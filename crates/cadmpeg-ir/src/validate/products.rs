@@ -177,8 +177,9 @@ mod tests {
             native_ref: None,
         });
         let mut wire = serde_json::to_value(&ir.model.assembly_joints[0]).expect("joint wire");
-        wire["operands"][0]["occurrence"] = serde_json::json!(occurrence.as_str());
-        wire["operands"][0]["external_document"] = serde_json::json!({
+        wire["operands"]["connectors"][0]["operand"]["occurrence"] =
+            serde_json::json!(occurrence.as_str());
+        wire["operands"]["connectors"][0]["operand"]["external_document"] = serde_json::json!({
             "path": "external.f3d",
             "resolution": "unresolved"
         });

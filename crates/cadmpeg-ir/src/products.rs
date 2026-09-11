@@ -893,43 +893,6 @@ fn resolve_occurrence<'a>(
     Ok(transform)
 }
 
-/// Neutral family of an assembly joint.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "native_kind", rename_all = "snake_case")]
-pub(crate) enum JointKind {
-    /// Rigid connection with no relative degrees of freedom.
-    Fixed,
-    /// Rotation about one axis.
-    Revolute,
-    /// Translation along one axis.
-    Slider,
-    /// Coupled rotation and translation on one axis.
-    Cylindrical,
-    /// Rotation about a common point.
-    Ball,
-    /// Maintains a scalar separation.
-    Distance,
-    /// Maintains parallel connector directions.
-    Parallel,
-    /// Maintains perpendicular connector directions.
-    Perpendicular,
-    /// Maintains an angular separation.
-    Angle,
-    /// Couples rack translation to pinion rotation.
-    RackPinion,
-    /// Couples translation and rotation by screw pitch.
-    Screw,
-    /// Couples two gear rotations.
-    Gears,
-    /// Couples two pulley rotations through a belt.
-    Belt,
-    /// Persisted grounding of a component.
-    Grounded,
-    /// Future application-defined family retained without relabeling.
-    Native(String),
-}
-
 /// Container that owns a joint operand object.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1087,7 +1050,9 @@ impl JsonSchema for JointLimits {
 }
 
 /// One joint connector with its local frame.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct JointConnector {
     /// Referenced operand.
     pub operand: JointOperand,
@@ -1098,7 +1063,9 @@ pub struct JointConnector {
 }
 
 /// Structurally complete operands and frames for an assembly joint.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "arity", rename_all = "snake_case", deny_unknown_fields)]
 // Inline fixed-size arrays encode the one-or-two connector invariant directly.
 #[allow(clippy::large_enum_variant)]
 pub enum JointOperands {
@@ -1107,6 +1074,7 @@ pub enum JointOperands {
         /// Grounded connector.
         connector: JointConnector,
         /// Connector attachment offset.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         offset_frame: Option<Transform>,
     },
     /// Two paired connectors and their optional attachment offsets.
@@ -1116,91 +1084,116 @@ pub enum JointOperands {
         /// Connectors in operand order.
         connectors: [JointConnector; 2],
         /// Connector attachment offsets in operand order.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         offset_frames: Option<[Transform; 2]>,
     },
 }
 
 /// Assembly-joint families that connect two operands.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PairedJointKind {
     /// Rigid connection with no relative degrees of freedom.
     Fixed {
         /// Angular offset in radians.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         angle: Option<FiniteReal>,
         /// Connector-local translation offset in document length units.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         translation_offset: Option<[FiniteReal; 3]>,
         /// Enabled angular interval in radians.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         angular_limits: Option<JointLimits>,
         /// Enabled linear interval in document length units.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         linear_limits: Option<JointLimits>,
     },
     /// Rotation about one axis.
     Revolute {
         /// Angular offset in radians.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         angle: Option<FiniteReal>,
         /// Enabled angular interval in radians.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         angular_limits: Option<JointLimits>,
     },
     /// Translation along one axis.
     Slider {
         /// Primary linear offset in document length units.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         distance: Option<FiniteReal>,
         /// Connector-local translation offset in document length units.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         translation_offset: Option<[FiniteReal; 3]>,
         /// Enabled linear interval in document length units.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         linear_limits: Option<JointLimits>,
     },
     /// Coupled rotation and translation on one axis.
     Cylindrical {
         /// Angular offset in radians.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         angle: Option<FiniteReal>,
         /// Primary linear offset in document length units.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         distance: Option<FiniteReal>,
         /// Enabled angular interval in radians.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         angular_limits: Option<JointLimits>,
         /// Enabled linear interval in document length units.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         linear_limits: Option<JointLimits>,
     },
     /// Rotation about a common point.
-    Ball,
+    Ball {},
     /// Maintains a scalar separation.
     Distance {
         /// Primary linear offset in document length units.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         distance: Option<FiniteReal>,
     },
     /// Maintains parallel connector directions.
-    Parallel,
+    Parallel {},
     /// Maintains perpendicular connector directions.
-    Perpendicular,
+    Perpendicular {},
     /// Maintains an angular separation.
     Angle {
         /// Angular offset in radians.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         angle: Option<FiniteReal>,
     },
     /// Couples rack translation to pinion rotation.
     RackPinion {
         /// Primary linear offset in document length units.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         distance: Option<FiniteReal>,
         /// Secondary linear offset in document length units.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         distance2: Option<FiniteReal>,
     },
     /// Couples translation and rotation by screw pitch.
     Screw {
         /// Primary linear offset in document length units.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         distance: Option<FiniteReal>,
     },
     /// Couples two gear rotations.
     Gears {
         /// Primary linear offset in document length units.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         distance: Option<FiniteReal>,
         /// Secondary linear offset in document length units.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         distance2: Option<FiniteReal>,
     },
     /// Couples two pulley rotations through a belt.
     Belt {
         /// Primary linear offset in document length units.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         distance: Option<FiniteReal>,
         /// Secondary linear offset in document length units.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         distance2: Option<FiniteReal>,
     },
     /// Future application-defined family retained without relabeling.
@@ -1208,320 +1201,27 @@ pub enum PairedJointKind {
         /// Application-defined family name.
         name: String,
         /// Angular offset in radians.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         angle: Option<FiniteReal>,
         /// Connector-local translation offset in document length units.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         translation_offset: Option<[FiniteReal; 3]>,
         /// Primary linear offset in document length units.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         distance: Option<FiniteReal>,
         /// Secondary linear offset in document length units.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         distance2: Option<FiniteReal>,
         /// Enabled angular interval in radians.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         angular_limits: Option<JointLimits>,
         /// Enabled linear interval in document length units.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         linear_limits: Option<JointLimits>,
     },
 }
 
-/// Kind-specific scalars carried on the CADIR joint wire.
-struct JointScalars {
-    angle: Option<f64>,
-    translation_offset: Option<[f64; 3]>,
-    distance: Option<f64>,
-    distance2: Option<f64>,
-    angular_limits: Option<JointLimits>,
-    linear_limits: Option<JointLimits>,
-}
-
 impl PairedJointKind {
-    fn from_wire(kind: JointKind, scalars: JointScalars) -> Result<Self, &'static str> {
-        let JointScalars {
-            angle,
-            translation_offset,
-            distance,
-            distance2,
-            angular_limits,
-            linear_limits,
-        } = scalars;
-        let angle = angle
-            .map(FiniteReal::try_from)
-            .transpose()
-            .map_err(|_| "angle must be finite")?;
-        let distance = distance
-            .map(FiniteReal::try_from)
-            .transpose()
-            .map_err(|_| "distance must be finite")?;
-        let distance2 = distance2
-            .map(FiniteReal::try_from)
-            .transpose()
-            .map_err(|_| "distance2 must be finite")?;
-        let translation_offset = translation_offset
-            .map(|values| {
-                let [x, y, z] = values.map(FiniteReal::try_from);
-                Ok::<_, &'static str>([x?, y?, z?])
-            })
-            .transpose()
-            .map_err(|_| "translation_offset must be finite")?;
-
-        match kind {
-            JointKind::Fixed if distance.is_none() && distance2.is_none() => Ok(Self::Fixed {
-                angle,
-                translation_offset,
-                angular_limits,
-                linear_limits,
-            }),
-            JointKind::Revolute
-                if translation_offset.is_none()
-                    && distance.is_none()
-                    && distance2.is_none()
-                    && linear_limits.is_none() =>
-            {
-                Ok(Self::Revolute {
-                    angle,
-                    angular_limits,
-                })
-            }
-            JointKind::Slider
-                if angle.is_none() && distance2.is_none() && angular_limits.is_none() =>
-            {
-                Ok(Self::Slider {
-                    distance,
-                    translation_offset,
-                    linear_limits,
-                })
-            }
-            JointKind::Cylindrical if translation_offset.is_none() && distance2.is_none() => {
-                Ok(Self::Cylindrical {
-                    angle,
-                    distance,
-                    angular_limits,
-                    linear_limits,
-                })
-            }
-            JointKind::Ball
-                if angle.is_none()
-                    && translation_offset.is_none()
-                    && distance.is_none()
-                    && distance2.is_none()
-                    && angular_limits.is_none()
-                    && linear_limits.is_none() =>
-            {
-                Ok(Self::Ball)
-            }
-            JointKind::Distance
-                if angle.is_none()
-                    && translation_offset.is_none()
-                    && distance2.is_none()
-                    && angular_limits.is_none()
-                    && linear_limits.is_none() =>
-            {
-                Ok(Self::Distance { distance })
-            }
-            JointKind::Parallel
-                if angle.is_none()
-                    && translation_offset.is_none()
-                    && distance.is_none()
-                    && distance2.is_none()
-                    && angular_limits.is_none()
-                    && linear_limits.is_none() =>
-            {
-                Ok(Self::Parallel)
-            }
-            JointKind::Perpendicular
-                if angle.is_none()
-                    && translation_offset.is_none()
-                    && distance.is_none()
-                    && distance2.is_none()
-                    && angular_limits.is_none()
-                    && linear_limits.is_none() =>
-            {
-                Ok(Self::Perpendicular)
-            }
-            JointKind::Angle
-                if translation_offset.is_none()
-                    && distance.is_none()
-                    && distance2.is_none()
-                    && angular_limits.is_none()
-                    && linear_limits.is_none() =>
-            {
-                Ok(Self::Angle { angle })
-            }
-            JointKind::RackPinion
-                if angle.is_none()
-                    && translation_offset.is_none()
-                    && angular_limits.is_none()
-                    && linear_limits.is_none() =>
-            {
-                Ok(Self::RackPinion {
-                    distance,
-                    distance2,
-                })
-            }
-            JointKind::Screw
-                if angle.is_none()
-                    && translation_offset.is_none()
-                    && distance2.is_none()
-                    && angular_limits.is_none()
-                    && linear_limits.is_none() =>
-            {
-                Ok(Self::Screw { distance })
-            }
-            JointKind::Gears
-                if angle.is_none()
-                    && translation_offset.is_none()
-                    && angular_limits.is_none()
-                    && linear_limits.is_none() =>
-            {
-                Ok(Self::Gears {
-                    distance,
-                    distance2,
-                })
-            }
-            JointKind::Belt
-                if angle.is_none()
-                    && translation_offset.is_none()
-                    && angular_limits.is_none()
-                    && linear_limits.is_none() =>
-            {
-                Ok(Self::Belt {
-                    distance,
-                    distance2,
-                })
-            }
-            JointKind::Native(name) => Ok(Self::Native {
-                name,
-                angle,
-                translation_offset,
-                distance,
-                distance2,
-                angular_limits,
-                linear_limits,
-            }),
-            JointKind::Grounded => Err("paired joint cannot use the grounded kind"),
-            _ => Err("joint scalar fields are not supported by the selected kind"),
-        }
-    }
-
-    fn scalars(&self) -> JointScalars {
-        match self {
-            Self::Fixed {
-                angle,
-                translation_offset,
-                angular_limits,
-                linear_limits,
-            } => JointScalars {
-                angle: angle.map(FiniteReal::get),
-                translation_offset: translation_offset.map(|values| values.map(FiniteReal::get)),
-                distance: None,
-                distance2: None,
-                angular_limits: angular_limits.clone(),
-                linear_limits: linear_limits.clone(),
-            },
-            Self::Revolute {
-                angle,
-                angular_limits,
-            } => JointScalars {
-                angle: angle.map(FiniteReal::get),
-                translation_offset: None,
-                distance: None,
-                distance2: None,
-                angular_limits: angular_limits.clone(),
-                linear_limits: None,
-            },
-            Self::Slider {
-                distance,
-                translation_offset,
-                linear_limits,
-            } => JointScalars {
-                angle: None,
-                translation_offset: translation_offset.map(|values| values.map(FiniteReal::get)),
-                distance: distance.map(FiniteReal::get),
-                distance2: None,
-                angular_limits: None,
-                linear_limits: linear_limits.clone(),
-            },
-            Self::Cylindrical {
-                angle,
-                distance,
-                angular_limits,
-                linear_limits,
-            } => JointScalars {
-                angle: angle.map(FiniteReal::get),
-                translation_offset: None,
-                distance: distance.map(FiniteReal::get),
-                distance2: None,
-                angular_limits: angular_limits.clone(),
-                linear_limits: linear_limits.clone(),
-            },
-            Self::Ball | Self::Parallel | Self::Perpendicular => JointScalars {
-                angle: None,
-                translation_offset: None,
-                distance: None,
-                distance2: None,
-                angular_limits: None,
-                linear_limits: None,
-            },
-            Self::Distance { distance } => JointScalars {
-                angle: None,
-                translation_offset: None,
-                distance: distance.map(FiniteReal::get),
-                distance2: None,
-                angular_limits: None,
-                linear_limits: None,
-            },
-            Self::Angle { angle } => JointScalars {
-                angle: angle.map(FiniteReal::get),
-                translation_offset: None,
-                distance: None,
-                distance2: None,
-                angular_limits: None,
-                linear_limits: None,
-            },
-            Self::RackPinion {
-                distance,
-                distance2,
-            }
-            | Self::Gears {
-                distance,
-                distance2,
-            }
-            | Self::Belt {
-                distance,
-                distance2,
-            } => JointScalars {
-                angle: None,
-                translation_offset: None,
-                distance: distance.map(FiniteReal::get),
-                distance2: distance2.map(FiniteReal::get),
-                angular_limits: None,
-                linear_limits: None,
-            },
-            Self::Screw { distance } => JointScalars {
-                angle: None,
-                translation_offset: None,
-                distance: distance.map(FiniteReal::get),
-                distance2: None,
-                angular_limits: None,
-                linear_limits: None,
-            },
-            Self::Native {
-                angle,
-                translation_offset,
-                distance,
-                distance2,
-                angular_limits,
-                linear_limits,
-                ..
-            } => JointScalars {
-                angle: angle.map(FiniteReal::get),
-                translation_offset: translation_offset.map(|values| values.map(FiniteReal::get)),
-                distance: distance.map(FiniteReal::get),
-                distance2: distance2.map(FiniteReal::get),
-                angular_limits: angular_limits.clone(),
-                linear_limits: linear_limits.clone(),
-            },
-        }
-    }
-
     fn set_angular_limits(&mut self, limits: Option<JointLimits>) {
         match self {
             Self::Fixed { angular_limits, .. }
@@ -1533,48 +1233,10 @@ impl PairedJointKind {
     }
 }
 
-impl From<PairedJointKind> for JointKind {
-    fn from(kind: PairedJointKind) -> Self {
-        match kind {
-            PairedJointKind::Fixed { .. } => Self::Fixed,
-            PairedJointKind::Revolute { .. } => Self::Revolute,
-            PairedJointKind::Slider { .. } => Self::Slider,
-            PairedJointKind::Cylindrical { .. } => Self::Cylindrical,
-            PairedJointKind::Ball => Self::Ball,
-            PairedJointKind::Distance { .. } => Self::Distance,
-            PairedJointKind::Parallel => Self::Parallel,
-            PairedJointKind::Perpendicular => Self::Perpendicular,
-            PairedJointKind::Angle { .. } => Self::Angle,
-            PairedJointKind::RackPinion { .. } => Self::RackPinion,
-            PairedJointKind::Screw { .. } => Self::Screw,
-            PairedJointKind::Gears { .. } => Self::Gears,
-            PairedJointKind::Belt { .. } => Self::Belt,
-            PairedJointKind::Native { name, .. } => Self::Native(name),
-        }
-    }
-}
-
-impl TryFrom<JointKind> for PairedJointKind {
-    type Error = ();
-
-    fn try_from(kind: JointKind) -> Result<Self, Self::Error> {
-        Self::from_wire(
-            kind,
-            JointScalars {
-                angle: None,
-                translation_offset: None,
-                distance: None,
-                distance2: None,
-                angular_limits: None,
-                linear_limits: None,
-            },
-        )
-        .map_err(|_| ())
-    }
-}
-
 /// Neutral assembly constraint between connector frames.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct AssemblyJoint {
     /// Globally unique joint identity.
     pub id: JointId,
@@ -1583,6 +1245,7 @@ pub struct AssemblyJoint {
     /// Whether solving this joint is suppressed.
     pub suppressed: bool,
     /// Format-native joint record supplying this constraint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_ref: Option<String>,
 }
 
@@ -1625,14 +1288,6 @@ impl AssemblyJoint {
             operands,
             suppressed: false,
             native_ref: None,
-        }
-    }
-
-    /// Returns the joint kinematic family.
-    pub(crate) fn kind(&self) -> JointKind {
-        match &self.operands {
-            JointOperands::Grounded { .. } => JointKind::Grounded,
-            JointOperands::Pair { kind, .. } => kind.clone().into(),
         }
     }
 
@@ -1699,42 +1354,62 @@ impl AssemblyJoint {
         }
     }
 
-    fn scalars(&self) -> JointScalars {
-        self.paired_kind().map_or(
-            JointScalars {
-                angle: None,
-                translation_offset: None,
-                distance: None,
-                distance2: None,
-                angular_limits: None,
-                linear_limits: None,
-            },
-            PairedJointKind::scalars,
-        )
-    }
-
     /// Angular offset in radians.
     #[must_use]
     pub fn angle(&self) -> Option<f64> {
-        self.scalars().angle
+        match self.paired_kind()? {
+            PairedJointKind::Fixed { angle, .. }
+            | PairedJointKind::Revolute { angle, .. }
+            | PairedJointKind::Cylindrical { angle, .. }
+            | PairedJointKind::Angle { angle }
+            | PairedJointKind::Native { angle, .. } => angle.map(FiniteReal::get),
+            _ => None,
+        }
     }
 
     /// Connector-local translation offset in document length units.
     #[must_use]
     pub fn translation_offset(&self) -> Option<[f64; 3]> {
-        self.scalars().translation_offset
+        match self.paired_kind()? {
+            PairedJointKind::Fixed {
+                translation_offset, ..
+            }
+            | PairedJointKind::Slider {
+                translation_offset, ..
+            }
+            | PairedJointKind::Native {
+                translation_offset, ..
+            } => translation_offset.map(|values| values.map(FiniteReal::get)),
+            _ => None,
+        }
     }
 
     /// Primary linear offset in document length units.
     #[must_use]
     pub fn distance(&self) -> Option<f64> {
-        self.scalars().distance
+        match self.paired_kind()? {
+            PairedJointKind::Slider { distance, .. }
+            | PairedJointKind::Cylindrical { distance, .. }
+            | PairedJointKind::Distance { distance }
+            | PairedJointKind::RackPinion { distance, .. }
+            | PairedJointKind::Screw { distance }
+            | PairedJointKind::Gears { distance, .. }
+            | PairedJointKind::Belt { distance, .. }
+            | PairedJointKind::Native { distance, .. } => distance.map(FiniteReal::get),
+            _ => None,
+        }
     }
 
     /// Secondary linear offset in document length units.
     #[must_use]
     pub fn distance2(&self) -> Option<f64> {
-        self.scalars().distance2
+        match self.paired_kind()? {
+            PairedJointKind::RackPinion { distance2, .. }
+            | PairedJointKind::Gears { distance2, .. }
+            | PairedJointKind::Belt { distance2, .. }
+            | PairedJointKind::Native { distance2, .. } => distance2.map(FiniteReal::get),
+            _ => None,
+        }
     }
 
     /// Enabled angular interval in radians.
@@ -1770,218 +1445,5 @@ impl AssemblyJoint {
         if let Some(kind) = self.pair_kind_mut() {
             kind.set_angular_limits(limits);
         }
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct AssemblyJointWire {
-    id: JointId,
-    kind: JointKind,
-    operands: Vec<JointOperand>,
-    frames: Vec<Transform>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    offset_frames: Vec<Transform>,
-    suppressed: bool,
-    detached: [bool; 2],
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    angle: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    translation_offset: Option<[f64; 3]>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    distance: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    distance2: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    angular_limits: Option<JointLimits>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    linear_limits: Option<JointLimits>,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    properties: BTreeMap<String, String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    native_ref: Option<String>,
-}
-
-impl From<&AssemblyJoint> for AssemblyJointWire {
-    fn from(joint: &AssemblyJoint) -> Self {
-        let (operands, frames, offset_frames) = match &joint.operands {
-            JointOperands::Grounded {
-                connector,
-                offset_frame,
-            } => (
-                vec![connector.operand.clone()],
-                vec![connector.frame],
-                offset_frame.iter().copied().collect(),
-            ),
-            JointOperands::Pair {
-                connectors,
-                offset_frames,
-                ..
-            } => (
-                connectors
-                    .iter()
-                    .map(|connector| connector.operand.clone())
-                    .collect(),
-                connectors.iter().map(|connector| connector.frame).collect(),
-                offset_frames.iter().flatten().copied().collect::<Vec<_>>(),
-            ),
-        };
-        let scalars = joint.scalars();
-        Self {
-            id: joint.id.clone(),
-            kind: joint.kind(),
-            operands,
-            frames,
-            offset_frames,
-            suppressed: joint.suppressed,
-            detached: joint.detached(),
-            angle: scalars.angle,
-            translation_offset: scalars.translation_offset,
-            distance: scalars.distance,
-            distance2: scalars.distance2,
-            angular_limits: scalars.angular_limits,
-            linear_limits: scalars.linear_limits,
-            properties: BTreeMap::new(),
-            native_ref: joint.native_ref.clone(),
-        }
-    }
-}
-
-impl TryFrom<AssemblyJointWire> for AssemblyJoint {
-    type Error = &'static str;
-
-    fn try_from(wire: AssemblyJointWire) -> Result<Self, Self::Error> {
-        let AssemblyJointWire {
-            id,
-            kind,
-            operands,
-            frames,
-            offset_frames,
-            suppressed,
-            detached,
-            angle,
-            translation_offset,
-            distance,
-            distance2,
-            angular_limits,
-            linear_limits,
-            properties: _,
-            native_ref,
-        } = wire;
-        let mut joint = if kind == JointKind::Grounded {
-            if angle.is_some()
-                || translation_offset.is_some()
-                || distance.is_some()
-                || distance2.is_some()
-                || angular_limits.is_some()
-                || linear_limits.is_some()
-            {
-                return Err("grounded joint cannot carry scalar fields");
-            }
-            if detached[1] {
-                return Err("grounded joint cannot detach a second connector");
-            }
-            let [operand] = operands
-                .try_into()
-                .map_err(|_| "grounded joint must contain one operand")?;
-            let [frame] = frames
-                .try_into()
-                .map_err(|_| "grounded joint must contain one frame")?;
-            let offset_frame = match offset_frames.as_slice() {
-                [] => None,
-                [offset] => Some(*offset),
-                _ => return Err("grounded joint must contain zero or one offset frame"),
-            };
-            Self::grounded(
-                id,
-                JointConnector {
-                    operand,
-                    frame,
-                    detached: detached[0],
-                },
-                offset_frame,
-            )
-        } else {
-            let kind = PairedJointKind::from_wire(
-                kind,
-                JointScalars {
-                    angle,
-                    translation_offset,
-                    distance,
-                    distance2,
-                    angular_limits,
-                    linear_limits,
-                },
-            )?;
-            let [first_operand, second_operand] = operands
-                .try_into()
-                .map_err(|_| "paired joint must contain two operands")?;
-            let [first_frame, second_frame] = frames
-                .try_into()
-                .map_err(|_| "paired joint must contain two frames")?;
-            let offset_frames = if offset_frames.is_empty() {
-                None
-            } else {
-                Some(
-                    <Vec<Transform> as TryInto<[Transform; 2]>>::try_into(offset_frames)
-                        .map_err(|_| "paired joint must contain zero or two offset frames")?,
-                )
-            };
-            Self::paired(
-                id,
-                kind,
-                [
-                    JointConnector {
-                        operand: first_operand,
-                        frame: first_frame,
-                        detached: detached[0],
-                    },
-                    JointConnector {
-                        operand: second_operand,
-                        frame: second_frame,
-                        detached: detached[1],
-                    },
-                ],
-                offset_frames,
-            )
-        };
-        joint.suppressed = suppressed;
-        joint.native_ref = native_ref;
-        Ok(joint)
-    }
-}
-
-impl Serialize for AssemblyJoint {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        AssemblyJointWire::from(self).serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for AssemblyJoint {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        AssemblyJointWire::deserialize(deserializer)?
-            .try_into()
-            .map_err(serde::de::Error::custom)
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for AssemblyJoint {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "AssemblyJoint".into()
-    }
-
-    fn schema_id() -> std::borrow::Cow<'static, str> {
-        concat!(module_path!(), "::AssemblyJoint").into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        AssemblyJointWire::json_schema(generator)
     }
 }

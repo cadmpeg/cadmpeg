@@ -6,195 +6,193 @@
       "appearances": [],
       "assembly_joints": [
         {
-          "detached": [
-            false,
-            false
-          ],
-          "frames": [
-            [
-              [
-                1.0,
-                0.0,
-                0.0,
-                10.0
-              ],
-              [
-                0.0,
-                1.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0,
-                0.0
-              ],
-              [
-                0.0,
-                0.0,
-                0.0,
-                1.0
-              ]
-            ]
-          ],
           "id": "fcstd:model:joint#GroundBracket:constraint",
-          "kind": {
-            "kind": "grounded"
-          },
           "native_ref": "fcstd:native:joint#GroundBracket",
-          "operands": [
-            {
-              "container": "occurrence",
-              "object": "fcstd:native:object#BracketOccurrence",
-              "occurrence": "fcstd:model:occurrence#BracketOccurrence:container"
+          "operands": {
+            "arity": "grounded",
+            "connector": {
+              "detached": false,
+              "frame": [
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  10.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ],
+              "operand": {
+                "container": "occurrence",
+                "object": "fcstd:native:object#BracketOccurrence",
+                "occurrence": "fcstd:model:occurrence#BracketOccurrence:container"
+              }
             }
-          ],
+          },
           "suppressed": false
         },
         {
-          "angle": 0.20943951023931956,
-          "angular_limits": {
-            "maximum": 0.9599310885968813,
-            "minimum": -0.6108652381980153
-          },
-          "detached": [
-            true,
-            false
-          ],
-          "frames": [
-            [
-              [
-                1.0,
-                0.0,
-                0.0,
-                20.0
-              ],
-              [
-                0.0,
-                1.0,
-                0.0,
-                6.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0,
-                3.0
-              ],
-              [
-                0.0,
-                0.0,
-                0.0,
-                1.0
-              ]
-            ],
-            [
-              [
-                1.0,
-                0.0,
-                0.0,
-                20.0
-              ],
-              [
-                0.0,
-                1.0,
-                0.0,
-                6.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0,
-                3.0
-              ],
-              [
-                0.0,
-                0.0,
-                0.0,
-                1.0
-              ]
-            ]
-          ],
           "id": "fcstd:model:joint#RevoluteJoint:constraint",
-          "kind": {
-            "kind": "revolute"
-          },
           "native_ref": "fcstd:native:joint#RevoluteJoint",
-          "offset_frames": [
-            [
-              [
-                1.0,
-                0.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                1.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0,
-                0.5
-              ],
-              [
-                0.0,
-                0.0,
-                0.0,
-                1.0
-              ]
+          "operands": {
+            "arity": "pair",
+            "connectors": [
+              {
+                "detached": true,
+                "frame": [
+                  [
+                    1.0,
+                    0.0,
+                    0.0,
+                    20.0
+                  ],
+                  [
+                    0.0,
+                    1.0,
+                    0.0,
+                    6.0
+                  ],
+                  [
+                    0.0,
+                    0.0,
+                    1.0,
+                    3.0
+                  ],
+                  [
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0
+                  ]
+                ],
+                "operand": {
+                  "container": "occurrence",
+                  "object": "fcstd:native:object#BracketOccurrence",
+                  "occurrence": "fcstd:model:occurrence#BracketOccurrence:container",
+                  "subelements": [
+                    "Face1",
+                    "Edge1"
+                  ]
+                }
+              },
+              {
+                "detached": false,
+                "frame": [
+                  [
+                    1.0,
+                    0.0,
+                    0.0,
+                    20.0
+                  ],
+                  [
+                    0.0,
+                    1.0,
+                    0.0,
+                    6.0
+                  ],
+                  [
+                    0.0,
+                    0.0,
+                    1.0,
+                    3.0
+                  ],
+                  [
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0
+                  ]
+                ],
+                "operand": {
+                  "container": "occurrence",
+                  "object": "fcstd:native:object#PinOccurrence",
+                  "occurrence": "fcstd:model:occurrence#PinOccurrence:instance",
+                  "subelements": [
+                    "Face2",
+                    "Edge3"
+                  ]
+                }
+              }
             ],
-            [
+            "kind": {
+              "angle": 0.20943951023931956,
+              "angular_limits": {
+                "maximum": 0.9599310885968813,
+                "minimum": -0.6108652381980153
+              },
+              "kind": "revolute"
+            },
+            "offset_frames": [
               [
-                1.0,
-                0.0,
-                0.0,
-                0.0
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.5
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
               ],
               [
-                0.0,
-                1.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0,
-                -0.5
-              ],
-              [
-                0.0,
-                0.0,
-                0.0,
-                1.0
+                [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  -0.5
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
               ]
             ]
-          ],
-          "operands": [
-            {
-              "container": "occurrence",
-              "object": "fcstd:native:object#BracketOccurrence",
-              "occurrence": "fcstd:model:occurrence#BracketOccurrence:container",
-              "subelements": [
-                "Face1",
-                "Edge1"
-              ]
-            },
-            {
-              "container": "occurrence",
-              "object": "fcstd:native:object#PinOccurrence",
-              "occurrence": "fcstd:model:occurrence#PinOccurrence:instance",
-              "subelements": [
-                "Face2",
-                "Edge3"
-              ]
-            }
-          ],
+          },
           "suppressed": false
         }
       ],
