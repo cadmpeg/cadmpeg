@@ -659,7 +659,9 @@ fn maps_each_admitted_operation_class_to_its_neutral_family() {
                 assert!(seeds.is_empty());
                 assert!(matches!(
                     (pattern).definition(),
-                    cadmpeg_ir::features::PatternTransform::UnresolvedCircular
+                    cadmpeg_ir::features::PatternTransform::Unresolved {
+                        form: Some(cadmpeg_ir::features::PatternForm::Circular)
+                    }
                 ));
             }
             other => panic!("unexpected operation source tag: {other:?}"),

@@ -1245,7 +1245,7 @@ fn semantic_writer_retains_unresolved_native_edge_treatments() {
         FeatureDefinition::Fillet {
             groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            radius: RadiusSpec::UnresolvedConstant,
+            radius: RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::RadiusForm::Constant) },
             ..
         }])
     ));
@@ -1255,7 +1255,7 @@ fn semantic_writer_retains_unresolved_native_edge_treatments() {
             groups,
             ..
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
-            spec: ChamferSpec::UnresolvedDistance,
+            spec: ChamferSpec::Unresolved { form: Some(cadmpeg_ir::features::ChamferForm::Distance) },
             ..
         }])
     ));

@@ -5300,21 +5300,27 @@ fn blend_feature_definition(
         .map_or_else(
             || {
                 if constant_radii.is_some() {
-                    RadiusSpec::UnresolvedConstant
+                    RadiusSpec::Unresolved {
+                        form: Some(cadmpeg_ir::features::RadiusForm::Constant),
+                    }
                 } else if laws.iter().all(|law| {
                     matches!(
                         law,
                         BlendRadiusLaw::Linear { .. } | BlendRadiusLaw::Law { .. }
                     )
                 }) {
-                    RadiusSpec::UnresolvedVariable
+                    RadiusSpec::Unresolved {
+                        form: Some(cadmpeg_ir::features::RadiusForm::Variable),
+                    }
                 } else {
-                    RadiusSpec::Unresolved
+                    RadiusSpec::Unresolved { form: None }
                 }
             },
             |radii| match cadmpeg_ir::scalar::PositiveLength::new(radii[0]) {
                 Some(radius) => RadiusSpec::Constant { radius },
-                None => RadiusSpec::UnresolvedConstant,
+                None => RadiusSpec::Unresolved {
+                    form: Some(cadmpeg_ir::features::RadiusForm::Constant),
+                },
             },
         );
     let face_blend = matches!(family, NxBlendFamily::Face)
@@ -6016,7 +6022,7 @@ fn body_writing_unresolved_feature_definition(
         "BLEND" => Some(FeatureDefinition::Fillet {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::FilletGroup {
                 edges: EdgeSelection::Unresolved,
-                radius: RadiusSpec::Unresolved,
+                radius: RadiusSpec::Unresolved { form: None },
                 tangency_weight: None,
             }),
         }),
@@ -6027,7 +6033,7 @@ fn body_writing_unresolved_feature_definition(
             )
             .ok()?,
 
-            radius: RadiusSpec::Unresolved,
+            radius: RadiusSpec::Unresolved { form: None },
         }),
         "DELETE FACE" => Some(FeatureDefinition::Unresolved {
             family: UnresolvedFamily::DeleteFace,
@@ -6413,7 +6419,7 @@ fn non_boolean_feature_definition_with_parameters(
             groups: cadmpeg_ir::features::NonEmptyMembers::one(
                 cadmpeg_ir::features::ChamferGroup {
                     edges: EdgeSelection::Unresolved,
-                    spec: ChamferSpec::Unresolved,
+                    spec: ChamferSpec::Unresolved { form: None },
                 },
             ),
             flip_direction: false,
@@ -6421,7 +6427,7 @@ fn non_boolean_feature_definition_with_parameters(
         "BLEND" => FeatureDefinition::Fillet {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::FilletGroup {
                 edges: EdgeSelection::Unresolved,
-                radius: RadiusSpec::Unresolved,
+                radius: RadiusSpec::Unresolved { form: None },
                 tangency_weight: None,
             }),
         },
@@ -6432,7 +6438,7 @@ fn non_boolean_feature_definition_with_parameters(
             )
             .map_err(cadmpeg_core::CodecError::malformed)?,
 
-            radius: RadiusSpec::Unresolved,
+            radius: RadiusSpec::Unresolved { form: None },
         },
         "SEW" => FeatureDefinition::SewBodies {
             bodies: BodySelection::Unresolved

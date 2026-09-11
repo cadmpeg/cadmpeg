@@ -1590,7 +1590,7 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(
                 cadmpeg_ir::features::ChamferGroup {
                     edges: EdgeSelection::Unresolved,
-                    spec: ChamferSpec::Unresolved,
+                    spec: ChamferSpec::Unresolved { form: None },
                 },
             ),
             flip_direction: false,

@@ -277,13 +277,7 @@ pub(crate) fn sweep_orientation_is_incomplete(orientation: &SweepOrientation) ->
 
 pub(crate) fn pattern_is_incomplete(pattern: &PatternKind) -> bool {
     match pattern.definition() {
-        PatternTransform::Unresolved
-        | PatternTransform::UnresolvedLinear
-        | PatternTransform::UnresolvedCircular
-        | PatternTransform::UnresolvedCurveDriven
-        | PatternTransform::UnresolvedMirror
-        | PatternTransform::UnresolvedScale
-        | PatternTransform::UnresolvedComposite => true,
+        PatternTransform::Unresolved { .. } => true,
         PatternTransform::Linear {
             direction, count, ..
         } => direction.is_none() || *count < 2,
@@ -355,13 +349,7 @@ pub(crate) fn pattern_occurrence_count(pattern: &PatternKind) -> Option<usize> {
                     }
                 })?
         }
-        PatternTransform::Unresolved
-        | PatternTransform::UnresolvedLinear
-        | PatternTransform::UnresolvedCircular
-        | PatternTransform::UnresolvedCurveDriven
-        | PatternTransform::UnresolvedMirror
-        | PatternTransform::UnresolvedScale
-        | PatternTransform::UnresolvedComposite => None,
+        PatternTransform::Unresolved { .. } => None,
     }
 }
 

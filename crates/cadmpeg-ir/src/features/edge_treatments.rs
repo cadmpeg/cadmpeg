@@ -5,19 +5,32 @@ use crate::scalar::{FiniteReal, InteriorAngle, Length, PositiveLength};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+/// Identified radius law form for a radius that is not yet dimensioned.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum RadiusForm {
+    /// Same radius along the whole edge chain.
+    Constant,
+    /// Constant transverse chord length.
+    Chordal,
+    /// Distinct offsets along the two support faces.
+    Asymmetric,
+    /// Radius varying along the edge chain.
+    Variable,
+}
+
 /// Radius assignment along filleted edges.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum RadiusSpec {
-    /// Radius law form is not identified.
-    Unresolved,
-    /// A constant-radius law is identified without its radius.
-    UnresolvedConstant,
-    /// A chordal law is identified without its chord length.
-    UnresolvedChordal,
-    /// An asymmetric law is identified without its offsets.
-    UnresolvedAsymmetric,
-    /// A variable-radius law is identified without its control points.
-    UnresolvedVariable,
+    /// The law is not dimensioned; `form` names it when the source identified one.
+    Unresolved {
+        /// Identified law form, when the source established one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        form: Option<RadiusForm>,
+    },
     /// Same radius along the whole edge chain.
     Constant {
         /// The fillet radius.
@@ -44,137 +57,8 @@ pub enum RadiusSpec {
 
 impl RadiusSpec {
     /// Returns whether the radius law lacks its required dimensions.
-    pub fn is_unresolved(&self) -> bool {
-        matches!(
-            self,
-            Self::Unresolved
-                | Self::UnresolvedConstant
-                | Self::UnresolvedChordal
-                | Self::UnresolvedAsymmetric
-                | Self::UnresolvedVariable
-        )
-    }
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-enum RadiusSpecWire {
-    Unresolved {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        form: Option<RadiusFormWire>,
-    },
-    Constant {
-        radius: PositiveLength,
-    },
-    Chordal {
-        chord_length: PositiveLength,
-    },
-    Asymmetric {
-        offset_one: PositiveLength,
-        offset_two: PositiveLength,
-    },
-    Variable {
-        points: VariableRadii,
-    },
-}
-
-#[derive(Clone, Copy, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-enum RadiusFormWire {
-    Constant,
-    Chordal,
-    Asymmetric,
-    Variable,
-}
-
-impl From<RadiusSpec> for RadiusSpecWire {
-    fn from(value: RadiusSpec) -> Self {
-        match value {
-            RadiusSpec::Unresolved => Self::Unresolved { form: None },
-            RadiusSpec::UnresolvedConstant => Self::Unresolved {
-                form: Some(RadiusFormWire::Constant),
-            },
-            RadiusSpec::UnresolvedChordal => Self::Unresolved {
-                form: Some(RadiusFormWire::Chordal),
-            },
-            RadiusSpec::UnresolvedAsymmetric => Self::Unresolved {
-                form: Some(RadiusFormWire::Asymmetric),
-            },
-            RadiusSpec::UnresolvedVariable => Self::Unresolved {
-                form: Some(RadiusFormWire::Variable),
-            },
-            RadiusSpec::Constant { radius } => Self::Constant { radius },
-            RadiusSpec::Chordal { chord_length } => Self::Chordal { chord_length },
-            RadiusSpec::Asymmetric {
-                offset_one,
-                offset_two,
-            } => Self::Asymmetric {
-                offset_one,
-                offset_two,
-            },
-            RadiusSpec::Variable { points } => Self::Variable { points },
-        }
-    }
-}
-
-impl From<RadiusSpecWire> for RadiusSpec {
-    fn from(value: RadiusSpecWire) -> Self {
-        match value {
-            RadiusSpecWire::Unresolved { form: None } => Self::Unresolved,
-            RadiusSpecWire::Unresolved {
-                form: Some(RadiusFormWire::Constant),
-            } => Self::UnresolvedConstant,
-            RadiusSpecWire::Unresolved {
-                form: Some(RadiusFormWire::Chordal),
-            } => Self::UnresolvedChordal,
-            RadiusSpecWire::Unresolved {
-                form: Some(RadiusFormWire::Asymmetric),
-            } => Self::UnresolvedAsymmetric,
-            RadiusSpecWire::Unresolved {
-                form: Some(RadiusFormWire::Variable),
-            } => Self::UnresolvedVariable,
-            RadiusSpecWire::Constant { radius } => Self::Constant { radius },
-            RadiusSpecWire::Chordal { chord_length } => Self::Chordal { chord_length },
-            RadiusSpecWire::Asymmetric {
-                offset_one,
-                offset_two,
-            } => Self::Asymmetric {
-                offset_one,
-                offset_two,
-            },
-            RadiusSpecWire::Variable { points } => Self::Variable { points },
-        }
-    }
-}
-
-impl Serialize for RadiusSpec {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        RadiusSpecWire::from(self.clone()).serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for RadiusSpec {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        Ok(RadiusSpecWire::deserialize(deserializer)?.into())
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for RadiusSpec {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "RadiusSpec".into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        RadiusSpecWire::json_schema(generator)
+    pub const fn is_unresolved(&self) -> bool {
+        matches!(self, Self::Unresolved { .. })
     }
 }
 
@@ -361,17 +245,30 @@ pub struct VariableRadius {
     pub radius: Length,
 }
 
+/// Identified chamfer form for a chamfer that is not yet dimensioned.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum ChamferForm {
+    /// Equal setback distance on both faces.
+    Distance,
+    /// Independent setback distances on each face.
+    TwoDistances,
+    /// A setback distance plus an angle from its reference face.
+    DistanceAngle,
+}
+
 /// Dimensional definition of an edge chamfer.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ChamferSpec {
-    /// Dimensional specification form is not identified.
-    Unresolved,
-    /// An equal-distance form is identified without its distance.
-    UnresolvedDistance,
-    /// A two-distance form is identified without its distances.
-    UnresolvedTwoDistances,
-    /// A distance-angle form is identified without its dimensions.
-    UnresolvedDistanceAngle,
+    /// The chamfer is not dimensioned; `form` names it when the source identified one.
+    Unresolved {
+        /// Identified chamfer form, when the source established one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        form: Option<ChamferForm>,
+    },
     /// Equal setback distance on both faces meeting the edge.
     Distance {
         /// Setback distance from the edge.
@@ -395,116 +292,7 @@ pub enum ChamferSpec {
 
 impl ChamferSpec {
     /// Returns whether the chamfer form lacks its required dimensions.
-    pub fn is_unresolved(self) -> bool {
-        matches!(
-            self,
-            Self::Unresolved
-                | Self::UnresolvedDistance
-                | Self::UnresolvedTwoDistances
-                | Self::UnresolvedDistanceAngle
-        )
-    }
-}
-
-#[derive(Clone, Copy, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-enum ChamferSpecWire {
-    Unresolved {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        form: Option<ChamferFormWire>,
-    },
-    Distance {
-        distance: PositiveLength,
-    },
-    TwoDistances {
-        first: PositiveLength,
-        second: PositiveLength,
-    },
-    DistanceAngle {
-        distance: PositiveLength,
-        angle: InteriorAngle,
-    },
-}
-
-#[derive(Clone, Copy, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-enum ChamferFormWire {
-    Distance,
-    TwoDistances,
-    DistanceAngle,
-}
-
-impl From<ChamferSpec> for ChamferSpecWire {
-    fn from(value: ChamferSpec) -> Self {
-        match value {
-            ChamferSpec::Unresolved => Self::Unresolved { form: None },
-            ChamferSpec::UnresolvedDistance => Self::Unresolved {
-                form: Some(ChamferFormWire::Distance),
-            },
-            ChamferSpec::UnresolvedTwoDistances => Self::Unresolved {
-                form: Some(ChamferFormWire::TwoDistances),
-            },
-            ChamferSpec::UnresolvedDistanceAngle => Self::Unresolved {
-                form: Some(ChamferFormWire::DistanceAngle),
-            },
-            ChamferSpec::Distance { distance } => Self::Distance { distance },
-            ChamferSpec::TwoDistances { first, second } => Self::TwoDistances { first, second },
-            ChamferSpec::DistanceAngle { distance, angle } => {
-                Self::DistanceAngle { distance, angle }
-            }
-        }
-    }
-}
-
-impl From<ChamferSpecWire> for ChamferSpec {
-    fn from(value: ChamferSpecWire) -> Self {
-        match value {
-            ChamferSpecWire::Unresolved { form: None } => Self::Unresolved,
-            ChamferSpecWire::Unresolved {
-                form: Some(ChamferFormWire::Distance),
-            } => Self::UnresolvedDistance,
-            ChamferSpecWire::Unresolved {
-                form: Some(ChamferFormWire::TwoDistances),
-            } => Self::UnresolvedTwoDistances,
-            ChamferSpecWire::Unresolved {
-                form: Some(ChamferFormWire::DistanceAngle),
-            } => Self::UnresolvedDistanceAngle,
-            ChamferSpecWire::Distance { distance } => Self::Distance { distance },
-            ChamferSpecWire::TwoDistances { first, second } => Self::TwoDistances { first, second },
-            ChamferSpecWire::DistanceAngle { distance, angle } => {
-                Self::DistanceAngle { distance, angle }
-            }
-        }
-    }
-}
-
-impl Serialize for ChamferSpec {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        ChamferSpecWire::from(*self).serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for ChamferSpec {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        Ok(ChamferSpecWire::deserialize(deserializer)?.into())
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for ChamferSpec {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "ChamferSpec".into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        ChamferSpecWire::json_schema(generator)
+    pub const fn is_unresolved(self) -> bool {
+        matches!(self, Self::Unresolved { .. })
     }
 }

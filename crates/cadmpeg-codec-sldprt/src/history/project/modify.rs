@@ -85,15 +85,19 @@ pub(crate) fn project_fillet(feature: &Feature) -> FeatureDefinition {
                         .keys()
                         .any(|name| indexed_name(name, "Radius"))
                     {
-                        RadiusSpec::UnresolvedVariable
+                        RadiusSpec::Unresolved {
+                            form: Some(cadmpeg_ir::features::RadiusForm::Variable),
+                        }
                     } else if feature
                         .parameters
                         .keys()
                         .any(|name| matches!(name.as_str(), "Radius" | "D1"))
                     {
-                        RadiusSpec::UnresolvedConstant
+                        RadiusSpec::Unresolved {
+                            form: Some(cadmpeg_ir::features::RadiusForm::Constant),
+                        }
                     } else {
-                        RadiusSpec::Unresolved
+                        RadiusSpec::Unresolved { form: None }
                     }
                 },
                 |points| RadiusSpec::Variable { points },
@@ -611,17 +615,23 @@ pub(crate) fn project_chamfer(feature: &Feature) -> FeatureDefinition {
     .or_else(ordered_spec)
     .unwrap_or_else(|| {
         if feature.parameters.contains_key("Angle") {
-            ChamferSpec::UnresolvedDistanceAngle
+            ChamferSpec::Unresolved {
+                form: Some(cadmpeg_ir::features::ChamferForm::DistanceAngle),
+            }
         } else if feature.parameters.contains_key("Distance1")
             || feature.parameters.contains_key("Distance2")
         {
-            ChamferSpec::UnresolvedTwoDistances
+            ChamferSpec::Unresolved {
+                form: Some(cadmpeg_ir::features::ChamferForm::TwoDistances),
+            }
         } else if feature.parameters.contains_key("Distance")
             || (feature.parameters.contains_key("D1") && !feature.parameters.contains_key("D2"))
         {
-            ChamferSpec::UnresolvedDistance
+            ChamferSpec::Unresolved {
+                form: Some(cadmpeg_ir::features::ChamferForm::Distance),
+            }
         } else {
-            ChamferSpec::Unresolved
+            ChamferSpec::Unresolved { form: None }
         }
     });
     FeatureDefinition::Chamfer {

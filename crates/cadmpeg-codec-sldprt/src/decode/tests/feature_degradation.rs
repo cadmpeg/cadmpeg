@@ -47,7 +47,7 @@ fn decode_degrades_nonfinite_feature_dimensions() {
         FeatureDefinition::Fillet {
             ref groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            radius: cadmpeg_ir::features::RadiusSpec::UnresolvedConstant,
+            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::RadiusForm::Constant) },
             ..
         }])
     ));
@@ -119,7 +119,7 @@ fn decode_degrades_nonpositive_feature_dimensions() {
         FeatureDefinition::Fillet {
             ref groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            radius: cadmpeg_ir::features::RadiusSpec::UnresolvedConstant,
+            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::RadiusForm::Constant) },
             ..
         }])
     ));
@@ -159,7 +159,7 @@ fn decode_degrades_nonpositive_feature_dimensions() {
             ref groups,
             ..
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
-            spec: cadmpeg_ir::features::ChamferSpec::UnresolvedDistance,
+            spec: cadmpeg_ir::features::ChamferSpec::Unresolved { form: Some(cadmpeg_ir::features::ChamferForm::Distance) },
             ..
         }])
     ));
@@ -192,7 +192,7 @@ fn decode_retains_invalid_feature_directions_and_angles_as_native() {
             FeatureDefinition::Pattern {
                 pattern: admitted_pattern,
                 ..
-            } if matches!(admitted_pattern.definition(), PatternTransform::UnresolvedLinear)
+            } if matches!(admitted_pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::PatternForm::Linear) })
         )
     );
     assert!(matches!(
@@ -223,7 +223,7 @@ fn decode_retains_invalid_feature_directions_and_angles_as_native() {
             ref groups,
             ..
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
-            spec: cadmpeg_ir::features::ChamferSpec::UnresolvedDistanceAngle,
+            spec: cadmpeg_ir::features::ChamferSpec::Unresolved { form: Some(cadmpeg_ir::features::ChamferForm::DistanceAngle) },
             ..
         }])
     ));

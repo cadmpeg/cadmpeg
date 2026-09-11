@@ -451,9 +451,11 @@ pub(in super::super) fn schema_feature_definition(
             .map_or_else(
                 || {
                     if differing_positive_lengths(&observed_radii) {
-                        RadiusSpec::UnresolvedVariable
+                        RadiusSpec::Unresolved {
+                            form: Some(cadmpeg_ir::features::RadiusForm::Variable),
+                        }
                     } else {
-                        RadiusSpec::Unresolved
+                        RadiusSpec::Unresolved { form: None }
                     }
                 },
                 |radius| RadiusSpec::Constant { radius },
@@ -476,7 +478,7 @@ pub(in super::super) fn schema_feature_definition(
                     spec: chamfer_constant_distance(scan, ir, feature_id)
                         .and_then(cadmpeg_ir::scalar::PositiveLength::new)
                         .map_or_else(
-                            || ChamferSpec::Unresolved,
+                            || ChamferSpec::Unresolved { form: None },
                             |distance| ChamferSpec::Distance { distance },
                         ),
                 },

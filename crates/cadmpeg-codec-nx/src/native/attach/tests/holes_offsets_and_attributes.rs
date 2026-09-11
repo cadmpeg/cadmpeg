@@ -1213,7 +1213,7 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
         FeatureDefinition::Fillet {
             groups
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-        radius: RadiusSpec::UnresolvedConstant,
+        radius: RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::RadiusForm::Constant) },
             ..
         }])
     ));

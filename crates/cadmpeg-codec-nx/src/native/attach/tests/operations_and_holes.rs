@@ -1044,7 +1044,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
             flip_direction: false,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
             edges: EdgeSelection::Unresolved,
-        spec: ChamferSpec::Unresolved,
+        spec: ChamferSpec::Unresolved { form: None },
         }])
     ));
     assert_eq!(
@@ -1113,7 +1113,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
                 FeatureDefinition::Pattern {
                     seeds,
             pattern: admitted_pattern,
-                } if matches!(admitted_pattern.definition(), PatternTransform::Unresolved if seeds.is_empty())
+                } if matches!(admitted_pattern.definition(), PatternTransform::Unresolved { form: None } if seeds.is_empty())
             )
         );
     }

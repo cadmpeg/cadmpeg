@@ -103,18 +103,29 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         Ok({
             let unsupported_form = matches!(
                 pattern.definition(),
-                PatternTransform::UnresolvedScale
-                    | PatternTransform::UnresolvedComposite
-                    | PatternTransform::Scale { .. }
+                PatternTransform::Unresolved {
+                    form: Some(
+                        cadmpeg_ir::features::PatternForm::Scale
+                            | cadmpeg_ir::features::PatternForm::Composite
+                    )
+                } | PatternTransform::Scale { .. }
                     | PatternTransform::Composite { .. }
             );
             let expected_form = match pattern.definition() {
-                PatternTransform::Unresolved => None,
-                PatternTransform::UnresolvedLinear => Some(NativePatternClass::Linear),
-                PatternTransform::UnresolvedCircular => Some(NativePatternClass::Circular),
-                PatternTransform::UnresolvedCurveDriven => Some(NativePatternClass::CurveDriven),
-                PatternTransform::UnresolvedMirror => Some(NativePatternClass::Mirror),
-                PatternTransform::UnresolvedScale | PatternTransform::UnresolvedComposite => None,
+                PatternTransform::Unresolved { form: None } => None,
+                PatternTransform::Unresolved {
+                    form: Some(cadmpeg_ir::features::PatternForm::Linear),
+                } => Some(NativePatternClass::Linear),
+                PatternTransform::Unresolved {
+                    form: Some(cadmpeg_ir::features::PatternForm::Circular),
+                } => Some(NativePatternClass::Circular),
+                PatternTransform::Unresolved {
+                    form: Some(cadmpeg_ir::features::PatternForm::CurveDriven),
+                } => Some(NativePatternClass::CurveDriven),
+                PatternTransform::Unresolved {
+                    form: Some(cadmpeg_ir::features::PatternForm::Mirror),
+                } => Some(NativePatternClass::Mirror),
+                PatternTransform::Unresolved { .. } => None,
                 PatternTransform::Linear { .. } | PatternTransform::LinearOffsets { .. } => {
                     Some(NativePatternClass::Linear)
                 }
@@ -182,13 +193,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 properties.insert("Seeds".into(), seed_sources.join(","));
             }
             match pattern.definition() {
-                PatternTransform::Unresolved
-                | PatternTransform::UnresolvedLinear
-                | PatternTransform::UnresolvedCircular
-                | PatternTransform::UnresolvedCurveDriven
-                | PatternTransform::UnresolvedMirror
-                | PatternTransform::UnresolvedScale
-                | PatternTransform::UnresolvedComposite => {
+                PatternTransform::Unresolved { .. } => {
                     if existing.is_none() {
                         return Err(CodecError::NotImplemented(format!(
                             "SLDPRT feature {} has unresolved pattern construction",

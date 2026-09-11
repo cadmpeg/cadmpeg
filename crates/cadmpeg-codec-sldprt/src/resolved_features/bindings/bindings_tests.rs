@@ -333,7 +333,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         FeatureDefinition::Pattern {
             pattern: admitted_pattern,
             ..
-        } if matches!(admitted_pattern.definition(), PatternTransform::UnresolvedMirror)
+        } if matches!(admitted_pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::PatternForm::Mirror) })
     ));
 
     let mut second_face = face.clone();
@@ -369,7 +369,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         FeatureDefinition::Pattern {
             pattern: admitted_pattern,
             ..
-        } if matches!(admitted_pattern.definition(), PatternTransform::UnresolvedMirror)
+        } if matches!(admitted_pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::PatternForm::Mirror) })
     ));
 }
 
@@ -521,7 +521,7 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Pattern { seeds, pattern: admitted_pattern }
-            if matches!(admitted_pattern.definition(), PatternTransform::UnresolvedCircular if seeds == &[PatternSeed::Feature(FeatureId::mint("synthetic:test:id#seed").expect("identity grammar"))])
+            if matches!(admitted_pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::PatternForm::Circular) } if seeds == &[PatternSeed::Feature(FeatureId::mint("synthetic:test:id#seed").expect("identity grammar"))])
     ));
 }
 

@@ -2447,11 +2447,7 @@ pub(crate) fn project_fixed_fillet_with_corners(
                 RadiusSpec::Chordal { .. }
                 | RadiusSpec::Asymmetric { .. }
                 | RadiusSpec::Variable { .. }
-                | RadiusSpec::Unresolved
-                | RadiusSpec::UnresolvedConstant
-                | RadiusSpec::UnresolvedChordal
-                | RadiusSpec::UnresolvedAsymmetric
-                | RadiusSpec::UnresolvedVariable => None,
+                | RadiusSpec::Unresolved { .. } => None,
             };
             let edges = resolved_edge_treatment_group_with_corners(
                 edge_group,

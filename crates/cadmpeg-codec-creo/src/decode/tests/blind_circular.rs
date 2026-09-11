@@ -800,7 +800,7 @@ fn placed_cylinder_samples_identify_variable_radius_with_unresolved_siblings() {
         } if matches!(
             groups.as_slice(),
             [cadmpeg_ir::features::FilletGroup {
-                radius: RadiusSpec::UnresolvedVariable,
+                radius: RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::RadiusForm::Variable) },
                 ..
             }]
         )
@@ -929,7 +929,7 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
         } if matches!(
             groups.as_slice(),
             [cadmpeg_ir::features::FilletGroup {
-                radius: RadiusSpec::UnresolvedVariable,
+                radius: RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::RadiusForm::Variable) },
                 ..
             }]
         )
@@ -1005,7 +1005,7 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
         } if matches!(
             groups.as_slice(),
             [cadmpeg_ir::features::FilletGroup {
-                radius: RadiusSpec::UnresolvedVariable,
+                radius: RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::RadiusForm::Variable) },
                 ..
             }]
         )
@@ -1085,7 +1085,7 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
         } if matches!(
             groups.as_slice(),
             [cadmpeg_ir::features::FilletGroup {
-                radius: RadiusSpec::UnresolvedVariable,
+                radius: RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::RadiusForm::Variable) },
                 ..
             }]
         )

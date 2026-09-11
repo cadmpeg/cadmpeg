@@ -1029,7 +1029,7 @@ fn nx_multi_instance_output_projects_as_an_unresolved_pattern() {
             cadmpeg_ir::features::FeatureDefinition::Pattern {
                 seeds,
                 pattern: admitted_pattern,
-            } if matches!(admitted_pattern.definition(), cadmpeg_ir::features::PatternTransform::Unresolved if seeds.is_empty())
+            } if matches!(admitted_pattern.definition(), cadmpeg_ir::features::PatternTransform::Unresolved { form: None } if seeds.is_empty())
         )
     );
 }
