@@ -577,23 +577,23 @@
         "creo:NovisGeom"
       ]
     },
-    "retained_records": [
-      {
-        "byte_len": 15,
-        "data": "I05vdmlzR2VvbQqquyMK",
-        "id": "creo:NovisGeom:section#143",
+    "retained_records": {
+      "creo:NovisGeom:section#143": {
+        "bytes": {
+          "data": "I05vdmlzR2VvbQqquyMK",
+          "retention": "inline"
+        },
         "offset": 143,
-        "sha256": "abf6c6d8a385818fe3f54e6e5f4734206ce914597ad2324c5eff451a4dd4d60c",
         "stream": "creo:NovisGeom"
       },
-      {
-        "byte_len": 67,
-        "data": "I1Zpc2liR2VvbQpzcmZfYXJyYXkA+AXgInAAY3J2X2FycmF5APP4DF9wcmluY2lwYWxfc3lzX3VuaXRzX2lkADMjCg==",
-        "id": "creo:VisibGeom:section#76",
+      "creo:VisibGeom:section#76": {
+        "bytes": {
+          "data": "I1Zpc2liR2VvbQpzcmZfYXJyYXkA+AXgInAAY3J2X2FycmF5APP4DF9wcmluY2lwYWxfc3lzX3VuaXRzX2lkADMjCg==",
+          "retention": "inline"
+        },
         "offset": 76,
-        "sha256": "82208f19bedbea1298f72b9d367b07a7bf806c1847da214c4427080271509620",
         "stream": "creo:VisibGeom"
       }
-    ]
+    }
   }
 }

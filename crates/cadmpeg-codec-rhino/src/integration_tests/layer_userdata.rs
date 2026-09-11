@@ -166,11 +166,8 @@ fn assert_layer_record_retained(
         .source_fidelity()
         .retained_records
         .iter()
-        .find(|record| {
-            record
-                .id()
-                .starts_with("rhino:opaque:record#10000011-20008050-")
-        })
+        .find(|(id, _)| id.starts_with("rhino:opaque:record#10000011-20008050-"))
+        .map(|(_, record)| record)
         .expect("layer record is retained");
     assert_eq!(retained.data(), Some(layer));
     assert_valid(result);

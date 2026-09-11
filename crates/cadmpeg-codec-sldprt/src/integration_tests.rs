@@ -422,22 +422,20 @@ fn the_patch_path_names_the_preserved_dialect() {
 fn a_retained_source_record_without_data_reports_degraded_fidelity() {
     let result = decode(versioned_part());
     let (ir, _, mut fidelity) = result.into_parts();
-    let source_image_index = fidelity
-        .retained_records
-        .iter()
-        .position(|record| record.id() == crate::SOURCE_IMAGE_ID)
-        .expect("decode retains the source image");
     let unavailable = {
-        let record = &fidelity.retained_records[source_image_index];
+        let record = fidelity
+            .retained_record(crate::SOURCE_IMAGE_ID)
+            .expect("decode retains the source image");
         cadmpeg_ir::RetainedSourceRecord::unavailable(
-            record.id().to_owned(),
             record.stream().to_owned(),
             record.offset(),
             record.byte_len(),
-            record.sha256().to_owned(),
+            record.sha256(),
         )
     };
-    fidelity.retained_records[source_image_index] = unavailable;
+    fidelity
+        .retained_records
+        .insert(crate::SOURCE_IMAGE_ID.to_owned(), unavailable);
 
     let plan = SldprtCodec
         .plan(

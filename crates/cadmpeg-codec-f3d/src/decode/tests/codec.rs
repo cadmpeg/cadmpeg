@@ -596,7 +596,7 @@ fn decode_yields_metadata_and_honest_report() {
     assert!(result
         .source_fidelity()
         .retained_records
-        .iter()
+        .values()
         .all(|record| record.sha256().len() == 64));
     assert!(result
         .source_fidelity()

@@ -5527,7 +5527,8 @@ mod tests {
             .source_fidelity()
             .retained_records
             .iter()
-            .filter(|record| record.id().starts_with("nx:om-section-"))
+            .filter(|(id, _)| id.starts_with("nx:om-section-"))
+            .map(|(_, record)| record)
             .collect::<Vec<_>>();
         assert_eq!(om_records.len(), 2);
         assert!(om_records.iter().all(|record| {

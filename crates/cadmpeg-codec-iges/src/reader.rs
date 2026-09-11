@@ -300,14 +300,10 @@ fn decode_with_occurrence_limits(
     let parameter_tokens = parameter_tokens(&parse.parameters);
     let mut source_fidelity = SourceFidelity::default();
     let retained_source = ctx.copy_retained(source_bytes, "iges_source_image")?;
-    source_fidelity
-        .retained_records
-        .push(RetainedSourceRecord::retained(
-            crate::SOURCE_IMAGE_ID,
-            "iges",
-            0,
-            retained_source,
-        ));
+    source_fidelity.retained_records.insert(
+        crate::SOURCE_IMAGE_ID.to_owned(),
+        RetainedSourceRecord::retained("iges", 0, retained_source),
+    );
 
     let primary = crate::dialect::classify(representation, &parse.global);
     let mut ir = CadIr::decoded(source_meta(&parse.global, representation, primary));
@@ -372,7 +368,6 @@ fn decode_with_occurrence_limits(
     // The transfer ledger is verified before DecodeResult construction, so its
     // identity checks require the same canonical arena order as the result.
     ir.finalize();
-    source_fidelity.finalize();
     let geometry_transferred = !projection.decoded.is_empty();
     let mut losses = parse.admission_losses();
     if invalid_resolution

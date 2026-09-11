@@ -504,7 +504,7 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
     let malformed_retained = malformed_result
         .source_fidelity()
         .retained_records
-        .iter()
+        .values()
         .find(|source| source.offset() == malformed_range.start as u64)
         .expect("malformed definition fidelity");
     assert_eq!(
@@ -572,7 +572,7 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
     let future_retained = future_result
         .source_fidelity()
         .retained_records
-        .iter()
+        .values()
         .find(|source| source.offset() == future_range.start as u64)
         .expect("future definition fidelity");
     assert_eq!(future_retained.data(), Some(future_record.as_slice()));

@@ -769,15 +769,15 @@
         "creo:AllFeatur"
       ]
     },
-    "retained_records": [
-      {
-        "byte_len": 48,
-        "data": "I1Zpc2liR2VvbQpzcmZfYXJyYXkA+AHgInAAY3J2X2FycmF5APP4AAckBAEAACMK",
-        "id": "creo:VisibGeom:section#76",
+    "retained_records": {
+      "creo:VisibGeom:section#76": {
+        "bytes": {
+          "data": "I1Zpc2liR2VvbQpzcmZfYXJyYXkA+AHgInAAY3J2X2FycmF5APP4AAckBAEAACMK",
+          "retention": "inline"
+        },
         "offset": 76,
-        "sha256": "68fcd84fa37d963a1e0bff3a992b703ffd03042aec3e129b30bd3f04fb924ff3",
         "stream": "creo:VisibGeom"
       }
-    ]
+    }
   }
 }

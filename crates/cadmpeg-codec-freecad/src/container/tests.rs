@@ -196,7 +196,8 @@ fn thumbnail_bytes_are_retained_with_digest() {
     let retained = result
         .source_fidelity()
         .retained_records
-        .first()
+        .values()
+        .next()
         .expect("retained thumbnail");
     assert_eq!(retained.data(), Some(b"png".as_slice()));
 }

@@ -223,14 +223,13 @@ impl DecodeResult {
         let Decoded {
             mut ir,
             body,
-            mut source_fidelity,
+            source_fidelity,
         } = decoded;
         let classification = match ir.source.as_ref() {
             Some(source) => source.classification().clone(),
             None => FormatIdentity::unclassified(format.as_str()),
         };
         ir.finalize();
-        source_fidelity.finalize();
         Self {
             ir,
             report: DecodeReport::from_body(classification, body, container_only),

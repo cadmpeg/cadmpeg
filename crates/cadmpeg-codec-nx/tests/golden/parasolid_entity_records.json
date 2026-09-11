@@ -311,16 +311,16 @@
           "nx:s0"
         ]
       },
-      "retained_records": [
-        {
-          "byte_len": 206,
-          "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIAU0NIX1RFU1RfMV85OTk5AABPAAAACgDJQVRUUl9DTEFTUwBQAAAAAQDKAAEAyQAAIygAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAEAUgAAAAEAZQAAAAcAUwAAAAEAZj/4AAAAAAAAAFQAAAAKAGRBVFRSX0xBQkVMAABRAAAAAQAyAAAAAgDKAGQAZQBmAJYAlwCYqqo=",
-          "id": "nx:container:parasolid#0",
+      "retained_records": {
+        "nx:container:parasolid#0": {
+          "bytes": {
+            "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIAU0NIX1RFU1RfMV85OTk5AABPAAAACgDJQVRUUl9DTEFTUwBQAAAAAQDKAAEAyQAAIygAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAEAUgAAAAEAZQAAAAcAUwAAAAEAZj/4AAAAAAAAAFQAAAAKAGRBVFRSX0xBQkVMAABRAAAAAQAyAAAAAgDKAGQAZQBmAJYAlwCYqqo=",
+            "retention": "inline"
+          },
           "offset": 76,
-          "sha256": "8409b0937bfb591500bb40c1cabdcc1a32e9cf06718872f27afcb1131dea68dd",
           "stream": "nx:container"
         }
-      ]
+      }
     }
   },
   "inspect": {

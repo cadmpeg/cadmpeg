@@ -210,23 +210,23 @@
         "source"
       ]
     },
-    "retained_records": [
-      {
-        "byte_len": 49,
-        "data": "UFMAAAAOcGFydGl0aW9uIGJvZHkAABJTQ0hfU1dfMzMxMDNfMTEwMDAAAAAAAAAAAA==",
-        "id": "sldprt:file:block#54",
+    "retained_records": {
+      "sldprt:file:block#54": {
+        "bytes": {
+          "data": "UFMAAAAOcGFydGl0aW9uIGJvZHkAABJTQ0hfU1dfMzMxMDNfMTEwMDAAAAAAAAAAAA==",
+          "retention": "inline"
+        },
         "offset": 54,
-        "sha256": "cec7bd4b62b96e490c6ba53b11475dfd3dd4ee3c42eefe748ddf9f734cbdfd27",
         "stream": "Contents/Config-0-Partition"
       },
-      {
-        "byte_len": 264,
-        "data": "AQAAAAAAAAQUAAYACAAQAAAAu2N6QgoAAAAIAAAACgAAAAUnVmeWVncF5HTrDPBzZ2RiZgEAFAAGAAgAIAAAAB8fHYMtAAAAMQAAABsAAAA09uZHVuZHN/I09uZmlnbSA9IFFidHlkeW9uYLCGZgYOArSCwqySzJzM9TSMpPqWRgEAp29ogPDo83NjY0MI43NDQwMGCAAgAUAAYACAAAAAAAtAAAAC0AAABaAAAAFQAAADT25kdW5kc38kSWNwfGFpfEljdHNxQABgAIADAAAAAAAAAAAgAAAAAAAAATAAAAAAAAAAAAAAAAAAAAAAC1NPbmR1bmR/VFlwdWN9Xih9bG5UtXWwAA",
-        "id": "sldprt:file:source-image#0",
+      "sldprt:file:source-image#0": {
+        "bytes": {
+          "data": "AQAAAAAAAAQUAAYACAAQAAAAu2N6QgoAAAAIAAAACgAAAAUnVmeWVncF5HTrDPBzZ2RiZgEAFAAGAAgAIAAAAB8fHYMtAAAAMQAAABsAAAA09uZHVuZHN/I09uZmlnbSA9IFFidHlkeW9uYLCGZgYOArSCwqySzJzM9TSMpPqWRgEAp29ogPDo83NjY0MI43NDQwMGCAAgAUAAYACAAAAAAAtAAAAC0AAABaAAAAFQAAADT25kdW5kc38kSWNwfGFpfEljdHNxQABgAIADAAAAAAAAAAAgAAAAAAAAATAAAAAAAAAAAAAAAAAAAAAAC1NPbmR1bmR/VFlwdWN9Xih9bG5UtXWwAA",
+          "retention": "inline"
+        },
         "offset": 0,
-        "sha256": "eb92821540511ea917dc6bcedab92b1a7b30e0aaa4889b1092882536cde5d5cc",
         "stream": "sldprt"
       }
-    ]
+    }
   }
 }

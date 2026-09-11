@@ -107,9 +107,9 @@ pub fn run(file: &Path, mode: FidelityMode<'_>) -> Result<()> {
             let records: Vec<serde_json::Value> = payload
                 .retained_records
                 .iter()
-                .map(|record| {
+                .map(|(id, record)| {
                     serde_json::json!({
-                        "id": record.id(),
+                        "id": id,
                         "stream": record.stream(),
                         "offset": record.offset(),
                         "byte_len": record.byte_len(),
@@ -130,14 +130,14 @@ pub fn run(file: &Path, mode: FidelityMode<'_>) -> Result<()> {
         }
         FidelityMode::Table => {
             println!("stream\toffset\tbytes\tdata\tid");
-            for record in &payload.retained_records {
+            for (id, record) in &payload.retained_records {
                 println!(
                     "{}\t{}\t{}\t{}\t{}",
                     super::cell(record.stream()),
                     record.offset(),
                     record.byte_len(),
                     if record.data().is_some() { "yes" } else { "no" },
-                    super::cell(record.id()),
+                    super::cell(id),
                 );
             }
             if payload.retained_records.is_empty() {
@@ -164,10 +164,10 @@ fn extract(
     sink: Sink<'_>,
 ) -> Result<()> {
     const SHOWN: usize = 20;
-    let selected: Vec<&cadmpeg_ir::RetainedSourceRecord> = payload
+    let selected: Vec<(&String, &cadmpeg_ir::RetainedSourceRecord)> = payload
         .retained_records
         .iter()
-        .filter(|record| record.stream() == stream)
+        .filter(|(_, record)| record.stream() == stream)
         .collect();
     if selected.is_empty() {
         if payload.retained_records.is_empty() {
@@ -175,7 +175,7 @@ fn extract(
         }
         let mut streams: Vec<&str> = payload
             .retained_records
-            .iter()
+            .values()
             .map(cadmpeg_ir::RetainedSourceRecord::stream)
             .collect();
         streams.sort_unstable();
@@ -189,10 +189,10 @@ fn extract(
     }
     let mut matched = Vec::with_capacity(selected.len());
     let mut missing = Vec::new();
-    for record in selected {
+    for (id, record) in selected {
         match record.data() {
-            Some(data) => matched.push((record, data)),
-            None => missing.push(record.id()),
+            Some(data) => matched.push((id, record, data)),
+            None => missing.push(id.as_str()),
         }
     }
     if !missing.is_empty() {
@@ -202,21 +202,16 @@ fn extract(
             missing.join(", ")
         );
     }
-    matched.sort_by_key(|(record, _)| record.offset());
+    matched.sort_by_key(|(_, record, _)| record.offset());
     let mut assembled: Vec<u8> = Vec::new();
     let mut expected_offset: Option<u64> = None;
-    for (record, data) in &matched {
+    for (_, record, data) in &matched {
         if let Some(expected) = expected_offset {
             if record.offset() != expected {
                 let extents: Vec<String> = matched
                     .iter()
-                    .map(|(record, _)| {
-                        format!(
-                            "{}+{} ({})",
-                            record.offset(),
-                            record.byte_len(),
-                            record.id()
-                        )
+                    .map(|(id, record, _)| {
+                        format!("{}+{} ({id})", record.offset(), record.byte_len())
                     })
                     .collect();
                 bail!(

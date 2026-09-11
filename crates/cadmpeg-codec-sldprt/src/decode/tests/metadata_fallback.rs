@@ -118,7 +118,7 @@ fn decode_without_geometry_falls_back_to_metadata() {
         .source_fidelity()
         .retained_records
         .iter()
-        .any(|record| record.id() != "sldprt:file:source-image#0" && record.sha256().len() == 64));
+        .any(|(id, record)| id != "sldprt:file:source-image#0" && record.sha256().len() == 64));
     let source = result.ir().source.as_ref().expect("source metadata");
     assert_eq!(source.format(), "sldprt");
     assert_eq!(

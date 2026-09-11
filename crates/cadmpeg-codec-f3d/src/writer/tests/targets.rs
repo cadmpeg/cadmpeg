@@ -23,14 +23,10 @@ fn explicit_transcode_declines_present_image_without_claiming_it_is_unavailable(
     let ir = sourced_ir("f3d:f3z-multi-document");
     let data = b"present retained image".to_vec();
     let mut fidelity = SourceFidelity::default();
-    fidelity
-        .retained_records
-        .push(RetainedSourceRecord::retained(
-            crate::ids::FILE_SOURCE_IMAGE_ID,
-            "f3d",
-            0,
-            data,
-        ));
+    fidelity.retained_records.insert(
+        crate::ids::FILE_SOURCE_IMAGE_ID.to_owned(),
+        RetainedSourceRecord::retained("f3d", 0, data),
+    );
     let plan = Encoder::plan(
         &F3dCodec,
         EncodeInput::new(&ir, Some(&fidelity)),

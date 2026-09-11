@@ -1130,15 +1130,15 @@
         "creo:VisibGeom"
       ]
     },
-    "retained_records": [
-      {
-        "byte_len": 83,
-        "data": "I1Zpc2liR2VvbQpzcmZfYXJyYXkA+AHgInAAY3J2X2FycmF5APP4AAciBAEAAA8PDw9D8ABD8ADk5C8AAOTjD+QP5A8PDw8PRggAAAAAAAAP5OM=",
-        "id": "creo:VisibGeom:section#76",
+    "retained_records": {
+      "creo:VisibGeom:section#76": {
+        "bytes": {
+          "data": "I1Zpc2liR2VvbQpzcmZfYXJyYXkA+AHgInAAY3J2X2FycmF5APP4AAciBAEAAA8PDw9D8ABD8ADk5C8AAOTjD+QP5A8PDw8PRggAAAAAAAAP5OM=",
+          "retention": "inline"
+        },
         "offset": 76,
-        "sha256": "1d1dd11de39303ac7ff4274b9b6d592e048cbe3bb674ec7dad1a56b609bd7125",
         "stream": "creo:VisibGeom"
       }
-    ]
+    }
   }
 }

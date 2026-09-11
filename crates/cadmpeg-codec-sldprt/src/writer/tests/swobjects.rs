@@ -45,7 +45,7 @@ fn semantic_writer_replays_unchanged_swobjects_payload() {
     let retained = regenerated
         .source_fidelity()
         .retained_records
-        .iter()
+        .values()
         .find(|record| record.stream() == "SWObjects")
         .unwrap();
     assert_eq!(retained.data(), Some(payload.as_slice()));

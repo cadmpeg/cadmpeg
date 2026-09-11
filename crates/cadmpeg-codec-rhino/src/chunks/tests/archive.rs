@@ -161,12 +161,38 @@ fn retention_caps_store_only_complete_records_with_exact_hashes() {
     });
 
     let retained = &result.source_fidelity().retained_records;
-    assert_eq!(retained[0].byte_len(), large.len() as u64);
-    assert_eq!(retained[0].sha256(), sha256_hex(&large));
-    assert_eq!(retained[0].data(), None);
-    assert_eq!(retained[1].byte_len(), point.len() as u64);
-    assert_eq!(retained[1].sha256(), sha256_hex(&point));
-    assert_eq!(retained[1].data(), Some(point.as_slice()));
+    assert_eq!(
+        retained
+            .values()
+            .nth(0)
+            .expect("retained record")
+            .byte_len(),
+        large.len() as u64
+    );
+    assert_eq!(
+        retained.values().nth(0).expect("retained record").sha256(),
+        sha256_hex(&large)
+    );
+    assert_eq!(
+        retained.values().nth(0).expect("retained record").data(),
+        None
+    );
+    assert_eq!(
+        retained
+            .values()
+            .nth(1)
+            .expect("retained record")
+            .byte_len(),
+        point.len() as u64
+    );
+    assert_eq!(
+        retained.values().nth(1).expect("retained record").sha256(),
+        sha256_hex(&point)
+    );
+    assert_eq!(
+        retained.values().nth(1).expect("retained record").data(),
+        Some(point.as_slice())
+    );
 
     let two_points = archive(&[point.clone(), point.clone()]);
     let scan = crate::container::scan_owned(two_points).expect("complete archive scan");
@@ -176,10 +202,25 @@ fn retention_caps_store_only_complete_records_with_exact_hashes() {
         crate::decode::seal_for_test(context.commit(), false)
     });
     assert_eq!(
-        result.source_fidelity().retained_records[0].data(),
+        result
+            .source_fidelity()
+            .retained_records
+            .values()
+            .nth(0)
+            .expect("retained record")
+            .data(),
         Some(point.as_slice())
     );
-    assert_eq!(result.source_fidelity().retained_records[1].data(), None);
+    assert_eq!(
+        result
+            .source_fidelity()
+            .retained_records
+            .values()
+            .nth(1)
+            .expect("retained record")
+            .data(),
+        None
+    );
 }
 
 #[test]
@@ -799,7 +840,12 @@ fn archive_failure_recovery_matrix_preserves_exact_unknown_records() {
             .ir()
             .native_unknowns("rhino")
             .expect("required invariant")[0];
-        let retained = &result.source_fidelity().retained_records[0];
+        let retained = &result
+            .source_fidelity()
+            .retained_records
+            .values()
+            .nth(0)
+            .expect("retained record");
         assert_eq!(retained.byte_len(), failure.len() as u64);
         assert_eq!(retained.sha256(), sha256_hex(&failure));
         assert_eq!(retained.data(), Some(failure.as_slice()));

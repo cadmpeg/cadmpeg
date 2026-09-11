@@ -305,16 +305,16 @@
           "nx:s0"
         ]
       },
-      "retained_records": [
-        {
-          "byte_len": 111,
-          "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChkZWx0YXMpIGNyZWF0ZWQgYnkgbW9kZWxsZXIAU0NIX1RFU1RfMV85OTk5AAAdADIAAAOEAAEBAAEBAAEBAAEBP4mZmZmZmZq/YGJN0vGp/D9wYk3S8an8",
-          "id": "nx:container:parasolid#0",
+      "retained_records": {
+        "nx:container:parasolid#0": {
+          "bytes": {
+            "data": "UFMAAFhYOiBUUkFOU01JVCBGSUxFIChkZWx0YXMpIGNyZWF0ZWQgYnkgbW9kZWxsZXIAU0NIX1RFU1RfMV85OTk5AAAdADIAAAOEAAEBAAEBAAEBAAEBP4mZmZmZmZq/YGJN0vGp/D9wYk3S8an8",
+            "retention": "inline"
+          },
           "offset": 76,
-          "sha256": "3da9bec3d5d0399b71938786c16959415124dbd5f5be4b21e5c515cd4ab27e2d",
           "stream": "nx:container"
         }
-      ]
+      }
     }
   },
   "inspect": {

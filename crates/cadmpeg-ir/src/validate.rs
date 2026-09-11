@@ -149,14 +149,6 @@ pub fn validate_neutral_with_source_fidelity(
     losses: Vec<LossNote>,
 ) -> ValidationReport {
     let mut report = validate_model(ir, losses);
-    if let Err(error) = source_fidelity.validate() {
-        report.findings.push(Finding {
-            check: Check::PayloadIntegrity,
-            severity: Severity::Error,
-            message: format!("invalid source fidelity: {error}"),
-            entity: None,
-        });
-    }
     let index = crate::index::ModelIndex::new(ir);
     let mut all_ids = index
         .identities()
@@ -165,8 +157,8 @@ pub fn validate_neutral_with_source_fidelity(
     all_ids.extend(
         source_fidelity
             .retained_records
-            .iter()
-            .map(|record| record.id().to_owned()),
+            .keys()
+            .map(ToOwned::to_owned),
     );
     check_annotations(
         ir,

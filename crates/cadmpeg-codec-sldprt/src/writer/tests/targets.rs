@@ -81,14 +81,10 @@ fn explicit_transcode_declines_present_image_without_claiming_it_is_unavailable(
     let ir = sourced_ir("sldprt:sw-version-12000-plus");
     let data = b"present retained image".to_vec();
     let mut fidelity = SourceFidelity::default();
-    fidelity
-        .retained_records
-        .push(RetainedSourceRecord::retained(
-            crate::SOURCE_IMAGE_ID,
-            "sldprt",
-            0,
-            data,
-        ));
+    fidelity.retained_records.insert(
+        crate::SOURCE_IMAGE_ID.to_owned(),
+        RetainedSourceRecord::retained("sldprt", 0, data),
+    );
     let plan = Encoder::plan(
         &SldprtCodec,
         EncodeInput::new(&ir, Some(&fidelity)),

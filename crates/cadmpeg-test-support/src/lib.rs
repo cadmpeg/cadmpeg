@@ -59,9 +59,10 @@ impl EditableDecodeResult {
         &self.source_fidelity
     }
 
-    /// Edit source fidelity and restore canonical order when the guard drops.
-    pub fn source_fidelity_mut(&mut self) -> impl DerefMut<Target = SourceFidelity> + '_ {
-        FinalizingEdit::new(&mut self.source_fidelity, SourceFidelity::finalize)
+    /// Edit source fidelity. Its retained records are keyed by id, so the
+    /// canonical order holds by construction.
+    pub const fn source_fidelity_mut(&mut self) -> &mut SourceFidelity {
+        &mut self.source_fidelity
     }
 
     /// Consume the editable value into IR, report, and source fidelity.

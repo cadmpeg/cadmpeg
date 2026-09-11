@@ -328,15 +328,15 @@
         }
       }
     },
-    "retained_records": [
-      {
-        "byte_len": 175,
-        "data": "cIAAIKMAAAAAAAAAcQAAggEAAAAAAAAA+n8CAFUAAAAAAAAA+/8CABQAAAAAAAAAHRoQw1fx0xG/5wAQgwEi8ExUB6T8/wIAHQAAAAAAAAAQAAAAAAAA8D8AAAAAAAAAQAAAAAAAAAhA5Qs8Sf9/AoAAAAAAAAAAAHKAAAIaAAAAAAAAACA8IQDQ7T/U312TEgqyCEdCAAAAAAA+vfBQfwAAggAAAAAAAAAAAAAAAA==",
-        "id": "rhino:object:record#000000",
+    "retained_records": {
+      "rhino:object:record#000000": {
+        "bytes": {
+          "data": "cIAAIKMAAAAAAAAAcQAAggEAAAAAAAAA+n8CAFUAAAAAAAAA+/8CABQAAAAAAAAAHRoQw1fx0xG/5wAQgwEi8ExUB6T8/wIAHQAAAAAAAAAQAAAAAAAA8D8AAAAAAAAAQAAAAAAAAAhA5Qs8Sf9/AoAAAAAAAAAAAHKAAAIaAAAAAAAAACA8IQDQ7T/U312TEgqyCEdCAAAAAAA+vfBQfwAAggAAAAAAAAAAAAAAAA==",
+          "retention": "inline"
+        },
         "offset": 622,
-        "sha256": "5d5bbee13c365a2f619a8fae45c0a0f1bccf9f8cd0287e54cde415d46084ddeb",
         "stream": "source"
       }
-    ]
+    }
   }
 }

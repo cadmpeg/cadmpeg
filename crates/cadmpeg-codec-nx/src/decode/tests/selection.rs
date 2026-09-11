@@ -978,7 +978,7 @@ fn decode_retains_unsupported_named_stream_payloads() {
         result
             .source_fidelity()
             .retained_records
-            .iter()
+            .values()
             .map(cadmpeg_ir::RetainedSourceRecord::byte_len)
             .collect::<Vec<_>>(),
         vec![
@@ -1057,7 +1057,13 @@ fn container_only_retains_typed_saved_toggle_payload() {
         .unwrap();
     assert_eq!(result.ir().native_unknowns("nx").unwrap().len(), 1);
     assert_eq!(
-        result.source_fidelity().retained_records[0].byte_len(),
+        result
+            .source_fidelity()
+            .retained_records
+            .values()
+            .nth(0)
+            .expect("retained record")
+            .byte_len(),
         toggle_len
     );
     assert!(result

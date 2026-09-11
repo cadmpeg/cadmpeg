@@ -835,23 +835,23 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "retained_records": [
-      {
-        "byte_len": 56,
-        "data": "IzQyPVBSRVNFTlRBVElPTl9TVFlMRV9BU1NJR05NRU5UKChOVUxMX1NUWUxFKC5OVUxMLikpKTs=",
-        "id": "step:data:presentation_style_assignment#42",
+    "retained_records": {
+      "step:data:presentation_style_assignment#42": {
+        "bytes": {
+          "data": "IzQyPVBSRVNFTlRBVElPTl9TVFlMRV9BU1NJR05NRU5UKChOVUxMX1NUWUxFKC5OVUxMLikpKTs=",
+          "retention": "inline"
+        },
         "offset": 2448,
-        "sha256": "7ece4aa47b7248f7b08bd521dedf23f9c07a793e0d8320637cd9b0555a7a98ea",
         "stream": "source"
       },
-      {
-        "byte_len": 29,
-        "data": "IzQzPVNUWUxFRF9JVEVNKCcnLCgjNDIpLCM3KTs=",
-        "id": "step:data:styled_item#43",
+      "step:data:styled_item#43": {
+        "bytes": {
+          "data": "IzQzPVNUWUxFRF9JVEVNKCcnLCgjNDIpLCM3KTs=",
+          "retention": "inline"
+        },
         "offset": 2505,
-        "sha256": "993aa7fb41284a84bc9e8c65099d76a2763b98d04b38cba7d48c74fa631b82ba",
         "stream": "source"
       }
-    ]
+    }
   }
 }
