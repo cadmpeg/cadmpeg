@@ -664,7 +664,6 @@
               "radii": {
                 "kind": "single",
                 "value": {
-                  "name": "two_ends",
                   "modern_flag": true,
                   "discriminator": 7,
                   "calibrated": 3,
