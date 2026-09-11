@@ -458,17 +458,14 @@
                 "inner_count": 1,
                 "curve": "f3d:brep:procedural_surface#9:skin:curve",
                 "subdata": {
-                  "type_code": 211,
-                  "row_count": 4,
-                  "column_count": 0,
-                  "rows": [
-                    {
-                      "parameters": [
-                        -0.5,
-                        1.5
-                      ],
-                      "columns": []
-                    }
+                  "form": "type211",
+                  "dimensions": [
+                    4,
+                    0
+                  ],
+                  "row": [
+                    -0.5,
+                    1.5
                   ]
                 },
                 "first_tail": -1,
