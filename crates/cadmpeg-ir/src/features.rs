@@ -3838,7 +3838,9 @@ pub enum PrimitiveSolidKind {
 }
 
 /// Resolution state and inputs of a profile revolution.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(from = "RevolveConstructionWire", into = "RevolveConstructionWire")]
 pub enum RevolveConstruction {
     /// One or more required construction inputs are absent.
     Unresolved(PartialRevolveConstruction),
@@ -4090,95 +4092,114 @@ impl RevolveConstruction {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-struct RevolveConstructionWire {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    profile: Option<PlanarProfileRef>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    axis: Option<RevolutionAxis>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    extent: Option<RevolveExtent>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    axis_reference: Option<PathRef>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    solid: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "face_maker_class")]
-    #[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
-    face_maker: Option<FaceMaker>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    fuse_order: Option<RevolutionFuseOrder>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    allow_multi_profile_faces: Option<bool>,
+#[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
+enum RevolveConstructionWire {
+    Unresolved {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        profile: Option<PlanarProfileRef>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        axis: Option<RevolutionAxis>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        extent: Option<RevolveExtent>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        solid: Option<bool>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "face_maker_class")]
+        #[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
+        face_maker: Option<FaceMaker>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        fuse_order: Option<RevolutionFuseOrder>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        allow_multi_profile_faces: Option<bool>,
+    },
+    Resolved {
+        profile: PlanarProfileRef,
+        axis: RevolutionAxis,
+        extent: RevolveExtent,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        solid: Option<bool>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "face_maker_class")]
+        #[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
+        face_maker: Option<FaceMaker>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        fuse_order: Option<RevolutionFuseOrder>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        allow_multi_profile_faces: Option<bool>,
+    },
 }
 
-impl Serialize for RevolveConstruction {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let components = self.components();
-        let axis_reference = components
-            .axis
-            .as_ref()
-            .and_then(|axis| axis.reference.clone());
-        RevolveConstructionWire {
-            profile: components.profile,
-            axis: components.axis,
-            extent: components.extent,
-            axis_reference,
-            solid: components.solid,
-            face_maker: components.face_maker,
-            fuse_order: components.fuse_order,
-            allow_multi_profile_faces: components.allow_multi_profile_faces,
+impl From<RevolveConstruction> for RevolveConstructionWire {
+    fn from(construction: RevolveConstruction) -> Self {
+        match construction {
+            RevolveConstruction::Unresolved(partial) => Self::Unresolved {
+                profile: partial.profile,
+                axis: partial.axis,
+                extent: partial.extent,
+                solid: partial.solid,
+                face_maker: partial.face_maker,
+                fuse_order: partial.fuse_order,
+                allow_multi_profile_faces: partial.allow_multi_profile_faces,
+            },
+            RevolveConstruction::Resolved {
+                profile,
+                axis,
+                extent,
+                solid,
+                face_maker,
+                fuse_order,
+                allow_multi_profile_faces,
+            } => Self::Resolved {
+                profile,
+                axis,
+                extent,
+                solid,
+                face_maker,
+                fuse_order,
+                allow_multi_profile_faces,
+            },
         }
-        .serialize(serializer)
     }
 }
 
-impl<'de> Deserialize<'de> for RevolveConstruction {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let RevolveConstructionWire {
-            profile,
-            mut axis,
-            extent,
-            axis_reference,
-            solid,
-            face_maker,
-            fuse_order,
-            allow_multi_profile_faces,
-        } = RevolveConstructionWire::deserialize(deserializer)?;
-        if let Some(reference) = axis_reference {
-            let Some(axis) = axis.as_mut() else {
-                return Err(serde::de::Error::custom(
-                    "axis_reference requires a revolution axis",
-                ));
-            };
-            axis.reference = Some(reference);
+impl From<RevolveConstructionWire> for RevolveConstruction {
+    fn from(wire: RevolveConstructionWire) -> Self {
+        match wire {
+            RevolveConstructionWire::Unresolved {
+                profile,
+                axis,
+                extent,
+                solid,
+                face_maker,
+                fuse_order,
+                allow_multi_profile_faces,
+            } => Self::Unresolved(PartialRevolveConstruction {
+                profile,
+                axis,
+                extent,
+                solid,
+                face_maker,
+                fuse_order,
+                allow_multi_profile_faces,
+            }),
+            RevolveConstructionWire::Resolved {
+                profile,
+                axis,
+                extent,
+                solid,
+                face_maker,
+                fuse_order,
+                allow_multi_profile_faces,
+            } => Self::Resolved {
+                profile,
+                axis,
+                extent,
+                solid,
+                face_maker,
+                fuse_order,
+                allow_multi_profile_faces,
+            },
         }
-        Ok(Self::new(
-            profile,
-            axis,
-            extent,
-            solid,
-            face_maker,
-            fuse_order,
-            allow_multi_profile_faces,
-        ))
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for RevolveConstruction {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "RevolveConstruction".into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        RevolveConstructionWire::json_schema(generator)
     }
 }
 
@@ -4203,8 +4224,7 @@ pub struct RevolutionAxis {
     /// Unit axis direction.
     pub direction: FeatureDirection3,
     /// Native edge, datum, or sketch-axis selection used to resolve the axis.
-    #[serde(skip)]
-    #[cfg_attr(feature = "schema", schemars(skip))]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reference: Option<PathRef>,
 }
 

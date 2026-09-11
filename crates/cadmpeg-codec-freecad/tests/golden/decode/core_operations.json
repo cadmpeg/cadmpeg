@@ -20602,7 +20602,8 @@
                 "kind": "sketch",
                 "value": "fcstd:design:sketch#RevolutionProfile"
               },
-              "solid": false
+              "solid": false,
+              "state": "resolved"
             },
             "definition": "revolve",
             "op": "new_body"
