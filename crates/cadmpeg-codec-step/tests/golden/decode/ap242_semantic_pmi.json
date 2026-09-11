@@ -23,23 +23,26 @@
           "definition": {
             "dimension": "size",
             "kind": "dimension",
-            "limits_and_fits": {
-              "form_variance": "H",
-              "grade": "7",
-              "source": "ISO 286",
-              "zone_variance": ""
-            },
-            "lower_deviation": {
-              "quantity": "length",
-              "value": -0.1
-            },
             "nominal": {
               "quantity": "length",
               "value": 12.0
             },
-            "upper_deviation": {
-              "quantity": "length",
-              "value": 0.2
+            "tolerance": {
+              "fit": {
+                "form_variance": "H",
+                "grade": "7",
+                "source": "ISO 286",
+                "zone_variance": ""
+              },
+              "form": "plus_minus_fit",
+              "lower": {
+                "quantity": "length",
+                "value": -0.1
+              },
+              "upper": {
+                "quantity": "length",
+                "value": 0.2
+              }
             }
           },
           "id": "step:presentation:pmi#10",
@@ -73,13 +76,16 @@
           "definition": {
             "dimension": "diameter",
             "kind": "dimension",
-            "lower_deviation": {
-              "quantity": "length",
-              "value": -0.1
-            },
-            "upper_deviation": {
-              "quantity": "length",
-              "value": 0.2
+            "tolerance": {
+              "form": "plus_minus",
+              "lower": {
+                "quantity": "length",
+                "value": -0.1
+              },
+              "upper": {
+                "quantity": "length",
+                "value": 0.2
+              }
             }
           },
           "id": "step:presentation:pmi#25",
