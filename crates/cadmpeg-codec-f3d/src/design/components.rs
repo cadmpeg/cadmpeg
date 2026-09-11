@@ -148,8 +148,7 @@ pub(crate) fn project_derived_instance_features(
                 occurrence: crate::ids::neutral_component_occurrence_id(
                     construction.occurrence_guid.as_str(),
                 ),
-            })
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+            });
     }
 
     Ok(())
@@ -191,8 +190,7 @@ pub(crate) fn project_unresolved_component_insert_occurrences(
             .evaluation
             .set_definition(FeatureDefinition::InsertComponent {
                 occurrence: occurrence_id.clone(),
-            })
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+            });
         occurrences.push(Occurrence {
             id: occurrence_id,
             prototype: PrototypeReference::Unresolved,

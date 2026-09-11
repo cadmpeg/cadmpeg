@@ -313,10 +313,7 @@ pub(crate) fn bind_sweep_sketch_selections(
             )
             .map_err(cadmpeg_core::CodecError::malformed)?;
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())
@@ -354,10 +351,7 @@ pub(crate) fn bind_split_face_sketch_selections(
                 *tool = SplitFaceTool::Path(path);
             }
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())
@@ -395,10 +389,7 @@ pub(crate) fn bind_surface_trim_sketch_selections(
                 *tool = path;
             }
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())
@@ -572,10 +563,7 @@ pub(crate) fn bind_extrude_profile_selections(
                     .unwrap_or_else(|_| ProfileRef::Native(scope.id.clone()))
                 });
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())
@@ -2510,10 +2498,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
                 }
             }
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
     for feature in features.iter_mut() {
         let mut definition = feature.evaluation.definition().clone();
@@ -2534,10 +2519,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
                     .map_err(cadmpeg_core::CodecError::malformed)?,
             ));
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
     Ok(())
 }

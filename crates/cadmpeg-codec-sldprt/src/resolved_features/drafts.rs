@@ -687,18 +687,14 @@ mod tests {
             } if ( faces.contains(":8") && neutral_plane.contains(":3")) && matches!(geometry_1.get(), Vector3 { x: 0.0, y: 0.0, z: 1.0 })
         ));
 
-        projected[0]
-            .evaluation
-            .try_edit(|definition, _| {
-                let FeatureDefinition::Draft { faces, anchor, .. } = definition else {
-                    panic!("typed draft");
-                };
-                *faces = FaceSelection::Native("explicit-faces".into());
-                anchor.pull_mut().unwrap().direction =
-                    cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
-                        .unwrap();
-            })
-            .unwrap();
+        projected[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Draft { faces, anchor, .. } = definition else {
+                panic!("typed draft");
+            };
+            *faces = FaceSelection::Native("explicit-faces".into());
+            anchor.pull_mut().unwrap().direction =
+                cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap();
+        });
         super::super::projections::project_draft_operands(&mut projected, &[history], &[lane])
             .unwrap();
         assert!(matches!(

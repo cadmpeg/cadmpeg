@@ -831,7 +831,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     assert_eq!(
         definition("CopyPasteBodies"),
         FeatureDefinition::InsertBodies {
-            bodies: BodySelection::Native(scopes[4].id.clone()),
+            bodies: cadmpeg_ir::features::InsertedBodies::Native(scopes[4].id.clone()),
         }
     );
     assert_eq!(

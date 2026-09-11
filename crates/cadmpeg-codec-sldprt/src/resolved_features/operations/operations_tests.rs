@@ -609,8 +609,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
 
     configured[0]
         .evaluation
-        .set_definition(extrude(BooleanOp::NewBody))
-        .unwrap();
+        .set_definition(extrude(BooleanOp::NewBody));
     inherit_configuration_operations(&mut configured, &base, &histories, &[], None).unwrap();
     assert!(matches!(
         configured[0].evaluation.definition(),

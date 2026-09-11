@@ -1879,10 +1879,7 @@ pub(crate) fn bind_extrude_start_planes(
                 }
             }
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())
@@ -1960,10 +1957,7 @@ pub(crate) fn bind_extrude_target_faces(
                 ExtrudeExtent::Symmetric { .. } => {}
             }
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())

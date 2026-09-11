@@ -477,8 +477,7 @@ fn rederived_body_census(
             FeatureDefinition::BaseFeature {
                 bodies: BodySelection::Resolved { bodies, .. },
             } if bodies.is_empty() && feature.evaluation.outputs().is_empty() => {}
-            FeatureDefinition::BaseFeature { bodies: selection }
-            | FeatureDefinition::InsertBodies { bodies: selection } => {
+            FeatureDefinition::BaseFeature { bodies: selection } => {
                 let Some(selected) = explicit_body_selection(selection) else {
                     return Err((
                         feature_boundary(feature),
@@ -488,6 +487,25 @@ fn rederived_body_census(
                 if selected != feature.evaluation.outputs().as_slice()
                     || selected.iter().any(|body| bodies.contains(body))
                 {
+                    return Err((
+                        feature_boundary(feature),
+                        UnsupportedBodyCensusReason::InvalidOutputLineage,
+                    ));
+                }
+                bodies.extend(selected.iter().cloned());
+            }
+            FeatureDefinition::InsertBodies { bodies: selection } => {
+                let selected = feature.evaluation.outputs();
+                if !selection.is_resolved()
+                    || selected.is_empty()
+                    || selected.iter().collect::<BTreeSet<_>>().len() != selected.len()
+                {
+                    return Err((
+                        feature_boundary(feature),
+                        UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
+                    ));
+                }
+                if selected.iter().any(|body| bodies.contains(body)) {
                     return Err((
                         feature_boundary(feature),
                         UnsupportedBodyCensusReason::InvalidOutputLineage,

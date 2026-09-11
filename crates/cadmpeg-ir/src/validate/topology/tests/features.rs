@@ -114,25 +114,22 @@ fn historical_vertex_selection_requires_input_state_membership() {
         .any(|finding| finding.check == Check::ReferentialIntegrity));
 
     let missing = "test:model:historical-vertex#missing";
-    ir.model.features[0]
-        .evaluation
-        .try_edit(|definition, _| {
-            let FeatureDefinition::DatumPoint {
-                construction: Some(construction),
-                ..
-            } = definition
-            else {
-                unreachable!("test feature is a constructed datum point")
-            };
-            let DatumPointConstruction::Vertex {
-                vertex: VertexSelection::Historical { vertex, .. },
-            } = construction.as_mut()
-            else {
-                unreachable!("test datum point uses a historical vertex")
-            };
-            *vertex = HistoricalVertexId::mint(missing).expect("valid identity");
-        })
-        .unwrap();
+    ir.model.features[0].evaluation.edit(|definition, _| {
+        let FeatureDefinition::DatumPoint {
+            construction: Some(construction),
+            ..
+        } = definition
+        else {
+            unreachable!("test feature is a constructed datum point")
+        };
+        let DatumPointConstruction::Vertex {
+            vertex: VertexSelection::Historical { vertex, .. },
+        } = construction.as_mut()
+        else {
+            unreachable!("test datum point uses a historical vertex")
+        };
+        *vertex = HistoricalVertexId::mint(missing).expect("valid identity");
+    });
     assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()
@@ -287,8 +284,7 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
                 allow_multi_profile_faces: None,
             },
             vec![BodyId::mint("synthetic:test:body#missing").expect("valid identity")],
-        )
-        .unwrap(),
+        ),
         native_ref: None,
     });
     ir.model.features.push(Feature {
@@ -564,8 +560,7 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
         .set_definition(FeatureDefinition::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Feature { feature: offset }),
             distance: Length::new(5.0).unwrap(),
-        })
-        .unwrap();
+        });
     let report = validate_neutral(&ir, Vec::new());
     assert!(report
         .findings
@@ -1035,24 +1030,19 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
 
     let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.is_empty(), "{:?}", report.findings);
-    ir.model.features[1]
-        .evaluation
-        .try_edit(|definition, _| {
-            let FeatureDefinition::BaseFeature {
-                bodies: BodySelection::Generated { bodies, .. },
-            } = definition
-            else {
-                panic!("test consumer must retain its generated body selection");
-            };
-            *bodies =
-                vec![
-                    GeneratedBodyRef::new(bodies[0].feature.clone(), "body#undeclared".into())
-                        .unwrap(),
-                ]
-                .try_into()
-                .unwrap();
-        })
+    ir.model.features[1].evaluation.edit(|definition, _| {
+        let FeatureDefinition::BaseFeature {
+            bodies: BodySelection::Generated { bodies, .. },
+        } = definition
+        else {
+            panic!("test consumer must retain its generated body selection");
+        };
+        *bodies = vec![
+            GeneratedBodyRef::new(bodies[0].feature.clone(), "body#undeclared".into()).unwrap(),
+        ]
+        .try_into()
         .unwrap();
+    });
     assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()

@@ -5,18 +5,14 @@ fn combine_consumes_tools_and_preserves_the_target_identity() {
     let mut ir = complete_block_ir();
     let target = ir.model.bodies[0].id.clone();
     let tool = BodyId::mint("test:model:entity#tool".to_string()).expect("identity grammar");
-    ir.model.features[0]
-        .evaluation
-        .try_edit(|_, outputs| {
-            outputs.push(tool.clone());
-        })
-        .unwrap();
+    ir.model.features[0].evaluation.edit(|_, outputs| {
+        outputs.push(tool.clone());
+    });
     ir.model.features[0]
         .evaluation
         .set_definition(FeatureDefinition::BaseFeature {
             bodies: BodySelection::Bodies(vec![target.clone(), tool.clone()]),
-        })
-        .unwrap();
+        });
     ir.model.features.push(body_preserving_feature(
         "combine",
         1,
@@ -47,18 +43,14 @@ fn combine_preserves_tools_when_requested() {
     let target = ir.model.bodies[0].id.clone();
     let tool = BodyId::mint("test:model:entity#tool".to_string()).expect("identity grammar");
     ir.model.bodies.push(model_body(tool.as_str()));
-    ir.model.features[0]
-        .evaluation
-        .try_edit(|_, outputs| {
-            outputs.push(tool.clone());
-        })
-        .unwrap();
+    ir.model.features[0].evaluation.edit(|_, outputs| {
+        outputs.push(tool.clone());
+    });
     ir.model.features[0]
         .evaluation
         .set_definition(FeatureDefinition::BaseFeature {
             bodies: BodySelection::Bodies(vec![target.clone(), tool.clone()]),
-        })
-        .unwrap();
+        });
     ir.model.features.push(body_preserving_feature(
         "combine",
         1,
@@ -151,14 +143,12 @@ fn trim_bodies_preserves_all_targets_and_tools() {
     ir.model.bodies.push(model_body(tool.as_str()));
     ir.model.features[0]
         .evaluation
-        .set_outputs(vec![first.clone(), second.clone(), tool.clone()])
-        .unwrap();
+        .set_outputs(vec![first.clone(), second.clone(), tool.clone()]);
     ir.model.features[0]
         .evaluation
         .set_definition(FeatureDefinition::BaseFeature {
             bodies: BodySelection::Bodies(vec![first.clone(), second.clone(), tool.clone()]),
-        })
-        .unwrap();
+        });
     let mut trim = body_neutral_feature(
         "trim",
         1,
@@ -173,8 +163,7 @@ fn trim_bodies_preserves_all_targets_and_tools() {
         },
     );
     trim.evaluation
-        .set_outputs(vec![first.clone(), second.clone()])
-        .unwrap();
+        .set_outputs(vec![first.clone(), second.clone()]);
     ir.model.features.push(trim);
 
     assert_eq!(
@@ -191,18 +180,14 @@ fn trim_bodies_rejects_outputs_that_do_not_match_its_targets() {
     let target = ir.model.bodies[0].id.clone();
     let tool = BodyId::mint("test:model:entity#tool".to_string()).expect("identity grammar");
     ir.model.bodies.push(model_body(tool.as_str()));
-    ir.model.features[0]
-        .evaluation
-        .try_edit(|_, outputs| {
-            outputs.push(tool.clone());
-        })
-        .unwrap();
+    ir.model.features[0].evaluation.edit(|_, outputs| {
+        outputs.push(tool.clone());
+    });
     ir.model.features[0]
         .evaluation
         .set_definition(FeatureDefinition::BaseFeature {
             bodies: BodySelection::Bodies(vec![target.clone(), tool.clone()]),
-        })
-        .unwrap();
+        });
     ir.model.features.push(body_preserving_feature(
         "trim",
         1,
@@ -313,14 +298,12 @@ fn sew_replaces_all_inputs_with_its_declared_outputs() {
     ir.model.bodies[0] = model_body(sewn.as_str());
     ir.model.features[0]
         .evaluation
-        .set_outputs(vec![first.clone(), second.clone()])
-        .unwrap();
+        .set_outputs(vec![first.clone(), second.clone()]);
     ir.model.features[0]
         .evaluation
         .set_definition(FeatureDefinition::BaseFeature {
             bodies: BodySelection::Bodies(vec![first.clone(), second.clone()]),
-        })
-        .unwrap();
+        });
     let mut feature = body_preserving_feature(
         "sew",
         1,
@@ -332,7 +315,7 @@ fn sew_replaces_all_inputs_with_its_declared_outputs() {
             gap_tolerance: None,
         },
     );
-    feature.evaluation.set_outputs(vec![sewn.clone()]).unwrap();
+    feature.evaluation.set_outputs(vec![sewn.clone()]);
     ir.model.features.push(feature);
 
     assert_eq!(
@@ -371,8 +354,7 @@ fn local_sew_with_an_already_retained_output_is_census_invariant() {
                 gap_tolerance: None,
             },
             vec![output.clone()],
-        )
-        .unwrap(),
+        ),
         native_ref: None,
     });
 
@@ -428,16 +410,16 @@ fn sew_rejects_an_output_identity_owned_by_an_unconsumed_body() {
     let unrelated =
         BodyId::mint("test:model:entity#unrelated".to_string()).expect("identity grammar");
     ir.model.bodies = vec![model_body(unrelated.as_str())];
-    ir.model.features[0]
-        .evaluation
-        .set_outputs(vec![first.clone(), second.clone(), unrelated.clone()])
-        .unwrap();
+    ir.model.features[0].evaluation.set_outputs(vec![
+        first.clone(),
+        second.clone(),
+        unrelated.clone(),
+    ]);
     ir.model.features[0]
         .evaluation
         .set_definition(FeatureDefinition::BaseFeature {
             bodies: BodySelection::Bodies(vec![first.clone(), second.clone(), unrelated.clone()]),
-        })
-        .unwrap();
+        });
     ir.model.features.push(body_preserving_feature(
         "sew",
         1,
@@ -471,8 +453,7 @@ fn native_body_selection_is_an_incomplete_semantic_boundary() {
         .evaluation
         .set_definition(FeatureDefinition::BaseFeature {
             bodies: BodySelection::Native("selection".to_string()),
-        })
-        .unwrap();
+        });
 
     assert_eq!(
         evaluate_saved_body_census(&ir),
@@ -640,18 +621,14 @@ fn complete_surface_edits_preserve_every_declared_body_identity() {
     let first = ir.model.bodies[0].id.clone();
     let second = BodyId::mint("test:model:entity#second".to_string()).expect("identity grammar");
     ir.model.bodies.push(model_body(second.as_str()));
-    ir.model.features[0]
-        .evaluation
-        .try_edit(|_, outputs| {
-            outputs.push(second.clone());
-        })
-        .unwrap();
+    ir.model.features[0].evaluation.edit(|_, outputs| {
+        outputs.push(second.clone());
+    });
     ir.model.features[0]
         .evaluation
         .set_definition(FeatureDefinition::BaseFeature {
             bodies: BodySelection::Bodies(vec![first.clone(), second.clone()]),
-        })
-        .unwrap();
+        });
     let faces = FaceSelection::Faces(vec![
         FaceId::mint("test:model:entity#face".to_string()).expect("identity grammar")
     ]);
@@ -668,8 +645,7 @@ fn complete_surface_edits_preserve_every_declared_body_identity() {
         },
     );
     trim.evaluation
-        .set_outputs(vec![first.clone(), second.clone()])
-        .unwrap();
+        .set_outputs(vec![first.clone(), second.clone()]);
     let mut extend = body_neutral_feature(
         "extend-surface",
         2,
@@ -681,8 +657,7 @@ fn complete_surface_edits_preserve_every_declared_body_identity() {
     );
     extend
         .evaluation
-        .set_outputs(vec![first.clone(), second.clone()])
-        .unwrap();
+        .set_outputs(vec![first.clone(), second.clone()]);
     ir.model.features.extend([trim, extend]);
 
     assert_eq!(
@@ -808,7 +783,7 @@ fn complete_surface_edit_rejects_an_output_absent_from_prior_history() {
             keep: TrimRegion::Outside,
         },
     );
-    trim.evaluation.set_outputs(vec![missing]).unwrap();
+    trim.evaluation.set_outputs(vec![missing]);
     ir.model.features.push(trim);
 
     assert_eq!(
@@ -965,18 +940,14 @@ fn output_free_hole_is_body_identity_neutral_regardless_of_suppression() {
     let body = ir.model.bodies[0].id.clone();
     let mut hole = complete_hole(body.clone());
     hole.suppressed = None;
-    hole.evaluation
-        .try_edit(|definition, _| {
-            if let FeatureDefinition::Hole { placements, .. } = definition {
-                *placements = None;
-            }
-        })
-        .unwrap();
-    hole.evaluation
-        .try_edit(|_, outputs| {
-            outputs.clear();
-        })
-        .unwrap();
+    hole.evaluation.edit(|definition, _| {
+        if let FeatureDefinition::Hole { placements, .. } = definition {
+            *placements = None;
+        }
+    });
+    hole.evaluation.edit(|_, outputs| {
+        outputs.clear();
+    });
     ir.model.features.push(hole);
 
     assert_eq!(

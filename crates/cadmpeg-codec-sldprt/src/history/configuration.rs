@@ -28,8 +28,7 @@ fn apply_configuration_state(
     let evaluation = cadmpeg_ir::features::FeatureEvaluation::new(
         state.definition.clone(),
         state.evaluation.outputs().to_vec(),
-    )
-    .map_err(cadmpeg_core::CodecError::malformed)?;
+    );
     feature.suppressed = Some(state.evaluation.is_suppressed());
     feature.dependencies.clone_from(&state.dependencies);
     feature.evaluation = evaluation;
@@ -291,10 +290,7 @@ pub(crate) fn project_configuration_design_states(
                             base_definition,
                             inherit_placements,
                         )?;
-                        feature
-                            .evaluation
-                            .set_definition(definition)
-                            .map_err(cadmpeg_core::CodecError::malformed)?;
+                        feature.evaluation.set_definition(definition);
                     }
                 }
                 Ok((
@@ -454,8 +450,7 @@ pub(crate) fn restore_configuration_tree_node_definitions(
             .set_definition(FeatureDefinition::TreeNode {
                 role: *role,
                 children: cadmpeg_ir::features::TreeChildren::default(),
-            })
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+            });
     }
 
     Ok(())
@@ -523,8 +518,7 @@ pub(crate) fn project_configuration_sketch_states(
                         .evaluation
                         .set_definition(FeatureDefinition::SpatialSketch {
                             sketch: Some(expected),
-                        })
-                        .map_err(cadmpeg_core::CodecError::malformed)?;
+                        });
                 }
                 continue;
             }
@@ -542,8 +536,7 @@ pub(crate) fn project_configuration_sketch_states(
                     .evaluation
                     .set_definition(FeatureDefinition::SpatialSketch {
                         sketch: Some(base_sketch.clone()),
-                    })
-                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                    });
             }
         }
         let mut parameters = ir.model.parameters.clone();
@@ -1112,10 +1105,7 @@ pub(crate) fn inherit_configuration_reference_plane_semantics(
             continue;
         };
         *reference = Some(replacement);
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
         if let Some(dependency) = dependency {
             if !feature.dependencies.contains(&dependency) {
                 feature.dependencies.insert(dependency);

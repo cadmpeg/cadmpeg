@@ -574,8 +574,7 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
                 allow_multi_profile_faces: None,
             },
             outputs,
-        )
-        .unwrap(),
+        ),
         native_ref: None,
     };
     let bodies = [

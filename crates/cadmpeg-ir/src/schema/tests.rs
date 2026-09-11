@@ -113,20 +113,17 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
         .any(|finding| finding.check == Check::ReferentialIntegrity));
 
     let missing = "test:model:historical-edge#missing";
-    ir.model.features[0]
-        .evaluation
-        .try_edit(|definition, _| {
-            let FeatureDefinition::Fillet { groups } = definition else {
-                unreachable!("test feature is a fillet")
-            };
-            let EdgeSelection::Historical { edges, .. } = &mut groups[0].edges else {
-                unreachable!("test fillet uses a historical selection")
-            };
-            *edges = vec![HistoricalEdgeId::mint(missing).expect("valid identity")]
-                .try_into()
-                .unwrap();
-        })
-        .unwrap();
+    ir.model.features[0].evaluation.edit(|definition, _| {
+        let FeatureDefinition::Fillet { groups } = definition else {
+            unreachable!("test feature is a fillet")
+        };
+        let EdgeSelection::Historical { edges, .. } = &mut groups[0].edges else {
+            unreachable!("test fillet uses a historical selection")
+        };
+        *edges = vec![HistoricalEdgeId::mint(missing).expect("valid identity")]
+            .try_into()
+            .unwrap();
+    });
     assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()

@@ -239,8 +239,7 @@ pub(crate) fn spatial_sketches(
                 .evaluation
                 .set_definition(FeatureDefinition::SpatialSketch {
                     sketch: Some(sketch_id),
-                })
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+                });
             continue;
         }
         if !declared_spatial {
@@ -320,8 +319,7 @@ pub(crate) fn spatial_sketches(
             .evaluation
             .set_definition(FeatureDefinition::SpatialSketch {
                 sketch: Some(sketch_id),
-            })
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+            });
     }
     Ok((sketches, entities))
 }

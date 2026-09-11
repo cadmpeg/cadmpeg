@@ -334,10 +334,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
             }
         }
 
-        features[index]
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        features[index].evaluation.set_definition(definition);
     }
 
     Ok(())
@@ -573,10 +570,7 @@ pub(crate) fn project_dissected_sketches(
                 }
             }
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())

@@ -4828,13 +4828,12 @@ mod tests {
         );
 
         let mut operation_owned = unevaluated;
-        operation_owned.model.features[0]
-            .evaluation
-            .set_definition(cadmpeg_ir::features::FeatureDefinition::Native {
+        operation_owned.model.features[0].evaluation.set_definition(
+            cadmpeg_ir::features::FeatureDefinition::Native {
                 kind: "TEST_OPERATION".into(),
                 parameters: BTreeMap::default(),
-            })
-            .unwrap();
+            },
+        );
         assert_eq!(
             feature_completeness::incomplete_expression_parameters(&operation_owned),
             [operation_owned.model.parameters[1].id.clone()].into()

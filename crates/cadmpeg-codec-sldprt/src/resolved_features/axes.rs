@@ -1157,10 +1157,7 @@ pub(crate) fn bind_profile_revolution_axes(
                 construction.set_axis(Some(axis));
             }
         }
-        model_features[index]
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        model_features[index].evaluation.set_definition(definition);
     }
 
     Ok(())

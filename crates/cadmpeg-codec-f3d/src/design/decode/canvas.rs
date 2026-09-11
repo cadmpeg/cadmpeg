@@ -119,8 +119,7 @@ pub fn project_canvas_images(
                         )
                     })?,
                 ),
-            })
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+            });
     }
     assets.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(assets)

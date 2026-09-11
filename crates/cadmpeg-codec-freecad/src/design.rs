@@ -468,8 +468,7 @@ pub(crate) fn transfer(
             source_tag: Some(object.type_name.clone()),
             source_text: None,
             source_content: FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, outputs)
-                .map_err(CodecError::malformed)?,
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, outputs),
             native_ref: Some(object.id.clone()),
         });
     }
@@ -504,8 +503,7 @@ pub(crate) fn transfer(
                             .map(Vec::as_slice)
                             .unwrap_or_default(),
                     ),
-                })
-                .map_err(CodecError::malformed)?;
+                });
             feature.dependencies.clear();
         }
     }

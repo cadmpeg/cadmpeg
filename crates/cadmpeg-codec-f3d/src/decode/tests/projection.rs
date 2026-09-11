@@ -1037,7 +1037,11 @@ fn body_copy_features_require_resolved_body_selection() {
         }
     ));
     assert!(!feature_definition_is_incomplete(
-        &FeatureDefinition::InsertBodies { bodies: resolved }
+        &FeatureDefinition::InsertBodies {
+            bodies: cadmpeg_ir::features::InsertedBodies::Resolved {
+                native: "native:body-selection".into(),
+            },
+        }
     ));
 
     let unresolved = BodySelection::Native("native:body-selection".into());

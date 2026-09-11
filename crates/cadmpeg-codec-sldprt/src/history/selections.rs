@@ -200,10 +200,7 @@ pub(crate) fn bind_topology_selections(
                 .and_then(|record| record.properties.get("Scope"))
             {
                 if let Some(outputs) = resolve_ids(scope, &body_ids) {
-                    feature
-                        .evaluation
-                        .set_outputs(outputs)
-                        .map_err(cadmpeg_core::CodecError::malformed)?;
+                    feature.evaluation.set_outputs(outputs);
                 }
             }
             match &mut definition {
@@ -456,10 +453,7 @@ pub(crate) fn bind_topology_selections(
                 _ => {}
             }
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())

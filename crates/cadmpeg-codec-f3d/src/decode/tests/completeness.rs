@@ -125,10 +125,7 @@ fn zero_body_base_features_are_complete_but_empty_insertions_are_not() {
     ));
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::InsertBodies {
-            bodies: BodySelection::Resolved {
-                bodies: Vec::new(),
-                native: "native:insert-bodies".into(),
-            },
+            bodies: cadmpeg_ir::features::InsertedBodies::Native("native:insert-bodies".into()),
         }
     ));
 }

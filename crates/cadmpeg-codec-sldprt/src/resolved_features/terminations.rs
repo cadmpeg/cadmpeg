@@ -904,10 +904,7 @@ pub(crate) fn project_surface_sweep_profiles(
                 })
                 .map_err(cadmpeg_core::CodecError::malformed)?;
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())
@@ -1119,10 +1116,7 @@ pub(crate) fn project_compact_combine_paths(
                 })
                 .map_err(cadmpeg_core::CodecError::malformed)?;
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())

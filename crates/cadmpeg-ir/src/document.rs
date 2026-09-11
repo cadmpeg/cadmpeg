@@ -373,9 +373,6 @@ macro_rules! declare_model {
                 let (features, feature_parents): (Vec<_>, Vec<_>) = feature_wires
                     .into_iter()
                     .map(FeatureReadWire::into_parts)
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(serde::de::Error::custom)?
-                    .into_iter()
                     .unzip();
                 let mut model = Self {
                     $($field: model_read_value!(wire, $field),)*

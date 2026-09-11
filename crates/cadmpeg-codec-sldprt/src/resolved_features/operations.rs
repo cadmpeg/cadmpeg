@@ -189,10 +189,7 @@ pub(crate) fn bind_revolution_operations(
                 *op = first;
             }
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())
@@ -264,10 +261,7 @@ pub(crate) fn bind_sweep_operations(
                 })
                 .map_err(cadmpeg_core::CodecError::malformed)?;
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())
@@ -404,10 +398,7 @@ pub(crate) fn bind_extrusion_operations(
                 *op = first;
             }
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())
@@ -487,10 +478,7 @@ pub(crate) fn inherit_configuration_operations(
                 _ => {}
             }
         }
-        feature
-            .evaluation
-            .set_definition(definition)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.set_definition(definition);
     }
 
     Ok(())

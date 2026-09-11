@@ -96,8 +96,7 @@ fn distinguishes_stored_base_and_application_owned_features() {
         .set_definition(cadmpeg_ir::features::FeatureDefinition::DerivedGeometry {
             source: cadmpeg_ir::features::FeatureId::mint("fcstd:design:feature#Missing")
                 .expect("identity grammar"),
-        })
-        .unwrap();
+        });
     assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
         .findings
         .iter()
@@ -252,20 +251,17 @@ fn transfers_ordered_body_membership_and_active_tip() {
         .iter_mut()
         .find(|feature| feature.name.as_deref() == Some("Body"))
         .expect("body");
-    body.evaluation
-        .try_edit(|definition, _| {
-            let cadmpeg_ir::features::FeatureDefinition::TreeNode { children, .. } = definition
-            else {
-                panic!("body tree node");
-            };
-            assert!(children
-                .set_active_child(Some(
-                    cadmpeg_ir::features::FeatureId::mint("fcstd:design:feature#Outside")
-                        .expect("identity grammar"),
-                ))
-                .is_err());
-        })
-        .unwrap();
+    body.evaluation.edit(|definition, _| {
+        let cadmpeg_ir::features::FeatureDefinition::TreeNode { children, .. } = definition else {
+            panic!("body tree node");
+        };
+        assert!(children
+            .set_active_child(Some(
+                cadmpeg_ir::features::FeatureId::mint("fcstd:design:feature#Outside")
+                    .expect("identity grammar"),
+            ))
+            .is_err());
+    });
     assert_valid_document(&corrupted);
 }
 

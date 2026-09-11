@@ -152,35 +152,33 @@ fn hole_and_sweep_edits_preserve_the_previous_admitted_shape() {
 }
 
 #[test]
-fn feature_evaluation_admits_matching_insert_outputs_on_every_wire_door() {
+fn an_inserted_body_selection_does_not_restate_the_feature_outputs() {
     let body = body_id("inserted");
     let definition = FeatureDefinition::InsertBodies {
-        bodies: BodySelection::Resolved {
-            bodies: vec![body.clone()],
+        bodies: crate::features::InsertedBodies::Resolved {
             native: "copied".into(),
         },
     };
-    assert!(FeatureEvaluation::new(definition.clone(), Vec::new()).is_err());
-    let mut evaluation = FeatureEvaluation::new(definition.clone(), vec![body.clone()]).unwrap();
-    let before = evaluation.clone();
-    assert!(evaluation.try_edit(|_, outputs| outputs.clear()).is_err());
-    assert_eq!(evaluation, before);
-    let feature = Feature::new(feature_id("insert"), 0, definition);
-    assert_eq!(feature.evaluation.outputs(), &[body]);
+    let mut feature = Feature::new(feature_id("insert"), 0, definition);
+    assert!(feature.evaluation.outputs().is_empty());
+    feature.evaluation.set_outputs(vec![body.clone()]);
     let wire = serde_json::to_value(&feature).unwrap();
     assert!(wire.get("evaluation").is_none());
+    assert_eq!(wire["outputs"], serde_json::json!([body.as_str()]));
+    assert!(wire["definition"]["bodies"]["value"]
+        .get("bodies")
+        .is_none());
     assert_eq!(
         serde_json::from_value::<Feature>(wire.clone()).unwrap(),
         feature
     );
-    let mut invalid = wire;
-    invalid["outputs"] = serde_json::json!([]);
-    assert!(serde_json::from_value::<Feature>(invalid.clone()).is_err());
-    let mut ir = crate::CadIr::empty();
-    ir.model.features.push(feature);
-    let mut document = serde_json::to_value(ir).unwrap();
-    document["model"]["features"][0] = invalid;
-    assert!(serde_json::from_value::<crate::CadIr>(document).is_err());
+
+    let mut restated = wire;
+    restated["definition"]["bodies"]["value"]["bodies"] = serde_json::json!([body.as_str()]);
+    let error = serde_json::from_value::<Feature>(restated)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("bodies"), "{error}");
 }
 
 #[test]

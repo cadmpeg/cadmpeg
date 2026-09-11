@@ -1176,8 +1176,7 @@ fn configuration_snapshots_preserve_base_tree_node_roles() {
         .set_definition(FeatureDefinition::TreeNode {
             role: FeatureTreeNodeRole::DirectionalLight,
             children: cadmpeg_ir::features::TreeChildren::default(),
-        })
-        .unwrap();
+        });
 
     restore_configuration_tree_node_definitions(&mut configured, &base).unwrap();
     assert!(matches!(

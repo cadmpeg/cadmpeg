@@ -1308,7 +1308,7 @@ impl<'de> Deserialize<'de> for PolygonSideCount {
     }
 }
 
-/// A feature definition and its compatible output-body list.
+/// A feature definition and the bodies its evaluation produces.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FeatureEvaluation {
     definition: FeatureDefinition,
@@ -1316,79 +1316,47 @@ pub struct FeatureEvaluation {
 }
 
 impl FeatureEvaluation {
-    /// Admit outputs that equal resolved inserted-body membership.
-    pub fn new(definition: FeatureDefinition, outputs: Vec<BodyId>) -> Result<Self, &'static str> {
-        if Self::inserted_bodies(&definition).is_some_and(|bodies| *bodies != outputs) {
-            return Err("outputs must equal the resolved InsertBodies selection");
-        }
-        Ok(Self {
-            definition,
-            outputs,
-        })
-    }
-
-    fn inserted_bodies(definition: &FeatureDefinition) -> Option<&Vec<BodyId>> {
-        let definition = match definition {
-            FeatureDefinition::PostProcess { operation, .. } => operation.as_ref(),
-            definition => definition,
-        };
-        match definition {
-            FeatureDefinition::InsertBodies {
-                bodies: BodySelection::Resolved { bodies, .. },
-            } => Some(bodies),
-            _ => None,
-        }
-    }
-
-    /// Construct an evaluation with the definition's inserted bodies or no outputs.
-    pub fn from_definition(definition: FeatureDefinition) -> Self {
-        let outputs = Self::inserted_bodies(&definition)
-            .cloned()
-            .unwrap_or_default();
+    /// Construct an evaluation from its semantics and produced bodies.
+    #[must_use]
+    pub const fn new(definition: FeatureDefinition, outputs: Vec<BodyId>) -> Self {
         Self {
             definition,
             outputs,
         }
     }
 
+    /// Construct an evaluation with no produced bodies.
+    #[must_use]
+    pub const fn from_definition(definition: FeatureDefinition) -> Self {
+        Self {
+            definition,
+            outputs: Vec::new(),
+        }
+    }
+
     /// Return the neutral construction semantics.
-    pub fn definition(&self) -> &FeatureDefinition {
+    pub const fn definition(&self) -> &FeatureDefinition {
         &self.definition
     }
 
     /// Return the produced or modified body identities.
-    pub fn outputs(&self) -> &Vec<BodyId> {
+    pub const fn outputs(&self) -> &Vec<BodyId> {
         &self.outputs
     }
 
-    /// Admit edited semantics and outputs before replacing either value.
-    pub fn try_edit(
-        &mut self,
-        edit: impl FnOnce(&mut FeatureDefinition, &mut Vec<BodyId>),
-    ) -> Result<(), &'static str> {
-        let mut definition = self.definition.clone();
-        let mut outputs = self.outputs.clone();
-        edit(&mut definition, &mut outputs);
-        *self = Self::new(definition, outputs)?;
-        Ok(())
+    /// Edit the semantics and the produced bodies together.
+    pub fn edit(&mut self, edit: impl FnOnce(&mut FeatureDefinition, &mut Vec<BodyId>)) {
+        edit(&mut self.definition, &mut self.outputs);
     }
 
-    /// Replace semantics while preserving compatible output bodies.
-    pub fn set_definition(&mut self, definition: FeatureDefinition) -> Result<(), &'static str> {
-        if Self::inserted_bodies(&definition).is_some_and(|bodies| *bodies != self.outputs) {
-            return Err("outputs must equal the resolved InsertBodies selection");
-        }
+    /// Replace the construction semantics.
+    pub fn set_definition(&mut self, definition: FeatureDefinition) {
         self.definition = definition;
-        Ok(())
     }
 
-    /// Replace output bodies when compatible with the definition.
-    pub fn set_outputs(&mut self, outputs: Vec<BodyId>) -> Result<(), &'static str> {
-        if Self::inserted_bodies(&self.definition).is_some_and(|bodies| *bodies != outputs) {
-            return Err("outputs must equal the resolved InsertBodies selection");
-        }
+    /// Replace the produced body identities.
+    pub fn set_outputs(&mut self, outputs: Vec<BodyId>) {
         self.outputs = outputs;
-        Ok(())
     }
 }
 
@@ -1520,8 +1488,8 @@ pub(crate) struct FeatureReadWire {
 }
 
 impl FeatureReadWire {
-    pub(crate) fn into_parts(self) -> Result<(Feature, Option<FeatureId>), &'static str> {
-        Ok((
+    pub(crate) fn into_parts(self) -> (Feature, Option<FeatureId>) {
+        (
             Feature {
                 id: self.id,
                 ordinal: self.ordinal,
@@ -1532,11 +1500,11 @@ impl FeatureReadWire {
                 source_tag: self.source_tag,
                 source_text: self.source_text,
                 source_content: self.source_content,
-                evaluation: FeatureEvaluation::new(self.definition, self.outputs)?,
+                evaluation: FeatureEvaluation::new(self.definition, self.outputs),
                 native_ref: self.native_ref,
             },
             self.parent,
-        ))
+        )
     }
 }
 
@@ -1554,9 +1522,7 @@ impl<'de> Deserialize<'de> for Feature {
     where
         D: serde::Deserializer<'de>,
     {
-        let (feature, parent) = FeatureReadWire::deserialize(deserializer)?
-            .into_parts()
-            .map_err(serde::de::Error::custom)?;
+        let (feature, parent) = FeatureReadWire::deserialize(deserializer)?.into_parts();
         if parent.is_some() {
             return Err(serde::de::Error::custom(
                 "a feature parent requires its owning model",
@@ -2417,10 +2383,12 @@ pub enum FeatureDefinition {
         #[serde(deserialize_with = "deserialize_local_tessellations")]
         tessellations: SelectionMembers<String>,
     },
-    /// Independent bodies introduced by a copy-and-paste operation.
+    /// Independent bodies introduced by a copy-and-paste operation. The copies
+    /// are the feature's outputs, so the selection carries only its native
+    /// expression.
     InsertBodies {
-        /// Newly created body copies in source order.
-        bodies: BodySelection,
+        /// Native selection expression of the copied bodies.
+        bodies: InsertedBodies,
     },
     /// External component occurrence introduced into an assembly timeline.
     InsertComponent {
@@ -5918,6 +5886,43 @@ pub enum BodySelectionError {
     /// A native member occurs more than once in the set.
     #[error("body selection set repeats a native member")]
     RepeatedNativeMember,
+}
+
+/// Native selection of the bodies a copy-and-paste operation introduces. The
+/// copied bodies themselves are the feature's outputs, so no variant restates
+/// them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+pub enum InsertedBodies {
+    /// The copied bodies are not resolved to the neutral model.
+    Native(String),
+    /// The copied bodies are resolved and listed in the feature's outputs.
+    Resolved {
+        /// Format-native selection expression.
+        native: String,
+    },
+}
+
+impl InsertedBodies {
+    /// Borrow the native selection expression.
+    #[must_use]
+    pub fn native(&self) -> &str {
+        match self {
+            Self::Native(native) | Self::Resolved { native } => native,
+        }
+    }
+
+    /// Whether the copied bodies are resolved to the neutral model.
+    #[must_use]
+    pub const fn is_resolved(&self) -> bool {
+        matches!(self, Self::Resolved { .. })
+    }
 }
 
 /// Body operands resolved by the decoder or retained in native form.

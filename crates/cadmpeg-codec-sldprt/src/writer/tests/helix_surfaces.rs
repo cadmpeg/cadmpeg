@@ -56,21 +56,18 @@ fn semantic_writer_round_trips_reference_coordinate_system() {
 
     {
         let mut ir_edit = decoded.ir_mut();
-        ir_edit.model.features[0]
-            .evaluation
-            .try_edit(|definition, _| {
-                let FeatureDefinition::DatumCoordinateSystem { frame } = definition else {
-                    panic!("typed reference coordinate system");
-                };
-                *frame = cadmpeg_ir::features::FeatureCoordinateFrame::new(
-                    Point3::new(4.0, 5.0, 6.0),
-                    Vector3::new(0.0, 1.0, 0.0),
-                    Vector3::new(-1.0, 0.0, 0.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                )
-                .unwrap();
-            })
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::DatumCoordinateSystem { frame } = definition else {
+                panic!("typed reference coordinate system");
+            };
+            *frame = cadmpeg_ir::features::FeatureCoordinateFrame::new(
+                Point3::new(4.0, 5.0, 6.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(-1.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+            )
             .unwrap();
+        });
     }
 
     let mut encoded = Vec::new();
@@ -139,23 +136,20 @@ fn semantic_writer_round_trips_equation_driven_curve() {
 
     {
         let mut ir_edit = decoded.ir_mut();
-        ir_edit.model.features[0]
-            .evaluation
-            .try_edit(|definition, _| {
-                let FeatureDefinition::EquationCurve { curve } = definition else {
-                    panic!("typed equation curve");
-                };
-                *curve = cadmpeg_ir::features::FeatureEquationCurve::new(
-                    "u".into(),
-                    "u".into(),
-                    "u^2".into(),
-                    "u^3".into(),
-                    -2.0,
-                    3.0,
-                )
-                .unwrap();
-            })
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::EquationCurve { curve } = definition else {
+                panic!("typed equation curve");
+            };
+            *curve = cadmpeg_ir::features::FeatureEquationCurve::new(
+                "u".into(),
+                "u".into(),
+                "u^2".into(),
+                "u^3".into(),
+                -2.0,
+                3.0,
+            )
             .unwrap();
+        });
     }
 
     let mut encoded = Vec::new();
@@ -232,32 +226,28 @@ fn semantic_writer_round_trips_helix() {
 
     {
         let mut ir_edit = decoded.ir_mut();
-        ir_edit.model.features[0]
-            .evaluation
-            .try_edit(|definition, _| {
-                let FeatureDefinition::Helix {
-                    axis_origin,
-                    axis_direction,
-                    radius,
-                    shape: HelixShape::Cylindrical { pitch },
-                    revolutions,
-                    clockwise,
-                    ..
-                } = definition
-                else {
-                    panic!("typed helix");
-                };
-                *axis_origin =
-                    cadmpeg_ir::features::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0)).unwrap();
-                *axis_direction =
-                    cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
-                        .unwrap();
-                *radius = cadmpeg_ir::scalar::PositiveLength::new(7.0).unwrap();
-                *pitch = NonZeroLength::new(8.0).unwrap();
-                *revolutions = cadmpeg_ir::scalar::PositiveReal::new(9.25).unwrap();
-                *clockwise = false;
-            })
-            .unwrap();
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Helix {
+                axis_origin,
+                axis_direction,
+                radius,
+                shape: HelixShape::Cylindrical { pitch },
+                revolutions,
+                clockwise,
+                ..
+            } = definition
+            else {
+                panic!("typed helix");
+            };
+            *axis_origin =
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0)).unwrap();
+            *axis_direction =
+                cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap();
+            *radius = cadmpeg_ir::scalar::PositiveLength::new(7.0).unwrap();
+            *pitch = NonZeroLength::new(8.0).unwrap();
+            *revolutions = cadmpeg_ir::scalar::PositiveReal::new(9.25).unwrap();
+            *clockwise = false;
+        });
     }
 
     let mut encoded = Vec::new();
@@ -337,32 +327,28 @@ fn semantic_writer_round_trips_slash_named_helix() {
 
     {
         let mut ir_edit = decoded.ir_mut();
-        ir_edit.model.features[0]
-            .evaluation
-            .try_edit(|definition, _| {
-                let FeatureDefinition::Helix {
-                    axis_origin,
-                    axis_direction,
-                    radius,
-                    shape: HelixShape::Cylindrical { pitch },
-                    revolutions,
-                    clockwise,
-                    ..
-                } = definition
-                else {
-                    panic!("typed helix");
-                };
-                *axis_origin =
-                    cadmpeg_ir::features::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0)).unwrap();
-                *axis_direction =
-                    cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
-                        .unwrap();
-                *radius = cadmpeg_ir::scalar::PositiveLength::new(7.0).unwrap();
-                *pitch = NonZeroLength::new(8.0).unwrap();
-                *revolutions = cadmpeg_ir::scalar::PositiveReal::new(9.25).unwrap();
-                *clockwise = true;
-            })
-            .unwrap();
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Helix {
+                axis_origin,
+                axis_direction,
+                radius,
+                shape: HelixShape::Cylindrical { pitch },
+                revolutions,
+                clockwise,
+                ..
+            } = definition
+            else {
+                panic!("typed helix");
+            };
+            *axis_origin =
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0)).unwrap();
+            *axis_direction =
+                cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap();
+            *radius = cadmpeg_ir::scalar::PositiveLength::new(7.0).unwrap();
+            *pitch = NonZeroLength::new(8.0).unwrap();
+            *revolutions = cadmpeg_ir::scalar::PositiveReal::new(9.25).unwrap();
+            *clockwise = true;
+        });
     }
 
     let mut encoded = Vec::new();
@@ -430,27 +416,24 @@ fn semantic_writer_round_trips_native_axis_helix() {
 
     {
         let mut ir_edit = decoded.ir_mut();
-        ir_edit.model.features[0]
-            .evaluation
-            .try_edit(|definition, _| {
-                let FeatureDefinition::HelixNativeAxis {
-                    axial_rise,
-                    pitch,
-                    revolutions,
-                    start_angle,
-                    clockwise,
-                    ..
-                } = definition
-                else {
-                    panic!("typed native-axis helix");
-                };
-                *axial_rise = Length::new(4000.0).unwrap();
-                *pitch = Length::new(16000.0).unwrap();
-                *revolutions = cadmpeg_ir::scalar::PositiveReal::new(0.5).unwrap();
-                *start_angle = Angle::new(std::f64::consts::FRAC_PI_2).unwrap();
-                *clockwise = true;
-            })
-            .unwrap();
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::HelixNativeAxis {
+                axial_rise,
+                pitch,
+                revolutions,
+                start_angle,
+                clockwise,
+                ..
+            } = definition
+            else {
+                panic!("typed native-axis helix");
+            };
+            *axial_rise = Length::new(4000.0).unwrap();
+            *pitch = Length::new(16000.0).unwrap();
+            *revolutions = cadmpeg_ir::scalar::PositiveReal::new(0.5).unwrap();
+            *start_angle = Angle::new(std::f64::consts::FRAC_PI_2).unwrap();
+            *clockwise = true;
+        });
     }
 
     let mut encoded = Vec::new();
@@ -536,15 +519,12 @@ fn semantic_writer_rejects_embedded_helix_geometry_edits() {
             &native.feature_input_lanes,
         )
         .unwrap();
-        ir_edit.model.features[0]
-            .evaluation
-            .try_edit(|definition, _| {
-                let FeatureDefinition::Helix { radius, .. } = definition else {
-                    panic!("embedded helix geometry");
-                };
-                *radius = cadmpeg_ir::scalar::PositiveLength::new(9.0).unwrap();
-            })
-            .unwrap();
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Helix { radius, .. } = definition else {
+                panic!("embedded helix geometry");
+            };
+            *radius = cadmpeg_ir::scalar::PositiveLength::new(9.0).unwrap();
+        });
     }
 
     let error = crate::test_support::plan_inherited_write(
@@ -595,26 +575,23 @@ fn semantic_writer_round_trips_wrap() {
 
     {
         let mut ir_edit = decoded.ir_mut();
-        ir_edit.model.features[0]
-            .evaluation
-            .try_edit(|definition, _| {
-                let FeatureDefinition::Wrap {
-                    profile,
-                    face,
-                    mode,
-                } = definition
-                else {
-                    panic!("typed wrap");
-                };
-                *profile = (ProfileRef::Faces(vec![face_id.clone()]))
-                    .try_into()
-                    .unwrap();
-                *face = FaceSelection::Faces(vec![face_id.clone()]);
-                *mode = WrapMode::Deboss {
-                    depth: Length::new(3.5).unwrap(),
-                };
-            })
-            .unwrap();
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Wrap {
+                profile,
+                face,
+                mode,
+            } = definition
+            else {
+                panic!("typed wrap");
+            };
+            *profile = (ProfileRef::Faces(vec![face_id.clone()]))
+                .try_into()
+                .unwrap();
+            *face = FaceSelection::Faces(vec![face_id.clone()]);
+            *mode = WrapMode::Deboss {
+                depth: Length::new(3.5).unwrap(),
+            };
+        });
     }
 
     let mut encoded = Vec::new();
@@ -645,15 +622,12 @@ fn semantic_writer_round_trips_wrap() {
     let mut scribed = cadmpeg_test_support::EditableDecodeResult::from(scribed);
     {
         let mut ir_edit = scribed.ir_mut();
-        ir_edit.model.features[0]
-            .evaluation
-            .try_edit(|definition, _| {
-                let FeatureDefinition::Wrap { mode, .. } = definition else {
-                    panic!("typed wrap");
-                };
-                *mode = WrapMode::Scribe;
-            })
-            .unwrap();
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Wrap { mode, .. } = definition else {
+                panic!("typed wrap");
+            };
+            *mode = WrapMode::Scribe;
+        });
     }
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(
@@ -720,33 +694,30 @@ fn semantic_writer_round_trips_move_copy_body() {
 
     {
         let mut ir_edit = decoded.ir_mut();
-        ir_edit.model.features[0]
-            .evaluation
-            .try_edit(|definition, _| {
-                let FeatureDefinition::MoveBody {
-                    bodies,
-                    translation,
-                    rotation,
-                    copies,
-                } = definition
-                else {
-                    panic!("typed body motion");
-                };
-                *bodies = BodySelection::Bodies(vec![body_id.clone()]);
-                *translation =
-                    cadmpeg_ir::features::FiniteVector3::new(Vector3::new(-7.0, 8.0, 9.0)).unwrap();
-                *rotation = Some(AxisAngle {
-                    origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(10.0, 11.0, 12.0))
-                        .unwrap(),
-                    direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-                        0.0, 1.0, 0.0,
-                    ))
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::MoveBody {
+                bodies,
+                translation,
+                rotation,
+                copies,
+            } = definition
+            else {
+                panic!("typed body motion");
+            };
+            *bodies = BodySelection::Bodies(vec![body_id.clone()]);
+            *translation =
+                cadmpeg_ir::features::FiniteVector3::new(Vector3::new(-7.0, 8.0, 9.0)).unwrap();
+            *rotation = Some(AxisAngle {
+                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(10.0, 11.0, 12.0))
                     .unwrap(),
-                    angle: Angle::new(0.25).unwrap(),
-                });
-                *copies = 3;
-            })
-            .unwrap();
+                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                    0.0, 1.0, 0.0,
+                ))
+                .unwrap(),
+                angle: Angle::new(0.25).unwrap(),
+            });
+            *copies = 3;
+        });
     }
 
     let mut encoded = Vec::new();
@@ -772,19 +743,16 @@ fn semantic_writer_round_trips_move_copy_body() {
     let mut translated = cadmpeg_test_support::EditableDecodeResult::from(translated);
     {
         let mut ir_edit = translated.ir_mut();
-        ir_edit.model.features[0]
-            .evaluation
-            .try_edit(|definition, _| {
-                let FeatureDefinition::MoveBody {
-                    rotation, copies, ..
-                } = definition
-                else {
-                    panic!("typed body motion");
-                };
-                *rotation = None;
-                *copies = 0;
-            })
-            .unwrap();
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::MoveBody {
+                rotation, copies, ..
+            } = definition
+            else {
+                panic!("typed body motion");
+            };
+            *rotation = None;
+            *copies = 0;
+        });
     }
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(
@@ -846,16 +814,13 @@ fn semantic_writer_round_trips_offset_surface() {
 
     {
         let mut ir_edit = decoded.ir_mut();
-        ir_edit.model.features[0]
-            .evaluation
-            .try_edit(|definition, _| {
-                let FeatureDefinition::OffsetSurface { faces, distance } = definition else {
-                    panic!("typed offset surface");
-                };
-                *faces = FaceSelection::Faces(vec![face_id.clone()]);
-                *distance = Some(Length::new(-3.5).unwrap());
-            })
-            .unwrap();
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::OffsetSurface { faces, distance } = definition else {
+                panic!("typed offset surface");
+            };
+            *faces = FaceSelection::Faces(vec![face_id.clone()]);
+            *distance = Some(Length::new(-3.5).unwrap());
+        });
     }
 
     let mut encoded = Vec::new();
@@ -915,24 +880,21 @@ fn semantic_writer_round_trips_knit_surface() {
 
     {
         let mut ir_edit = decoded.ir_mut();
-        ir_edit.model.features[0]
-            .evaluation
-            .try_edit(|definition, _| {
-                let FeatureDefinition::KnitSurface {
-                    faces,
-                    merge_entities,
-                    create_solid,
-                    gap_tolerance,
-                } = definition
-                else {
-                    panic!("typed knit surface");
-                };
-                *faces = FaceSelection::Faces(vec![face_id.clone()]);
-                *merge_entities = Some(true);
-                *create_solid = Some(true);
-                *gap_tolerance = None;
-            })
-            .unwrap();
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::KnitSurface {
+                faces,
+                merge_entities,
+                create_solid,
+                gap_tolerance,
+            } = definition
+            else {
+                panic!("typed knit surface");
+            };
+            *faces = FaceSelection::Faces(vec![face_id.clone()]);
+            *merge_entities = Some(true);
+            *create_solid = Some(true);
+            *gap_tolerance = None;
+        });
     }
 
     let mut encoded = Vec::new();
@@ -998,22 +960,19 @@ fn semantic_writer_round_trips_cut_with_surface() {
 
     {
         let mut ir_edit = decoded.ir_mut();
-        ir_edit.model.features[0]
-            .evaluation
-            .try_edit(|definition, _| {
-                let FeatureDefinition::CutWithSurface {
-                    targets,
-                    tools,
-                    reverse,
-                } = definition
-                else {
-                    panic!("typed surface cut");
-                };
-                *targets = BodySelection::Bodies(vec![body_id.clone()]);
-                *tools = FaceSelection::Faces(vec![face_id.clone()]);
-                *reverse = Some(true);
-            })
-            .unwrap();
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::CutWithSurface {
+                targets,
+                tools,
+                reverse,
+            } = definition
+            else {
+                panic!("typed surface cut");
+            };
+            *targets = BodySelection::Bodies(vec![body_id.clone()]);
+            *tools = FaceSelection::Faces(vec![face_id.clone()]);
+            *reverse = Some(true);
+        });
     }
 
     let mut encoded = Vec::new();
@@ -1148,27 +1107,23 @@ fn filled_surface_round_trip(
 
     {
         let mut ir_edit = decoded.ir_mut();
-        ir_edit.model.features[0]
-            .evaluation
-            .try_edit(|definition, _| {
-                let FeatureDefinition::FilledSurface {
-                    boundary,
-                    support_faces,
-                    continuity,
-                    merge_result,
-                } = definition
-                else {
-                    panic!("typed filled surface");
-                };
-                *boundary =
-                    cadmpeg_ir::features::SurfaceBoundary::Edges(EdgeSelection::Edges(vec![
-                        edge_id.clone(),
-                    ]));
-                *support_faces = FaceSelection::Faces(vec![face_id.clone()]);
-                *continuity = edited_continuity;
-                *merge_result = Some(true);
-            })
-            .unwrap();
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::FilledSurface {
+                boundary,
+                support_faces,
+                continuity,
+                merge_result,
+            } = definition
+            else {
+                panic!("typed filled surface");
+            };
+            *boundary = cadmpeg_ir::features::SurfaceBoundary::Edges(EdgeSelection::Edges(vec![
+                edge_id.clone(),
+            ]));
+            *support_faces = FaceSelection::Faces(vec![face_id.clone()]);
+            *continuity = edited_continuity;
+            *merge_result = Some(true);
+        });
     }
 
     let mut encoded = Vec::new();
@@ -1233,20 +1188,17 @@ fn semantic_writer_round_trips_trim_surface() {
 
     {
         let mut ir_edit = decoded.ir_mut();
-        ir_edit.model.features[0]
-            .evaluation
-            .try_edit(|definition, _| {
-                let FeatureDefinition::TrimSurface {
-                    faces, tool, keep, ..
-                } = definition
-                else {
-                    panic!("typed trim surface");
-                };
-                *faces = FaceSelection::Faces(vec![face_id.clone()]);
-                *tool = PathRef::Edges(vec![edge_id.clone()]);
-                *keep = TrimRegion::Outside;
-            })
-            .unwrap();
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::TrimSurface {
+                faces, tool, keep, ..
+            } = definition
+            else {
+                panic!("typed trim surface");
+            };
+            *faces = FaceSelection::Faces(vec![face_id.clone()]);
+            *tool = PathRef::Edges(vec![edge_id.clone()]);
+            *keep = TrimRegion::Outside;
+        });
     }
 
     let mut encoded = Vec::new();
@@ -1306,22 +1258,19 @@ fn semantic_writer_round_trips_extend_surface() {
 
     {
         let mut ir_edit = decoded.ir_mut();
-        ir_edit.model.features[0]
-            .evaluation
-            .try_edit(|definition, _| {
-                let FeatureDefinition::ExtendSurface {
-                    faces,
-                    distance,
-                    method,
-                } = definition
-                else {
-                    panic!("typed extended surface");
-                };
-                *faces = FaceSelection::Faces(vec![face_id.clone()]);
-                *distance = Some(cadmpeg_ir::scalar::PositiveLength::new(4.5).unwrap());
-                *method = SurfaceExtension::Linear;
-            })
-            .unwrap();
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::ExtendSurface {
+                faces,
+                distance,
+                method,
+            } = definition
+            else {
+                panic!("typed extended surface");
+            };
+            *faces = FaceSelection::Faces(vec![face_id.clone()]);
+            *distance = Some(cadmpeg_ir::scalar::PositiveLength::new(4.5).unwrap());
+            *method = SurfaceExtension::Linear;
+        });
     }
 
     let mut encoded = Vec::new();
@@ -1390,25 +1339,22 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
 
     {
         let mut ir_edit = decoded.ir_mut();
-        ir_edit.model.features[0]
-            .evaluation
-            .try_edit(|definition, _| {
-                let FeatureDefinition::RuledSurface {
-                    edges,
-                    support_faces,
-                    mode,
-                    ..
-                } = definition
-                else {
-                    panic!("typed ruled surface");
-                };
-                *edges = EdgeSelection::Edges(vec![edge_id.clone()]);
-                *support_faces = FaceSelection::Faces(vec![face_id.clone()]);
-                *mode = RuledSurfaceMode::Normal {
-                    distance: cadmpeg_ir::scalar::PositiveLength::new(3.0).unwrap(),
-                };
-            })
-            .unwrap();
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::RuledSurface {
+                edges,
+                support_faces,
+                mode,
+                ..
+            } = definition
+            else {
+                panic!("typed ruled surface");
+            };
+            *edges = EdgeSelection::Edges(vec![edge_id.clone()]);
+            *support_faces = FaceSelection::Faces(vec![face_id.clone()]);
+            *mode = RuledSurfaceMode::Normal {
+                distance: cadmpeg_ir::scalar::PositiveLength::new(3.0).unwrap(),
+            };
+        });
     }
 
     let mut encoded = Vec::new();
@@ -1430,17 +1376,14 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
 
     {
         let mut ir_edit = regenerated.ir_mut();
-        ir_edit.model.features[0]
-            .evaluation
-            .try_edit(|definition, _| {
-                let FeatureDefinition::RuledSurface { mode, .. } = definition else {
-                    panic!("typed ruled surface");
-                };
-                *mode = RuledSurfaceMode::Tangent {
-                    distance: cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap(),
-                };
-            })
-            .unwrap();
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::RuledSurface { mode, .. } = definition else {
+                panic!("typed ruled surface");
+            };
+            *mode = RuledSurfaceMode::Tangent {
+                distance: cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap(),
+            };
+        });
     }
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(
@@ -1500,26 +1443,23 @@ fn semantic_writer_round_trips_projected_curve() {
 
     {
         let mut ir_edit = decoded.ir_mut();
-        ir_edit.model.features[0]
-            .evaluation
-            .try_edit(|definition, _| {
-                let FeatureDefinition::ProjectedCurve {
-                    source,
-                    target_faces,
-                    direction,
-                    bidirectional,
-                } = definition
-                else {
-                    panic!("typed projected curve");
-                };
-                *source = PathRef::Edges(vec![edge_id.clone()]);
-                *target_faces = FaceSelection::Faces(vec![face_id.clone()]);
-                *direction = cadmpeg_ir::features::CurveProjectionDirection::State(
-                    cadmpeg_ir::features::CurveProjectionDirectionState::TargetNormal,
-                );
-                *bidirectional = Some(true);
-            })
-            .unwrap();
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::ProjectedCurve {
+                source,
+                target_faces,
+                direction,
+                bidirectional,
+            } = definition
+            else {
+                panic!("typed projected curve");
+            };
+            *source = PathRef::Edges(vec![edge_id.clone()]);
+            *target_faces = FaceSelection::Faces(vec![face_id.clone()]);
+            *direction = cadmpeg_ir::features::CurveProjectionDirection::State(
+                cadmpeg_ir::features::CurveProjectionDirectionState::TargetNormal,
+            );
+            *bidirectional = Some(true);
+        });
     }
 
     let mut encoded = Vec::new();
@@ -1585,21 +1525,18 @@ fn semantic_writer_round_trips_ordered_composite_curve() {
 
     {
         let mut ir_edit = decoded.ir_mut();
-        ir_edit.model.features[0]
-            .evaluation
-            .try_edit(|definition, _| {
-                let FeatureDefinition::CompositeCurve { segments, closed } = definition else {
-                    panic!("typed composite curve");
-                };
-                *segments = vec![
-                    PathRef::Edges(vec![second_id.clone()]),
-                    PathRef::Edges(vec![first_id.clone()]),
-                ]
-                .try_into()
-                .unwrap();
-                *closed = true;
-            })
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::CompositeCurve { segments, closed } = definition else {
+                panic!("typed composite curve");
+            };
+            *segments = vec![
+                PathRef::Edges(vec![second_id.clone()]),
+                PathRef::Edges(vec![first_id.clone()]),
+            ]
+            .try_into()
             .unwrap();
+            *closed = true;
+        });
     }
 
     let mut encoded = Vec::new();
@@ -1681,9 +1618,7 @@ fn semantic_writer_round_trips_typed_revolution() {
             },
         }));
         *op = BooleanOp::Cut;
-        updated_ir_edit_evaluation
-            .set_definition(updated_ir_edit_definition)
-            .unwrap();
+        updated_ir_edit_evaluation.set_definition(updated_ir_edit_definition);
     }
 
     let mut encoded = Vec::new();
@@ -1849,9 +1784,7 @@ fn semantic_writer_round_trips_all_revolution_extents() {
             },
         }));
         *op = BooleanOp::Intersect;
-        updated_ir_edit_evaluation
-            .set_definition(updated_ir_edit_definition)
-            .unwrap();
+        updated_ir_edit_evaluation.set_definition(updated_ir_edit_definition);
     }
 
     let mut encoded = Vec::new();

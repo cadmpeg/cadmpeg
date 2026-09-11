@@ -435,10 +435,7 @@ pub(in super::super) fn reconcile_feature_links(
             continue;
         };
         if let Some(outputs) = output_updates.get(&feature.id) {
-            feature
-                .evaluation
-                .set_outputs(outputs.clone())
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            feature.evaluation.set_outputs(outputs.clone());
         }
         let native_dependencies = native_feature_dependency_ids(
             &scan.features.affected_ids,

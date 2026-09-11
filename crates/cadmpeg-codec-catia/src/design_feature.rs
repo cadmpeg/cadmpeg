@@ -366,8 +366,7 @@ fn assign_native_operation_parameter_values(
                         .set_definition(FeatureDefinition::Native {
                             kind: kind.clone(),
                             parameters: values,
-                        })
-                        .map_err(cadmpeg_core::CodecError::malformed)?;
+                        });
                 }
             }
             FeatureDefinition::Unresolved {

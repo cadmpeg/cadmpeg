@@ -73,15 +73,12 @@ fn semantic_writer_rejects_compact_edge_selection_edits() {
             .iter_mut()
             .find(|feature| feature.name.as_deref() == Some("Round"))
             .unwrap();
-        feature
-            .evaluation
-            .try_edit(|definition, _| {
-                let FeatureDefinition::Fillet { groups } = definition else {
-                    panic!("typed fillet");
-                };
-                groups[0].edges = EdgeSelection::Native("changed".into());
-            })
-            .unwrap();
+        feature.evaluation.edit(|definition, _| {
+            let FeatureDefinition::Fillet { groups } = definition else {
+                panic!("typed fillet");
+            };
+            groups[0].edges = EdgeSelection::Native("changed".into());
+        });
     }
 
     let error = crate::test_support::plan_inherited_write(
@@ -188,9 +185,7 @@ fn semantic_writer_rejects_compact_surface_selection_edits() {
             panic!("to-face termination");
         };
         *face = FaceSelection::Native("changed".into());
-        updated_feature_evaluation
-            .set_definition(updated_feature_definition)
-            .unwrap();
+        updated_feature_evaluation.set_definition(updated_feature_definition);
     }
 
     let error = crate::test_support::plan_inherited_write(
