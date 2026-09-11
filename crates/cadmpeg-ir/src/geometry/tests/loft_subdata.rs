@@ -55,8 +55,7 @@ fn loft_subdata_names_its_form_and_refuses_a_211_table() {
     let mut coded = wire.clone();
     coded["type_code"] = serde_json::json!(211);
     let error = serde_json::from_value::<LoftSubdata>(coded)
-        .err()
-        .expect("211 is not a table type code")
+        .unwrap_err()
         .to_string();
     assert!(error.contains("211"), "{error}");
 
@@ -66,16 +65,14 @@ fn loft_subdata_names_its_form_and_refuses_a_211_table() {
         .expect("object")
         .insert("row_count".to_string(), serde_json::json!(2));
     let error = serde_json::from_value::<LoftSubdata>(restated)
-        .err()
-        .expect("row_count is not a wire field")
+        .unwrap_err()
         .to_string();
     assert!(error.contains("row_count"), "{error}");
 
     let mut ragged = wire;
     ragged["rows"][1]["columns"] = serde_json::json!([[6.0, 7.0], [8.0, 9.0]]);
     let error = serde_json::from_value::<LoftSubdata>(ragged)
-        .err()
-        .expect("rows share one column width")
+        .unwrap_err()
         .to_string();
     assert!(error.contains("column width"), "{error}");
 }

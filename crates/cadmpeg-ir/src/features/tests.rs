@@ -236,13 +236,10 @@ fn revolve_construction_carries_its_axis_reference_inside_the_axis() {
     assert_eq!(serde_json::to_value(definition).unwrap(), wire);
 
     let mut sibling = wire;
-    sibling["construction"]
-        .as_object_mut()
-        .unwrap()
-        .insert(
-            "axis_reference".to_string(),
-            serde_json::json!({"kind": "native", "value": "test:axis"}),
-        );
+    sibling["construction"].as_object_mut().unwrap().insert(
+        "axis_reference".to_string(),
+        serde_json::json!({"kind": "native", "value": "test:axis"}),
+    );
     let error = serde_json::from_value::<FeatureDefinition>(sibling)
         .unwrap_err()
         .to_string();

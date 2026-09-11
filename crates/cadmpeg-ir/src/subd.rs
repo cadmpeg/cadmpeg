@@ -547,7 +547,6 @@ impl TryFrom<SubdSymmetryWire> for SubdSymmetry {
     }
 }
 
-
 /// Subdivision scheme used by a control cage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]

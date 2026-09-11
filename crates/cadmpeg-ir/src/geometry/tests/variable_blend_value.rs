@@ -15,7 +15,10 @@ fn a_variable_blend_value_states_no_native_name_on_its_wire() {
 
     for name in ["two_ends", "const", "unknown"] {
         let mut restated = wire.clone();
-        restated.as_object_mut().unwrap().insert("name".to_string(), json!(name));
+        restated
+            .as_object_mut()
+            .unwrap()
+            .insert("name".to_string(), json!(name));
         let error = serde_json::from_value::<VariableBlendValue>(restated).unwrap_err();
         assert!(error.to_string().contains("name"), "{error}");
     }
