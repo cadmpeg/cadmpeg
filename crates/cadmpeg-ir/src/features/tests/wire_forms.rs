@@ -450,6 +450,8 @@ fn hole_construction_forms_preserve_the_nested_shape_wire_layout() {
     let standard = serde_json::json!({
         "definition": "hole",
         "shape": {
+            "construction": {
+            "construction": "form",
             "kind": {"kind": "simple"},
             "specification": {
                 "standard": "ISO metric",
@@ -460,6 +462,7 @@ fn hole_construction_forms_preserve_the_nested_shape_wire_layout() {
                 "cosmetic": false,
                 "hand": "right",
                 "depth": {"kind": "hole_depth"}
+            }
             }
         }
     });
@@ -475,14 +478,14 @@ fn hole_construction_forms_preserve_the_nested_shape_wire_layout() {
     let native_thread = serde_json::json!({
         "definition": "hole",
         "shape": {
-            "diameter": 6.0,
-            "kind": {
-                "kind": "threaded",
+            "construction": {
+                "construction": "native_thread",
                 "major_diameter": 8.0,
                 "thread_depth": 12.0,
                 "pitch": 1.25,
                 "drill_point_angle": 2.0
-            }
+            },
+            "diameter": 6.0
         }
     });
     let definition: FeatureDefinition = serde_json::from_value(native_thread.clone()).unwrap();
@@ -528,7 +531,7 @@ fn an_unknown_key_beside_the_hole_shape_is_rejected_by_name() {
 
     let hole = serde_json::json!({
         "definition": "hole",
-        "shape": {"kind": {"kind": "simple"}, "diameter": 3.0}
+        "shape": {"construction": {"construction": "form", "kind": {"kind": "simple"}}, "diameter": 3.0}
     });
     assert!(serde_json::from_value::<FeatureDefinition>(hole.clone()).is_ok());
 
@@ -1042,13 +1045,37 @@ fn an_unknown_hole_wire_key_is_rejected_by_name() {
     assert!(error.contains("counter_bore_depth"), "{error}");
 
     let error = serde_json::from_value::<HoleShape>(serde_json::json!({
-        "kind": {"kind": "partial_counterbore", "diameter": 10.0},
+        "construction": {
+            "construction": "form",
+            "kind": {"kind": "partial_counterbore", "dimension": {"kind": "diameter", "diameter": 10.0}}
+        },
         "diameter": 2.0,
         "counter_bore_depth": 4.0
     }))
     .unwrap_err()
     .to_string();
     assert!(error.contains("counter_bore_depth"), "{error}");
+
+    let error = serde_json::from_value::<HoleShape>(serde_json::json!({
+        "construction": {
+            "construction": "native_thread",
+            "major_diameter": 8.0,
+            "thread_depth": 12.0,
+            "drill_point_angle": 2.0,
+            "specification": {
+                "standard": "ISO metric",
+                "threaded": false,
+                "modeled": false,
+                "cosmetic": false,
+                "hand": "right",
+                "depth": {"kind": "hole_depth"}
+            }
+        },
+        "diameter": 2.0
+    }))
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("unknown field `specification`"), "{error}");
 
     let error = serde_json::from_value::<HoleSpecification>(serde_json::json!({
         "standard": "iso",

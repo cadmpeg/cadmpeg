@@ -20167,12 +20167,15 @@
                 "points": true
               },
               "shape": {
-                "diameter": 6.0,
-                "kind": {
-                  "angle": 1.4311699866353502,
-                  "diameter": 10.0,
-                  "kind": "countersink"
-                }
+                "construction": {
+                  "construction": "form",
+                  "kind": {
+                    "angle": 1.4311699866353502,
+                    "diameter": 10.0,
+                    "kind": "countersink"
+                  }
+                },
+                "diameter": 6.0
               }
             },
             "refine": true

@@ -18,8 +18,11 @@
           "definition": {
             "definition": "hole",
             "shape": {
-              "kind": {
-                "kind": "unresolved"
+              "construction": {
+                "construction": "form",
+                "kind": {
+                  "kind": "unresolved"
+                }
               }
             }
           },
