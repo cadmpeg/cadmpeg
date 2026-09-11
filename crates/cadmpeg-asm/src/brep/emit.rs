@@ -55,7 +55,7 @@ fn map_law_formula(
     mut map: impl FnMut(usize, EmbeddedLawExpression) -> cadmpeg_ir::geometry::LawExpression,
 ) -> cadmpeg_ir::geometry::LawFormula {
     match formula {
-        EmbeddedLawFormula::Null => cadmpeg_ir::geometry::LawFormula::Null,
+        EmbeddedLawFormula::Null => cadmpeg_ir::geometry::LawFormula::Null {},
         EmbeddedLawFormula::Named { name, variables } => cadmpeg_ir::geometry::LawFormula::Named {
             name,
             variables: variables

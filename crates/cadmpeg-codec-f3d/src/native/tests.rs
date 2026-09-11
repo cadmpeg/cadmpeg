@@ -505,8 +505,8 @@ fn stamped_law_intcurve_round_trips_byte_exactly() {
         LawExpression::TransformVec { .. }
     ));
     assert_eq!(additional.len(), 4);
-    assert!(matches!(additional[0], LawFormula::Null));
-    assert!(matches!(additional[1], LawFormula::Null));
+    assert!(matches!(additional[0], LawFormula::Null {}));
+    assert!(matches!(additional[1], LawFormula::Null {}));
     assert_eq!(additional[2].name(), raw_name);
     assert_eq!(additional[3].name(), "TRANS(VEC(X,X2,X3),TRANS1)");
     assert!(matches!(

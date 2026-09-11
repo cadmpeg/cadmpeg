@@ -5468,7 +5468,7 @@ fn unit_domain_sweep_formula(name: &str) -> bool {
 
 fn sweep_rail_basis(formula: &LawFormula) -> Option<[Vector3; 3]> {
     match formula {
-        LawFormula::Null => {
+        LawFormula::Null {} => {
             return Some([
                 Vector3::new(1.0, 0.0, 0.0),
                 Vector3::new(0.0, 1.0, 0.0),

@@ -405,6 +405,7 @@
             },
             "extension": 0,
             "primary": {
+              "kind": "named",
               "name": "primary_law",
               "variables": [
                 {
@@ -419,12 +420,10 @@
             },
             "additional": [
               {
-                "name": "null_law",
-                "variables": []
+                "kind": "null"
               },
               {
-                "name": "null_law",
-                "variables": []
+                "kind": "null"
               }
             ]
           },

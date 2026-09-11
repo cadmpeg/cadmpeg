@@ -349,6 +349,7 @@
             "kind": "law",
             "construction": {
               "primary": {
+                "kind": "named",
                 "name": "primary-law",
                 "variables": [
                   {
@@ -365,6 +366,7 @@
               },
               "additional": [
                 {
+                  "kind": "named",
                   "name": "aux-law",
                   "variables": [
                     {

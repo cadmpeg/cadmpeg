@@ -461,16 +461,13 @@
                 ],
                 "formulas": [
                   {
-                    "name": "null_law",
-                    "variables": []
+                    "kind": "null"
                   },
                   {
-                    "name": "null_law",
-                    "variables": []
+                    "kind": "null"
                   },
                   {
-                    "name": "null_law",
-                    "variables": []
+                    "kind": "null"
                   }
                 ]
               },
