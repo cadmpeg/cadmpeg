@@ -723,12 +723,12 @@ impl SubdVertexGripLayout {
             return Err(SubdError("secondary_grips.wedges is empty".into()));
         }
         let spoke_count = |wedge: &SubdGripWedge| match wedge {
-            SubdGripWedge::Phantom => 0,
+            SubdGripWedge::Phantom {} => 0,
             SubdGripWedge::Slot { spokes, .. } => spokes.len(),
         };
         for (index, (wedge, next)) in wedges.iter().zip(wedges.iter().cycle().skip(1)).enumerate() {
             let sector_count = match wedge {
-                SubdGripWedge::Phantom => 0,
+                SubdGripWedge::Phantom {} => 0,
                 SubdGripWedge::Slot { sectors, .. } => sectors.len(),
             };
             if spoke_count(wedge).checked_mul(spoke_count(next)) != Some(sector_count) {
@@ -752,10 +752,12 @@ impl SubdVertexGripLayout {
 }
 
 /// One wedge in a secondary-grip layout.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SubdGripWedge {
     /// Boundary padding with no topology or grip data.
-    Phantom,
+    Phantom {},
     /// One topology and grip slot in the vertex fan.
     Slot {
         /// IR edge for this fan slot.
@@ -768,84 +770,6 @@ pub enum SubdGripWedge {
         /// next-spoke position, with `S[k] * S[k + 1]` slots.
         sectors: Vec<Option<SubdSecondaryGrip>>,
     },
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct SubdGripWedgeWire {
-    edge: Option<u32>,
-    sector_face: Option<u32>,
-    phantom: bool,
-    spokes: Vec<Option<SubdSecondaryGrip>>,
-    sectors: Vec<Option<SubdSecondaryGrip>>,
-}
-
-impl Serialize for SubdGripWedge {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let wire = match self {
-            Self::Phantom => SubdGripWedgeWire {
-                edge: None,
-                sector_face: None,
-                phantom: true,
-                spokes: Vec::new(),
-                sectors: Vec::new(),
-            },
-            Self::Slot {
-                edge,
-                sector_face,
-                spokes,
-                sectors,
-            } => SubdGripWedgeWire {
-                edge: *edge,
-                sector_face: *sector_face,
-                phantom: false,
-                spokes: spokes.clone(),
-                sectors: sectors.clone(),
-            },
-        };
-        wire.serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for SubdGripWedge {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let wire = SubdGripWedgeWire::deserialize(deserializer)?;
-        if !wire.phantom {
-            return Ok(Self::Slot {
-                edge: wire.edge,
-                sector_face: wire.sector_face,
-                spokes: wire.spokes,
-                sectors: wire.sectors,
-            });
-        }
-        if wire.edge.is_some()
-            || wire.sector_face.is_some()
-            || !wire.spokes.is_empty()
-            || !wire.sectors.is_empty()
-        {
-            return Err(serde::de::Error::custom(
-                "phantom SubD grip wedge cannot carry topology or grip data",
-            ));
-        }
-        Ok(Self::Phantom)
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for SubdGripWedge {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "SubdGripWedge".into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        SubdGripWedgeWire::json_schema(generator)
-    }
 }
 
 /// A secondary grip point and its source grip-array identity.

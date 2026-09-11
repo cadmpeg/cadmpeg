@@ -652,7 +652,7 @@ fn build_secondary_layouts(
                         "phantom wedge carries a nonzero spoke length",
                     ));
                 }
-                wedges.push(SubdGripWedge::Phantom);
+                wedges.push(SubdGripWedge::Phantom {});
                 continue;
             };
             let edge = Some(
@@ -1613,7 +1613,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         assert_eq!(spokes[0].as_ref().unwrap().source_index(), 4);
         assert!(layout.wedges()[2..]
             .iter()
-            .all(|wedge| matches!(wedge, SubdGripWedge::Phantom)));
+            .all(|wedge| matches!(wedge, SubdGripWedge::Phantom {})));
         assert!(matches!(
             &layout.wedges()[1],
             SubdGripWedge::Slot {

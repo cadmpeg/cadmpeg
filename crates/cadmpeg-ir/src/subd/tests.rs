@@ -73,21 +73,15 @@ fn subd_round_trip_and_directed_ring_validation() {
 }
 
 #[test]
-fn grip_wedge_keeps_the_flat_wire_shape() {
-    let phantom_wire = serde_json::json!({
-        "edge": null,
-        "sector_face": null,
-        "phantom": true,
-        "spokes": [],
-        "sectors": [],
-    });
+fn a_grip_wedge_states_its_kind_and_carries_only_its_own_keys() {
+    let phantom_wire = serde_json::json!({"kind": "phantom"});
     assert_eq!(
-        serde_json::to_value(SubdGripWedge::Phantom).unwrap(),
+        serde_json::to_value(SubdGripWedge::Phantom {}).unwrap(),
         phantom_wire
     );
     assert_eq!(
         serde_json::from_value::<SubdGripWedge>(phantom_wire).unwrap(),
-        SubdGripWedge::Phantom
+        SubdGripWedge::Phantom {}
     );
 
     let slot = SubdGripWedge::Slot {
@@ -96,29 +90,38 @@ fn grip_wedge_keeps_the_flat_wire_shape() {
         spokes: Vec::new(),
         sectors: Vec::new(),
     };
-    assert_eq!(
-        serde_json::to_value(&slot).unwrap(),
-        serde_json::json!({
-            "edge": 3,
-            "sector_face": null,
-            "phantom": false,
-            "spokes": [],
-            "sectors": [],
-        })
-    );
-}
-
-#[test]
-fn grip_wedge_rejects_phantom_payload() {
-    let error = serde_json::from_value::<SubdGripWedge>(serde_json::json!({
+    let slot_wire = serde_json::json!({
+        "kind": "slot",
         "edge": 3,
         "sector_face": null,
-        "phantom": true,
         "spokes": [],
         "sectors": [],
+    });
+    assert_eq!(serde_json::to_value(&slot).unwrap(), slot_wire);
+    assert_eq!(
+        serde_json::from_value::<SubdGripWedge>(slot_wire).unwrap(),
+        slot
+    );
+
+    let error = serde_json::from_value::<SubdGripWedge>(serde_json::json!({
+        "kind": "phantom",
+        "edge": 3,
     }))
-    .unwrap_err();
-    assert!(error.to_string().contains("phantom SubD grip wedge"));
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("edge"), "{error}");
+
+    let error = serde_json::from_value::<SubdGripWedge>(serde_json::json!({
+        "kind": "slot",
+        "edge": 3,
+        "sector_face": null,
+        "spokes": [],
+        "sectors": [],
+        "phantom": false,
+    }))
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("phantom"), "{error}");
 }
 
 #[test]
@@ -259,7 +262,7 @@ fn cage_admission_requires_non_empty_grip_layouts_and_valid_sector_arity() {
     for wedges in [
         serde_json::json!([]),
         serde_json::json!([{
-            "edge": 0, "sector_face": null, "phantom": false, "spokes": [null], "sectors": []
+            "kind": "slot", "edge": 0, "sector_face": null, "spokes": [null], "sectors": []
         }]),
     ] {
         let mut wire = serde_json::to_value(triangle_cage()).unwrap();
@@ -283,7 +286,7 @@ fn cage_admission_requires_incident_grip_topology() {
             wire["vertices"].as_array_mut().unwrap().push(extra);
         }
         wire["vertices"][owner]["secondary_grips"] = serde_json::json!({
-            "direction": "north", "wedges": [{ "edge": edge, "sector_face": face, "phantom": false, "spokes": [], "sectors": [] }]
+            "direction": "north", "wedges": [{ "kind": "slot", "edge": edge, "sector_face": face, "spokes": [], "sectors": [] }]
         });
         rejects_cage_wire(wire);
     }
@@ -294,7 +297,7 @@ fn grip_indices_are_unique_across_the_whole_cage() {
     let mut wire = serde_json::to_value(triangle_cage()).unwrap();
     for owner in 0..2 {
         wire["vertices"][owner]["secondary_grips"] = serde_json::json!({
-            "direction": "north", "wedges": [{ "edge": 0, "sector_face": null, "phantom": false,
+            "direction": "north", "wedges": [{ "kind": "slot", "edge": 0, "sector_face": null,
             "spokes": [{ "source_index": 42, "point": { "x": 0.0, "y": 0.0, "z": 0.0 }, "weight": 1.0 }], "sectors": [null] }]
         });
     }
@@ -473,7 +476,7 @@ fn grip_layout_admits_cyclic_arity_before_cage_construction() {
     for wedges in [
         Vec::new(),
         vec![slot(vec![None], Vec::new())],
-        vec![slot(vec![None], vec![None]), SubdGripWedge::Phantom],
+        vec![slot(vec![None], vec![None]), SubdGripWedge::Phantom {}],
         vec![
             slot(vec![None], vec![None, None]),
             slot(vec![None, None], Vec::new()),
@@ -484,7 +487,7 @@ fn grip_layout_admits_cyclic_arity_before_cage_construction() {
         assert!(serde_json::from_value::<SubdVertexGripLayout>(wire).is_err());
     }
     for wedges in [
-        vec![SubdGripWedge::Phantom],
+        vec![SubdGripWedge::Phantom {}],
         vec![slot(vec![None], vec![None])],
         vec![
             slot(vec![None], vec![None, None]),
