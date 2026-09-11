@@ -2165,9 +2165,7 @@ impl TreeChildren {
             return Err("active_child must belong to children");
         }
         Ok(Self {
-            children: children
-                .try_into()
-                .map_err(|_| "children must be distinct")?,
+            children: children.try_into()?,
             active_child,
         })
     }
@@ -6763,7 +6761,7 @@ pub enum SweepSection {
 
 impl SweepSection {
     /// Returns the referenced profile when this section does not own its geometry.
-    pub fn referenced_profile(&self) -> Option<&ProfileRef> {
+    pub const fn referenced_profile(&self) -> Option<&PlanarProfileRef> {
         match self {
             Self::Profile(profile) => Some(profile),
             Self::Unresolved(_) | Self::Generated(_) => None,
@@ -7381,65 +7379,6 @@ pub enum BinderOffsetJoin {
     Intersection,
 }
 
-/// A profile reference excluding spatial-sketch profile forms.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(transparent)]
-pub struct PlanarProfileRef(ProfileRef);
-
-impl TryFrom<ProfileRef> for PlanarProfileRef {
-    type Error = &'static str;
-    fn try_from(profile: ProfileRef) -> Result<Self, Self::Error> {
-        if matches!(
-            profile,
-            ProfileRef::SpatialSketchProfiles { .. } | ProfileRef::SpatialSketchSelection { .. }
-        ) {
-            return Err("profile must not select spatial-sketch profiles");
-        }
-        Ok(Self(profile))
-    }
-}
-
-impl std::ops::Deref for PlanarProfileRef {
-    type Target = ProfileRef;
-    fn deref(&self) -> &ProfileRef {
-        &self.0
-    }
-}
-
-impl AsRef<ProfileRef> for PlanarProfileRef {
-    fn as_ref(&self) -> &ProfileRef {
-        &self.0
-    }
-}
-
-impl From<crate::sketches::SketchId> for PlanarProfileRef {
-    fn from(sketch: crate::sketches::SketchId) -> Self {
-        Self(ProfileRef::Sketch(sketch))
-    }
-}
-
-impl PlanarProfileRef {
-    /// Retain a native profile reference.
-    pub fn native(reference: String) -> Self {
-        Self(ProfileRef::Native(reference))
-    }
-
-    /// Admit a profile edit before replacing the reference.
-    pub fn try_edit(&mut self, edit: impl FnOnce(&mut ProfileRef)) -> Result<(), &'static str> {
-        let mut profile = self.0.clone();
-        edit(&mut profile);
-        *self = Self::try_from(profile)?;
-        Ok(())
-    }
-}
-
-impl<'de> Deserialize<'de> for PlanarProfileRef {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Self::try_from(ProfileRef::deserialize(deserializer)?).map_err(serde::de::Error::custom)
-    }
-}
-
 /// A feature operation eligible for a single post-processing layer.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -7509,7 +7448,8 @@ impl<'de> Deserialize<'de> for UnprocessedFeature {
     }
 }
 
-/// Profile consumed by a profile-driven feature.
+/// Profile consumed by a profile-driven feature that admits no spatial-sketch
+/// form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
@@ -7518,7 +7458,7 @@ impl<'de> Deserialize<'de> for UnprocessedFeature {
     rename_all = "snake_case",
     deny_unknown_fields
 )]
-pub enum ProfileRef {
+pub enum PlanarProfileRef {
     /// A profile is required by the identified native owner but its carrier is unresolved.
     Unresolved(String),
     /// Opaque reference into a native feature-input record; no neutral geometry given.
@@ -7556,22 +7496,6 @@ pub enum ProfileRef {
         #[serde(deserialize_with = "deserialize_selection_selections")]
         selections: NativeSelections,
     },
-    /// Specific solved profile loops within one neutral spatial sketch.
-    SpatialSketchProfiles {
-        /// Spatial sketch containing the selected loops.
-        sketch: crate::sketches::SpatialSketchId,
-        /// Zero-based indices into [`crate::sketches::SpatialSketch::profiles`].
-        #[serde(deserialize_with = "deserialize_selection_profiles")]
-        profiles: SelectionMembers<u32>,
-    },
-    /// Source-native selection within a known neutral spatial sketch.
-    SpatialSketchSelection {
-        /// Spatial sketch containing the unresolved selected geometry.
-        sketch: crate::sketches::SpatialSketchId,
-        /// Full-fidelity native selection records in source order.
-        #[serde(deserialize_with = "deserialize_selection_selections")]
-        selections: NativeSelections,
-    },
     /// Profile given by faces in the consuming feature's input topology.
     HistoricalFaces {
         /// Input topology containing every selected face.
@@ -7597,6 +7521,62 @@ pub enum ProfileRef {
     },
     /// Profile given directly as a set of solved B-rep faces.
     Faces(Vec<FaceId>),
+}
+
+/// Profile consumed by a profile-driven feature.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+pub enum ProfileRef {
+    /// Specific solved profile loops within one neutral spatial sketch.
+    SpatialSketchProfiles {
+        /// Spatial sketch containing the selected loops.
+        sketch: crate::sketches::SpatialSketchId,
+        /// Zero-based indices into [`crate::sketches::SpatialSketch::profiles`].
+        #[serde(deserialize_with = "deserialize_selection_profiles")]
+        profiles: SelectionMembers<u32>,
+    },
+    /// Source-native selection within a known neutral spatial sketch.
+    SpatialSketchSelection {
+        /// Spatial sketch containing the unresolved selected geometry.
+        sketch: crate::sketches::SpatialSketchId,
+        /// Full-fidelity native selection records in source order.
+        #[serde(deserialize_with = "deserialize_selection_selections")]
+        selections: NativeSelections,
+    },
+    /// Any profile form that does not select spatial-sketch geometry.
+    #[serde(untagged)]
+    Planar(PlanarProfileRef),
+}
+
+impl From<crate::sketches::SketchId> for PlanarProfileRef {
+    fn from(sketch: crate::sketches::SketchId) -> Self {
+        Self::Sketch(sketch)
+    }
+}
+
+impl PlanarProfileRef {
+    /// Retain a native profile reference.
+    #[must_use]
+    pub const fn native(reference: String) -> Self {
+        Self::Native(reference)
+    }
+}
+
+impl ProfileRef {
+    /// Planar form of this profile, when it selects no spatial-sketch geometry.
+    #[must_use]
+    pub const fn planar(&self) -> Option<&PlanarProfileRef> {
+        match self {
+            Self::Planar(profile) => Some(profile),
+            _ => None,
+        }
+    }
 }
 
 /// One ordered cross-section consumed by a loft operation.
@@ -7692,7 +7672,7 @@ pub enum PathRef {
     },
 }
 
-impl ProfileRef {
+impl PlanarProfileRef {
     /// Admits nonempty distinct profile regions in one sketch.
     pub fn sketch_regions(
         sketch: crate::sketches::SketchId,
@@ -7703,7 +7683,6 @@ impl ProfileRef {
             regions: regions.try_into()?,
         })
     }
-
     /// Admits distinct profile indices in one planar sketch.
     pub fn sketch_profiles(
         sketch: crate::sketches::SketchId,
@@ -7714,18 +7693,6 @@ impl ProfileRef {
             profiles: profiles.try_into()?,
         })
     }
-
-    /// Admits distinct profile indices in one spatial sketch.
-    pub fn spatial_sketch_profiles(
-        sketch: crate::sketches::SpatialSketchId,
-        profiles: Vec<u32>,
-    ) -> Result<Self, BodySelectionError> {
-        Ok(Self::SpatialSketchProfiles {
-            sketch,
-            profiles: profiles.try_into()?,
-        })
-    }
-
     /// Admits distinct profile entities in one sketch.
     pub fn sketch_entities(
         sketch: crate::sketches::SketchId,
@@ -7736,7 +7703,6 @@ impl ProfileRef {
             entities: entities.try_into()?,
         })
     }
-
     /// Admits native profile selections in one sketch.
     pub fn sketch_selection(
         sketch: crate::sketches::SketchId,
@@ -7747,18 +7713,6 @@ impl ProfileRef {
             selections: selections.try_into()?,
         })
     }
-
-    /// Admits native profile selections in one spatial sketch.
-    pub fn spatial_sketch_selection(
-        sketch: crate::sketches::SpatialSketchId,
-        selections: Vec<String>,
-    ) -> Result<Self, BodySelectionError> {
-        Ok(Self::SpatialSketchSelection {
-            sketch,
-            selections: selections.try_into()?,
-        })
-    }
-
     /// Admits historical profile faces and native selection groups.
     pub fn historical_faces(
         state: FeatureInputTopologyId,
@@ -7771,7 +7725,6 @@ impl ProfileRef {
             native: native.try_into()?,
         })
     }
-
     /// Admits generated profile curves and their native reference.
     pub fn generated(
         curves: Vec<GeneratedCurveRef>,
@@ -7780,6 +7733,29 @@ impl ProfileRef {
         Ok(Self::Generated {
             curves: curves.try_into()?,
             native: native.try_into()?,
+        })
+    }
+}
+
+impl ProfileRef {
+    /// Admits distinct profile indices in one spatial sketch.
+    pub fn spatial_sketch_profiles(
+        sketch: crate::sketches::SpatialSketchId,
+        profiles: Vec<u32>,
+    ) -> Result<Self, BodySelectionError> {
+        Ok(Self::SpatialSketchProfiles {
+            sketch,
+            profiles: profiles.try_into()?,
+        })
+    }
+    /// Admits native profile selections in one spatial sketch.
+    pub fn spatial_sketch_selection(
+        sketch: crate::sketches::SpatialSketchId,
+        selections: Vec<String>,
+    ) -> Result<Self, BodySelectionError> {
+        Ok(Self::SpatialSketchSelection {
+            sketch,
+            selections: selections.try_into()?,
         })
     }
 }

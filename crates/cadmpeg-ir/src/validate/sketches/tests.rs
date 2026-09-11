@@ -499,7 +499,7 @@ fn sketch_constraint_native_ref_must_resolve() {
 fn sketch_feature_ownership_and_order_are_validated() {
     use crate::features::{
         BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
-        LinearTermination, ProfileRef,
+        LinearTermination, PlanarProfileRef, ProfileRef,
     };
     use crate::sketches::{Sketch, SketchId};
 
@@ -532,7 +532,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Extrude {
-                profile: ProfileRef::Sketch(sketch_id.clone()),
+                profile: ProfileRef::Planar(PlanarProfileRef::Sketch(sketch_id.clone())),
                 direction: ExtrudeDirection::ProfileNormal {},
                 start: crate::features::ExtrudeStart::ProfilePlane {},
                 extent: ExtrudeExtent::OneSided {
@@ -587,7 +587,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
 fn sketch_profile_subselections_are_bounds_checked() {
     use crate::features::{
         BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
-        LinearTermination, ProfileRef, SketchProfileRegion,
+        LinearTermination, PlanarProfileRef, ProfileRef, SketchProfileRegion,
     };
     use crate::sketches::{Sketch, SketchEntityId, SketchId};
 
@@ -644,22 +644,26 @@ fn sketch_profile_subselections_are_bounds_checked() {
     ir.model.features.push(feature(
         "invalid-profile-index",
         1,
-        ProfileRef::sketch_profiles(sketch_id.clone(), vec![0]).unwrap(),
+        ProfileRef::Planar(PlanarProfileRef::sketch_profiles(sketch_id.clone(), vec![0]).unwrap()),
     ));
     ir.model.features.push(feature(
         "invalid-region",
         2,
-        ProfileRef::sketch_regions(
-            sketch_id.clone(),
-            vec![SketchProfileRegion::loops(0, Vec::new()).unwrap()],
-        )
-        .unwrap(),
+        ProfileRef::Planar(
+            PlanarProfileRef::sketch_regions(
+                sketch_id.clone(),
+                vec![SketchProfileRegion::loops(0, Vec::new()).unwrap()],
+            )
+            .unwrap(),
+        ),
     ));
     let selected_entity = SketchEntityId::mint("synthetic:test:entity#missing").unwrap();
     ir.model.features.push(feature(
         "repeated-profile-entity",
         3,
-        ProfileRef::sketch_entities(sketch_id.clone(), vec![selected_entity]).unwrap(),
+        ProfileRef::Planar(
+            PlanarProfileRef::sketch_entities(sketch_id.clone(), vec![selected_entity]).unwrap(),
+        ),
     ));
 
     let findings = validate_neutral(&ir, Vec::new()).findings;

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed `PmDc` feature records and feature-list terminators.
+use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
 
 use crate::pmdc::unique_by;
 
@@ -16,7 +17,7 @@ use cadmpeg_ir::{
         BooleanOp, ChamferGroup, ChamferSpec, DesignParameter, DistinctMembers, EdgeSelection,
         ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, ExtrusionDirectionSource,
         Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureResultTopology, FilletGroup,
-        HoleKind, HolePlacement, LinearTermination, ParameterValue, ProfileRef, RadiusSpec,
+        HoleKind, HolePlacement, LinearTermination, ParameterValue, RadiusSpec,
     },
     scalar::{Angle, Length},
 };
@@ -1230,7 +1231,9 @@ fn project_extrusion(
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Extrude {
-                profile: ProfileRef::sketch_selection(sketch_id, selections).ok()?,
+                profile: ProfileRef::Planar(
+                    PlanarProfileRef::sketch_selection(sketch_id, selections).ok()?,
+                ),
                 direction: ExtrudeDirection::Explicit {
                     vector: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
                     source: Some(ExtrusionDirectionSource::Custom {}),

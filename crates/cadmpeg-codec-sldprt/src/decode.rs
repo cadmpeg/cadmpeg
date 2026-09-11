@@ -309,7 +309,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
     use cadmpeg_ir::features::{
         AngularTermination, BodyRetentionMode, BodySelection, BooleanOp, EdgeSelection,
         ExtrudeExtent, FaceSelection, FeatureDefinition, FeatureSourceContent, LinearTermination,
-        PathRef, ProfileRef, RevolveExtent, SplitFaceTool,
+        PathRef, PlanarProfileRef, ProfileRef, RevolveExtent, SplitFaceTool,
     };
     use cadmpeg_ir::sketches::{SketchGeometryDefinition, SpatialSketchGeometryDefinition};
 
@@ -981,16 +981,23 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
         BodySelection::Local { bodies, .. } => bodies.is_empty(),
         BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_) => true,
     };
+    let incomplete_planar_profile = |profile: &PlanarProfileRef| match profile {
+        PlanarProfileRef::Faces(faces) => faces.is_empty(),
+        PlanarProfileRef::Unresolved(_) | PlanarProfileRef::Native(_) => true,
+        PlanarProfileRef::Generated { .. }
+        | PlanarProfileRef::SketchProfiles { .. }
+        | PlanarProfileRef::SketchRegions { .. }
+        | PlanarProfileRef::SketchEntities { .. }
+        | PlanarProfileRef::SketchSelection { .. }
+        | PlanarProfileRef::HistoricalFaces { .. }
+        | PlanarProfileRef::Sketch(_)
+        | PlanarProfileRef::Feature(_) => false,
+    };
     let incomplete_profile = |profile: &ProfileRef| match profile {
-        ProfileRef::Faces(faces) => faces.is_empty(),
-        ProfileRef::Generated { .. } => false,
-        ProfileRef::SketchProfiles { .. } | ProfileRef::SpatialSketchProfiles { .. } => false,
-        ProfileRef::SketchRegions { .. } => false,
-        ProfileRef::SketchEntities { .. } => false,
-        ProfileRef::SketchSelection { .. } | ProfileRef::SpatialSketchSelection { .. } => false,
-        ProfileRef::HistoricalFaces { .. } => false,
-        ProfileRef::Unresolved(_) | ProfileRef::Native(_) => true,
-        ProfileRef::Sketch(_) | ProfileRef::Feature(_) => false,
+        ProfileRef::SpatialSketchProfiles { .. } | ProfileRef::SpatialSketchSelection { .. } => {
+            false
+        }
+        ProfileRef::Planar(profile) => incomplete_planar_profile(profile),
     };
     let incomplete_path = |path: &PathRef| match path {
         PathRef::Edges(edges) => edges.is_empty(),
@@ -1174,7 +1181,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
             FeatureDefinition::Wrap {
                 profile, face, ..
             } => {
-                incomplete_profile(profile) || incomplete_face_selection(face)
+                incomplete_planar_profile(profile) || incomplete_face_selection(face)
             }
             FeatureDefinition::Sketch { sketch, .. } => sketch.id().is_none(),
             FeatureDefinition::SpatialSketch { sketch } => sketch.is_none(),
@@ -1213,7 +1220,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                     cadmpeg_ir::features::RevolveConstruction::Resolved {
                         profile, extent, ..
                     } => {
-                        incomplete_profile(profile)
+                        incomplete_planar_profile(profile)
                             || incomplete_revolve_extent(extent)
                             || *op == BooleanOp::Unresolved
                     }
@@ -1231,10 +1238,10 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                 let sections = shape.sections();
                 let mode = shape.mode();
                 matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_))
-                    || section.referenced_profile().is_some_and(incomplete_profile)
+                    || section.referenced_profile().is_some_and(incomplete_planar_profile)
                     || sections.iter().any(|section| {
                         matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_))
-                            || section.referenced_profile().is_some_and(incomplete_profile)
+                            || section.referenced_profile().is_some_and(incomplete_planar_profile)
                     })
                     || path.as_ref().is_none_or(incomplete_path)
                     || matches!(
@@ -1245,7 +1252,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                     || matches!(mode, cadmpeg_ir::features::SweepMode::Unresolved {})
             }
             FeatureDefinition::HelicalSweep { construction, op } => {
-                incomplete_profile(&construction.profile) || *op == BooleanOp::Unresolved
+                incomplete_planar_profile(&construction.profile) || *op == BooleanOp::Unresolved
             }
             FeatureDefinition::Binder {
                 sources,
@@ -1304,7 +1311,10 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                     || *op == BooleanOp::Unresolved
             }
             FeatureDefinition::Rib { construction, op } => {
-                construction.profile.as_deref().is_none_or(incomplete_profile)
+                construction
+                    .profile
+                    .as_ref()
+                    .is_none_or(incomplete_planar_profile)
                     || construction.direction.is_none()
                     || construction.thickness.is_none()
                     || construction.side.is_none()
@@ -1312,7 +1322,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                     || *op == BooleanOp::Unresolved
             }
             FeatureDefinition::SheetMetalBaseFlange { profile, .. } => {
-                incomplete_profile(profile)
+                incomplete_planar_profile(profile)
             }
             FeatureDefinition::SheetMetalEdgeFlange { edges, .. } => {
                 incomplete_edge_selection(edges)
@@ -1595,7 +1605,7 @@ incomplete_face_selection(targets) || incomplete_face_selection(replacements)},
                 let exit_kind_is_unresolved = exit_kind
                     .as_ref()
                     .is_some_and(cadmpeg_ir::features::HoleKind::is_unresolved);
-                profile.as_deref().is_some_and(incomplete_profile)
+                profile.as_ref().is_some_and(incomplete_planar_profile)
                     || face.as_ref().is_some_and(incomplete_face_selection)
                     || placements.is_none()
                     || matches!(

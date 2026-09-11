@@ -14,6 +14,7 @@
 //! A framing failure or a stream without decoded geometry produces a
 //! metadata-only document. The report marks geometry and topology as blocking,
 //! and retained source data remains available for native replay.
+use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
 
 use cadmpeg_core::container::ContainerRole;
 
@@ -418,21 +419,27 @@ fn face_motion_is_resolved(motion: &cadmpeg_ir::features::FaceMotion) -> bool {
     }
 }
 
-fn profile_ref_is_resolved(profile: &cadmpeg_ir::features::ProfileRef) -> bool {
-    use cadmpeg_ir::features::ProfileRef;
-
+fn planar_profile_ref_is_resolved(profile: &PlanarProfileRef) -> bool {
     match profile {
-        ProfileRef::Unresolved(_)
-        | ProfileRef::Native(_)
-        | ProfileRef::SketchSelection { .. }
-        | ProfileRef::SpatialSketchSelection { .. } => false,
-        ProfileRef::Sketch(_) | ProfileRef::Feature(_) => true,
-        ProfileRef::SketchProfiles { .. } | ProfileRef::SpatialSketchProfiles { .. } => true,
-        ProfileRef::SketchRegions { .. } => true,
-        ProfileRef::SketchEntities { .. } => true,
-        ProfileRef::HistoricalFaces { .. } => true,
-        ProfileRef::Generated { .. } => true,
-        ProfileRef::Faces(faces) => !faces.is_empty(),
+        PlanarProfileRef::Unresolved(_)
+        | PlanarProfileRef::Native(_)
+        | PlanarProfileRef::SketchSelection { .. } => false,
+        PlanarProfileRef::Sketch(_)
+        | PlanarProfileRef::Feature(_)
+        | PlanarProfileRef::SketchProfiles { .. }
+        | PlanarProfileRef::SketchRegions { .. }
+        | PlanarProfileRef::SketchEntities { .. }
+        | PlanarProfileRef::HistoricalFaces { .. }
+        | PlanarProfileRef::Generated { .. } => true,
+        PlanarProfileRef::Faces(faces) => !faces.is_empty(),
+    }
+}
+
+fn profile_ref_is_resolved(profile: &cadmpeg_ir::features::ProfileRef) -> bool {
+    match profile {
+        ProfileRef::SpatialSketchSelection { .. } => false,
+        ProfileRef::SpatialSketchProfiles { .. } => true,
+        ProfileRef::Planar(profile) => planar_profile_ref_is_resolved(profile),
     }
 }
 
@@ -583,7 +590,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                                 && angular_termination_is_resolved(second)
                         }
                     };
-                    !profile_ref_is_resolved(profile)
+                    !planar_profile_ref_is_resolved(profile)
                         || axis.direction.unit().is_none()
                         || !extent_is_resolved
                         || *op == cadmpeg_ir::features::BooleanOp::Unresolved
@@ -607,7 +614,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
 
             let section_is_resolved = |section: &SweepSection| match section {
                 SweepSection::Unresolved(_) => false,
-                SweepSection::Profile(profile) => profile_ref_is_resolved(profile),
+                SweepSection::Profile(profile) => planar_profile_ref_is_resolved(profile),
                 SweepSection::Generated(_) => true,
             };
             let mode_is_resolved = match mode {
@@ -656,7 +663,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             };
             let diameter = shape.diameter();
 
-            let support_is_resolved = profile.as_deref().is_some_and(profile_ref_is_resolved)
+            let support_is_resolved = profile.as_ref().is_some_and(planar_profile_ref_is_resolved)
                 || face.as_ref().is_some_and(face_selection_is_resolved);
             let placements_are_resolved = placements.as_ref().is_some_and(|placements| {
                 !placements.is_empty()
@@ -832,7 +839,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             faces, distance, ..
         } => !face_selection_is_resolved(faces) || distance.is_none(),
         FeatureDefinition::SheetMetalBaseFlange { profile, .. } => {
-            !profile_ref_is_resolved(profile)
+            !planar_profile_ref_is_resolved(profile)
         }
         FeatureDefinition::SheetMetalEdgeFlange { edges, height, .. } => {
             !edge_selection_is_resolved(edges)
@@ -995,7 +1002,9 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
     use cadmpeg_ir::features::{
         BodySelection, EdgeSelection, ExtrudeExtent, ExtrudeStart, FaceSelection, LinearTermination,
     };
-    use cadmpeg_ir::features::{FeatureDefinition, NativeFeatureKind, PathRef, ProfileRef};
+    use cadmpeg_ir::features::{
+        FeatureDefinition, NativeFeatureKind, PathRef, PlanarProfileRef, ProfileRef,
+    };
     use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
     use std::collections::{HashMap, HashSet};
 
@@ -1483,7 +1492,8 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             } => {
                 if matches!(
                     profile,
-                    ProfileRef::Native(_) | ProfileRef::SketchSelection { .. }
+                    ProfileRef::Planar(PlanarProfileRef::Native(_))
+                        | ProfileRef::Planar(PlanarProfileRef::SketchSelection { .. })
                 ) {
                     gaps.profile_selections += 1;
                 }
@@ -1540,10 +1550,9 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                     ) || section.referenced_profile().is_some_and(|profile| {
                         matches!(
                             profile,
-                            ProfileRef::Native(_)
-                                | ProfileRef::Unresolved(_)
-                                | ProfileRef::SketchSelection { .. }
-                                | ProfileRef::SpatialSketchSelection { .. }
+                            PlanarProfileRef::Native(_)
+                                | PlanarProfileRef::Unresolved(_)
+                                | PlanarProfileRef::SketchSelection { .. }
                         )
                     }) {
                         gaps.profile_selections += 1;
@@ -1658,7 +1667,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                 face_selection(replacements);
             }
             FeatureDefinition::SheetMetalBaseFlange { profile, .. } => {
-                gaps.profile_selections += usize::from(!profile_ref_is_resolved(profile));
+                gaps.profile_selections += usize::from(!planar_profile_ref_is_resolved(profile));
             }
             FeatureDefinition::SheetMetalEdgeFlange { edges, .. }
             | FeatureDefinition::SheetMetalHem { edges, .. } => edge_selection(edges),

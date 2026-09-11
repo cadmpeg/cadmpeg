@@ -781,8 +781,10 @@ mod idless_history_binding_tests {
 
                 evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                     FeatureDefinition::Extrude {
-                        profile: cadmpeg_ir::features::ProfileRef::Unresolved(
-                            "extrusion-native".into(),
+                        profile: cadmpeg_ir::features::ProfileRef::Planar(
+                            cadmpeg_ir::features::PlanarProfileRef::Unresolved(
+                                "extrusion-native".into(),
+                            ),
                         ),
                         direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
                         start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
@@ -816,7 +818,7 @@ mod idless_history_binding_tests {
         assert!(matches!(
             features[1].evaluation.definition(),
             FeatureDefinition::Extrude {
-                profile: cadmpeg_ir::features::ProfileRef::Feature(actual),
+                profile: cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Feature(actual)),
                 ..
             } if actual == &profile_id
         ));

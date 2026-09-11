@@ -14,7 +14,7 @@ use crate::decode::sweep::{
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition as IrFeatureDefinition,
-    LinearTermination, ProfileRef,
+    LinearTermination, PlanarProfileRef, ProfileRef,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::Length;
@@ -51,17 +51,17 @@ fn circular_sweep_projects_profile_direction_and_extent() {
 
     assert_eq!(
         circular_sweep_feature_definition(
-            ProfileRef::Sketch(
+            ProfileRef::Planar(PlanarProfileRef::Sketch(
                 SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture")
-            ),
+            )),
             &sweep,
             BooleanOp::Join,
             Some(true),
         ),
         IrFeatureDefinition::Extrude {
-            profile: ProfileRef::Sketch(
+            profile: ProfileRef::Planar(PlanarProfileRef::Sketch(
                 SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture")
-            ),
+            )),
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                 vector: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, -1.0))
                     .expect("valid direction fixture"),
@@ -182,7 +182,9 @@ fn section_profile_prefers_a_resolved_sketch_chain() {
     });
     assert_eq!(
         section_profile_ref(&ir, "creo:featdefs:sketch#offset:40".to_string()),
-        ProfileRef::Native("creo:featdefs:sketch#offset:40".to_string())
+        ProfileRef::Planar(PlanarProfileRef::Native(
+            "creo:featdefs:sketch#offset:40".to_string()
+        ))
     );
 
     ir.model.sketches[0].profiles.push_single(SketchEntityUse {
@@ -192,13 +194,15 @@ fn section_profile_prefers_a_resolved_sketch_chain() {
     });
     assert_eq!(
         section_profile_ref(&ir, "creo:featdefs:sketch#offset:40".to_string()),
-        ProfileRef::Sketch(
+        ProfileRef::Planar(PlanarProfileRef::Sketch(
             SketchId::mint("creo:model:sketch#offset:40".to_string()).expect("valid test fixture")
-        )
+        ))
     );
     assert_eq!(
         section_profile_ref(&ir, "creo:featdefs:sketch#918".to_string()),
-        ProfileRef::Native("creo:featdefs:sketch#918".to_string())
+        ProfileRef::Planar(PlanarProfileRef::Native(
+            "creo:featdefs:sketch#918".to_string()
+        ))
     );
 }
 

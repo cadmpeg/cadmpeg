@@ -15,7 +15,7 @@ const EPS_REVOLUTION_HALF_TURN: f64 = 1.0e-12;
 fn decode_resolves_feature_topology_selections() {
     use cadmpeg_ir::features::{
         BodySelection, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition,
-        LinearTermination, PathRef, ProfileRef,
+        LinearTermination, PathRef, PlanarProfileRef, ProfileRef,
     };
 
     // Two bodies so the combine has disjoint operands: a body cannot be both
@@ -81,7 +81,7 @@ fn decode_resolves_feature_topology_selections() {
     assert!(matches!(
         decoded.ir().model.features[3].evaluation.definition(),
         FeatureDefinition::Extrude {
-            profile: ProfileRef::Faces(profile_faces),
+            profile: ProfileRef::Planar(PlanarProfileRef::Faces(profile_faces)),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::ToFace {
@@ -107,7 +107,7 @@ fn decode_resolves_feature_topology_selections() {
             shape,
             path: Some(PathRef::Edges(edges)),
             ..
-        } if matches!((shape.section(),), (cadmpeg_ir::features::SweepSection::Profile(profile),) if matches!((profile.as_ref(),), (ProfileRef::Faces(faces),) if faces == std::slice::from_ref(&face_id) && edges == std::slice::from_ref(&edge_id)))));
+        } if matches!((shape.section(),), (cadmpeg_ir::features::SweepSection::Profile(profile),) if matches!((profile,), (PlanarProfileRef::Faces(faces),) if faces == std::slice::from_ref(&face_id) && edges == std::slice::from_ref(&edge_id)))));
 
     decoded.ir_mut().model.features[0]
         .evaluation
@@ -703,7 +703,7 @@ fn decode_projects_native_surface_sweep_class_without_localized_type() {
 
 #[test]
 fn decode_projects_surface_sweep_reference_curve_profile() {
-    use cadmpeg_ir::features::{FeatureDefinition, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, PlanarProfileRef};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -763,7 +763,7 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
         sweep.evaluation.definition(), FeatureDefinition::Sweep {
             shape,
             ..
-        } if matches!((shape.section(),), (cadmpeg_ir::features::SweepSection::Profile(profile),) if matches!((profile.as_ref(),), (ProfileRef::Feature(feature),) if feature == &helix.id))));
+        } if matches!((shape.section(),), (cadmpeg_ir::features::SweepSection::Profile(profile),) if matches!((profile,), (PlanarProfileRef::Feature(feature),) if feature == &helix.id))));
     assert!(sweep.dependencies.contains(&helix.id));
 
     let mut changed_profile = decoded.ir().clone();
@@ -782,7 +782,7 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
     let mut edited_section = shape.section().clone();
     let section = &mut edited_section;
     *section = cadmpeg_ir::features::SweepSection::Profile(
-        (ProfileRef::Native("other".into())).try_into().unwrap(),
+        cadmpeg_ir::features::PlanarProfileRef::Native("other".into()),
     );
 
     *shape = cadmpeg_ir::features::SweepShape::new(
@@ -830,12 +830,12 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
             .map(|feature| feature.evaluation.definition()), Some(FeatureDefinition::Sweep {
             shape,
             ..
-        }) if matches!((shape.section(),), (cadmpeg_ir::features::SweepSection::Profile(profile),) if matches!((profile.as_ref(),), (ProfileRef::Feature(_),)))));
+        }) if matches!((shape.section(),), (cadmpeg_ir::features::SweepSection::Profile(profile),) if matches!((profile,), (PlanarProfileRef::Feature(_),)))));
 }
 
 #[test]
 fn decode_projects_generated_surface_sweep_profile_path() {
-    use cadmpeg_ir::features::{FeatureDefinition, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, PlanarProfileRef};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -903,7 +903,7 @@ fn decode_projects_generated_surface_sweep_profile_path() {
         second.evaluation.definition(), FeatureDefinition::Sweep {
             shape,
             ..
-        } if matches!((shape.section(),), (cadmpeg_ir::features::SweepSection::Profile(profile),) if matches!((profile.as_ref(),), (ProfileRef::Generated {
+        } if matches!((shape.section(),), (cadmpeg_ir::features::SweepSection::Profile(profile),) if matches!((profile,), (PlanarProfileRef::Generated {
                 curves,
                 native,
             },) if curves.len() == 1

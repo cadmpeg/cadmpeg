@@ -4,13 +4,14 @@
 use super::super::{format_angle_rad, valid_direction};
 use super::format::{format_point3_mm, format_vector3};
 use super::support::{
-    is_loft, is_revolve, is_sweep, path_source, profile_source, resolved_boolean_op,
+    is_loft, is_revolve, is_sweep, path_source, planar_profile_source, profile_source,
+    resolved_boolean_op,
 };
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::{
     features::{
-        AngularTermination, BooleanOp, LoftSection, PathRef, ProfileRef, RevolveConstruction,
+        AngularTermination, BooleanOp, LoftSection, PathRef, PlanarProfileRef, RevolveConstruction,
         RevolveExtent, SweepGuideRail, SweepMode, SweepOrientation, SweepPathExtent, SweepSection,
         SweepTransformation, SweepTransition,
     },
@@ -115,7 +116,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }
             if let Some(profile) = construction.profile() {
                 let profile_source =
-                    profile_source(profile, record_sources, feature_sources, sketch_sources)
+                    planar_profile_source(profile, record_sources, feature_sources, sketch_sources)
                         .ok_or_else(|| {
                             CodecError::malformed(format_args!(
                                 "SLDPRT feature {} references a missing revolution profile",
@@ -180,20 +181,20 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }
             let profile_source = match section {
                 cadmpeg_ir::features::SweepSection::Profile(profile)
-                    if matches!(profile.as_ref(), ProfileRef::Generated { .. })
+                    if matches!(profile, PlanarProfileRef::Generated { .. })
                         && existing.is_some() =>
                 {
                     None
                 }
                 cadmpeg_ir::features::SweepSection::Profile(profile)
-                    if matches!(profile.as_ref(), ProfileRef::Feature(_))
+                    if matches!(profile, PlanarProfileRef::Feature(_))
                         && existing
                             .is_some_and(|record| !record.properties.contains_key("Profile")) =>
                 {
                     None
                 }
                 cadmpeg_ir::features::SweepSection::Profile(profile) => Some(
-                    profile_source(profile, record_sources, feature_sources, sketch_sources)
+                    planar_profile_source(profile, record_sources, feature_sources, sketch_sources)
                         .ok_or_else(|| {
                             CodecError::malformed(format_args!(
                                 "SLDPRT feature {} references a missing sweep profile",

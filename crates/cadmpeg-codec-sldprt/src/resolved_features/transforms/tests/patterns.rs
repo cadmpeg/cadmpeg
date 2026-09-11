@@ -840,7 +840,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             shape,
             path: Some(PathRef::Sketch(ref path)),
             ..
-        } if matches!((shape.section(),), (cadmpeg_ir::features::SweepSection::Profile(profile),) if matches!((profile.as_ref(),), (cadmpeg_ir::features::ProfileRef::Sketch(ref profile),) if profile == &sketch && path == &path_sketch))));
+        } if matches!((shape.section(),), (cadmpeg_ir::features::SweepSection::Profile(profile),) if matches!((profile,), (cadmpeg_ir::features::PlanarProfileRef::Sketch(ref profile),) if profile == &sketch && path == &path_sketch))));
     assert_eq!(
         features[0].dependencies.as_slice(),
         [features[1].id.clone(), features[2].id.clone()]

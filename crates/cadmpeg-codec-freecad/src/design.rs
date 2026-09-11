@@ -26,7 +26,7 @@ use cadmpeg_ir::{
         HelicalSweepLaw, HelixConstructionStyle, HoleBottom, HoleConstruction, HoleKind,
         HoleProfileFilter, HoleSpecification, HoleThreadDepth, InnerWireTaper, LinearTermination,
         ParameterId, ParameterValue, PathRef, PatternKind, PatternScaleCenter, PatternSeed,
-        PatternStage, PatternStageCombination, PatternTransform, PrimitiveSolid,
+        PatternStage, PatternStageCombination, PatternTransform, PlanarProfileRef, PrimitiveSolid,
         PrimitiveSolidKind, ProfileRef, RadiusSpec, RevolutionAxis, RevolutionFuseOrder,
         RevolveConstruction, RevolveExtent, RuledCurveOrientation, ScaleCenter, ScaleFactors,
         ShellJoin, ShellMode, SurfaceProjectionMode, SweepMode, SweepOrientation,
@@ -268,13 +268,17 @@ pub(crate) fn transfer(
             })
         } else if is_extrusion(&object.type_name) {
             let profile = match profile_ref(&object.id, &owned, &sketch_ids) {
-                ProfileRef::Unresolved(_) => ["Profile", "Sketch", "Base", "Source"]
-                    .iter()
-                    .find_map(|name| property(&owned, name))
-                    .map_or_else(
-                        || ProfileRef::Unresolved(object.id.clone()),
-                        |property| ProfileRef::Native(property.id.clone()),
-                    ),
+                ProfileRef::Planar(PlanarProfileRef::Unresolved(_)) => {
+                    ["Profile", "Sketch", "Base", "Source"]
+                        .iter()
+                        .find_map(|name| property(&owned, name))
+                        .map_or_else(
+                            || ProfileRef::Planar(PlanarProfileRef::Unresolved(object.id.clone())),
+                            |property| {
+                                ProfileRef::Planar(PlanarProfileRef::Native(property.id.clone()))
+                            },
+                        )
+                }
                 profile => profile,
             };
             let profile_normal = profile_target(&owned)
@@ -3263,11 +3267,11 @@ fn profile_ref(
     sketches: &HashMap<&str, SketchId>,
 ) -> ProfileRef {
     let Some((property, target)) = profile_target(properties) else {
-        return ProfileRef::Unresolved(owner.to_owned());
+        return ProfileRef::Planar(PlanarProfileRef::Unresolved(owner.to_owned()));
     };
     sketches.get(target).cloned().map_or_else(
-        || ProfileRef::Native(property.id.clone()),
-        ProfileRef::Sketch,
+        || ProfileRef::Planar(PlanarProfileRef::Native(property.id.clone())),
+        |sketch| ProfileRef::Planar(PlanarProfileRef::Sketch(sketch)),
     )
 }
 
@@ -3314,7 +3318,7 @@ fn revolution_definition(
     sketches: &HashMap<&str, SketchId>,
 ) -> Option<FeatureDefinition> {
     let profile = match profile_ref(owner, properties, sketches) {
-        ProfileRef::Unresolved(_) => None,
+        ProfileRef::Planar(PlanarProfileRef::Unresolved(_)) => None,
         profile => Some(profile),
     };
     let mut axis = revolution_axis(properties)?;
@@ -3429,7 +3433,7 @@ fn revolution_definition(
             None
         };
     let profile: Option<cadmpeg_ir::features::PlanarProfileRef> =
-        profile.map(TryInto::try_into).transpose().ok()?;
+        profile.map(|profile| profile.planar().cloned()).flatten();
     let solid = Some(if kind == "Part::Revolution" {
         bool_selector(properties, "Solid", false)?
     } else {
@@ -3737,7 +3741,7 @@ fn extrusion_definition(
             }
             2 => {
                 let normal = match &profile {
-                    ProfileRef::Sketch(sketch_id) => sketches
+                    ProfileRef::Planar(PlanarProfileRef::Sketch(sketch_id)) => sketches
                         .iter()
                         .find(|sketch| sketch.id == *sketch_id)
                         .and_then(Sketch::resolved_placement)
@@ -4016,13 +4020,13 @@ fn extrusion_definition(
         }
     } else {
         let normal = match &profile {
-            ProfileRef::Sketch(sketch_id) => sketches
+            ProfileRef::Planar(PlanarProfileRef::Sketch(sketch_id)) => sketches
                 .iter()
                 .find(|sketch| sketch.id == *sketch_id)
                 .and_then(Sketch::resolved_placement)
                 .map(|(_, normal, _)| normal)
                 .or(profile_normal),
-            ProfileRef::Native(_) => profile_normal,
+            ProfileRef::Planar(PlanarProfileRef::Native(_)) => profile_normal,
             _ => return None,
         }
         .and_then(Vector3::unit);
@@ -4867,10 +4871,10 @@ fn loft_definition(
         .flat_map(PropertyRecord::links)
         .filter_map(|link| link.as_ref()?.object())
         .map(|object| {
-            sketches
-                .get(object)
-                .cloned()
-                .map_or_else(|| ProfileRef::Native(object.to_owned()), ProfileRef::Sketch)
+            sketches.get(object).cloned().map_or_else(
+                || ProfileRef::Planar(PlanarProfileRef::Native(object.to_owned())),
+                |sketch| ProfileRef::Planar(PlanarProfileRef::Sketch(sketch)),
+            )
         })
         .collect::<Vec<_>>();
     if profiles.len() < 2 {
@@ -4917,10 +4921,10 @@ fn sweep_definition(
     sketches: &HashMap<&str, SketchId>,
 ) -> Option<FeatureDefinition> {
     let profile_ref = |object: &str| {
-        sketches
-            .get(object)
-            .cloned()
-            .map_or_else(|| ProfileRef::Native(object.to_owned()), ProfileRef::Sketch)
+        sketches.get(object).cloned().map_or_else(
+            || ProfileRef::Planar(PlanarProfileRef::Native(object.to_owned())),
+            |sketch| ProfileRef::Planar(PlanarProfileRef::Sketch(sketch)),
+        )
     };
     let mut profiles = property(properties, "Profile")
         .into_iter()
@@ -5008,16 +5012,16 @@ fn sweep_definition(
     };
     Some(FeatureDefinition::Sweep {
         shape: cadmpeg_ir::features::SweepShape::new(
-            cadmpeg_ir::features::SweepSection::Profile(profile.try_into().ok()?),
+            cadmpeg_ir::features::SweepSection::Profile(profile.planar().cloned()?),
             profiles
                 .into_iter()
                 .map(|profile| {
                     profile
-                        .try_into()
+                        .planar()
+                        .cloned()
                         .map(cadmpeg_ir::features::SweepSection::Profile)
                 })
-                .collect::<Result<Vec<_>, _>>()
-                .ok()?,
+                .collect::<Option<Vec<_>>>()?,
             if solid {
                 SweepMode::Solid {
                     op: operation_boolean(kind).try_into().ok()?,
@@ -5061,7 +5065,7 @@ fn hole_definition(
     program_version: Option<&str>,
 ) -> Option<FeatureDefinition> {
     let profile = profile_ref(owner, properties, sketches);
-    if matches!(profile, ProfileRef::Unresolved(_)) {
+    if matches!(profile, ProfileRef::Planar(PlanarProfileRef::Unresolved(_))) {
         return None;
     }
     let filter_bits = integer_selector(properties, "BaseProfileType", 6)?;
@@ -5207,7 +5211,7 @@ fn hole_definition(
     let direction = axis_reference(properties, "Profile", objects, properties_by_owner)
         .map(|(_, direction)| direction);
     Some(FeatureDefinition::Hole {
-        profile: Some(profile.try_into().ok()?),
+        profile: Some(profile.planar().cloned()?),
         profile_filter: Some(profile_filter),
         face: None,
         direction,
@@ -5280,11 +5284,11 @@ fn helical_sweep_definition(
         .map(|(origin, direction)| (Point3::new(origin.x, origin.y, origin.z), direction))
         .or_else(|| axis_reference(properties, "ReferenceAxis", objects, properties_by_owner))?;
     let profile = profile_ref(owner, properties, sketches);
-    if matches!(profile, ProfileRef::Unresolved(_)) {
+    if matches!(profile, ProfileRef::Planar(PlanarProfileRef::Unresolved(_))) {
         return None;
     }
     let construction = HelicalSweepConstruction {
-        profile: profile.try_into().ok()?,
+        profile: profile.planar().cloned()?,
         axis_origin: cadmpeg_ir::features::FinitePoint3::new(axis_origin)?,
         axis_direction: cadmpeg_ir::features::FeatureDirection3::new(axis_direction.unit()?)?,
         law,

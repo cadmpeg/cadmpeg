@@ -89,8 +89,8 @@ pub(crate) fn transfers_branch_complete_threaded_counterdrill_hole() {
         panic!("standard hole construction");
     };
     assert!(matches!(
-        profile.as_deref(),
-        Some(cadmpeg_ir::features::ProfileRef::Sketch(_))
+        profile,
+        Some(cadmpeg_ir::features::PlanarProfileRef::Sketch(_))
     ));
     assert_eq!(
         *profile_filter,
@@ -1021,7 +1021,7 @@ fn derives_extrusion_direction_from_a_non_sketch_profile_frame() {
     assert!(matches!(
         pocket.evaluation.definition(),
         FeatureDefinition::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Native(_),
+            profile: cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Native(_)),
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                 vector: direction,
                 source: Some(cadmpeg_ir::features::ExtrusionDirectionSource::ProfileNormal {}),
@@ -1209,7 +1209,7 @@ fn preserves_linkless_partdesign_extrusion_profile_and_direction() {
     assert!(matches!(
         definition,
         FeatureDefinition::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Native(profile),
+            profile: cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Native(profile)),
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
             extent: ExtrudeExtent::OneSided { .. },
             ..
@@ -1258,7 +1258,7 @@ fn rejects_ambiguous_profile_carriers_without_selecting_a_sketch() {
         assert!(matches!(
             feature.evaluation.definition(),
             FeatureDefinition::Extrude {
-                profile: cadmpeg_ir::features::ProfileRef::Native(profile),
+                profile: cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Native(profile)),
                 ..
             } if profile.ends_with(":Profile")
         ));
@@ -1905,7 +1905,7 @@ fn transfers_sketch_pad_and_pocket_design_history() {
     assert!(matches!(
         pad.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Sketch(_),
+            profile: cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Sketch(_)),
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
                     termination: cadmpeg_ir::features::LinearTermination::Blind {

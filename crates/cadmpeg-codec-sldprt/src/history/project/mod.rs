@@ -9,8 +9,8 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::{
     features::{
         ConfigurationBodies, ConfigurationId, DatumPlaneReference, DesignConfiguration,
-        FeatureDefinition, FeatureId, FeatureSourceContent, ParameterId, PathRef, ProfileRef,
-        SplitFaceTool, UnresolvedFamily,
+        FeatureDefinition, FeatureId, FeatureSourceContent, ParameterId, PathRef, PlanarProfileRef,
+        ProfileRef, SplitFaceTool, UnresolvedFamily,
     },
     scalar::Length,
 };
@@ -698,42 +698,39 @@ pub(crate) fn bind_native_construction_features(
 
     for feature in features {
         let mut dependencies = Vec::new();
-        let mut bind = |profile: &mut ProfileRef| {
-            let ProfileRef::Native(native) = profile else {
+        let mut bind_planar = |profile: &mut PlanarProfileRef| {
+            let PlanarProfileRef::Native(native) = profile else {
                 return;
             };
             let Some(target) = feature_ids_by_native.get(native.as_str()) else {
                 return;
             };
-            *profile = ProfileRef::Feature(target.clone());
+            *profile = PlanarProfileRef::Feature(target.clone());
             dependencies.push(target.clone());
+        };
+        let mut bind = |profile: &mut ProfileRef| {
+            if let ProfileRef::Planar(profile) = profile {
+                bind_planar(profile);
+            }
         };
         let mut definition = feature.evaluation.definition().clone();
         match &mut definition {
             FeatureDefinition::Extrude { profile, .. } => bind(profile),
-            FeatureDefinition::Wrap { profile, .. } => profile
-                .try_edit(&mut bind)
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+            FeatureDefinition::Wrap { profile, .. } => bind_planar(profile),
             FeatureDefinition::Revolve { construction, .. } => {
                 if let Some(profile) = construction.profile_mut() {
-                    profile
-                        .try_edit(&mut bind)
-                        .map_err(cadmpeg_core::CodecError::malformed)?;
+                    bind_planar(profile);
                 }
             }
             FeatureDefinition::Rib { construction, .. } => {
                 if let Some(profile) = &mut construction.profile {
-                    profile
-                        .try_edit(&mut bind)
-                        .map_err(cadmpeg_core::CodecError::malformed)?;
+                    bind_planar(profile);
                 }
             }
             FeatureDefinition::Sweep { shape, .. } => {
                 let mut section = shape.section().clone();
                 if let Some(profile) = section.referenced_profile_mut() {
-                    profile
-                        .try_edit(&mut bind)
-                        .map_err(cadmpeg_core::CodecError::malformed)?;
+                    bind_planar(profile);
                 }
                 *shape = cadmpeg_ir::features::SweepShape::new(
                     section,

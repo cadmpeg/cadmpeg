@@ -109,9 +109,7 @@ fn wrap_mode_round_trips_as_a_nested_key() {
     assert_eq!(serde_json::to_value(definition).unwrap(), wire);
 
     let scribe = FeatureDefinition::Wrap {
-        profile: crate::features::ProfileRef::Native("wrap:profile".into())
-            .try_into()
-            .unwrap(),
+        profile: crate::features::PlanarProfileRef::Native("wrap:profile".into()),
         face: crate::features::FaceSelection::Native("wrap:face".into()),
         mode: WrapMode::Scribe,
     };

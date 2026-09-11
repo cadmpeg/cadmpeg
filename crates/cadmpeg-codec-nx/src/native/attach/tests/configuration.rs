@@ -1140,7 +1140,8 @@ fn topology_inferred_hole_axis_is_not_an_authored_direction() {
 #[test]
 fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
     use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, LinearTermination, ProfileRef,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, LinearTermination,
+        PlanarProfileRef, ProfileRef,
     };
 
     assert_eq!(
@@ -1151,7 +1152,7 @@ fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
             &[cadmpeg_ir::topology::BodyKind::Solid],
         ),
         FeatureDefinition::Extrude {
-            profile: ProfileRef::Native("nx:profile#1".to_string()),
+            profile: ProfileRef::Planar(PlanarProfileRef::Native("nx:profile#1".to_string())),
             direction: cadmpeg_ir::features::ExtrudeDirection::Unresolved {},
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -1176,7 +1177,7 @@ fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
             &[cadmpeg_ir::topology::BodyKind::Sheet],
         ),
         FeatureDefinition::Extrude {
-            profile: ProfileRef::Unresolved(_),
+            profile: ProfileRef::Planar(PlanarProfileRef::Unresolved(_)),
             solid: Some(false),
             ..
         }
@@ -1192,7 +1193,7 @@ fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
             ],
         ),
         FeatureDefinition::Extrude {
-            profile: ProfileRef::Unresolved(_),
+            profile: ProfileRef::Planar(PlanarProfileRef::Unresolved(_)),
             solid: None,
             ..
         }

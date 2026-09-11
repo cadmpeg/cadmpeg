@@ -623,7 +623,7 @@ pub(super) fn fixed_kind_path_operations(
             }),
             guide_rail: None,
             ..
-        }) if matches!((shape.section(),), (cadmpeg_ir::features::SweepSection::Profile(profile),) if matches!((profile.as_ref(),), (cadmpeg_ir::features::ProfileRef::Native(profile),) if profile == "stream:sweep-group-0" && faces == "stream:sweep-guide-surface"))));
+        }) if matches!((shape.section(),), (cadmpeg_ir::features::SweepSection::Profile(profile),) if matches!((profile,), (cadmpeg_ir::features::PlanarProfileRef::Native(profile),) if profile == "stream:sweep-group-0" && faces == "stream:sweep-guide-surface"))));
     if let crate::records::feature::DesignScopePayloadMut::Sweep(slot) = sweep_scope.payload_mut() {
         slot.get_or_insert_with(Default::default).sweep_profile = None;
     }

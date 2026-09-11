@@ -1360,7 +1360,7 @@ fn grouped_face_reference_selects_one_changed_topology_face() {
 fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
     use crate::records::feature::DesignParameterScope;
     use crate::records::topology::{DesignConstructionOperandGroup, DesignFaceOperand};
-    use cadmpeg_ir::features::ProfileRef;
+    use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
 
     let group = |record_index, scope_reference_ordinal, members: Vec<u32>| {
         let member_offsets = (0..members.len())
@@ -1614,11 +1614,11 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
     let prefix = crate::ids::history_input_prefix(feature_key, 1);
     assert!(matches!(
         profile,
-        ProfileRef::HistoricalFaces {
+        ProfileRef::Planar(PlanarProfileRef::HistoricalFaces {
             state,
             faces,
             native,
-        } if state == crate::design::edge_resolve::feature_input_topology_id(&feature, 1)
+        }) if state == crate::design::edge_resolve::feature_input_topology_id(&feature, 1)
             && faces.as_slice() == [
                 crate::ids::history_input_face_id(&prefix, 10),
                 crate::ids::history_input_face_id(&prefix, 11),

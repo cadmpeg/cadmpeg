@@ -2525,8 +2525,8 @@ pub fn bind_sketch_feature_geometry(
     spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::{
-        DatumPointConstruction, FeatureDefinition, LoftSection, PathRef, ProfileRef,
-        SketchPointSelection,
+        DatumPointConstruction, FeatureDefinition, LoftSection, PathRef, PlanarProfileRef,
+        ProfileRef, SketchPointSelection,
     };
 
     for feature in features.iter_mut() {
@@ -2587,7 +2587,7 @@ pub fn bind_sketch_feature_geometry(
             let FeatureDefinition::Extrude { profile, .. } = &mut definition else {
                 break 'feature_edit;
             };
-            let ProfileRef::Sketch(sketch) = profile else {
+            let ProfileRef::Planar(PlanarProfileRef::Sketch(sketch)) = profile else {
                 break 'feature_edit;
             };
             let planar_id = sketch.clone();
@@ -2624,7 +2624,7 @@ pub fn bind_sketch_feature_geometry(
                         profile_operand.byte_offset()
                     )],
                 )
-                .unwrap_or_else(|_| ProfileRef::Native(scope.id.clone()));
+                .unwrap_or_else(|_| ProfileRef::Planar(PlanarProfileRef::Native(scope.id.clone())));
                 break 'feature_edit;
             }
             let Ok(profile_count) = u32::try_from(spatial.profiles.len()) else {
@@ -2634,7 +2634,7 @@ pub fn bind_sketch_feature_geometry(
                 spatial.id.clone(),
                 (0..profile_count).collect(),
             )
-            .unwrap_or_else(|_| ProfileRef::Native(scope.id.clone()));
+            .unwrap_or_else(|_| ProfileRef::Planar(PlanarProfileRef::Native(scope.id.clone())));
         }
         feature.evaluation.set_definition(definition);
     }
@@ -2656,12 +2656,22 @@ pub fn bind_sketch_feature_geometry(
             _ => None,
         })
         .collect::<HashMap<_, _>>();
+    let planar_profile_dependency = |profile: &PlanarProfileRef| match profile {
+        PlanarProfileRef::Sketch(sketch)
+        | PlanarProfileRef::SketchProfiles { sketch, .. }
+        | PlanarProfileRef::SketchRegions { sketch, .. }
+        | PlanarProfileRef::SketchEntities { sketch, .. }
+        | PlanarProfileRef::SketchSelection { sketch, .. } => sketch_features.get(sketch).cloned(),
+        _ => None,
+    };
     let profile_dependency = |profile: &ProfileRef| match profile {
-        ProfileRef::Sketch(sketch)
-        | ProfileRef::SketchProfiles { sketch, .. }
-        | ProfileRef::SketchRegions { sketch, .. }
-        | ProfileRef::SketchEntities { sketch, .. }
-        | ProfileRef::SketchSelection { sketch, .. } => sketch_features.get(sketch).cloned(),
+        ProfileRef::Planar(PlanarProfileRef::Sketch(sketch))
+        | ProfileRef::Planar(PlanarProfileRef::SketchProfiles { sketch, .. })
+        | ProfileRef::Planar(PlanarProfileRef::SketchRegions { sketch, .. })
+        | ProfileRef::Planar(PlanarProfileRef::SketchEntities { sketch, .. })
+        | ProfileRef::Planar(PlanarProfileRef::SketchSelection { sketch, .. }) => {
+            sketch_features.get(sketch).cloned()
+        }
         ProfileRef::SpatialSketchProfiles { sketch, .. }
         | ProfileRef::SpatialSketchSelection { sketch, .. } => {
             spatial_sketch_features.get(sketch).cloned()
@@ -2692,15 +2702,10 @@ pub fn bind_sketch_feature_geometry(
                 dependencies.extend(profile_dependency(profile));
             }
             FeatureDefinition::SheetMetalBaseFlange { profile, .. } => {
-                dependencies.extend(profile_dependency(profile));
+                dependencies.extend(planar_profile_dependency(profile));
             }
             FeatureDefinition::Revolve { construction, .. } => {
-                dependencies.extend(
-                    construction
-                        .profile()
-                        .map(std::ops::Deref::deref)
-                        .and_then(profile_dependency),
-                );
+                dependencies.extend(construction.profile().and_then(planar_profile_dependency));
                 dependencies.extend(
                     construction
                         .axis()
@@ -2721,7 +2726,7 @@ pub fn bind_sketch_feature_geometry(
                     std::iter::once(section)
                         .chain(sections)
                         .filter_map(|section| section.referenced_profile())
-                        .filter_map(profile_dependency),
+                        .filter_map(planar_profile_dependency),
                 );
                 dependencies.extend(path.as_ref().and_then(path_dependency));
                 dependencies.extend(
@@ -3501,7 +3506,7 @@ fn project_base_flange(
     groups: &[DesignConstructionOperandGroup],
     placements: &[DesignSketchPlacement],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{FeatureDefinition, ProfileRef, SheetMetalThicknessSide};
+    use cadmpeg_ir::features::{FeatureDefinition, PlanarProfileRef, SheetMetalThicknessSide};
 
     let operation = scope.base_flange_operation()?;
     let matching = groups
@@ -3536,9 +3541,7 @@ fn project_base_flange(
             && placement.entity_id == profile.entity_id
     })?;
     Some(FeatureDefinition::SheetMetalBaseFlange {
-        profile: (ProfileRef::Sketch(neutral_sketch_id(placement)))
-            .try_into()
-            .ok()?,
+        profile: PlanarProfileRef::Sketch(neutral_sketch_id(placement)),
         thickness: cadmpeg_ir::scalar::PositiveLength::new(operation.thickness.get() * 10.0)?,
         side: SheetMetalThicknessSide::Forward,
     })
@@ -5732,8 +5735,8 @@ pub(crate) fn project_fixed_revolve_with_entities(
     curve_identities: &[SketchCurveIdentity],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
-        AngularTermination, FeatureDefinition, ProfileRef, RevolutionAxis, RevolveConstruction,
-        RevolveExtent,
+        AngularTermination, FeatureDefinition, PlanarProfileRef, RevolutionAxis,
+        RevolveConstruction, RevolveExtent,
     };
 
     let crate::records::feature::DesignScopePayload::Revolve(Some(
@@ -5826,7 +5829,7 @@ pub(crate) fn project_fixed_revolve_with_entities(
         return None;
     };
     let revolve_profile: cadmpeg_ir::features::PlanarProfileRef =
-        (ProfileRef::Native(profile.id.clone())).try_into().ok()?;
+        PlanarProfileRef::Native(profile.id.clone());
     let extent = RevolveExtent::OneSided {
         termination: AngularTermination::Angle {
             angle: cadmpeg_ir::scalar::PositiveAngle::new(angle.get())?,
@@ -6175,7 +6178,9 @@ pub(crate) fn project_fixed_loft(
     edge_identity_operands: &[DesignEdgeIdentityOperand],
     face_operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{FeatureDefinition, LoftPointSection, LoftSection, ProfileRef};
+    use cadmpeg_ir::features::{
+        FeatureDefinition, LoftPointSection, LoftSection, PlanarProfileRef, ProfileRef,
+    };
 
     let crate::records::feature::DesignScopePayload::Loft(Some(
         crate::records::feature::DesignLoftConstruction { operation, .. },
@@ -6262,7 +6267,9 @@ pub(crate) fn project_fixed_loft(
                 LoftSection::Profile(
                     resolved_loft_edge_profile_group(scope, group, edge_operands)
                         .or_else(|| resolved_profile_face_group(scope, group, face_operands))
-                        .unwrap_or_else(|| ProfileRef::Native(group.id.clone())),
+                        .unwrap_or_else(|| {
+                            ProfileRef::Planar(PlanarProfileRef::Native(group.id.clone()))
+                        }),
                 )
             })
             .collect::<Vec<_>>();
@@ -6330,7 +6337,9 @@ pub(crate) fn project_fixed_loft(
                                 cadmpeg_ir::NonEmptyString::new(group.id.clone())?,
                             ))
                         } else {
-                            LoftSection::Profile(ProfileRef::Native(group.id.clone()))
+                            LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Native(
+                                group.id.clone(),
+                            )))
                         })
                     })
                     .collect::<Option<Vec<_>>>()?,
@@ -6355,7 +6364,11 @@ pub(crate) fn project_fixed_loft(
                 operands
                     .iter()
                     .filter(|group| group.role() == role)
-                    .map(|group| LoftSection::Profile(ProfileRef::Native(group.id.clone())))
+                    .map(|group| {
+                        LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Native(
+                            group.id.clone(),
+                        )))
+                    })
                     .collect::<Vec<_>>(),
                 Vec::new(),
                 None,
@@ -6820,7 +6833,7 @@ pub(crate) fn project_fixed_sweep(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::{
         features::{
-            FaceSelection, FeatureDefinition, ProfileRef, SweepGuideRail, SweepMode,
+            FaceSelection, FeatureDefinition, PlanarProfileRef, SweepGuideRail, SweepMode,
             SweepOrientation, SweepPathExtent,
         },
         scalar::Angle,
@@ -6965,9 +6978,9 @@ pub(crate) fn project_fixed_sweep(
         });
     Some(FeatureDefinition::Sweep {
         shape: cadmpeg_ir::features::SweepShape::new(
-            cadmpeg_ir::features::SweepSection::Profile(
-                (ProfileRef::Native(profile.id.clone())).try_into().ok()?,
-            ),
+            cadmpeg_ir::features::SweepSection::Profile(PlanarProfileRef::Native(
+                profile.id.clone(),
+            )),
             Vec::new(),
             if *operation == DesignExtrudeOperation::NewBody {
                 SweepMode::Solid {
@@ -8004,7 +8017,7 @@ pub(crate) fn project_extrude(
     use cadmpeg_ir::{
         features::{
             BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection,
-            FeatureDefinition, LinearTermination, ProfileRef,
+            FeatureDefinition, LinearTermination, PlanarProfileRef, ProfileRef,
         },
         scalar::{Angle, Length},
     };
@@ -8059,7 +8072,7 @@ pub(crate) fn project_extrude(
                 native_stream(&placement.id) == native_stream(&scope.id)
                     && placement.entity_id == profile.entity_id
             })?;
-            ProfileRef::Sketch(neutral_sketch_id(placement))
+            ProfileRef::Planar(PlanarProfileRef::Sketch(neutral_sketch_id(placement)))
         }
         None => {
             let [first, rest @ ..] = profile_groups.as_slice() else {
@@ -8072,7 +8085,7 @@ pub(crate) fn project_extrude(
                     construction_groups,
                     face_operands,
                 )
-                .unwrap_or_else(|| ProfileRef::Native(first.id.clone()))
+                .unwrap_or_else(|| ProfileRef::Planar(PlanarProfileRef::Native(first.id.clone())))
             } else {
                 let resolved = profile_groups
                     .iter()
@@ -8085,17 +8098,17 @@ pub(crate) fn project_extrude(
                         )
                     })
                     .collect::<Option<Vec<_>>>();
-                match resolved {
+                ProfileRef::Planar(match resolved {
                     Some(selections) => {
                         let mut state = None;
                         let mut faces = Vec::new();
                         let mut native = Vec::new();
                         let complete = selections.into_iter().all(|selection| {
-                            let ProfileRef::HistoricalFaces {
+                            let ProfileRef::Planar(PlanarProfileRef::HistoricalFaces {
                                 state: selected_state,
                                 faces: selected_faces,
                                 native: selected_native,
-                            } = selection
+                            }) = selection
                             else {
                                 return false;
                             };
@@ -8113,14 +8126,14 @@ pub(crate) fn project_extrude(
                         });
                         match (complete, state) {
                             (true, Some(state)) if !faces.is_empty() => {
-                                ProfileRef::historical_faces(state, faces, native)
-                                    .unwrap_or_else(|_| ProfileRef::Native(scope.id.clone()))
+                                PlanarProfileRef::historical_faces(state, faces, native)
+                                    .unwrap_or_else(|_| PlanarProfileRef::Native(scope.id.clone()))
                             }
-                            _ => ProfileRef::Native(scope.id.clone()),
+                            _ => PlanarProfileRef::Native(scope.id.clone()),
                         }
                     }
-                    None => ProfileRef::Native(scope.id.clone()),
-                }
+                    None => PlanarProfileRef::Native(scope.id.clone()),
+                })
             }
         }
     };

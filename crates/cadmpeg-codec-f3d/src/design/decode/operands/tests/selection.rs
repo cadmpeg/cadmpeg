@@ -859,10 +859,10 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             None,
             None,
         ),
-        cadmpeg_ir::features::ProfileRef::SketchProfiles {
+        cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchProfiles {
             sketch: ref actual_sketch,
             ref profiles,
-        } if actual_sketch == &sketch_id && profiles.as_slice() == [0]
+        }) if actual_sketch == &sketch_id && profiles.as_slice() == [0]
     ));
     let mut point_member = member.clone();
     point_member.id = "f3d:Design/BulkStream.dat:selection-member#201".into();
@@ -930,10 +930,10 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             None,
             None,
         ),
-        cadmpeg_ir::features::ProfileRef::SketchProfiles {
+        cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchProfiles {
             sketch: ref actual_sketch,
             ref profiles,
-        } if actual_sketch == &sketch_id && profiles.as_slice() == [0, 1]
+        }) if actual_sketch == &sketch_id && profiles.as_slice() == [0, 1]
     ));
     member.resolved_geometry = None;
     assert!(matches!(
@@ -956,10 +956,10 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             None,
             None,
         ),
-        cadmpeg_ir::features::ProfileRef::SketchSelection {
+        cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchSelection {
             sketch: ref actual_sketch,
             selections: ref actual_selections,
-        } if actual_sketch == &sketch_id && actual_selections.as_slice() == [group.id.clone()]
+        }) if actual_sketch == &sketch_id && actual_selections.as_slice() == [group.id.clone()]
     ));
     let mut single_profile_sketch = sketch.clone();
     single_profile_sketch
@@ -986,9 +986,9 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             None,
             None,
         ),
-        cadmpeg_ir::features::ProfileRef::SketchProfiles {
+        cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchProfiles {
             sketch: ref actual_sketch,
             ref profiles,
-        } if actual_sketch == &sketch_id && profiles.as_slice() == [0]
+        }) if actual_sketch == &sketch_id && profiles.as_slice() == [0]
     ));
 }

@@ -6,8 +6,8 @@ use crate::records::{Feature, FeatureContent};
 use cadmpeg_ir::{
     features::{
         AngularTermination, BooleanOp, FeatureDefinition, PartialRevolveConstruction, PathRef,
-        ProfileRef, RevolutionAxis, RevolveConstruction, RevolveExtent, RibConstruction, RibDraft,
-        RibSide, SweepMode,
+        PlanarProfileRef, ProfileRef, RevolutionAxis, RevolveConstruction, RevolveExtent,
+        RibConstruction, RibDraft, RibSide, SweepMode,
     },
     scalar::Angle,
 };
@@ -83,7 +83,9 @@ pub(crate) fn project_loft(
                 resolve_native_refs(value, native_by_source)?
                     .into_iter()
                     .map(|profile| {
-                        cadmpeg_ir::features::LoftSection::Profile(ProfileRef::Native(profile))
+                        cadmpeg_ir::features::LoftSection::Profile(ProfileRef::Planar(
+                            PlanarProfileRef::Native(profile),
+                        ))
                     })
                     .collect::<Vec<_>>(),
             )

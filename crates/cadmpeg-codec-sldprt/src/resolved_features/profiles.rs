@@ -169,10 +169,12 @@ pub(crate) fn bind_sketch_profiles(
                 cadmpeg_ir::features::FeatureDefinition::Extrude { profile, .. } => {
                     if matches!(
                         &*profile,
-                        cadmpeg_ir::features::ProfileRef::Unresolved(owner)
+                        cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Unresolved(owner))
                             if owner == &native_feature.id
                     ) {
-                        *profile = cadmpeg_ir::features::ProfileRef::Sketch(sketch.id.clone());
+                        *profile = cadmpeg_ir::features::ProfileRef::Planar(
+                            cadmpeg_ir::features::PlanarProfileRef::Sketch(sketch.id.clone()),
+                        );
                     }
                 }
                 _ => {}

@@ -975,7 +975,8 @@ fn semantic_writer_round_trips_feature_output_scope() {
 #[test]
 fn semantic_writer_round_trips_all_extrusion_forms() {
     use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, LinearTermination, ProfileRef,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, LinearTermination,
+        PlanarProfileRef, ProfileRef,
     };
     use cadmpeg_ir::math::Vector3;
 
@@ -993,7 +994,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
     assert!(matches!(
         decoded.ir().model.features[1].evaluation.definition(),
         FeatureDefinition::Extrude {
-            profile: ProfileRef::Feature(profile),
+            profile: ProfileRef::Planar(PlanarProfileRef::Feature(profile)),
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
             start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
             extent: ExtrudeExtent::OneSided {

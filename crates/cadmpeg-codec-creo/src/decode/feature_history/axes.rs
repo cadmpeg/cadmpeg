@@ -8,7 +8,8 @@ use crate::vecmath::normalize;
 use crate::vecmath::{cross, dot};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    AngularTermination, FeatureId as IrFeatureId, ProfileRef, RevolutionAxis, RevolveExtent,
+    AngularTermination, FeatureId as IrFeatureId, PlanarProfileRef, ProfileRef, RevolutionAxis,
+    RevolveExtent,
 };
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
@@ -247,12 +248,12 @@ pub(in super::super) fn section_profile_ref(ir: &CadIr, native_ref: String) -> P
             .iter()
             .filter(|sketch| sketch.id.as_str() == sketch_id),
     ) else {
-        return ProfileRef::Native(native_ref);
+        return ProfileRef::Planar(PlanarProfileRef::Native(native_ref));
     };
     if sketch.profiles.is_empty() {
-        ProfileRef::Native(native_ref)
+        ProfileRef::Planar(PlanarProfileRef::Native(native_ref))
     } else {
-        ProfileRef::Sketch(sketch.id.clone())
+        ProfileRef::Planar(PlanarProfileRef::Sketch(sketch.id.clone()))
     }
 }
 

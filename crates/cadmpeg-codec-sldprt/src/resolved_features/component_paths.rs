@@ -1,4 +1,5 @@
 //! Component path resolution and selection value encoding.
+use cadmpeg_ir::features::PlanarProfileRef;
 
 use super::operations::feature_inline_operation_fields;
 use super::scalars::feature_object_name;
@@ -322,13 +323,15 @@ pub(crate) fn project_adjacent_extrusion_profiles(
         else {
             continue;
         };
-        if !matches!(neutral_profile, cadmpeg_ir::features::ProfileRef::Unresolved(owner) if owner == &extrusion)
+        if !matches!(neutral_profile, cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Unresolved(owner)) if owner == &extrusion)
         {
             continue;
         }
         if let Some(&profile_index) = neutral_indices.get(profile) {
             let dependency = features[profile_index].id.clone();
-            *neutral_profile = cadmpeg_ir::features::ProfileRef::Feature(dependency.clone());
+            *neutral_profile = cadmpeg_ir::features::ProfileRef::Planar(
+                cadmpeg_ir::features::PlanarProfileRef::Feature(dependency.clone()),
+            );
             if !features[index].dependencies.contains(&dependency) {
                 features[index].dependencies.insert(dependency);
             }
@@ -507,16 +510,21 @@ pub(crate) fn project_dissected_sketches(
                 break 'feature_edit;
             }
             let replace = |profile: &mut cadmpeg_ir::features::ProfileRef| {
-                let cadmpeg_ir::features::ProfileRef::Feature(child) = profile else {
+                let cadmpeg_ir::features::ProfileRef::Planar(
+                    cadmpeg_ir::features::PlanarProfileRef::Feature(child),
+                ) = profile
+                else {
                     return None;
                 };
                 let (owner, sketch) = profile_aliases.get(child)?;
                 let child = child.clone();
-                *profile = cadmpeg_ir::features::ProfileRef::Sketch(sketch.clone());
+                *profile = cadmpeg_ir::features::ProfileRef::Planar(
+                    cadmpeg_ir::features::PlanarProfileRef::Sketch(sketch.clone()),
+                );
                 Some((child, owner.clone()))
             };
             let replace_planar = |profile: &mut cadmpeg_ir::features::PlanarProfileRef| {
-                let cadmpeg_ir::features::ProfileRef::Feature(child) = profile.as_ref() else {
+                let PlanarProfileRef::Feature(child) = profile else {
                     return None;
                 };
                 let (owner, sketch) = profile_aliases.get(child)?;

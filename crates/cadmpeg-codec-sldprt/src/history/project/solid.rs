@@ -6,7 +6,8 @@ use crate::records::{Feature, FeatureContent};
 use cadmpeg_ir::{
     features::{
         BooleanOp, ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition, HoleBottom,
-        HoleConstruction, HoleKind, LinearTermination, ProfileRef, VertexSelection,
+        HoleConstruction, HoleKind, LinearTermination, PlanarProfileRef, ProfileRef,
+        VertexSelection,
     },
     scalar::Length,
 };
@@ -200,21 +201,21 @@ pub(crate) fn project_extrude(
         return None;
     }
     let profile = if let Some(source) = feature.properties.get("Profile") {
-        ProfileRef::Native(
+        ProfileRef::Planar(PlanarProfileRef::Native(
             native_by_source
                 .get(source.as_str())
                 .map_or_else(|| source.clone(), |id| (*id).to_string()),
-        )
+        ))
     } else if let Some(children) = feature.properties.get("DissectableChildren") {
         let profiles = resolve_native_refs(children, native_by_source)?;
         match profiles.as_slice() {
-            [profile] => ProfileRef::Native(profile.clone()),
-            _ => ProfileRef::Unresolved(feature.id.clone()),
+            [profile] => ProfileRef::Planar(PlanarProfileRef::Native(profile.clone())),
+            _ => ProfileRef::Planar(PlanarProfileRef::Unresolved(feature.id.clone())),
         }
     } else if let Some(profile) = history_profile {
-        ProfileRef::Native(profile)
+        ProfileRef::Planar(PlanarProfileRef::Native(profile))
     } else {
-        ProfileRef::Unresolved(feature.id.clone())
+        ProfileRef::Planar(PlanarProfileRef::Unresolved(feature.id.clone()))
     };
     Some(FeatureDefinition::Extrude {
         profile,

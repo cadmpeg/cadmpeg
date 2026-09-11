@@ -233,9 +233,7 @@ fn design_completeness_audits_typed_construction_families() {
             op: BooleanOp::NewBody,
         },
         FeatureDefinition::SheetMetalBaseFlange {
-            profile: (cadmpeg_ir::features::ProfileRef::Sketch(sketch))
-                .try_into()
-                .unwrap(),
+            profile: cadmpeg_ir::features::PlanarProfileRef::Sketch(sketch),
             thickness: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
             side: cadmpeg_ir::features::SheetMetalThicknessSide::Symmetric,
         },
@@ -570,11 +568,12 @@ fn design_completeness_recurses_through_pattern_operands() {
 fn design_completeness_checks_secondary_sweep_and_loft_paths() {
     let mut ir = CadIr::empty();
     let sketch = cadmpeg_ir::sketches::SketchId::mint("synthetic:test:id#sketch").unwrap();
-    let profile = cadmpeg_ir::features::ProfileRef::Sketch(sketch.clone());
+    let planar_profile = cadmpeg_ir::features::PlanarProfileRef::Sketch(sketch.clone());
+    let profile = cadmpeg_ir::features::ProfileRef::Planar(planar_profile.clone());
     let path = PathRef::Sketch(sketch);
     let sweep = |sections, orientation| FeatureDefinition::Sweep {
         shape: cadmpeg_ir::features::SweepShape::new(
-            cadmpeg_ir::features::SweepSection::Profile((profile.clone()).try_into().unwrap()),
+            cadmpeg_ir::features::SweepSection::Profile(planar_profile.clone()),
             sections,
             cadmpeg_ir::features::SweepMode::Surface {},
         )
@@ -597,9 +596,7 @@ fn design_completeness_checks_secondary_sweep_and_loft_paths() {
     let definitions = [
         sweep(
             vec![cadmpeg_ir::features::SweepSection::Profile(
-                (cadmpeg_ir::features::ProfileRef::Native("section".into()))
-                    .try_into()
-                    .unwrap(),
+                cadmpeg_ir::features::PlanarProfileRef::Native("section".into()),
             )],
             None,
         ),
@@ -660,7 +657,8 @@ fn design_completeness_checks_secondary_sweep_and_loft_paths() {
 fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
     let mut ir = CadIr::empty();
     let sketch = cadmpeg_ir::sketches::SketchId::mint("synthetic:test:id#sketch").unwrap();
-    let profile = cadmpeg_ir::features::ProfileRef::Sketch(sketch.clone());
+    let planar_profile = cadmpeg_ir::features::PlanarProfileRef::Sketch(sketch.clone());
+    let profile = cadmpeg_ir::features::ProfileRef::Planar(planar_profile.clone());
     let path = PathRef::Sketch(sketch);
     let face = FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId::mint(
         "test:model:entity#face",
@@ -928,11 +926,9 @@ fn hole_completeness_checks_optional_operands_when_present() {
     };
     for (ordinal, definition) in [
         hole(
-            Some(
-                (cadmpeg_ir::features::ProfileRef::Native("profile".into()))
-                    .try_into()
-                    .unwrap(),
-            ),
+            Some(cadmpeg_ir::features::PlanarProfileRef::Native(
+                "profile".into(),
+            )),
             None,
         ),
         hole(None, Some(cadmpeg_ir::features::HoleKind::Unresolved(None))),

@@ -4,8 +4,8 @@
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     BooleanOp, EdgeSelection, ExtrudeExtent, ExtrudeStart, FaceSelection,
-    FeatureDefinition as IrFeatureDefinition, HoleKind, ProfileRef, RadiusSpec, RevolveExtent,
-    UnresolvedFamily,
+    FeatureDefinition as IrFeatureDefinition, HoleKind, PlanarProfileRef, ProfileRef, RadiusSpec,
+    RevolveExtent, UnresolvedFamily,
 };
 
 use crate::container::ContainerScan;
@@ -142,8 +142,10 @@ pub(in super::super) fn collect_feature_coverage(
                 ..
             } => {
                 extrude_feature_count += 1;
-                let unresolved_profile = matches!(profile, ProfileRef::Unresolved(_));
-                let native_profile = matches!(profile, ProfileRef::Native(_));
+                let unresolved_profile =
+                    matches!(profile, ProfileRef::Planar(PlanarProfileRef::Unresolved(_)));
+                let native_profile =
+                    matches!(profile, ProfileRef::Planar(PlanarProfileRef::Native(_)));
                 let incomplete_start = matches!(
                     start,
                     ExtrudeStart::FromFace { face, .. }
@@ -176,11 +178,9 @@ pub(in super::super) fn collect_feature_coverage(
                 revolve_feature_count += 1;
                 let unresolved_profile = construction
                     .profile()
-                    .is_none_or(|profile| matches!(&**profile, ProfileRef::Unresolved(_)));
-                let native_profile = matches!(
-                    construction.profile().map(std::ops::Deref::deref),
-                    Some(ProfileRef::Native(_))
-                );
+                    .is_none_or(|profile| matches!(profile, PlanarProfileRef::Unresolved(_)));
+                let native_profile =
+                    matches!(construction.profile(), Some(PlanarProfileRef::Native(_)));
                 let unresolved_axis = construction.axis().is_none();
                 let incomplete_extent = construction.extent().is_none_or(|extent| match extent {
                     RevolveExtent::OneSided { termination }
@@ -220,9 +220,8 @@ pub(in super::super) fn collect_feature_coverage(
                 let diameter = shape.diameter();
                 hole_feature_count += 1;
                 let unresolved_location = profile.is_none() && placements.is_none();
-                let unresolved_profile =
-                    matches!(profile.as_deref(), Some(ProfileRef::Unresolved(_)));
-                let native_profile = matches!(profile.as_deref(), Some(ProfileRef::Native(_)));
+                let unresolved_profile = matches!(profile, Some(PlanarProfileRef::Unresolved(_)));
+                let native_profile = matches!(profile, Some(PlanarProfileRef::Native(_)));
                 let unresolved_face = matches!(
                     face,
                     Some(FaceSelection::Unresolved | FaceSelection::HistoricalPartial { .. })

@@ -144,14 +144,14 @@ fn historical_vertex_selection_requires_input_state_membership() {
 fn neutral_features_resolve_sketch_profile_and_path_operands() {
     use crate::features::{
         BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
-        LinearTermination, PathRef, ProfileRef,
+        LinearTermination, PathRef, PlanarProfileRef, ProfileRef,
     };
     use crate::sketches::SketchId;
 
     let sketch = SketchId::mint("synthetic:test:sketch#missing").unwrap();
     let definitions = [
         FeatureDefinition::Extrude {
-            profile: ProfileRef::Sketch(sketch.clone()),
+            profile: ProfileRef::Planar(PlanarProfileRef::Sketch(sketch.clone())),
             direction: ExtrudeDirection::ProfileNormal {},
             start: crate::features::ExtrudeStart::ProfilePlane {},
             extent: ExtrudeExtent::OneSided {
@@ -171,9 +171,7 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
         },
         FeatureDefinition::Sweep {
             shape: crate::features::SweepShape::new(
-                crate::features::SweepSection::Profile(
-                    ProfileRef::Sketch(sketch.clone()).try_into().unwrap(),
-                ),
+                crate::features::SweepSection::Profile(PlanarProfileRef::Sketch(sketch.clone())),
                 Vec::new(),
                 crate::features::SweepMode::Solid {
                     op: crate::features::SolidSweepOperation::NewBody,
@@ -233,7 +231,8 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
 fn feature_history_rejects_dangling_and_forward_dependencies() {
     use crate::features::{
         BooleanOp, ExtrudeExtent, ExtrudeSide, FaceSelection, Feature, FeatureDefinition,
-        FeatureId, FeatureSourceContent, LinearTermination, ParameterId, ProfileRef,
+        FeatureId, FeatureSourceContent, LinearTermination, ParameterId, PlanarProfileRef,
+        ProfileRef,
     };
     use crate::ids::{BodyId, FaceId};
     use std::collections::BTreeMap;
@@ -260,10 +259,10 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
 
         evaluation: crate::features::FeatureEvaluation::new(
             FeatureDefinition::Extrude {
-                profile: ProfileRef::Faces(vec![FaceId::mint(
+                profile: ProfileRef::Planar(PlanarProfileRef::Faces(vec![FaceId::mint(
                     "synthetic:test:face#profile-missing",
                 )
-                .expect("valid identity")]),
+                .expect("valid identity")])),
                 direction: ExtrudeDirection::ProfileNormal {},
                 start: crate::features::ExtrudeStart::ProfilePlane {},
                 extent: ExtrudeExtent::OneSided {
@@ -575,7 +574,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
     use crate::features::{
         BooleanOp, ConfigurationBodies, ConfigurationFeatureState, ConfigurationId,
         DesignConfiguration, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
-        GeneratedVertexRef, LinearTermination, ProfileRef, VertexSelection,
+        GeneratedVertexRef, LinearTermination, PlanarProfileRef, ProfileRef, VertexSelection,
     };
     use std::collections::BTreeMap;
 
@@ -614,7 +613,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Extrude {
-                profile: ProfileRef::Native("test:profile".into()),
+                profile: ProfileRef::Planar(PlanarProfileRef::Native("test:profile".into())),
                 direction: ExtrudeDirection::ProfileNormal {},
                 start: crate::features::ExtrudeStart::ProfilePlane {},
                 extent: ExtrudeExtent::OneSided {
@@ -765,7 +764,8 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
             BooleanOp, ConfigurationBodies, ConfigurationFeatureState, ConfigurationId,
             DatumPlaneReference, DesignConfiguration, ExtrudeDirection, ExtrudeExtent, ExtrudeSide,
             ExtrudeStart, Feature, FeatureDefinition, FeatureId, GeneratedCurveRef,
-            LinearTermination, PatternKind, PatternSeed, PatternTransform, ProfileRef,
+            LinearTermination, PatternKind, PatternSeed, PatternTransform, PlanarProfileRef,
+            ProfileRef,
         },
         scalar::Length,
     };
@@ -853,11 +853,13 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
             profile.clone(),
             6,
             FeatureDefinition::Extrude {
-                profile: ProfileRef::generated(
-                    vec![GeneratedCurveRef::new(source.clone(), "curve-0".into()).unwrap()],
-                    "synthetic:test:profile-selection".into(),
-                )
-                .unwrap(),
+                profile: ProfileRef::Planar(
+                    PlanarProfileRef::generated(
+                        vec![GeneratedCurveRef::new(source.clone(), "curve-0".into()).unwrap()],
+                        "synthetic:test:profile-selection".into(),
+                    )
+                    .unwrap(),
+                ),
                 direction: ExtrudeDirection::ProfileNormal {},
                 start: ExtrudeStart::ProfilePlane {},
                 extent: ExtrudeExtent::OneSided {

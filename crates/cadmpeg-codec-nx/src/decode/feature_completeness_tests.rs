@@ -9,6 +9,7 @@ use crate::decode::feature_completeness::operands::{
     extrude_start_is_incomplete, face_selection_is_incomplete, hole_feature_is_incomplete,
     hole_specification_is_incomplete, loft_section_is_incomplete, path_ref_is_incomplete,
     pattern_feature_is_incomplete, pattern_is_incomplete, pattern_occurrence_count,
+    planar_profile_dependency_is_incomplete, planar_profile_ref_is_incomplete,
     profile_dependency_is_incomplete, profile_ref_is_incomplete, revolve_feature_is_incomplete,
     rib_feature_is_incomplete, sweep_mode_is_incomplete, sweep_orientation_is_incomplete,
     termination_dependency_is_incomplete, termination_is_incomplete,
@@ -23,7 +24,7 @@ use crate::decode::report::append_design_intent_losses;
 fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operands() {
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::{
-        features::{FaceSelection, HoleKind, HolePlacement, LinearTermination, ProfileRef},
+        features::{FaceSelection, HoleKind, HolePlacement, LinearTermination, PlanarProfileRef},
         scalar::Length,
     };
 
@@ -92,7 +93,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         ));
     }
     assert!(hole_feature_is_incomplete(
-        Some(&ProfileRef::Unresolved("hole".into())),
+        Some(&PlanarProfileRef::Unresolved("hole".into())),
         Some(&FaceSelection::Unresolved),
         None,
         (&HoleKind::Simple, None),
@@ -318,15 +319,13 @@ fn nx_extent_completeness_checks_nested_and_face_termination() {
 
 #[test]
 fn nx_rib_completeness_requires_a_resolved_profile() {
-    use cadmpeg_ir::features::{BooleanOp, ProfileRef, RibConstruction, RibDraft, RibSide};
+    use cadmpeg_ir::features::{BooleanOp, PlanarProfileRef, RibConstruction, RibDraft, RibSide};
     use cadmpeg_ir::math::Vector3;
 
     let mut construction = RibConstruction {
-        profile: Some(
-            (ProfileRef::Native("nx:profile#0".to_string()))
-                .try_into()
-                .unwrap(),
-        ),
+        profile: Some(cadmpeg_ir::features::PlanarProfileRef::Native(
+            "nx:profile#0".to_string(),
+        )),
         direction: Some(
             cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
         ),
@@ -335,16 +334,12 @@ fn nx_rib_completeness_requires_a_resolved_profile() {
         draft: RibDraft::None,
     };
     assert!(rib_feature_is_incomplete(&construction, BooleanOp::Join,));
-    construction.profile = Some(
-        (ProfileRef::Faces(vec![cadmpeg_ir::ids::FaceId::mint(
-            "test:model:entity#face%230".to_string(),
-        )
-        .expect("identity grammar")]))
-        .try_into()
-        .unwrap(),
-    );
+    construction.profile = Some(PlanarProfileRef::Faces(vec![
+        cadmpeg_ir::ids::FaceId::mint("test:model:entity#face%230".to_string())
+            .expect("identity grammar"),
+    ]));
     assert!(!rib_feature_is_incomplete(&construction, BooleanOp::Join,));
-    construction.profile = Some((ProfileRef::Faces(Vec::new())).try_into().unwrap());
+    construction.profile = Some(cadmpeg_ir::features::PlanarProfileRef::Faces(Vec::new()));
     assert!(rib_feature_is_incomplete(&construction, BooleanOp::Join,));
 }
 
@@ -478,7 +473,7 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
 fn nx_selection_completeness_requires_nonempty_unique_identities() {
     use cadmpeg_ir::features::{
         BodySelection, EdgeSelection, FaceSelection, LoftPointSection, LoftSection, PathRef,
-        ProfileRef,
+        PlanarProfileRef,
     };
 
     assert!(body_selection_is_incomplete(&BodySelection::Bodies(
@@ -504,15 +499,17 @@ fn nx_selection_completeness_requires_nonempty_unique_identities() {
         Vec::new()
     )));
     assert!(!edge_selection_is_incomplete(&EdgeSelection::All));
-    assert!(profile_ref_is_incomplete(&ProfileRef::Faces(Vec::new())));
-    assert!(profile_ref_is_incomplete(
-        &ProfileRef::sketch_selection(
+    assert!(planar_profile_ref_is_incomplete(&PlanarProfileRef::Faces(
+        Vec::new()
+    )));
+    assert!(planar_profile_ref_is_incomplete(
+        &PlanarProfileRef::sketch_selection(
             cadmpeg_ir::sketches::SketchId::mint("test:test:sketch#0").unwrap(),
             vec!["nx:sketch-selection#0".into()]
         )
         .unwrap()
     ));
-    assert!(ProfileRef::sketch_profiles(
+    assert!(PlanarProfileRef::sketch_profiles(
         cadmpeg_ir::sketches::SketchId::mint("test:test:sketch#0").unwrap(),
         Vec::new()
     )
@@ -719,16 +716,17 @@ fn nx_replace_face_completeness_requires_resolved_disjoint_operands() {
 fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
     use cadmpeg_ir::features::{
         BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, Feature,
-        FeatureDefinition, FeatureId, FeatureResultTopology, LinearTermination, ProfileRef,
+        FeatureDefinition, FeatureId, FeatureResultTopology, LinearTermination, PlanarProfileRef,
+        ProfileRef,
     };
     use cadmpeg_ir::ids::FeatureResultTopologyId;
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let output = ir.model.bodies[0].id.clone();
     let definition = |direction, start, solid| FeatureDefinition::Extrude {
-        profile: ProfileRef::Sketch(
+        profile: ProfileRef::Planar(PlanarProfileRef::Sketch(
             cadmpeg_ir::sketches::SketchId::mint("test:test:sketch#0").unwrap(),
-        ),
+        )),
         direction,
         start,
         extent: ExtrudeExtent::OneSided {
@@ -825,7 +823,7 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
 fn nx_revolve_completeness_checks_construction_and_output_lineage() {
     use cadmpeg_ir::features::{
         AngularTermination, BooleanOp, Feature, FeatureDefinition, FeatureId, GeneratedVertexRef,
-        PathRef, ProfileRef, RevolutionAxis, RevolveConstruction, RevolveExtent, VertexSelection,
+        PathRef, RevolutionAxis, RevolveConstruction, RevolveExtent, VertexSelection,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -833,7 +831,7 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
     let output = ir.model.bodies[0].id.clone();
     let face = ir.model.faces[0].id.clone();
     let complete = RevolveConstruction::Resolved {
-        profile: (ProfileRef::Faces(vec![face])).try_into().unwrap(),
+        profile: cadmpeg_ir::features::PlanarProfileRef::Faces(vec![face]),
         axis: RevolutionAxis {
             origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
             direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
@@ -969,7 +967,7 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
 #[test]
 fn nx_selection_completeness_rejects_repeated_faces_and_edges() {
     use cadmpeg_ir::features::{
-        EdgeSelection, FaceSelection, FeatureId, GeneratedCurveRef, ProfileRef,
+        EdgeSelection, FaceSelection, FeatureId, GeneratedCurveRef, PlanarProfileRef, ProfileRef,
     };
     use cadmpeg_ir::ids::{EdgeId, FaceId};
 
@@ -980,23 +978,22 @@ fn nx_selection_completeness_rejects_repeated_faces_and_edges() {
     ]),));
 
     let face = FaceId::mint("test:model:profile-face#repeated").expect("identity grammar");
-    assert!(profile_ref_is_incomplete(&ProfileRef::Faces(vec![
-        face.clone(),
-        face
-    ]),));
+    assert!(profile_ref_is_incomplete(&ProfileRef::Planar(
+        PlanarProfileRef::Faces(vec![face.clone(), face])
+    ),));
     let producer = FeatureId::mint("test:test:feature#profile-producer").expect("identity grammar");
-    let generated = ProfileRef::generated(
+    let generated = PlanarProfileRef::generated(
         vec![GeneratedCurveRef::new(producer.clone(), "curve-0".into()).unwrap()],
         "test:profile-selection".into(),
     )
     .unwrap();
-    assert!(!profile_ref_is_incomplete(&generated));
-    assert!(profile_dependency_is_incomplete(&generated, &[],));
-    assert!(!profile_dependency_is_incomplete(
+    assert!(!planar_profile_ref_is_incomplete(&generated));
+    assert!(planar_profile_dependency_is_incomplete(&generated, &[],));
+    assert!(!planar_profile_dependency_is_incomplete(
         &generated,
         std::slice::from_ref(&producer),
     ));
-    let direct = ProfileRef::Feature(producer.clone());
+    let direct = ProfileRef::Planar(PlanarProfileRef::Feature(producer.clone()));
     assert!(profile_dependency_is_incomplete(&direct, &[],));
     assert!(!profile_dependency_is_incomplete(&direct, &[producer],));
 
@@ -1011,7 +1008,7 @@ fn nx_selection_completeness_rejects_repeated_faces_and_edges() {
 fn nx_hole_completeness_rejects_opaque_supplied_operands() {
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::{
-        features::{FaceSelection, HoleKind, HolePlacement, LinearTermination, ProfileRef},
+        features::{FaceSelection, HoleKind, HolePlacement, LinearTermination},
         scalar::Length,
     };
 
@@ -1032,7 +1029,7 @@ fn nx_hole_completeness_rejects_opaque_supplied_operands() {
     };
 
     assert!(!incomplete(None, None));
-    let unresolved_profile = ProfileRef::Unresolved("hole".into());
+    let unresolved_profile = cadmpeg_ir::features::PlanarProfileRef::Unresolved("hole".into());
     assert!(incomplete(Some(&unresolved_profile), None));
     assert!(incomplete(None, Some(&FaceSelection::Unresolved)));
 }

@@ -27,8 +27,8 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     AngularTermination, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeDirection, ExtrudeExtent,
     ExtrudeSide, FaceSelection, Feature, FeatureDefinition as IrFeatureDefinition,
-    FeatureId as IrFeatureId, LinearTermination, PathRef, ProfileRef, SurfaceBoundary, ThickenSide,
-    UnresolvedFamily,
+    FeatureId as IrFeatureId, LinearTermination, PathRef, PlanarProfileRef, ProfileRef,
+    SurfaceBoundary, ThickenSide, UnresolvedFamily,
 };
 use cadmpeg_ir::geometry::{PcurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{BodyId, SurfaceId};
@@ -476,7 +476,7 @@ fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
         )
         .expect("valid test fixture"),
         IrFeatureDefinition::Extrude {
-            profile: ProfileRef::Unresolved(_),
+            profile: ProfileRef::Planar(PlanarProfileRef::Unresolved(_)),
             op: BooleanOp::NewBody,
             solid: Some(false),
             ..
@@ -1007,7 +1007,7 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
             Some(IrFeatureDefinition::Revolve {
                 ref construction,
                 op: BooleanOp::Unresolved,
-            }) if matches!(construction.profile().map(AsRef::as_ref), Some(ProfileRef::Native(profile))
+            }) if matches!(construction.profile(), Some(PlanarProfileRef::Native(profile))
                 if profile == "creo:featdefs:sketch#822")
                 && construction.axis().is_none()
                 && construction.extent().is_none()
@@ -1608,7 +1608,7 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
 
     ir.model.features[0] = feature(
         IrFeatureDefinition::Extrude {
-            profile: ProfileRef::Native("creo:section#1".to_string()),
+            profile: ProfileRef::Planar(PlanarProfileRef::Native("creo:section#1".to_string())),
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {

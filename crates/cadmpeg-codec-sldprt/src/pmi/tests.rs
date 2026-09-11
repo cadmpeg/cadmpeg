@@ -913,7 +913,8 @@ fn ordinate_pmi_dimensions_round_trip_typed_values() {
 #[test]
 fn decode_uses_pmi_dimension_to_project_sparse_extrusion() {
     use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, LinearTermination, ProfileRef,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, LinearTermination,
+        PlanarProfileRef, ProfileRef,
     };
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -939,7 +940,7 @@ fn decode_uses_pmi_dimension_to_project_sparse_extrusion() {
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Extrude {
-            profile: ProfileRef::Unresolved(_),
+            profile: ProfileRef::Planar(PlanarProfileRef::Unresolved(_)),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {

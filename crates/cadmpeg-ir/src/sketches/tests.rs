@@ -506,10 +506,11 @@ fn coordinate_equation_constraints_round_trip_and_validate_geometry() {
 
 #[test]
 fn sketch_regions_round_trip_with_explicit_boundary_roles() {
+    use crate::features::PlanarProfileRef;
     use crate::features::{ProfileRef, SketchProfileBoundaryUse, SketchProfileRegion};
     use crate::sketches::{SketchEntityId, SketchId};
 
-    let profile = ProfileRef::sketch_regions(
+    let profile = PlanarProfileRef::sketch_regions(
         SketchId::mint("synthetic:test:sketch#region").unwrap(),
         vec![
             SketchProfileRegion::loops(2, vec![3, 5]).unwrap(),
@@ -545,7 +546,7 @@ fn sketch_regions_round_trip_with_explicit_boundary_roles() {
     );
     assert_eq!(
         serde_json::from_value::<ProfileRef>(json).expect("deserialize sketch regions"),
-        profile
+        ProfileRef::Planar(profile)
     );
 }
 

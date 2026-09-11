@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::examples::unit_cube;
 use crate::features::{DistinctMembers, FeatureContent};
+use crate::features::{PlanarProfileRef, ProfileRef};
 use crate::math::{Point3, Vector3};
 use crate::validate::validate_neutral;
 
@@ -197,7 +198,9 @@ fn termination_families_preserve_wire_and_reject_cross_family_variants() {
 
 #[test]
 fn loft_sections_preserve_profile_shape() {
-    use crate::features::{BooleanOp, FeatureDefinition, LoftSection, ProfileRef};
+    use crate::features::{
+        BooleanOp, FeatureDefinition, LoftSection, PlanarProfileRef, ProfileRef,
+    };
 
     let wire = serde_json::json!({
         "definition": "loft",
@@ -215,7 +218,7 @@ fn loft_sections_preserve_profile_shape() {
             op: BooleanOp::NewBody,
             closed: false,
             ..
-        } if sections == &vec![LoftSection::Profile(ProfileRef::Native("native:section".into()))]
+        } if sections == &vec![LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Native("native:section".into())))]
             && guides.is_empty()
     ));
     let encoded = serde_json::to_value(definition).unwrap();
@@ -764,17 +767,19 @@ fn face_selections_round_trip_through_json() {
 
 #[test]
 fn historical_face_profiles_round_trip_through_json() {
-    use crate::features::ProfileRef;
     use crate::ids::{FeatureInputTopologyId, HistoricalFaceId};
 
-    let profile = ProfileRef::historical_faces(
+    let profile = PlanarProfileRef::historical_faces(
         FeatureInputTopologyId::mint("synthetic:history-input:state#0").expect("valid identity"),
         vec![HistoricalFaceId::mint("synthetic:history-input:face#0").expect("valid identity")],
         vec!["native:profile-group#0".into()],
     )
     .unwrap();
     let json = serde_json::to_string(&profile).unwrap();
-    assert_eq!(serde_json::from_str::<ProfileRef>(&json).unwrap(), profile);
+    assert_eq!(
+        serde_json::from_str::<ProfileRef>(&json).unwrap(),
+        ProfileRef::Planar(profile)
+    );
 }
 
 #[test]
