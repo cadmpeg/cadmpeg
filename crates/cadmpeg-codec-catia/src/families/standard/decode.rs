@@ -5257,14 +5257,7 @@ fn emit_standard_topology(
                     "trim_mesh_boundary_run",
                     Exactness::ByteExact,
                 );
-                for field in [
-                    "owner_loop",
-                    "edge",
-                    "next",
-                    "previous",
-                    "radial_next",
-                    "sense",
-                ] {
+                for field in ["owner_loop", "edge", "radial_next", "sense"] {
                     annotations
                         .derived(&id, field)
                         .map_err(cadmpeg_core::CodecError::malformed)?;

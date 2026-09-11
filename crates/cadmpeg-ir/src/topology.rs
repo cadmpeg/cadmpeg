@@ -14,9 +14,8 @@ use crate::math::Point3;
 use crate::transform::Transform;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize, Serializer};
-use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 /// RGBA color, components in `[0, 1]`.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -939,8 +938,9 @@ pub struct AnchoredVertexUse {
 ///
 /// Coedges form a loop ring through the owning [`Loop`] coedge order, and a
 /// radial ring around their shared edge through `radial_next`.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct Coedge {
     /// Arena id.
     pub id: CoedgeId,
@@ -960,106 +960,12 @@ pub struct Coedge {
     pub use_curve: Option<CoedgeUseCurve>,
 }
 
-thread_local! {
-    static COEDGE_RING_NEIGHBORS: RefCell<HashMap<CoedgeId, (CoedgeId, CoedgeId)>> =
-        RefCell::new(HashMap::new());
-}
-
-fn install_coedge_ring_neighbors(loops: &[Loop], coedges: &[Coedge]) {
-    let mut neighbors = HashMap::with_capacity(coedges.len());
-    for coedge in coedges {
-        if let Some(pair) = loops
-            .iter()
-            .find(|loop_| loop_.id == coedge.owner_loop)
-            .and_then(|loop_| loop_.ring_neighbors_of(coedge))
-        {
-            neighbors.insert(coedge.id.clone(), pair);
-        }
-    }
-    COEDGE_RING_NEIGHBORS.with(|slot| *slot.borrow_mut() = neighbors);
-}
-
 /// Next and previous coedge ids from the owning loop ring.
 #[must_use]
 pub fn coedge_ring_neighbors(loops: &[Loop], coedge: &Coedge) -> Option<(CoedgeId, CoedgeId)> {
     loops
         .iter()
         .find_map(|loop_| loop_.ring_neighbors_of(coedge))
-}
-
-/// Serialize an entity graph with coedge neighbors derived from its owning
-/// topology. Nested calls restore the enclosing graph's context.
-pub fn with_topology_serialization<T>(
-    loops: &[Loop],
-    coedges: &[Coedge],
-    serialize: impl FnOnce() -> T,
-) -> T {
-    let _scope = TopologyWireScope::new(loops, coedges);
-    serialize()
-}
-
-pub(crate) struct TopologyWireScope {
-    neighbors: HashMap<CoedgeId, (CoedgeId, CoedgeId)>,
-    // A scope must restore the same thread-local state that it installed.
-    _thread: std::marker::PhantomData<std::rc::Rc<()>>,
-}
-
-impl TopologyWireScope {
-    pub(crate) fn new(loops: &[Loop], coedges: &[Coedge]) -> Self {
-        let neighbors = COEDGE_RING_NEIGHBORS.with(|slot| std::mem::take(&mut *slot.borrow_mut()));
-        let scope = Self {
-            neighbors,
-            _thread: std::marker::PhantomData,
-        };
-        install_coedge_ring_neighbors(loops, coedges);
-        scope
-    }
-}
-
-impl Drop for TopologyWireScope {
-    fn drop(&mut self) {
-        COEDGE_RING_NEIGHBORS.with(|slot| *slot.borrow_mut() = std::mem::take(&mut self.neighbors));
-    }
-}
-
-#[derive(Serialize)]
-struct CoedgeWriteWire<'a> {
-    id: &'a CoedgeId,
-    owner_loop: &'a LoopId,
-    edge: &'a EdgeId,
-    next: CoedgeId,
-    previous: CoedgeId,
-    radial_next: &'a CoedgeId,
-    sense: Sense,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pcurves: &'a Vec<PcurveUse>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    use_curve: Option<&'a CoedgeUseCurve>,
-}
-
-impl Serialize for Coedge {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let (next, previous) = COEDGE_RING_NEIGHBORS
-            .with(|slot| slot.borrow().get(&self.id).cloned())
-            .ok_or_else(|| {
-                serde::ser::Error::custom(format!(
-                    "coedge {} is absent from its owning loop ring",
-                    self.id.as_str()
-                ))
-            })?;
-        CoedgeWriteWire {
-            id: &self.id,
-            owner_loop: &self.owner_loop,
-            edge: &self.edge,
-            next,
-            previous,
-            radial_next: &self.radial_next,
-            sense: self.sense,
-            pcurves: &self.pcurves,
-            use_curve: self.use_curve.as_ref(),
-        }
-        .serialize(serializer)
-    }
 }
 
 /// A coedge-local curve and its loop-traversal interval.
@@ -1388,8 +1294,8 @@ mod tests {
     }
 
     use super::{
-        with_topology_serialization, AnchoredVertexUse, Coedge, CoedgeUseCurve, Face, Loop,
-        LoopBoundary, LoopBoundaryRole, LoopRing,
+        coedge_ring_neighbors, AnchoredVertexUse, Coedge, CoedgeUseCurve, Face, Loop, LoopBoundary,
+        LoopBoundaryRole, LoopRing,
     };
 
     #[test]
@@ -1452,8 +1358,6 @@ mod tests {
             "id": "test:model:coedge#0",
             "owner_loop": "test:model:loop#0",
             "edge": "test:model:edge#0",
-            "next": "test:model:coedge#0",
-            "previous": "test:model:coedge#0",
             "radial_next": "test:model:coedge#0",
             "sense": "forward",
             "use_curve": {
@@ -1480,11 +1384,11 @@ mod tests {
                 super::LoopRing::new(vec![coedge.id.clone()], Vec::new()).expect("valid loop ring"),
             ),
         };
-        let encoded = with_topology_serialization(
-            std::slice::from_ref(&loop_),
-            std::slice::from_ref(&coedge),
-            || serde_json::to_value(&coedge).unwrap(),
+        assert_eq!(
+            coedge_ring_neighbors(std::slice::from_ref(&loop_), &coedge),
+            Some((coedge.id.clone(), coedge.id.clone()))
         );
+        let encoded = serde_json::to_value(&coedge).unwrap();
         assert_eq!(
             encoded["use_curve"],
             serde_json::json!({
@@ -1499,38 +1403,27 @@ mod tests {
     }
 
     #[test]
-    fn topology_serialization_restores_nested_context_after_unwind() {
+    fn a_coedge_states_no_ring_neighbor_and_its_loop_order_survives_a_round_trip() {
         let model = crate::examples::unit_cube().model;
         let coedge = &model.coedges[0];
-        assert!(serde_json::to_value(coedge).is_err());
-        with_topology_serialization(&model.loops, &model.coedges, || {
-            let expected = serde_json::to_value(coedge).unwrap();
-            let interrupted = std::panic::catch_unwind(|| {
-                with_topology_serialization(&[], &[], || {
-                    assert!(serde_json::to_value(coedge).is_err());
-                    panic!("interrupt nested serialization");
-                });
-            });
-            assert!(interrupted.is_err());
-            assert_eq!(serde_json::to_value(coedge).unwrap(), expected);
-        });
-        assert!(serde_json::to_value(coedge).is_err());
-    }
+        let wire = serde_json::to_value(coedge).unwrap();
+        assert!(wire.get("next").is_none(), "{wire}");
+        assert!(wire.get("previous").is_none(), "{wire}");
 
-    #[test]
-    fn model_deserialization_restores_enclosing_topology_context() {
-        let model = crate::examples::unit_cube().model;
-        let coedge = &model.coedges[0];
-        let empty_model = serde_json::to_value(crate::document::Model::default()).unwrap();
-        with_topology_serialization(&model.loops, &model.coedges, || {
-            let expected = serde_json::to_value(coedge).unwrap();
-            serde_json::from_value::<crate::document::Model>(empty_model.clone()).unwrap();
-            assert_eq!(serde_json::to_value(coedge).unwrap(), expected);
-            let mut invalid = empty_model.clone();
-            invalid["vertices"] = serde_json::json!("invalid");
-            assert!(serde_json::from_value::<crate::document::Model>(invalid).is_err());
-            assert_eq!(serde_json::to_value(coedge).unwrap(), expected);
-        });
+        let mut with_next = wire.clone();
+        with_next["next"] = serde_json::json!(coedge.id.as_str());
+        let error = serde_json::from_value::<Coedge>(with_next)
+            .expect_err("the ring order is the loop's, not the coedge's")
+            .to_string();
+        assert!(error.contains("next"), "{error}");
+        assert_eq!(&serde_json::from_value::<Coedge>(wire).unwrap(), coedge);
+
+        let before = coedge_ring_neighbors(&model.loops, coedge).expect("a ring neighbor pair");
+        let round_tripped: crate::document::Model =
+            serde_json::from_value(serde_json::to_value(&model).unwrap()).unwrap();
+        let after = coedge_ring_neighbors(&round_tripped.loops, &round_tripped.coedges[0])
+            .expect("a ring neighbor pair");
+        assert_eq!(before, after);
     }
 
     #[test]

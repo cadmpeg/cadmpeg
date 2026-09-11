@@ -554,15 +554,7 @@ pub(super) fn emit_faces(
                     "serialized_loop_member",
                     Exactness::ByteExact,
                 );
-                for field in [
-                    "owner_loop",
-                    "edge",
-                    "next",
-                    "previous",
-                    "radial_next",
-                    "sense",
-                    "pcurves",
-                ] {
+                for field in ["owner_loop", "edge", "radial_next", "sense", "pcurves"] {
                     if annotations.derived(&id, field).is_err() {
                         return false;
                     }

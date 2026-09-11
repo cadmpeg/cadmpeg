@@ -219,7 +219,6 @@
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:8",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A1",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A2",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1",
           "pcurves": [
             {
@@ -230,14 +229,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:8%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A4",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A4",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:7",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A2",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A3",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1",
           "pcurves": [
             {
@@ -248,14 +245,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:7%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A1",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A4",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:5",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A3",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A4",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1",
           "pcurves": [
             {
@@ -266,14 +261,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:5%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A2",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:3",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A4",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A1",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1",
           "pcurves": [
             {
@@ -284,14 +277,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:3%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A3",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:13",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A1",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A2",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1",
           "pcurves": [
             {
@@ -302,14 +293,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:13%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A4",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:15",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A2",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A3",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1",
           "pcurves": [
             {
@@ -320,14 +309,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:15%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A1",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:17",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A3",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A4",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1",
           "pcurves": [
             {
@@ -338,14 +325,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:17%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A2",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A2",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:18",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A4",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A1",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1",
           "pcurves": [
             {
@@ -356,14 +341,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:18%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A3",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A2",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:3",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A1",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A2",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1",
           "pcurves": [
             {
@@ -374,14 +357,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:3%3A3%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A4",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A4",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:22",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A2",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A3",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1",
           "pcurves": [
             {
@@ -392,14 +373,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:22%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A1",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A4",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:13",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A3",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A4",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1",
           "pcurves": [
             {
@@ -410,14 +389,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:13%3A3%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A2",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:21",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A4",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A1",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1",
           "pcurves": [
             {
@@ -428,14 +405,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:21%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A3",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:25",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A1",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A2",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1",
           "pcurves": [
             {
@@ -446,14 +421,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:25%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A4",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:17",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A2",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A3",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1",
           "pcurves": [
             {
@@ -464,14 +437,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:17%3A3%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A1",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:26",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A3",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A4",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1",
           "pcurves": [
             {
@@ -482,14 +453,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:26%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A2",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A2",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:7",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A4",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A1",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1",
           "pcurves": [
             {
@@ -500,14 +469,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:7%3A3%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A3",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A2",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:21",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A1",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A2",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1",
           "pcurves": [
             {
@@ -518,14 +485,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:21%3A3%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A4",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A4",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:18",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A2",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A3",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1",
           "pcurves": [
             {
@@ -536,14 +501,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:18%3A3%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A1",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A4",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:25",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A3",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A4",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1",
           "pcurves": [
             {
@@ -554,14 +517,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:25%3A3%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A2",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:8",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A4",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A1",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1",
           "pcurves": [
             {
@@ -572,14 +533,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:8%3A3%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1%3A3",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:5",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A1",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A2",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1",
           "pcurves": [
             {
@@ -590,14 +549,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:5%3A3%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A4",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:26",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A2",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A3",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1",
           "pcurves": [
             {
@@ -608,14 +565,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:26%3A3%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A1",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:15",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A3",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A4",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1",
           "pcurves": [
             {
@@ -626,14 +581,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:15%3A3%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A2",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1%3A2",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:22",
           "id": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A4",
-          "next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A1",
           "owner_loop": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1",
           "pcurves": [
             {
@@ -644,14 +597,12 @@
               "pcurve": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:22%3A3%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1%3A3",
           "radial_next": "fcstd:model:coedge#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1%3A2",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#PinPrototype:Shape:PinPrototype.Shape.brp:5",
           "id": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:11%3A1%3A1",
-          "next": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:11%3A1%3A1",
           "owner_loop": "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:11%3A1",
           "pcurves": [
             {
@@ -662,14 +613,12 @@
               "pcurve": "fcstd:model:pcurve#PinPrototype:Shape:PinPrototype.Shape.brp:5%3A3%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:11%3A1%3A1",
           "radial_next": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#PinPrototype:Shape:PinPrototype.Shape.brp:2",
           "id": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A1",
-          "next": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A2",
           "owner_loop": "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1",
           "pcurves": [
             {
@@ -680,14 +629,12 @@
               "pcurve": "fcstd:model:pcurve#PinPrototype:Shape:PinPrototype.Shape.brp:2%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A4",
           "radial_next": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:9%3A1%3A1",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#PinPrototype:Shape:PinPrototype.Shape.brp:4",
           "id": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A2",
-          "next": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A3",
           "owner_loop": "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1",
           "pcurves": [
             {
@@ -698,14 +645,12 @@
               "pcurve": "fcstd:model:pcurve#PinPrototype:Shape:PinPrototype.Shape.brp:4%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A1",
           "radial_next": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A4",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#PinPrototype:Shape:PinPrototype.Shape.brp:5",
           "id": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A3",
-          "next": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A4",
           "owner_loop": "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1",
           "pcurves": [
             {
@@ -716,14 +661,12 @@
               "pcurve": "fcstd:model:pcurve#PinPrototype:Shape:PinPrototype.Shape.brp:5%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A2",
           "radial_next": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:11%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#PinPrototype:Shape:PinPrototype.Shape.brp:4",
           "id": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A4",
-          "next": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A1",
           "owner_loop": "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1",
           "pcurves": [
             {
@@ -734,14 +677,12 @@
               "pcurve": "fcstd:model:pcurve#PinPrototype:Shape:PinPrototype.Shape.brp:4%3A2%3A2"
             }
           ],
-          "previous": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A3",
           "radial_next": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A2",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#PinPrototype:Shape:PinPrototype.Shape.brp:2",
           "id": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:9%3A1%3A1",
-          "next": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:9%3A1%3A1",
           "owner_loop": "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:9%3A1",
           "pcurves": [
             {
@@ -752,7 +693,6 @@
               "pcurve": "fcstd:model:pcurve#PinPrototype:Shape:PinPrototype.Shape.brp:2%3A3%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:9%3A1%3A1",
           "radial_next": "fcstd:model:coedge#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1%3A1",
           "sense": "forward"
         }

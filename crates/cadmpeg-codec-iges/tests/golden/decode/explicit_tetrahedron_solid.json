@@ -28,108 +28,84 @@
         {
           "edge": "iges:model:edge#D55:D35:2",
           "id": "iges:model:coedge#D55:D53:D37:0",
-          "next": "iges:model:coedge#D55:D53:D37:1",
           "owner_loop": "iges:model:loop#D55:D53:D37",
-          "previous": "iges:model:coedge#D55:D53:D37:2",
           "radial_next": "iges:model:coedge#D55:D53:D41:2",
           "sense": "forward"
         },
         {
           "edge": "iges:model:edge#D55:D35:4",
           "id": "iges:model:coedge#D55:D53:D37:1",
-          "next": "iges:model:coedge#D55:D53:D37:2",
           "owner_loop": "iges:model:loop#D55:D53:D37",
-          "previous": "iges:model:coedge#D55:D53:D37:0",
           "radial_next": "iges:model:coedge#D55:D53:D43:0",
           "sense": "reversed"
         },
         {
           "edge": "iges:model:edge#D55:D35:1",
           "id": "iges:model:coedge#D55:D53:D37:2",
-          "next": "iges:model:coedge#D55:D53:D37:0",
           "owner_loop": "iges:model:loop#D55:D53:D37",
-          "previous": "iges:model:coedge#D55:D53:D37:1",
           "radial_next": "iges:model:coedge#D55:D53:D39:0",
           "sense": "reversed"
         },
         {
           "edge": "iges:model:edge#D55:D35:1",
           "id": "iges:model:coedge#D55:D53:D39:0",
-          "next": "iges:model:coedge#D55:D53:D39:1",
           "owner_loop": "iges:model:loop#D55:D53:D39",
-          "previous": "iges:model:coedge#D55:D53:D39:2",
           "radial_next": "iges:model:coedge#D55:D53:D37:2",
           "sense": "forward"
         },
         {
           "edge": "iges:model:edge#D55:D35:5",
           "id": "iges:model:coedge#D55:D53:D39:1",
-          "next": "iges:model:coedge#D55:D53:D39:2",
           "owner_loop": "iges:model:loop#D55:D53:D39",
-          "previous": "iges:model:coedge#D55:D53:D39:0",
           "radial_next": "iges:model:coedge#D55:D53:D43:2",
           "sense": "forward"
         },
         {
           "edge": "iges:model:edge#D55:D35:3",
           "id": "iges:model:coedge#D55:D53:D39:2",
-          "next": "iges:model:coedge#D55:D53:D39:0",
           "owner_loop": "iges:model:loop#D55:D53:D39",
-          "previous": "iges:model:coedge#D55:D53:D39:1",
           "radial_next": "iges:model:coedge#D55:D53:D41:0",
           "sense": "reversed"
         },
         {
           "edge": "iges:model:edge#D55:D35:3",
           "id": "iges:model:coedge#D55:D53:D41:0",
-          "next": "iges:model:coedge#D55:D53:D41:1",
           "owner_loop": "iges:model:loop#D55:D53:D41",
-          "previous": "iges:model:coedge#D55:D53:D41:2",
           "radial_next": "iges:model:coedge#D55:D53:D39:2",
           "sense": "forward"
         },
         {
           "edge": "iges:model:edge#D55:D35:6",
           "id": "iges:model:coedge#D55:D53:D41:1",
-          "next": "iges:model:coedge#D55:D53:D41:2",
           "owner_loop": "iges:model:loop#D55:D53:D41",
-          "previous": "iges:model:coedge#D55:D53:D41:0",
           "radial_next": "iges:model:coedge#D55:D53:D43:1",
           "sense": "reversed"
         },
         {
           "edge": "iges:model:edge#D55:D35:2",
           "id": "iges:model:coedge#D55:D53:D41:2",
-          "next": "iges:model:coedge#D55:D53:D41:0",
           "owner_loop": "iges:model:loop#D55:D53:D41",
-          "previous": "iges:model:coedge#D55:D53:D41:1",
           "radial_next": "iges:model:coedge#D55:D53:D37:0",
           "sense": "reversed"
         },
         {
           "edge": "iges:model:edge#D55:D35:4",
           "id": "iges:model:coedge#D55:D53:D43:0",
-          "next": "iges:model:coedge#D55:D53:D43:1",
           "owner_loop": "iges:model:loop#D55:D53:D43",
-          "previous": "iges:model:coedge#D55:D53:D43:2",
           "radial_next": "iges:model:coedge#D55:D53:D37:1",
           "sense": "forward"
         },
         {
           "edge": "iges:model:edge#D55:D35:6",
           "id": "iges:model:coedge#D55:D53:D43:1",
-          "next": "iges:model:coedge#D55:D53:D43:2",
           "owner_loop": "iges:model:loop#D55:D53:D43",
-          "previous": "iges:model:coedge#D55:D53:D43:0",
           "radial_next": "iges:model:coedge#D55:D53:D41:1",
           "sense": "forward"
         },
         {
           "edge": "iges:model:edge#D55:D35:5",
           "id": "iges:model:coedge#D55:D53:D43:2",
-          "next": "iges:model:coedge#D55:D53:D43:0",
           "owner_loop": "iges:model:loop#D55:D53:D43",
-          "previous": "iges:model:coedge#D55:D53:D43:1",
           "radial_next": "iges:model:coedge#D55:D53:D39:1",
           "sense": "reversed"
         }

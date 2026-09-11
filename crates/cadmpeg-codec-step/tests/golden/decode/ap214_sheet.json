@@ -61,32 +61,26 @@
         {
           "edge": "step:data:edge#19",
           "id": "step:data:coedge#22-face-29",
-          "next": "step:data:coedge#23-face-29",
           "owner_loop": "step:data:loop#25-face-29",
           "pcurves": [
             {
               "pcurve": "step:data:pcurve#56"
             }
           ],
-          "previous": "step:data:coedge#24-face-29",
           "radial_next": "step:data:coedge#22-face-29",
           "sense": "forward"
         },
         {
           "edge": "step:data:edge#20",
           "id": "step:data:coedge#23-face-29",
-          "next": "step:data:coedge#24-face-29",
           "owner_loop": "step:data:loop#25-face-29",
-          "previous": "step:data:coedge#22-face-29",
           "radial_next": "step:data:coedge#23-face-29",
           "sense": "forward"
         },
         {
           "edge": "step:data:edge#21",
           "id": "step:data:coedge#24-face-29",
-          "next": "step:data:coedge#22-face-29",
           "owner_loop": "step:data:loop#25-face-29",
-          "previous": "step:data:coedge#23-face-29",
           "radial_next": "step:data:coedge#24-face-29",
           "sense": "forward"
         }

@@ -28,28 +28,24 @@
         {
           "edge": "iges:model:edge#D15:0:0",
           "id": "iges:model:coedge#D15:0:0",
-          "next": "iges:model:coedge#D15:0:0",
           "owner_loop": "iges:model:loop#D15:0",
           "pcurves": [
             {
               "pcurve": "iges:model:pcurve#D15:0:0:0"
             }
           ],
-          "previous": "iges:model:coedge#D15:0:0",
           "radial_next": "iges:model:coedge#D15:0:0",
           "sense": "forward"
         },
         {
           "edge": "iges:model:edge#D15:1:0",
           "id": "iges:model:coedge#D15:1:0",
-          "next": "iges:model:coedge#D15:1:0",
           "owner_loop": "iges:model:loop#D15:1",
           "pcurves": [
             {
               "pcurve": "iges:model:pcurve#D15:1:0:0"
             }
           ],
-          "previous": "iges:model:coedge#D15:1:0",
           "radial_next": "iges:model:coedge#D15:1:0",
           "sense": "forward"
         }

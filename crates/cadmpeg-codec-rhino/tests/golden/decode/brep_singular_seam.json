@@ -20,56 +20,48 @@
         {
           "edge": "rhino:object:edge#record-000000-offset-177.singular-0",
           "id": "rhino:object:coedge#record-000000-offset-177.slot-0",
-          "next": "rhino:object:coedge#record-000000-offset-177.slot-1",
           "owner_loop": "rhino:object:loop#record-000000-offset-177.slot-0",
           "pcurves": [
             {
               "pcurve": "rhino:object:pcurve#record-000000-offset-177.trim-0"
             }
           ],
-          "previous": "rhino:object:coedge#record-000000-offset-177.slot-3",
           "radial_next": "rhino:object:coedge#record-000000-offset-177.slot-0",
           "sense": "forward"
         },
         {
           "edge": "rhino:object:edge#record-000000-offset-177.slot-0",
           "id": "rhino:object:coedge#record-000000-offset-177.slot-1",
-          "next": "rhino:object:coedge#record-000000-offset-177.slot-2",
           "owner_loop": "rhino:object:loop#record-000000-offset-177.slot-0",
           "pcurves": [
             {
               "pcurve": "rhino:object:pcurve#record-000000-offset-177.trim-1"
             }
           ],
-          "previous": "rhino:object:coedge#record-000000-offset-177.slot-0",
           "radial_next": "rhino:object:coedge#record-000000-offset-177.slot-3",
           "sense": "forward"
         },
         {
           "edge": "rhino:object:edge#record-000000-offset-177.singular-2",
           "id": "rhino:object:coedge#record-000000-offset-177.slot-2",
-          "next": "rhino:object:coedge#record-000000-offset-177.slot-3",
           "owner_loop": "rhino:object:loop#record-000000-offset-177.slot-0",
           "pcurves": [
             {
               "pcurve": "rhino:object:pcurve#record-000000-offset-177.trim-2"
             }
           ],
-          "previous": "rhino:object:coedge#record-000000-offset-177.slot-1",
           "radial_next": "rhino:object:coedge#record-000000-offset-177.slot-2",
           "sense": "forward"
         },
         {
           "edge": "rhino:object:edge#record-000000-offset-177.slot-0",
           "id": "rhino:object:coedge#record-000000-offset-177.slot-3",
-          "next": "rhino:object:coedge#record-000000-offset-177.slot-0",
           "owner_loop": "rhino:object:loop#record-000000-offset-177.slot-0",
           "pcurves": [
             {
               "pcurve": "rhino:object:pcurve#record-000000-offset-177.trim-3"
             }
           ],
-          "previous": "rhino:object:coedge#record-000000-offset-177.slot-2",
           "radial_next": "rhino:object:coedge#record-000000-offset-177.slot-1",
           "sense": "reversed"
         }

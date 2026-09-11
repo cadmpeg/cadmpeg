@@ -132,8 +132,6 @@
           "id": "f3d:brep:entity#7",
           "owner_loop": "f3d:brep:entity#5",
           "edge": "f3d:brep:entity#10",
-          "next": "f3d:brep:entity#8",
-          "previous": "f3d:brep:entity#9",
           "radial_next": "f3d:brep:entity#7",
           "sense": "forward"
         },
@@ -141,8 +139,6 @@
           "id": "f3d:brep:entity#8",
           "owner_loop": "f3d:brep:entity#5",
           "edge": "f3d:brep:entity#11",
-          "next": "f3d:brep:entity#9",
-          "previous": "f3d:brep:entity#7",
           "radial_next": "f3d:brep:entity#8",
           "sense": "forward"
         },
@@ -150,8 +146,6 @@
           "id": "f3d:brep:entity#9",
           "owner_loop": "f3d:brep:entity#5",
           "edge": "f3d:brep:entity#12",
-          "next": "f3d:brep:entity#7",
-          "previous": "f3d:brep:entity#8",
           "radial_next": "f3d:brep:entity#9",
           "sense": "forward"
         }

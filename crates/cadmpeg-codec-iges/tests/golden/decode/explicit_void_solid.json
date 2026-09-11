@@ -28,216 +28,168 @@
         {
           "edge": "iges:model:edge#D109:D89:2",
           "id": "iges:model:coedge#D109:D107:D91:0",
-          "next": "iges:model:coedge#D109:D107:D91:1",
           "owner_loop": "iges:model:loop#D109:D107:D91",
-          "previous": "iges:model:coedge#D109:D107:D91:2",
           "radial_next": "iges:model:coedge#D109:D107:D95:2",
           "sense": "forward"
         },
         {
           "edge": "iges:model:edge#D109:D89:4",
           "id": "iges:model:coedge#D109:D107:D91:1",
-          "next": "iges:model:coedge#D109:D107:D91:2",
           "owner_loop": "iges:model:loop#D109:D107:D91",
-          "previous": "iges:model:coedge#D109:D107:D91:0",
           "radial_next": "iges:model:coedge#D109:D107:D97:0",
           "sense": "reversed"
         },
         {
           "edge": "iges:model:edge#D109:D89:1",
           "id": "iges:model:coedge#D109:D107:D91:2",
-          "next": "iges:model:coedge#D109:D107:D91:0",
           "owner_loop": "iges:model:loop#D109:D107:D91",
-          "previous": "iges:model:coedge#D109:D107:D91:1",
           "radial_next": "iges:model:coedge#D109:D107:D93:0",
           "sense": "reversed"
         },
         {
           "edge": "iges:model:edge#D109:D89:1",
           "id": "iges:model:coedge#D109:D107:D93:0",
-          "next": "iges:model:coedge#D109:D107:D93:1",
           "owner_loop": "iges:model:loop#D109:D107:D93",
-          "previous": "iges:model:coedge#D109:D107:D93:2",
           "radial_next": "iges:model:coedge#D109:D107:D91:2",
           "sense": "forward"
         },
         {
           "edge": "iges:model:edge#D109:D89:5",
           "id": "iges:model:coedge#D109:D107:D93:1",
-          "next": "iges:model:coedge#D109:D107:D93:2",
           "owner_loop": "iges:model:loop#D109:D107:D93",
-          "previous": "iges:model:coedge#D109:D107:D93:0",
           "radial_next": "iges:model:coedge#D109:D107:D97:2",
           "sense": "forward"
         },
         {
           "edge": "iges:model:edge#D109:D89:3",
           "id": "iges:model:coedge#D109:D107:D93:2",
-          "next": "iges:model:coedge#D109:D107:D93:0",
           "owner_loop": "iges:model:loop#D109:D107:D93",
-          "previous": "iges:model:coedge#D109:D107:D93:1",
           "radial_next": "iges:model:coedge#D109:D107:D95:0",
           "sense": "reversed"
         },
         {
           "edge": "iges:model:edge#D109:D89:3",
           "id": "iges:model:coedge#D109:D107:D95:0",
-          "next": "iges:model:coedge#D109:D107:D95:1",
           "owner_loop": "iges:model:loop#D109:D107:D95",
-          "previous": "iges:model:coedge#D109:D107:D95:2",
           "radial_next": "iges:model:coedge#D109:D107:D93:2",
           "sense": "forward"
         },
         {
           "edge": "iges:model:edge#D109:D89:6",
           "id": "iges:model:coedge#D109:D107:D95:1",
-          "next": "iges:model:coedge#D109:D107:D95:2",
           "owner_loop": "iges:model:loop#D109:D107:D95",
-          "previous": "iges:model:coedge#D109:D107:D95:0",
           "radial_next": "iges:model:coedge#D109:D107:D97:1",
           "sense": "reversed"
         },
         {
           "edge": "iges:model:edge#D109:D89:2",
           "id": "iges:model:coedge#D109:D107:D95:2",
-          "next": "iges:model:coedge#D109:D107:D95:0",
           "owner_loop": "iges:model:loop#D109:D107:D95",
-          "previous": "iges:model:coedge#D109:D107:D95:1",
           "radial_next": "iges:model:coedge#D109:D107:D91:0",
           "sense": "reversed"
         },
         {
           "edge": "iges:model:edge#D109:D89:4",
           "id": "iges:model:coedge#D109:D107:D97:0",
-          "next": "iges:model:coedge#D109:D107:D97:1",
           "owner_loop": "iges:model:loop#D109:D107:D97",
-          "previous": "iges:model:coedge#D109:D107:D97:2",
           "radial_next": "iges:model:coedge#D109:D107:D91:1",
           "sense": "forward"
         },
         {
           "edge": "iges:model:edge#D109:D89:6",
           "id": "iges:model:coedge#D109:D107:D97:1",
-          "next": "iges:model:coedge#D109:D107:D97:2",
           "owner_loop": "iges:model:loop#D109:D107:D97",
-          "previous": "iges:model:coedge#D109:D107:D97:0",
           "radial_next": "iges:model:coedge#D109:D107:D95:1",
           "sense": "forward"
         },
         {
           "edge": "iges:model:edge#D109:D89:5",
           "id": "iges:model:coedge#D109:D107:D97:2",
-          "next": "iges:model:coedge#D109:D107:D97:0",
           "owner_loop": "iges:model:loop#D109:D107:D97",
-          "previous": "iges:model:coedge#D109:D107:D97:1",
           "radial_next": "iges:model:coedge#D109:D107:D93:1",
           "sense": "reversed"
         },
         {
           "edge": "iges:model:edge#D109:D35:2",
           "id": "iges:model:coedge#D109:D53:D37:0",
-          "next": "iges:model:coedge#D109:D53:D37:1",
           "owner_loop": "iges:model:loop#D109:D53:D37",
-          "previous": "iges:model:coedge#D109:D53:D37:2",
           "radial_next": "iges:model:coedge#D109:D53:D41:2",
           "sense": "forward"
         },
         {
           "edge": "iges:model:edge#D109:D35:4",
           "id": "iges:model:coedge#D109:D53:D37:1",
-          "next": "iges:model:coedge#D109:D53:D37:2",
           "owner_loop": "iges:model:loop#D109:D53:D37",
-          "previous": "iges:model:coedge#D109:D53:D37:0",
           "radial_next": "iges:model:coedge#D109:D53:D43:0",
           "sense": "reversed"
         },
         {
           "edge": "iges:model:edge#D109:D35:1",
           "id": "iges:model:coedge#D109:D53:D37:2",
-          "next": "iges:model:coedge#D109:D53:D37:0",
           "owner_loop": "iges:model:loop#D109:D53:D37",
-          "previous": "iges:model:coedge#D109:D53:D37:1",
           "radial_next": "iges:model:coedge#D109:D53:D39:0",
           "sense": "reversed"
         },
         {
           "edge": "iges:model:edge#D109:D35:1",
           "id": "iges:model:coedge#D109:D53:D39:0",
-          "next": "iges:model:coedge#D109:D53:D39:1",
           "owner_loop": "iges:model:loop#D109:D53:D39",
-          "previous": "iges:model:coedge#D109:D53:D39:2",
           "radial_next": "iges:model:coedge#D109:D53:D37:2",
           "sense": "forward"
         },
         {
           "edge": "iges:model:edge#D109:D35:5",
           "id": "iges:model:coedge#D109:D53:D39:1",
-          "next": "iges:model:coedge#D109:D53:D39:2",
           "owner_loop": "iges:model:loop#D109:D53:D39",
-          "previous": "iges:model:coedge#D109:D53:D39:0",
           "radial_next": "iges:model:coedge#D109:D53:D43:2",
           "sense": "forward"
         },
         {
           "edge": "iges:model:edge#D109:D35:3",
           "id": "iges:model:coedge#D109:D53:D39:2",
-          "next": "iges:model:coedge#D109:D53:D39:0",
           "owner_loop": "iges:model:loop#D109:D53:D39",
-          "previous": "iges:model:coedge#D109:D53:D39:1",
           "radial_next": "iges:model:coedge#D109:D53:D41:0",
           "sense": "reversed"
         },
         {
           "edge": "iges:model:edge#D109:D35:3",
           "id": "iges:model:coedge#D109:D53:D41:0",
-          "next": "iges:model:coedge#D109:D53:D41:1",
           "owner_loop": "iges:model:loop#D109:D53:D41",
-          "previous": "iges:model:coedge#D109:D53:D41:2",
           "radial_next": "iges:model:coedge#D109:D53:D39:2",
           "sense": "forward"
         },
         {
           "edge": "iges:model:edge#D109:D35:6",
           "id": "iges:model:coedge#D109:D53:D41:1",
-          "next": "iges:model:coedge#D109:D53:D41:2",
           "owner_loop": "iges:model:loop#D109:D53:D41",
-          "previous": "iges:model:coedge#D109:D53:D41:0",
           "radial_next": "iges:model:coedge#D109:D53:D43:1",
           "sense": "reversed"
         },
         {
           "edge": "iges:model:edge#D109:D35:2",
           "id": "iges:model:coedge#D109:D53:D41:2",
-          "next": "iges:model:coedge#D109:D53:D41:0",
           "owner_loop": "iges:model:loop#D109:D53:D41",
-          "previous": "iges:model:coedge#D109:D53:D41:1",
           "radial_next": "iges:model:coedge#D109:D53:D37:0",
           "sense": "reversed"
         },
         {
           "edge": "iges:model:edge#D109:D35:4",
           "id": "iges:model:coedge#D109:D53:D43:0",
-          "next": "iges:model:coedge#D109:D53:D43:1",
           "owner_loop": "iges:model:loop#D109:D53:D43",
-          "previous": "iges:model:coedge#D109:D53:D43:2",
           "radial_next": "iges:model:coedge#D109:D53:D37:1",
           "sense": "forward"
         },
         {
           "edge": "iges:model:edge#D109:D35:6",
           "id": "iges:model:coedge#D109:D53:D43:1",
-          "next": "iges:model:coedge#D109:D53:D43:2",
           "owner_loop": "iges:model:loop#D109:D53:D43",
-          "previous": "iges:model:coedge#D109:D53:D43:0",
           "radial_next": "iges:model:coedge#D109:D53:D41:1",
           "sense": "forward"
         },
         {
           "edge": "iges:model:edge#D109:D35:5",
           "id": "iges:model:coedge#D109:D53:D43:2",
-          "next": "iges:model:coedge#D109:D53:D43:0",
           "owner_loop": "iges:model:loop#D109:D53:D43",
-          "previous": "iges:model:coedge#D109:D53:D43:1",
           "radial_next": "iges:model:coedge#D109:D53:D39:1",
           "sense": "reversed"
         }

@@ -19,14 +19,12 @@
         {
           "edge": "sldprt:brep:edge#40",
           "id": "sldprt:brep:coedge#30",
-          "next": "sldprt:brep:coedge#30",
           "owner_loop": "sldprt:brep:loop#20",
           "pcurves": [
             {
               "pcurve": "sldprt:brep:pcurve#cylinder:30"
             }
           ],
-          "previous": "sldprt:brep:coedge#30",
           "radial_next": "sldprt:brep:coedge#30",
           "sense": "forward"
         }

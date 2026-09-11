@@ -1944,7 +1944,7 @@ fn emit_e5_faces_loops_coedges(
                     "serialized_loop_member",
                     Exactness::ByteExact,
                 );
-                for field in ["owner_loop", "edge", "next", "previous", "sense", "pcurves"] {
+                for field in ["owner_loop", "edge", "sense", "pcurves"] {
                     if annotations.derived(&id, field).is_err() {
                         return false;
                     }

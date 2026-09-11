@@ -19,168 +19,144 @@
         {
           "edge": "creo:visibgeom:edge#10",
           "id": "creo:visibgeom:coedge#10:0",
-          "next": "creo:visibgeom:coedge#12:0",
           "owner_loop": "creo:visibgeom:loop#1",
           "pcurves": [
             {
               "pcurve": "creo:visibgeom:pcurve#10:1"
             }
           ],
-          "previous": "creo:visibgeom:coedge#11:0",
           "radial_next": "creo:visibgeom:coedge#10:1",
           "sense": "forward"
         },
         {
           "edge": "creo:visibgeom:edge#10",
           "id": "creo:visibgeom:coedge#10:1",
-          "next": "creo:visibgeom:coedge#13:0",
           "owner_loop": "creo:visibgeom:loop#2",
           "pcurves": [
             {
               "pcurve": "creo:visibgeom:pcurve#10:2"
             }
           ],
-          "previous": "creo:visibgeom:coedge#14:0",
           "radial_next": "creo:visibgeom:coedge#10:0",
           "sense": "reversed"
         },
         {
           "edge": "creo:visibgeom:edge#11",
           "id": "creo:visibgeom:coedge#11:0",
-          "next": "creo:visibgeom:coedge#10:0",
           "owner_loop": "creo:visibgeom:loop#1",
           "pcurves": [
             {
               "pcurve": "creo:visibgeom:pcurve#11:1"
             }
           ],
-          "previous": "creo:visibgeom:coedge#12:0",
           "radial_next": "creo:visibgeom:coedge#11:1",
           "sense": "forward"
         },
         {
           "edge": "creo:visibgeom:edge#11",
           "id": "creo:visibgeom:coedge#11:1",
-          "next": "creo:visibgeom:coedge#15:0",
           "owner_loop": "creo:visibgeom:loop#3",
           "pcurves": [
             {
               "pcurve": "creo:visibgeom:pcurve#11:3"
             }
           ],
-          "previous": "creo:visibgeom:coedge#13:1",
           "radial_next": "creo:visibgeom:coedge#11:0",
           "sense": "reversed"
         },
         {
           "edge": "creo:visibgeom:edge#12",
           "id": "creo:visibgeom:coedge#12:0",
-          "next": "creo:visibgeom:coedge#11:0",
           "owner_loop": "creo:visibgeom:loop#1",
           "pcurves": [
             {
               "pcurve": "creo:visibgeom:pcurve#12:1"
             }
           ],
-          "previous": "creo:visibgeom:coedge#10:0",
           "radial_next": "creo:visibgeom:coedge#12:1",
           "sense": "forward"
         },
         {
           "edge": "creo:visibgeom:edge#12",
           "id": "creo:visibgeom:coedge#12:1",
-          "next": "creo:visibgeom:coedge#14:1",
           "owner_loop": "creo:visibgeom:loop#4",
           "pcurves": [
             {
               "pcurve": "creo:visibgeom:pcurve#12:4"
             }
           ],
-          "previous": "creo:visibgeom:coedge#15:1",
           "radial_next": "creo:visibgeom:coedge#12:0",
           "sense": "reversed"
         },
         {
           "edge": "creo:visibgeom:edge#13",
           "id": "creo:visibgeom:coedge#13:0",
-          "next": "creo:visibgeom:coedge#14:0",
           "owner_loop": "creo:visibgeom:loop#2",
           "pcurves": [
             {
               "pcurve": "creo:visibgeom:pcurve#13:2"
             }
           ],
-          "previous": "creo:visibgeom:coedge#10:1",
           "radial_next": "creo:visibgeom:coedge#13:1",
           "sense": "forward"
         },
         {
           "edge": "creo:visibgeom:edge#13",
           "id": "creo:visibgeom:coedge#13:1",
-          "next": "creo:visibgeom:coedge#11:1",
           "owner_loop": "creo:visibgeom:loop#3",
           "pcurves": [
             {
               "pcurve": "creo:visibgeom:pcurve#13:3"
             }
           ],
-          "previous": "creo:visibgeom:coedge#15:0",
           "radial_next": "creo:visibgeom:coedge#13:0",
           "sense": "reversed"
         },
         {
           "edge": "creo:visibgeom:edge#14",
           "id": "creo:visibgeom:coedge#14:0",
-          "next": "creo:visibgeom:coedge#10:1",
           "owner_loop": "creo:visibgeom:loop#2",
           "pcurves": [
             {
               "pcurve": "creo:visibgeom:pcurve#14:2"
             }
           ],
-          "previous": "creo:visibgeom:coedge#13:0",
           "radial_next": "creo:visibgeom:coedge#14:1",
           "sense": "forward"
         },
         {
           "edge": "creo:visibgeom:edge#14",
           "id": "creo:visibgeom:coedge#14:1",
-          "next": "creo:visibgeom:coedge#15:1",
           "owner_loop": "creo:visibgeom:loop#4",
           "pcurves": [
             {
               "pcurve": "creo:visibgeom:pcurve#14:4"
             }
           ],
-          "previous": "creo:visibgeom:coedge#12:1",
           "radial_next": "creo:visibgeom:coedge#14:0",
           "sense": "reversed"
         },
         {
           "edge": "creo:visibgeom:edge#15",
           "id": "creo:visibgeom:coedge#15:0",
-          "next": "creo:visibgeom:coedge#13:1",
           "owner_loop": "creo:visibgeom:loop#3",
           "pcurves": [
             {
               "pcurve": "creo:visibgeom:pcurve#15:3"
             }
           ],
-          "previous": "creo:visibgeom:coedge#11:1",
           "radial_next": "creo:visibgeom:coedge#15:1",
           "sense": "forward"
         },
         {
           "edge": "creo:visibgeom:edge#15",
           "id": "creo:visibgeom:coedge#15:1",
-          "next": "creo:visibgeom:coedge#12:1",
           "owner_loop": "creo:visibgeom:loop#4",
           "pcurves": [
             {
               "pcurve": "creo:visibgeom:pcurve#15:4"
             }
           ],
-          "previous": "creo:visibgeom:coedge#14:1",
           "radial_next": "creo:visibgeom:coedge#15:0",
           "sense": "reversed"
         }

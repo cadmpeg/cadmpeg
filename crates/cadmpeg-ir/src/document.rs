@@ -353,8 +353,6 @@ macro_rules! declare_model {
             where
                 S: Serializer,
             {
-                let _scope =
-                    crate::topology::TopologyWireScope::new(&self.loops, &self.coedges);
                 ModelWriteWire {
                     $($field: model_write_value!(self, $field),)*
                 }
@@ -367,7 +365,6 @@ macro_rules! declare_model {
             where
                 D: Deserializer<'de>,
             {
-                let _scope = crate::topology::TopologyWireScope::new(&[], &[]);
                 let mut wire = ModelReadWire::deserialize(deserializer)?;
                 let procedural_surfaces = std::mem::take(&mut wire.procedural_surfaces);
                 let procedural_curves = std::mem::take(&mut wire.procedural_curves);
@@ -476,8 +473,6 @@ macro_rules! declare_model {
                 other: Self,
                 rewrite: &mut R,
             ) -> Result<(), R::Error> {
-                let _scope =
-                    crate::topology::TopologyWireScope::new(&other.loops, &other.coedges);
                 $(
                     self.$field.reserve(other.$field.len());
                     for entity in other.$field {
@@ -526,11 +521,7 @@ macro_rules! declare_model_view {
 
         impl Serialize for SortedModel<'_> {
             fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-                crate::topology::with_topology_serialization(
-                    &self.owner.loops,
-                    &self.owner.coedges,
-                    || Self::serialize(self, serializer),
-                )
+                Self::serialize(self, serializer)
             }
         }
 

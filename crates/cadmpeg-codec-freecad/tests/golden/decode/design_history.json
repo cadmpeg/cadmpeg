@@ -94,88 +94,69 @@
         {
           "edge": "fcstd:model:edge#Body:Shape:Body.Shape.brp:8%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:10%3A1%3A1",
-          "next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:10%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Body:Shape:Body.Shape.brp:10%3A1",
-          "previous": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:10%3A1%3A4",
           "radial_next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:37%3A1%3A1",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Body:Shape:Body.Shape.brp:7",
           "id": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:10%3A1%3A2",
-          "next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:10%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Body:Shape:Body.Shape.brp:10%3A1",
-          "previous": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:10%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:29%3A1%3A4",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Body:Shape:Body.Shape.brp:5",
           "id": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:10%3A1%3A3",
-          "next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:10%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Body:Shape:Body.Shape.brp:10%3A1",
-          "previous": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:10%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:24%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Body:Shape:Body.Shape.brp:3",
           "id": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:10%3A1%3A4",
-          "next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:10%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Body:Shape:Body.Shape.brp:10%3A1",
-          "previous": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:10%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:19%3A1%3A5",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Body:Shape:Body.Shape.brp:17",
           "id": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:19%3A1%3A1",
-          "next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:19%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Body:Shape:Body.Shape.brp:19%3A1",
-          "previous": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:19%3A1%3A5",
           "radial_next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:42%3A1%3A2",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Body:Shape:Body.Shape.brp:16",
           "id": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:19%3A1%3A2",
-          "next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:19%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Body:Shape:Body.Shape.brp:19%3A1",
-          "previous": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:19%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:40%3A1%3A4",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Body:Shape:Body.Shape.brp:14",
           "id": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:19%3A1%3A3",
-          "next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:19%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Body:Shape:Body.Shape.brp:19%3A1",
-          "previous": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:19%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:29%3A1%3A2",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Body:Shape:Body.Shape.brp:12",
           "id": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:19%3A1%3A4",
-          "next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:19%3A1%3A5",
           "owner_loop": "fcstd:model:loop#Body:Shape:Body.Shape.brp:19%3A1",
-          "previous": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:19%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:24%3A1%3A4",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Body:Shape:Body.Shape.brp:3",
           "id": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:19%3A1%3A5",
-          "next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:19%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Body:Shape:Body.Shape.brp:19%3A1",
-          "previous": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:19%3A1%3A4",
           "radial_next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:10%3A1%3A4",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Body:Shape:Body.Shape.brp:22",
           "id": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:24%3A1%3A1",
-          "next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:24%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Body:Shape:Body.Shape.brp:24%3A1",
           "pcurves": [
             {
@@ -186,14 +167,12 @@
               "pcurve": "fcstd:model:pcurve#Body:Shape:Body.Shape.brp:22%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:24%3A1%3A4",
           "radial_next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:37%3A1%3A2",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Body:Shape:Body.Shape.brp:21",
           "id": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:24%3A1%3A2",
-          "next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:24%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Body:Shape:Body.Shape.brp:24%3A1",
           "pcurves": [
             {
@@ -204,14 +183,12 @@
               "pcurve": "fcstd:model:pcurve#Body:Shape:Body.Shape.brp:21%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:24%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:40%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Body:Shape:Body.Shape.brp:5",
           "id": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:24%3A1%3A3",
-          "next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:24%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Body:Shape:Body.Shape.brp:24%3A1",
           "pcurves": [
             {
@@ -222,14 +199,12 @@
               "pcurve": "fcstd:model:pcurve#Body:Shape:Body.Shape.brp:5%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:24%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:10%3A1%3A3",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Body:Shape:Body.Shape.brp:12",
           "id": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:24%3A1%3A4",
-          "next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:24%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Body:Shape:Body.Shape.brp:24%3A1",
           "pcurves": [
             {
@@ -240,176 +215,138 @@
               "pcurve": "fcstd:model:pcurve#Body:Shape:Body.Shape.brp:12%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:24%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:19%3A1%3A4",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Body:Shape:Body.Shape.brp:27%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:29%3A1%3A1",
-          "next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:29%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Body:Shape:Body.Shape.brp:29%3A1",
-          "previous": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:29%3A1%3A4",
           "radial_next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:37%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Body:Shape:Body.Shape.brp:14",
           "id": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:29%3A1%3A2",
-          "next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:29%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Body:Shape:Body.Shape.brp:29%3A1",
-          "previous": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:29%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:19%3A1%3A3",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Body:Shape:Body.Shape.brp:26",
           "id": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:29%3A1%3A3",
-          "next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:29%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Body:Shape:Body.Shape.brp:29%3A1",
-          "previous": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:29%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:42%3A1%3A4",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Body:Shape:Body.Shape.brp:7",
           "id": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:29%3A1%3A4",
-          "next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:29%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Body:Shape:Body.Shape.brp:29%3A1",
-          "previous": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:29%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:10%3A1%3A2",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Body:Shape:Body.Shape.brp:8%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:37%3A1%3A1",
-          "next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:37%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Body:Shape:Body.Shape.brp:37%3A1",
-          "previous": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:37%3A1%3A5",
           "radial_next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:10%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Body:Shape:Body.Shape.brp:22",
           "id": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:37%3A1%3A2",
-          "next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:37%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Body:Shape:Body.Shape.brp:37%3A1",
-          "previous": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:37%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:24%3A1%3A1",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Body:Shape:Body.Shape.brp:27%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:37%3A1%3A3",
-          "next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:37%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Body:Shape:Body.Shape.brp:37%3A1",
-          "previous": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:37%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:29%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Body:Shape:Body.Shape.brp:31%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:37%3A1%3A4",
-          "next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:37%3A1%3A5",
           "owner_loop": "fcstd:model:loop#Body:Shape:Body.Shape.brp:37%3A1",
-          "previous": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:37%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:40%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Body:Shape:Body.Shape.brp:32%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:37%3A1%3A5",
-          "next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:37%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Body:Shape:Body.Shape.brp:37%3A1",
-          "previous": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:37%3A1%3A4",
           "radial_next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:42%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Body:Shape:Body.Shape.brp:35%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:37%3A2%3A1",
-          "next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:37%3A2%3A1",
           "owner_loop": "fcstd:model:loop#Body:Shape:Body.Shape.brp:37%3A2",
-          "previous": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:37%3A2%3A1",
           "radial_next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:47%3A1%3A2",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Body:Shape:Body.Shape.brp:31%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:40%3A1%3A1",
-          "next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:40%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Body:Shape:Body.Shape.brp:40%3A1",
-          "previous": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:40%3A1%3A4",
           "radial_next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:37%3A1%3A4",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Body:Shape:Body.Shape.brp:38",
           "id": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:40%3A1%3A2",
-          "next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:40%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Body:Shape:Body.Shape.brp:40%3A1",
-          "previous": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:40%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:42%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Body:Shape:Body.Shape.brp:21",
           "id": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:40%3A1%3A3",
-          "next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:40%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Body:Shape:Body.Shape.brp:40%3A1",
-          "previous": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:40%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:24%3A1%3A2",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Body:Shape:Body.Shape.brp:16",
           "id": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:40%3A1%3A4",
-          "next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:40%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Body:Shape:Body.Shape.brp:40%3A1",
-          "previous": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:40%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:19%3A1%3A2",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Body:Shape:Body.Shape.brp:32%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:42%3A1%3A1",
-          "next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:42%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Body:Shape:Body.Shape.brp:42%3A1",
-          "previous": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:42%3A1%3A4",
           "radial_next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:37%3A1%3A5",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Body:Shape:Body.Shape.brp:17",
           "id": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:42%3A1%3A2",
-          "next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:42%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Body:Shape:Body.Shape.brp:42%3A1",
-          "previous": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:42%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:19%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Body:Shape:Body.Shape.brp:38",
           "id": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:42%3A1%3A3",
-          "next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:42%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Body:Shape:Body.Shape.brp:42%3A1",
-          "previous": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:42%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:40%3A1%3A2",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Body:Shape:Body.Shape.brp:26",
           "id": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:42%3A1%3A4",
-          "next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:42%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Body:Shape:Body.Shape.brp:42%3A1",
-          "previous": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:42%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:29%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Body:Shape:Body.Shape.brp:45%40f9909aad000b01a7",
           "id": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:47%3A1%3A1",
-          "next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:47%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Body:Shape:Body.Shape.brp:47%3A1",
           "pcurves": [
             {
@@ -420,14 +357,12 @@
               "pcurve": "fcstd:model:pcurve#Body:Shape:Body.Shape.brp:45%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:47%3A1%3A4",
           "radial_next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:49%40a5307fcccbc44611%3A1%3A1",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Body:Shape:Body.Shape.brp:35%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:47%3A1%3A2",
-          "next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:47%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Body:Shape:Body.Shape.brp:47%3A1",
           "pcurves": [
             {
@@ -438,14 +373,12 @@
               "pcurve": "fcstd:model:pcurve#Body:Shape:Body.Shape.brp:35%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:47%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:37%3A2%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Body:Shape:Body.Shape.brp:44",
           "id": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:47%3A1%3A3",
-          "next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:47%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Body:Shape:Body.Shape.brp:47%3A1",
           "pcurves": [
             {
@@ -456,14 +389,12 @@
               "pcurve": "fcstd:model:pcurve#Body:Shape:Body.Shape.brp:44%3A2%3A2"
             }
           ],
-          "previous": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:47%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:47%3A1%3A4",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Body:Shape:Body.Shape.brp:44",
           "id": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:47%3A1%3A4",
-          "next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:47%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Body:Shape:Body.Shape.brp:47%3A1",
           "pcurves": [
             {
@@ -474,50 +405,40 @@
               "pcurve": "fcstd:model:pcurve#Body:Shape:Body.Shape.brp:44%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:47%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:47%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Body:Shape:Body.Shape.brp:45%40f9909aad000b01a7",
           "id": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:49%40a5307fcccbc44611%3A1%3A1",
-          "next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:49%40a5307fcccbc44611%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Body:Shape:Body.Shape.brp:49%40a5307fcccbc44611%3A1",
-          "previous": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:49%40a5307fcccbc44611%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Body:Shape:Body.Shape.brp:47%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:16",
           "id": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:18%3A1%3A1",
-          "next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:18%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:18%3A1",
-          "previous": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:18%3A1%3A5",
           "radial_next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:37%3A1%3A2",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:15",
           "id": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:18%3A1%3A2",
-          "next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:18%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:18%3A1",
-          "previous": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:18%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:35%3A1%3A4",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:13",
           "id": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:18%3A1%3A3",
-          "next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:18%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:18%3A1",
-          "previous": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:18%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:26%3A1%3A2",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:11",
           "id": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:18%3A1%3A4",
-          "next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:18%3A1%3A5",
           "owner_loop": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:18%3A1",
           "pcurves": [
             {
@@ -528,23 +449,19 @@
               "pcurve": "fcstd:model:pcurve#Fillet:Shape:Fillet.Shape.brp:11%3A3%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:18%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:23%3A1%3A4",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:3",
           "id": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:18%3A1%3A5",
-          "next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:18%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:18%3A1",
-          "previous": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:18%3A1%3A4",
           "radial_next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:9%3A1%3A4",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:21",
           "id": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:23%3A1%3A1",
-          "next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:23%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:23%3A1",
           "pcurves": [
             {
@@ -555,14 +472,12 @@
               "pcurve": "fcstd:model:pcurve#Fillet:Shape:Fillet.Shape.brp:21%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:23%3A1%3A4",
           "radial_next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:32%3A1%3A2",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:20",
           "id": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:23%3A1%3A2",
-          "next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:23%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:23%3A1",
           "pcurves": [
             {
@@ -573,14 +488,12 @@
               "pcurve": "fcstd:model:pcurve#Fillet:Shape:Fillet.Shape.brp:20%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:23%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:35%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:5",
           "id": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:23%3A1%3A3",
-          "next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:23%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:23%3A1",
           "pcurves": [
             {
@@ -591,14 +504,12 @@
               "pcurve": "fcstd:model:pcurve#Fillet:Shape:Fillet.Shape.brp:5%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:23%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:9%3A1%3A3",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:11",
           "id": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:23%3A1%3A4",
-          "next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:23%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:23%3A1",
           "pcurves": [
             {
@@ -609,59 +520,47 @@
               "pcurve": "fcstd:model:pcurve#Fillet:Shape:Fillet.Shape.brp:11%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:23%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:18%3A1%3A4",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:13%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:26%3A1%3A1",
-          "next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:26%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:26%3A1",
-          "previous": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:26%3A1%3A4",
           "radial_next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:32%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:13",
           "id": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:26%3A1%3A2",
-          "next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:26%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:26%3A1",
-          "previous": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:26%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:18%3A1%3A3",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:24",
           "id": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:26%3A1%3A3",
-          "next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:26%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:26%3A1",
-          "previous": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:26%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:37%3A1%3A4",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:6",
           "id": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:26%3A1%3A4",
-          "next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:26%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:26%3A1",
-          "previous": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:26%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:9%3A1%3A2",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:7%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:32%3A1%3A1",
-          "next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:32%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:32%3A1",
-          "previous": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:32%3A1%3A5",
           "radial_next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:9%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:21",
           "id": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:32%3A1%3A2",
-          "next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:32%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:32%3A1",
           "pcurves": [
             {
@@ -672,68 +571,54 @@
               "pcurve": "fcstd:model:pcurve#Fillet:Shape:Fillet.Shape.brp:21%3A3%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:32%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:23%3A1%3A1",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:13%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:32%3A1%3A3",
-          "next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:32%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:32%3A1",
-          "previous": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:32%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:26%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:27%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:32%3A1%3A4",
-          "next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:32%3A1%3A5",
           "owner_loop": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:32%3A1",
-          "previous": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:32%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:35%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:16%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:32%3A1%3A5",
-          "next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:32%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:32%3A1",
-          "previous": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:32%3A1%3A4",
           "radial_next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:37%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:30%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:32%3A2%3A1",
-          "next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:32%3A2%3A1",
           "owner_loop": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:32%3A2",
-          "previous": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:32%3A2%3A1",
           "radial_next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:42%3A1%3A2",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:27%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:35%3A1%3A1",
-          "next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:35%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:35%3A1",
-          "previous": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:35%3A1%3A4",
           "radial_next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:32%3A1%3A4",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:33",
           "id": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:35%3A1%3A2",
-          "next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:35%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:35%3A1",
-          "previous": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:35%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:37%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:20",
           "id": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:35%3A1%3A3",
-          "next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:35%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:35%3A1",
           "pcurves": [
             {
@@ -744,59 +629,47 @@
               "pcurve": "fcstd:model:pcurve#Fillet:Shape:Fillet.Shape.brp:20%3A3%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:35%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:23%3A1%3A2",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:15",
           "id": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:35%3A1%3A4",
-          "next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:35%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:35%3A1",
-          "previous": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:35%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:18%3A1%3A2",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:16%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:37%3A1%3A1",
-          "next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:37%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:37%3A1",
-          "previous": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:37%3A1%3A4",
           "radial_next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:32%3A1%3A5",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:16",
           "id": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:37%3A1%3A2",
-          "next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:37%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:37%3A1",
-          "previous": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:37%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:18%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:33",
           "id": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:37%3A1%3A3",
-          "next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:37%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:37%3A1",
-          "previous": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:37%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:35%3A1%3A2",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:24",
           "id": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:37%3A1%3A4",
-          "next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:37%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:37%3A1",
-          "previous": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:37%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:26%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:40%40f9909aad000b01a7",
           "id": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:42%3A1%3A1",
-          "next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:42%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:42%3A1",
           "pcurves": [
             {
@@ -807,14 +680,12 @@
               "pcurve": "fcstd:model:pcurve#Fillet:Shape:Fillet.Shape.brp:40%3A3%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:42%3A1%3A4",
           "radial_next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:44%40a5307fcccbc44611%3A1%3A1",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:30%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:42%3A1%3A2",
-          "next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:42%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:42%3A1",
           "pcurves": [
             {
@@ -825,14 +696,12 @@
               "pcurve": "fcstd:model:pcurve#Fillet:Shape:Fillet.Shape.brp:30%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:42%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:32%3A2%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:39",
           "id": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:42%3A1%3A3",
-          "next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:42%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:42%3A1",
           "pcurves": [
             {
@@ -843,14 +712,12 @@
               "pcurve": "fcstd:model:pcurve#Fillet:Shape:Fillet.Shape.brp:39%3A2%3A2"
             }
           ],
-          "previous": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:42%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:42%3A1%3A4",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:39",
           "id": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:42%3A1%3A4",
-          "next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:42%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:42%3A1",
           "pcurves": [
             {
@@ -861,41 +728,33 @@
               "pcurve": "fcstd:model:pcurve#Fillet:Shape:Fillet.Shape.brp:39%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:42%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:42%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:40%40f9909aad000b01a7",
           "id": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:44%40a5307fcccbc44611%3A1%3A1",
-          "next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:44%40a5307fcccbc44611%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:44%40a5307fcccbc44611%3A1",
-          "previous": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:44%40a5307fcccbc44611%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:42%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:7%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:9%3A1%3A1",
-          "next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:9%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:9%3A1",
-          "previous": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:9%3A1%3A4",
           "radial_next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:32%3A1%3A1",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:6",
           "id": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:9%3A1%3A2",
-          "next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:9%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:9%3A1",
-          "previous": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:9%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:26%3A1%3A4",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:5",
           "id": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:9%3A1%3A3",
-          "next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:9%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:9%3A1",
           "pcurves": [
             {
@@ -906,455 +765,355 @@
               "pcurve": "fcstd:model:pcurve#Fillet:Shape:Fillet.Shape.brp:5%3A3%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:9%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:23%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:3",
           "id": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:9%3A1%3A4",
-          "next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:9%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Fillet:Shape:Fillet.Shape.brp:9%3A1",
-          "previous": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:9%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Fillet:Shape:Fillet.Shape.brp:18%3A1%3A5",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:10%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:12%3A1%3A1",
-          "next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:12%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:12%3A1",
-          "previous": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:12%3A1%3A4",
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:22%4076889a8b8100da92%3A1%3A2",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:10",
           "id": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:12%3A1%3A2",
-          "next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:12%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:12%3A1",
-          "previous": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:12%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:22%3A1%3A3",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:9",
           "id": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:12%3A1%3A3",
-          "next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:12%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:12%3A1",
-          "previous": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:12%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:17%3A1%3A4",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:4",
           "id": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:12%3A1%3A4",
-          "next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:12%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:12%3A1",
-          "previous": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:12%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:7%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:15%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:17%3A1%3A1",
-          "next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:17%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:17%3A1",
-          "previous": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:17%3A1%3A4",
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:22%4076889a8b8100da92%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:15",
           "id": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:17%3A1%3A2",
-          "next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:17%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:17%3A1",
-          "previous": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:17%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:22%3A1%3A2",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:14",
           "id": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:17%3A1%3A3",
-          "next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:17%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:17%3A1",
-          "previous": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:17%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:20%3A1%3A4",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:9",
           "id": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:17%3A1%3A4",
-          "next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:17%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:17%3A1",
-          "previous": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:17%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:12%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:18%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:20%3A1%3A1",
-          "next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:20%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:20%3A1",
-          "previous": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:20%3A1%3A4",
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:22%4076889a8b8100da92%3A1%3A4",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:18",
           "id": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:20%3A1%3A2",
-          "next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:20%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:20%3A1",
-          "previous": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:20%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:22%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:2",
           "id": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:20%3A1%3A3",
-          "next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:20%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:20%3A1",
-          "previous": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:20%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:7%3A1%3A4",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:14",
           "id": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:20%3A1%3A4",
-          "next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:20%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:20%3A1",
-          "previous": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:20%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:17%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:18",
           "id": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:22%3A1%3A1",
-          "next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:22%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:22%3A1",
-          "previous": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:22%3A1%3A4",
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:20%3A1%3A2",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:15",
           "id": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:22%3A1%3A2",
-          "next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:22%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:22%3A1",
-          "previous": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:22%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:17%3A1%3A2",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:10",
           "id": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:22%3A1%3A3",
-          "next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:22%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:22%3A1",
-          "previous": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:22%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:12%3A1%3A2",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:5",
           "id": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:22%3A1%3A4",
-          "next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:22%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:22%3A1",
-          "previous": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:22%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:7%3A1%3A2",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:5%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:22%4076889a8b8100da92%3A1%3A1",
-          "next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:22%4076889a8b8100da92%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:22%4076889a8b8100da92%3A1",
-          "previous": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:22%4076889a8b8100da92%3A1%3A4",
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:7%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:10%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:22%4076889a8b8100da92%3A1%3A2",
-          "next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:22%4076889a8b8100da92%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:22%4076889a8b8100da92%3A1",
-          "previous": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:22%4076889a8b8100da92%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:12%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:15%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:22%4076889a8b8100da92%3A1%3A3",
-          "next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:22%4076889a8b8100da92%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:22%4076889a8b8100da92%3A1",
-          "previous": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:22%4076889a8b8100da92%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:17%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:18%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:22%4076889a8b8100da92%3A1%3A4",
-          "next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:22%4076889a8b8100da92%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:22%4076889a8b8100da92%3A1",
-          "previous": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:22%4076889a8b8100da92%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:20%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:5%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:7%3A1%3A1",
-          "next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:7%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:7%3A1",
-          "previous": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:7%3A1%3A4",
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:22%4076889a8b8100da92%3A1%3A1",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:5",
           "id": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:7%3A1%3A2",
-          "next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:7%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:7%3A1",
-          "previous": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:7%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:22%3A1%3A4",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:4",
           "id": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:7%3A1%3A3",
-          "next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:7%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:7%3A1",
-          "previous": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:7%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:12%3A1%3A4",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:2",
           "id": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:7%3A1%3A4",
-          "next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:7%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Pad:AddSubShape:Pad.AddSubShape.brp:7%3A1",
-          "previous": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:7%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Pad:AddSubShape:Pad.AddSubShape.brp:20%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:10%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:12%3A1%3A1",
-          "next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:12%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:12%3A1",
-          "previous": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:12%3A1%3A4",
           "radial_next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:22%4076889a8b8100da92%3A1%3A2",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:10",
           "id": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:12%3A1%3A2",
-          "next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:12%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:12%3A1",
-          "previous": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:12%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:22%3A1%3A3",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:9",
           "id": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:12%3A1%3A3",
-          "next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:12%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:12%3A1",
-          "previous": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:12%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:17%3A1%3A4",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:4",
           "id": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:12%3A1%3A4",
-          "next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:12%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:12%3A1",
-          "previous": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:12%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:7%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:15%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:17%3A1%3A1",
-          "next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:17%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:17%3A1",
-          "previous": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:17%3A1%3A4",
           "radial_next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:22%4076889a8b8100da92%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:15",
           "id": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:17%3A1%3A2",
-          "next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:17%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:17%3A1",
-          "previous": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:17%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:22%3A1%3A2",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:14",
           "id": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:17%3A1%3A3",
-          "next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:17%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:17%3A1",
-          "previous": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:17%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:20%3A1%3A4",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:9",
           "id": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:17%3A1%3A4",
-          "next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:17%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:17%3A1",
-          "previous": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:17%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:12%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:18%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:20%3A1%3A1",
-          "next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:20%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:20%3A1",
-          "previous": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:20%3A1%3A4",
           "radial_next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:22%4076889a8b8100da92%3A1%3A4",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:18",
           "id": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:20%3A1%3A2",
-          "next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:20%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:20%3A1",
-          "previous": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:20%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:22%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:2",
           "id": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:20%3A1%3A3",
-          "next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:20%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:20%3A1",
-          "previous": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:20%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:7%3A1%3A4",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:14",
           "id": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:20%3A1%3A4",
-          "next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:20%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:20%3A1",
-          "previous": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:20%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:17%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:18",
           "id": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:22%3A1%3A1",
-          "next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:22%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:22%3A1",
-          "previous": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:22%3A1%3A4",
           "radial_next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:20%3A1%3A2",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:15",
           "id": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:22%3A1%3A2",
-          "next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:22%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:22%3A1",
-          "previous": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:22%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:17%3A1%3A2",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:10",
           "id": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:22%3A1%3A3",
-          "next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:22%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:22%3A1",
-          "previous": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:22%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:12%3A1%3A2",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:5",
           "id": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:22%3A1%3A4",
-          "next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:22%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:22%3A1",
-          "previous": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:22%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:7%3A1%3A2",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:5%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:22%4076889a8b8100da92%3A1%3A1",
-          "next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:22%4076889a8b8100da92%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:22%4076889a8b8100da92%3A1",
-          "previous": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:22%4076889a8b8100da92%3A1%3A4",
           "radial_next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:7%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:10%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:22%4076889a8b8100da92%3A1%3A2",
-          "next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:22%4076889a8b8100da92%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:22%4076889a8b8100da92%3A1",
-          "previous": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:22%4076889a8b8100da92%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:12%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:15%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:22%4076889a8b8100da92%3A1%3A3",
-          "next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:22%4076889a8b8100da92%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:22%4076889a8b8100da92%3A1",
-          "previous": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:22%4076889a8b8100da92%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:17%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:18%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:22%4076889a8b8100da92%3A1%3A4",
-          "next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:22%4076889a8b8100da92%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:22%4076889a8b8100da92%3A1",
-          "previous": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:22%4076889a8b8100da92%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:20%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:5%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:7%3A1%3A1",
-          "next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:7%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:7%3A1",
-          "previous": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:7%3A1%3A4",
           "radial_next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:22%4076889a8b8100da92%3A1%3A1",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:5",
           "id": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:7%3A1%3A2",
-          "next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:7%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:7%3A1",
-          "previous": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:7%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:22%3A1%3A4",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:4",
           "id": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:7%3A1%3A3",
-          "next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:7%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:7%3A1",
-          "previous": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:7%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:12%3A1%3A4",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:2",
           "id": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:7%3A1%3A4",
-          "next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:7%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Pad:Shape:Pad.Shape.brp:7%3A1",
-          "previous": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:7%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:20%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pocket:AddSubShape:Pocket.AddSubShape.brp:2",
           "id": "fcstd:model:coedge#Pocket:AddSubShape:Pocket.AddSubShape.brp:5%3A1%3A1",
-          "next": "fcstd:model:coedge#Pocket:AddSubShape:Pocket.AddSubShape.brp:5%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Pocket:AddSubShape:Pocket.AddSubShape.brp:5%3A1",
           "pcurves": [
             {
@@ -1365,14 +1124,12 @@
               "pcurve": "fcstd:model:pcurve#Pocket:AddSubShape:Pocket.AddSubShape.brp:2%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#Pocket:AddSubShape:Pocket.AddSubShape.brp:5%3A1%3A4",
           "radial_next": "fcstd:model:coedge#Pocket:AddSubShape:Pocket.AddSubShape.brp:5%3A1%3A2",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pocket:AddSubShape:Pocket.AddSubShape.brp:2",
           "id": "fcstd:model:coedge#Pocket:AddSubShape:Pocket.AddSubShape.brp:5%3A1%3A2",
-          "next": "fcstd:model:coedge#Pocket:AddSubShape:Pocket.AddSubShape.brp:5%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Pocket:AddSubShape:Pocket.AddSubShape.brp:5%3A1",
           "pcurves": [
             {
@@ -1383,14 +1140,12 @@
               "pcurve": "fcstd:model:pcurve#Pocket:AddSubShape:Pocket.AddSubShape.brp:2%3A2%3A2"
             }
           ],
-          "previous": "fcstd:model:coedge#Pocket:AddSubShape:Pocket.AddSubShape.brp:5%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Pocket:AddSubShape:Pocket.AddSubShape.brp:5%3A1%3A1",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pocket:AddSubShape:Pocket.AddSubShape.brp:3%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Pocket:AddSubShape:Pocket.AddSubShape.brp:5%3A1%3A3",
-          "next": "fcstd:model:coedge#Pocket:AddSubShape:Pocket.AddSubShape.brp:5%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Pocket:AddSubShape:Pocket.AddSubShape.brp:5%3A1",
           "pcurves": [
             {
@@ -1401,14 +1156,12 @@
               "pcurve": "fcstd:model:pcurve#Pocket:AddSubShape:Pocket.AddSubShape.brp:3%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#Pocket:AddSubShape:Pocket.AddSubShape.brp:5%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Pocket:AddSubShape:Pocket.AddSubShape.brp:7%3A1%3A1",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pocket:AddSubShape:Pocket.AddSubShape.brp:3%40f9909aad000b01a7",
           "id": "fcstd:model:coedge#Pocket:AddSubShape:Pocket.AddSubShape.brp:5%3A1%3A4",
-          "next": "fcstd:model:coedge#Pocket:AddSubShape:Pocket.AddSubShape.brp:5%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Pocket:AddSubShape:Pocket.AddSubShape.brp:5%3A1",
           "pcurves": [
             {
@@ -1419,221 +1172,173 @@
               "pcurve": "fcstd:model:pcurve#Pocket:AddSubShape:Pocket.AddSubShape.brp:3%3A3%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#Pocket:AddSubShape:Pocket.AddSubShape.brp:5%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Pocket:AddSubShape:Pocket.AddSubShape.brp:7%40a5307fcccbc44611%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pocket:AddSubShape:Pocket.AddSubShape.brp:3%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Pocket:AddSubShape:Pocket.AddSubShape.brp:7%3A1%3A1",
-          "next": "fcstd:model:coedge#Pocket:AddSubShape:Pocket.AddSubShape.brp:7%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Pocket:AddSubShape:Pocket.AddSubShape.brp:7%3A1",
-          "previous": "fcstd:model:coedge#Pocket:AddSubShape:Pocket.AddSubShape.brp:7%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Pocket:AddSubShape:Pocket.AddSubShape.brp:5%3A1%3A3",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pocket:AddSubShape:Pocket.AddSubShape.brp:3%40f9909aad000b01a7",
           "id": "fcstd:model:coedge#Pocket:AddSubShape:Pocket.AddSubShape.brp:7%40a5307fcccbc44611%3A1%3A1",
-          "next": "fcstd:model:coedge#Pocket:AddSubShape:Pocket.AddSubShape.brp:7%40a5307fcccbc44611%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Pocket:AddSubShape:Pocket.AddSubShape.brp:7%40a5307fcccbc44611%3A1",
-          "previous": "fcstd:model:coedge#Pocket:AddSubShape:Pocket.AddSubShape.brp:7%40a5307fcccbc44611%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Pocket:AddSubShape:Pocket.AddSubShape.brp:5%3A1%3A4",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:10%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:12%3A1%3A1",
-          "next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:12%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:12%3A1",
-          "previous": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:12%3A1%3A4",
           "radial_next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:25%3A1%3A2",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:10",
           "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:12%3A1%3A2",
-          "next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:12%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:12%3A1",
-          "previous": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:12%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:20%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:2",
           "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:12%3A1%3A3",
-          "next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:12%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:12%3A1",
-          "previous": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:12%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:7%3A1%3A4",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:9",
           "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:12%3A1%3A4",
-          "next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:12%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:12%3A1",
-          "previous": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:12%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:27%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:15%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:17%3A1%3A1",
-          "next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:17%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:17%3A1",
-          "previous": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:17%3A1%3A4",
           "radial_next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:25%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:15",
           "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:17%3A1%3A2",
-          "next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:17%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:17%3A1",
-          "previous": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:17%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:20%3A1%3A3",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:14",
           "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:17%3A1%3A3",
-          "next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:17%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:17%3A1",
-          "previous": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:17%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:27%3A1%3A4",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:4",
           "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:17%3A1%3A4",
-          "next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:17%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:17%3A1",
-          "previous": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:17%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:7%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:10",
           "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:20%3A1%3A1",
-          "next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:20%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:20%3A1",
-          "previous": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:20%3A1%3A4",
           "radial_next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:12%3A1%3A2",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:18",
           "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:20%3A1%3A2",
-          "next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:20%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:20%3A1",
-          "previous": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:20%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:27%3A1%3A2",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:15",
           "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:20%3A1%3A3",
-          "next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:20%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:20%3A1",
-          "previous": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:20%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:17%3A1%3A2",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:5",
           "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:20%3A1%3A4",
-          "next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:20%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:20%3A1",
-          "previous": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:20%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:7%3A1%3A2",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:5%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:25%3A1%3A1",
-          "next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:25%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:25%3A1",
-          "previous": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:25%3A1%3A4",
           "radial_next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:7%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:10%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:25%3A1%3A2",
-          "next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:25%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:25%3A1",
-          "previous": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:25%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:12%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:15%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:25%3A1%3A3",
-          "next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:25%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:25%3A1",
-          "previous": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:25%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:17%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:18%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:25%3A1%3A4",
-          "next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:25%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:25%3A1",
-          "previous": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:25%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:27%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:23%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:25%3A2%3A1",
-          "next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:25%3A2%3A1",
           "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:25%3A2",
-          "previous": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:25%3A2%3A1",
           "radial_next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:32%3A1%3A2",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:18%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:27%3A1%3A1",
-          "next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:27%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:27%3A1",
-          "previous": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:27%3A1%3A4",
           "radial_next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:25%3A1%3A4",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:18",
           "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:27%3A1%3A2",
-          "next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:27%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:27%3A1",
-          "previous": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:27%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:20%3A1%3A2",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:9",
           "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:27%3A1%3A3",
-          "next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:27%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:27%3A1",
-          "previous": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:27%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:12%3A1%3A4",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:14",
           "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:27%3A1%3A4",
-          "next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:27%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:27%3A1",
-          "previous": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:27%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:17%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:30%40f9909aad000b01a7",
           "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:32%3A1%3A1",
-          "next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:32%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:32%3A1",
           "pcurves": [
             {
@@ -1644,14 +1349,12 @@
               "pcurve": "fcstd:model:pcurve#Pocket:Shape:Pocket.Shape.brp:30%3A3%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:32%3A1%3A4",
           "radial_next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:34%40a5307fcccbc44611%3A1%3A1",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:23%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:32%3A1%3A2",
-          "next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:32%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:32%3A1",
           "pcurves": [
             {
@@ -1662,14 +1365,12 @@
               "pcurve": "fcstd:model:pcurve#Pocket:Shape:Pocket.Shape.brp:23%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:32%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:25%3A2%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:29",
           "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:32%3A1%3A3",
-          "next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:32%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:32%3A1",
           "pcurves": [
             {
@@ -1680,14 +1381,12 @@
               "pcurve": "fcstd:model:pcurve#Pocket:Shape:Pocket.Shape.brp:29%3A2%3A2"
             }
           ],
-          "previous": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:32%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:32%3A1%3A4",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:29",
           "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:32%3A1%3A4",
-          "next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:32%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:32%3A1",
           "pcurves": [
             {
@@ -1698,52 +1397,41 @@
               "pcurve": "fcstd:model:pcurve#Pocket:Shape:Pocket.Shape.brp:29%3A2%3A1"
             }
           ],
-          "previous": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:32%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:32%3A1%3A3",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:30%40f9909aad000b01a7",
           "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:34%40a5307fcccbc44611%3A1%3A1",
-          "next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:34%40a5307fcccbc44611%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:34%40a5307fcccbc44611%3A1",
-          "previous": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:34%40a5307fcccbc44611%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:32%3A1%3A1",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:5%4076889a8b8100da92",
           "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:7%3A1%3A1",
-          "next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:7%3A1%3A2",
           "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:7%3A1",
-          "previous": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:7%3A1%3A4",
           "radial_next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:25%3A1%3A1",
           "sense": "reversed"
         },
         {
           "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:5",
           "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:7%3A1%3A2",
-          "next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:7%3A1%3A3",
           "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:7%3A1",
-          "previous": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:7%3A1%3A1",
           "radial_next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:20%3A1%3A4",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:4",
           "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:7%3A1%3A3",
-          "next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:7%3A1%3A4",
           "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:7%3A1",
-          "previous": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:7%3A1%3A2",
           "radial_next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:17%3A1%3A4",
           "sense": "forward"
         },
         {
           "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:2",
           "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:7%3A1%3A4",
-          "next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:7%3A1%3A1",
           "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:7%3A1",
-          "previous": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:7%3A1%3A3",
           "radial_next": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:12%3A1%3A3",
           "sense": "reversed"
         }

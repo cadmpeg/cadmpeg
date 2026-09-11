@@ -41,27 +41,21 @@
         {
           "edge": "step:data:edge#26",
           "id": "step:data:coedge#29-face-36",
-          "next": "step:data:coedge#30-face-36",
           "owner_loop": "step:data:loop#32-face-36",
-          "previous": "step:data:coedge#31-face-36",
           "radial_next": "step:data:coedge#29-face-36",
           "sense": "forward"
         },
         {
           "edge": "step:data:edge#27",
           "id": "step:data:coedge#30-face-36",
-          "next": "step:data:coedge#31-face-36",
           "owner_loop": "step:data:loop#32-face-36",
-          "previous": "step:data:coedge#29-face-36",
           "radial_next": "step:data:coedge#30-face-36",
           "sense": "forward"
         },
         {
           "edge": "step:data:edge#28",
           "id": "step:data:coedge#31-face-36",
-          "next": "step:data:coedge#29-face-36",
           "owner_loop": "step:data:loop#32-face-36",
-          "previous": "step:data:coedge#30-face-36",
           "radial_next": "step:data:coedge#31-face-36",
           "sense": "forward"
         }

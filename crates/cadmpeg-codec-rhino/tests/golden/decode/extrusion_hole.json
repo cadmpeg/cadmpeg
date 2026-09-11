@@ -21,56 +21,48 @@
         {
           "edge": "rhino:object:edge#record-000000-offset-177.cap-0.profile-0",
           "id": "rhino:object:coedge#record-000000-offset-177.cap-0.profile-0",
-          "next": "rhino:object:coedge#record-000000-offset-177.cap-0.profile-0",
           "owner_loop": "rhino:object:loop#record-000000-offset-177.cap-0.profile-0",
           "pcurves": [
             {
               "pcurve": "rhino:object:pcurve#record-000000-offset-177.cap-0.profile-0"
             }
           ],
-          "previous": "rhino:object:coedge#record-000000-offset-177.cap-0.profile-0",
           "radial_next": "rhino:object:coedge#record-000000-offset-177.cap-0.profile-0",
           "sense": "forward"
         },
         {
           "edge": "rhino:object:edge#record-000000-offset-177.cap-0.profile-1",
           "id": "rhino:object:coedge#record-000000-offset-177.cap-0.profile-1",
-          "next": "rhino:object:coedge#record-000000-offset-177.cap-0.profile-1",
           "owner_loop": "rhino:object:loop#record-000000-offset-177.cap-0.profile-1",
           "pcurves": [
             {
               "pcurve": "rhino:object:pcurve#record-000000-offset-177.cap-0.profile-1"
             }
           ],
-          "previous": "rhino:object:coedge#record-000000-offset-177.cap-0.profile-1",
           "radial_next": "rhino:object:coedge#record-000000-offset-177.cap-0.profile-1",
           "sense": "forward"
         },
         {
           "edge": "rhino:object:edge#record-000000-offset-177.cap-1.profile-0",
           "id": "rhino:object:coedge#record-000000-offset-177.cap-1.profile-0",
-          "next": "rhino:object:coedge#record-000000-offset-177.cap-1.profile-0",
           "owner_loop": "rhino:object:loop#record-000000-offset-177.cap-1.profile-0",
           "pcurves": [
             {
               "pcurve": "rhino:object:pcurve#record-000000-offset-177.cap-1.profile-0"
             }
           ],
-          "previous": "rhino:object:coedge#record-000000-offset-177.cap-1.profile-0",
           "radial_next": "rhino:object:coedge#record-000000-offset-177.cap-1.profile-0",
           "sense": "forward"
         },
         {
           "edge": "rhino:object:edge#record-000000-offset-177.cap-1.profile-1",
           "id": "rhino:object:coedge#record-000000-offset-177.cap-1.profile-1",
-          "next": "rhino:object:coedge#record-000000-offset-177.cap-1.profile-1",
           "owner_loop": "rhino:object:loop#record-000000-offset-177.cap-1.profile-1",
           "pcurves": [
             {
               "pcurve": "rhino:object:pcurve#record-000000-offset-177.cap-1.profile-1"
             }
           ],
-          "previous": "rhino:object:coedge#record-000000-offset-177.cap-1.profile-1",
           "radial_next": "rhino:object:coedge#record-000000-offset-177.cap-1.profile-1",
           "sense": "forward"
         }
