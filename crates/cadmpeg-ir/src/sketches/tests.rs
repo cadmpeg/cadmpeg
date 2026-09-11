@@ -591,7 +591,9 @@ fn a_rectangular_pattern_states_its_grid_as_rows() {
         wire["pattern"]["directions"][0]["spacing_parameter"],
         "test:test:parameter#spacing"
     );
-    assert!(wire["pattern"]["directions"][0].get("span_parameter").is_none());
+    assert!(wire["pattern"]["directions"][0]
+        .get("span_parameter")
+        .is_none());
     assert!(wire.get("instances").is_none());
     assert!(wire["pattern"].get("instances").is_none());
     assert_eq!(

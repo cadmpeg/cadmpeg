@@ -60,24 +60,19 @@ fn a_blend_surface_curve_tail_refuses_the_parametric_second_flag() {
     for pointer in ["/tail", "/tail/form", "/tail/flags"] {
         let mut mutated = wire.clone();
         let node = mutated.pointer_mut(pointer).expect("pointer");
-        let object = match node.as_object_mut() {
-            Some(object) => object,
-            None => {
-                // `flags` is a bare bool on a blend tail, so the key cannot be
-                // written beside it at all.
-                *node = serde_json::json!({"flag": true, "second_flag": false});
-                let error = serde_json::from_value::<SurfaceCurveFamily>(mutated)
-                    .err()
-                    .expect("parametric flags are not a blend tail")
-                    .to_string();
-                assert!(error.contains("bool"), "{pointer}: {error}");
-                continue;
-            }
+        let Some(object) = node.as_object_mut() else {
+            // `flags` is a bare bool on a blend tail, so the key cannot be
+            // written beside it at all.
+            *node = serde_json::json!({"flag": true, "second_flag": false});
+            let error = serde_json::from_value::<SurfaceCurveFamily>(mutated)
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains("bool"), "{pointer}: {error}");
+            continue;
         };
         object.insert("second_flag".to_string(), serde_json::json!(false));
         let error = serde_json::from_value::<SurfaceCurveFamily>(mutated)
-            .err()
-            .expect("second_flag is parametric-only")
+            .unwrap_err()
             .to_string();
         assert!(error.contains("second_flag"), "{pointer}: {error}");
     }
@@ -95,7 +90,10 @@ fn a_blend_surface_curve_tail_refuses_the_parametric_second_flag() {
     let wire = serde_json::to_value(&parametric).expect("serializes");
     assert_eq!(wire["family"], "parametric");
     assert_eq!(wire["tail"]["flags"]["flag"], serde_json::json!(true));
-    assert_eq!(wire["tail"]["flags"]["second_flag"], serde_json::json!(false));
+    assert_eq!(
+        wire["tail"]["flags"]["second_flag"],
+        serde_json::json!(false)
+    );
     assert_eq!(
         serde_json::from_value::<SurfaceCurveFamily>(wire).expect("round trip"),
         parametric

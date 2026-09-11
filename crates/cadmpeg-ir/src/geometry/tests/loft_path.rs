@@ -33,8 +33,7 @@ fn loft_path_carries_endpoints_inside_its_curve_object() {
         "flag": 4,
     });
     let error = serde_json::from_value::<LoftPath>(flat)
-        .err()
-        .expect("a flat endpoints key has no loft path field")
+        .unwrap_err()
         .to_string();
     assert!(error.contains("endpoints"), "{error}");
 
@@ -44,8 +43,7 @@ fn loft_path_carries_endpoints_inside_its_curve_object() {
         "flag": 4,
     });
     let error = serde_json::from_value::<LoftPath>(orphan)
-        .err()
-        .expect("endpoints without a curve are unrepresentable")
+        .unwrap_err()
         .to_string();
     assert!(error.contains("curve"), "{error}");
 }

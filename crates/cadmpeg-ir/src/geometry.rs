@@ -2277,7 +2277,6 @@ impl TryFrom<TSplineSurfaceConstructionWire> for TSplineSurfaceConstruction {
     }
 }
 
-
 /// Leading token of a recognized T-spline header declaration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum TSplineHeaderKind {
@@ -2524,7 +2523,6 @@ impl TSplineProgram {
         }
         parsed
     }
-
 }
 
 /// One oriented support of a procedural blend.
@@ -3051,7 +3049,10 @@ pub struct RaggedLoftTable;
 
 impl LoftSubdataTable {
     /// Admit a table whose rows share one column width.
-    pub fn new(type_code: TableTypeCode, rows: Vec<LoftSubdataRow>) -> Result<Self, RaggedLoftTable> {
+    pub fn new(
+        type_code: TableTypeCode,
+        rows: Vec<LoftSubdataRow>,
+    ) -> Result<Self, RaggedLoftTable> {
         if rows.len() > i64::MAX as usize
             || rows
                 .first()

@@ -661,6 +661,7 @@ fn profile_and_boolean_features_require_resolved_operation_inputs() {
     let revolve = definition(serde_json::json!({
         "definition": "revolve",
         "construction": {
+            "state": "resolved",
             "profile": {"kind": "sketch", "value": "test:model:sketch#profile"},
             "axis": {
                 "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
@@ -678,6 +679,7 @@ fn profile_and_boolean_features_require_resolved_operation_inputs() {
         serde_json::json!({
             "definition": "revolve",
             "construction": {
+                "state": "resolved",
                 "profile": {"kind": "native", "value": "native:profile"},
                 "axis": {
                     "origin": {"x": 0.0, "y": 0.0, "z": 0.0},

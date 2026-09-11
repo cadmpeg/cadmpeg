@@ -192,9 +192,7 @@ impl StreamName {
     /// error rather than a run-time panic.
     #[must_use]
     pub const fn literal(name: &'static str) -> Self {
-        if name.is_empty() {
-            panic!("a source stream name cannot be empty");
-        }
+        assert!(!name.is_empty(), "a source stream name cannot be empty");
         Self(std::borrow::Cow::Borrowed(name))
     }
 
@@ -415,11 +413,8 @@ mod tests {
         assert_eq!(read.stream(), None);
         assert_eq!(read, root);
 
-        let named = SourceProvenance::in_stream(
-            "fcstd",
-            const { StreamName::literal("Document.xml") },
-            0,
-        );
+        let named =
+            SourceProvenance::in_stream("fcstd", const { StreamName::literal("Document.xml") }, 0);
         let wire = serde_json::to_value(&named).expect("serialize");
         assert_eq!(
             wire,

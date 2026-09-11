@@ -1932,7 +1932,6 @@ impl TryFrom<SketchCircularPatternWire> for SketchCircularPattern {
     }
 }
 
-
 /// One independently measured pair within a repeated linear dimension.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
