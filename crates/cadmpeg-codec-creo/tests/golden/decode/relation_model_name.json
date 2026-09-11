@@ -205,7 +205,6 @@
     }
   },
   "report": {
-    "container_only": false,
     "coverage": {
       "active_curve_expression_assignment_count": 1,
       "active_feature_relation_constraint_count": 0,
@@ -644,7 +643,8 @@
       "native model name: widget.prt ",
       "no VisibGeom srf_array/crv_array count header was located",
       "container-level enumeration; `decode` preserves PSB geometry sections as unknown records and transfers only carriers whose model-space placement is complete"
-    ]
+    ],
+    "transfer": "full"
   },
   "source_fidelity": {
     "annotations": {

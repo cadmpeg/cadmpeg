@@ -1039,7 +1039,6 @@
     }
   },
   "report": {
-    "container_only": false,
     "dialects": {
       "extra": [],
       "primary": {
@@ -1078,6 +1077,7 @@
       "parameter_tokens=4",
       "external_references=0"
     ],
+    "transfer": "full",
     "transfer_ledger": {
       "entries": [
         {

@@ -78,7 +78,6 @@
     }
   },
   "report": {
-    "container_only": false,
     "dialects": {
       "extra": [],
       "primary": {
@@ -117,7 +116,8 @@
       "external document SPEC-42 (Interface control drawing) from supplier vault",
       "external source https://example.invalid/library item fastener-table",
       "byte accounting: 289 structural, 396 typed, 0 named opaque, 0 unclassified"
-    ]
+    ],
+    "transfer": "full"
   },
   "source_fidelity": {
     "annotations": {}

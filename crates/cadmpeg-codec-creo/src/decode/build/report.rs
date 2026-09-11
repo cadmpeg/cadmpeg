@@ -159,7 +159,7 @@ pub(in super::super) fn build_report(
 
     DecodeBody {
         transfer: if container_only {
-            cadmpeg_ir::report::DecodeTransfer::ContainerOnly
+            cadmpeg_ir::report::DecodeTransfer::ContainerOnly {}
         } else {
             cadmpeg_ir::report::DecodeTransfer::full(has_transferred_geometry(ir))
         },

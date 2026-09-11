@@ -438,7 +438,6 @@
     }
   },
   "report": {
-    "container_only": false,
     "coverage": {
       "active_kernel_carriers": 1,
       "appearance_bindings_transferred": 0,
@@ -548,7 +547,8 @@
         "severity": "warning"
       }
     ],
-    "notes": []
+    "notes": [],
+    "transfer": "full"
   },
   "source_fidelity": {
     "annotations": {},

@@ -100,7 +100,7 @@ mod tests {
         std::fs::write(&path, &text).unwrap();
         let report: DecodeReport = serde_json::from_value(serde_json::json!({
             "format": "test",
-            "container_only": false,
+            "transfer": "full",
             "geometry_transferred": false,
             "losses": [],
             "notes": [],

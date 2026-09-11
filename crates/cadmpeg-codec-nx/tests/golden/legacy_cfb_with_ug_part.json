@@ -82,7 +82,6 @@
       }
     },
     "report": {
-      "container_only": false,
       "dialects": {
         "extra": [],
         "primary": {
@@ -110,7 +109,8 @@
       "notes": [
         "legacy CFB container: 2 directory entries",
         "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
-      ]
+      ],
+      "transfer": "full"
     },
     "source_fidelity": {
       "annotations": {

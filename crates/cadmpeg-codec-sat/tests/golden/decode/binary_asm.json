@@ -177,7 +177,6 @@
     }
   },
   "report": {
-    "container_only": false,
     "coverage": {
       "unknown_records": 0,
       "unknown_surface_faces": 0
@@ -207,7 +206,8 @@
     "format": "sat",
     "geometry_transferred": true,
     "losses": [],
-    "notes": []
+    "notes": [],
+    "transfer": "full"
   },
   "source_fidelity": {
     "annotations": {}

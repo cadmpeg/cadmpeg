@@ -6060,7 +6060,6 @@
       }
     },
     "report": {
-      "container_only": false,
       "dialects": {
         "extra": [],
         "primary": {
@@ -6100,7 +6099,8 @@
         "NX object model: 0 of 1 bounded offset-store control block(s) have an admitted complete grammar",
         "NX object model: 1 size-framed section(s), 2 class declaration(s), 2 field declaration(s)",
         "NX object model: 1 indexed section(s), 0 ID-bounded entity record(s), 7 offset-only data block(s)"
-      ]
+      ],
+      "transfer": "full"
     },
     "source_fidelity": {
       "annotations": {

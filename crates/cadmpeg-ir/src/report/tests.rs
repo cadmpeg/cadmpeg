@@ -336,19 +336,23 @@ fn classified_report_wire_requires_its_primary_format() {
     let golden = serde_json::to_string(&report).unwrap();
     assert_eq!(
         golden,
-        r#"{"format":"rhino","container_only":false,"geometry_transferred":true,"losses":[],"notes":[],"dialects":{"primary":{"format":"rhino","dialect":"rhino:archive-80","admission":"admitted"},"extra":[]}}"#
+        r#"{"format":"rhino","transfer":"full","geometry_transferred":true,"losses":[],"notes":[],"dialects":{"primary":{"format":"rhino","dialect":"rhino:archive-80","admission":"admitted"},"extra":[]}}"#
     );
     assert_eq!(
         serde_json::from_str::<DecodeReport>(&golden).unwrap(),
         report
     );
 
-    let contradictory = golden.replacen("\"container_only\":false", "\"container_only\":true", 1);
+    let contradictory = golden.replacen(
+        "\"transfer\":\"full\"",
+        "\"transfer\":\"container_only\"",
+        1,
+    );
     let error = serde_json::from_str::<DecodeReport>(&contradictory)
-        .expect_err("container-only reports cannot claim geometry transfer");
-    assert_eq!(
-        error.to_string(),
-        "container-only decode report cannot claim geometry transfer"
+        .expect_err("a container-only report has no geometry outcome to state");
+    assert!(
+        error.to_string().contains("geometry_transferred"),
+        "{error}"
     );
 
     let mismatched = golden.replacen("\"format\":\"rhino\"", "\"format\":\"step\"", 1);
@@ -366,7 +370,7 @@ fn classified_report_wire_requires_its_primary_format() {
 fn container_only_report_wire_preserves_the_coherent_transfer_state() {
     let report = DecodeReport::unclassified(
         "test",
-        DecodeTransfer::ContainerOnly,
+        DecodeTransfer::ContainerOnly {},
         BTreeMap::new(),
         Vec::new(),
         Vec::new(),
@@ -374,11 +378,11 @@ fn container_only_report_wire_preserves_the_coherent_transfer_state() {
     );
 
     let rendered = serde_json::to_string(&report).unwrap();
-    assert!(rendered.contains("\"container_only\":true"), "{rendered}");
     assert!(
-        rendered.contains("\"geometry_transferred\":false"),
+        rendered.contains("\"transfer\":\"container_only\""),
         "{rendered}"
     );
+    assert!(!rendered.contains("geometry_transferred"), "{rendered}");
     assert_eq!(
         serde_json::from_str::<DecodeReport>(&rendered).unwrap(),
         report
@@ -394,4 +398,50 @@ fn namespaced_loss_rejects_reserved_namespace() {
         "namespace": "shared", "code": "wrong", "kind": "pcurve_omitted"
     }))
     .is_err());
+}
+
+#[test]
+fn a_decode_transfer_states_its_scope_and_carries_only_its_own_keys() {
+    let base = serde_json::json!({
+        "format": "rhino",
+        "transfer": "full",
+        "geometry_transferred": true,
+        "losses": [],
+        "notes": [],
+        "dialects": null,
+    });
+    let report = serde_json::from_value::<DecodeReport>(base.clone()).expect("a full decode");
+    assert_eq!(report.transfer(), DecodeTransfer::full(true));
+    assert_eq!(serde_json::to_value(&report).unwrap()["transfer"], "full");
+
+    let mut container_only = base.clone();
+    container_only["transfer"] = serde_json::json!("container_only");
+    let error = serde_json::from_value::<DecodeReport>(container_only.clone())
+        .expect_err("a container-only report has no geometry outcome");
+    assert!(
+        error.to_string().contains("geometry_transferred"),
+        "{error}"
+    );
+
+    container_only
+        .as_object_mut()
+        .expect("map")
+        .remove("geometry_transferred");
+    let report = serde_json::from_value::<DecodeReport>(container_only).expect("container only");
+    assert_eq!(report.transfer(), DecodeTransfer::ContainerOnly {});
+    let wire = serde_json::to_value(&report).unwrap();
+    assert_eq!(wire["transfer"], "container_only");
+    assert!(wire.get("geometry_transferred").is_none());
+
+    let mut without_outcome = base;
+    without_outcome
+        .as_object_mut()
+        .expect("map")
+        .remove("geometry_transferred");
+    let error = serde_json::from_value::<DecodeReport>(without_outcome)
+        .expect_err("a full decode states its geometry outcome");
+    assert!(
+        error.to_string().contains("geometry_transferred"),
+        "{error}"
+    );
 }

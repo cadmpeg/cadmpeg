@@ -449,7 +449,6 @@
     }
   },
   "report": {
-    "container_only": false,
     "dialects": {
       "extra": [
         {
@@ -523,7 +522,8 @@
       "outer version word: 0x00000004; 2 CRC-validated block(s), 0 tail-directory entry/entries, 0 cache-cell(s), 0 compound stream(s)",
       "no unique active Parasolid partition located; available B-rep sites remain decodable",
       "Parasolid body streams supply the typed topology and analytic carriers used by decode"
-    ]
+    ],
+    "transfer": "full"
   },
   "source_fidelity": {
     "annotations": {

@@ -984,7 +984,6 @@
     }
   },
   "report": {
-    "container_only": false,
     "dialects": {
       "extra": [],
       "primary": {
@@ -1007,7 +1006,8 @@
       "parameter_records=1",
       "parameter_tokens=1",
       "external_references=0"
-    ]
+    ],
+    "transfer": "full"
   },
   "source_fidelity": {
     "annotations": {},

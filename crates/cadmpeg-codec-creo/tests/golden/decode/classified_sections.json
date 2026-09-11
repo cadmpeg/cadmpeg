@@ -99,7 +99,6 @@
     }
   },
   "report": {
-    "container_only": false,
     "coverage": {
       "active_curve_expression_assignment_count": 0,
       "active_feature_relation_constraint_count": 0,
@@ -538,7 +537,8 @@
       "VisibGeom namespace census: srf_array=5, crv_array=12 (byte-backed count headers; per-instance row geometry is not decoded)",
       "THMB_IMG_MAIN carries a JPEG preview (excluded from geometry)",
       "container-level enumeration; `decode` preserves PSB geometry sections as unknown records and transfers only carriers whose model-space placement is complete"
-    ]
+    ],
+    "transfer": "full"
   },
   "source_fidelity": {
     "annotations": {

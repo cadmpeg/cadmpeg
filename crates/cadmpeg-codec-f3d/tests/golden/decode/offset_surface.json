@@ -627,7 +627,7 @@
   },
   "report": {
     "format": "f3d",
-    "container_only": false,
+    "transfer": "full",
     "geometry_transferred": true,
     "losses": [
       {

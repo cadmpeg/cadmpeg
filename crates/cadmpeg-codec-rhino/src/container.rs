@@ -1322,7 +1322,7 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> Decoded {
     Decoded {
         ir,
         body: DecodeBody {
-            transfer: cadmpeg_ir::report::DecodeTransfer::ContainerOnly,
+            transfer: cadmpeg_ir::report::DecodeTransfer::ContainerOnly {},
             coverage: cadmpeg_ir::Coverage::default(),
             losses,
             notes,

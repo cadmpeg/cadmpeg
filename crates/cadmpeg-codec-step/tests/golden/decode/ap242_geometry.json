@@ -761,7 +761,6 @@
     }
   },
   "report": {
-    "container_only": false,
     "dialects": {
       "extra": [],
       "primary": {
@@ -825,7 +824,8 @@
     ],
     "notes": [
       "byte accounting: 314 structural, 2563 typed, 85 named opaque, 0 unclassified"
-    ]
+    ],
+    "transfer": "full"
   },
   "source_fidelity": {
     "annotations": {},

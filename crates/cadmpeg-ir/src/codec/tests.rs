@@ -266,7 +266,7 @@ fn dialect_layer(id: &'static str) -> DialectMatch {
 #[test]
 fn wrapper_stamps_request_scope_for_each_backend_transfer() {
     for transfer in [
-        crate::report::DecodeTransfer::ContainerOnly,
+        crate::report::DecodeTransfer::ContainerOnly {},
         crate::report::DecodeTransfer::full(false),
         crate::report::DecodeTransfer::full(true),
     ] {

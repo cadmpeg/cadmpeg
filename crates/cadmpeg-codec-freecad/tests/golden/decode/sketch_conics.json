@@ -833,7 +833,6 @@
     }
   },
   "report": {
-    "container_only": false,
     "dialects": {
       "extra": [],
       "primary": {
@@ -858,7 +857,8 @@
       "object count=2",
       "physical ledger spans=29 coverage=exact",
       "ProgramVersion=1.1R20260414 (Git shallow)"
-    ]
+    ],
+    "transfer": "full"
   },
   "source_fidelity": {
     "annotations": {}
