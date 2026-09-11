@@ -104,7 +104,7 @@ fn radial_controls_require_nonzero_segments_and_finite_sweeps() {
     assert!(serde_json::from_value::<SubdSymmetry>(wire)
         .unwrap_err()
         .to_string()
-        .contains("segments"));
+        .contains("nonzero"));
     for sweep in [-f64::MAX, -1.0, 0.0, f64::MAX] {
         let symmetry = radial(sweep).unwrap();
         assert!(
@@ -129,7 +129,7 @@ fn symmetry_pair_admission_requires_distinct_sources_and_targets() {
             pairs[index] = invalid.clone();
             let [faces, edges, vertices] = pairs;
             assert!(SubdSymmetry::new(
-                SubdSymmetryKind::Correspondence,
+                SubdSymmetryKind::Correspondence {},
                 plane(),
                 faces,
                 edges,
@@ -139,7 +139,7 @@ fn symmetry_pair_admission_requires_distinct_sources_and_targets() {
             .to_string()
             .contains(field));
             let symmetry = SubdSymmetry::new(
-                SubdSymmetryKind::Correspondence,
+                SubdSymmetryKind::Correspondence {},
                 plane(),
                 Vec::new(),
                 Vec::new(),
@@ -156,7 +156,7 @@ fn symmetry_pair_admission_requires_distinct_sources_and_targets() {
     }
     let pairs = vec![[0, 0], [u32::MAX, u32::MAX]];
     let symmetry = SubdSymmetry::new(
-        SubdSymmetryKind::Correspondence,
+        SubdSymmetryKind::Correspondence {},
         plane(),
         pairs.clone(),
         pairs.clone(),
@@ -187,7 +187,7 @@ fn radial_maps_require_distinct_selectors_and_sources() {
                 .is_err()
         );
         let mut wire = serde_json::to_value(radial(0.0).unwrap()).unwrap();
-        wire["radial_maps"] = serde_json::to_value(maps).unwrap();
+        wire["kind"]["radial_maps"] = serde_json::to_value(maps).unwrap();
         assert!(serde_json::from_value::<SubdSymmetry>(wire).is_err());
     }
     let symmetry = SubdSymmetry::new(
