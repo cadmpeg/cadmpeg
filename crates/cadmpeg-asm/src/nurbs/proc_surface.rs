@@ -3522,10 +3522,10 @@ fn off_spl_sur(
                     .flatten(),
             }
         } else {
-            cadmpeg_ir::geometry::LegacyExtensionFlags::Disabled
+            cadmpeg_ir::geometry::LegacyExtensionFlags::Disabled {}
         }
     } else {
-        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent
+        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {}
     };
     let (_, cache_end) = surface_block(span, cur.pos())?;
     cur.set_pos(cache_end);

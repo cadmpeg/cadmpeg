@@ -27,92 +27,23 @@ fn default_true() -> bool {
 }
 
 /// Admitted conditional flag shapes in the pre-revision offset-surface layout.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
 pub enum LegacyExtensionFlags {
     /// The compact `offsur` layout has no extension flag.
-    Absent,
+    Absent {},
     /// The extension gate is false, so no dependent flags follow it.
-    Disabled,
+    Disabled {},
     /// The extension gate is true and carries its required flag and optional
     /// later-revision flag.
     Enabled {
         /// Required flag following the true extension gate.
         secondary: bool,
         /// Optional flag admitted by the later legacy layout.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         tertiary: Option<bool>,
     },
-}
-
-impl LegacyExtensionFlags {
-    /// Return the legacy wire sequence.
-    #[must_use]
-    pub fn wire_values(self) -> Vec<bool> {
-        match self {
-            Self::Absent => Vec::new(),
-            Self::Disabled => vec![false],
-            Self::Enabled {
-                secondary,
-                tertiary,
-            } => {
-                let mut flags = vec![true, secondary];
-                flags.extend(tertiary);
-                flags
-            }
-        }
-    }
-}
-
-impl TryFrom<Vec<bool>> for LegacyExtensionFlags {
-    type Error = Vec<bool>;
-
-    fn try_from(flags: Vec<bool>) -> Result<Self, Self::Error> {
-        match flags.as_slice() {
-            [] => Ok(Self::Absent),
-            [false] => Ok(Self::Disabled),
-            [true, secondary] => Ok(Self::Enabled {
-                secondary: *secondary,
-                tertiary: None,
-            }),
-            [true, secondary, tertiary] => Ok(Self::Enabled {
-                secondary: *secondary,
-                tertiary: Some(*tertiary),
-            }),
-            _ => Err(flags),
-        }
-    }
-}
-
-impl Serialize for LegacyExtensionFlags {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        self.wire_values().serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for LegacyExtensionFlags {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        Self::try_from(Vec::<bool>::deserialize(deserializer)?).map_err(|_| {
-            serde::de::Error::custom(
-                "extension_flags must be [], [false], [true, flag], or [true, flag, flag]",
-            )
-        })
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for LegacyExtensionFlags {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "LegacyExtensionFlags".into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        Vec::<bool>::json_schema(generator)
-    }
 }
 
 /// Mutually exclusive pre-revision and revision-gated offset layouts.

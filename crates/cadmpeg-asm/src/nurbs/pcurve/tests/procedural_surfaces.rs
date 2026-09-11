@@ -57,11 +57,11 @@ fn offset_surface_uses_direct_support_fields_then_cache() {
             assert_eq!(u_sense, 2);
             assert_eq!(v_sense, 3);
             assert_eq!(
-                flags.wire_values(),
+                flags,
                 if name == "off_spl_sur" {
-                    vec![false]
+                    cadmpeg_ir::geometry::LegacyExtensionFlags::Disabled {}
                 } else {
-                    vec![]
+                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {}
                 }
             );
             assert!((fit_tolerance - 0.01).abs() < f64::EPSILON * 10.0);

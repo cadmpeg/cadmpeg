@@ -755,7 +755,7 @@ fn decode_standard_transfers_exact_offset_construction() {
     assert_eq!(
         *extension,
         cadmpeg_ir::geometry::OffsetExtension::Legacy {
-            flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+            flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
         }
     );
     let Some(bounds) = procedural.record_bounds else {

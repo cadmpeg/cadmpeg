@@ -1951,7 +1951,7 @@ fn try_decode_standard_population(
                             None,
                             false,
                             cadmpeg_ir::geometry::OffsetExtension::Legacy {
-                                flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                                flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
                             },
                         )
                         .ok()?,

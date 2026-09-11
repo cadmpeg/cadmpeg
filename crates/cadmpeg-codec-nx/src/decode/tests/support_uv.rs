@@ -367,7 +367,7 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
                     None,
                     false,
                     cadmpeg_ir::geometry::OffsetExtension::Legacy {
-                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
                     },
                 )
                 .unwrap(),

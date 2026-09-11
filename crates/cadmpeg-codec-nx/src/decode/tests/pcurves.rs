@@ -1080,7 +1080,7 @@ fn saved_offset_cache_retains_its_procedural_lineage() {
                 Some(0),
                 false,
                 cadmpeg_ir::geometry::OffsetExtension::Legacy {
-                    flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                    flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
                 },
             )
             .unwrap(),
@@ -1644,7 +1644,7 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
                     Some(0),
                     false,
                     cadmpeg_ir::geometry::OffsetExtension::Legacy {
-                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
                     },
                 )
                 .unwrap(),

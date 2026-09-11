@@ -508,7 +508,19 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
 fn generated_offset_spline_surfaces_decode_and_write_source_less() {
     use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 
-    for (name, expected_flags) in [("off_spl_sur", vec![true, false, true]), ("offsur", vec![])] {
+    for (name, expected_flags) in [
+        (
+            "off_spl_sur",
+            cadmpeg_ir::geometry::LegacyExtensionFlags::Enabled {
+                secondary: false,
+                tertiary: Some(true),
+            },
+        ),
+        (
+            "offsur",
+            cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+        ),
+    ] {
         let result = F3dCodec
             .decode(
                 &mut Cursor::new(f3d_with_smbh(&synthetic_off_spl_sur_smbh(name))),
@@ -531,7 +543,7 @@ fn generated_offset_spline_surfaces_decode_and_write_source_less() {
         let cadmpeg_ir::geometry::OffsetExtension::Legacy { flags } = extension else {
             panic!("expected legacy offset extension")
         };
-        assert_eq!(flags.wire_values(), expected_flags);
+        assert_eq!(*flags, expected_flags);
         assert!(result
             .ir()
             .model
@@ -563,7 +575,7 @@ fn generated_offset_spline_surfaces_decode_and_write_source_less() {
         let cadmpeg_ir::geometry::OffsetExtension::Legacy { flags } = extension else {
             panic!("expected legacy offset extension")
         };
-        assert_eq!(flags.wire_values(), expected_flags);
+        assert_eq!(*flags, expected_flags);
     }
 }
 

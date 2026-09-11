@@ -42,7 +42,7 @@ fn offset_distance_mutation_preserves_the_previous_value_on_rejection() {
         None,
         false,
         OffsetExtension::Legacy {
-            flags: LegacyExtensionFlags::Absent,
+            flags: LegacyExtensionFlags::Absent {},
         },
     )
     .unwrap();
@@ -85,7 +85,10 @@ fn an_offset_extension_layout_carries_only_the_keys_its_own_arm_owns() {
 
     let legacy_wire = serde_json::to_value(&legacy).unwrap();
     assert_eq!(legacy_wire["layout"], serde_json::json!("legacy"));
-    assert_eq!(legacy_wire["flags"], serde_json::json!([true, true]));
+    assert_eq!(
+        legacy_wire["flags"],
+        serde_json::json!({"state": "enabled", "secondary": true})
+    );
     assert!(legacy_wire.get("extension_flags").is_none());
     let revision_wire = serde_json::to_value(&revision).unwrap();
     assert_eq!(revision_wire["layout"], serde_json::json!("revision"));
@@ -101,12 +104,29 @@ fn an_offset_extension_layout_carries_only_the_keys_its_own_arm_owns() {
     );
 
     let mut legacy_with_form = legacy_wire;
-    legacy_with_form["flags"] = serde_json::json!([]);
+    legacy_with_form["flags"] = serde_json::json!({"state": "absent"});
     legacy_with_form["form"] = serde_json::to_value(&form).unwrap();
     let error = serde_json::from_value::<OffsetSurfaceConstruction>(legacy_with_form)
         .unwrap_err()
         .to_string();
     assert!(error.contains("form"), "{error}");
+
+    let error = serde_json::from_value::<LegacyExtensionFlags>(
+        serde_json::json!({"state": "disabled", "secondary": true}),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("unknown field `secondary`"), "{error}");
+
+    for wire in [
+        serde_json::json!({"state": "absent"}),
+        serde_json::json!({"state": "disabled"}),
+        serde_json::json!({"state": "enabled", "secondary": false}),
+        serde_json::json!({"state": "enabled", "secondary": false, "tertiary": true}),
+    ] {
+        let flags = serde_json::from_value::<LegacyExtensionFlags>(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(flags).unwrap(), wire);
+    }
 
     let mut short_run = revision_wire;
     short_run["form"]["flags"] = serde_json::json!([true, true, true]);
