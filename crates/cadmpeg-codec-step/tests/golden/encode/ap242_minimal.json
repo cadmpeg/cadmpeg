@@ -33,7 +33,8 @@
           "code": {
             "code": "native.passthrough-record-omitted",
             "kind": "passthrough_record_omitted",
-            "namespace": "step"
+            "namespace": "step",
+            "scope": "namespaced"
           },
           "message": "2 uninterpreted passthrough record(s) were not represented in STEP",
           "severity": "info"
@@ -42,7 +43,9 @@
           "code": {
             "code": "target.source-dialect-displaced",
             "kind": "source_dialect_displaced",
-            "namespace": "step"
+            "namespace": "step",
+            "scope": "namespaced",
+            "strict_floor": "warning"
           },
           "message": "source dialect step:ap242-e2 was displaced by target dialect step:ap242-e3; the source dialect identity is not preserved",
           "severity": "warning"
@@ -88,7 +91,8 @@
           "code": {
             "code": "native.passthrough-record-omitted",
             "kind": "passthrough_record_omitted",
-            "namespace": "step"
+            "namespace": "step",
+            "scope": "namespaced"
           },
           "message": "2 uninterpreted passthrough record(s) were not represented in STEP",
           "severity": "info"
@@ -97,7 +101,9 @@
           "code": {
             "code": "target.source-dialect-displaced",
             "kind": "source_dialect_displaced",
-            "namespace": "step"
+            "namespace": "step",
+            "scope": "namespaced",
+            "strict_floor": "warning"
           },
           "message": "source dialect step:ap242-e2 was displaced by target dialect step:ap214; the source dialect identity is not preserved",
           "severity": "warning"
@@ -143,7 +149,8 @@
           "code": {
             "code": "native.passthrough-record-omitted",
             "kind": "passthrough_record_omitted",
-            "namespace": "step"
+            "namespace": "step",
+            "scope": "namespaced"
           },
           "message": "2 uninterpreted passthrough record(s) were not represented in STEP",
           "severity": "info"

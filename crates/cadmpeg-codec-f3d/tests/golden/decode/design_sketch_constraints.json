@@ -2081,6 +2081,7 @@
     "losses": [
       {
         "code": {
+          "scope": "namespaced",
           "namespace": "f3d",
           "code": "feature.edge-reference-lost",
           "kind": "attributes_not_transferred"
@@ -2090,6 +2091,7 @@
       },
       {
         "code": {
+          "scope": "namespaced",
           "namespace": "f3d",
           "code": "sketch.relation-native",
           "kind": "feature_history_retained"
@@ -2099,6 +2101,7 @@
       },
       {
         "code": {
+          "scope": "namespaced",
           "namespace": "f3d",
           "code": "sketch.dimension-native",
           "kind": "feature_history_retained"

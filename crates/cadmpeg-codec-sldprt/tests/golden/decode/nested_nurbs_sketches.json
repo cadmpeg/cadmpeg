@@ -854,7 +854,8 @@
         "code": {
           "code": "topology.body-hierarchy-derived",
           "kind": "topology_gauge_substituted",
-          "namespace": "sldprt"
+          "namespace": "sldprt",
+          "scope": "namespaced"
         },
         "message": "No body record was available; one body/region/shell hierarchy was derived.",
         "severity": "warning"
@@ -863,7 +864,9 @@
         "code": {
           "code": "source.dialect-unverified",
           "kind": "source_dialect_unverified",
-          "namespace": "sldprt"
+          "namespace": "sldprt",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
         "severity": "warning"
@@ -872,7 +875,8 @@
         "code": {
           "code": "config.inferred-without-native",
           "kind": "feature_history_retained",
-          "namespace": "sldprt"
+          "namespace": "sldprt",
+          "scope": "namespaced"
         },
         "message": "1 configuration state(s) are inferred from geometry partitions without native configuration definitions.",
         "severity": "warning"

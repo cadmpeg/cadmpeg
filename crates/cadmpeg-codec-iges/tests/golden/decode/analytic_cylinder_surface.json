@@ -2585,7 +2585,8 @@
         "code": {
           "code": "entity.retained-unprojected",
           "kind": "record_not_typed",
-          "namespace": "iges"
+          "namespace": "iges",
+          "scope": "namespaced"
         },
         "message": "IGES entity type 123 form 0 retained without neutral projection",
         "provenance": {

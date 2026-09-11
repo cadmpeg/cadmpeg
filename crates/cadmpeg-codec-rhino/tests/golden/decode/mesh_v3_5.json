@@ -245,7 +245,8 @@
         "code": {
           "code": "object.record-census",
           "kind": "object_records_untransferred",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "scope": "namespaced"
         },
         "message": "decoded 1/1 Rhino object records",
         "severity": "info"
@@ -254,7 +255,8 @@
         "code": {
           "code": "mesh.quad-topology-triangulated",
           "kind": "record_not_typed",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "scope": "namespaced"
         },
         "message": "1 quadrilateral face(s) were triangulated for mesh rhino:object:tessellation#record-000000-offset-177",
         "severity": "warning"
@@ -263,7 +265,9 @@
         "code": {
           "code": "container.integrity-failure",
           "kind": "integrity_failure",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "CRC mismatch at offset 177 for typecode 0x20008070: expected 0x0, got 0xd37a1d50",
         "severity": "error"
@@ -272,7 +276,8 @@
         "code": {
           "code": "container.scan-diagnostic",
           "kind": "decode_diagnostic",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "scope": "namespaced"
         },
         "message": "object at 177 has nil object UUID",
         "severity": "warning"
@@ -282,7 +287,7 @@
           "code": "source.writer-stamp-unverified",
           "kind": "source_dialect_unverified",
           "namespace": "rhino",
-          "strict_floor": null
+          "scope": "namespaced"
         },
         "message": "rhino:object:record#record-000000-offset-177: ON_Mesh dropped 3 bytes of post-2006 fields (mapping tag, n-gons, double-precision vertices) because the archive has no writer-version stamp",
         "severity": "warning"

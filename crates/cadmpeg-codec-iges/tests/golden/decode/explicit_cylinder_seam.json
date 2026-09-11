@@ -6604,7 +6604,8 @@
         "code": {
           "code": "entity.not-projected",
           "kind": "record_not_typed",
-          "namespace": "iges"
+          "namespace": "iges",
+          "scope": "namespaced"
         },
         "message": "IGES entity type 508 form 1 was not projected: loop edge-use tuple is invalid",
         "provenance": {
@@ -6619,7 +6620,8 @@
         "code": {
           "code": "entity.not-projected",
           "kind": "record_not_typed",
-          "namespace": "iges"
+          "namespace": "iges",
+          "scope": "namespaced"
         },
         "message": "IGES entity type 510 form 1 was not projected: face loop is missing",
         "provenance": {
@@ -6634,7 +6636,8 @@
         "code": {
           "code": "entity.not-projected",
           "kind": "record_not_typed",
-          "namespace": "iges"
+          "namespace": "iges",
+          "scope": "namespaced"
         },
         "message": "IGES entity type 514 form 2 was not projected: shell face-use tuple is invalid",
         "provenance": {
@@ -6649,7 +6652,9 @@
         "code": {
           "code": "parameter.data-quarantined",
           "kind": "noncanonical_source_syntax",
-          "namespace": "iges"
+          "namespace": "iges",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "IGES Parameter Data of D15 (P8 through P9) is quarantined because a numeric field or its delimiter crosses a card boundary; its 2 raw card(s) are retained and no token was interpreted",
         "provenance": {
@@ -6664,7 +6669,8 @@
         "code": {
           "code": "entity.retained-unprojected",
           "kind": "record_not_typed",
-          "namespace": "iges"
+          "namespace": "iges",
+          "scope": "namespaced"
         },
         "message": "IGES entity type 502 form 1 retained without neutral projection",
         "provenance": {
@@ -6679,7 +6685,8 @@
         "code": {
           "code": "entity.retained-unprojected",
           "kind": "record_not_typed",
-          "namespace": "iges"
+          "namespace": "iges",
+          "scope": "namespaced"
         },
         "message": "IGES entity type 504 form 1 retained without neutral projection",
         "provenance": {

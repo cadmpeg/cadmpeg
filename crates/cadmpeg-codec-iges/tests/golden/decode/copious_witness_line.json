@@ -1079,7 +1079,8 @@
         "code": {
           "code": "presentation.display-data-not-projected",
           "kind": "material_not_transferred",
-          "namespace": "iges"
+          "namespace": "iges",
+          "scope": "namespaced"
         },
         "message": "IGES entity type 106 form 40 display data was not projected: copious presentation tuples have no neutral display carrier",
         "provenance": {

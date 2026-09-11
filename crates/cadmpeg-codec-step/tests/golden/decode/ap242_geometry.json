@@ -780,7 +780,8 @@
         "code": {
           "code": "decode.warning",
           "kind": "decode_diagnostic",
-          "namespace": "step"
+          "namespace": "step",
+          "scope": "namespaced"
         },
         "message": "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #51 has no indexed surface member; set dropped",
         "severity": "warning"
@@ -789,7 +790,9 @@
         "code": {
           "code": "geometry.document-angle-unit-unresolved",
           "kind": "geometry_not_transferred",
-          "namespace": "step"
+          "namespace": "step",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
         "severity": "error"
@@ -798,7 +801,8 @@
         "code": {
           "code": "decode.warning",
           "kind": "decode_diagnostic",
-          "namespace": "step"
+          "namespace": "step",
+          "scope": "namespaced"
         },
         "message": "B_SPLINE_SURFACE_WITH_KNOTS V direction #21 has UNKNOWN periodicity; decoded as non-periodic",
         "severity": "warning"
@@ -807,7 +811,8 @@
         "code": {
           "code": "decode.opaque-record-preserved",
           "kind": "record_not_typed",
-          "namespace": "step"
+          "namespace": "step",
+          "scope": "namespaced"
         },
         "message": "preserved 1 PRESENTATION_STYLE_ASSIGNMENT instance(s) as named opaque STEP records",
         "severity": "warning"
@@ -816,7 +821,8 @@
         "code": {
           "code": "decode.opaque-record-preserved",
           "kind": "record_not_typed",
-          "namespace": "step"
+          "namespace": "step",
+          "scope": "namespaced"
         },
         "message": "preserved 1 STYLED_ITEM instance(s) as named opaque STEP records",
         "severity": "warning"

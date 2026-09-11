@@ -3638,7 +3638,8 @@
         "code": {
           "code": "geometry.spline-header-not-transferred",
           "kind": "metadata_not_transferred",
-          "namespace": "iges"
+          "namespace": "iges",
+          "scope": "namespaced"
         },
         "message": "Type 114 curve and patch types are retained only in native parameters",
         "provenance": {

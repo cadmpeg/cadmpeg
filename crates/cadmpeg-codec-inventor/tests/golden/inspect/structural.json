@@ -42,7 +42,9 @@
       "code": {
         "code": "source.dialect-unverified",
         "kind": "source_dialect_unverified",
-        "namespace": "inventor"
+        "namespace": "inventor",
+        "scope": "namespaced",
+        "strict_floor": "warning"
       },
       "message": "no RSe database stream declares a schema; no RSe segment metadata stream declares a marker and version; this decode applied the only Inventor grammars this codec implements — RSe database schema 31 and RSe segment metadata marker \"RSe Meta Stream Version 8\" version 8 — to those streams, and what they did not frame is reported as an unavailable stream with its own issue record",
       "severity": "warning"

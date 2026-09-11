@@ -17,9 +17,10 @@ fn loss_code_serializes_as_namespaced_object() {
     )
     .with_severity(Severity::Blocking);
     let value: serde_json::Value = serde_json::to_value(&note).expect("required invariant");
-    assert_eq!(value["code"]["namespace"], SHARED_LOSS_NAMESPACE);
-    assert_eq!(value["code"]["code"], "topology_not_transferred");
+    assert_eq!(value["code"]["scope"], "shared");
     assert_eq!(value["code"]["kind"], "topology_not_transferred");
+    assert!(value["code"].get("namespace").is_none());
+    assert!(value["code"].get("code").is_none());
     assert!(value["code"].get("strict_floor").is_none());
     assert_eq!(
         note.code.to_string(),
@@ -28,17 +29,71 @@ fn loss_code_serializes_as_namespaced_object() {
 }
 
 #[test]
-fn shared_loss_deserialization_rejects_a_code_that_disagrees_with_its_taxonomy() {
+fn a_shared_loss_kind_carries_no_code_and_no_strict_floor() {
+    let shared = LossKind::shared(LossTaxonomy::TopologyNotTransferred);
+    let wire = serde_json::to_value(&shared).expect("serializes");
+    assert_eq!(
+        wire,
+        serde_json::json!({"scope": "shared", "kind": "topology_not_transferred"})
+    );
+    assert_eq!(
+        serde_json::from_value::<LossKind>(wire).expect("round trip"),
+        shared
+    );
+
     let error = serde_json::from_value::<LossKind>(serde_json::json!({
+        "scope": "shared",
+        "kind": "topology_not_transferred",
+        "code": "geometry_not_transferred"
+    }))
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("code"), "{error}");
+
+    let error = serde_json::from_value::<LossKind>(serde_json::json!({
+        "scope": "shared",
+        "kind": "topology_not_transferred",
+        "strict_floor": "error"
+    }))
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("strict_floor"), "{error}");
+
+    let namespaced = LossKind::namespaced(
+        const {
+            match LossNamespace::new("rhino") {
+                Ok(namespace) => namespace,
+                Err(_) => panic!("reserved codec namespace"),
+            }
+        },
+        "brep.trim-pcurve-dropped",
+        LossTaxonomy::TopologyNotTransferred,
+    );
+    let wire = serde_json::to_value(&namespaced).expect("serializes");
+    assert_eq!(
+        wire,
+        serde_json::json!({
+            "scope": "namespaced",
+            "namespace": "rhino",
+            "code": "brep.trim-pcurve-dropped",
+            "kind": "topology_not_transferred",
+            "strict_floor": "warning"
+        })
+    );
+    assert_eq!(
+        serde_json::from_value::<LossKind>(wire).expect("round trip"),
+        namespaced
+    );
+
+    let error = serde_json::from_value::<LossKind>(serde_json::json!({
+        "scope": "namespaced",
         "namespace": "shared",
-        "code": "geometry_not_transferred",
+        "code": "topology_not_transferred",
         "kind": "topology_not_transferred"
     }))
     .unwrap_err()
     .to_string();
-
-    assert!(error.contains("LossKind.code"));
-    assert!(error.contains("topology_not_transferred"));
+    assert!(error.contains("shared"), "{error}");
 }
 
 #[test]
@@ -203,7 +258,7 @@ fn loss_provenance_root_alias_constructs_and_serializes() {
     );
     let json = serde_json::to_value(&note).unwrap();
     assert_eq!(json["provenance"]["format"], "rhino");
-    assert_eq!(json["provenance"]["stream"], "");
+    assert!(json["provenance"].get("stream").is_none());
     assert_eq!(json["provenance"]["offset"], 42);
     assert_eq!(
         json["provenance"]["tag"],

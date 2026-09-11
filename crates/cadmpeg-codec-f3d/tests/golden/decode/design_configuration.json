@@ -450,6 +450,7 @@
     "losses": [
       {
         "code": {
+          "scope": "namespaced",
           "namespace": "f3d",
           "code": "material.not-transferred",
           "kind": "material_not_transferred"
@@ -459,6 +460,7 @@
       },
       {
         "code": {
+          "scope": "namespaced",
           "namespace": "f3d",
           "code": "configuration.parameter-override-unbound",
           "kind": "metadata_not_transferred"
@@ -468,6 +470,7 @@
       },
       {
         "code": {
+          "scope": "namespaced",
           "namespace": "f3d",
           "code": "configuration.feature-suppression-unbound",
           "kind": "metadata_not_transferred"

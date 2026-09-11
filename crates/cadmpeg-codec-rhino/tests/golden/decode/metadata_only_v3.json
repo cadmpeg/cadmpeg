@@ -136,7 +136,8 @@
         "code": {
           "code": "object.record-census",
           "kind": "object_records_untransferred",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "scope": "namespaced"
         },
         "message": "decoded 0/1 Rhino object records",
         "severity": "info"
@@ -145,7 +146,8 @@
         "code": {
           "code": "object.family-not-transferred",
           "kind": "unsupported_object_family",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "scope": "namespaced"
         },
         "message": "retained 1 object record(s) for class c3101a1d-f157-11d3-bfe7-0010830122f0; geometry is not decoded",
         "provenance": {
@@ -159,7 +161,9 @@
         "code": {
           "code": "container.integrity-failure",
           "kind": "integrity_failure",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "CRC mismatch at offset 87 for typecode 0x20008070: expected 0x0, got 0x75b2f733",
         "severity": "error"
@@ -168,7 +172,8 @@
         "code": {
           "code": "container.scan-diagnostic",
           "kind": "decode_diagnostic",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "scope": "namespaced"
         },
         "message": "object at 87 has nil object UUID",
         "severity": "warning"
@@ -177,7 +182,8 @@
         "code": {
           "code": "object.decode-diagnostic",
           "kind": "decode_diagnostic",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "scope": "namespaced"
         },
         "message": "c3101a1d-f157-11d3-bfe7-0010830122f0: simple geometry retained because document units are unavailable",
         "severity": "warning"
