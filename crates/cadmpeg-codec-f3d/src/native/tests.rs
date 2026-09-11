@@ -871,7 +871,7 @@ fn generated_revision_offset_surface_round_trips() {
     let v_sense = definition_payload.v_sense();
     let extension = definition_payload.extension();
     assert_eq!((*u_sense, *v_sense), (None, None));
-    let cadmpeg_ir::geometry::OffsetExtension::Revision(form) = extension else {
+    let cadmpeg_ir::geometry::OffsetExtension::Revision { form } = extension else {
         panic!("expected revision offset extension")
     };
     assert_eq!(form.flags, [false, true, false, false]);
@@ -912,7 +912,7 @@ fn generated_parameterized_revision_offset_surface_round_trips() {
         panic!("expected offset surface construction")
     };
     let extension = definition_payload.extension();
-    let cadmpeg_ir::geometry::OffsetExtension::Revision(form) = extension else {
+    let cadmpeg_ir::geometry::OffsetExtension::Revision { form } = extension else {
         panic!("expected revision form")
     };
     assert_eq!(form.cache.selector(), 2);

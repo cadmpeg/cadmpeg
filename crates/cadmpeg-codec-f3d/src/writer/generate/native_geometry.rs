@@ -1042,7 +1042,7 @@ fn native_procedural_surface_definition(
                         ))
                     })?;
                 let extension_flags = match extension {
-                    cadmpeg_ir::geometry::OffsetExtension::Revision(form) => {
+                    cadmpeg_ir::geometry::OffsetExtension::Revision { form } => {
                         if form.revision <= 0 {
                             return Err(CodecError::Malformed(
                                 "revision-gated off_spl_sur requires a positive revision".into(),
@@ -1071,7 +1071,7 @@ fn native_procedural_surface_definition(
                         bytes.push(0x10);
                         return Ok(true);
                     }
-                    cadmpeg_ir::geometry::OffsetExtension::Legacy(flags) => flags.wire_values(),
+                    cadmpeg_ir::geometry::OffsetExtension::Legacy { flags } => flags.wire_values(),
                 };
                 let u_sense = (*u_sense).ok_or_else(|| {
                     CodecError::NotImplemented(

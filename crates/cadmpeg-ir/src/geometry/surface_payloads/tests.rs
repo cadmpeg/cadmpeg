@@ -41,7 +41,9 @@ fn offset_distance_mutation_preserves_the_previous_value_on_rejection() {
         None,
         None,
         false,
-        OffsetExtension::Legacy(LegacyExtensionFlags::Absent),
+        OffsetExtension::Legacy {
+            flags: LegacyExtensionFlags::Absent,
+        },
     )
     .unwrap();
     let before = payload.clone();
@@ -51,6 +53,70 @@ fn offset_distance_mutation_preserves_the_previous_value_on_rejection() {
     }
     payload.try_set_distance(0.0).unwrap();
     assert_eq!(*payload.distance(), 0.0);
+}
+
+#[test]
+fn an_offset_extension_layout_carries_only_the_keys_its_own_arm_owns() {
+    use crate::geometry::{
+        RevisionCacheForm, RevisionSurfaceForm, RevisionSurfaceParameterization,
+    };
+
+    let form = RevisionSurfaceForm {
+        revision: 1,
+        support_bounds: [None; 4],
+        reference_endpoints: [None; 2],
+        second_endpoints: [None; 2],
+        flags: [true, false, true, false],
+        cache: RevisionCacheForm::Parameterization(RevisionSurfaceParameterization::default()),
+        discontinuities: Default::default(),
+        tail_flag: false,
+        trailing_flags: Vec::new(),
+    };
+    let offset = |extension| {
+        OffsetSurfaceConstruction::try_new(support(), 1.0, None, None, false, extension).unwrap()
+    };
+    let legacy = offset(OffsetExtension::Legacy {
+        flags: LegacyExtensionFlags::Enabled {
+            secondary: true,
+            tertiary: None,
+        },
+    });
+    let revision = offset(OffsetExtension::Revision { form: form.clone() });
+
+    let legacy_wire = serde_json::to_value(&legacy).unwrap();
+    assert_eq!(legacy_wire["layout"], serde_json::json!("legacy"));
+    assert_eq!(legacy_wire["flags"], serde_json::json!([true, true]));
+    assert!(legacy_wire.get("extension_flags").is_none());
+    let revision_wire = serde_json::to_value(&revision).unwrap();
+    assert_eq!(revision_wire["layout"], serde_json::json!("revision"));
+    assert!(revision_wire.get("extension_flags").is_none());
+    assert!(revision_wire.get("revision_form").is_none());
+    assert_eq!(
+        serde_json::from_value::<OffsetSurfaceConstruction>(legacy_wire.clone()).unwrap(),
+        legacy
+    );
+    assert_eq!(
+        serde_json::from_value::<OffsetSurfaceConstruction>(revision_wire.clone()).unwrap(),
+        revision
+    );
+
+    let mut legacy_with_form = legacy_wire;
+    legacy_with_form["flags"] = serde_json::json!([]);
+    legacy_with_form["form"] = serde_json::to_value(&form).unwrap();
+    let error = serde_json::from_value::<OffsetSurfaceConstruction>(legacy_with_form)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("form"), "{error}");
+
+    let mut short_run = revision_wire;
+    short_run["form"]["flags"] = serde_json::json!([true, true, true]);
+    let error = serde_json::from_value::<OffsetSurfaceConstruction>(short_run)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("invalid length 3, expected an array of length 4"),
+        "{error}"
+    );
 }
 
 #[test]

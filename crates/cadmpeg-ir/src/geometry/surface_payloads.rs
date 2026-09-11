@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Checked procedural surface payloads.
 
-#[cfg(feature = "schema")]
-use super::OffsetExtensionSchemaWire;
 use super::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, CompoundComponent, CompoundLoftConstruction,
     DeformableSurfaceConstruction, ExactSpline, G2BlendConstruction, LawSurfaceConstruction,
@@ -524,7 +522,6 @@ pub struct OffsetSurfaceConstruction {
     linear_support_extension: bool,
     /// Legacy conditional extension flags or the revision-gated form.
     #[serde(flatten)]
-    #[cfg_attr(feature = "schema", schemars(with = "OffsetExtensionSchemaWire"))]
     extension: OffsetExtension,
 }
 
@@ -547,7 +544,6 @@ struct OffsetSurfaceConstructionWire {
     linear_support_extension: bool,
     /// Legacy conditional extension flags or the revision-gated form.
     #[serde(flatten)]
-    #[cfg_attr(feature = "schema", schemars(with = "OffsetExtensionSchemaWire"))]
     extension: OffsetExtension,
 }
 
@@ -570,8 +566,8 @@ impl OffsetSurfaceConstruction {
 
     pub(super) fn revision_cache_mut(&mut self) -> Option<&mut super::RevisionCacheForm> {
         match &mut self.extension {
-            OffsetExtension::Revision(form) => Some(&mut form.cache),
-            OffsetExtension::Legacy(_) => None,
+            OffsetExtension::Revision { form } => Some(&mut form.cache),
+            OffsetExtension::Legacy { flags: _ } => None,
         }
     }
     /// Admit the construction parameters.

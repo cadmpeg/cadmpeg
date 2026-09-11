@@ -27,8 +27,9 @@
         {
           "definition": {
             "distance": 2.0,
-            "extension_flags": [],
+            "flags": [],
             "kind": "offset",
+            "layout": "legacy",
             "support": "iges:model:surface#D1",
             "u_sense": 0,
             "v_sense": 0

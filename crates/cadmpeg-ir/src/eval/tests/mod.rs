@@ -958,13 +958,13 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
     ir.model.procedural_surfaces = vec![
         procedural_surface! {
             id: first_construction,
-            definition: ProceduralSurfaceDefinition::Offset(crate::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(support_id, 2.0, None, None, false, OffsetExtension::Legacy(LegacyExtensionFlags::Absent)).unwrap()),
+            definition: ProceduralSurfaceDefinition::Offset(crate::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(support_id, 2.0, None, None, false, OffsetExtension::Legacy { flags: LegacyExtensionFlags::Absent }).unwrap()),
             cache_fit_tolerance: None,
             record_bounds: None,
         },
         procedural_surface! {
             id: second_construction,
-            definition: ProceduralSurfaceDefinition::Offset(crate::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(first_id, -5.0, None, None, false, OffsetExtension::Legacy(LegacyExtensionFlags::Absent)).unwrap()),
+            definition: ProceduralSurfaceDefinition::Offset(crate::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(first_id, -5.0, None, None, false, OffsetExtension::Legacy { flags: LegacyExtensionFlags::Absent }).unwrap()),
             cache_fit_tolerance: None,
             record_bounds: None,
         },
@@ -1040,7 +1040,7 @@ fn linear_offset_support_extension_uses_the_boundary_tangent_plane() {
     ];
     ir.model.procedural_surfaces.push(procedural_surface! {
         id: construction,
-        definition: ProceduralSurfaceDefinition::Offset(crate::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(support_id, 0.0, None, None, true, OffsetExtension::Legacy(LegacyExtensionFlags::Absent)).unwrap()),
+        definition: ProceduralSurfaceDefinition::Offset(crate::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(support_id, 0.0, None, None, true, OffsetExtension::Legacy { flags: LegacyExtensionFlags::Absent }).unwrap()),
         cache_fit_tolerance: None,
         record_bounds: None,
     });
@@ -1081,7 +1081,7 @@ fn offset_uses_the_nurbs_carrier_normal_orientation() {
     ];
     ir.model.procedural_surfaces.push(procedural_surface! {
         id: construction,
-        definition: ProceduralSurfaceDefinition::Offset(crate::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(support_id, 2.0, None, None, false, OffsetExtension::Legacy(LegacyExtensionFlags::Absent)).unwrap()),
+        definition: ProceduralSurfaceDefinition::Offset(crate::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(support_id, 2.0, None, None, false, OffsetExtension::Legacy { flags: LegacyExtensionFlags::Absent }).unwrap()),
         cache_fit_tolerance: None,
         record_bounds: None,
     });
@@ -1148,7 +1148,7 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
             offset_id.clone(),
             procedural_surface! {
                 id: offset_construction,
-                definition: ProceduralSurfaceDefinition::Offset(crate::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(subset_id, 2.0, None, None, false, OffsetExtension::Legacy(LegacyExtensionFlags::Absent)).unwrap()),
+                definition: ProceduralSurfaceDefinition::Offset(crate::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(subset_id, 2.0, None, None, false, OffsetExtension::Legacy { flags: LegacyExtensionFlags::Absent }).unwrap()),
                 cache_fit_tolerance: None,
                 record_bounds: None,
             },
