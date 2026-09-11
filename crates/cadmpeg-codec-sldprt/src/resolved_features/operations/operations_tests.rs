@@ -596,7 +596,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         ),
     ];
 
-    inherit_configuration_operations(&mut configured, &base, &histories, &[], None).unwrap();
+    inherit_configuration_operations(&mut configured, &base, &histories, &[], None);
 
     assert!(matches!(
         configured[0].evaluation.definition(),
@@ -616,7 +616,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
     configured[0]
         .evaluation
         .set_definition(extrude(BooleanOp::NewBody));
-    inherit_configuration_operations(&mut configured, &base, &histories, &[], None).unwrap();
+    inherit_configuration_operations(&mut configured, &base, &histories, &[], None);
     assert!(matches!(
         configured[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -666,8 +666,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         &histories,
         &[operation_lane.clone()],
         Some(4),
-    )
-    .unwrap();
+    );
     assert!(matches!(
         inherited[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -688,8 +687,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         &histories,
         &[operation_lane],
         Some(4),
-    )
-    .unwrap();
+    );
     assert!(matches!(
         unresolved[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {

@@ -31,8 +31,7 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
         f64::from_bits(0x7ff8_0000_0000_0002).to_be_bytes(),
     ];
 
-    crate::brep::patch_nurbs_surface(&mut bytes, 0, &old, &new, 0.001)
-        .expect("compact NURBS patch");
+    crate::brep::patch_nurbs_surface(&mut bytes, 0, old, &new, 0.001).expect("compact NURBS patch");
 
     let patched = crate::brep::spline::scan_surface_carriers(&bytes)
         .remove(&180)

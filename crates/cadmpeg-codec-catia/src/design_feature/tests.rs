@@ -754,7 +754,7 @@ fn orders_exact_feature_parameters_by_serialized_field_position() {
         &native,
         &crate::decode::ModelingGraphScope::Unscoped,
     );
-    transfer.assign_parameter_owners(&mut ir, &native).unwrap();
+    transfer.assign_parameter_owners(&mut ir, &native);
 
     assert_eq!(
         ir.model
@@ -880,7 +880,7 @@ fn assigns_a_nested_parameter_to_the_nearest_operation() {
         &native,
         &crate::decode::ModelingGraphScope::Unscoped,
     );
-    transfer.assign_parameter_owners(&mut ir, &native).unwrap();
+    transfer.assign_parameter_owners(&mut ir, &native);
 
     let child_feature =
         FeatureId::mint("synthetic:test:feature#child-operation").expect("identity grammar");
@@ -942,8 +942,7 @@ fn native_parameter_map_uses_disambiguated_names_when_source_names_collide() {
                 FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
             ),
         ]),
-    )
-    .unwrap();
+    );
 
     let FeatureDefinition::Operation(FeatureOperation::Native { parameters, .. }) =
         ir.model.features[0].evaluation.definition()
@@ -994,8 +993,7 @@ fn native_parameter_map_retains_circular_pattern_values_in_source_properties() {
                 .expect("identity grammar"),
             FeatureId::mint("synthetic:test:id#pattern-feature").expect("identity grammar"),
         )]),
-    )
-    .unwrap();
+    );
 
     assert_eq!(
         ir.model.features[0]
@@ -1233,7 +1231,7 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
             pmi: None,
             native_ref: Some(parameter_entity.id.clone()),
         });
-    transfer.assign_parameter_owners(&mut ir, &native).unwrap();
+    transfer.assign_parameter_owners(&mut ir, &native);
 
     assert_eq!(ir.model.sketches.len(), 1);
     assert!(matches!(
@@ -1422,7 +1420,7 @@ fn parameter_owner_follows_one_exact_child_design_object() {
             native_ref: Some(child_entity_id),
         });
 
-    transfer.assign_parameter_owners(&mut ir, &native).unwrap();
+    transfer.assign_parameter_owners(&mut ir, &native);
 
     assert_eq!(ir.model.features.len(), 1);
     assert_eq!(

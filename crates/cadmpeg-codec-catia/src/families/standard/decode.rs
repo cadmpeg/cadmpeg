@@ -374,7 +374,7 @@ fn bind_consolidated_revolution_faces_and_seams(
             CurveGeometry::Procedural { cache, .. } => cache
                 .as_ref()
                 .is_none_or(|cache| matches!(cache, SolvedCurveGeometry::Unknown { .. })),
-            _ => false,
+            CurveGeometry::Solved(_) => false,
         };
         if !unresolved || curve_edge_counts.get(curve_id) != Some(&1) {
             continue;
@@ -403,7 +403,7 @@ fn bind_consolidated_revolution_faces_and_seams(
                 };
                 *cache = Some(solved);
             }
-            carrier => *carrier = geometry,
+            carrier @ CurveGeometry::Solved(_) => *carrier = geometry,
         }
         edge.set_param_range(Some(parameter_range))
             .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -7424,13 +7424,13 @@ pub(crate) fn analytic_surface_uv(surface: &SurfaceGeometry, point: Point3) -> O
 pub(crate) fn unwrap_standard_uv(surface: &SurfaceGeometry, value: &mut Point2, reference: Point2) {
     match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)) => {
-            value.u = unwrap_angle(value.u, reference.u)
+            value.u = unwrap_angle(value.u, reference.u);
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_)) => {
-            value.u = unwrap_angle(value.u, reference.u)
+            value.u = unwrap_angle(value.u, reference.u);
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_)) => {
-            value.u = unwrap_angle(value.u, reference.u)
+            value.u = unwrap_angle(value.u, reference.u);
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_)) => {
             value.u = unwrap_angle(value.u, reference.u);
@@ -7490,10 +7490,12 @@ fn point_on_surface_if_supported(point: Point3, surface: &SurfaceGeometry) -> Op
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
             return point_on_nurbs_surface(point, surface);
         }
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(_))
-        | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed { .. })
-        | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => return None,
+        SurfaceGeometry::Solved(
+            SolvedSurfaceGeometry::Polygonal(_)
+            | SolvedSurfaceGeometry::Transformed { .. }
+            | SolvedSurfaceGeometry::Unknown { .. },
+        )
+        | SurfaceGeometry::Procedural { .. } => return None,
     };
     Some(residual <= TOLERANCE)
 }
@@ -8257,8 +8259,7 @@ pub(crate) fn build_standard_edge_curve(
     if param_range.is_none()
         && matches!(
             geometry,
-            CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))
-                | CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_))
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_))
         )
     {
         let endpoints = [
@@ -9393,11 +9394,13 @@ pub(crate) fn circle_axis_from_carrier(
                 None
             }
         }
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
-        | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(_))
-        | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed { .. })
-        | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => None,
+        SurfaceGeometry::Solved(
+            SolvedSurfaceGeometry::Nurbs(_)
+            | SolvedSurfaceGeometry::Polygonal(_)
+            | SolvedSurfaceGeometry::Transformed { .. }
+            | SolvedSurfaceGeometry::Unknown { .. },
+        )
+        | SurfaceGeometry::Procedural { .. } => None,
     }
 }
 

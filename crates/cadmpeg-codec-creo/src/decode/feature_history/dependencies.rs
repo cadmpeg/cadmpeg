@@ -401,7 +401,7 @@ pub(in super::super) fn reconcile_feature_links(
     scan: &ContainerScan,
     ir: &mut CadIr,
     prototype_dependencies: &BTreeMap<u32, Vec<u32>>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let output_updates = ir
         .model
         .features
@@ -509,18 +509,19 @@ pub(in super::super) fn reconcile_feature_links(
     for (ordinal, index) in ordered.into_iter().enumerate() {
         ir.model.features[index].ordinal = ordinal as u64;
     }
-    Ok(())
 }
 
 pub(in super::super) fn feature_generated_dependencies(
     definition: &IrFeatureDefinition,
 ) -> Vec<IrFeatureId> {
     let face_selections = match definition {
-        IrFeatureDefinition::Operation(IrFeatureOperation::Hole {
-            face: Some(face), ..
-        })
-        | IrFeatureDefinition::Operation(IrFeatureOperation::Thicken { faces: face, .. })
-        | IrFeatureDefinition::Operation(IrFeatureOperation::KnitSurface { faces: face, .. }) => {
+        IrFeatureDefinition::Operation(
+            IrFeatureOperation::Hole {
+                face: Some(face), ..
+            }
+            | IrFeatureOperation::Thicken { faces: face, .. }
+            | IrFeatureOperation::KnitSurface { faces: face, .. },
+        ) => {
             vec![face]
         }
         _ => Vec::new(),

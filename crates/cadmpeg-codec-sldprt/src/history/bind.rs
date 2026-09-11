@@ -362,7 +362,7 @@ pub(crate) fn derive_feature_outputs(
     faces: &[Face],
     shells: &[cadmpeg_ir::topology::Shell],
     regions: &[cadmpeg_ir::topology::Region],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let mut feature_ids_by_ordinal = HashMap::<u32, Option<&str>>::new();
     for history in histories {
         let mut ordinal = 0_u32;
@@ -399,7 +399,7 @@ pub(crate) fn derive_feature_outputs(
         }
     }
     if face_producers.is_empty() {
-        return Ok(());
+        return;
     }
     let owners = face_owner_bodies(faces, shells, regions);
     let mut produced: HashMap<u32, Vec<cadmpeg_ir::ids::BodyId>> = HashMap::new();
@@ -433,7 +433,6 @@ pub(crate) fn derive_feature_outputs(
             feature.evaluation.set_outputs(bodies.clone());
         }
     }
-    Ok(())
 }
 
 pub(crate) fn bind_definition_sketch(

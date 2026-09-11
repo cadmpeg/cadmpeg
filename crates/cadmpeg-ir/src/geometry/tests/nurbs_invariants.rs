@@ -27,7 +27,7 @@ fn surface() -> NurbsSurface {
             vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
         ],
         Some(vec![-1.0, 1.0, 2.0, -2.0])
-            .map(|values| values.chunks(2 as usize).map(<[_]>::to_vec).collect()),
+            .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
         true,
         true,
         false,

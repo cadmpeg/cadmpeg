@@ -2537,7 +2537,7 @@ pub fn bind_sketch_feature_geometry(
     placements: &[DesignSketchPlacement],
     sketches: &[cadmpeg_ir::sketches::Sketch],
     spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     use cadmpeg_ir::features::{
         DatumPointConstruction, FeatureDefinition, FeatureOperation, LoftSection, PathRef,
         PlanarProfileRef, ProfileRef, SketchPointSelection,
@@ -2548,8 +2548,9 @@ pub fn bind_sketch_feature_geometry(
         'feature_edit: {
             if !matches!(
                 &definition,
-                FeatureDefinition::Operation(FeatureOperation::Sketch { .. })
-                    | FeatureDefinition::Operation(FeatureOperation::SpatialSketch { .. })
+                FeatureDefinition::Operation(
+                    FeatureOperation::Sketch { .. } | FeatureOperation::SpatialSketch { .. }
+                )
             ) {
                 break 'feature_edit;
             }
@@ -2682,18 +2683,18 @@ pub fn bind_sketch_feature_geometry(
         _ => None,
     };
     let profile_dependency = |profile: &ProfileRef| match profile {
-        ProfileRef::Planar(PlanarProfileRef::Sketch(sketch))
-        | ProfileRef::Planar(PlanarProfileRef::SketchProfiles { sketch, .. })
-        | ProfileRef::Planar(PlanarProfileRef::SketchRegions { sketch, .. })
-        | ProfileRef::Planar(PlanarProfileRef::SketchEntities { sketch, .. })
-        | ProfileRef::Planar(PlanarProfileRef::SketchSelection { sketch, .. }) => {
-            sketch_features.get(sketch).cloned()
-        }
+        ProfileRef::Planar(
+            PlanarProfileRef::Sketch(sketch)
+            | PlanarProfileRef::SketchProfiles { sketch, .. }
+            | PlanarProfileRef::SketchRegions { sketch, .. }
+            | PlanarProfileRef::SketchEntities { sketch, .. }
+            | PlanarProfileRef::SketchSelection { sketch, .. },
+        ) => sketch_features.get(sketch).cloned(),
         ProfileRef::SpatialSketchProfiles { sketch, .. }
         | ProfileRef::SpatialSketchSelection { sketch, .. } => {
             spatial_sketch_features.get(sketch).cloned()
         }
-        _ => None,
+        ProfileRef::Planar(_) => None,
     };
     let path_dependency = |path: &PathRef| match path {
         PathRef::Sketch(sketch) | PathRef::SketchCurves { sketch, .. } => {
@@ -2787,8 +2788,6 @@ pub fn bind_sketch_feature_geometry(
             }
         }
     }
-
-    Ok(())
 }
 
 /// Bind `WorkPoint` inputs that select a sketch point after the sketch arenas
@@ -2800,7 +2799,7 @@ pub fn bind_work_point_sketch_point_constructions(
     scopes: &[DesignParameterScope],
     sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
     spatial_sketch_entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     use cadmpeg_ir::features::{
         DatumPointConstruction, FeatureDefinition, FeatureOperation, SketchPointSelection,
     };
@@ -2868,8 +2867,6 @@ pub fn bind_work_point_sketch_point_constructions(
         }
         feature.evaluation.set_definition(definition);
     }
-
-    Ok(())
 }
 
 fn project_surface_offset(
@@ -5991,7 +5988,7 @@ pub(crate) fn bind_revolve_face_axes(
     face_operands: &[crate::records::topology::DesignFaceOperand],
     faces: &[cadmpeg_ir::topology::Face],
     surfaces: &[cadmpeg_ir::geometry::Surface],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     for feature in features {
@@ -6093,8 +6090,6 @@ pub(crate) fn bind_revolve_face_axes(
         }
         feature.evaluation.set_definition(definition);
     }
-
-    Ok(())
 }
 
 fn analytic_axis_for_face(
@@ -7786,7 +7781,7 @@ pub(crate) fn bind_surface_trim_cell_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     scopes: &[DesignParameterScope],
     operations: &[DesignSurfaceTrimOperation],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     for feature in features {
         let mut definition = feature.evaluation.definition().clone();
         'feature_edit: {
@@ -7823,8 +7818,6 @@ pub(crate) fn bind_surface_trim_cell_selections(
         }
         feature.evaluation.set_definition(definition);
     }
-
-    Ok(())
 }
 
 pub(crate) fn project_split(

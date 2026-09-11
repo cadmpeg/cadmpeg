@@ -5538,7 +5538,7 @@ pub(crate) mod tests {
         assert_eq!(normalized.poles().count(), 14);
         assert_eq!(
             normalized.poles().nth(12).copied().unwrap(),
-            normalized.poles().nth(0).copied().unwrap()
+            normalized.poles().next().copied().unwrap()
         );
         assert_eq!(
             normalized.poles().nth(13).copied().unwrap(),

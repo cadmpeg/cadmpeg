@@ -144,7 +144,7 @@ fn unresolved_face_frame_resolves_a_later_principal_plane_from_support_geometry(
     principal.native_ref = Some("sldprt:history:feature#0:right".into());
 
     let mut features = vec![offset, principal];
-    bind_offset_plane_references(&mut features).unwrap();
+    bind_offset_plane_references(&mut features);
 
     assert!(matches!(
         features[0].evaluation.definition(),
@@ -232,7 +232,7 @@ fn unresolved_face_frame_collapses_a_zero_offset_plane_alias() {
         .insert("ReferenceFaceUAxis".into(), "0,0,-1".into());
 
     let mut features = vec![base, alias, offset];
-    bind_offset_plane_references(&mut features).unwrap();
+    bind_offset_plane_references(&mut features);
 
     assert!(matches!(
         features[2].evaluation.definition(),
@@ -287,7 +287,7 @@ fn explicit_later_constructed_plane_survives_without_result_offset_frame() {
     reference.native_ref = Some("sldprt:history:feature#0:reference".into());
 
     let mut features = vec![offset, reference];
-    bind_offset_plane_references(&mut features).unwrap();
+    bind_offset_plane_references(&mut features);
 
     assert!(matches!(
         features[0].evaluation.definition(),

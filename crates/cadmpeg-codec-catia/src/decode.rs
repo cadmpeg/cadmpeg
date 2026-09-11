@@ -204,7 +204,7 @@ fn finish_decode(
     );
     let formula_transfer =
         formula::transfer_parameters(&mut ir, &native, &mut annotations, &modeling_graph_scope)?;
-    design_feature_transfer.assign_parameter_owners(&mut ir, &native)?;
+    design_feature_transfer.assign_parameter_owners(&mut ir, &native);
     let appearance_transfer = crate::appearance::transfer(
         &mut ir,
         &native,

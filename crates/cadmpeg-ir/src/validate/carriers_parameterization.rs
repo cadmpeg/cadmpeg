@@ -941,8 +941,9 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
         if let Some(curve) = edge.curve().as_ref().and_then(|id| curves.get(id.as_str())) {
             let tau = std::f64::consts::TAU;
             match curve {
-                CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))
-                | CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_)) => {
+                CurveGeometry::Solved(
+                    SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_),
+                ) => {
                     // Canonical periodic domain: the start angle wrapped into
                     // one turn, the sweep at most a full turn. An arc crossing
                     // the seam ends past `τ`. A full-period edge retains

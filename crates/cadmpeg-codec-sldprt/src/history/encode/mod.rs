@@ -209,25 +209,25 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 self.encode_offset_shape()
             }
             FeatureDefinition::PostProcess { .. } => self.encode_post_process(),
-            FeatureDefinition::Operation(FeatureOperation::PointGeometry { .. })
-            | FeatureDefinition::Operation(FeatureOperation::LineSegment { .. })
-            | FeatureDefinition::Operation(FeatureOperation::CircularArc { .. })
-            | FeatureDefinition::Operation(FeatureOperation::EllipticArc { .. })
-            | FeatureDefinition::Operation(FeatureOperation::Polyline { .. })
-            | FeatureDefinition::Operation(FeatureOperation::RegularPolygonCurve { .. })
-            | FeatureDefinition::Operation(FeatureOperation::PlanarPatch { .. })
-            | FeatureDefinition::Operation(FeatureOperation::FaceFromShapes { .. }) => {
-                self.encode_curve_geometry()
-            }
-            FeatureDefinition::Operation(FeatureOperation::Compound { .. })
-            | FeatureDefinition::Operation(FeatureOperation::RefineShape { .. })
-            | FeatureDefinition::Operation(FeatureOperation::ReverseShape { .. })
-            | FeatureDefinition::Operation(FeatureOperation::RuledBetweenCurves { .. })
-            | FeatureDefinition::Operation(FeatureOperation::SectionShape { .. })
-            | FeatureDefinition::Operation(FeatureOperation::MirrorShape { .. })
-            | FeatureDefinition::Operation(FeatureOperation::ProjectOnSurface { .. }) => {
-                self.encode_shape_operation()
-            }
+            FeatureDefinition::Operation(
+                FeatureOperation::PointGeometry { .. }
+                | FeatureOperation::LineSegment { .. }
+                | FeatureOperation::CircularArc { .. }
+                | FeatureOperation::EllipticArc { .. }
+                | FeatureOperation::Polyline { .. }
+                | FeatureOperation::RegularPolygonCurve { .. }
+                | FeatureOperation::PlanarPatch { .. }
+                | FeatureOperation::FaceFromShapes { .. },
+            ) => self.encode_curve_geometry(),
+            FeatureDefinition::Operation(
+                FeatureOperation::Compound { .. }
+                | FeatureOperation::RefineShape { .. }
+                | FeatureOperation::ReverseShape { .. }
+                | FeatureOperation::RuledBetweenCurves { .. }
+                | FeatureOperation::SectionShape { .. }
+                | FeatureOperation::MirrorShape { .. }
+                | FeatureOperation::ProjectOnSurface { .. },
+            ) => self.encode_shape_operation(),
             FeatureDefinition::Operation(FeatureOperation::Shell {
                 bodies,
                 removed_faces,
@@ -424,22 +424,22 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 self.encode_helical_sweep()
             }
             FeatureDefinition::Operation(FeatureOperation::Binder { .. }) => self.encode_binder(),
-            FeatureDefinition::Operation(FeatureOperation::Unresolved {
-                family:
-                    UnresolvedFamily::DatumPoint
-                    | UnresolvedFamily::DatumCoordinateSystem
-                    | UnresolvedFamily::Loft
-                    | UnresolvedFamily::FreeformSurface
-                    | UnresolvedFamily::Draft,
-            })
-            | FeatureDefinition::Operation(FeatureOperation::Block { .. })
-            | FeatureDefinition::Operation(FeatureOperation::ExtractBody { .. })
-            | FeatureDefinition::Operation(FeatureOperation::FaceBlend { .. })
-            | FeatureDefinition::Operation(FeatureOperation::SewBodies { .. })
-            | FeatureDefinition::Operation(FeatureOperation::TrimBodies { .. }) => {
-                self.encode_explicitly_unsupported()
-            }
-            _ => self.encode_unsupported(),
+            FeatureDefinition::Operation(
+                FeatureOperation::Unresolved {
+                    family:
+                        UnresolvedFamily::DatumPoint
+                        | UnresolvedFamily::DatumCoordinateSystem
+                        | UnresolvedFamily::Loft
+                        | UnresolvedFamily::FreeformSurface
+                        | UnresolvedFamily::Draft,
+                }
+                | FeatureOperation::Block { .. }
+                | FeatureOperation::ExtractBody { .. }
+                | FeatureOperation::FaceBlend { .. }
+                | FeatureOperation::SewBodies { .. }
+                | FeatureOperation::TrimBodies { .. },
+            ) => self.encode_explicitly_unsupported(),
+            FeatureDefinition::Operation(_) => self.encode_unsupported(),
         }
     }
 }

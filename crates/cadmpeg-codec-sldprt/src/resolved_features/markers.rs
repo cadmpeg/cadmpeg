@@ -54,7 +54,7 @@ pub(crate) fn spatial_sketches(
     model_features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) -> Result<(Vec<SpatialSketch>, Vec<SpatialSketchEntity>), cadmpeg_core::CodecError> {
+) -> (Vec<SpatialSketch>, Vec<SpatialSketchEntity>) {
     let records = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -325,7 +325,7 @@ pub(crate) fn spatial_sketches(
                 },
             ));
     }
-    Ok((sketches, entities))
+    (sketches, entities)
 }
 
 pub(super) fn marker_spatial_coordinate_offset(payload: &[u8], offset: usize) -> Option<usize> {

@@ -49,7 +49,7 @@ pub(super) fn bind_circular_profile_by_dimension(
     sketches: &mut [Sketch],
     sketch_entities: &[SketchEntity],
     parameters: &[cadmpeg_ir::features::DesignParameter],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let geometry_by_entity = sketch_entities
         .iter()
         .map(|entity| (entity.id(), &entity.geometry))
@@ -147,8 +147,6 @@ pub(super) fn bind_circular_profile_by_dimension(
             native.name = name;
         }
     }
-
-    Ok(())
 }
 
 /// Bind neutral parameters to uniquely owned native scalar records.
@@ -625,7 +623,7 @@ pub(crate) fn type_display_relation_parameters(
 pub(crate) fn project_compact_body_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     lanes: &[FeatureInputLane],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let selections = lanes.iter().flat_map(|lane| &lane.body_selections).fold(
         HashMap::<&str, Vec<&FeatureInputBodySelection>>::new(),
         |mut by_feature, selection| {
@@ -677,8 +675,6 @@ pub(crate) fn project_compact_body_selections(
         }
         feature.evaluation.set_definition(definition);
     }
-
-    Ok(())
 }
 
 pub(crate) fn project_compact_edge_selections(
@@ -1454,13 +1450,13 @@ pub(crate) fn project_compact_surface_selections(
                 FeatureDefinition::Operation(FeatureOperation::Shell { removed_faces, .. }) => {
                     SelectionSlot::Face(removed_faces)
                 }
-                FeatureDefinition::Operation(FeatureOperation::OffsetSurface { faces, .. })
-                | FeatureDefinition::Operation(FeatureOperation::KnitSurface { faces, .. })
-                | FeatureDefinition::Operation(FeatureOperation::TrimSurface { faces, .. })
-                | FeatureDefinition::Operation(FeatureOperation::ExtendSurface { faces, .. })
-                | FeatureDefinition::Operation(FeatureOperation::Dome { faces, .. }) => {
-                    SelectionSlot::Face(faces)
-                }
+                FeatureDefinition::Operation(
+                    FeatureOperation::OffsetSurface { faces, .. }
+                    | FeatureOperation::KnitSurface { faces, .. }
+                    | FeatureOperation::TrimSurface { faces, .. }
+                    | FeatureOperation::ExtendSurface { faces, .. }
+                    | FeatureOperation::Dome { faces, .. },
+                ) => SelectionSlot::Face(faces),
                 FeatureDefinition::Operation(FeatureOperation::FilledSurface {
                     support_faces,
                     ..
@@ -1701,7 +1697,7 @@ pub(crate) fn project_draft_operands(
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let feature_ids_by_native = features
         .iter()
         .filter_map(|feature| Some((feature.native_ref.clone()?, feature.id.clone())))
@@ -1810,8 +1806,6 @@ pub(crate) fn project_draft_operands(
         }
         feature.evaluation.set_definition(definition);
     }
-
-    Ok(())
 }
 
 fn draft_face_selection(
@@ -1982,7 +1976,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
     lanes: &[FeatureInputLane],
     faces: &[Face],
     surfaces: &[Surface],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let native_features = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -2161,8 +2155,6 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
         }
         feature.evaluation.set_definition(definition);
     }
-
-    Ok(())
 }
 
 pub(super) fn unique_cylindrical_face(
@@ -2225,7 +2217,7 @@ pub(crate) fn project_unbound_offset_plane_faces(
     features: &mut [cadmpeg_ir::features::Feature],
     faces: &[Face],
     surfaces: &[Surface],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     for feature in features {
         let mut definition = feature.evaluation.definition().clone();
         'feature_edit: {
@@ -2250,8 +2242,6 @@ pub(crate) fn project_unbound_offset_plane_faces(
         }
         feature.evaluation.set_definition(definition);
     }
-
-    Ok(())
 }
 
 pub(super) fn unique_planar_face(

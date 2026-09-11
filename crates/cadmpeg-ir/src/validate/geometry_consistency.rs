@@ -718,10 +718,12 @@ fn edge_pcurve_parameter_ranges(
     let curve_geometry = curve_geometry?;
     if !matches!(
         curve_geometry,
-        crate::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))
-            | crate::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_))
-            | crate::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Parabola(_))
-            | crate::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(_))
+        crate::geometry::CurveGeometry::Solved(
+            SolvedCurveGeometry::Circle(_)
+                | SolvedCurveGeometry::Ellipse(_)
+                | SolvedCurveGeometry::Parabola(_)
+                | SolvedCurveGeometry::Hyperbola(_)
+        )
     ) {
         return None;
     }

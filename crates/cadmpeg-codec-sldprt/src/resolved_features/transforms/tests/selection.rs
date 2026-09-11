@@ -926,8 +926,7 @@ fn circular_profile_binds_by_unique_diameter_signature() {
         .unwrap(),
     )];
 
-    bind_circular_profile_by_dimension(&mut features, &mut sketches, &entities, &parameters)
-        .unwrap();
+    bind_circular_profile_by_dimension(&mut features, &mut sketches, &entities, &parameters);
 
     assert!(matches!(
         features[0].evaluation.definition(),

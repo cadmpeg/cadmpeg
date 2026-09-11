@@ -174,8 +174,7 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
         &[],
         &[],
         &[history],
-    )
-    .unwrap();
+    );
 
     assert!(matches!(
         features[0].evaluation.definition(),
@@ -858,8 +857,7 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
         &[],
         &[],
         &[history],
-    )
-    .unwrap();
+    );
 
     let FeatureDefinition::Operation(FeatureOperation::Hole {
         face:

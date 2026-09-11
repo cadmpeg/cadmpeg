@@ -1485,7 +1485,7 @@ mod tests {
             .geometry
         {
             CurveGeometry::Procedural { construction, .. } => construction.clone(),
-            _ => panic!("derived curve remains procedural"),
+            CurveGeometry::Solved(_) => panic!("derived curve remains procedural"),
         };
         assert_ne!(derived_construction, construction_id);
         assert_eq!(

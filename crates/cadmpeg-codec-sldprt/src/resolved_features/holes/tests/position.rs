@@ -734,8 +734,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         &entities,
         std::slice::from_ref(&history),
         &[lane, alternate_configuration],
-    )
-    .unwrap();
+    );
 
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         features[0].evaluation.definition()
@@ -771,8 +770,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         &[],
         std::slice::from_ref(&history),
         std::slice::from_ref(&paired_lane),
-    )
-    .unwrap();
+    );
     let FeatureDefinition::Operation(FeatureOperation::Hole {
         placements: paired_placements,
         ..
@@ -835,8 +833,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         &[],
         std::slice::from_ref(&history),
         std::slice::from_ref(&incomplete_lane),
-    )
-    .unwrap();
+    );
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         incomplete_features[0].evaluation.definition()
     else {
@@ -930,8 +927,7 @@ fn unique_unindexed_point_locus_is_projected() {
         &[],
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
-    )
-    .unwrap();
+    );
 
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         features[0].evaluation.definition()
@@ -963,8 +959,7 @@ fn unique_unindexed_point_locus_is_projected() {
         &[],
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
-    )
-    .unwrap();
+    );
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         ambiguous_features[0].evaluation.definition()
     else {
@@ -1107,8 +1102,7 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
         &[surface],
         &[history],
         &[lane],
-    )
-    .unwrap();
+    );
 
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         features[0].evaluation.definition()
@@ -1206,8 +1200,7 @@ fn shared_spatial_sketch_falls_back_to_geometry_without_scoped_markers() {
         &[],
         &[history],
         &[lane],
-    )
-    .unwrap();
+    );
 
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         features[0].evaluation.definition()
@@ -1337,8 +1330,7 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
         &[surface],
         &[history],
         &[lane],
-    )
-    .unwrap();
+    );
 
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         features[0].evaluation.definition()
@@ -1720,8 +1712,7 @@ fn hole_axes_do_not_claim_unowned_same_radius_surfaces() {
         },
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
-    )
-    .unwrap();
+    );
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         features[0].evaluation.definition()
     else {

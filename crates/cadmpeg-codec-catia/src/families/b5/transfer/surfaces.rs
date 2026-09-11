@@ -438,7 +438,7 @@ pub(super) fn revolve_nurbs(
             weights.push(profile_weight * angular_weight);
         }
     }
-    let row_len = usize::try_from(angular_count).ok()?;
+    let row_len = angular_count;
     NurbsSurface::new(
         profile.degree(),
         2,

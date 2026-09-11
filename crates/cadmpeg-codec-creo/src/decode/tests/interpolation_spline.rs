@@ -218,7 +218,7 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
     assert_eq!(side.u_knots(), [2.0, 2.0, 2.0, 2.0, 5.0, 5.0, 5.0, 5.0]);
     assert_eq!(side.v_knots(), [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(
-        side.poles().nth(0).copied().unwrap(),
+        side.poles().next().copied().unwrap(),
         Point3::new(11.0, 20.0, 28.0)
     );
     assert_eq!(

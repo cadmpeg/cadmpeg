@@ -162,7 +162,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     #[derive(PartialEq)]
     enum ProfileVote {
         Missing,
@@ -339,8 +339,6 @@ pub(crate) fn project_adjacent_extrusion_profiles(
 
         features[index].evaluation.set_definition(definition);
     }
-
-    Ok(())
 }
 
 pub(crate) fn is_profile_feature_object(feature: &crate::records::Feature) -> bool {

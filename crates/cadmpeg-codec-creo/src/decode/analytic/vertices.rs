@@ -601,11 +601,13 @@ pub fn solve_topological_vertices(
             let geometry = &unique_model_curve(ir, &id)?.geometry;
             let evaluable = matches!(
                 geometry,
-                CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
-                    | CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))
-                    | CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_))
-                    | CurveGeometry::Solved(SolvedCurveGeometry::Parabola(_))
-                    | CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(_))
+                CurveGeometry::Solved(
+                    SolvedCurveGeometry::Line(_)
+                        | SolvedCurveGeometry::Circle(_)
+                        | SolvedCurveGeometry::Ellipse(_)
+                        | SolvedCurveGeometry::Parabola(_)
+                        | SolvedCurveGeometry::Hyperbola(_)
+                )
             );
             evaluable.then_some((row.id, geometry))
         })

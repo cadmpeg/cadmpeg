@@ -18,6 +18,7 @@ mod blind_extent;
 mod carrier_solver;
 mod chamfer;
 mod circular_profile;
+mod coaxial_cones;
 mod equation_constraints;
 mod equation_scalar_propagation;
 mod generated_nurbs;

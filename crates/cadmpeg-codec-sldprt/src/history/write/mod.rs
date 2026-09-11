@@ -308,12 +308,12 @@ fn project_feature_model_with_native_inputs(
         &histories,
         &native.feature_input_lanes,
         None,
-    )?;
+    );
     let _ = crate::resolved_features::markers::spatial_sketches(
         features,
         &histories,
         &native.feature_input_lanes,
-    )?;
+    );
     Ok(projection)
 }
 

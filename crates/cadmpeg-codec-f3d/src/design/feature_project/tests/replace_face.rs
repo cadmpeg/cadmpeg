@@ -354,8 +354,7 @@ fn surface_trim_binds_selected_cells_without_inventing_a_side() {
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(&scope),
         std::slice::from_ref(&operation),
-    )
-    .unwrap();
+    );
 
     assert!(matches!(
         feature.evaluation.definition(),

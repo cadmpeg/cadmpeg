@@ -264,7 +264,7 @@ fn free_plane_and_rational_nurbs_surface_round_trip() {
                     vec![Point3::new(3.0, 0.0, 1.0), Point3::new(3.0, 2.0, 1.0)],
                 ],
                 Some(vec![1.0, 0.75, 0.5, 1.0])
-                    .map(|values| values.chunks(2 as usize).map(<[_]>::to_vec).collect()),
+                    .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
                 false,
                 false,
                 false,

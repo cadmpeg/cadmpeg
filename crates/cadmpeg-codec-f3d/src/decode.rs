@@ -506,8 +506,9 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) => {
             !matches!(kind, NativeFeatureKind::Canvas | NativeFeatureKind::Decal)
         }
-        FeatureDefinition::Operation(FeatureOperation::ReferenceImage { .. })
-        | FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { .. }) => false,
+        FeatureDefinition::Operation(
+            FeatureOperation::ReferenceImage { .. } | FeatureOperation::DatumPrincipalPlane { .. },
+        ) => false,
         FeatureDefinition::Operation(FeatureOperation::MeshImport { tessellations }) => {
             tessellations.is_empty()
         }
@@ -1520,8 +1521,9 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             }) => {
                 if matches!(
                     profile,
-                    ProfileRef::Planar(PlanarProfileRef::Native(_))
-                        | ProfileRef::Planar(PlanarProfileRef::SketchSelection { .. })
+                    ProfileRef::Planar(
+                        PlanarProfileRef::Native(_) | PlanarProfileRef::SketchSelection { .. }
+                    )
                 ) {
                     gaps.profile_selections += 1;
                 }
@@ -1685,15 +1687,15 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                 face_selection(removed_faces);
             }
             FeatureDefinition::Operation(FeatureOperation::CosmeticThread { face, .. }) => {
-                face_selection(face)
+                face_selection(face);
             }
             FeatureDefinition::Operation(FeatureOperation::Decal { faces, .. }) => {
-                face_selection(faces)
+                face_selection(faces);
             }
-            FeatureDefinition::Operation(FeatureOperation::DeleteFace { faces, .. })
-            | FeatureDefinition::Operation(FeatureOperation::OffsetSurface { faces, .. }) => {
-                face_selection(faces)
-            }
+            FeatureDefinition::Operation(
+                FeatureOperation::DeleteFace { faces, .. }
+                | FeatureOperation::OffsetSurface { faces, .. },
+            ) => face_selection(faces),
             FeatureDefinition::Operation(FeatureOperation::ReplaceFace { operands }) => {
                 let targets = operands.targets();
                 let replacements = operands.replacements();
@@ -1706,14 +1708,12 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             }) => {
                 gaps.profile_selections += usize::from(!planar_profile_ref_is_resolved(profile));
             }
-            FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange {
-                edges, ..
-            })
-            | FeatureDefinition::Operation(FeatureOperation::SheetMetalHem { edges, .. }) => {
-                edge_selection(edges)
-            }
+            FeatureDefinition::Operation(
+                FeatureOperation::SheetMetalEdgeFlange { edges, .. }
+                | FeatureOperation::SheetMetalHem { edges, .. },
+            ) => edge_selection(edges),
             FeatureDefinition::Operation(FeatureOperation::MoveFace { faces, .. }) => {
-                face_selection(faces)
+                face_selection(faces);
             }
             _ => {}
         }
@@ -2461,7 +2461,7 @@ impl<'a> F3dDecodeSession<'a> {
             &mut self.ir.model.features,
             &self.native.design_parameter_scopes,
             &self.native.design_surface_trim_operations,
-        )?;
+        );
         if let SessionPath::Geometry(geometry_path) = path {
             let geometry = &geometry_path.index;
             bind_mesh_feature_definitions(
@@ -2507,7 +2507,7 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.design_parameter_scopes,
             &self.native.asm_histories,
             &self.ir.model.bodies,
-        )?;
+        );
         crate::history::bind_sweep_result_modes(
             &mut self.ir.model.features,
             &self.ir.model.bodies,
@@ -2535,13 +2535,13 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.design_entity_selection_operands,
             &self.native.design_body_recipe_operands,
             &self.native.asm_histories,
-        )?;
+        );
         crate::history::bind_feature_path_selections(
             &mut self.ir.model.features,
             &self.native.design_parameter_scopes,
             &self.native.design_construction_operand_groups,
             &self.native.design_entity_selection_operands,
-        )?;
+        );
         crate::design::feature_project::bind_revolve_face_axes(
             &mut self.ir.model.features,
             &self.native.design_parameter_scopes,
@@ -2550,7 +2550,7 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.design_face_operands,
             &self.ir.model.faces,
             &self.ir.model.surfaces,
-        )?;
+        );
         (self.ir.model.sketches, self.ir.model.sketch_entities) =
             crate::design::sketch_project::project_sketch_design(
                 &self.native.design_sketch_placements,
@@ -2576,7 +2576,7 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.design_parameter_scopes,
             &self.ir.model.sketch_entities,
             &self.ir.model.spatial_sketch_entities,
-        )?;
+        );
         let arrangement_budget =
             ctx.work_budget(crate::design::geometry::MAX_ARRANGEMENT_WALK_WORK as u64);
         crate::design::profile_select::bind_sweep_sketch_selections(
@@ -2606,7 +2606,7 @@ impl<'a> F3dDecodeSession<'a> {
                 spatial_sketches: &self.ir.model.spatial_sketches,
                 spatial_sketch_entities: &self.ir.model.spatial_sketch_entities,
             },
-        )?;
+        );
         crate::design::profile_select::bind_surface_trim_sketch_selections(
             &mut self.ir.model.features,
             &crate::design::profile_select::SketchCurveSelectionResolution {
@@ -2620,7 +2620,7 @@ impl<'a> F3dDecodeSession<'a> {
                 spatial_sketches: &self.ir.model.spatial_sketches,
                 spatial_sketch_entities: &self.ir.model.spatial_sketch_entities,
             },
-        )?;
+        );
         crate::design::profile_select::bind_loft_and_revolve_sketch_selections(
             scan,
             &self.native.design_construction_operand_groups,
@@ -2645,7 +2645,7 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.design_sketch_placements,
             &self.ir.model.sketches,
             &self.ir.model.spatial_sketches,
-        )?;
+        );
         self.ir.model.spatial_sketch_constraints =
             crate::design::sketch_project::project_spatial_sketch_constraints(
                 &self.native.design_sketch_placements,
@@ -2688,7 +2688,7 @@ impl<'a> F3dDecodeSession<'a> {
                 angular_tolerance: self.ir.tolerances.angular.get(),
                 arrangement_budget: &arrangement_budget,
             },
-        )?;
+        );
         if matches!(path, SessionPath::Geometry(_)) {
             crate::history::discard_projection_caches(&mut self.native.asm_histories);
         }
@@ -2704,12 +2704,12 @@ impl<'a> F3dDecodeSession<'a> {
             &mut self.ir.model.features,
             &self.ir.model.sketches,
             &mut extrude_face_resolution,
-        )?;
+        );
         crate::design::face_resolve::bind_extrude_target_faces(
             &mut self.ir.model.features,
             &self.ir.model.sketches,
             &mut extrude_face_resolution,
-        )?;
+        );
         self.ir.model.sketch_constraints = crate::design::constraints::project_sketch_constraints(
             &self.native.design_sketch_placements,
             &self.native.design_parameters,
@@ -2825,7 +2825,7 @@ impl<'a> F3dDecodeSession<'a> {
                             &mut self.ir.model.features,
                             &self.native.design_parameter_scopes,
                             &table,
-                        )?;
+                        );
                         self.native.xref_designs = table.designs;
                         self.native.xref_references = table.references;
                     }
@@ -2854,7 +2854,7 @@ impl<'a> F3dDecodeSession<'a> {
                         &mut self.ir.model.features,
                         &self.native.design_parameter_scopes,
                         table,
-                    )?;
+                    );
                     self.native.xref_designs.clone_from(&table.designs);
                     self.native.xref_references.clone_from(&table.references);
                 }
@@ -2875,7 +2875,7 @@ impl<'a> F3dDecodeSession<'a> {
         crate::design::components::project_derived_instance_features(
             &mut self.ir.model.features,
             &self.native.design_parameter_scopes,
-        )?;
+        );
         let unresolved_component_inserts =
             crate::design::components::project_unresolved_component_insert_occurrences(
                 &mut self.ir.model.features,

@@ -594,8 +594,7 @@ fn revolution_nurbs(
             weights.push(profile_weight * angular_weight);
         }
     }
-    let row_len =
-        usize::try_from(profile_count).map_err(|_| error(offset, "revolution V count overflow"))?;
+    let row_len = profile_count;
     let mut result = NurbsSurface::new(
         2,
         profile.degree(),
@@ -672,7 +671,7 @@ fn sum_nurbs(
             }
         }
     }
-    let row_len = usize::try_from(v_count).map_err(|_| error(offset, "sum V count overflow"))?;
+    let row_len = v_count;
     NurbsSurface::new(
         first.degree(),
         second.degree(),
@@ -731,11 +730,8 @@ pub(crate) fn extrusion_nurbs(
             path_domain[1],
             path_domain[1],
         ],
-        control_points
-            .chunks(2 as usize)
-            .map(<[_]>::to_vec)
-            .collect(),
-        weights.map(|values| values.chunks(2 as usize).map(<[_]>::to_vec).collect()),
+        control_points.chunks(2_usize).map(<[_]>::to_vec).collect(),
+        weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
         false,
         start.periodic(),
         false,
@@ -941,8 +937,7 @@ pub(crate) fn read_nurbs_surface_prefix(
         read_poles(reader, stored_cv_count, rational != 0, dimension, scale)?;
     let u_knots = reconstruct_knots(&u_knots, u_order, u_count)?;
     let v_knots = reconstruct_knots(&v_knots, v_order, v_count)?;
-    let row_len = usize::try_from(v_count)
-        .map_err(|_| error(reader.position(), "surface V count overflow"))?;
+    let row_len = v_count;
     NurbsSurface::new(
         u32::try_from(u_order - 1)
             .map_err(|_| error(reader.position(), "surface U order overflow"))?,

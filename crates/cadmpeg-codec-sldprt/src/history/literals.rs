@@ -277,16 +277,18 @@ pub(crate) fn parse_neutral_parameter_literal(
     let positional_length = match name {
         "D1" => matches!(
             feature.evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::Extrude { .. })
-                | FeatureDefinition::Operation(FeatureOperation::Fillet { .. })
-                | FeatureDefinition::Operation(FeatureOperation::Chamfer { .. })
-                | FeatureDefinition::Operation(FeatureOperation::Shell { .. })
-                | FeatureDefinition::Operation(FeatureOperation::Thicken { .. })
-                | FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { .. })
-                | FeatureDefinition::Operation(FeatureOperation::MoveFace {
-                    motion: FaceMotion::Offset { .. } | FaceMotion::Translate { .. },
-                    ..
-                })
+            FeatureDefinition::Operation(
+                FeatureOperation::Extrude { .. }
+                    | FeatureOperation::Fillet { .. }
+                    | FeatureOperation::Chamfer { .. }
+                    | FeatureOperation::Shell { .. }
+                    | FeatureOperation::Thicken { .. }
+                    | FeatureOperation::DatumOffsetPlane { .. }
+                    | FeatureOperation::MoveFace {
+                        motion: FaceMotion::Offset { .. } | FaceMotion::Translate { .. },
+                        ..
+                    }
+            )
         ),
         "D2" => matches!(
             feature.evaluation.definition(),

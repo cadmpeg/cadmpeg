@@ -107,8 +107,7 @@ fn generated_face_outputs_follow_producer_history_after_feature_insertion() {
         vec![BodyId::mint("creo:feature:extrusion#50:body".to_string()).expect("identity grammar")]
     );
 
-    super::super::dependencies::reconcile_feature_links(&scan, &mut ir, &BTreeMap::new())
-        .expect("valid test fixture");
+    super::super::dependencies::reconcile_feature_links(&scan, &mut ir, &BTreeMap::new());
     assert_eq!(
         *ir.model.features[0].evaluation.outputs(),
         vec![BodyId::mint("creo:feature:extrusion#50:body".to_string()).expect("identity grammar")]

@@ -461,8 +461,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             angular_tolerance: 1.0e-9,
             arrangement_budget: &arrangement_budget,
         },
-    )
-    .unwrap();
+    );
     assert!(matches!(
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -579,8 +578,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         &sketches,
         &[],
-    )
-    .unwrap();
+    );
     let sketch_feature = features
         .iter()
         .find(|feature| {
@@ -640,8 +638,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         &[],
         std::slice::from_ref(&spatial_sketch),
-    )
-    .unwrap();
+    );
     let spatial_feature = spatial_features
         .iter()
         .find(|feature| {
@@ -699,8 +696,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         std::slice::from_ref(&placement),
         &[],
         std::slice::from_ref(&open_spatial_sketch),
-    )
-    .unwrap();
+    );
     let open_spatial_extrude = open_spatial_features
         .iter()
         .find(|feature| {
@@ -1668,8 +1664,7 @@ fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
     let expected_dependencies = [spatial_feature.id.clone(), planar_feature.id.clone()];
     let mut features = vec![planar_feature, spatial_feature, base_flange, loft];
 
-    crate::design::feature_project::bind_sketch_feature_geometry(&mut features, &[], &[], &[], &[])
-        .unwrap();
+    crate::design::feature_project::bind_sketch_feature_geometry(&mut features, &[], &[], &[], &[]);
 
     assert_eq!(
         features[2].dependencies.as_slice(),

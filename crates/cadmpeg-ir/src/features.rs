@@ -3963,10 +3963,12 @@ impl RevolveConstruction {
                 PartialRevolveConstruction::Profile { axis: None, .. }
                 | PartialRevolveConstruction::Axis { .. },
             ) => None,
-            Self::Unresolved(PartialRevolveConstruction::Profile {
-                axis: Some(axis), ..
-            })
-            | Self::Unresolved(PartialRevolveConstruction::Extent { axis, .. })
+            Self::Unresolved(
+                PartialRevolveConstruction::Profile {
+                    axis: Some(axis), ..
+                }
+                | PartialRevolveConstruction::Extent { axis, .. },
+            )
             | Self::Resolved { axis, .. } => Some(axis),
         }
     }
@@ -3978,10 +3980,12 @@ impl RevolveConstruction {
                 PartialRevolveConstruction::Profile { axis: None, .. }
                 | PartialRevolveConstruction::Axis { .. },
             ) => None,
-            Self::Unresolved(PartialRevolveConstruction::Profile {
-                axis: Some(axis), ..
-            })
-            | Self::Unresolved(PartialRevolveConstruction::Extent { axis, .. })
+            Self::Unresolved(
+                PartialRevolveConstruction::Profile {
+                    axis: Some(axis), ..
+                }
+                | PartialRevolveConstruction::Extent { axis, .. },
+            )
             | Self::Resolved { axis, .. } => Some(axis),
         }
     }

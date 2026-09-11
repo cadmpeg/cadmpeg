@@ -1066,7 +1066,7 @@ fn container_only_retains_typed_saved_toggle_payload() {
             .source_fidelity()
             .retained_records
             .values()
-            .nth(0)
+            .next()
             .expect("retained record")
             .byte_len(),
         toggle_len

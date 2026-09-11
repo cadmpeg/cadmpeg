@@ -333,7 +333,7 @@ fn surface_descriptor_uses_terminal_array_references() {
     let Some(SolvedSurfaceGeometry::Nurbs(surface)) = carrier.geometry.solved() else {
         panic!("expected NURBS surface");
     };
-    assert_eq!(surface.poles().nth(0).copied().unwrap().x, 10_000.0);
+    assert_eq!(surface.poles().next().copied().unwrap().x, 10_000.0);
     assert_eq!(surface.poles().nth(3).copied().unwrap().y, 1_000.0);
 }
 

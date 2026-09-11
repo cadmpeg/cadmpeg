@@ -559,8 +559,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         &mut entities,
         &histories,
         &lanes,
-    )
-    .unwrap();
+    );
 
     assert_eq!(sketches.len(), 1);
     assert_eq!(entities.len(), 13);
@@ -608,8 +607,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         &mut entities,
         &histories,
         &lanes,
-    )
-    .unwrap();
+    );
     assert_eq!(sketches.len(), 1);
     assert_eq!(entities.len(), 13);
     assert!(matches!(
@@ -647,8 +645,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         &mut replacement_entities,
         &histories,
         &lanes,
-    )
-    .unwrap();
+    );
     assert_eq!(replacement_sketches.len(), 1);
     assert_eq!(replacement_sketches[0].id, expected_sketch);
     assert_eq!(replacement_entities.len(), 13);
@@ -727,8 +724,7 @@ fn marker_backed_sketch_preserves_geometry_when_placement_is_unresolved() {
         &mut entities,
         &histories,
         &lanes,
-    )
-    .unwrap();
+    );
 
     assert_eq!(sketches.len(), 1);
     assert_eq!(sketches[0].placement, SketchPlacement::Unresolved);

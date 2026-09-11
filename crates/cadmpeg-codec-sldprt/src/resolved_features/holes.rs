@@ -1380,7 +1380,7 @@ pub(crate) fn project_hole_position_sketches(
     sketch_entities: &[SketchEntity],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = EPS_HOLE_POSITION;
     let native_features = histories
@@ -1617,8 +1617,6 @@ pub(crate) fn project_hole_position_sketches(
         }
         feature.evaluation.set_definition(definition);
     }
-
-    Ok(())
 }
 
 fn paired_object_locus_markers<'a>(
@@ -1705,7 +1703,7 @@ pub(crate) fn project_spatial_hole_position_sketches(
     surfaces: &[Surface],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let native_features = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -1864,8 +1862,6 @@ pub(crate) fn project_spatial_hole_position_sketches(
         }
         feature.evaluation.set_definition(definition);
     }
-
-    Ok(())
 }
 
 fn coplanar_spatial_position_placements(points: &[Point3]) -> Option<Vec<HolePlacement>> {
@@ -1958,7 +1954,7 @@ pub(crate) fn project_generated_hole_axes(
     face_identities: &[(cadmpeg_ir::ids::FaceId, crate::brep::PersistentFaceIdentity)],
     faces: &[Face],
     surfaces: &[Surface],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     const AXIS_QUANTUM: f64 = EPS_HOLE_POSITION;
     let quantize = |value: f64| (value / AXIS_QUANTUM).round() as i64;
     let native_features = histories
@@ -2100,8 +2096,6 @@ pub(crate) fn project_generated_hole_axes(
         }
         feature.evaluation.set_definition(definition);
     }
-
-    Ok(())
 }
 
 /// Resolve placements from exact dimensional topology matches.
@@ -2113,7 +2107,7 @@ pub(crate) fn project_generated_hole_axes(
 pub(crate) fn project_hole_topology_axes(
     features: &mut [cadmpeg_ir::features::Feature],
     topology: &HoleTopology<'_>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let diameter_counts = features
         .iter()
         .filter(|feature| feature.suppressed != Some(true))
@@ -2236,16 +2230,14 @@ pub(crate) fn project_hole_topology_axes(
     }
 
     let cylinders = cylindrical_bore_face_spans(topology);
-    project_flat_blind_topology_axes(features, &cylinders)?;
-    project_drilled_hole_topology_axes(features, &cylinders, topology)?;
-
-    Ok(())
+    project_flat_blind_topology_axes(features, &cylinders);
+    project_drilled_hole_topology_axes(features, &cylinders, topology);
 }
 
 fn project_flat_blind_topology_axes(
     features: &mut [cadmpeg_ir::features::Feature],
     cylinders: &[(Point3, Vector3, f64, f64, bool)],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let unresolved = features
         .iter()
         .enumerate()
@@ -2295,16 +2287,14 @@ fn project_flat_blind_topology_axes(
         };
         set_hole_placements(&mut features[index], placements);
     }
-
-    Ok(())
 }
 
 fn project_drilled_hole_topology_axes(
     features: &mut [cadmpeg_ir::features::Feature],
     cylinders: &[(Point3, Vector3, f64, f64, bool)],
     topology: &HoleTopology<'_>,
-) -> Result<(), cadmpeg_core::CodecError> {
-    expand_seeded_drilled_hole_topology_axes(features, cylinders, topology)?;
+) {
+    expand_seeded_drilled_hole_topology_axes(features, cylinders, topology);
     let unresolved = features
         .iter()
         .enumerate()
@@ -2360,8 +2350,6 @@ fn project_drilled_hole_topology_axes(
         };
         set_hole_placements(&mut features[index], placements);
     }
-
-    Ok(())
 }
 
 fn drilled_hole_topology_candidates(
@@ -2418,7 +2406,7 @@ fn expand_seeded_drilled_hole_topology_axes(
     features: &mut [cadmpeg_ir::features::Feature],
     cylinders: &[(Point3, Vector3, f64, f64, bool)],
     topology: &HoleTopology<'_>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let mut visited = HashSet::new();
     for index in 0..features.len() {
         if visited.contains(&index) || features[index].suppressed == Some(true) {
@@ -2500,10 +2488,8 @@ fn expand_seeded_drilled_hole_topology_axes(
         let Some(candidates) = candidates else {
             continue;
         };
-        partition_seeded_hole_axes(features, &siblings, &candidates)?;
+        partition_seeded_hole_axes(features, &siblings, &candidates);
     }
-
-    Ok(())
 }
 
 fn seeded_drilled_bore_candidates(
@@ -2562,13 +2548,13 @@ fn partition_seeded_hole_axes(
     features: &mut [cadmpeg_ir::features::Feature],
     siblings: &[usize],
     candidates: &[HolePlacement],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let candidate_keys = candidates
         .iter()
         .filter_map(hole_axis_key)
         .collect::<HashSet<_>>();
     if candidate_keys.len() != candidates.len() {
-        return Ok(());
+        return;
     }
     let mut seed_directions: Vec<Vector3> = Vec::with_capacity(siblings.len());
     for &sibling in siblings {
@@ -2577,14 +2563,14 @@ fn partition_seeded_hole_axes(
             ..
         }) = features[sibling].evaluation.definition()
         else {
-            return Ok(());
+            return;
         };
         let mut axes = placements.iter().filter_map(|placement| match placement {
             HolePlacement::Axis { axis, .. } => Some(canonical_axis(axis.get())),
             HolePlacement::Directed { .. } => None,
         });
         let Some(direction) = axes.next() else {
-            return Ok(());
+            return;
         };
         if axes.any(|axis| axis.dot(direction) < 1.0 - EPS_HOLE_GEOMETRY)
             || placements.iter().any(|placement| {
@@ -2594,7 +2580,7 @@ fn partition_seeded_hole_axes(
                 .iter()
                 .any(|candidate| candidate.dot(direction) >= 1.0 - EPS_HOLE_GEOMETRY)
         {
-            return Ok(());
+            return;
         }
         seed_directions.push(direction);
     }
@@ -2604,11 +2590,11 @@ fn partition_seeded_hole_axes(
         Vec::<HolePlacement>::new(),
         "SLDPRT seeded hole-axis partitions",
     ) else {
-        return Ok(());
+        return;
     };
     for placement in candidates {
         let HolePlacement::Axis { axis, .. } = placement else {
-            return Ok(());
+            return;
         };
         let direction = canonical_axis(axis.get());
         let matches = seed_directions
@@ -2618,18 +2604,16 @@ fn partition_seeded_hole_axes(
             .map(|(index, _)| index)
             .collect::<Vec<_>>();
         let [partition] = matches.as_slice() else {
-            return Ok(());
+            return;
         };
         partitions[*partition].push(placement.clone());
     }
     if partitions.iter().any(Vec::is_empty) {
-        return Ok(());
+        return;
     }
     for (&sibling, partition) in siblings.iter().zip(partitions) {
         set_hole_placements(&mut features[sibling], partition);
     }
-
-    Ok(())
 }
 
 fn set_hole_placements(feature: &mut cadmpeg_ir::features::Feature, value: Vec<HolePlacement>) {
@@ -2884,7 +2868,7 @@ pub(crate) fn project_hole_axes(
     topology: &HoleTopology<'_>,
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let surfaces = topology.surfaces;
     let native_features = histories
         .iter()
@@ -3099,8 +3083,6 @@ pub(crate) fn project_hole_axes(
         }
         feature.evaluation.set_definition(definition);
     }
-
-    Ok(())
 }
 
 fn cylindrical_bore_axes(radius: f64, topology: &HoleTopology<'_>) -> Vec<(Point3, Vector3)> {
@@ -3453,7 +3435,7 @@ pub(crate) fn project_bore_backed_position_sketches(
     surfaces: &[Surface],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     struct Projection {
         feature: cadmpeg_ir::features::FeatureId,
         sketch: Sketch,
@@ -3639,8 +3621,6 @@ pub(crate) fn project_bore_backed_position_sketches(
 
         feature.evaluation.set_definition(definition);
     }
-
-    Ok(())
 }
 
 fn marker_pattern_bore_axes(

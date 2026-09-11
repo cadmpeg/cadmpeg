@@ -812,8 +812,7 @@ mod idless_history_binding_tests {
             &mut features,
             std::slice::from_ref(&history),
             std::slice::from_ref(&lane),
-        )
-        .unwrap();
+        );
 
         assert!(matches!(
             features[1].evaluation.definition(),

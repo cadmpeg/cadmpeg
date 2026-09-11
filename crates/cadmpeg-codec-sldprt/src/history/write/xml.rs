@@ -35,21 +35,25 @@ pub(crate) fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String
         }
         FeatureDefinition::Operation(FeatureOperation::ProjectedCurve { .. }) => "ProjectedCurve",
         FeatureDefinition::Operation(FeatureOperation::CompositeCurve { .. }) => "CompositeCurve",
-        FeatureDefinition::Operation(FeatureOperation::Helix { .. })
-        | FeatureDefinition::Operation(FeatureOperation::HelixNativeAxis { .. }) => "Helix",
+        FeatureDefinition::Operation(
+            FeatureOperation::Helix { .. } | FeatureOperation::HelixNativeAxis { .. },
+        ) => "Helix",
         FeatureDefinition::Operation(FeatureOperation::Wrap { .. }) => "Wrap",
-        FeatureDefinition::Operation(FeatureOperation::Sketch { .. })
-        | FeatureDefinition::Operation(FeatureOperation::SpatialSketch { .. }) => "Sketch",
+        FeatureDefinition::Operation(
+            FeatureOperation::Sketch { .. } | FeatureOperation::SpatialSketch { .. },
+        ) => "Sketch",
         FeatureDefinition::Operation(FeatureOperation::SketchBlockDefinition { .. }) => "Block",
         FeatureDefinition::Operation(FeatureOperation::SketchBlockInstance { .. }) => "Feature",
         FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}) => "Feature",
-        FeatureDefinition::Operation(FeatureOperation::BaseFeature { .. })
-        | FeatureDefinition::Operation(FeatureOperation::InsertBodies { .. })
-        | FeatureDefinition::Operation(FeatureOperation::Form { .. })
-        | FeatureDefinition::Operation(FeatureOperation::Coil { .. })
-        | FeatureDefinition::Operation(FeatureOperation::Sphere { .. })
-        | FeatureDefinition::Operation(FeatureOperation::Torus { .. })
-        | FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange { .. }) => "Feature",
+        FeatureDefinition::Operation(
+            FeatureOperation::BaseFeature { .. }
+            | FeatureOperation::InsertBodies { .. }
+            | FeatureOperation::Form { .. }
+            | FeatureOperation::Coil { .. }
+            | FeatureOperation::Sphere { .. }
+            | FeatureOperation::Torus { .. }
+            | FeatureOperation::SheetMetalBaseFlange { .. },
+        ) => "Feature",
         FeatureDefinition::Operation(FeatureOperation::DerivedGeometry { .. }) => "Feature",
         FeatureDefinition::Operation(FeatureOperation::ImportedGeometry { .. }) => "Feature",
         FeatureDefinition::Operation(FeatureOperation::Primitive { .. }) => "Primitive",
@@ -137,20 +141,22 @@ pub(crate) fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String
             kind.as_str()
         }
         FeatureDefinition::Operation(FeatureOperation::Native { .. }) => "Feature",
-        FeatureDefinition::Operation(FeatureOperation::Unresolved {
-            family:
-                UnresolvedFamily::DatumPoint
-                | UnresolvedFamily::DatumCoordinateSystem
-                | UnresolvedFamily::Loft
-                | UnresolvedFamily::FreeformSurface
-                | UnresolvedFamily::Draft,
-        })
-        | FeatureDefinition::Operation(FeatureOperation::Block { .. })
-        | FeatureDefinition::Operation(FeatureOperation::ExtractBody { .. })
-        | FeatureDefinition::Operation(FeatureOperation::FaceBlend { .. })
-        | FeatureDefinition::Operation(FeatureOperation::SewBodies { .. })
-        | FeatureDefinition::Operation(FeatureOperation::TrimBodies { .. }) => "Feature",
-        _ => "Feature",
+        FeatureDefinition::Operation(
+            FeatureOperation::Unresolved {
+                family:
+                    UnresolvedFamily::DatumPoint
+                    | UnresolvedFamily::DatumCoordinateSystem
+                    | UnresolvedFamily::Loft
+                    | UnresolvedFamily::FreeformSurface
+                    | UnresolvedFamily::Draft,
+            }
+            | FeatureOperation::Block { .. }
+            | FeatureOperation::ExtractBody { .. }
+            | FeatureOperation::FaceBlend { .. }
+            | FeatureOperation::SewBodies { .. }
+            | FeatureOperation::TrimBodies { .. },
+        ) => "Feature",
+        FeatureDefinition::Operation(_) => "Feature",
     };
     tag.into()
 }

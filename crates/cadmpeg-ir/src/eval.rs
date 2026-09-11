@@ -6433,7 +6433,6 @@ fn surface_second_partials_are_finite(partials: SurfaceSecondPartials) -> bool {
 }
 
 fn model_surface_point_with_budget_solved(
-    ir: &CadIr,
     geometry: &SolvedSurfaceGeometry,
     u: f64,
     v: f64,
@@ -6449,7 +6448,7 @@ fn model_surface_point_with_budget_solved(
         }
         (SolvedSurfaceGeometry::Transformed { basis, transform }, Some(budget)) => {
             budget.charge().then_some(())?;
-            model_surface_point_with_budget_solved(ir, basis, u, v, Some(budget), depth + 1)
+            model_surface_point_with_budget_solved(basis, u, v, Some(budget), depth + 1)
                 .map(|point| affine_point(*transform, point))
         }
         _ => surface_point_solved(geometry, u, v),
@@ -8066,7 +8065,7 @@ fn model_surface_point_with_budget(
     depth: usize,
 ) -> Option<Point3> {
     match geometry.solved() {
-        Some(solved) => model_surface_point_with_budget_solved(ir, solved, u, v, budget, depth),
+        Some(solved) => model_surface_point_with_budget_solved(solved, u, v, budget, depth),
         None => model_surface_point(ir, geometry, u, v),
     }
 }

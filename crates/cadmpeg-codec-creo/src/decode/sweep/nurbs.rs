@@ -418,11 +418,8 @@ pub(in super::super) fn extruded_nurbs_surface(
         1,
         directrix.knots().to_vec(),
         vec![0.0, 0.0, 1.0, 1.0],
-        control_points
-            .chunks(2 as usize)
-            .map(<[_]>::to_vec)
-            .collect(),
-        weights.map(|values| values.chunks(2 as usize).map(<[_]>::to_vec).collect()),
+        control_points.chunks(2_usize).map(<[_]>::to_vec).collect(),
+        weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
         false,
         directrix.periodic(),
         false,

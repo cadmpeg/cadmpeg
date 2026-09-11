@@ -982,13 +982,15 @@ pub(in super::super) fn preceding_features_establish_body(ir: &CadIr) -> bool {
             && (!feature.evaluation.outputs().is_empty()
                 || matches!(
                     feature.evaluation.definition(),
-                    IrFeatureDefinition::Operation(IrFeatureOperation::Extrude {
-                        op: BooleanOp::NewBody,
-                        ..
-                    }) | IrFeatureDefinition::Operation(IrFeatureOperation::Revolve {
-                        op: BooleanOp::NewBody,
-                        ..
-                    })
+                    IrFeatureDefinition::Operation(
+                        IrFeatureOperation::Extrude {
+                            op: BooleanOp::NewBody,
+                            ..
+                        } | IrFeatureOperation::Revolve {
+                            op: BooleanOp::NewBody,
+                            ..
+                        }
+                    )
                 ))
     })
 }
