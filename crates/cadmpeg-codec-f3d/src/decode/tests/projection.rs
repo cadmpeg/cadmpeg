@@ -778,7 +778,7 @@ fn datum_plane_completeness_accepts_direct_frames_and_resolved_construction() {
     assert!(!feature_definition_is_incomplete(&definition(
         serde_json::json!({
             "definition": "datum_offset_plane",
-            "reference": "test:model:feature#plane",
+            "reference": {"reference": "feature", "feature": "test:model:feature#plane"},
             "distance": 5.0
         }),
     )));
