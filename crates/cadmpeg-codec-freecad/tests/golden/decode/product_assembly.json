@@ -45,6 +45,7 @@
           "native_ref": "fcstd:native:joint#GroundBracket",
           "operands": [
             {
+              "container": "occurrence",
               "object": "fcstd:native:object#BracketOccurrence",
               "occurrence": "fcstd:model:occurrence#BracketOccurrence:container"
             }
@@ -176,6 +177,7 @@
           ],
           "operands": [
             {
+              "container": "occurrence",
               "object": "fcstd:native:object#BracketOccurrence",
               "occurrence": "fcstd:model:occurrence#BracketOccurrence:container",
               "subelements": [
@@ -184,6 +186,7 @@
               ]
             },
             {
+              "container": "occurrence",
               "object": "fcstd:native:object#PinOccurrence",
               "occurrence": "fcstd:model:occurrence#PinOccurrence:instance",
               "subelements": [

@@ -533,6 +533,62 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_joint_operand_states_the_container_that_owns_its_object() {
+        let root = JointOperand::root("Body1", Vec::new());
+        let root_wire = serde_json::to_value(&root).unwrap();
+        assert_eq!(
+            root_wire,
+            serde_json::json!({"container": "root", "object": "Body1"})
+        );
+        assert_eq!(
+            serde_json::from_value::<JointOperand>(root_wire.clone()).unwrap(),
+            root
+        );
+
+        let occurrence_id = OccurrenceId::mint("test:model:occurrence#0").unwrap();
+        let occurrence = JointOperand::occurrence(occurrence_id.clone(), "Body1", Vec::new());
+        let occurrence_wire = serde_json::to_value(&occurrence).unwrap();
+        assert_eq!(occurrence_wire["container"], "occurrence");
+        assert_eq!(
+            serde_json::from_value::<JointOperand>(occurrence_wire.clone()).unwrap(),
+            occurrence
+        );
+
+        let external = JointOperand::external(
+            ExternalDocument::path("parts/widget.FCStd"),
+            "Body1",
+            Vec::new(),
+        );
+        let external_wire = serde_json::to_value(&external).unwrap();
+        assert_eq!(external_wire["container"], "external");
+        assert_eq!(
+            serde_json::from_value::<JointOperand>(external_wire).unwrap(),
+            external
+        );
+
+        let mut both = occurrence_wire;
+        both["external_document"] = serde_json::json!({"resolution": "missing"});
+        let error = serde_json::from_value::<JointOperand>(both)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("external_document"), "{error}");
+
+        let mut stray = root_wire.clone();
+        stray["occurrence"] = serde_json::json!(occurrence_id.as_str());
+        let error = serde_json::from_value::<JointOperand>(stray)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("occurrence"), "{error}");
+
+        let mut without_object = root_wire;
+        without_object.as_object_mut().unwrap().remove("object");
+        let error = serde_json::from_value::<JointOperand>(without_object)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("object"), "{error}");
+    }
+
     fn translation(x: f64) -> Transform {
         Transform::affine([
             [1.0, 0.0, 0.0, x],
@@ -870,24 +926,35 @@ pub(crate) enum JointKind {
 }
 
 /// Container that owns a joint operand object.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "container", rename_all = "snake_case", deny_unknown_fields)]
 pub enum OperandContainer {
     /// Object in the current document root.
-    Root,
+    Root {},
     /// Object in a placed local occurrence.
-    Occurrence(OccurrenceId),
+    Occurrence {
+        /// Placed local occurrence that owns the object.
+        occurrence: OccurrenceId,
+    },
     /// Object in an external document.
-    External(ExternalDocumentReference),
+    External {
+        /// External document that owns the object.
+        external_document: ExternalDocumentReference,
+    },
 }
 
 /// One connector operand and its selected native subelements.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct JointOperand {
     /// Container that owns the object.
+    #[serde(flatten)]
     pub container: OperandContainer,
     /// Exact referenced application object identity.
     pub object: String,
     /// Ordered persistent object/element paths.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub subelements: Vec<String>,
 }
 
@@ -895,7 +962,7 @@ impl JointOperand {
     /// Constructs an operand owned by the current document root.
     pub fn root(object: impl Into<String>, subelements: Vec<String>) -> Self {
         Self {
-            container: OperandContainer::Root,
+            container: OperandContainer::Root {},
             object: object.into(),
             subelements,
         }
@@ -908,7 +975,7 @@ impl JointOperand {
         subelements: Vec<String>,
     ) -> Self {
         Self {
-            container: OperandContainer::Occurrence(occurrence),
+            container: OperandContainer::Occurrence { occurrence },
             object: object.into(),
             subelements,
         }
@@ -921,84 +988,12 @@ impl JointOperand {
         subelements: Vec<String>,
     ) -> Self {
         Self {
-            container: OperandContainer::External(document),
+            container: OperandContainer::External {
+                external_document: document,
+            },
             object: object.into(),
             subelements,
         }
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct JointOperandWire {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    occurrence: Option<OccurrenceId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    external_document: Option<ExternalDocumentReference>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    object: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    subelements: Vec<String>,
-}
-
-impl Serialize for JointOperand {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let (occurrence, external_document) = match &self.container {
-            OperandContainer::Root => (None, None),
-            OperandContainer::Occurrence(occurrence) => (Some(occurrence.clone()), None),
-            OperandContainer::External(document) => (None, Some(document.clone())),
-        };
-        JointOperandWire {
-            occurrence,
-            external_document,
-            object: Some(self.object.clone()),
-            subelements: self.subelements.clone(),
-        }
-        .serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for JointOperand {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let wire = JointOperandWire::deserialize(deserializer)?;
-        let container = match (wire.occurrence, wire.external_document) {
-            (None, None) => OperandContainer::Root,
-            (Some(occurrence), None) => OperandContainer::Occurrence(occurrence),
-            (None, Some(document)) => OperandContainer::External(document),
-            (Some(_), Some(_)) => {
-                return Err(serde::de::Error::custom(
-                    "joint operand cannot name both an occurrence and an external document",
-                ));
-            }
-        };
-        Ok(Self {
-            container,
-            object: wire
-                .object
-                .ok_or_else(|| serde::de::Error::missing_field("object"))?,
-            subelements: wire.subelements,
-        })
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for JointOperand {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "JointOperand".into()
-    }
-
-    fn schema_id() -> std::borrow::Cow<'static, str> {
-        concat!(module_path!(), "::JointOperand").into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        JointOperandWire::json_schema(generator)
     }
 }
 

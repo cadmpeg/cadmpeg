@@ -1059,12 +1059,12 @@ mod tests {
 
         assert_eq!(
             operands[0].container,
-            cadmpeg_ir::OperandContainer::Occurrence(occurrence)
+            cadmpeg_ir::OperandContainer::Occurrence { occurrence }
         );
         assert!(operands[0]
             .object
             .starts_with("f3d:feature-input:connector#"));
-        assert_eq!(operands[1].container, cadmpeg_ir::OperandContainer::Root);
+        assert_eq!(operands[1].container, cadmpeg_ir::OperandContainer::Root {});
         assert_eq!(
             operands[1].object,
             crate::ids::neutral_feature_id(&origin_scope).as_str()
