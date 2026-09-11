@@ -3377,10 +3377,10 @@ pub struct LoftPathCurve {
 /// One curve member of a loft profile.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct LoftProfileMember {
     /// Profile curve and its revision-gated parameter endpoints.
-    #[serde(flatten)]
-    pub curve: LoftPathCurve,
+    pub profile: LoftPathCurve,
     /// Structurally selected surface-side constraint form.
     pub form: LoftMemberForm,
 }

@@ -780,7 +780,7 @@ fn emit_loft_surface(
                                                         source_object: None,
                                                     });
                                                     cadmpeg_ir::geometry::LoftProfileMember {
-                                                        curve: LoftPathCurve {
+                                                        profile: LoftPathCurve {
                                                             id: curve,
                                                             endpoints: member.data.endpoints(),
                                                         },
@@ -1463,7 +1463,7 @@ fn emit_net_surface(
                                                         source_object: None,
                                                     });
                                                     cadmpeg_ir::geometry::LoftProfileMember {
-                                                        curve: LoftPathCurve {
+                                                        profile: LoftPathCurve {
                                                             id: curve,
                                                             endpoints: member.data.endpoints(),
                                                         },
@@ -2047,7 +2047,7 @@ fn emit_revision_compound_loft_surface(
                     source_object: None,
                 });
                 cadmpeg_ir::geometry::LoftProfileMember {
-                    curve: LoftPathCurve {
+                    profile: LoftPathCurve {
                         id: curve,
                         endpoints: member.data.endpoints(),
                     },

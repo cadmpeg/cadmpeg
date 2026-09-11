@@ -444,7 +444,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                         .iter()
                         .map(|curve| &curve.id)
                         .chain(entry.path.auxiliaries.iter())
-                        .chain(entry.profile.iter().map(|member| &member.curve.id))
+                        .chain(entry.profile.iter().map(|member| &member.profile.id))
                     {
                         if ids.curves(curve.as_str()).is_none() {
                             ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
@@ -702,7 +702,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                         .iter()
                         .map(|curve| &curve.id)
                         .chain(entry.path.auxiliaries.iter())
-                        .chain(entry.profile.iter().map(|member| &member.curve.id))
+                        .chain(entry.profile.iter().map(|member| &member.profile.id))
                     {
                         if ids.curves(curve.as_str()).is_none() {
                             ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
@@ -813,12 +813,12 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     .iter()
                     .chain(construction.entries.iter().flat_map(|entry| &entry.profile))
                 {
-                    if ids.curves(member.curve.id.as_str()).is_none() {
+                    if ids.curves(member.profile.id.as_str()).is_none() {
                         ref_error(
                             findings,
                             procedural.id.as_str(),
                             "curve",
-                            member.curve.id.as_str(),
+                            member.profile.id.as_str(),
                         );
                     }
                     if let Some(surface) = member.form.surface() {

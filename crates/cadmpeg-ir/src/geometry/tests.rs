@@ -376,7 +376,7 @@ fn loft_subdata_type_211_preserves_headers_independent_of_payload_size() {
 #[test]
 fn a_loft_member_form_states_its_kind_and_carries_only_its_own_keys() {
     let support = crate::geometry::LoftProfileMember {
-        curve: crate::geometry::LoftPathCurve {
+        profile: crate::geometry::LoftPathCurve {
             id: crate::ids::CurveId::mint("test:model:curve#loft").expect("valid identity"),
             endpoints: Some([Some(0.0), Some(1.0)]),
         },
@@ -406,7 +406,7 @@ fn a_loft_member_form_states_its_kind_and_carries_only_its_own_keys() {
     );
 
     let pair = crate::geometry::LoftProfileMember {
-        curve: crate::geometry::LoftPathCurve {
+        profile: crate::geometry::LoftPathCurve {
             id: crate::ids::CurveId::mint("test:model:curve#loft").expect("valid identity"),
             endpoints: Some([None, None]),
         },
@@ -758,6 +758,8 @@ mod variable_blend_cache;
 mod revision_compound_loft_tail;
 
 mod loft_path;
+
+mod loft_profile_member;
 
 mod loft_subdata;
 

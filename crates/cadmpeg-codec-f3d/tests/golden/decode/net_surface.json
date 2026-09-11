@@ -596,7 +596,9 @@
                       "parameter": 0.0,
                       "profile": [
                         {
-                          "curve": "f3d:brep:procedural_surface#9:net:0:0:member:0:curve",
+                          "profile": {
+                            "curve": "f3d:brep:procedural_surface#9:net:0:0:member:0:curve"
+                          },
                           "form": {
                             "kind": "support",
                             "type_code": 9,
@@ -667,7 +669,9 @@
                       "parameter": 1.0,
                       "profile": [
                         {
-                          "curve": "f3d:brep:procedural_surface#9:net:1:0:member:0:curve",
+                          "profile": {
+                            "curve": "f3d:brep:procedural_surface#9:net:1:0:member:0:curve"
+                          },
                           "form": {
                             "kind": "support",
                             "type_code": 9,

@@ -1478,9 +1478,9 @@ fn native_loft_section(
         );
         for member in &entry.profile {
             native_i64(bytes, member.form.type_code());
-            let curve = native_loft_curve_in_range(target, &member.curve.id, parameter_range)?;
+            let curve = native_loft_curve_in_range(target, &member.profile.id, parameter_range)?;
             native_nurbs_curve(bytes, &curve)?;
-            if let Some(endpoints) = member.curve.endpoints {
+            if let Some(endpoints) = member.profile.endpoints {
                 for value in endpoints {
                     native_optional_f64(bytes, value);
                 }
@@ -1504,7 +1504,7 @@ fn native_loft_section(
                                     "loft references missing surface {surface_id}"
                                 ))
                             })?;
-                        if member.curve.endpoints.is_some() {
+                        if member.profile.endpoints.is_some() {
                             native_embedded_surface_with_bounds(
                                 bytes,
                                 &surface.geometry,
@@ -3598,9 +3598,9 @@ fn native_revision_cl_scale(
     );
     for member in profile {
         native_i64(bytes, member.form.type_code());
-        let curve = native_loft_curve_in_range(target, &member.curve.id, None)?;
+        let curve = native_loft_curve_in_range(target, &member.profile.id, None)?;
         native_nurbs_curve(bytes, &curve)?;
-        let endpoints = member.curve.endpoints.ok_or_else(|| {
+        let endpoints = member.profile.endpoints.ok_or_else(|| {
             CodecError::Malformed(
                 "revision compound-loft members require optional endpoints".into(),
             )
