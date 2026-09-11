@@ -6871,65 +6871,23 @@ pub enum DeformableCurveSource {
 }
 
 /// Orientation carrier of a planar curve offset.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "side", rename_all = "snake_case", deny_unknown_fields)]
 pub enum OffsetSide {
     /// Unit plane normal defining the positive offset side.
-    PlaneNormal(Vector3),
+    PlaneNormal {
+        /// Unit plane normal.
+        normal: Vector3,
+    },
     /// Explicit offset direction, optionally constrained to a support surface.
     Direction {
         /// Nonzero offset direction.
         direction: Vector3,
         /// Support surface within which the offset is measured.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         support: Option<SurfaceId>,
     },
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct OffsetSideWire {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    direction: Option<Vector3>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    support: Option<SurfaceId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    normal: Option<Vector3>,
-}
-
-impl Serialize for OffsetSide {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let wire = match self {
-            Self::PlaneNormal(normal) => OffsetSideWire {
-                direction: None,
-                support: None,
-                normal: Some(*normal),
-            },
-            Self::Direction { direction, support } => OffsetSideWire {
-                direction: Some(*direction),
-                support: support.clone(),
-                normal: None,
-            },
-        };
-        wire.serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for OffsetSide {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let wire = OffsetSideWire::deserialize(deserializer)?;
-        match (wire.direction, wire.support, wire.normal) {
-            (Some(direction), support, None) => Ok(Self::Direction { direction, support }),
-            (None, None, Some(normal)) => Ok(Self::PlaneNormal(normal)),
-            _ => Err(serde::de::Error::custom(
-                "offset direction and normal are exclusive, and support requires direction",
-            )),
-        }
-    }
 }
 
 /// Parameter interval and optional variable-distance law of a curve offset.

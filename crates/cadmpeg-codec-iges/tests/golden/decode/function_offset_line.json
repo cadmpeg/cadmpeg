@@ -227,6 +227,7 @@
                 10.0
               ]
             },
+            "side": "plane_normal",
             "source": "iges:model:curve#D1"
           },
           "id": "iges:model:procedural-curve#D5"

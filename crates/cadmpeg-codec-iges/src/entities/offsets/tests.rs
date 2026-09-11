@@ -325,7 +325,8 @@ fn decode_places_uniform_offset_circle_with_a_proper_transform() {
         panic!("expected an offset construction");
     };
     let source = definition_payload_0.source();
-    let cadmpeg_ir::geometry::OffsetSide::PlaneNormal(normal) = definition_payload_0.side() else {
+    let cadmpeg_ir::geometry::OffsetSide::PlaneNormal { normal } = definition_payload_0.side()
+    else {
         panic!("expected an offset construction");
     };
     assert_eq!(source.as_str(), "iges:model:curve#D3-placed-source");
