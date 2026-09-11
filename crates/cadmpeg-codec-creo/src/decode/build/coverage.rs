@@ -280,9 +280,14 @@ pub(in super::super) fn collect_feature_coverage(
                     .any(|group| matches!(&group.edges, EdgeSelection::Native(_)));
                 let unresolved_radius =
                     groups.is_empty() || groups.iter().any(|group| group.radius.is_unresolved());
-                let variable_radius = groups
-                    .iter()
-                    .any(|group| matches!(&group.radius, RadiusSpec::UnresolvedVariable));
+                let variable_radius = groups.iter().any(|group| {
+                    matches!(
+                        &group.radius,
+                        RadiusSpec::Unresolved {
+                            form: Some(cadmpeg_ir::features::RadiusForm::Variable)
+                        }
+                    )
+                });
                 let has_generated_surface = feature
                     .id
                     .as_str()

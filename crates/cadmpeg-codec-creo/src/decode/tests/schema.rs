@@ -156,7 +156,7 @@ fn decode_types_class_914_as_unresolved_chamfer() {
             ..
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
             edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
-            spec: cadmpeg_ir::features::ChamferSpec::Unresolved,
+            spec: cadmpeg_ir::features::ChamferSpec::Unresolved { form: None },
         }])
     ));
     assert_eq!(
@@ -571,7 +571,7 @@ fn decode_types_z_prefixed_round_with_unresolved_operands() {
         cadmpeg_ir::features::FeatureDefinition::Fillet {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::FilletGroup {
                 edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
-                radius: cadmpeg_ir::features::RadiusSpec::Unresolved,
+                radius: cadmpeg_ir::features::RadiusSpec::Unresolved { form: None },
                 tangency_weight: None,
             }),
         }
@@ -1110,7 +1110,7 @@ fn decode_types_round_with_labeled_edge_selection() {
                 edges: cadmpeg_ir::features::EdgeSelection::Native(
                     "creo:allfeatur:edgs_affected#4:44,45".to_string()
                 ),
-                radius: cadmpeg_ir::features::RadiusSpec::Unresolved,
+                radius: cadmpeg_ir::features::RadiusSpec::Unresolved { form: None },
                 tangency_weight: None,
             }),
         }

@@ -8054,8 +8054,8 @@ pub enum SplitFaceTool {
 
 mod edge_treatments;
 pub use edge_treatments::{
-    ChamferGroup, ChamferSpec, FilletGroup, FullRoundFilletGroup, FullRoundSideSelection,
-    RadiusSpec, VariableRadii, VariableRadius,
+    ChamferForm, ChamferGroup, ChamferSpec, FilletGroup, FullRoundFilletGroup,
+    FullRoundSideSelection, RadiusForm, RadiusSpec, VariableRadii, VariableRadius,
 };
 
 mod holes;
@@ -8177,8 +8177,8 @@ pub enum FlexForm {
 
 mod patterns;
 pub use patterns::{
-    LinearPatternDirection, PatternKind, PatternScaleCenter, PatternStage, PatternStageCombination,
-    PatternTransform,
+    CompositePattern, LinearPatternDirection, PatternForm, PatternKind, PatternScaleCenter,
+    PatternStage, PatternStageCombination, PatternTransform,
 };
 
 #[cfg(test)]

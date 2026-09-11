@@ -896,7 +896,7 @@ fn generated_edge_dependencies_follow_the_producer_feature() {
     let fillet = IrFeatureDefinition::Fillet {
         groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::FilletGroup {
             edges: generated_edges.clone(),
-            radius: RadiusSpec::Unresolved,
+            radius: RadiusSpec::Unresolved { form: None },
             tangency_weight: None,
         }),
     };
@@ -908,7 +908,7 @@ fn generated_edge_dependencies_follow_the_producer_feature() {
     let chamfer = IrFeatureDefinition::Chamfer {
         groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::ChamferGroup {
             edges: generated_edges,
-            spec: cadmpeg_ir::features::ChamferSpec::Unresolved,
+            spec: cadmpeg_ir::features::ChamferSpec::Unresolved { form: None },
         }),
         flip_direction: false,
     };

@@ -290,7 +290,9 @@ fn design_completeness_audits_typed_construction_families() {
             )
             .unwrap(),
 
-            radius: RadiusSpec::UnresolvedVariable,
+            radius: RadiusSpec::Unresolved {
+                form: Some(cadmpeg_ir::features::RadiusForm::Variable),
+            },
         },
         FeatureDefinition::BoundaryFill {
             tools: BodySelection::Bodies(vec![body]),
@@ -505,17 +507,20 @@ fn design_completeness_recurses_through_pattern_operands() {
         (
             3,
             PatternKind::new(PatternTransform::Composite {
-                stages: vec![cadmpeg_ir::features::PatternStage {
-                    pattern: Box::new(
-                        PatternKind::new(PatternTransform::CurveDriven {
-                            path: None,
-                            spacing: Length::new(10.0).unwrap(),
-                            count: 2,
-                        })
-                        .unwrap(),
-                    ),
-                    combination: cadmpeg_ir::features::PatternStageCombination::Initialize,
-                }],
+                stages: cadmpeg_ir::features::CompositePattern::new(vec![
+                    cadmpeg_ir::features::PatternStage {
+                        pattern: Box::new(
+                            PatternKind::new(PatternTransform::CurveDriven {
+                                path: None,
+                                spacing: Length::new(10.0).unwrap(),
+                                count: 2,
+                            })
+                            .unwrap(),
+                        ),
+                        combination: cadmpeg_ir::features::PatternStageCombination::Initialize,
+                    },
+                ])
+                .unwrap(),
             })
             .unwrap(),
         ),
@@ -877,7 +882,9 @@ fn empty_required_operands_are_incomplete_design_semantics() {
                         edges: EdgeSelection::Edges(vec![
                             EdgeId::mint("test:model:entity#edge").expect("identity grammar")
                         ]),
-                        radius: RadiusSpec::UnresolvedVariable,
+                        radius: RadiusSpec::Unresolved {
+                            form: Some(cadmpeg_ir::features::RadiusForm::Variable),
+                        },
                         tangency_weight: None,
                     },
                 ),

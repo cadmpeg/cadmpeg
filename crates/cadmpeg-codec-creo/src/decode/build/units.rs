@@ -1105,11 +1105,7 @@ fn scale_radius_spec(
             *points = cadmpeg_ir::features::VariableRadii::new(scaled)
                 .map_err(|message| CodecError::Malformed(message.into()))?;
         }
-        RadiusSpec::Unresolved
-        | RadiusSpec::UnresolvedConstant
-        | RadiusSpec::UnresolvedChordal
-        | RadiusSpec::UnresolvedAsymmetric
-        | RadiusSpec::UnresolvedVariable => {}
+        RadiusSpec::Unresolved { .. } => {}
     }
     Ok(())
 }
@@ -1128,10 +1124,7 @@ fn scale_chamfer_spec(
             scale_positive_length(first, scale)?;
             scale_positive_length(second, scale)?;
         }
-        ChamferSpec::Unresolved
-        | ChamferSpec::UnresolvedDistance
-        | ChamferSpec::UnresolvedTwoDistances
-        | ChamferSpec::UnresolvedDistanceAngle => {}
+        cadmpeg_ir::features::ChamferSpec::Unresolved { .. } => {}
     }
     Ok(())
 }
@@ -1322,22 +1315,19 @@ fn scale_pattern_kind(
         PatternTransform::CircularAngles { axis_origin, .. } => scale_point3(axis_origin, scale),
         PatternTransform::Mirror { plane_origin, .. } => scale_point3(plane_origin, scale),
         PatternTransform::Composite { stages } => {
-            for stage in stages {
+            let mut scaled = stages.to_vec();
+            for stage in &mut scaled {
                 scale_pattern_kind(&mut stage.pattern, scale)?;
             }
+            *stages = cadmpeg_ir::features::CompositePattern::new(scaled)
+                .map_err(|message| CodecError::Malformed(message.into()))?;
         }
         PatternTransform::Scale { center, .. } => {
             if let cadmpeg_ir::features::PatternScaleCenter::Point(point) = center {
                 scale_point3(point, scale);
             }
         }
-        PatternTransform::Unresolved
-        | PatternTransform::UnresolvedLinear
-        | PatternTransform::UnresolvedCircular
-        | PatternTransform::UnresolvedCurveDriven
-        | PatternTransform::UnresolvedMirror
-        | PatternTransform::UnresolvedScale
-        | PatternTransform::UnresolvedComposite
+        cadmpeg_ir::features::PatternTransform::Unresolved { .. }
         | PatternTransform::MirrorReference { .. } => {}
     }
     *pattern = cadmpeg_ir::features::PatternKind::new(transform)

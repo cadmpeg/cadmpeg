@@ -924,6 +924,34 @@ fn sweep_mode_preserves_the_solid_new_body_wire_form() {
     );
 }
 
+/// The identified-but-undimensioned form is one state on the wire and in the
+/// IR, so a dimension beside it is refused by name.
+#[test]
+fn an_unresolved_form_refuses_a_dimension_beside_it() {
+    use crate::features::{ChamferSpec, PatternKind, RadiusSpec};
+
+    let error = serde_json::from_value::<RadiusSpec>(
+        serde_json::json!({"kind": "unresolved", "form": "chordal", "radius": 1}),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("unknown field `radius`"), "{error}");
+
+    let error = serde_json::from_value::<ChamferSpec>(
+        serde_json::json!({"kind": "unresolved", "form": "distance", "distance": 1}),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("unknown field `distance`"), "{error}");
+
+    let error = serde_json::from_value::<PatternKind>(
+        serde_json::json!({"kind": "unresolved", "form": "linear", "count": 2}),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("unknown field `count`"), "{error}");
+}
+
 #[test]
 fn unresolved_feature_forms_preserve_the_legacy_wire_shape() {
     use crate::features::{ChamferSpec, PatternKind, RadiusSpec};
@@ -931,15 +959,19 @@ fn unresolved_feature_forms_preserve_the_legacy_wire_shape() {
     for (wire, expected) in [
         (
             serde_json::json!({"kind": "unresolved"}),
-            RadiusSpec::Unresolved,
+            RadiusSpec::Unresolved { form: None },
         ),
         (
             serde_json::json!({"kind": "unresolved", "form": "constant"}),
-            RadiusSpec::UnresolvedConstant,
+            RadiusSpec::Unresolved {
+                form: Some(crate::features::RadiusForm::Constant),
+            },
         ),
         (
             serde_json::json!({"kind": "unresolved", "form": "variable"}),
-            RadiusSpec::UnresolvedVariable,
+            RadiusSpec::Unresolved {
+                form: Some(crate::features::RadiusForm::Variable),
+            },
         ),
     ] {
         assert_eq!(
@@ -952,15 +984,19 @@ fn unresolved_feature_forms_preserve_the_legacy_wire_shape() {
     for (wire, expected) in [
         (
             serde_json::json!({"kind": "unresolved"}),
-            ChamferSpec::Unresolved,
+            ChamferSpec::Unresolved { form: None },
         ),
         (
             serde_json::json!({"kind": "unresolved", "form": "distance"}),
-            ChamferSpec::UnresolvedDistance,
+            ChamferSpec::Unresolved {
+                form: Some(crate::features::ChamferForm::Distance),
+            },
         ),
         (
             serde_json::json!({"kind": "unresolved", "form": "distance_angle"}),
-            ChamferSpec::UnresolvedDistanceAngle,
+            ChamferSpec::Unresolved {
+                form: Some(crate::features::ChamferForm::DistanceAngle),
+            },
         ),
     ] {
         assert_eq!(

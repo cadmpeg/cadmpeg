@@ -894,7 +894,7 @@ fn direct_round_radii_cover_homogeneous_and_mixed_carrier_sets() {
         cadmpeg_ir::features::FeatureDefinition::Fillet {
             ref groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            radius: cadmpeg_ir::features::RadiusSpec::UnresolvedVariable, ..
+            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::RadiusForm::Variable) }, ..
         }])
     ));
 
@@ -925,7 +925,7 @@ fn direct_round_radii_cover_homogeneous_and_mixed_carrier_sets() {
         cadmpeg_ir::features::FeatureDefinition::Fillet {
             ref groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            radius: cadmpeg_ir::features::RadiusSpec::UnresolvedVariable, ..
+            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::RadiusForm::Variable) }, ..
         }])
     ));
     assert_eq!(

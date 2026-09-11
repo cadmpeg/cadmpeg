@@ -179,13 +179,7 @@ fn incomplete_pattern(
     use cadmpeg_ir::features::{PatternScaleCenter, PatternTransform};
 
     match pattern.definition() {
-        PatternTransform::Unresolved
-        | PatternTransform::UnresolvedLinear
-        | PatternTransform::UnresolvedCircular
-        | PatternTransform::UnresolvedCurveDriven
-        | PatternTransform::UnresolvedMirror
-        | PatternTransform::UnresolvedScale
-        | PatternTransform::UnresolvedComposite => true,
+        cadmpeg_ir::features::PatternTransform::Unresolved { .. } => true,
         PatternTransform::Linear { direction, .. }
         | PatternTransform::LinearOffsets { direction, .. } => direction.is_none(),
         PatternTransform::Circular { .. } | PatternTransform::Mirror { .. } => false,

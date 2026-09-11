@@ -195,18 +195,21 @@ pub(crate) fn bind_pattern_inputs(
                 let Some(&model_index) = model_by_native.get(feature.id.as_str()) else {
                     continue;
                 };
-                let (needs_seed, needs_axis) = match model_features[model_index]
-                    .evaluation
-                    .definition()
-                {
-                    FeatureDefinition::Pattern { seeds, pattern }
-                        if matches!(pattern.definition(), PatternTransform::UnresolvedCircular) =>
-                    {
-                        (seeds.is_empty(), true)
-                    }
-                    FeatureDefinition::Pattern { seeds, .. } => (seeds.is_empty(), false),
-                    _ => continue,
-                };
+                let (needs_seed, needs_axis) =
+                    match model_features[model_index].evaluation.definition() {
+                        FeatureDefinition::Pattern { seeds, pattern }
+                            if matches!(
+                                pattern.definition(),
+                                PatternTransform::Unresolved {
+                                    form: Some(cadmpeg_ir::features::PatternForm::Circular)
+                                }
+                            ) =>
+                        {
+                            (seeds.is_empty(), true)
+                        }
+                        FeatureDefinition::Pattern { seeds, .. } => (seeds.is_empty(), false),
+                        _ => continue,
+                    };
                 if !needs_seed && !needs_axis {
                     continue;
                 }
@@ -275,7 +278,7 @@ pub(crate) fn bind_pattern_inputs(
                     FeatureDefinition::Pattern {
                         pattern: admitted_pattern,
                         ..
-                    } if matches!(admitted_pattern.definition(), PatternTransform::UnresolvedLinear)
+                    } if matches!(admitted_pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::PatternForm::Linear) })
                 ) {
                     if let Some((spacing, count)) =
                         object_start.filter(|start| *start < end).and_then(|start| {
@@ -638,7 +641,12 @@ pub(crate) fn bind_pattern_inputs(
         };
         let mut definition = model_features[index].evaluation.definition().clone();
         if let FeatureDefinition::Pattern { pattern: slot, .. } = &mut definition {
-            if !matches!(slot.definition(), PatternTransform::UnresolvedCircular) {
+            if !matches!(
+                slot.definition(),
+                PatternTransform::Unresolved {
+                    form: Some(cadmpeg_ir::features::PatternForm::Circular)
+                }
+            ) {
                 continue;
             }
             *slot = PatternKind::new(PatternTransform::Circular {

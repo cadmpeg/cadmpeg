@@ -5588,7 +5588,10 @@ fn pattern_definition(
                 })
             })
             .collect::<Option<Vec<_>>>()?;
-        PatternKind::new(PatternTransform::Composite { stages }).ok()?
+        PatternKind::new(PatternTransform::Composite {
+            stages: cadmpeg_ir::features::CompositePattern::new(stages).ok()?,
+        })
+        .ok()?
     } else {
         pattern_kind(kind, properties, objects, properties_by_owner, entries)?
     };
@@ -5723,7 +5726,7 @@ fn pattern_kind(
                 entries,
             )?;
             PatternKind::new(PatternTransform::Composite {
-                stages: vec![
+                stages: cadmpeg_ir::features::CompositePattern::new(vec![
                     PatternStage {
                         pattern: Box::new(first),
                         combination: PatternStageCombination::Initialize,
@@ -5732,7 +5735,8 @@ fn pattern_kind(
                         pattern: Box::new(second),
                         combination: PatternStageCombination::CartesianProduct,
                     },
-                ],
+                ])
+                .ok()?,
             })
             .ok()?
         } else {

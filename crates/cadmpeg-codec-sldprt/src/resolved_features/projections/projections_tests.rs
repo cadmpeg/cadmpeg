@@ -676,7 +676,7 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
                 groups: cadmpeg_ir::features::NonEmptyMembers::one(
                     cadmpeg_ir::features::FilletGroup {
                         edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
-                        radius: cadmpeg_ir::features::RadiusSpec::Unresolved,
+                        radius: RadiusSpec::Unresolved { form: None },
                         tangency_weight: None,
                     },
                 ),
@@ -1644,7 +1644,9 @@ fn a_sole_unresolved_fillet_group_carries_its_edges() {
 
     let carried = sole_unresolved_fillet_group(&fillet(vec![group(
         native.clone(),
-        RadiusSpec::UnresolvedVariable,
+        RadiusSpec::Unresolved {
+            form: Some(cadmpeg_ir::features::RadiusForm::Variable),
+        },
     )]))
     .expect("a sole group without a radius is carried out of the check");
     assert_eq!(carried.0, native);
@@ -1660,8 +1662,18 @@ fn a_sole_unresolved_fillet_group_carries_its_edges() {
     );
     assert_eq!(
         sole_unresolved_fillet_group(&fillet(vec![
-            group(native.clone(), RadiusSpec::UnresolvedVariable),
-            group(EdgeSelection::Unresolved, RadiusSpec::UnresolvedVariable),
+            group(
+                native.clone(),
+                RadiusSpec::Unresolved {
+                    form: Some(cadmpeg_ir::features::RadiusForm::Variable)
+                }
+            ),
+            group(
+                EdgeSelection::Unresolved,
+                RadiusSpec::Unresolved {
+                    form: Some(cadmpeg_ir::features::RadiusForm::Variable)
+                }
+            ),
         ])),
         None
     );
@@ -1669,7 +1681,9 @@ fn a_sole_unresolved_fillet_group_carries_its_edges() {
         sole_unresolved_fillet_group(&FeatureDefinition::Chamfer {
             groups: vec![cadmpeg_ir::features::ChamferGroup {
                 edges: native,
-                spec: cadmpeg_ir::features::ChamferSpec::UnresolvedDistance,
+                spec: cadmpeg_ir::features::ChamferSpec::Unresolved {
+                    form: Some(cadmpeg_ir::features::ChamferForm::Distance)
+                },
             }]
             .try_into()
             .expect("a chamfer keeps one or more groups"),
@@ -1687,7 +1701,9 @@ fn a_sole_unresolved_fillet_group_carries_its_tangency_weight() {
     let fillet = |tangency_weight| FeatureDefinition::Fillet {
         groups: vec![FilletGroup {
             edges: EdgeSelection::Unresolved,
-            radius: RadiusSpec::UnresolvedConstant,
+            radius: RadiusSpec::Unresolved {
+                form: Some(cadmpeg_ir::features::RadiusForm::Constant),
+            },
             tangency_weight,
         }]
         .try_into()

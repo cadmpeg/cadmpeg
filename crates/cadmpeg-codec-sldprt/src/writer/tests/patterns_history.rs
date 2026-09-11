@@ -483,7 +483,7 @@ fn semantic_writer_retains_unresolved_native_pattern_construction() {
         FeatureDefinition::Pattern {
             seeds,
             pattern: admitted_pattern,
-        } if matches!(admitted_pattern.definition(), PatternTransform::UnresolvedLinear if seeds.is_empty())
+        } if matches!(admitted_pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::PatternForm::Linear) } if seeds.is_empty())
     ));
     decoded.ir_mut().model.features[0].name = Some("Renamed pattern".into());
 
@@ -508,7 +508,7 @@ fn semantic_writer_retains_unresolved_native_pattern_construction() {
             FeatureDefinition::Pattern {
                 pattern: admitted_pattern,
                 ..
-            } if matches!(admitted_pattern.definition(), PatternTransform::UnresolvedLinear)
+            } if matches!(admitted_pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::PatternForm::Linear) })
         )
     );
 }

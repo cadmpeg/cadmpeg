@@ -432,7 +432,7 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
     ));
     assert!(pattern_is_incomplete(
         &PatternKind::new(PatternTransform::Composite {
-            stages: vec![PatternStage {
+            stages: cadmpeg_ir::features::CompositePattern::new(vec![PatternStage {
                 pattern: Box::new(
                     PatternKind::new(PatternTransform::Linear {
                         direction: None,
@@ -443,12 +443,13 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
                     .unwrap()
                 ),
                 combination: PatternStageCombination::Initialize,
-            }],
+            }])
+            .unwrap(),
         })
         .unwrap()
     ));
     let composite = PatternKind::new(PatternTransform::Composite {
-        stages: vec![
+        stages: cadmpeg_ir::features::CompositePattern::new(vec![
             PatternStage {
                 pattern: Box::new(linear),
                 combination: PatternStageCombination::Initialize,
@@ -463,7 +464,8 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
                 ),
                 combination: PatternStageCombination::CartesianProduct,
             },
-        ],
+        ])
+        .unwrap(),
     })
     .unwrap();
     assert!(!pattern_is_incomplete(&composite));

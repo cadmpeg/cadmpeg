@@ -790,7 +790,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         FeatureDefinition::Pattern {
             ref seeds,
             pattern: admitted_pattern,
-        } if matches!(admitted_pattern.definition(), PatternTransform::UnresolvedMirror if seeds == &[PatternSeed::Feature(features[2].id.clone())])
+        } if matches!(admitted_pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::PatternForm::Mirror) } if seeds == &[PatternSeed::Feature(features[2].id.clone())])
     ));
     assert_eq!(
         features[0].dependencies.as_slice(),
