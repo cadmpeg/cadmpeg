@@ -2460,7 +2460,7 @@ fn law_expression_resolving(
     }
     let operator = cur.take_str()?.to_string();
     match operator.as_str() {
-        "null_law" => Some(EmbeddedLawExpression::Null {}),
+        "null_law" => Some(EmbeddedLawExpression::Null),
         "TRANS" => {
             if matches!(cur.peek(), Some(Token::Vector3(_))) {
                 let mut vectors = [Vector3::new(0.0, 0.0, 0.0); 4];
