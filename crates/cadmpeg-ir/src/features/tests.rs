@@ -254,6 +254,7 @@ fn revolve_construction_admits_only_typed_partial_states() {
         "definition": "revolve",
         "construction": {
             "state": "unresolved",
+            "missing": "axis",
             "profile": {"kind": "native", "value": "test:profile"},
             "solid": false
         },
@@ -288,6 +289,60 @@ fn revolve_construction_admits_only_typed_partial_states() {
         .unwrap_err()
         .to_string();
     assert!(error.contains("profile"), "{error}");
+}
+
+#[test]
+fn an_unresolved_revolve_names_its_first_missing_operand() {
+    use crate::features::{PartialRevolveConstruction, RevolveConstruction};
+
+    let axis = serde_json::json!({
+        "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
+        "direction": {"x": 0.0, "y": 0.0, "z": 1.0}
+    });
+    let extent = serde_json::json!({
+        "kind": "one_sided",
+        "termination": {"kind": "angle", "angle": 1.25}
+    });
+    let profile = serde_json::json!({"kind": "native", "value": "test:profile"});
+
+    let contradicting = serde_json::json!({
+        "state": "unresolved",
+        "missing": "axis",
+        "profile": profile,
+        "axis": axis,
+    });
+    let error = serde_json::from_value::<RevolveConstruction>(contradicting)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("axis"), "{error}");
+
+    let untyped = serde_json::json!({
+        "state": "unresolved",
+        "profile": profile,
+        "axis": axis,
+        "extent": extent,
+    });
+    let error = serde_json::from_value::<RevolveConstruction>(untyped)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("missing"), "{error}");
+
+    let named = serde_json::json!({
+        "state": "unresolved",
+        "missing": "profile",
+        "axis": axis,
+    });
+    let construction: RevolveConstruction =
+        serde_json::from_value(named.clone()).expect("reads the named partial state");
+    assert!(matches!(
+        construction,
+        RevolveConstruction::Unresolved(PartialRevolveConstruction::Profile {
+            axis: Some(_),
+            extent: None,
+            ..
+        })
+    ));
+    assert_eq!(serde_json::to_value(&construction).unwrap(), named);
 }
 
 #[test]

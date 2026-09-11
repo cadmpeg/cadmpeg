@@ -5830,20 +5830,35 @@ pub(crate) fn project_fixed_revolve_with_entities(
     } else {
         return None;
     };
+    let revolve_profile: cadmpeg_ir::features::PlanarProfileRef =
+        (ProfileRef::Native(profile.id.clone())).try_into().ok()?;
+    let extent = RevolveExtent::OneSided {
+        termination: AngularTermination::Angle {
+            angle: cadmpeg_ir::scalar::PositiveAngle::new(angle.get())?,
+        },
+    };
     Some(FeatureDefinition::Revolve {
-        construction: RevolveConstruction::new(
-            Some((ProfileRef::Native(profile.id.clone())).try_into().ok()?),
-            axis,
-            Some(RevolveExtent::OneSided {
-                termination: AngularTermination::Angle {
-                    angle: cadmpeg_ir::scalar::PositiveAngle::new(angle.get())?,
+        construction: match axis {
+            Some(axis) => RevolveConstruction::Resolved {
+                profile: revolve_profile,
+                axis,
+                extent,
+                solid: None,
+                face_maker: None,
+                fuse_order: None,
+                allow_multi_profile_faces: None,
+            },
+            None => RevolveConstruction::Unresolved(
+                cadmpeg_ir::features::PartialRevolveConstruction::Axis {
+                    profile: revolve_profile,
+                    extent: Some(extent),
+                    solid: None,
+                    face_maker: None,
+                    fuse_order: None,
+                    allow_multi_profile_faces: None,
                 },
-            }),
-            None,
-            None,
-            None,
-            None,
-        ),
+            ),
+        },
         op: fixed_boolean_operation(*operation),
     })
 }

@@ -845,24 +845,24 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let output = ir.model.bodies[0].id.clone();
     let face = ir.model.faces[0].id.clone();
-    let complete = RevolveConstruction::new(
-        Some((ProfileRef::Faces(vec![face])).try_into().unwrap()),
-        Some(RevolutionAxis {
+    let complete = RevolveConstruction::Resolved {
+        profile: (ProfileRef::Faces(vec![face])).try_into().unwrap(),
+        axis: RevolutionAxis {
             origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
             direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
                 .unwrap(),
             reference: None,
-        }),
-        Some(RevolveExtent::OneSided {
+        },
+        extent: RevolveExtent::OneSided {
             termination: AngularTermination::Angle {
                 angle: cadmpeg_ir::scalar::PositiveAngle::new(1.0).unwrap(),
             },
-        }),
-        Some(true),
-        None,
-        None,
-        None,
-    );
+        },
+        solid: Some(true),
+        face_maker: None,
+        fuse_order: None,
+        allow_multi_profile_faces: None,
+    };
     assert!(!revolve_feature_is_incomplete(
         &complete,
         BooleanOp::NewBody,

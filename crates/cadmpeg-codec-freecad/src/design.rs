@@ -3430,24 +3430,40 @@ fn revolution_definition(
         } else {
             None
         };
+    let profile: Option<cadmpeg_ir::features::PlanarProfileRef> =
+        profile.map(TryInto::try_into).transpose().ok()?;
+    let solid = Some(if kind == "Part::Revolution" {
+        bool_selector(properties, "Solid", false)?
+    } else {
+        true
+    });
+    let allow_multi_profile_faces = if kind.starts_with("PartDesign::") {
+        Some(bool_selector(properties, "AllowMultiFace", false)?)
+    } else {
+        None
+    };
     Some(FeatureDefinition::Revolve {
-        construction: RevolveConstruction::new(
-            profile.map(TryInto::try_into).transpose().ok()?,
-            Some(axis),
-            Some(extent),
-            Some(if kind == "Part::Revolution" {
-                bool_selector(properties, "Solid", false)?
-            } else {
-                true
-            }),
-            face_maker,
-            fuse_order,
-            if kind.starts_with("PartDesign::") {
-                Some(bool_selector(properties, "AllowMultiFace", false)?)
-            } else {
-                None
+        construction: match profile {
+            Some(profile) => RevolveConstruction::Resolved {
+                profile,
+                axis,
+                extent,
+                solid,
+                face_maker,
+                fuse_order,
+                allow_multi_profile_faces,
             },
-        ),
+            None => RevolveConstruction::Unresolved(
+                cadmpeg_ir::features::PartialRevolveConstruction::Profile {
+                    axis: Some(axis),
+                    extent: Some(extent),
+                    solid,
+                    face_maker,
+                    fuse_order,
+                    allow_multi_profile_faces,
+                },
+            ),
+        },
         op: if kind == "Part::Revolution" {
             BooleanOp::NewBody
         } else if kind.contains("Groove") {

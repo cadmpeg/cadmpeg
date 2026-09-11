@@ -357,9 +357,9 @@ fn encoder_writes_source_less_line_sketches() {
     let path = PathRef::Sketch(sketch_id.clone());
     let generated = [
         FeatureDefinition::Revolve {
-            construction: cadmpeg_ir::features::RevolveConstruction::new(
-                Some((profile.clone()).try_into().unwrap()),
-                Some(cadmpeg_ir::features::RevolutionAxis {
+            construction: cadmpeg_ir::features::RevolveConstruction::Resolved {
+                profile: (profile.clone()).try_into().unwrap(),
+                axis: cadmpeg_ir::features::RevolutionAxis {
                     origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                         .unwrap(),
                     direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
@@ -367,17 +367,17 @@ fn encoder_writes_source_less_line_sketches() {
                     ))
                     .unwrap(),
                     reference: None,
-                }),
-                Some(RevolveExtent::OneSided {
+                },
+                extent: RevolveExtent::OneSided {
                     termination: AngularTermination::Angle {
                         angle: cadmpeg_ir::scalar::PositiveAngle::new(1.2).unwrap(),
                     },
-                }),
-                Some(true),
-                None,
-                None,
-                None,
-            ),
+                },
+                solid: Some(true),
+                face_maker: None,
+                fuse_order: None,
+                allow_multi_profile_faces: None,
+            },
             op: BooleanOp::NewBody,
         },
         FeatureDefinition::Sweep {
