@@ -116,10 +116,22 @@ fn offset_payload_preserves_direction_magnitude_and_requires_strict_ranges() {
         wire["range"] = serde_json::json!({"kind": "uniform", "parameter_range": range});
         assert!(serde_json::from_value::<ProceduralCurveDefinition>(wire).is_err());
     }
-    assert!(definition(OffsetSide::PlaneNormal(Vector3::new(0.0, 0.0, 2.0)), None).is_err());
+    assert!(definition(
+        OffsetSide::PlaneNormal {
+            normal: Vector3::new(0.0, 0.0, 2.0)
+        },
+        None
+    )
+    .is_err());
     assert!(ProceduralCurve::new(
         id(),
-        definition(OffsetSide::PlaneNormal(Vector3::new(0.0, 0.0, 1.0)), None).unwrap()
+        definition(
+            OffsetSide::PlaneNormal {
+                normal: Vector3::new(0.0, 0.0, 1.0)
+            },
+            None
+        )
+        .unwrap()
     )
     .is_ok());
     assert!(definition(
@@ -240,4 +252,50 @@ fn rejected_curve_definition_replacements_preserve_serialized_owner() {
             .is_err());
         assert_eq!(serde_json::to_vec(&curve).unwrap(), before);
     }
+}
+
+#[test]
+fn an_offset_side_states_its_carrier_and_denies_the_other_one() {
+    use crate::geometry::curve_payloads::OffsetCurveConstruction;
+    let definition = |side| {
+        OffsetCurveConstruction::try_new(source(), -2.0, side, None)
+            .map(ProceduralCurveDefinition::Offset)
+            .unwrap()
+    };
+    let normal = definition(OffsetSide::PlaneNormal {
+        normal: Vector3::new(0.0, 0.0, 1.0),
+    });
+    let direction = definition(OffsetSide::Direction {
+        direction: Vector3::new(0.0, 0.0, 2.0),
+        support: None,
+    });
+
+    let normal_wire = serde_json::to_value(&normal).unwrap();
+    assert_eq!(normal_wire["side"], "plane_normal");
+    assert!(normal_wire.get("direction").is_none());
+    let direction_wire = serde_json::to_value(&direction).unwrap();
+    assert_eq!(direction_wire["side"], "direction");
+    assert!(direction_wire.get("normal").is_none());
+    assert_eq!(
+        serde_json::from_value::<ProceduralCurveDefinition>(normal_wire.clone()).unwrap(),
+        normal
+    );
+    assert_eq!(
+        serde_json::from_value::<ProceduralCurveDefinition>(direction_wire.clone()).unwrap(),
+        direction
+    );
+
+    let mut both = normal_wire;
+    both["direction"] = serde_json::json!({"x": 0.0, "y": 0.0, "z": 2.0});
+    let error = serde_json::from_value::<ProceduralCurveDefinition>(both)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("direction"), "{error}");
+
+    let mut stray_support = serde_json::to_value(&normal).unwrap();
+    stray_support["support"] = serde_json::json!("test:model:surface#0");
+    let error = serde_json::from_value::<ProceduralCurveDefinition>(stray_support)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("support"), "{error}");
 }

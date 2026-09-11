@@ -823,7 +823,7 @@ pub(super) fn project(
             match cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::try_new(
                 offset_source_id.clone(),
                 distance,
-                cadmpeg_ir::geometry::OffsetSide::PlaneNormal(normal),
+                cadmpeg_ir::geometry::OffsetSide::PlaneNormal { normal },
                 Some(match distance_law {
                     Some(distance_law) => cadmpeg_ir::geometry::CurveOffsetRange::Variable {
                         parameter_range: [start, end],

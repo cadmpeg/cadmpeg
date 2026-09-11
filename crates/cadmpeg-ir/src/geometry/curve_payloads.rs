@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Checked procedural curve payloads.
 
-#[cfg(feature = "schema")]
-use super::OffsetSideWire;
 use super::{
     default_true, CacheFirstCurveForm, CurveOffsetRange, DeformableCurveData,
     DeformableCurveSource, IntcurveSupportContext, OffsetSide, ProceduralGeometryError,
@@ -349,7 +347,6 @@ pub struct OffsetCurveConstruction {
     distance: FiniteReal,
     /// Exclusive plane-normal or explicit-direction carrier.
     #[serde(flatten)]
-    #[cfg_attr(feature = "schema", schemars(with = "OffsetSideWire"))]
     side: OffsetSide,
     /// Retained parameter range, with its distance law when variable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -365,7 +362,6 @@ struct OffsetCurveConstructionWire {
     distance: f64,
     /// Exclusive plane-normal or explicit-direction carrier.
     #[serde(flatten)]
-    #[cfg_attr(feature = "schema", schemars(with = "OffsetSideWire"))]
     side: OffsetSide,
     /// Retained parameter range, with its distance law when variable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -381,7 +377,7 @@ impl OffsetCurveConstruction {
         range: Option<CurveOffsetRange>,
     ) -> Result<Self, ProceduralGeometryError> {
         let side_valid = match &side {
-            crate::geometry::OffsetSide::PlaneNormal(normal) => {
+            crate::geometry::OffsetSide::PlaneNormal { normal } => {
                 normal.x.is_finite()
                     && normal.y.is_finite()
                     && normal.z.is_finite()
