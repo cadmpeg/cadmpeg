@@ -1152,8 +1152,8 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
             FeatureDefinition::DatumOffsetPlane { reference, .. } => reference
                 .as_ref()
                 .is_none_or(|reference| match reference {
-                    cadmpeg_ir::features::DatumPlaneReference::Feature(_) => false,
-                    cadmpeg_ir::features::DatumPlaneReference::Face(face) => {
+                    cadmpeg_ir::features::DatumPlaneReference::Feature { .. } => false,
+                    cadmpeg_ir::features::DatumPlaneReference::Face { face } => {
                         incomplete_face_selection(face)
                     }
                     cadmpeg_ir::features::DatumPlaneReference::ResolvedPlane { .. } => false,
@@ -4012,9 +4012,9 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_c
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::DatumOffsetPlane {
                 reference:
-                    Some(cadmpeg_ir::features::DatumPlaneReference::Face(
-                        face @ cadmpeg_ir::features::FaceSelection::Faces(selected),
-                    )),
+                    Some(cadmpeg_ir::features::DatumPlaneReference::Face {
+                        face: face @ cadmpeg_ir::features::FaceSelection::Faces(selected),
+                    }),
                 distance,
             } = feature.evaluation.definition()
             else {
@@ -4037,9 +4037,9 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_c
             continue;
         };
         if *distance == resolved_distance {
-            *reference = Some(cadmpeg_ir::features::DatumPlaneReference::Face(
-                resolved_face,
-            ));
+            *reference = Some(cadmpeg_ir::features::DatumPlaneReference::Face {
+                face: resolved_face,
+            });
         }
     }
     let resolved = ir

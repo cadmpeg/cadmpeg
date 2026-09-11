@@ -2332,7 +2332,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             path.push(cursor);
             let Some(next) = feature_records.get(cursor).and_then(|feature| {
                 let FeatureDefinition::DatumOffsetPlane {
-                    reference: Some(DatumPlaneReference::Feature(reference)),
+                    reference: Some(DatumPlaneReference::Feature { feature: reference }),
                     ..
                 } = feature.evaluation.definition()
                 else {
@@ -3055,7 +3055,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 }
                 for plane in plane_references {
                     match plane {
-                        DatumPlaneReference::Feature(reference) => {
+                        DatumPlaneReference::Feature { feature: reference } => {
                             match feature_records.get(reference.as_str()) {
                                 None => ref_error(
                                     findings,
@@ -3101,7 +3101,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                                 Some(_) => {}
                             }
                         }
-                        DatumPlaneReference::Face(face) => face_selections.push(face),
+                        DatumPlaneReference::Face { face } => face_selections.push(face),
                         DatumPlaneReference::ResolvedPlane { .. } => {}
                     }
                 }
@@ -3188,7 +3188,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             FeatureDefinition::DatumOffsetPlane { reference, .. } => {
                 if let Some(reference) = reference {
                     match reference {
-                        DatumPlaneReference::Feature(reference) => {
+                        DatumPlaneReference::Feature { feature: reference } => {
                             match feature_records.get(reference.as_str()) {
                                 None => {
                                     ref_error(
@@ -3240,7 +3240,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                                 Some(_) => {}
                             }
                         }
-                        DatumPlaneReference::Face(face) => face_selections.push(face),
+                        DatumPlaneReference::Face { face } => face_selections.push(face),
                         DatumPlaneReference::ResolvedPlane { .. } => {}
                     }
                 }
@@ -3704,7 +3704,7 @@ fn regeneration_references(
         // reference names a feature; a face-supported plane carries its frame
         // inline and is checked through the face selection instead.
         crate::features::FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Feature(reference)),
+            reference: Some(DatumPlaneReference::Feature { feature: reference }),
             ..
         } => {
             references.insert(reference);

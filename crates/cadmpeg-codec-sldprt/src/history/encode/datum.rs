@@ -111,7 +111,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }
             let mut properties = feature.source_properties.clone();
             match reference {
-                Some(DatumPlaneReference::Feature(reference)) => {
+                Some(DatumPlaneReference::Feature { feature: reference }) => {
                     let source = parent_sources.get(reference).ok_or_else(|| {
                         CodecError::malformed(format_args!(
                             "SLDPRT feature {} references a missing datum plane",
@@ -127,7 +127,9 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     };
                     properties.insert(key.into(), source.clone());
                 }
-                Some(DatumPlaneReference::Face(_) | DatumPlaneReference::ResolvedPlane { .. }) => {
+                Some(
+                    DatumPlaneReference::Face { .. } | DatumPlaneReference::ResolvedPlane { .. },
+                ) => {
                     let Some(record) = existing else {
                         return Err(CodecError::NotImplemented(format!(
                             "SLDPRT feature {} cannot create a face-supported datum plane",

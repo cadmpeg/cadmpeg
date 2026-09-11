@@ -1799,128 +1799,25 @@ pub enum FeatureSourceContent {
 }
 
 /// Parametric support of an offset datum plane.
-///
-/// The untagged representation retains the legacy feature-id string while face
-/// selections use their existing tagged object representation.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "reference", rename_all = "snake_case", deny_unknown_fields)]
 pub enum DatumPlaneReference {
     /// Another datum-plane feature.
-    Feature(FeatureId),
+    Feature {
+        /// Referenced datum-plane feature.
+        feature: FeatureId,
+    },
     /// A selected planar face whose geometry defines the support plane.
-    Face(FaceSelection),
+    Face {
+        /// Selected planar face.
+        face: FaceSelection,
+    },
     /// A resolved support plane without a face identity.
     ResolvedPlane {
         /// Finite support plane with nonzero perpendicular directions.
         frame: FeatureSupportPlaneFrame,
     },
-}
-
-#[derive(Serialize)]
-#[serde(untagged)]
-enum DatumPlaneReferenceWireRef<'a> {
-    Feature(&'a FeatureId),
-    Face {
-        face: &'a FaceSelection,
-    },
-    ResolvedPlane {
-        face: FaceSelection,
-        origin: Point3,
-        normal: Vector3,
-        u_axis: Vector3,
-    },
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(untagged)]
-enum DatumPlaneReferenceWire {
-    Feature(FeatureId),
-    LegacyFace(DatumPlaneLegacyFaceWire),
-    Face(DatumPlaneFaceWire),
-    ResolvedPlane(DatumResolvedPlaneWire),
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-struct DatumPlaneLegacyFaceWire {
-    face: FaceSelection,
-    origin: Point3,
-    normal: Vector3,
-    u_axis: Vector3,
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-struct DatumPlaneFaceWire {
-    face: FaceSelection,
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-struct DatumResolvedPlaneWire {
-    origin: Point3,
-    normal: Vector3,
-    u_axis: Vector3,
-}
-
-impl Serialize for DatumPlaneReference {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        match self {
-            Self::Feature(feature) => DatumPlaneReferenceWireRef::Feature(feature),
-            Self::Face(face) => DatumPlaneReferenceWireRef::Face { face },
-            Self::ResolvedPlane { frame } => DatumPlaneReferenceWireRef::ResolvedPlane {
-                face: FaceSelection::Unresolved,
-                origin: frame.origin(),
-                normal: frame.normal(),
-                u_axis: frame.u_axis(),
-            },
-        }
-        .serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for DatumPlaneReference {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        Ok(match DatumPlaneReferenceWire::deserialize(deserializer)? {
-            DatumPlaneReferenceWire::Feature(feature) => Self::Feature(feature),
-            DatumPlaneReferenceWire::LegacyFace(DatumPlaneLegacyFaceWire {
-                face: FaceSelection::Unresolved,
-                origin,
-                normal,
-                u_axis,
-            })
-            | DatumPlaneReferenceWire::ResolvedPlane(DatumResolvedPlaneWire {
-                origin,
-                normal,
-                u_axis,
-            }) => Self::ResolvedPlane {
-                frame: FeatureSupportPlaneFrame::new(origin, normal, u_axis)
-                    .ok_or_else(|| serde::de::Error::custom("resolved plane requires finite origin and nonzero perpendicular directions"))?,
-            },
-            DatumPlaneReferenceWire::LegacyFace(DatumPlaneLegacyFaceWire { face, .. })
-            | DatumPlaneReferenceWire::Face(DatumPlaneFaceWire { face }) => Self::Face(face),
-        })
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for DatumPlaneReference {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "DatumPlaneReference".into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        DatumPlaneReferenceWire::json_schema(generator)
-    }
 }
 
 /// Sketch point operand resolved by a datum-point construction or retained in
@@ -2015,14 +1912,13 @@ impl DatumPointConstruction {
             Self::ThreePlaneIntersection { planes } => planes
                 .iter()
                 .filter_map(|plane| match plane {
-                    DatumPlaneReference::Feature(feature) => Some(feature),
-                    DatumPlaneReference::Face(_) | DatumPlaneReference::ResolvedPlane { .. } => {
-                        None
-                    }
+                    DatumPlaneReference::Feature { feature } => Some(feature),
+                    DatumPlaneReference::Face { .. }
+                    | DatumPlaneReference::ResolvedPlane { .. } => None,
                 })
                 .collect(),
             Self::EdgePlaneIntersection {
-                plane: DatumPlaneReference::Feature(feature),
+                plane: DatumPlaneReference::Feature { feature },
                 ..
             } => vec![feature],
             Self::Vertex {

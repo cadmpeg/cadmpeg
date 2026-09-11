@@ -1145,9 +1145,11 @@ fn configuration_offset_plane_inherits_shared_reference() {
     };
 
     let base = FeatureDefinition::DatumOffsetPlane {
-        reference: Some(DatumPlaneReference::Face(FaceSelection::Faces(vec![
-            "test:model:face#1".try_into().expect("valid identity"),
-        ]))),
+        reference: Some(DatumPlaneReference::Face {
+            face: FaceSelection::Faces(vec!["test:model:face#1"
+                .try_into()
+                .expect("valid identity")]),
+        }),
         distance: Length::new(5.0).unwrap(),
     };
     let mut configured = FeatureDefinition::DatumOffsetPlane {
@@ -1176,9 +1178,11 @@ fn configuration_offset_plane_does_not_merge_a_resolved_plane_with_a_face() {
     };
 
     let base = FeatureDefinition::DatumOffsetPlane {
-        reference: Some(DatumPlaneReference::Face(FaceSelection::Faces(vec![
-            "test:model:face#1".try_into().expect("valid identity"),
-        ]))),
+        reference: Some(DatumPlaneReference::Face {
+            face: FaceSelection::Faces(vec!["test:model:face#1"
+                .try_into()
+                .expect("valid identity")]),
+        }),
         distance: Length::new(5.0).unwrap(),
     };
     let configured_origin = cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0);
@@ -1247,7 +1251,9 @@ fn scoped_offset_plane_inherits_only_a_frame_matching_reference() {
         offset_id.clone(),
         1,
         FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Feature(plane_id.clone())),
+            reference: Some(DatumPlaneReference::Feature {
+                feature: plane_id.clone(),
+            }),
             distance: Length::new(12.0).unwrap(),
         },
     );
@@ -1278,7 +1284,7 @@ fn scoped_offset_plane_inherits_only_a_frame_matching_reference() {
     assert!(matches!(
         configured.evaluation.definition().clone(),
         FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Feature(reference)),
+            reference: Some(DatumPlaneReference::Feature { feature: reference }),
             ..
         } if reference == plane_id
     ));
@@ -1350,7 +1356,9 @@ fn scoped_offset_plane_inherits_an_omitted_resolved_reference() {
     let base_offset = neutral_feature(
         offset_id.clone(),
         FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Feature(plane_id.clone())),
+            reference: Some(DatumPlaneReference::Feature {
+                feature: plane_id.clone(),
+            }),
             distance: Length::new(6.0).unwrap(),
         },
     );
@@ -1372,7 +1380,7 @@ fn scoped_offset_plane_inherits_an_omitted_resolved_reference() {
     assert!(matches!(
         configured.evaluation.definition().clone(),
         FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Feature(reference)),
+            reference: Some(DatumPlaneReference::Feature { feature: reference }),
             distance: actual_distance,
         } if (reference == FeatureId::mint("test:model:feature#plane").expect("identity grammar")) && actual_distance.get() == 6.0
     ));
@@ -1444,11 +1452,11 @@ fn scoped_offset_plane_does_not_merge_a_resolved_plane_with_a_face() {
         .unwrap(),
     };
     let base = neutral_feature(FeatureDefinition::DatumOffsetPlane {
-        reference: Some(DatumPlaneReference::Face(FaceSelection::Faces(vec![
-            "test:model:entity#face%231"
+        reference: Some(DatumPlaneReference::Face {
+            face: FaceSelection::Faces(vec!["test:model:entity#face%231"
                 .try_into()
-                .expect("valid identity"),
-        ]))),
+                .expect("valid identity")]),
+        }),
         distance: Length::new(7.0).unwrap(),
     });
     let mut configured = neutral_feature(FeatureDefinition::DatumOffsetPlane {
@@ -1605,9 +1613,9 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
         components: components.clone(),
     };
     let definition = || FeatureDefinition::DatumOffsetPlane {
-        reference: Some(DatumPlaneReference::Face(FaceSelection::Native(
-            native.clone(),
-        ))),
+        reference: Some(DatumPlaneReference::Face {
+            face: FaceSelection::Native(native.clone()),
+        }),
         distance: Length::new(4.0).unwrap(),
     };
     let feature = NeutralFeature {
@@ -1671,10 +1679,10 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
     assert!(matches!(
         &ir.model.configurations[0].feature_states.values().next().unwrap().definition,
         FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Face(FaceSelection::Resolved {
+            reference: Some(DatumPlaneReference::Face { face: FaceSelection::Resolved {
                 faces,
                 native: resolved_native,
-            })),
+            } }),
             ..
         } if faces == &[FaceId::mint("test:model:entity#face").expect("identity grammar")] && resolved_native == &native
     ));
@@ -1764,7 +1772,7 @@ fn configuration_frame_alias_binds_without_body_membership() {
     assert!(matches!(
         &ir.model.configurations[0].feature_states.values().next().unwrap().definition,
         FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Face(FaceSelection::Faces(faces))),
+            reference: Some(DatumPlaneReference::Face { face: FaceSelection::Faces(faces) }),
             ..
         } if faces == &[FaceId::mint("test:model:entity#face").expect("identity grammar")]
     ));

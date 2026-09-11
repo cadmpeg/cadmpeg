@@ -211,7 +211,7 @@ pub(crate) fn bind_topology_selections(
                     reference,
                     distance,
                 } => match reference {
-                    Some(DatumPlaneReference::Face(reference)) => resolve_face(reference),
+                    Some(DatumPlaneReference::Face { face: reference }) => resolve_face(reference),
                     Some(DatumPlaneReference::ResolvedPlane { frame }) => {
                         let origin = frame.origin();
                         let normal = frame.normal();
@@ -238,7 +238,7 @@ pub(crate) fn bind_topology_selections(
                             &surfaces_by_id,
                         );
                         if !matches!(face, FaceSelection::Unresolved) {
-                            *reference = Some(DatumPlaneReference::Face(face));
+                            *reference = Some(DatumPlaneReference::Face { face });
                         }
                     }
                     None => {
@@ -265,10 +265,10 @@ pub(crate) fn bind_topology_selections(
                             &surfaces_by_id,
                         );
                         if !matches!(face, FaceSelection::Unresolved) {
-                            *reference = Some(DatumPlaneReference::Face(face));
+                            *reference = Some(DatumPlaneReference::Face { face });
                         }
                     }
-                    Some(DatumPlaneReference::Feature(_)) => {}
+                    Some(DatumPlaneReference::Feature { .. }) => {}
                 },
                 FeatureDefinition::Extrude {
                     profile, extent, ..

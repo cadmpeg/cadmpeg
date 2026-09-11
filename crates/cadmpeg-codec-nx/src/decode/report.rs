@@ -538,7 +538,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             }
             FeatureDefinition::DatumOffsetPlane { reference, .. }
                 if reference.as_ref().is_none_or(|reference| match reference {
-                    DatumPlaneReference::Feature(reference) => {
+                    DatumPlaneReference::Feature { feature: reference } => {
                         ir.model
                             .features
                             .iter()
@@ -546,7 +546,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                             .is_none_or(|source| source.ordinal >= feature.ordinal)
                             || !feature.dependencies.contains(reference)
                     }
-                    DatumPlaneReference::Face(face) => face_selection_is_incomplete(face),
+                    DatumPlaneReference::Face { face } => face_selection_is_incomplete(face),
                     DatumPlaneReference::ResolvedPlane { .. } => false,
                 }) =>
             {

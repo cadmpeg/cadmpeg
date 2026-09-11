@@ -5,81 +5,82 @@ use crate::math::{Point3, Vector3};
 use crate::validate::validate_neutral;
 
 #[test]
-fn datum_plane_reference_preserves_legacy_feature_ids_and_face_selections() {
-    let feature = crate::features::DatumPlaneReference::Feature(
-        crate::features::FeatureId::mint("test:model:feature#feature").expect("identity grammar"),
-    );
+fn a_datum_plane_reference_states_which_support_it_names() {
+    use crate::features::{DatumPlaneReference, FaceSelection, FeatureSupportPlaneFrame};
+
+    let feature = DatumPlaneReference::Feature {
+        feature: crate::features::FeatureId::mint("test:model:feature#feature")
+            .expect("identity grammar"),
+    };
     assert_eq!(
         serde_json::to_value(&feature).unwrap(),
-        serde_json::json!("test:model:feature#feature")
-    );
-    assert_eq!(
-        serde_json::from_value::<crate::features::DatumPlaneReference>(serde_json::json!(
-            "test:model:feature#feature"
-        ))
-        .unwrap(),
-        feature
+        serde_json::json!({
+            "reference": "feature",
+            "feature": "test:model:feature#feature"
+        })
     );
 
-    let face =
-        crate::features::DatumPlaneReference::Face(crate::features::FaceSelection::Faces(vec![
-            crate::ids::FaceId::mint("test:model:face#face").expect("valid identity"),
-        ]));
+    let face = DatumPlaneReference::Face {
+        face: FaceSelection::Faces(vec![
+            crate::ids::FaceId::mint("test:model:face#face").expect("valid identity")
+        ]),
+    };
     assert_eq!(
         serde_json::to_value(&face).unwrap(),
         serde_json::json!({
+            "reference": "face",
             "face": {"kind": "faces", "value": ["test:model:face#face"]}
         })
     );
-    assert_eq!(
-        serde_json::from_value::<crate::features::DatumPlaneReference>(
-            serde_json::to_value(&face).unwrap()
-        )
-        .unwrap(),
-        face
-    );
-    let legacy_face_wire = serde_json::json!({
-        "face": {"kind": "faces", "value": ["test:model:face#face"]},
-        "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
-        "normal": {"x": 0.0, "y": 0.0, "z": 1.0},
-        "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0}
-    });
-    assert_eq!(
-        serde_json::from_value::<crate::features::DatumPlaneReference>(legacy_face_wire).unwrap(),
-        face
-    );
 
-    let resolved = crate::features::DatumPlaneReference::ResolvedPlane {
-        frame: crate::features::FeatureSupportPlaneFrame::new(
+    let resolved = DatumPlaneReference::ResolvedPlane {
+        frame: FeatureSupportPlaneFrame::new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
         .unwrap(),
     };
-    let resolved_wire = serde_json::json!({
-        "face": {"kind": "unresolved"},
-        "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
-        "normal": {"x": 0.0, "y": 0.0, "z": 1.0},
-        "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0}
-    });
-    assert_eq!(serde_json::to_value(&resolved).unwrap(), resolved_wire);
     assert_eq!(
-        serde_json::from_value::<crate::features::DatumPlaneReference>(
-            serde_json::to_value(&resolved).unwrap()
-        )
-        .unwrap(),
-        resolved
+        serde_json::to_value(&resolved).unwrap(),
+        serde_json::json!({
+            "reference": "resolved_plane",
+            "frame": {
+                "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
+                "normal": {"x": 0.0, "y": 0.0, "z": 1.0},
+                "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0}
+            }
+        })
     );
 
-    let partial_legacy_wire = serde_json::json!({
-        "face": {"kind": "faces", "value": ["test:model:face#face"]},
-        "origin": {"x": 0.0, "y": 0.0, "z": 0.0}
-    });
-    assert!(
-        serde_json::from_value::<crate::features::DatumPlaneReference>(partial_legacy_wire)
-            .is_err()
-    );
+    for reference in [&feature, &face, &resolved] {
+        let wire = serde_json::to_value(reference).unwrap();
+        assert_eq!(
+            &serde_json::from_value::<DatumPlaneReference>(wire).unwrap(),
+            reference
+        );
+    }
+
+    let mut legacy = serde_json::to_value(&resolved).unwrap();
+    legacy["face"] = serde_json::json!({"kind": "unresolved"});
+    let error = serde_json::from_value::<DatumPlaneReference>(legacy)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("face"), "{error}");
+
+    let mut stray = serde_json::to_value(&face).unwrap();
+    stray["origin"] = serde_json::json!({"x": 0.0, "y": 0.0, "z": 0.0});
+    let error = serde_json::from_value::<DatumPlaneReference>(stray)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("origin"), "{error}");
+
+    let error = serde_json::from_value::<DatumPlaneReference>(serde_json::json!(
+        "test:model:feature#feature"
+    ))
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("invalid type: string"), "{error}");
 }
 
 #[test]

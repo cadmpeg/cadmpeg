@@ -209,9 +209,9 @@ fn offset_plane_frame_translates_its_reference_frame() {
             "synthetic:test:id#offset",
             "offset-native",
             FeatureDefinition::DatumOffsetPlane {
-                reference: Some(cadmpeg_ir::features::DatumPlaneReference::Feature(
-                    FeatureId::mint("synthetic:test:id#plane").expect("identity grammar"),
-                )),
+                reference: Some(cadmpeg_ir::features::DatumPlaneReference::Feature {
+                    feature: FeatureId::mint("synthetic:test:id#plane").expect("identity grammar"),
+                }),
                 distance: Length::new(3.0).unwrap(),
             },
         ),

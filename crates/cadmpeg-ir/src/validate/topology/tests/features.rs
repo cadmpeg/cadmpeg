@@ -532,7 +532,9 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
         "synthetic:test:feature#offset",
         0,
         FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Feature(principal.clone())),
+            reference: Some(DatumPlaneReference::Feature {
+                feature: principal.clone(),
+            }),
             distance: Length::new(5.0).unwrap(),
         },
     ));
@@ -560,7 +562,7 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
     ir.model.features[1]
         .evaluation
         .set_definition(FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Feature(offset)),
+            reference: Some(DatumPlaneReference::Feature { feature: offset }),
             distance: Length::new(5.0).unwrap(),
         })
         .unwrap();
@@ -812,7 +814,9 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
             offset.clone(),
             1,
             FeatureDefinition::DatumOffsetPlane {
-                reference: Some(DatumPlaneReference::Feature(source.clone())),
+                reference: Some(DatumPlaneReference::Feature {
+                    feature: source.clone(),
+                }),
                 distance: Length::new(5.0).unwrap(),
             },
         ),

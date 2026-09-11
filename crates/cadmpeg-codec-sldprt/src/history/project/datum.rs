@@ -36,7 +36,7 @@ pub(crate) fn project_offset_plane(
         .get("Reference")
         .or_else(|| feature.properties.get("Plane"))
         .and_then(|source| by_source.get(source.as_str()).cloned())
-        .map(DatumPlaneReference::Feature)
+        .map(|feature| DatumPlaneReference::Feature { feature })
         .or_else(|| {
             Some(DatumPlaneReference::ResolvedPlane {
                 frame: cadmpeg_ir::features::FeatureSupportPlaneFrame::new(
@@ -48,9 +48,9 @@ pub(crate) fn project_offset_plane(
         })
         .or_else(|| {
             let native = feature.properties.get("ReferenceFaceNative")?;
-            Some(DatumPlaneReference::Face(FaceSelection::Native(
-                native.clone(),
-            )))
+            Some(DatumPlaneReference::Face {
+                face: FaceSelection::Native(native.clone()),
+            })
         });
     Some(FeatureDefinition::DatumOffsetPlane {
         reference,
