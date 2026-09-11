@@ -312,7 +312,7 @@ fn configuration_name_preserves_resolution_state() {
 }
 
 #[test]
-fn configuration_suppression_is_derived_and_requires_agreeing_feature_states() {
+fn configuration_suppression_is_read_from_feature_states_and_refuses_the_deleted_key() {
     use crate::features::{
         ConfigurationBodies, ConfigurationFeatureState, ConfigurationId, DesignConfiguration,
         Feature, FeatureDefinition, FeatureId,
@@ -352,32 +352,32 @@ fn configuration_suppression_is_derived_and_requires_agreeing_feature_states() {
         native_ref: None,
     });
 
-    let mut wire = serde_json::to_value(&ir).unwrap();
-    let configuration = &mut wire["model"]["configurations"][0];
+    let wire = serde_json::to_value(&ir).unwrap();
+    let configuration = &wire["model"]["configurations"][0];
+    assert!(configuration.get("suppressed_features").is_none());
+    let round_trip = serde_json::from_value::<CadIr>(wire.clone()).unwrap();
     assert_eq!(
-        configuration["suppressed_features"],
-        serde_json::json!([feature.id.0.clone()])
-    );
-    configuration
-        .as_object_mut()
-        .unwrap()
-        .remove("feature_states");
-    let error = serde_json::from_value::<CadIr>(wire).unwrap_err();
-    assert!(
-        error.to_string().contains(&format!(
-            "configuration suppressed feature `{}` has no configuration feature state",
-            feature.id.0
-        )),
-        "{error}"
+        round_trip.model.configurations[0]
+            .suppressed_features()
+            .collect::<Vec<_>>(),
+        vec![&feature.id]
     );
 
-    let mut invalid = serde_json::to_value(&ir).unwrap();
-    invalid["model"]["configurations"][0]["feature_states"][feature.id.0.as_str()]["evaluation"]
-        ["kind"] = serde_json::json!("active");
-    let error = serde_json::from_value::<CadIr>(invalid).unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("configuration suppression disagrees with feature state"));
+    let mut restated = wire;
+    restated["model"]["configurations"][0]
+        .as_object_mut()
+        .unwrap()
+        .insert(
+            "suppressed_features".into(),
+            serde_json::json!([feature.id.0.clone()]),
+        );
+    let error = serde_json::from_value::<CadIr>(restated).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("unknown field `suppressed_features`"),
+        "{error}"
+    );
 }
 
 #[test]
