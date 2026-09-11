@@ -5246,6 +5246,7 @@ impl LawFormula {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct LawFormulaWire {
     name: String,
     variables: Vec<LawExpression>,
@@ -5346,10 +5347,10 @@ pub enum LawSurfaceTail {
 /// One native law-expression node.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum LawExpression {
     /// Zero-payload `null_law` sentinel.
-    Null,
+    Null {},
     /// Serializer-preserved textual law expression.
     Text {
         /// Exact text stored in the native law slot.

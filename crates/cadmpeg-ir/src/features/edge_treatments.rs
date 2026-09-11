@@ -298,6 +298,7 @@ pub enum FullRoundSideSelection {
 /// One independently dimensioned group of chamfered edges.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct ChamferGroup {
     /// Edges sharing this dimensional specification.
     pub edges: EdgeSelection,
@@ -407,7 +408,7 @@ impl ChamferSpec {
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum ChamferSpecWire {
     Unresolved {
         #[serde(default, skip_serializing_if = "Option::is_none")]

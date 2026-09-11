@@ -180,6 +180,7 @@ pub struct FeatureCoordinateFrame {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct FeatureCoordinateFrameWire {
     origin: Point3,
     x_axis: Vector3,
@@ -270,6 +271,7 @@ const EPS_FEATURE_PLANE_ORTHOGONAL: f64 = 1.0e-9;
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct FeaturePlaneFrameWire {
     origin: Point3,
     normal: Vector3,
@@ -711,6 +713,7 @@ impl From<FeatureEllipticArc> for FeatureEllipticArcWire {
 /// Resolved pull frame of a draft anchor.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct DraftPull {
     /// Pull direction used to measure the draft angle.
     pub direction: FeatureDirection3,
@@ -2114,6 +2117,7 @@ macro_rules! selection_operands {
         }
 
         #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
         struct $wire {
             $first: $selection,
             $second: $selection,
@@ -2308,6 +2312,7 @@ pub struct TreeChildren {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct TreeChildrenWire {
     #[serde(default)]
     children: Vec<FeatureId>,
@@ -3523,7 +3528,12 @@ pub enum HolePlacement {
 /// One geometric selection repeated or reflected by a pattern operation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum PatternSeed {
     /// Complete result of a preceding construction-history feature.
     Feature(FeatureId),
@@ -3553,7 +3563,12 @@ pub enum GeometryImportFormat {
 /// Selection policy for Boolean-operation fuzzy tolerance.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum FuzzyTolerance {
     /// Let the modeling kernel use its default tolerance.
     KernelDefault,
@@ -3718,7 +3733,7 @@ impl From<PrimitiveSolid> for PrimitiveSolidKind {
 /// Canonical dimensions of an analytic solid primitive.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PrimitiveSolidKind {
     /// Rectangular solid aligned to its feature frame.
     Box {
@@ -4075,6 +4090,7 @@ impl RevolveConstruction {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct RevolveConstructionWire {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     profile: Option<PlanarProfileRef>,
@@ -4180,6 +4196,7 @@ pub enum RevolutionFuseOrder {
 /// Complete line placement used as a revolution axis.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct RevolutionAxis {
     /// A point on the axis.
     pub origin: FinitePoint3,
@@ -6317,7 +6334,7 @@ pub enum ExtrudeExtent {
 /// side-local modifiers, only their termination laws.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum RevolveExtent {
     /// Travel on the oriented side only.
     OneSided {
@@ -6342,17 +6359,17 @@ pub enum RevolveExtent {
 /// Persisted source of a resolved linear-extrusion direction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ExtrusionDirectionSource {
     /// Direction comes from the persisted direction vector.
-    Custom,
+    Custom {},
     /// Direction comes from a selected straight edge.
     Edge {
         /// Native edge selection used as the direction axis.
         reference: PathRef,
     },
     /// Direction comes from the source profile's plane normal.
-    ProfileNormal,
+    ProfileNormal {},
 }
 
 /// Native algorithm used to construct faces from wires.
@@ -6741,11 +6758,11 @@ pub enum SweepMode {
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "mode", rename_all = "snake_case")]
+#[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
 enum SweepModeWire {
-    Unresolved,
+    Unresolved {},
     Solid { op: SolidSweepOperation },
-    Surface,
+    Surface {},
 }
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
@@ -6761,7 +6778,7 @@ enum SolidSweepOperation {
 impl From<SweepMode> for SweepModeWire {
     fn from(value: SweepMode) -> Self {
         match value {
-            SweepMode::Unresolved => Self::Unresolved,
+            SweepMode::Unresolved => Self::Unresolved {},
             SweepMode::NewBody => Self::Solid {
                 op: SolidSweepOperation::NewBody,
             },
@@ -6772,7 +6789,7 @@ impl From<SweepMode> for SweepModeWire {
                     BooleanKind::Intersect => SolidSweepOperation::Intersect,
                 },
             },
-            SweepMode::Surface => Self::Surface,
+            SweepMode::Surface => Self::Surface {},
         }
     }
 }
@@ -6780,7 +6797,7 @@ impl From<SweepMode> for SweepModeWire {
 impl From<SweepModeWire> for SweepMode {
     fn from(value: SweepModeWire) -> Self {
         match value {
-            SweepModeWire::Unresolved => Self::Unresolved,
+            SweepModeWire::Unresolved {} => Self::Unresolved,
             SweepModeWire::Solid {
                 op: SolidSweepOperation::NewBody,
             } => Self::NewBody,
@@ -6799,7 +6816,7 @@ impl From<SweepModeWire> for SweepMode {
             } => Self::Solid {
                 op: BooleanKind::Intersect,
             },
-            SweepModeWire::Surface => Self::Surface,
+            SweepModeWire::Surface {} => Self::Surface,
         }
     }
 }
@@ -6856,7 +6873,12 @@ pub struct SweepGuideRail {
 /// Cross-section owned or referenced by a sweep construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum SweepSection {
     /// The source requires a cross-section, but its carrier is unresolved.
     Unresolved(Option<String>),
@@ -6944,6 +6966,7 @@ pub struct SweepShape {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct SweepShapeWire {
     section: SweepSection,
     #[serde(default)]
@@ -7189,14 +7212,14 @@ impl<'de> Deserialize<'de> for SketchProfileRegions {
 /// Cross-section orientation law along a sweep path.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SweepOrientation {
     /// Rotation-minimizing corrected-Frenet frame.
-    CorrectedFrenet,
+    CorrectedFrenet {},
     /// Fixed section frame.
-    Fixed,
+    Fixed {},
     /// Exact Frenet frame from path derivatives.
-    Frenet,
+    Frenet {},
     /// Frame constrained by a secondary path.
     Auxiliary {
         /// Secondary orientation path.
@@ -7739,7 +7762,12 @@ pub struct GeneratedCurveRef {
 /// Trajectory consumed by a sweep or path-driven operation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum PathRef {
     /// Source path exists but its neutral members remain unresolved.
     Unresolved(String),

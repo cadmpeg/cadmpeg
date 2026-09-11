@@ -1233,7 +1233,7 @@ fn project_extrusion(
                 profile: ProfileRef::sketch_selection(sketch_id, selections).ok()?,
                 direction: ExtrudeDirection::Explicit {
                     vector: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
-                    source: Some(ExtrusionDirectionSource::Custom),
+                    source: Some(ExtrusionDirectionSource::Custom {}),
                 },
                 start: ExtrudeStart::ProfilePlane {},
                 extent,

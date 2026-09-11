@@ -984,7 +984,7 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
         FeatureDefinition::Extrude {
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                 vector: direction,
-                source: Some(ExtrusionDirectionSource::ProfileNormal),
+                source: Some(ExtrusionDirectionSource::ProfileNormal {}),
             },
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -1024,7 +1024,7 @@ fn derives_extrusion_direction_from_a_non_sketch_profile_frame() {
             profile: cadmpeg_ir::features::ProfileRef::Native(_),
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                 vector: direction,
-                source: Some(cadmpeg_ir::features::ExtrusionDirectionSource::ProfileNormal),
+                source: Some(cadmpeg_ir::features::ExtrusionDirectionSource::ProfileNormal {}),
             },
             op: cadmpeg_ir::features::BooleanOp::Cut,
             ..
@@ -1145,7 +1145,7 @@ fn distinguishes_absent_and_malformed_part_extrusion_direction_mode() {
         FeatureDefinition::Extrude {
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                 vector: direction,
-                source: Some(ExtrusionDirectionSource::Custom),
+                source: Some(ExtrusionDirectionSource::Custom {}),
             },
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {

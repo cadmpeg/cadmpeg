@@ -269,9 +269,9 @@ pub(crate) fn sweep_orientation_is_incomplete(orientation: &SweepOrientation) ->
         SweepOrientation::Auxiliary { path, .. } => path_ref_is_incomplete(path),
         SweepOrientation::GuideSurface { faces } => face_selection_is_incomplete(faces),
         SweepOrientation::Binormal { .. } => false,
-        SweepOrientation::CorrectedFrenet | SweepOrientation::Fixed | SweepOrientation::Frenet => {
-            false
-        }
+        SweepOrientation::CorrectedFrenet {}
+        | SweepOrientation::Fixed {}
+        | SweepOrientation::Frenet {} => false,
     }
 }
 

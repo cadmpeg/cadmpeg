@@ -671,6 +671,7 @@ pub struct Loop {
 /// One ordered parameter-space representation of a coedge.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct PcurveUse {
     /// Parameter-space curve carrier.
     pub pcurve: PcurveId,
