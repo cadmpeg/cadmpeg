@@ -210,6 +210,43 @@
           "partition_streams": "1",
           "plain_streams": "0"
         },
+        "identity": {
+          "classification": "classified",
+          "dialects": {
+            "extra": [
+              {
+                "admission": "residual",
+                "declared": {
+                  "carrier": "stream@76",
+                  "schema": "SCH_TEST_1_9999"
+                },
+                "dialect": "parasolid:unknown",
+                "format": "parasolid"
+              }
+            ],
+            "primary": {
+              "admission": "admitted",
+              "declared": {
+                "splmsstr_version": "6"
+              },
+              "dialect": "nx:splmsstr",
+              "format": "nx"
+            }
+          }
+        }
+      },
+      "tolerances": {
+        "angular": 1e-10,
+        "linear": 1e-6
+      },
+      "units": {
+        "length": "millimeter"
+      }
+    },
+    "report": {
+      "geometry_transferred": true,
+      "identity": {
+        "classification": "classified",
         "dialects": {
           "extra": [
             {
@@ -230,41 +267,8 @@
             "dialect": "nx:splmsstr",
             "format": "nx"
           }
-        },
-        "format": "nx"
-      },
-      "tolerances": {
-        "angular": 1e-10,
-        "linear": 1e-6
-      },
-      "units": {
-        "length": "millimeter"
-      }
-    },
-    "report": {
-      "dialects": {
-        "extra": [
-          {
-            "admission": "residual",
-            "declared": {
-              "carrier": "stream@76",
-              "schema": "SCH_TEST_1_9999"
-            },
-            "dialect": "parasolid:unknown",
-            "format": "parasolid"
-          }
-        ],
-        "primary": {
-          "admission": "admitted",
-          "declared": {
-            "splmsstr_version": "6"
-          },
-          "dialect": "nx:splmsstr",
-          "format": "nx"
         }
       },
-      "format": "nx",
-      "geometry_transferred": true,
       "losses": [
         {
           "code": {
@@ -438,27 +442,6 @@
   },
   "inspect": {
     "container_kind": "splmsstr",
-    "dialects": {
-      "extra": [
-        {
-          "admission": "residual",
-          "declared": {
-            "carrier": "stream@76",
-            "schema": "SCH_TEST_1_9999"
-          },
-          "dialect": "parasolid:unknown",
-          "format": "parasolid"
-        }
-      ],
-      "primary": {
-        "admission": "admitted",
-        "declared": {
-          "splmsstr_version": "6"
-        },
-        "dialect": "nx:splmsstr",
-        "format": "nx"
-      }
-    },
     "entries": [
       {
         "attributes": {
@@ -499,7 +482,30 @@
         "uncompressed_size": 577
       }
     ],
-    "format": "nx",
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [
+          {
+            "admission": "residual",
+            "declared": {
+              "carrier": "stream@76",
+              "schema": "SCH_TEST_1_9999"
+            },
+            "dialect": "parasolid:unknown",
+            "format": "parasolid"
+          }
+        ],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "splmsstr_version": "6"
+          },
+          "dialect": "nx:splmsstr",
+          "format": "nx"
+        }
+      }
+    },
     "losses": [
       {
         "code": {

@@ -96,18 +96,20 @@
         "archive_version": "3",
         "container_kind": "3dm-chunks"
       },
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "admitted",
-          "declared": {
-            "archive_version": "3"
-          },
-          "dialect": "rhino:archive-3",
-          "format": "rhino"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "archive_version": "3"
+            },
+            "dialect": "rhino:archive-3",
+            "format": "rhino"
+          }
         }
-      },
-      "format": "rhino"
+      }
     },
     "tolerances": {
       "angular": 1e-10,
@@ -118,19 +120,21 @@
     }
   },
   "report": {
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "declared": {
-          "archive_version": "3"
-        },
-        "dialect": "rhino:archive-3",
-        "format": "rhino"
+    "geometry_transferred": false,
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "archive_version": "3"
+          },
+          "dialect": "rhino:archive-3",
+          "format": "rhino"
+        }
       }
     },
-    "format": "rhino",
-    "geometry_transferred": false,
     "losses": [
       {
         "code": {

@@ -215,7 +215,7 @@ fn a_decode_result_with_unclassified_source_yields_an_unclassified_report() {
     let mut ir = unit_cube();
     ir.source = Some(
         serde_json::from_value(serde_json::json!({
-            "format": "test",
+            "identity": {"classification": "unclassified", "format": "test"},
             "attributes": {},
         }))
         .unwrap(),

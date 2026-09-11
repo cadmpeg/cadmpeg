@@ -402,18 +402,18 @@ mod tests {
     }
 
     #[test]
-    fn decode_sidecar_uses_decode_report_dialect_omission_policy() {
+    fn decode_sidecar_states_its_report_identity_once() {
         let sidecar = DecodeSidecar::bind(b"cad-ir", report(), SourceFidelity::default());
         let json = sidecar.to_canonical_json().expect("serialize sidecar");
-        assert!(json.contains("\"dialects\":null"), "{json}");
-        let truncated = json.replace(",\"dialects\":null", "");
-        assert!(!truncated.contains("dialects"), "{truncated}");
+        assert!(
+            json.contains("\"identity\":{\"classification\":\"unclassified\",\"format\":\"test\"}"),
+            "{json}"
+        );
 
-        let parsed = DecodeSidecar::from_json(&truncated)
-            .expect("the reusable decode-report wire accepts omitted dialects");
+        let parsed = DecodeSidecar::from_json(&json).expect("the sidecar round-trips");
         assert!(parsed.report.dialects().is_none());
         assert_eq!(
-            serde_json::from_str::<DecodeSidecar>(&truncated)
+            serde_json::from_str::<DecodeSidecar>(&json)
                 .expect("direct sidecar deserialization uses the same policy"),
             parsed
         );

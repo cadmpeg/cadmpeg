@@ -1,18 +1,20 @@
 {
   "container_kind": "3dm-chunks",
-  "dialects": {
-    "extra": [],
-    "primary": {
-      "admission": "admitted",
-      "declared": {
-        "archive_version": "1"
-      },
-      "dialect": "rhino:archive-1",
-      "format": "rhino"
+  "entries": [],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "archive_version": "1"
+        },
+        "dialect": "rhino:archive-1",
+        "format": "rhino"
+      }
     }
   },
-  "entries": [],
-  "format": "rhino",
   "notes": [
     "archive version 1"
   ]

@@ -1,27 +1,5 @@
 {
   "container_kind": "stream",
-  "dialects": {
-    "extra": [
-      {
-        "admission": "admitted",
-        "declared": {
-          "reference_width": "4",
-          "save_format_major": "218",
-          "save_format_minor": "0"
-        },
-        "dialect": "acis:save-format-218",
-        "format": "acis"
-      }
-    ],
-    "primary": {
-      "admission": "admitted",
-      "declared": {
-        "encoding": "binary"
-      },
-      "dialect": "sat:acis-binary",
-      "format": "sat"
-    }
-  },
   "entries": [
     {
       "attributes": {
@@ -40,6 +18,30 @@
       "uncompressed_size": 440
     }
   ],
-  "format": "sat",
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [
+        {
+          "admission": "admitted",
+          "declared": {
+            "reference_width": "4",
+            "save_format_major": "218",
+            "save_format_minor": "0"
+          },
+          "dialect": "acis:save-format-218",
+          "format": "acis"
+        }
+      ],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "encoding": "binary"
+        },
+        "dialect": "sat:acis-binary",
+        "format": "sat"
+      }
+    }
+  },
   "notes": []
 }

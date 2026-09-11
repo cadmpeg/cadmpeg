@@ -93,17 +93,19 @@ fn summary_exposes_document_and_decode_dialect_identity() {
         r#"{
           "ir_version": "6",
           "source": {
-            "format": "rhino",
-            "attributes": {},
-            "dialects": {
-              "primary": {
-                "format": "rhino",
-                "dialect": "rhino:archive-80",
-                "declared": {"archive_version": "80"},
-                "admission": "admitted"
-              },
-              "extra": []
-            }
+            "identity": {
+              "classification": "classified",
+              "dialects": {
+                "primary": {
+                  "format": "rhino",
+                  "dialect": "rhino:archive-80",
+                  "declared": {"archive_version": "80"},
+                  "admission": "admitted"
+                },
+                "extra": []
+              }
+            },
+            "attributes": {}
           },
           "model": {},
           "native": {}
@@ -1278,7 +1280,8 @@ fn schema_sidecar_and_json_envelope() {
 
 const FIDELITY_SIDECAR: &str = r#"{
   "ir_sha256": "abc",
-  "report": {"format": "f3d", "transfer": "full", "geometry_transferred": true,
+  "report": {"identity": {"classification": "unclassified", "format": "f3d"},
+             "transfer": "full", "geometry_transferred": true,
              "coverage": {}, "losses": [], "notes": []},
   "fidelity": {
     "annotations": {"streams": ["Contents/Config-0"],

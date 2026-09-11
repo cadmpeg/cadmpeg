@@ -166,15 +166,17 @@
         "preview_count": "0",
         "stream_count": "2"
       },
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "admitted",
-          "dialect": "catia:inner-no-directory",
-          "format": "catia"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "dialect": "catia:inner-no-directory",
+            "format": "catia"
+          }
         }
-      },
-      "format": "catia"
+      }
     },
     "tolerances": {
       "angular": 1e-10,
@@ -527,16 +529,18 @@
       "unresolved_unreferenced_relation_expression_count": 0,
       "unselected_object_stream_run_count": 0
     },
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "dialect": "catia:inner-no-directory",
-        "format": "catia"
+    "geometry_transferred": true,
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "dialect": "catia:inner-no-directory",
+          "format": "catia"
+        }
       }
     },
-    "format": "catia",
-    "geometry_transferred": true,
     "losses": [
       {
         "code": {

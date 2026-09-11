@@ -96,15 +96,17 @@
         "outer_dir_offset": "36",
         "preview_count": "0"
       },
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "residual",
-          "dialect": "catia:unknown",
-          "format": "catia"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "residual",
+            "dialect": "catia:unknown",
+            "format": "catia"
+          }
         }
-      },
-      "format": "catia"
+      }
     },
     "tolerances": {
       "angular": 1e-10,
@@ -449,16 +451,18 @@
       "unresolved_storage_record_count": 0,
       "unresolved_unreferenced_relation_expression_count": 0
     },
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "residual",
-        "dialect": "catia:unknown",
-        "format": "catia"
+    "geometry_transferred": false,
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "residual",
+          "dialect": "catia:unknown",
+          "format": "catia"
+        }
       }
     },
-    "format": "catia",
-    "geometry_transferred": false,
     "losses": [
       {
         "code": {

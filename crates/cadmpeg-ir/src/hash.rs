@@ -515,32 +515,33 @@ mod tests {
     ///
     /// ```text
     ///   "source": {
-    ///     "format": "pin",
+    ///     "identity": {
+    ///       "classification": "classified",
+    ///       "dialects": {
+    ///         "primary": {
+    ///           "format": "pin",
+    ///           "dialect": "pin:test",
+    ///           "admission": "admitted"
+    ///         },
+    ///         "extra": []
+    ///       }
+    ///     },
     ///     "attributes": {
     ///       "file_size": "4096"
-    ///     },
-    ///     "dialects": {
-    ///       "primary": {
-    ///         "format": "pin",
-    ///         "dialect": "pin:test",
-    ///         "admission": "admitted"
-    ///       },
-    ///       "extra": []
     ///     }
     ///   },
     /// ```
     ///
-    /// `dialects` is the member the wire format makes unconditional. This is the
-    /// only pin this shape change moves: the other pinned documents carry no
-    /// source metadata, so their normalized form still elides the whole
-    /// `source` member.
+    /// The identity states the format once, inside its classification. The other
+    /// pinned documents carry no source metadata, so their normalized form still
+    /// elides the whole `source` member.
     #[test]
     fn pins_document_digest_over_source_metadata() {
         let ir = pinned_document_with_source();
         let independently_normalized = cloned_local_digest(&ir, "pin", "pin:test:source-image#0");
         assert_eq!(
             independently_normalized,
-            "3c2f8334870f7c44b3de17bda445f4f56003a68e22f6078f11f96ed5109725a9"
+            "fb3cb2be7e4de64132d2a0bb7029faf9f0d6edb69aa2b8dbed06ec632101c202"
         );
         assert_eq!(
             document_local_sha256(&ir, "pin", "pin:test:source-image#0"),

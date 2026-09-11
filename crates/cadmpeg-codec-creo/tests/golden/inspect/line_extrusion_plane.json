@@ -1,16 +1,5 @@
 {
   "container_kind": "psb",
-  "dialects": {
-    "extra": [],
-    "primary": {
-      "admission": "admitted",
-      "declared": {
-        "version_line": "#UGC:2 P c"
-      },
-      "dialect": "creo:nd",
-      "format": "creo"
-    }
-  },
   "entries": [
     {
       "attributes": {
@@ -24,7 +13,20 @@
       "uncompressed_size": 68
     }
   ],
-  "format": "creo",
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "version_line": "#UGC:2 P c"
+        },
+        "dialect": "creo:nd",
+        "format": "creo"
+      }
+    }
+  },
   "notes": [
     "PSB container: #UGC:2 P c",
     "layout: ND; 1 section(s) enumerated",

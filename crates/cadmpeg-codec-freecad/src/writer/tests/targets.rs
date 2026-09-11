@@ -323,7 +323,7 @@ fn inherit_refuses_a_source_that_records_no_dialect() {
     let format = source.format().to_owned();
     ir.source = Some(
         serde_json::from_value(serde_json::json!({
-            "format": format,
+            "identity": {"classification": "unclassified", "format": format},
             "attributes": source.attributes,
         }))
         .unwrap(),

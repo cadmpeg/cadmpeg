@@ -1,17 +1,5 @@
 {
   "container_kind": "iso-10303-21-clear-text",
-  "dialects": {
-    "extra": [],
-    "primary": {
-      "admission": "admitted",
-      "declared": {
-        "file_schema_identifier": "CONFIG_CONTROL_DESIGN",
-        "implementation_level": "2;1"
-      },
-      "dialect": "step:ap203-e1",
-      "format": "step"
-    }
-  },
   "entries": [
     {
       "attributes": {},
@@ -29,7 +17,21 @@
       "role": "entity-records"
     }
   ],
-  "format": "step",
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "file_schema_identifier": "CONFIG_CONTROL_DESIGN",
+          "implementation_level": "2;1"
+        },
+        "dialect": "step:ap203-e1",
+        "format": "step"
+      }
+    }
+  },
   "losses": [
     {
       "code": {

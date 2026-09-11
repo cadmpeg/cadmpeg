@@ -359,6 +359,34 @@
         "entity_instances": "59",
         "schema": "AUTOMOTIVE_DESIGN"
       },
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "file_schema_identifier": "AUTOMOTIVE_DESIGN",
+              "implementation_level": "2;1"
+            },
+            "dialect": "step:ap214",
+            "format": "step"
+          }
+        }
+      }
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "geometry_transferred": true,
+    "identity": {
+      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
@@ -370,32 +398,8 @@
           "dialect": "step:ap214",
           "format": "step"
         }
-      },
-      "format": "step"
-    },
-    "tolerances": {
-      "angular": 1e-10,
-      "linear": 1e-6
-    },
-    "units": {
-      "length": "millimeter"
-    }
-  },
-  "report": {
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "declared": {
-          "file_schema_identifier": "AUTOMOTIVE_DESIGN",
-          "implementation_level": "2;1"
-        },
-        "dialect": "step:ap214",
-        "format": "step"
       }
     },
-    "format": "step",
-    "geometry_transferred": true,
     "losses": [
       {
         "code": {

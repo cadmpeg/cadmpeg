@@ -1,18 +1,5 @@
 {
   "container_kind": "zip",
-  "dialects": {
-    "extra": [],
-    "primary": {
-      "admission": "admitted",
-      "declared": {
-        "file_version": "1",
-        "program_version": "1.1R20260414 (Git shallow)",
-        "schema_version": "4"
-      },
-      "dialect": "fcstd:schema-4",
-      "format": "fcstd"
-    }
-  },
   "entries": [
     {
       "attributes": {
@@ -41,7 +28,22 @@
       "uncompressed_size": 2387
     }
   ],
-  "format": "fcstd",
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "file_version": "1",
+          "program_version": "1.1R20260414 (Git shallow)",
+          "schema_version": "4"
+        },
+        "dialect": "fcstd:schema-4",
+        "format": "fcstd"
+      }
+    }
+  },
   "notes": [
     "SchemaVersion=4",
     "FileVersion=1",

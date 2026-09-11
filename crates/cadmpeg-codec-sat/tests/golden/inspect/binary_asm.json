@@ -1,27 +1,5 @@
 {
   "container_kind": "stream",
-  "dialects": {
-    "extra": [
-      {
-        "admission": "admitted",
-        "declared": {
-          "reference_width": "8",
-          "save_format_major": "232",
-          "save_format_minor": "0"
-        },
-        "dialect": "acis:asm-binaryfile-8",
-        "format": "acis"
-      }
-    ],
-    "primary": {
-      "admission": "admitted",
-      "declared": {
-        "encoding": "binary"
-      },
-      "dialect": "sat:asm-binary",
-      "format": "sat"
-    }
-  },
   "entries": [
     {
       "attributes": {
@@ -40,6 +18,30 @@
       "uncompressed_size": 588
     }
   ],
-  "format": "sat",
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [
+        {
+          "admission": "admitted",
+          "declared": {
+            "reference_width": "8",
+            "save_format_major": "232",
+            "save_format_minor": "0"
+          },
+          "dialect": "acis:asm-binaryfile-8",
+          "format": "acis"
+        }
+      ],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "encoding": "binary"
+        },
+        "dialect": "sat:asm-binary",
+        "format": "sat"
+      }
+    }
+  },
   "notes": []
 }

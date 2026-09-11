@@ -129,103 +129,22 @@ impl<'de> Deserialize<'de> for ContainerKind {
 }
 
 /// The result of inspecting a container without decoding its geometry.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct ContainerSummary {
-    classification: FormatIdentity<DialectLayers>,
+    /// Format identity: classified dialect layers, or a bare known format.
+    identity: FormatIdentity<DialectLayers>,
     /// Container kind, for example, `"zip"`.
+    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     pub container_kind: ContainerKind,
     /// Enumerated entries.
     pub entries: Vec<ContainerEntry>,
-    /// Losses resolved during inspection.
+    /// Losses resolved during inspection. Omitted when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub losses: Vec<LossNote>,
     /// Codec-defined informational notes.
     pub notes: Vec<String>,
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct ContainerSummaryWire<
-    Strings,
-    Entries,
-    Losses: Default + AsRef<[LossNote]>,
-    Notes,
-    Dialects: Default,
-> {
-    format: Strings,
-    container_kind: Strings,
-    entries: Entries,
-    /// Omitted when empty. Summaries written before typed inspection losses
-    /// existed therefore read back with no recorded losses.
-    #[serde(default, skip_serializing_if = "losses_empty")]
-    losses: Losses,
-    notes: Notes,
-    /// Always serialized. Summaries written before the field existed omit the
-    /// key and read back as unclassified.
-    #[serde(default)]
-    dialects: Dialects,
-}
-
-fn losses_empty(losses: &impl AsRef<[LossNote]>) -> bool {
-    losses.as_ref().is_empty()
-}
-
-type OwnedContainerSummaryWire = ContainerSummaryWire<
-    String,
-    Vec<ContainerEntry>,
-    Vec<LossNote>,
-    Vec<String>,
-    Option<DialectLayers>,
->;
-
-impl Serialize for ContainerSummary {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        ContainerSummaryWire {
-            format: self.format(),
-            container_kind: self.container_kind.as_str(),
-            entries: self.entries.as_slice(),
-            losses: self.losses.as_slice(),
-            notes: self.notes.as_slice(),
-            dialects: self.dialects(),
-        }
-        .serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for ContainerSummary {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = OwnedContainerSummaryWire::deserialize(deserializer)?;
-        let classification = FormatIdentity::from_wire(wire.format, wire.dialects)
-            .map_err(serde::de::Error::custom)?;
-        Ok(Self {
-            classification,
-            container_kind: ContainerKind::parse(&wire.container_kind).ok_or_else(|| {
-                serde::de::Error::custom(format!(
-                    "container_kind: unknown value {}",
-                    wire.container_kind
-                ))
-            })?,
-            entries: wire.entries,
-            losses: wire.losses,
-            notes: wire.notes,
-        })
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for ContainerSummary {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "ContainerSummary".into()
-    }
-
-    fn schema_id() -> std::borrow::Cow<'static, str> {
-        concat!(module_path!(), "::ContainerSummary").into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        let mut schema = OwnedContainerSummaryWire::json_schema(generator);
-        crate::schema::require_object_fields(&mut schema, ["dialects"]);
-        schema
-    }
 }
 
 impl ContainerSummary {
@@ -239,7 +158,7 @@ impl ContainerSummary {
         notes: Vec<String>,
     ) -> Self {
         Self {
-            classification: FormatIdentity::classified(dialects),
+            identity: FormatIdentity::classified(dialects),
             container_kind,
             entries,
             losses,
@@ -257,7 +176,7 @@ impl ContainerSummary {
         notes: Vec<String>,
     ) -> Self {
         Self {
-            classification: FormatIdentity::unclassified(format),
+            identity: FormatIdentity::unclassified(format),
             container_kind,
             entries,
             losses,
@@ -268,13 +187,13 @@ impl ContainerSummary {
     /// Returns the source format id.
     #[must_use]
     pub fn format(&self) -> &str {
-        self.classification.format()
+        self.identity.format()
     }
 
     /// Returns the classified dialect layers, if inspection classified them.
     #[must_use]
-    pub fn dialects(&self) -> Option<&DialectLayers> {
-        self.classification.classified_payload()
+    pub const fn dialects(&self) -> Option<&DialectLayers> {
+        self.identity.classified_payload()
     }
 }
 
@@ -284,10 +203,8 @@ mod tests {
 
     use super::{ContainerKind, ContainerSummary};
 
-    /// Current writers emit the dialect field and omit an empty loss set.
-    /// Readers still accept summaries written before either field existed.
     #[test]
-    fn an_unclassified_summary_serializes_required_empty_fields() {
+    fn an_unclassified_summary_states_its_format_inside_the_identity() {
         let summary = ContainerSummary::unclassified(
             "rhino",
             ContainerKind::Flat,
@@ -296,23 +213,19 @@ mod tests {
             Vec::new(),
         );
 
-        let bare = serde_json::to_string(&summary).expect("a summary serializes");
-        assert!(!bare.contains("\"losses\""), "{bare}");
-        assert!(bare.contains("\"dialects\":null"), "{bare}");
+        let bare = serde_json::to_value(&summary).expect("a summary serializes");
+        assert!(bare.get("losses").is_none(), "{bare}");
+        assert_eq!(bare["identity"]["classification"], "unclassified");
+        assert_eq!(bare["identity"]["format"], "rhino");
+        assert!(bare.get("format").is_none(), "{bare}");
         assert_eq!(
-            serde_json::from_str::<ContainerSummary>(&bare).expect("a summary round-trips"),
-            summary
-        );
-
-        let legacy = r#"{"format":"rhino","container_kind":"flat","entries":[],"notes":[]}"#;
-        assert_eq!(
-            serde_json::from_str::<ContainerSummary>(legacy).expect("a legacy summary reads"),
+            serde_json::from_value::<ContainerSummary>(bare).expect("a summary round-trips"),
             summary
         );
     }
 
     #[test]
-    fn classified_summary_wire_uses_and_requires_the_primary_format() {
+    fn a_classified_summary_carries_its_format_once() {
         let primary = DialectMatch::admitted(DialectId::pinned("rhino:archive-80"));
         let extra = DialectMatch::admitted(DialectId::pinned("acis:save-format-217"));
         let summary = ContainerSummary::classified(
@@ -323,11 +236,12 @@ mod tests {
             Vec::new(),
         );
         let classified = serde_json::to_value(&summary).expect("a summary serializes");
+        assert_eq!(classified["identity"]["classification"], "classified");
         assert_eq!(
-            classified["dialects"],
+            classified["identity"]["dialects"],
             serde_json::json!({"primary": primary, "extra": [extra]})
         );
-        assert_eq!(classified["format"], "rhino");
+        assert!(classified["identity"].get("format").is_none());
 
         let restored: ContainerSummary =
             serde_json::from_value(classified.clone()).expect("classified summary reads");
@@ -340,26 +254,23 @@ mod tests {
             "rhino"
         );
 
-        let mut malformed = classified;
-        malformed["format"] = serde_json::json!("step");
-        let error = serde_json::from_value::<ContainerSummary>(malformed)
-            .expect_err("a classified summary must match its primary dialect format");
-        assert_eq!(
-            error.to_string(),
-            "format \"step\" does not match classified payload format \"rhino\""
-        );
+        let mut restated = classified;
+        restated["identity"]["format"] = serde_json::json!("step");
+        let error = serde_json::from_value::<ContainerSummary>(restated)
+            .expect_err("a classified identity carries no second format");
+        assert!(error.to_string().contains("format"), "{error}");
     }
 
     #[cfg(feature = "schema")]
     #[test]
-    fn current_summary_schema_requires_the_always_serialized_dialects_field() {
+    fn current_summary_schema_requires_its_identity() {
         let schema = serde_json::to_value(schemars::schema_for!(ContainerSummary))
             .expect("summary schema serializes");
         let required = schema["required"]
             .as_array()
             .expect("summary schema has required fields");
         assert!(
-            required.iter().any(|field| field == "dialects"),
+            required.iter().any(|field| field == "identity"),
             "{schema:#}"
         );
         assert!(

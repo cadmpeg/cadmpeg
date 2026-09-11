@@ -1,15 +1,17 @@
 {
   "container_kind": "v5-cfv2",
-  "dialects": {
-    "extra": [],
-    "primary": {
-      "admission": "admitted",
-      "dialect": "catia:zero-entity",
-      "format": "catia"
+  "entries": [],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "dialect": "catia:zero-entity",
+        "format": "catia"
+      }
     }
   },
-  "entries": [],
-  "format": "catia",
   "notes": [
     "outer V5_CFV2 container: directory offset 0 + length 0 = 0 (file size 181); variant: zero-entity a9 03 (no nested container): analytic carriers decoded",
     "no nested V5_CFV2 sub-container (outer-preamble record families only)",

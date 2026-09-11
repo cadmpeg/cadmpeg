@@ -366,7 +366,7 @@ fn an_unknown_dialect_is_refused_with_the_encoder_catalog() {
         .as_array()
         .is_some_and(|available| !available.is_empty()));
     assert!(value["decode_report"].is_object());
-    assert!(value["decode_report"]["dialects"].is_object());
+    assert!(value["decode_report"]["identity"]["dialects"].is_object());
     assert!(value["check_report"].is_object());
 
     // Destination safety is checked before input work or planning. An existing

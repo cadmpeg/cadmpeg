@@ -1519,6 +1519,35 @@
         "representation": "compressed-ascii",
         "sender_product": "product"
       },
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "effective_version": "5.3",
+              "representation": "compressed-ascii",
+              "version_flag": "11"
+            },
+            "dialect": "iges:5.3-compressed-ascii",
+            "format": "iges"
+          }
+        }
+      }
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 0.001
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "geometry_transferred": true,
+    "identity": {
+      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
@@ -1531,33 +1560,8 @@
           "dialect": "iges:5.3-compressed-ascii",
           "format": "iges"
         }
-      },
-      "format": "iges"
-    },
-    "tolerances": {
-      "angular": 1e-10,
-      "linear": 0.001
-    },
-    "units": {
-      "length": "millimeter"
-    }
-  },
-  "report": {
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "declared": {
-          "effective_version": "5.3",
-          "representation": "compressed-ascii",
-          "version_flag": "11"
-        },
-        "dialect": "iges:5.3-compressed-ascii",
-        "format": "iges"
       }
     },
-    "format": "iges",
-    "geometry_transferred": true,
     "losses": [],
     "notes": [
       "entities=2",

@@ -1,13 +1,5 @@
 {
   "container_kind": "v5-cfv2",
-  "dialects": {
-    "extra": [],
-    "primary": {
-      "admission": "residual",
-      "dialect": "catia:unknown",
-      "format": "catia"
-    }
-  },
   "entries": [
     {
       "attributes": {
@@ -23,7 +15,17 @@
       "uncompressed_size": 20
     }
   ],
-  "format": "catia",
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "residual",
+        "dialect": "catia:unknown",
+        "format": "catia"
+      }
+    }
+  },
   "losses": [
     {
       "code": {

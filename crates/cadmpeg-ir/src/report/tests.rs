@@ -280,17 +280,13 @@ fn unclassified_reports_serialize_empty_dialect_keys() {
         TransferLedger::default(),
     );
     let rendered = serde_json::to_string(&decode).unwrap();
-    assert!(rendered.contains("\"dialects\":null"), "{rendered}");
+    assert!(
+        rendered
+            .contains("\"identity\":{\"classification\":\"unclassified\",\"format\":\"rhino\"}"),
+        "{rendered}"
+    );
     assert_eq!(
         serde_json::from_str::<DecodeReport>(&rendered).unwrap(),
-        decode
-    );
-
-    // A report persisted before the field existed omits the key entirely.
-    let legacy = rendered.replace(",\"dialects\":null", "");
-    assert!(!legacy.contains("dialects"), "{legacy}");
-    assert_eq!(
-        serde_json::from_str::<DecodeReport>(&legacy).unwrap(),
         decode
     );
 
@@ -391,7 +387,7 @@ fn classified_report_wire_requires_its_primary_format() {
     let golden = serde_json::to_string(&report).unwrap();
     assert_eq!(
         golden,
-        r#"{"format":"rhino","transfer":"full","geometry_transferred":true,"losses":[],"notes":[],"dialects":{"primary":{"format":"rhino","dialect":"rhino:archive-80","admission":"admitted"},"extra":[]}}"#
+        r#"{"identity":{"classification":"classified","dialects":{"primary":{"format":"rhino","dialect":"rhino:archive-80","admission":"admitted"},"extra":[]}},"transfer":"full","geometry_transferred":true,"losses":[],"notes":[]}"#
     );
     assert_eq!(
         serde_json::from_str::<DecodeReport>(&golden).unwrap(),
@@ -410,15 +406,14 @@ fn classified_report_wire_requires_its_primary_format() {
         "{error}"
     );
 
-    let mismatched = golden.replacen("\"format\":\"rhino\"", "\"format\":\"step\"", 1);
-    let error = serde_json::from_str::<DecodeReport>(&mismatched)
-        .expect_err("the report and its primary layer must name the same format");
-    assert!(
-        error
-            .to_string()
-            .contains("format \"step\" does not match classified payload format \"rhino\""),
-        "{error}"
+    let restated = golden.replacen(
+        "\"classification\":\"classified\"",
+        "\"classification\":\"classified\",\"format\":\"step\"",
+        1,
     );
+    let error = serde_json::from_str::<DecodeReport>(&restated)
+        .expect_err("a classified identity carries no second format");
+    assert!(error.to_string().contains("format"), "{error}");
 }
 
 #[test]
@@ -458,12 +453,11 @@ fn namespaced_loss_rejects_reserved_namespace() {
 #[test]
 fn a_decode_transfer_states_its_scope_and_carries_only_its_own_keys() {
     let base = serde_json::json!({
-        "format": "rhino",
+        "identity": {"classification": "unclassified", "format": "rhino"},
         "transfer": "full",
         "geometry_transferred": true,
         "losses": [],
         "notes": [],
-        "dialects": null,
     });
     let report = serde_json::from_value::<DecodeReport>(base.clone()).expect("a full decode");
     assert_eq!(report.transfer(), DecodeTransfer::full(true));

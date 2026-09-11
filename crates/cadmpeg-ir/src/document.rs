@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Versioned document structure and canonical arena ordering.
 
-use std::borrow::{Borrow, Cow};
+use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -1354,69 +1354,15 @@ pub fn entity_census(ir: &CadIr) -> BTreeMap<CensusKey, usize> {
 /// source bytes must not use that suffix. See
 /// [`crate::hash::document_local_sha256`] and
 /// [`cadmpeg_ir::compare::is_local_digest_attribute`].
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SourceMeta {
-    classification: FormatIdentity<DialectLayers>,
-    /// Format-specific attributes.
-    pub attributes: BTreeMap<String, String>,
-}
-
-/// Wire shape of [`SourceMeta`], used for both directions.
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct SourceMetaWire<'a> {
-    format: Cow<'a, str>,
-    #[serde(default = "SourceMetaWire::default_attributes")]
-    attributes: Cow<'a, BTreeMap<String, String>>,
+#[serde(deny_unknown_fields)]
+pub struct SourceMeta {
+    /// Format identity: classified dialect layers, or a bare known format.
+    identity: FormatIdentity<DialectLayers>,
+    /// Format-specific attributes.
     #[serde(default)]
-    dialects: Option<Cow<'a, DialectLayers>>,
-}
-
-impl SourceMetaWire<'_> {
-    fn default_attributes() -> Cow<'static, BTreeMap<String, String>> {
-        Cow::Owned(BTreeMap::new())
-    }
-}
-
-impl Serialize for SourceMeta {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        SourceMetaWire {
-            format: Cow::Borrowed(self.format()),
-            attributes: Cow::Borrowed(&self.attributes),
-            dialects: self.dialects().map(Cow::Borrowed),
-        }
-        .serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for SourceMeta {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = SourceMetaWire::deserialize(deserializer)?;
-        let classification =
-            FormatIdentity::from_wire(wire.format.into_owned(), wire.dialects.map(Cow::into_owned))
-                .map_err(serde::de::Error::custom)?;
-        Ok(Self {
-            classification,
-            attributes: wire.attributes.into_owned(),
-        })
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for SourceMeta {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "SourceMeta".into()
-    }
-
-    fn schema_id() -> std::borrow::Cow<'static, str> {
-        concat!(module_path!(), "::SourceMeta").into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        let mut schema = SourceMetaWire::json_schema(generator);
-        crate::schema::require_object_fields(&mut schema, ["dialects"]);
-        schema
-    }
+    pub attributes: BTreeMap<String, String>,
 }
 
 impl SourceMeta {
@@ -1424,27 +1370,27 @@ impl SourceMeta {
     #[must_use]
     pub fn classified(dialects: DialectLayers, attributes: BTreeMap<String, String>) -> Self {
         Self {
-            classification: FormatIdentity::classified(dialects),
+            identity: FormatIdentity::classified(dialects),
             attributes,
         }
     }
 
     /// The complete source identity: format plus classified layers, if any.
     #[must_use]
-    pub(crate) fn classification(&self) -> &FormatIdentity<DialectLayers> {
-        &self.classification
+    pub(crate) const fn classification(&self) -> &FormatIdentity<DialectLayers> {
+        &self.identity
     }
 
     /// Registry format namespace of this source's primary layer.
     #[must_use]
     pub fn format(&self) -> &str {
-        self.classification.format()
+        self.identity.format()
     }
 
     /// Returns every source dialect layer when the source was classified.
     #[must_use]
-    pub fn dialects(&self) -> Option<&DialectLayers> {
-        self.classification.classified_payload()
+    pub const fn dialects(&self) -> Option<&DialectLayers> {
+        self.identity.classified_payload()
     }
 
     /// Returns the primary source dialect match when the source was classified.

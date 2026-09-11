@@ -1,23 +1,5 @@
 {
   "container_kind": "sldprt-blocks",
-  "dialects": {
-    "extra": [
-      {
-        "admission": "admitted",
-        "declared": {
-          "carrier": "block@8:Contents/Config-0-Partition+0",
-          "schema": "SCH_SW_33103_11000"
-        },
-        "dialect": "parasolid:sch-sw-33103",
-        "format": "parasolid"
-      }
-    ],
-    "primary": {
-      "admission": "residual",
-      "dialect": "sldprt:unknown",
-      "format": "sldprt"
-    }
-  },
   "entries": [
     {
       "attributes": {
@@ -61,7 +43,27 @@
       "uncompressed_size": 64
     }
   ],
-  "format": "sldprt",
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [
+        {
+          "admission": "admitted",
+          "declared": {
+            "carrier": "block@8:Contents/Config-0-Partition+0",
+            "schema": "SCH_SW_33103_11000"
+          },
+          "dialect": "parasolid:sch-sw-33103",
+          "format": "parasolid"
+        }
+      ],
+      "primary": {
+        "admission": "residual",
+        "dialect": "sldprt:unknown",
+        "format": "sldprt"
+      }
+    }
+  },
   "losses": [
     {
       "code": {

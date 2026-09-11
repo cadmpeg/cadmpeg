@@ -248,18 +248,20 @@
         "section_count": "1",
         "version_line": "#UGC:2 P c"
       },
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "residual",
-          "declared": {
-            "version_line": "#UGC:2 P c"
-          },
-          "dialect": "creo:unknown",
-          "format": "creo"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "residual",
+            "declared": {
+              "version_line": "#UGC:2 P c"
+            },
+            "dialect": "creo:unknown",
+            "format": "creo"
+          }
         }
-      },
-      "format": "creo"
+      }
     },
     "tolerances": {
       "angular": 1e-10,
@@ -647,19 +649,21 @@
       "visible_spline_surface_row_count": 0,
       "visible_torus_or_sphere_surface_row_count": 0
     },
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "residual",
-        "declared": {
-          "version_line": "#UGC:2 P c"
-        },
-        "dialect": "creo:unknown",
-        "format": "creo"
+    "geometry_transferred": false,
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "residual",
+          "declared": {
+            "version_line": "#UGC:2 P c"
+          },
+          "dialect": "creo:unknown",
+          "format": "creo"
+        }
       }
     },
-    "format": "creo",
-    "geometry_transferred": false,
     "losses": [
       {
         "code": {

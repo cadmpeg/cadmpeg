@@ -3984,6 +3984,54 @@
           "plain_streams": "0",
           "rmfastload_active_object_count": "50"
         },
+        "identity": {
+          "classification": "classified",
+          "dialects": {
+            "extra": [
+              {
+                "admission": "residual",
+                "declared": {
+                  "carrier": "stream@121",
+                  "schema": "SCH_TEST_1_9999"
+                },
+                "dialect": "parasolid:unknown",
+                "format": "parasolid",
+                "instance": "stream@121"
+              },
+              {
+                "admission": "residual",
+                "declared": {
+                  "carrier": "stream@1658",
+                  "schema": "SCH_TEST_1_9999"
+                },
+                "dialect": "parasolid:unknown",
+                "format": "parasolid",
+                "instance": "stream@1658"
+              }
+            ],
+            "primary": {
+              "admission": "admitted",
+              "declared": {
+                "splmsstr_version": "6"
+              },
+              "dialect": "nx:splmsstr",
+              "format": "nx"
+            }
+          }
+        }
+      },
+      "tolerances": {
+        "angular": 1e-10,
+        "linear": 1e-6
+      },
+      "units": {
+        "length": "millimeter"
+      }
+    },
+    "report": {
+      "geometry_transferred": true,
+      "identity": {
+        "classification": "classified",
         "dialects": {
           "extra": [
             {
@@ -4015,52 +4063,8 @@
             "dialect": "nx:splmsstr",
             "format": "nx"
           }
-        },
-        "format": "nx"
-      },
-      "tolerances": {
-        "angular": 1e-10,
-        "linear": 1e-6
-      },
-      "units": {
-        "length": "millimeter"
-      }
-    },
-    "report": {
-      "dialects": {
-        "extra": [
-          {
-            "admission": "residual",
-            "declared": {
-              "carrier": "stream@121",
-              "schema": "SCH_TEST_1_9999"
-            },
-            "dialect": "parasolid:unknown",
-            "format": "parasolid",
-            "instance": "stream@121"
-          },
-          {
-            "admission": "residual",
-            "declared": {
-              "carrier": "stream@1658",
-              "schema": "SCH_TEST_1_9999"
-            },
-            "dialect": "parasolid:unknown",
-            "format": "parasolid",
-            "instance": "stream@1658"
-          }
-        ],
-        "primary": {
-          "admission": "admitted",
-          "declared": {
-            "splmsstr_version": "6"
-          },
-          "dialect": "nx:splmsstr",
-          "format": "nx"
         }
       },
-      "format": "nx",
-      "geometry_transferred": true,
       "losses": [
         {
           "code": {
@@ -6409,38 +6413,6 @@
   },
   "inspect": {
     "container_kind": "splmsstr",
-    "dialects": {
-      "extra": [
-        {
-          "admission": "residual",
-          "declared": {
-            "carrier": "stream@121",
-            "schema": "SCH_TEST_1_9999"
-          },
-          "dialect": "parasolid:unknown",
-          "format": "parasolid",
-          "instance": "stream@121"
-        },
-        {
-          "admission": "residual",
-          "declared": {
-            "carrier": "stream@1658",
-            "schema": "SCH_TEST_1_9999"
-          },
-          "dialect": "parasolid:unknown",
-          "format": "parasolid",
-          "instance": "stream@1658"
-        }
-      ],
-      "primary": {
-        "admission": "admitted",
-        "declared": {
-          "splmsstr_version": "6"
-        },
-        "dialect": "nx:splmsstr",
-        "format": "nx"
-      }
-    },
     "entries": [
       {
         "attributes": {
@@ -6519,7 +6491,41 @@
         "uncompressed_size": 6634
       }
     ],
-    "format": "nx",
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [
+          {
+            "admission": "residual",
+            "declared": {
+              "carrier": "stream@121",
+              "schema": "SCH_TEST_1_9999"
+            },
+            "dialect": "parasolid:unknown",
+            "format": "parasolid",
+            "instance": "stream@121"
+          },
+          {
+            "admission": "residual",
+            "declared": {
+              "carrier": "stream@1658",
+              "schema": "SCH_TEST_1_9999"
+            },
+            "dialect": "parasolid:unknown",
+            "format": "parasolid",
+            "instance": "stream@1658"
+          }
+        ],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "splmsstr_version": "6"
+          },
+          "dialect": "nx:splmsstr",
+          "format": "nx"
+        }
+      }
+    },
     "losses": [
       {
         "code": {

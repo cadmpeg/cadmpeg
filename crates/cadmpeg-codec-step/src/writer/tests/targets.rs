@@ -246,7 +246,7 @@ fn inherit_refuses_a_step_source_that_records_no_dialect() {
     let mut ir = CadIr::empty();
     ir.source = Some(
         serde_json::from_value(serde_json::json!({
-            "format": crate::dialect::FORMAT,
+            "identity": {"classification": "unclassified", "format": crate::dialect::FORMAT},
             "attributes": {},
         }))
         .unwrap(),

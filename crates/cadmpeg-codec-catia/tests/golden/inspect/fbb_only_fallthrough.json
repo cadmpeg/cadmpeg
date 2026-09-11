@@ -1,13 +1,5 @@
 {
   "container_kind": "v5-cfv2",
-  "dialects": {
-    "extra": [],
-    "primary": {
-      "admission": "admitted",
-      "dialect": "catia:fbb-only",
-      "format": "catia"
-    }
-  },
   "entries": [
     {
       "attributes": {
@@ -36,7 +28,17 @@
       "uncompressed_size": 198
     }
   ],
-  "format": "catia",
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "dialect": "catia:fbb-only",
+        "format": "catia"
+      }
+    }
+  },
   "notes": [
     "outer V5_CFV2 container: directory offset 587 + length 0 = 587 (file size 587); variant: FBB-only partial spine (width-selected W∈{1,2,3} edge handles, no standard delimiter): vertex and analytic carrier decode supported",
     "nested V5_CFV2 at file offset 16 with a CATIA_V5 CB0001 directory of 2 stream(s)",
