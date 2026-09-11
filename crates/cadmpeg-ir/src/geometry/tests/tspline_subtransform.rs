@@ -90,3 +90,43 @@ fn subtransform_wire_rejects_missing_resolved_payload() {
         assert_eq!(error.to_string(), "T-spline subtransform is unresolved");
     }
 }
+
+/// The two program graphs are parsed from the subtransform, so the wire states
+/// them nowhere and cannot disagree with them.
+#[test]
+fn a_tspline_construction_states_no_program_graph_on_its_wire() {
+    use super::super::TSplineSurfaceConstruction;
+
+    let inline = TSplineSubtransform::Inline(
+        InlineTSplineSubtransform::try_new("v 1 2", None, "e 3").unwrap(),
+    );
+    let construction = TSplineSurfaceConstruction::try_new(
+        [[0.0, 1.0], [0.0, 1.0]],
+        7,
+        inline,
+        4,
+        Default::default(),
+        false,
+        None,
+    )
+    .unwrap();
+    assert_eq!(construction.program_graph().records().len(), 1);
+
+    let wire = serde_json::to_value(&construction).unwrap();
+    assert!(wire.get("program_graph").is_none());
+    assert!(wire.get("values_graph").is_none());
+    assert_eq!(
+        serde_json::from_value::<TSplineSurfaceConstruction>(wire.clone()).unwrap(),
+        construction
+    );
+
+    let mut restated = wire;
+    restated.as_object_mut().unwrap().insert(
+        "program_graph".to_string(),
+        json!({"headers": [], "records": [], "unparsed_lines": []}),
+    );
+    let error = serde_json::from_value::<TSplineSurfaceConstruction>(restated)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("program_graph"), "{error}");
+}

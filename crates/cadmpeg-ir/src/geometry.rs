@@ -2120,7 +2120,12 @@ impl TSplineSubtransform {
 }
 
 /// Complete native `t_spl_sur` wrapper.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    try_from = "TSplineSurfaceConstructionWire",
+    into = "TSplineSurfaceConstructionWire"
+)]
 pub struct TSplineSurfaceConstruction {
     /// Ordered U and V native parameter intervals.
     parameter_ranges: [crate::topology::ParameterInterval; 2],
@@ -2227,66 +2232,40 @@ impl TSplineSurfaceConstruction {
     }
 }
 
-#[derive(Serialize)]
-struct TSplineSurfaceConstructionWriteWire<'a> {
-    parameter_ranges: &'a [[f64; 2]; 2],
-    type_code: i64,
-    subtransform: &'a TSplineSubtransform,
-    program_graph: &'a TSplineProgram,
-    values_graph: &'a TSplineProgram,
-    trailing_value: i64,
-    discontinuities: &'a [Vec<f64>; 6],
-    discontinuity_flag: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    revision_form: Option<&'a RevisionSurfaceForm>,
-}
-
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct TSplineSurfaceConstructionReadWire {
+#[cfg_attr(feature = "schema", schemars(rename = "TSplineSurfaceConstruction"))]
+#[serde(deny_unknown_fields)]
+struct TSplineSurfaceConstructionWire {
     parameter_ranges: [[f64; 2]; 2],
     type_code: i64,
     subtransform: TSplineSubtransform,
-    #[serde(default)]
-    program_graph: Option<TSplineProgramWire>,
-    #[serde(default)]
-    values_graph: Option<TSplineProgramWire>,
     trailing_value: i64,
     discontinuities: [Vec<f64>; 6],
     discontinuity_flag: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     revision_form: Option<RevisionSurfaceForm>,
 }
 
-impl Serialize for TSplineSurfaceConstruction {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let program_graph = self.program_graph();
-        let values_graph = self.values_graph();
-        TSplineSurfaceConstructionWriteWire {
-            parameter_ranges: &self.parameter_ranges(),
-            type_code: self.type_code,
-            subtransform: &self.subtransform,
-            program_graph: &program_graph,
-            values_graph: &values_graph,
-            trailing_value: self.trailing_value,
-            discontinuities: &self.discontinuities,
-            discontinuity_flag: self.discontinuity_flag,
-            revision_form: self.revision_form.as_ref(),
+impl From<TSplineSurfaceConstruction> for TSplineSurfaceConstructionWire {
+    fn from(construction: TSplineSurfaceConstruction) -> Self {
+        Self {
+            parameter_ranges: construction.parameter_ranges(),
+            type_code: construction.type_code,
+            subtransform: construction.subtransform,
+            trailing_value: construction.trailing_value,
+            discontinuities: construction.discontinuities,
+            discontinuity_flag: construction.discontinuity_flag,
+            revision_form: construction.revision_form,
         }
-        .serialize(serializer)
     }
 }
 
-impl<'de> Deserialize<'de> for TSplineSurfaceConstruction {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let wire = TSplineSurfaceConstructionReadWire::deserialize(deserializer)?;
-        let construction = Self::try_new(
+impl TryFrom<TSplineSurfaceConstructionWire> for TSplineSurfaceConstruction {
+    type Error = ProceduralGeometryError;
+
+    fn try_from(wire: TSplineSurfaceConstructionWire) -> Result<Self, Self::Error> {
+        Self::try_new(
             wire.parameter_ranges,
             wire.type_code,
             wire.subtransform,
@@ -2295,39 +2274,9 @@ impl<'de> Deserialize<'de> for TSplineSurfaceConstruction {
             wire.discontinuity_flag,
             wire.revision_form,
         )
-        .map_err(serde::de::Error::custom)?;
-        if wire
-            .program_graph
-            .as_ref()
-            .is_some_and(|graph| !construction.program_graph().matches_wire(graph))
-        {
-            return Err(serde::de::Error::custom(
-                "program_graph does not match the T-spline program",
-            ));
-        }
-        if wire
-            .values_graph
-            .as_ref()
-            .is_some_and(|graph| !construction.values_graph().matches_wire(graph))
-        {
-            return Err(serde::de::Error::custom(
-                "values_graph does not match the T-spline values program",
-            ));
-        }
-        Ok(construction)
     }
 }
 
-#[cfg(feature = "schema")]
-impl JsonSchema for TSplineSurfaceConstruction {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "TSplineSurfaceConstruction".into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        TSplineSurfaceConstructionReadWire::json_schema(generator)
-    }
-}
 
 /// Leading token of a recognized T-spline header declaration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -2576,44 +2525,6 @@ impl TSplineProgram {
         parsed
     }
 
-    fn matches_wire(&self, wire: &TSplineProgramWire) -> bool {
-        self.headers.len() == wire.headers.len()
-            && self.records.len() == wire.records.len()
-            && self.unparsed_lines == wire.unparsed_lines
-            && self
-                .headers
-                .iter()
-                .zip(&wire.headers)
-                .all(|(line, mirror)| {
-                    line.kind.as_str() == mirror.kind && line.fields == mirror.fields
-                })
-            && self
-                .records
-                .iter()
-                .zip(&wire.records)
-                .all(|(line, mirror)| {
-                    line.kind.as_str() == mirror.kind && line.fields == mirror.fields
-                })
-    }
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct TSplineProgramWire {
-    #[serde(default)]
-    headers: Vec<TSplineProgramLineWire>,
-    #[serde(default)]
-    records: Vec<TSplineProgramLineWire>,
-    #[serde(default)]
-    unparsed_lines: Vec<String>,
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct TSplineProgramLineWire {
-    kind: String,
-    #[serde(default)]
-    fields: Vec<String>,
 }
 
 /// One oriented support of a procedural blend.
