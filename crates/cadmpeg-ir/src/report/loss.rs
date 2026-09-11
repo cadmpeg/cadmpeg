@@ -331,11 +331,13 @@ impl fmt::Display for LossTaxonomy {
 /// Namespace for shared (non-codec-local) loss codes.
 pub const SHARED_LOSS_NAMESPACE: &str = "shared";
 
-/// Namespaced machine-readable loss code on the decode/export wire.
+/// Machine-readable loss code on the decode/export wire.
 ///
-/// Wire form:
-/// `{ "namespace": "rhino", "code": "brep.trim-pcurve-dropped", "kind": "pcurve_omitted" }`.
-/// The optional `strict_floor` field is omitted when it matches [`LossTaxonomy::strict_floor`].
+/// A `scope` tag selects the variant. A shared loss is
+/// `{ "scope": "shared", "kind": "pcurve_omitted" }`; a codec-local one is
+/// `{ "scope": "namespaced", "namespace": "rhino", "code": "brep.trim-pcurve-dropped",
+/// "kind": "pcurve_omitted" }`, carrying `strict_floor` exactly when the code
+/// pins one.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "scope", rename_all = "snake_case", deny_unknown_fields)]
