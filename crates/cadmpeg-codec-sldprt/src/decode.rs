@@ -1241,7 +1241,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                         Some(cadmpeg_ir::features::SweepOrientation::Auxiliary { path, .. })
                             if incomplete_path(path)
                     )
-                    || matches!(mode, cadmpeg_ir::features::SweepMode::Unresolved)
+                    || matches!(mode, cadmpeg_ir::features::SweepMode::Unresolved {})
             }
             FeatureDefinition::HelicalSweep { construction, op } => {
                 incomplete_profile(&construction.profile) || *op == BooleanOp::Unresolved

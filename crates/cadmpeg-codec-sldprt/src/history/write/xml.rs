@@ -48,7 +48,7 @@ pub(crate) fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String
         FeatureDefinition::Primitive { .. } => "Primitive",
         FeatureDefinition::Extrude { .. } => "Extrusion",
         FeatureDefinition::Revolve { .. } => "Revolve",
-        FeatureDefinition::Sweep { shape, .. } if shape.mode() == SweepMode::Surface => {
+        FeatureDefinition::Sweep { shape, .. } if shape.mode() == SweepMode::Surface {} => {
             "Surface-Sweep"
         }
         FeatureDefinition::Sweep { .. } => "Sweep",

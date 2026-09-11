@@ -135,18 +135,20 @@ fn hole_and_sweep_edits_preserve_the_previous_admitted_shape() {
     assert!(SweepShape::new(
         SweepSection::Unresolved(None),
         vec![circular.clone()],
-        SweepMode::Unresolved
+        SweepMode::Unresolved {}
     )
     .is_err());
     let mut sweep = SweepShape::new(
         SweepSection::Unresolved(None),
         vec![circular],
-        SweepMode::NewBody,
+        SweepMode::Solid {
+            op: crate::features::SolidSweepOperation::NewBody,
+        },
     )
     .unwrap();
     let before = sweep.clone();
     assert!(sweep
-        .try_edit(|_, _, mode| *mode = SweepMode::Surface)
+        .try_edit(|_, _, mode| *mode = SweepMode::Surface {})
         .is_err());
     assert_eq!(sweep, before);
 }

@@ -611,8 +611,12 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 SweepSection::Generated(_) => true,
             };
             let mode_is_resolved = match mode {
-                SweepMode::Unresolved => false,
-                SweepMode::NewBody | SweepMode::Solid { .. } | SweepMode::Surface => true,
+                SweepMode::Unresolved {} => false,
+                SweepMode::Solid {
+                    op: cadmpeg_ir::features::SolidSweepOperation::NewBody,
+                }
+                | SweepMode::Solid { .. }
+                | SweepMode::Surface {} => true,
             };
             let orientation_is_resolved = match orientation {
                 Some(SweepOrientation::Auxiliary { path, .. }) => loft_path_is_resolved(path),

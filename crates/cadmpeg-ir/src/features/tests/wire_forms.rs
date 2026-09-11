@@ -241,7 +241,9 @@ fn generated_sweep_sections_round_trip_and_validate() {
                 .unwrap(),
             }),
             Vec::new(),
-            SweepMode::NewBody,
+            SweepMode::Solid {
+                op: crate::features::SolidSweepOperation::NewBody,
+            },
         )
         .unwrap(),
 
@@ -300,7 +302,7 @@ fn generated_sweep_sections_round_trip_and_validate() {
     };
     let before = shape.clone();
     assert!(shape
-        .try_edit(|_, _, mode| *mode = SweepMode::Surface)
+        .try_edit(|_, _, mode| *mode = SweepMode::Surface {})
         .is_err());
     assert_eq!(shape, before);
 }
@@ -904,27 +906,52 @@ fn combine_omits_the_default_keep_tools_flag_from_json() {
     assert_eq!(json.get("keep_tools"), None);
 }
 
+/// `new_body` is one solid sweep operation among four, so it has exactly one
+/// spelling and an unknown key beside `op` is refused by name.
 #[test]
-fn sweep_mode_preserves_the_solid_new_body_wire_form() {
-    use crate::features::{BooleanKind, SweepMode};
+fn sweep_mode_spells_new_body_once_and_refuses_a_key_beside_op() {
+    use crate::features::{SolidSweepOperation, SweepMode};
 
-    let wire = serde_json::json!({"mode": "solid", "op": "new_body"});
-    assert_eq!(
-        serde_json::from_value::<SweepMode>(wire.clone()).unwrap(),
-        SweepMode::NewBody
-    );
-    assert_eq!(serde_json::to_value(SweepMode::NewBody).unwrap(), wire);
+    for (wire, expected) in [
+        (
+            serde_json::json!({"mode": "solid", "op": "new_body"}),
+            SweepMode::Solid {
+                op: SolidSweepOperation::NewBody,
+            },
+        ),
+        (
+            serde_json::json!({"mode": "solid", "op": "join"}),
+            SweepMode::Solid {
+                op: SolidSweepOperation::Join,
+            },
+        ),
+        (
+            serde_json::json!({"mode": "unresolved"}),
+            SweepMode::Unresolved {},
+        ),
+        (
+            serde_json::json!({"mode": "surface"}),
+            SweepMode::Surface {},
+        ),
+    ] {
+        assert_eq!(
+            serde_json::from_value::<SweepMode>(wire.clone()).unwrap(),
+            expected
+        );
+        assert_eq!(serde_json::to_value(expected).unwrap(), wire);
+    }
+
     assert!(serde_json::from_value::<SweepMode>(
         serde_json::json!({"mode": "solid", "op": "unresolved"})
     )
     .is_err());
-    assert_eq!(
-        serde_json::from_value::<SweepMode>(serde_json::json!({"mode": "solid", "op": "join"}))
-            .unwrap(),
-        SweepMode::Solid {
-            op: BooleanKind::Join
-        }
-    );
+
+    let error = serde_json::from_value::<SweepMode>(
+        serde_json::json!({"mode": "solid", "op": "join", "zz_bogus": 1}),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("unknown field `zz_bogus`"), "{error}");
 }
 
 /// The identified-but-undimensioned form is one state on the wire and in the

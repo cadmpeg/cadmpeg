@@ -461,10 +461,9 @@ fn rederived_body_census(
             FeatureDefinition::Sweep { shape, .. } => {
                 let mode = shape.mode();
                 let op = match mode {
-                    cadmpeg_ir::features::SweepMode::Solid { op } => (op).into(),
-                    cadmpeg_ir::features::SweepMode::NewBody => BooleanOp::NewBody,
-                    cadmpeg_ir::features::SweepMode::Surface => BooleanOp::NewBody,
-                    cadmpeg_ir::features::SweepMode::Unresolved => BooleanOp::Unresolved,
+                    cadmpeg_ir::features::SweepMode::Solid { op } => op.into(),
+                    cadmpeg_ir::features::SweepMode::Surface {} => BooleanOp::NewBody,
+                    cadmpeg_ir::features::SweepMode::Unresolved {} => BooleanOp::Unresolved,
                 };
                 apply_complete_boolean_outputs(
                     feature,

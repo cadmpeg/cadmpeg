@@ -576,7 +576,7 @@ fn design_completeness_checks_secondary_sweep_and_loft_paths() {
         shape: cadmpeg_ir::features::SweepShape::new(
             cadmpeg_ir::features::SweepSection::Profile((profile.clone()).try_into().unwrap()),
             sections,
-            cadmpeg_ir::features::SweepMode::Surface,
+            cadmpeg_ir::features::SweepMode::Surface {},
         )
         .unwrap(),
 

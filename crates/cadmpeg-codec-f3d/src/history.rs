@@ -894,7 +894,8 @@ pub(crate) fn bind_sweep_result_modes(
             let FeatureDefinition::Sweep { shape, .. } = &mut definition else {
                 break 'feature_edit;
             };
-            if shape.mode() != SweepMode::Unresolved || feature.evaluation.outputs().is_empty() {
+            if shape.mode() != (SweepMode::Unresolved {}) || feature.evaluation.outputs().is_empty()
+            {
                 break 'feature_edit;
             }
             let output_kinds = feature
@@ -905,12 +906,14 @@ pub(crate) fn bind_sweep_result_modes(
                 .collect::<Option<Vec<_>>>();
             let mode = match output_kinds.as_deref() {
                 Some(kinds) if kinds.iter().all(|kind| *kind == BodyKind::Sheet) => {
-                    SweepMode::Surface
+                    SweepMode::Surface {}
                 }
                 Some(kinds) if kinds.iter().all(|kind| *kind == BodyKind::Solid) => {
-                    SweepMode::NewBody
+                    SweepMode::Solid {
+                        op: cadmpeg_ir::features::SolidSweepOperation::NewBody,
+                    }
                 }
-                _ => SweepMode::Unresolved,
+                _ => SweepMode::Unresolved {},
             };
             shape
                 .try_edit(|_, _, result| *result = mode)

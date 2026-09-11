@@ -568,7 +568,7 @@ fn decode_projects_compact_solid_sweep_join_operation() {
             shape,
             ..
         } if matches!((shape.mode(),), (SweepMode::Solid {
-                op: cadmpeg_ir::features::BooleanKind::Join
+                op: cadmpeg_ir::features::SolidSweepOperation::Join
             },))));
     let feature_id = &decoded.ir().model.features[0].id;
     assert!(matches!(
@@ -576,7 +576,7 @@ fn decode_projects_compact_solid_sweep_join_operation() {
             shape,
             ..
         } if matches!((shape.mode(),), (SweepMode::Solid {
-                op: cadmpeg_ir::features::BooleanKind::Join
+                op: cadmpeg_ir::features::SolidSweepOperation::Join
             },))));
 }
 
@@ -698,7 +698,7 @@ fn decode_projects_native_surface_sweep_class_without_localized_type() {
             shape,
             path: Some(PathRef::Native(ref path)),
             ..
-        } if matches!((shape.mode(),), (SweepMode::Surface,) if path.ends_with(&format!(":{path_offset}")))));
+        } if matches!((shape.mode(),), (SweepMode::Surface {},) if path.ends_with(&format!(":{path_offset}")))));
 }
 
 #[test]

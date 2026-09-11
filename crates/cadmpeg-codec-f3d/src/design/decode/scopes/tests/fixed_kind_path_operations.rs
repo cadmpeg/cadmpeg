@@ -510,7 +510,7 @@ pub(super) fn fixed_kind_path_operations(
         ), Some(cadmpeg_ir::features::FeatureDefinition::Sweep {
             shape,
             ..
-        }) if matches!((&shape.mode(),), (cadmpeg_ir::features::SweepMode::NewBody,))));
+        }) if matches!((&shape.mode(),), (cadmpeg_ir::features::SweepMode::Solid { op: cadmpeg_ir::features::SolidSweepOperation::NewBody },))));
     assert_eq!(
         crate::design::feature_project::project_fixed_sweep(
             &sweep_scope,
@@ -658,7 +658,7 @@ pub(super) fn fixed_kind_path_operations(
             shape,
             ..
         }) if matches!((&shape.mode(),), (cadmpeg_ir::features::SweepMode::Solid {
-                op: cadmpeg_ir::features::BooleanKind::Cut
+                op: cadmpeg_ir::features::SolidSweepOperation::Cut
             },))));
 
     let pipe_start = bytes.len();

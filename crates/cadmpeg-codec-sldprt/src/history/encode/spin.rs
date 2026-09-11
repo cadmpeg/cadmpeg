@@ -226,7 +226,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            if existing.is_none() && *mode == SweepMode::Unresolved {
+            if existing.is_none() && matches!(*mode, SweepMode::Unresolved { .. }) {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} has unresolved sweep result semantics",
                     feature.id
@@ -259,28 +259,32 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 properties.insert("Path".into(), path);
             }
             match mode {
+                SweepMode::Solid {
+                    op: cadmpeg_ir::features::SolidSweepOperation::NewBody,
+                } => {
+                    properties.insert("Operation".into(), "NewBody".into());
+                }
                 SweepMode::Solid { op } => {
                     properties.insert(
                         "Operation".into(),
                         resolved_boolean_op((*op).into(), &feature.id)?.into(),
                     );
                 }
-                SweepMode::NewBody => {
-                    properties.insert("Operation".into(), "NewBody".into());
-                }
-                SweepMode::Surface => {
+                SweepMode::Surface {} => {
                     properties.remove("Operation");
                 }
-                SweepMode::Unresolved => {}
+                SweepMode::Unresolved {} => {}
             }
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(
                     || {
                         match mode {
-                            SweepMode::Surface => "Surface-Sweep",
-                            SweepMode::NewBody
+                            SweepMode::Surface {} => "Surface-Sweep",
+                            SweepMode::Solid {
+                                op: cadmpeg_ir::features::SolidSweepOperation::NewBody,
+                            }
                             | SweepMode::Solid { .. }
-                            | SweepMode::Unresolved => "Sweep",
+                            | SweepMode::Unresolved {} => "Sweep",
                         }
                         .into()
                     },

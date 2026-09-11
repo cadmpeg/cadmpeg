@@ -367,8 +367,10 @@ fn nx_loft_completeness_validates_point_sections() {
 fn nx_sweep_completeness_checks_nested_mode_and_orientation_operands() {
     use cadmpeg_ir::features::{PathRef, SweepMode, SweepOrientation};
 
-    assert!(sweep_mode_is_incomplete(SweepMode::Unresolved));
-    assert!(!sweep_mode_is_incomplete(SweepMode::NewBody));
+    assert!(sweep_mode_is_incomplete(SweepMode::Unresolved {}));
+    assert!(!sweep_mode_is_incomplete(SweepMode::Solid {
+        op: cadmpeg_ir::features::SolidSweepOperation::NewBody
+    }));
     assert!(sweep_orientation_is_incomplete(
         &SweepOrientation::Auxiliary {
             path: PathRef::Native("nx:auxiliary-path#0".into()),
