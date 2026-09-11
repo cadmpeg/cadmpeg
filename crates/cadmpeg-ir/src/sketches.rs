@@ -2386,13 +2386,11 @@ pub enum SketchConstraintDefinitionInput {
     /// A complete two-axis rectangular pattern with resolved instances.
     RectangularPattern {
         /// Checked directions and rectangular instance grid.
-        #[serde(flatten)]
         pattern: SketchRectangularPattern,
     },
     /// A parameter-driven circular pattern with geometrically resolved instances.
     CircularPattern {
         /// Checked center, parameters, and positional instances.
-        #[serde(flatten)]
         pattern: SketchCircularPattern,
     },
     /// Text entity bounded by ordered frame curves.
