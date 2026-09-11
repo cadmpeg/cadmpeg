@@ -3361,8 +3361,9 @@ impl JsonSchema for ClassicLoftProfileData {
 }
 
 /// Type-selected fields of one loft profile member.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum LoftMemberForm {
     /// Support-surface form. Legacy layouts can use type zero; revision-gated
     /// layouts select this form with a nonzero type code.
@@ -3371,32 +3372,41 @@ pub enum LoftMemberForm {
         type_code: i64,
         /// Constraint support surface, absent for the native `null_surface`
         /// sentinel.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         surface: Option<SurfaceId>,
         /// Optional U/V bound fields following the support surface in the
         /// revision-gated encoding.
+        #[serde(default)]
         support_bounds: [Option<f64>; 4],
         /// UV curve on the support, absent for `nullbs`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         pcurve: Option<PcurveGeometry>,
         /// First native constraint flag.
         first_flag: bool,
         /// ASM extension integer when the stream version carries it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         asm_extension: Option<i64>,
         /// Native constraint table.
         subdata: LoftSubdata,
         /// Optional direction selected by the second native flag.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         direction: Option<Vector3>,
     },
     /// Revision-gated type-zero form with two nullable UV curve slots.
     PcurvePair {
         /// First UV curve slot, absent for `nullbs`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         pcurve: Option<PcurveGeometry>,
         /// Second UV curve slot, absent for `nullbs`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         secondary_pcurve: Option<PcurveGeometry>,
         /// ASM extension integer when the stream version carries it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         asm_extension: Option<i64>,
         /// Native constraint table.
         subdata: LoftSubdata,
         /// Optional direction selected by the second native flag.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         direction: Option<Vector3>,
     },
 }
@@ -3460,144 +3470,14 @@ pub struct LoftPathCurve {
 }
 
 /// One curve member of a loft profile.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct LoftProfileMember {
     /// Profile curve and its revision-gated parameter endpoints.
+    #[serde(flatten)]
     pub curve: LoftPathCurve,
     /// Structurally selected surface-side constraint form.
     pub form: LoftMemberForm,
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct LoftProfileMemberWire {
-    type_code: i64,
-    curve: CurveId,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    endpoints: Option<[Option<f64>; 2]>,
-    data: LoftProfileDataWire,
-}
-
-impl Serialize for LoftProfileMember {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let data = match &self.form {
-            LoftMemberForm::Support {
-                surface,
-                support_bounds,
-                pcurve,
-                first_flag,
-                asm_extension,
-                subdata,
-                direction,
-                ..
-            } => LoftProfileDataWire {
-                surface: surface.clone(),
-                support_bounds: *support_bounds,
-                pcurve: pcurve.clone(),
-                secondary_pcurve: None,
-                first_flag: Some(*first_flag),
-                asm_extension: *asm_extension,
-                subdata: subdata.clone(),
-                direction: *direction,
-            },
-            LoftMemberForm::PcurvePair {
-                pcurve,
-                secondary_pcurve,
-                asm_extension,
-                subdata,
-                direction,
-            } => LoftProfileDataWire {
-                surface: None,
-                support_bounds: [None; 4],
-                pcurve: pcurve.clone(),
-                secondary_pcurve: secondary_pcurve.clone(),
-                first_flag: None,
-                asm_extension: *asm_extension,
-                subdata: subdata.clone(),
-                direction: *direction,
-            },
-        };
-        LoftProfileMemberWire {
-            type_code: self.form.type_code(),
-            curve: self.curve.id.clone(),
-            endpoints: self.curve.endpoints,
-            data,
-        }
-        .serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for LoftProfileMember {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = LoftProfileMemberWire::deserialize(deserializer)?;
-        let LoftProfileDataWire {
-            surface,
-            support_bounds,
-            pcurve,
-            secondary_pcurve,
-            first_flag,
-            asm_extension,
-            subdata,
-            direction,
-        } = wire.data;
-        let form = match first_flag {
-            Some(first_flag) if secondary_pcurve.is_none() => LoftMemberForm::Support {
-                type_code: wire.type_code,
-                surface,
-                support_bounds,
-                pcurve,
-                first_flag,
-                asm_extension,
-                subdata,
-                direction,
-            },
-            Some(_) => {
-                return Err(serde::de::Error::custom(
-                    "loft support form cannot carry secondary_pcurve",
-                ));
-            }
-            None if wire.type_code == 0
-                && surface.is_none()
-                && support_bounds.iter().all(Option::is_none) =>
-            {
-                LoftMemberForm::PcurvePair {
-                    pcurve,
-                    secondary_pcurve,
-                    asm_extension,
-                    subdata,
-                    direction,
-                }
-            }
-            None if wire.type_code == 0 => {
-                return Err(serde::de::Error::custom(
-                    "loft pcurve-pair form cannot carry a support surface or support_bounds",
-                ));
-            }
-            None => {
-                return Err(serde::de::Error::custom(
-                    "nonzero loft type_code requires data.first_flag",
-                ));
-            }
-        };
-        Ok(Self {
-            curve: LoftPathCurve {
-                id: wire.curve,
-                endpoints: wire.endpoints,
-            },
-            form,
-        })
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for LoftProfileMember {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "LoftProfileMember".into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        LoftProfileMemberWire::json_schema(generator)
-    }
 }
 
 /// Native path data attached to one loft section entry.
