@@ -47,7 +47,8 @@
           "code": {
             "code": "geometry.procedural-reduced-to-carrier",
             "kind": "procedural_reduced",
-            "namespace": "step"
+            "namespace": "step",
+            "scope": "namespaced"
           },
           "message": "1 procedural surface definition(s) and 0 procedural curve definition(s) were reduced to their solved STEP carriers",
           "severity": "info"
@@ -56,7 +57,9 @@
           "code": {
             "code": "target.source-dialect-displaced",
             "kind": "source_dialect_displaced",
-            "namespace": "step"
+            "namespace": "step",
+            "scope": "namespaced",
+            "strict_floor": "warning"
           },
           "message": "source dialect step:ap203-e1 was displaced by target dialect step:ap242-e3; the source dialect identity is not preserved",
           "severity": "warning"
@@ -116,7 +119,8 @@
           "code": {
             "code": "geometry.procedural-reduced-to-carrier",
             "kind": "procedural_reduced",
-            "namespace": "step"
+            "namespace": "step",
+            "scope": "namespaced"
           },
           "message": "1 procedural surface definition(s) and 0 procedural curve definition(s) were reduced to their solved STEP carriers",
           "severity": "info"
@@ -125,7 +129,9 @@
           "code": {
             "code": "target.source-dialect-displaced",
             "kind": "source_dialect_displaced",
-            "namespace": "step"
+            "namespace": "step",
+            "scope": "namespaced",
+            "strict_floor": "warning"
           },
           "message": "source dialect step:ap203-e1 was displaced by target dialect step:ap214; the source dialect identity is not preserved",
           "severity": "warning"
@@ -185,7 +191,8 @@
           "code": {
             "code": "geometry.procedural-reduced-to-carrier",
             "kind": "procedural_reduced",
-            "namespace": "step"
+            "namespace": "step",
+            "scope": "namespaced"
           },
           "message": "1 procedural surface definition(s) and 0 procedural curve definition(s) were reduced to their solved STEP carriers",
           "severity": "info"

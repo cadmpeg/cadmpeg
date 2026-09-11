@@ -1608,7 +1608,8 @@
         "code": {
           "code": "geometry.spline-header-not-transferred",
           "kind": "metadata_not_transferred",
-          "namespace": "iges"
+          "namespace": "iges",
+          "scope": "namespaced"
         },
         "message": "Type 112 curve type, continuity, and dimensionality are retained only in native parameters",
         "provenance": {

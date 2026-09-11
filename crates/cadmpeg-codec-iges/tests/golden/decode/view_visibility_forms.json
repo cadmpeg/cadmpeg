@@ -2780,7 +2780,8 @@
         "code": {
           "code": "entity.not-projected",
           "kind": "record_not_typed",
-          "namespace": "iges"
+          "namespace": "iges",
+          "scope": "namespaced"
         },
         "message": "IGES entity type 410 form 0 was not projected: view number, projection, transform, scale, or clipping fields are invalid",
         "provenance": {
@@ -2795,7 +2796,8 @@
         "code": {
           "code": "entity.not-projected",
           "kind": "record_not_typed",
-          "namespace": "iges"
+          "namespace": "iges",
+          "scope": "namespaced"
         },
         "message": "IGES entity type 410 form 0 was not projected: view number, projection, transform, scale, or clipping fields are invalid",
         "provenance": {
@@ -2810,7 +2812,8 @@
         "code": {
           "code": "entity.not-projected",
           "kind": "record_not_typed",
-          "namespace": "iges"
+          "namespace": "iges",
+          "scope": "namespaced"
         },
         "message": "IGES entity type 402 form 3 was not projected: view-visibility blocks, display overrides, entities, or back pointers are invalid",
         "provenance": {
@@ -2825,7 +2828,8 @@
         "code": {
           "code": "entity.not-projected",
           "kind": "record_not_typed",
-          "namespace": "iges"
+          "namespace": "iges",
+          "scope": "namespaced"
         },
         "message": "IGES entity type 402 form 4 was not projected: view-visibility blocks, display overrides, entities, or back pointers are invalid",
         "provenance": {

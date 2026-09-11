@@ -1143,7 +1143,8 @@
         "code": {
           "code": "geometry.carrier-summary",
           "kind": "carrier_summary",
-          "namespace": "catia"
+          "namespace": "catia",
+          "scope": "namespaced"
         },
         "message": "4 vertex point(s) were decoded verbatim from `05 08 01` records (3×f32 LE, millimetres, identity world placement) and 4 analytic surface carrier(s) were decoded from `SurfacicReps` `00 33` records: 0 plane, 0 cylinder, 0 cone, 4 sphere, 0 torus.",
         "severity": "info"
@@ -1152,7 +1153,8 @@
         "code": {
           "code": "attributes.materials-metadata-not-transferred",
           "kind": "attributes_not_transferred",
-          "namespace": "catia"
+          "namespace": "catia",
+          "scope": "namespaced"
         },
         "message": "Standard circles with an exact adjacent-carrier section normal or two non-collinear endpoint radii, plane-plane lines, and same-surface cylinder or cone generators are transferred as curves. Standard spline edges retain exact two-surface intersection constructions and their identity-bound support pcurves when present, but unbound serialized 3D NURBS caches, materials, and document metadata are not yet transferred.",
         "severity": "warning"

@@ -76,7 +76,9 @@
       "code": {
         "code": "parameter.data-quarantined",
         "kind": "noncanonical_source_syntax",
-        "namespace": "iges"
+        "namespace": "iges",
+        "scope": "namespaced",
+        "strict_floor": "warning"
       },
       "message": "IGES Parameter Data of D1 (P1 through P2) is quarantined because a numeric field or its delimiter crosses a card boundary; its 2 raw card(s) are retained and no token was interpreted",
       "provenance": {

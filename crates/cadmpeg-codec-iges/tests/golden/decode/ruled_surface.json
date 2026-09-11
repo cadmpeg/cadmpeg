@@ -2281,7 +2281,8 @@
         "code": {
           "code": "geometry.ruled-developability-not-transferred",
           "kind": "metadata_not_transferred",
-          "namespace": "iges"
+          "namespace": "iges",
+          "scope": "namespaced"
         },
         "message": "Type 118 developability is retained only in the native entity record",
         "provenance": {

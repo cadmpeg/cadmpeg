@@ -35,7 +35,8 @@
       "code": {
         "code": "topology.pcurve-global-fidelity-unproved",
         "kind": "decode_diagnostic",
-        "namespace": "step"
+        "namespace": "step",
+        "scope": "namespaced"
       },
       "message": "a finite endpoint and locus witness admits 1 pcurve relation(s); global model-space point-set equality and direction are unproved: curve #57 on surface #28 at coedge use #22",
       "severity": "warning"
@@ -44,7 +45,9 @@
       "code": {
         "code": "geometry.document-angle-unit-unresolved",
         "kind": "geometry_not_transferred",
-        "namespace": "step"
+        "namespace": "step",
+        "scope": "namespaced",
+        "strict_floor": "warning"
       },
       "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
       "severity": "error"

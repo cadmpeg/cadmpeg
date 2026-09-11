@@ -1627,6 +1627,7 @@
     "losses": [
       {
         "code": {
+          "scope": "namespaced",
           "namespace": "f3d",
           "code": "feature.edge-reference-lost",
           "kind": "attributes_not_transferred"
@@ -1636,6 +1637,7 @@
       },
       {
         "code": {
+          "scope": "namespaced",
           "namespace": "f3d",
           "code": "sketch.point-unprojected",
           "kind": "feature_history_retained"
@@ -1645,6 +1647,7 @@
       },
       {
         "code": {
+          "scope": "namespaced",
           "namespace": "f3d",
           "code": "sketch.curve-unprojected",
           "kind": "feature_history_retained"
@@ -1654,6 +1657,7 @@
       },
       {
         "code": {
+          "scope": "namespaced",
           "namespace": "f3d",
           "code": "sketch.relation-unprojected",
           "kind": "feature_history_retained"

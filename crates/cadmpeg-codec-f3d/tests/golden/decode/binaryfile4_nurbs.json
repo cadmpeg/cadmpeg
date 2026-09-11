@@ -461,6 +461,7 @@
     "losses": [
       {
         "code": {
+          "scope": "namespaced",
           "namespace": "f3d",
           "code": "geometry.nurbs-curve-carrier",
           "kind": "carrier_summary"
@@ -470,6 +471,7 @@
       },
       {
         "code": {
+          "scope": "namespaced",
           "namespace": "f3d",
           "code": "material.not-transferred",
           "kind": "material_not_transferred"

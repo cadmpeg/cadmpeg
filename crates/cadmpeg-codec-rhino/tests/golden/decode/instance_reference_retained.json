@@ -196,7 +196,8 @@
         "code": {
           "code": "object.record-census",
           "kind": "object_records_untransferred",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "scope": "namespaced"
         },
         "message": "decoded 0/1 Rhino object records",
         "severity": "info"
@@ -205,7 +206,8 @@
         "code": {
           "code": "container.instance-definition-degraded",
           "kind": "decode_diagnostic",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "scope": "namespaced"
         },
         "message": "retained 1 malformed, ambiguous, or checksum-degraded instance-definition record(s); first: instance definition CRC mismatch at offset 179",
         "provenance": {
@@ -219,7 +221,8 @@
         "code": {
           "code": "object.family-not-transferred",
           "kind": "unsupported_object_family",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "scope": "namespaced"
         },
         "message": "retained 1 object record(s) for class f9cfb638-b9d4-4340-87e3-c56e7865d96a; geometry is not decoded",
         "provenance": {
@@ -233,7 +236,9 @@
         "code": {
           "code": "container.integrity-failure",
           "kind": "integrity_failure",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "CRC mismatch at offset 534 for typecode 0x20008070: expected 0x0, got 0x9d88d481",
         "severity": "error"
@@ -242,7 +247,8 @@
         "code": {
           "code": "container.scan-diagnostic",
           "kind": "decode_diagnostic",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "scope": "namespaced"
         },
         "message": "object at 534 has nil object UUID",
         "severity": "warning"
@@ -251,7 +257,8 @@
         "code": {
           "code": "object.decode-diagnostic",
           "kind": "decode_diagnostic",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "scope": "namespaced"
         },
         "message": "f9cfb638-b9d4-4340-87e3-c56e7865d96a: instance retained: document units are unavailable",
         "severity": "warning"

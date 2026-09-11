@@ -81,7 +81,9 @@
       "code": {
         "code": "source.dialect-unverified",
         "kind": "source_dialect_unverified",
-        "namespace": "iges"
+        "namespace": "iges",
+        "scope": "namespaced",
+        "strict_floor": "warning"
       },
       "message": "IGES Global version flag 99 names effective specification version 5.3 after the clamp to 11 that IGES 5.3 section 2.2.4.3.23 requires of a postprocessor; this decode interpreted the file with the semantics verified for versions 4.0, 5.0, 5.1, 5.2, 5.3",
       "severity": "warning"

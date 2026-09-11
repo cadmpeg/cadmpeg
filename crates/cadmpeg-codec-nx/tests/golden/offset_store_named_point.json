@@ -211,7 +211,9 @@
           "code": {
             "code": "geometry.not-transferred",
             "kind": "geometry_not_transferred",
-            "namespace": "nx"
+            "namespace": "nx",
+            "scope": "namespaced",
+            "strict_floor": "warning"
           },
           "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
           "severity": "blocking"
@@ -220,7 +222,8 @@
           "code": {
             "code": "container.offset-store-control-untyped",
             "kind": "record_not_typed",
-            "namespace": "nx"
+            "namespace": "nx",
+            "scope": "namespaced"
           },
           "message": "1 of 1 bounded offset-store control block(s) have no admitted complete grammar.",
           "severity": "warning"

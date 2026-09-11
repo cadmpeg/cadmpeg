@@ -502,7 +502,8 @@
         "code": {
           "code": "topology.body-hierarchy-derived",
           "kind": "topology_gauge_substituted",
-          "namespace": "sldprt"
+          "namespace": "sldprt",
+          "scope": "namespaced"
         },
         "message": "No body record was available; one body/region/shell hierarchy was derived.",
         "severity": "warning"
@@ -511,7 +512,9 @@
         "code": {
           "code": "source.dialect-unverified",
           "kind": "source_dialect_unverified",
-          "namespace": "sldprt"
+          "namespace": "sldprt",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
         "severity": "warning"
@@ -520,7 +523,8 @@
         "code": {
           "code": "config.inferred-without-native",
           "kind": "feature_history_retained",
-          "namespace": "sldprt"
+          "namespace": "sldprt",
+          "scope": "namespaced"
         },
         "message": "1 configuration state(s) are inferred from geometry partitions without native configuration definitions.",
         "severity": "warning"
@@ -529,7 +533,8 @@
         "code": {
           "code": "config.incoherent-body-refs",
           "kind": "feature_history_retained",
-          "namespace": "sldprt"
+          "namespace": "sldprt",
+          "scope": "namespaced"
         },
         "message": "1 configuration record(s) have unresolved body membership; 0 configuration record(s) contain missing or repeated body references.",
         "severity": "warning"
@@ -538,7 +543,8 @@
         "code": {
           "code": "config.incomplete-snapshot",
           "kind": "feature_history_retained",
-          "namespace": "sldprt"
+          "namespace": "sldprt",
+          "scope": "namespaced"
         },
         "message": "1 configuration(s) lack a complete evaluated feature snapshot; 1 configuration(s) lack a complete evaluated parameter snapshot.",
         "severity": "warning"
@@ -547,7 +553,8 @@
         "code": {
           "code": "feature.unresolved-output-scope",
           "kind": "feature_history_retained",
-          "namespace": "sldprt"
+          "namespace": "sldprt",
+          "scope": "namespaced"
         },
         "message": "1 feature(s) retain non-empty native output scopes that do not resolve to model bodies.",
         "severity": "warning"
@@ -556,7 +563,8 @@
         "code": {
           "code": "feature.typed-operand-incomplete",
           "kind": "feature_history_retained",
-          "namespace": "sldprt"
+          "namespace": "sldprt",
+          "scope": "namespaced"
         },
         "message": "1 typed feature(s) retain native or unresolved required operation operands.",
         "severity": "warning"

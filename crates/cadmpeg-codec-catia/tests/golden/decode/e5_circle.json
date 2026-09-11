@@ -577,7 +577,9 @@
         "code": {
           "code": "topology.e5-graph-unclosed",
           "kind": "topology_not_transferred",
-          "namespace": "catia"
+          "namespace": "catia",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "E5 carriers were decoded, but the reference graph could not be transferred with a closed surface/pcurve/vertex binding.",
         "severity": "blocking"

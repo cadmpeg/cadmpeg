@@ -513,7 +513,8 @@
         "code": {
           "code": "object.record-census",
           "kind": "object_records_untransferred",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "scope": "namespaced"
         },
         "message": "decoded 1/1 Rhino object records",
         "severity": "info"
@@ -522,7 +523,9 @@
         "code": {
           "code": "container.integrity-failure",
           "kind": "integrity_failure",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "CRC mismatch at offset 177 for typecode 0x20008070: expected 0x0, got 0xa63178ca",
         "severity": "error"
@@ -531,7 +534,8 @@
         "code": {
           "code": "container.scan-diagnostic",
           "kind": "decode_diagnostic",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "scope": "namespaced"
         },
         "message": "object at 177 has nil object UUID",
         "severity": "warning"
@@ -541,7 +545,7 @@
           "code": "source.writer-stamp-unverified",
           "kind": "source_dialect_unverified",
           "namespace": "rhino",
-          "strict_floor": null
+          "scope": "namespaced"
         },
         "message": "60b5dbc5-e660-11d3-bfe4-0010830122f0: Brep edge domains read with the pre-2002 layout for 1 records because the archive has no writer-version stamp",
         "severity": "warning"
@@ -551,7 +555,7 @@
           "code": "source.writer-stamp-unverified",
           "kind": "source_dialect_unverified",
           "namespace": "rhino",
-          "strict_floor": null
+          "scope": "namespaced"
         },
         "message": "60b5dbc5-e660-11d3-bfe4-0010830122f0: Brep trim domains and proxy senses read with the pre-2002 layout for 4 records because the archive has no writer-version stamp",
         "severity": "warning"
@@ -560,7 +564,9 @@
         "code": {
           "code": "container.integrity-failure",
           "kind": "integrity_failure",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "60b5dbc5-e660-11d3-bfe4-0010830122f0: Brep anonymous CRC mismatch at offset 2245",
         "severity": "error"
@@ -569,7 +575,9 @@
         "code": {
           "code": "container.integrity-failure",
           "kind": "integrity_failure",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "60b5dbc5-e660-11d3-bfe4-0010830122f0: Brep anonymous CRC mismatch at offset 2353",
         "severity": "error"
@@ -578,7 +586,9 @@
         "code": {
           "code": "container.integrity-failure",
           "kind": "integrity_failure",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "60b5dbc5-e660-11d3-bfe4-0010830122f0: Brep anonymous CRC mismatch at offset 2225",
         "severity": "error"
@@ -587,7 +597,9 @@
         "code": {
           "code": "container.integrity-failure",
           "kind": "integrity_failure",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
         "message": "60b5dbc5-e660-11d3-bfe4-0010830122f0: Brep region wrapper checksum mismatch",
         "severity": "error"
@@ -596,7 +608,8 @@
         "code": {
           "code": "object.decode-diagnostic",
           "kind": "decode_diagnostic",
-          "namespace": "rhino"
+          "namespace": "rhino",
+          "scope": "namespaced"
         },
         "message": "60b5dbc5-e660-11d3-bfe4-0010830122f0: 2 decode warnings; first: Brep anonymous chunk skipped 1 trailing bytes",
         "severity": "warning"
