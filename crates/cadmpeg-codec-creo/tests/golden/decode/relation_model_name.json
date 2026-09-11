@@ -663,16 +663,20 @@
     "annotations": {
       "exactness": {
         "creo:depdb:curve_expression_feature#7-125": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:depdb:curve_expression_parameter#7-125-0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:model:occurrence#root": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:model:product_definition#root": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         }
       },
       "provenance": {

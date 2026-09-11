@@ -1218,7 +1218,7 @@
       },
       "exactness": {
         "f3d:brep:entity#8": {
-          "entity": "byte_exact",
+          "scope": "fields",
           "fields": {
             "geometry.normal": "derived",
             "geometry.u_axis": "derived"

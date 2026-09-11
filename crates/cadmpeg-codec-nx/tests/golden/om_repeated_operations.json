@@ -1942,40 +1942,52 @@
       "annotations": {
         "exactness": {
           "nx:feature-history:feature#0000000000-0000000000": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:feature#0000000000-0000000001": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:feature#0000000000-0000000002": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:feature#0000000000-0000000003": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:feature#0000000000-0000000004": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:feature#0000000000-0000000005": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:feature#0000000000-0000000006": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:feature#0000000000-0000000007": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:feature#0000000000-0000000008": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:feature#0000000000-0000000009": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:feature#0000000000-0000000010": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:feature#0000000000-0000000011": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           }
         },
         "provenance": {

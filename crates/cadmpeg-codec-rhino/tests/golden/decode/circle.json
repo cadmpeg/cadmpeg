@@ -217,7 +217,8 @@
     "annotations": {
       "exactness": {
         "rhino:object:curve#record-000000-offset-177": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         }
       }
     },

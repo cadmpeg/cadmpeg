@@ -880,7 +880,8 @@
     "annotations": {
       "exactness": {
         "creo:model:feature#40": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         }
       },
       "provenance": {

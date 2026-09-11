@@ -1130,127 +1130,168 @@
     "annotations": {
       "exactness": {
         "rhino:object:body#record-000000-offset-177.caps": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:coedge#record-000000-offset-177.cap-0.profile-0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:coedge#record-000000-offset-177.cap-0.profile-1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:coedge#record-000000-offset-177.cap-1.profile-0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:coedge#record-000000-offset-177.cap-1.profile-1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:curve#record-000000-offset-177.cap-1.profile-0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:curve#record-000000-offset-177.cap-1.profile-1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:curve#record-000000-offset-177.profile-0.start": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:curve#record-000000-offset-177.profile-1.start": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:edge#record-000000-offset-177.cap-0.profile-0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:edge#record-000000-offset-177.cap-0.profile-1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:edge#record-000000-offset-177.cap-1.profile-0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:edge#record-000000-offset-177.cap-1.profile-1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:face#record-000000-offset-177.cap-0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:face#record-000000-offset-177.cap-1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:loop#record-000000-offset-177.cap-0.profile-0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:loop#record-000000-offset-177.cap-0.profile-1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:loop#record-000000-offset-177.cap-1.profile-0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:loop#record-000000-offset-177.cap-1.profile-1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:pcurve#record-000000-offset-177.cap-0.profile-0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:pcurve#record-000000-offset-177.cap-0.profile-1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:pcurve#record-000000-offset-177.cap-1.profile-0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:pcurve#record-000000-offset-177.cap-1.profile-1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:point#record-000000-offset-177.cap-0.profile-0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:point#record-000000-offset-177.cap-0.profile-1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:point#record-000000-offset-177.cap-1.profile-0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:point#record-000000-offset-177.cap-1.profile-1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:procedural-surface#record-000000-offset-177.lateral-0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:procedural-surface#record-000000-offset-177.lateral-1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:region#record-000000-offset-177.cap-0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:region#record-000000-offset-177.cap-1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:shell#record-000000-offset-177.cap-0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:shell#record-000000-offset-177.cap-1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:surface#record-000000-offset-177.cap-0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:surface#record-000000-offset-177.cap-1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:surface#record-000000-offset-177.lateral-0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:surface#record-000000-offset-177.lateral-1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:vertex#record-000000-offset-177.cap-0.profile-0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:vertex#record-000000-offset-177.cap-0.profile-1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:vertex#record-000000-offset-177.cap-1.profile-0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "rhino:object:vertex#record-000000-offset-177.cap-1.profile-1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         }
       }
     },

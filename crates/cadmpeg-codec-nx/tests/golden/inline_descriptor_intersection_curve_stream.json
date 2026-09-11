@@ -471,61 +471,62 @@
             "entity": "derived",
             "fields": {
               "links": "derived"
-            }
+            },
+            "scope": "entity"
           },
           "nx:s0:crv#0": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:edge#8": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:face#4": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:intersection#0": {
-            "entity": "byte_exact",
             "fields": {
               "definition": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:intersection-crv#0": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:pt#0": {
-            "entity": "byte_exact",
             "fields": {
               "position": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:region#12": {
-            "entity": "byte_exact",
             "fields": {
               "body": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#0": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:vertex#10": {
-            "entity": "byte_exact",
             "fields": {
               "tolerance": "derived"
-            }
+            },
+            "scope": "fields"
           }
         },
         "provenance": {

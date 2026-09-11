@@ -194,7 +194,8 @@
       "annotations": {
         "exactness": {
           "nx:container:parasolid#0": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           }
         },
         "provenance": {

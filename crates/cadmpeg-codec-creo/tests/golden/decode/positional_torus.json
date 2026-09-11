@@ -1251,10 +1251,12 @@
     "annotations": {
       "exactness": {
         "creo:VisibGeom:section#76": {
-          "entity": "unknown"
+          "entity": "unknown",
+          "scope": "entity"
         },
         "creo:visibgeom:surface#7": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         }
       },
       "provenance": {

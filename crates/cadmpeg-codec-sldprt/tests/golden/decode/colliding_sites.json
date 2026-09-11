@@ -526,34 +526,40 @@
     "annotations": {
       "exactness": {
         "sldprt:brep:body#0@block@250": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "sldprt:brep:body#0@block@8": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "sldprt:brep:region#0@block@250": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "sldprt:brep:region#0@block@8": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "sldprt:brep:shell#0@block@250": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "sldprt:brep:shell#0@block@8": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "sldprt:brep:surf#10@block@250": {
-          "entity": "byte_exact",
           "fields": {
             "geometry.u_axis": "derived"
-          }
+          },
+          "scope": "fields"
         },
         "sldprt:brep:surf#10@block@8": {
-          "entity": "byte_exact",
           "fields": {
             "geometry.u_axis": "derived"
-          }
+          },
+          "scope": "fields"
         }
       },
       "provenance": {

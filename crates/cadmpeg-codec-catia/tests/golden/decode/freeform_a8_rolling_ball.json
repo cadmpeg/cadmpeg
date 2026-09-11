@@ -649,13 +649,15 @@
     "annotations": {
       "exactness": {
         "catia:a8-rolling-ball:surf#0": {
-          "entity": "unknown"
+          "entity": "unknown",
+          "scope": "entity"
         },
         "catia:payload:unknown#freeform": {
           "entity": "unknown",
           "fields": {
             "links": "derived"
-          }
+          },
+          "scope": "entity"
         }
       },
       "provenance": {

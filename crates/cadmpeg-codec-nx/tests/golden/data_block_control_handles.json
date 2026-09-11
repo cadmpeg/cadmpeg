@@ -321,17 +321,18 @@
             "entity": "derived",
             "fields": {
               "source_content": "derived"
-            }
+            },
+            "scope": "entity"
           },
           "nx:om-entry-0:parameter#99": {
-            "entity": "byte_exact",
             "fields": {
               "native_ref": "derived",
               "ordinal": "derived",
               "owner": "derived",
               "properties": "derived",
               "value": "derived"
-            }
+            },
+            "scope": "fields"
           }
         },
         "provenance": {

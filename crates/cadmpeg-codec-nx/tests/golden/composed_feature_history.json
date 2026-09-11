@@ -6116,79 +6116,103 @@
       "annotations": {
         "exactness": {
           "nx:feature-history:feature#0000000000-0000000000": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:feature#0000000000-0000000001": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:feature#0000000000-0000000002": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:feature#0000000000-0000000003": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:feature#0000000000-0000000004": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:feature#0000000000-0000000005": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:feature#0000000000-0000000006": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:feature#0000000000-0000000007": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:feature#0000000000-0000000008": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:feature#0000000000-0000000009": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:feature#0000000000-0000000010": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:feature#0000000000-0000000011": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:feature#0000000000-0000000012": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:feature#0000000000-0000000013": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:feature#0000000000-0000000014": {
             "entity": "derived",
             "fields": {
               "source_content": "derived"
-            }
+            },
+            "scope": "entity"
           },
           "nx:feature-history:sketch#0000000000-0000000000": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:sketch#0000000000-0000000001": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:sketch-entity#point-0000000000-0000000000-0-0-1-0": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:sketch-entity#point-0000000000-0000000001-0-0-6-0": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:sketch-fixed-point#0000000000-0000000001-0000000001": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:sketch-point-use#0000000000-0000000000-0-0-1-0": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:sketch-point-use#0000000000-0000000001-0-0-6-0": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:sketch-record#0000000000-0000000000": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           },
           "nx:feature-history:sketch-record#0000000000-0000000001": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           }
         },
         "provenance": {

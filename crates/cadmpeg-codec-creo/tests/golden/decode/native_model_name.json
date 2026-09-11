@@ -587,10 +587,12 @@
     "annotations": {
       "exactness": {
         "creo:model:occurrence#root": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:model:product_definition#root": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         }
       },
       "provenance": {

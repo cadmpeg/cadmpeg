@@ -299,43 +299,48 @@
             "entity": "derived",
             "fields": {
               "links": "derived"
-            }
+            },
+            "scope": "entity"
           },
           "nx:derived:point-body#0": {
-            "entity": "inferred"
+            "entity": "inferred",
+            "scope": "entity"
           },
           "nx:derived:point-region#0": {
-            "entity": "inferred"
+            "entity": "inferred",
+            "scope": "entity"
           },
           "nx:derived:point-shell#0": {
-            "entity": "inferred"
+            "entity": "inferred",
+            "scope": "entity"
           },
           "nx:derived:point-vertex#0": {
-            "entity": "inferred"
+            "entity": "inferred",
+            "scope": "entity"
           },
           "nx:s0:crv#0": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:pt#0": {
-            "entity": "byte_exact",
             "fields": {
               "position": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#0": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           },
           "nx:s0:surf#1": {
-            "entity": "byte_exact",
             "fields": {
               "geometry": "derived"
-            }
+            },
+            "scope": "fields"
           }
         },
         "provenance": {

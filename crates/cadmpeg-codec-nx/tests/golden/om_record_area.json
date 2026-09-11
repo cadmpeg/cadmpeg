@@ -391,7 +391,8 @@
       "annotations": {
         "exactness": {
           "nx:feature-history:feature#0000000000-0000000000": {
-            "entity": "derived"
+            "entity": "derived",
+            "scope": "entity"
           }
         },
         "provenance": {

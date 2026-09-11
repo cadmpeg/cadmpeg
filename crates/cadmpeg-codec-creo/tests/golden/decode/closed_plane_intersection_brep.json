@@ -4279,220 +4279,292 @@
     "annotations": {
       "exactness": {
         "creo:VisibGeom:section#76": {
-          "entity": "unknown"
+          "entity": "unknown",
+          "scope": "entity"
         },
         "creo:topology:half_edge#10:0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:topology:half_edge#10:1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:topology:half_edge#11:0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:topology:half_edge#11:1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:topology:half_edge#12:0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:topology:half_edge#12:1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:topology:half_edge#13:0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:topology:half_edge#13:1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:topology:half_edge#14:0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:topology:half_edge#14:1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:topology:half_edge#15:0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:topology:half_edge#15:1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:body#1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:coedge#10:0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:coedge#10:1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:coedge#11:0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:coedge#11:1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:coedge#12:0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:coedge#12:1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:coedge#13:0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:coedge#13:1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:coedge#14:0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:coedge#14:1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:coedge#15:0": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:coedge#15:1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:curve#10": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:curve#11": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:curve#12": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:curve#13": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:curve#14": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:curve#15": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:edge#10": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:edge#11": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:edge#12": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:edge#13": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:edge#14": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:edge#15": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:face#1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:face#2": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:face#3": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:face#4": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:loop#1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:loop#2": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:loop#3": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:loop#4": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:pcurve#10:1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:pcurve#10:2": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:pcurve#11:1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:pcurve#11:3": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:pcurve#12:1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:pcurve#12:4": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:pcurve#13:2": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:pcurve#13:3": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:pcurve#14:2": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:pcurve#14:4": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:pcurve#15:3": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:pcurve#15:4": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:point#1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:point#2": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:point#3": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:point#4": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:region#1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:shell#1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:surface#1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:surface#2": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:surface#3": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:surface#4": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:vertex#1": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:vertex#2": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:vertex#3": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         },
         "creo:visibgeom:vertex#4": {
-          "entity": "derived"
+          "entity": "derived",
+          "scope": "entity"
         }
       },
       "provenance": {

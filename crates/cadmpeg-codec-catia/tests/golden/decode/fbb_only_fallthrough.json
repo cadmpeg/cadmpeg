@@ -670,13 +670,14 @@
           "entity": "unknown",
           "fields": {
             "links": "derived"
-          }
+          },
+          "scope": "entity"
         },
         "catia:standard:circle#0": {
-          "entity": "byte_exact",
           "fields": {
             "geometry.axis": "derived"
-          }
+          },
+          "scope": "fields"
         }
       },
       "provenance": {
