@@ -2860,7 +2860,7 @@ fn emit_surface_curve_layout<F>(
         EmbeddedSurfaceCurveLayout::CacheFirst { context, flags } => {
             let (context, form) = context
                 .into_intersection(solved_domain.ok_or("missing procedural curve cache domain")?);
-            let tail = cadmpeg_ir::geometry::SurfaceCurveTail {
+            let curve_tail = cadmpeg_ir::geometry::SurfaceCurveTail {
                 extension: form.extension,
                 revision: form.revision,
                 cache: form.cache,
@@ -2869,7 +2869,10 @@ fn emit_surface_curve_layout<F>(
             };
             (
                 context,
-                Some(cadmpeg_ir::geometry::SurfaceCurveCacheFirst { tail, flags }),
+                Some(cadmpeg_ir::geometry::SurfaceCurveCacheFirst {
+                    form: curve_tail,
+                    flags,
+                }),
             )
         }
     };
