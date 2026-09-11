@@ -132,7 +132,7 @@ fn source_less_offset_plane_resolves_a_native_feature_reference() {
     assert!(matches!(
         projected[1].evaluation.definition(),
         FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Feature(reference)),
+            reference: Some(DatumPlaneReference::Feature { feature: reference }),
             distance: actual_distance,
         } if (reference == &projected[0].id) && actual_distance.get() == 6.0
     ));

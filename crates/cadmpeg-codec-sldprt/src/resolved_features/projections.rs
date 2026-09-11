@@ -1418,16 +1418,16 @@ pub(crate) fn project_compact_surface_selections(
                     None => cadmpeg_ir::features::FaceSelection::Native(native),
                 };
                 match reference {
-                    Some(cadmpeg_ir::features::DatumPlaneReference::Face(existing)) => {
+                    Some(cadmpeg_ir::features::DatumPlaneReference::Face { face: existing }) => {
                         *existing = face;
                     }
                     reference @ (None
                     | Some(
                         cadmpeg_ir::features::DatumPlaneReference::ResolvedPlane { .. },
                     )) => {
-                        *reference = Some(cadmpeg_ir::features::DatumPlaneReference::Face(face));
+                        *reference = Some(cadmpeg_ir::features::DatumPlaneReference::Face { face });
                     }
-                    Some(cadmpeg_ir::features::DatumPlaneReference::Feature(_)) => {}
+                    Some(cadmpeg_ir::features::DatumPlaneReference::Feature { .. }) => {}
                 }
                 break 'feature_edit;
             }
@@ -1605,17 +1605,19 @@ pub(crate) fn project_compact_surface_selections(
                     }
                 }
             }
-            if let Some(cadmpeg_ir::features::DatumPlaneReference::Face(existing)) = reference {
+            if let Some(cadmpeg_ir::features::DatumPlaneReference::Face { face: existing }) =
+                reference
+            {
                 *existing = face;
                 break 'feature_edit;
             }
             if matches!(
                 reference,
-                Some(cadmpeg_ir::features::DatumPlaneReference::Feature(_))
+                Some(cadmpeg_ir::features::DatumPlaneReference::Feature { .. })
             ) {
                 break 'feature_edit;
             }
-            *reference = Some(cadmpeg_ir::features::DatumPlaneReference::Face(face));
+            *reference = Some(cadmpeg_ir::features::DatumPlaneReference::Face { face });
         }
         feature
             .evaluation
@@ -2211,9 +2213,9 @@ pub(crate) fn project_unbound_offset_plane_faces(
             let Some(selected) = unique_planar_face(origin, normal, faces, surfaces) else {
                 break 'feature_edit;
             };
-            *reference = Some(cadmpeg_ir::features::DatumPlaneReference::Face(
-                cadmpeg_ir::features::FaceSelection::Faces(vec![selected]),
-            ));
+            *reference = Some(cadmpeg_ir::features::DatumPlaneReference::Face {
+                face: cadmpeg_ir::features::FaceSelection::Faces(vec![selected]),
+            });
         }
         feature
             .evaluation

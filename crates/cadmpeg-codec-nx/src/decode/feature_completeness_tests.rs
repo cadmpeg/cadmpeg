@@ -1480,9 +1480,9 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     ir.model.features[0]
         .evaluation
         .set_definition(FeatureDefinition::DatumOffsetPlane {
-            reference: Some(cadmpeg_ir::features::DatumPlaneReference::Feature(
-                datum.clone(),
-            )),
+            reference: Some(cadmpeg_ir::features::DatumPlaneReference::Feature {
+                feature: datum.clone(),
+            }),
             distance: Length::new(5.0).unwrap(),
         })
         .unwrap();

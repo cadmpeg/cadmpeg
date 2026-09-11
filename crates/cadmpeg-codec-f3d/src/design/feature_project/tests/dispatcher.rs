@@ -297,8 +297,8 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
     let plane_features = planes
         .iter()
         .map(|plane| match plane {
-            DatumPlaneReference::Feature(feature) => feature.clone(),
-            DatumPlaneReference::Face(_) | DatumPlaneReference::ResolvedPlane { .. } => {
+            DatumPlaneReference::Feature { feature } => feature.clone(),
+            DatumPlaneReference::Face { .. } | DatumPlaneReference::ResolvedPlane { .. } => {
                 panic!("feature-backed plane")
             }
         })

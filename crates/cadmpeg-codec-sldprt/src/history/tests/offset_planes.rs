@@ -35,7 +35,7 @@ fn offset_plane_frame_resolves_one_preceding_parallel_plane() {
     assert!(matches!(
         projected[1].evaluation.definition(),
         FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Feature(bound)),
+            reference: Some(DatumPlaneReference::Feature { feature: bound }),
             distance: actual_distance,
         } if (bound == &projected[0].id) && actual_distance.get() == 6.0
     ));
@@ -87,7 +87,7 @@ fn unresolved_face_frame_resolves_one_preceding_parallel_plane() {
     assert!(matches!(
         projected[1].evaluation.definition(),
         FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Feature(bound)),
+            reference: Some(DatumPlaneReference::Feature { feature: bound }),
             distance: actual_distance,
         } if (bound == &projected[0].id) && actual_distance.get() == 6.0
     ));
@@ -148,7 +148,7 @@ fn unresolved_face_frame_resolves_a_later_principal_plane_from_support_geometry(
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Feature(reference)),
+            reference: Some(DatumPlaneReference::Feature { feature: reference }),
             distance: actual_distance,
         } if (reference == &features[1].id) && actual_distance.get() == 6.0
     ));
@@ -178,7 +178,9 @@ fn unresolved_face_frame_collapses_a_zero_offset_plane_alias() {
         FeatureId::mint("synthetic:test:id#alias").expect("identity grammar"),
         1,
         FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Feature(base.id.clone())),
+            reference: Some(DatumPlaneReference::Feature {
+                feature: base.id.clone(),
+            }),
             distance: Length::new(0.0).unwrap(),
         },
     );
@@ -234,7 +236,7 @@ fn unresolved_face_frame_collapses_a_zero_offset_plane_alias() {
     assert!(matches!(
         features[2].evaluation.definition(),
         FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Feature(reference)),
+            reference: Some(DatumPlaneReference::Feature { feature: reference }),
             distance: actual_distance,
         } if (reference == &features[0].id) && actual_distance.get() == 6.0
     ));
@@ -250,9 +252,9 @@ fn explicit_later_constructed_plane_survives_without_result_offset_frame() {
         FeatureId::mint("synthetic:test:id#offset").expect("identity grammar"),
         0,
         FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Feature(
-                FeatureId::mint("synthetic:test:id#reference").expect("identity grammar"),
-            )),
+            reference: Some(DatumPlaneReference::Feature {
+                feature: FeatureId::mint("synthetic:test:id#reference").expect("identity grammar"),
+            }),
             distance: Length::new(6.0).unwrap(),
         },
     );
@@ -289,7 +291,7 @@ fn explicit_later_constructed_plane_survives_without_result_offset_frame() {
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Feature(reference)),
+            reference: Some(DatumPlaneReference::Feature { feature: reference }),
             distance: actual_distance,
         } if (reference == &features[1].id) && actual_distance.get() == 6.0
     ));
@@ -548,7 +550,7 @@ fn native_face_offset_reference_uses_identity_without_a_duplicate_frame() {
 
         let definition = project_offset_plane(&offset, &HashMap::new()).unwrap();
         let FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Face(face)),
+            reference: Some(DatumPlaneReference::Face { face }),
             distance,
         } = definition
         else {
@@ -651,7 +653,7 @@ fn explicit_offset_plane_reference_orders_a_later_serialized_principal_first() {
     assert!(matches!(
         projected[0].evaluation.definition(),
         FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Feature(reference)),
+            reference: Some(DatumPlaneReference::Feature { feature: reference }),
             distance: actual_distance,
         } if (reference == &projected[1].id) && actual_distance.get() == 6.0
     ));
@@ -691,7 +693,7 @@ fn explicit_principal_reference_survives_a_coincident_result_frame() {
     assert!(matches!(
         projected[0].evaluation.definition(),
         FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Feature(reference)),
+            reference: Some(DatumPlaneReference::Feature { feature: reference }),
             distance: actual_distance,
         } if (reference == &projected[1].id) && actual_distance.get() == 6.0
     ));
@@ -776,7 +778,7 @@ fn explicit_offset_plane_reference_orders_a_later_derived_plane_first() {
     assert!(matches!(
         projected[0].evaluation.definition(),
         FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Feature(reference)),
+            reference: Some(DatumPlaneReference::Feature { feature: reference }),
             distance: actual_distance,
         } if (reference == &projected[1].id) && actual_distance.get() == 6.0
     ));

@@ -195,7 +195,7 @@ fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
     .unwrap();
 
     let FeatureDefinition::DatumOffsetPlane {
-        reference: Some(DatumPlaneReference::Face(face)),
+        reference: Some(DatumPlaneReference::Face { face }),
         ..
     } = features[0].evaluation.definition()
     else {
@@ -247,9 +247,9 @@ fn generic_native_offset_plane_support_stays_native() {
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::DatumOffsetPlane {
-                reference: Some(DatumPlaneReference::Face(FaceSelection::Native(
-                    native.into(),
-                ))),
+                reference: Some(DatumPlaneReference::Face {
+                    face: FaceSelection::Native(native.into()),
+                }),
                 distance: Length::new(4.0).unwrap(),
             },
         ),
@@ -264,7 +264,7 @@ fn generic_native_offset_plane_support_stays_native() {
     .unwrap();
 
     let FeatureDefinition::DatumOffsetPlane {
-        reference: Some(DatumPlaneReference::Face(face)),
+        reference: Some(DatumPlaneReference::Face { face }),
         ..
     } = features[0].evaluation.definition()
     else {

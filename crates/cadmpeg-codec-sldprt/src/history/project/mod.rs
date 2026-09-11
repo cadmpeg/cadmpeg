@@ -396,7 +396,7 @@ pub(crate) fn bind_offset_plane_references(
         .iter()
         .filter_map(|feature| {
             let FeatureDefinition::DatumOffsetPlane {
-                reference: Some(DatumPlaneReference::Feature(reference)),
+                reference: Some(DatumPlaneReference::Feature { feature: reference }),
                 distance,
             } = feature.evaluation.definition()
             else {
@@ -429,7 +429,10 @@ pub(crate) fn bind_offset_plane_references(
         else {
             continue;
         };
-        let Some(DatumPlaneReference::Feature(reference_id)) = reference.as_ref() else {
+        let Some(DatumPlaneReference::Feature {
+            feature: reference_id,
+        }) = reference.as_ref()
+        else {
             continue;
         };
         let reference_id = reference_id.clone();
@@ -501,7 +504,7 @@ pub(crate) fn bind_offset_plane_references(
         let mut changed = false;
         for feature in features.iter() {
             let FeatureDefinition::DatumOffsetPlane {
-                reference: Some(DatumPlaneReference::Feature(reference)),
+                reference: Some(DatumPlaneReference::Feature { feature: reference }),
                 distance,
             } = feature.evaluation.definition()
             else {
@@ -628,7 +631,9 @@ pub(crate) fn bind_offset_plane_references(
             let Some(distance) = Length::new(distance) else {
                 continue;
             };
-            *slot = Some(DatumPlaneReference::Feature(reference.clone()));
+            *slot = Some(DatumPlaneReference::Feature {
+                feature: reference.clone(),
+            });
             *stored_distance = distance;
             if !features[index].dependencies.contains(&reference) {
                 features[index].dependencies.insert(reference);

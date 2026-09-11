@@ -314,8 +314,10 @@ fn datum_plane_reference_is_resolved(
     reference: &cadmpeg_ir::features::DatumPlaneReference,
 ) -> bool {
     match reference {
-        cadmpeg_ir::features::DatumPlaneReference::Feature(_) => true,
-        cadmpeg_ir::features::DatumPlaneReference::Face(face) => face_selection_is_resolved(face),
+        cadmpeg_ir::features::DatumPlaneReference::Feature { .. } => true,
+        cadmpeg_ir::features::DatumPlaneReference::Face { face } => {
+            face_selection_is_resolved(face)
+        }
         cadmpeg_ir::features::DatumPlaneReference::ResolvedPlane { .. } => true,
     }
 }
@@ -1572,7 +1574,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                 use cadmpeg_ir::features::{DatumPlaneReference, DatumPointConstruction};
 
                 let mut plane = |reference: &DatumPlaneReference| {
-                    if let DatumPlaneReference::Face(face) = reference {
+                    if let DatumPlaneReference::Face { face } = reference {
                         face_selection(face);
                     }
                 };

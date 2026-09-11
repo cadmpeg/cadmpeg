@@ -1907,7 +1907,7 @@ fn project_work_point_construction(
         scope_ids
             .get(&(stream, selection.work_plane_scope_record_index))
             .cloned()
-            .map(DatumPlaneReference::Feature)
+            .map(|feature| DatumPlaneReference::Feature { feature })
     };
 
     Some(match construction.rule.form() {

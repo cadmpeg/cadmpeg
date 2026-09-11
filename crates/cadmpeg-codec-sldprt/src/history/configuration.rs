@@ -753,7 +753,7 @@ pub(crate) fn project_configuration_sketch_states(
             if let Some(base_definition) = base.get(feature_id) {
                 inherit_configuration_shared_semantics(&mut state.definition, base_definition)?;
                 if let FeatureDefinition::DatumOffsetPlane {
-                    reference: Some(DatumPlaneReference::Feature(reference)),
+                    reference: Some(DatumPlaneReference::Feature { feature: reference }),
                     ..
                 } = &state.definition
                 {
@@ -781,8 +781,8 @@ pub(crate) fn inherit_configuration_shared_semantics(
         if reference.is_none() {
             reference.clone_from(base_reference);
         } else if let (
-            Some(cadmpeg_ir::features::DatumPlaneReference::Face(face)),
-            Some(cadmpeg_ir::features::DatumPlaneReference::Face(base_face)),
+            Some(cadmpeg_ir::features::DatumPlaneReference::Face { face }),
+            Some(cadmpeg_ir::features::DatumPlaneReference::Face { face: base_face }),
         ) = (reference, base_reference)
         {
             let incomplete = match face {
@@ -1031,15 +1031,15 @@ fn configuration_reference_plane_frame(
     visiting: &mut HashSet<FeatureId>,
 ) -> Option<ConfigurationPlaneFrame> {
     match reference {
-        DatumPlaneReference::Feature(feature_id) => {
-            configuration_feature_plane_frame(feature_id, features, visiting)
-        }
+        DatumPlaneReference::Feature {
+            feature: feature_id,
+        } => configuration_feature_plane_frame(feature_id, features, visiting),
         DatumPlaneReference::ResolvedPlane { frame } => valid_plane_frame(
             frame.normal(),
             frame.u_axis(),
         )
         .then_some((frame.origin(), frame.normal(), frame.u_axis())),
-        DatumPlaneReference::Face(_) => None,
+        DatumPlaneReference::Face { .. } => None,
     }
 }
 
@@ -1090,20 +1090,22 @@ pub(crate) fn inherit_configuration_reference_plane_semantics(
                 }
             }
             match base_reference {
-                DatumPlaneReference::Feature(_) => Some(base_reference.clone()),
-                DatumPlaneReference::Face(face) if complete_configuration_face_selection(face) => {
+                DatumPlaneReference::Feature { .. } => Some(base_reference.clone()),
+                DatumPlaneReference::Face { face }
+                    if complete_configuration_face_selection(face) =>
+                {
                     Some(base_reference.clone())
                 }
                 DatumPlaneReference::ResolvedPlane { .. } => Some(base_reference.clone()),
-                DatumPlaneReference::Face(_) => None,
+                DatumPlaneReference::Face { .. } => None,
             }
         })();
         let Some(replacement) = replacement else {
             continue;
         };
         let dependency = match &replacement {
-            DatumPlaneReference::Feature(reference) => Some(reference.clone()),
-            DatumPlaneReference::Face(_) | DatumPlaneReference::ResolvedPlane { .. } => None,
+            DatumPlaneReference::Feature { feature: reference } => Some(reference.clone()),
+            DatumPlaneReference::Face { .. } | DatumPlaneReference::ResolvedPlane { .. } => None,
         };
         let mut definition = feature.evaluation.definition().clone();
         let FeatureDefinition::DatumOffsetPlane { reference, .. } = &mut definition else {

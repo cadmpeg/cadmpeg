@@ -1118,15 +1118,11 @@ fn datum_and_support_plane_frames_preserve_nonunit_geometry_and_wire_fields() {
         definition
     );
     let resolved = DatumPlaneReference::ResolvedPlane { frame: support };
+    let resolved_wire =
+        serde_json::json!({"reference": "resolved_plane", "frame": geometry.clone()});
+    assert_eq!(serde_json::to_value(&resolved).unwrap(), resolved_wire);
     assert_eq!(
-        serde_json::from_value::<DatumPlaneReference>(geometry.clone()).unwrap(),
-        resolved
-    );
-    let mut legacy = geometry;
-    legacy["face"] = serde_json::json!({"kind":"unresolved"});
-    assert_eq!(serde_json::to_value(&resolved).unwrap(), legacy);
-    assert_eq!(
-        serde_json::from_value::<DatumPlaneReference>(legacy).unwrap(),
+        serde_json::from_value::<DatumPlaneReference>(resolved_wire).unwrap(),
         resolved
     );
 }
@@ -1175,21 +1171,26 @@ fn plane_frame_owners_preserve_their_distinct_floating_point_thresholds() {
 }
 
 #[test]
-fn resolved_plane_serde_checks_used_geometry_and_preserves_ignored_legacy_geometry() {
+fn a_resolved_plane_reference_checks_the_geometry_it_carries() {
     use crate::features::{DatumPlaneReference, FaceSelection};
-    let geometry = serde_json::json!({
-        "origin":{"x":0.0,"y":0.0,"z":0.0},
-        "normal":{"x":0.0,"y":0.0,"z":0.0},
-        "u_axis":{"x":1.0,"y":0.0,"z":0.0}
+    let degenerate = serde_json::json!({
+        "reference": "resolved_plane",
+        "frame": {
+            "origin":{"x":0.0,"y":0.0,"z":0.0},
+            "normal":{"x":0.0,"y":0.0,"z":0.0},
+            "u_axis":{"x":1.0,"y":0.0,"z":0.0}
+        }
     });
-    assert!(serde_json::from_value::<DatumPlaneReference>(geometry.clone()).is_err());
-    let mut legacy = geometry;
-    legacy["face"] = serde_json::json!({"kind":"unresolved"});
-    assert!(serde_json::from_value::<DatumPlaneReference>(legacy.clone()).is_err());
-    legacy["face"] = serde_json::json!({"kind":"native","value":"face:retained"});
+    assert!(serde_json::from_value::<DatumPlaneReference>(degenerate).is_err());
+    let native = serde_json::json!({
+        "reference": "face",
+        "face": {"kind":"native","value":"face:retained"}
+    });
     assert_eq!(
-        serde_json::from_value::<DatumPlaneReference>(legacy).unwrap(),
-        DatumPlaneReference::Face(FaceSelection::Native("face:retained".into()))
+        serde_json::from_value::<DatumPlaneReference>(native).unwrap(),
+        DatumPlaneReference::Face {
+            face: FaceSelection::Native("face:retained".into())
+        }
     );
 }
 

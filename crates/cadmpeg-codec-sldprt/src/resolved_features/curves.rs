@@ -1306,31 +1306,35 @@ pub(super) fn sketch_plane_frames(
         })
         .collect::<HashMap<_, _>>();
     loop {
-        let derived = features
-            .iter()
-            .filter(|feature| !frames_by_feature.contains_key(&feature.id))
-            .filter_map(|feature| {
-                let cadmpeg_ir::features::FeatureDefinition::DatumOffsetPlane {
-                    reference: Some(cadmpeg_ir::features::DatumPlaneReference::Feature(reference)),
-                    distance,
-                } = feature.evaluation.definition()
-                else {
-                    return None;
-                };
-                let frame = *frames_by_feature.get(reference)?;
-                Some((
-                    feature.id.clone(),
-                    SketchPlaneFrame {
-                        origin: Point3::new(
-                            frame.origin.x + frame.normal.x * distance.get(),
-                            frame.origin.y + frame.normal.y * distance.get(),
-                            frame.origin.z + frame.normal.z * distance.get(),
-                        ),
-                        ..frame
-                    },
-                ))
-            })
-            .collect::<Vec<_>>();
+        let derived =
+            features
+                .iter()
+                .filter(|feature| !frames_by_feature.contains_key(&feature.id))
+                .filter_map(|feature| {
+                    let cadmpeg_ir::features::FeatureDefinition::DatumOffsetPlane {
+                        reference:
+                            Some(cadmpeg_ir::features::DatumPlaneReference::Feature {
+                                feature: reference,
+                            }),
+                        distance,
+                    } = feature.evaluation.definition()
+                    else {
+                        return None;
+                    };
+                    let frame = *frames_by_feature.get(reference)?;
+                    Some((
+                        feature.id.clone(),
+                        SketchPlaneFrame {
+                            origin: Point3::new(
+                                frame.origin.x + frame.normal.x * distance.get(),
+                                frame.origin.y + frame.normal.y * distance.get(),
+                                frame.origin.z + frame.normal.z * distance.get(),
+                            ),
+                            ..frame
+                        },
+                    ))
+                })
+                .collect::<Vec<_>>();
         if derived.is_empty() {
             break;
         }
