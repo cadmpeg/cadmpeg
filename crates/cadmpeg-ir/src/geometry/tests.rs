@@ -251,9 +251,9 @@ fn the_variable_blend_radii_are_one_nested_tagged_object() {
     let wire = serde_json::to_value(&value).unwrap();
     assert_eq!(wire["radii"]["kind"], "two");
     assert_eq!(wire["radii"]["first"]["payload"]["kind"], "two_ends");
-    assert_eq!(wire["radii"]["first"]["discriminator"], 0);
+    assert_eq!(wire["radii"]["first"]["payload"]["discriminator"], 0);
     assert_eq!(wire["radii"]["second"]["payload"]["kind"], "two_ends");
-    assert_eq!(wire["radii"]["second"]["discriminator"], 1);
+    assert_eq!(wire["radii"]["second"]["payload"]["discriminator"], 1);
     assert_eq!(wire["u_range"], serde_json::json!([-1.0, 2.0]));
     assert_eq!(wire["v_lower"], -0.5);
     assert_eq!(

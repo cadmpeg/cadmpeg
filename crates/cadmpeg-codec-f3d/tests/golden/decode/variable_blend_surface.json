@@ -669,10 +669,10 @@
                 "kind": "single",
                 "value": {
                   "modern_flag": true,
-                  "discriminator": 7,
                   "calibrated": 3,
                   "payload": {
                     "kind": "two_ends",
+                    "discriminator": 7,
                     "parameters": [
                       0.25,
                       0.75
