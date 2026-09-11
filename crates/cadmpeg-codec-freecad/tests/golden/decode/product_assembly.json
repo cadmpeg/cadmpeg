@@ -1810,7 +1810,7 @@
           "prototype": {
             "document": {
               "path": "external_component.FCStd",
-              "resolution": "unresolved"
+              "resolution": "path"
             },
             "object": "ExternalPrototype",
             "scope": "external"

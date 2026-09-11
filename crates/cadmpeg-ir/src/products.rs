@@ -154,166 +154,70 @@ impl<'de> Deserialize<'de> for NonEmptyString {
 }
 
 /// Typed identity or explicit absence of an external document.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "resolution", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ExternalDocument {
     /// Non-empty file path stored by the source.
-    Path(NonEmptyString),
+    Path {
+        /// Persisted file path.
+        path: NonEmptyString,
+    },
     /// Non-empty document identity stored by the source.
-    DocumentId(NonEmptyString),
+    DocumentId {
+        /// Persisted document identity.
+        document_id: NonEmptyString,
+    },
     /// Persisted reference was empty or structurally unusable.
-    Missing,
+    Missing {},
 }
 
 impl ExternalDocument {
     /// Constructs a path reference, or [`Self::Missing`] when the path is empty.
     pub fn path(path: impl Into<String>) -> Self {
         match NonEmptyString::new(path) {
-            Some(path) => Self::Path(path),
-            None => Self::Missing,
+            Some(path) => Self::Path { path },
+            None => Self::Missing {},
         }
     }
 
     /// Constructs a document-id reference, or [`Self::Missing`] when the id is empty.
     pub fn document_id(document_id: impl Into<String>) -> Self {
         match NonEmptyString::new(document_id) {
-            Some(document_id) => Self::DocumentId(document_id),
-            None => Self::Missing,
+            Some(document_id) => Self::DocumentId { document_id },
+            None => Self::Missing {},
         }
     }
 
     /// Returns the explicit missing-reference state.
     pub fn missing() -> Self {
-        Self::Missing
+        Self::Missing {}
     }
 
     /// Returns the persisted file path, when the reference uses one.
     pub fn as_path(&self) -> Option<&str> {
         match self {
-            Self::Path(path) => Some(path.as_str()),
-            Self::DocumentId(_) | Self::Missing => None,
+            Self::Path { path } => Some(path.as_str()),
+            Self::DocumentId { .. } | Self::Missing {} => None,
         }
     }
 
     /// Returns the persisted document id, when the reference uses one.
     pub fn as_document_id(&self) -> Option<&str> {
         match self {
-            Self::DocumentId(document_id) => Some(document_id.as_str()),
-            Self::Path(_) | Self::Missing => None,
+            Self::DocumentId { document_id } => Some(document_id.as_str()),
+            Self::Path { .. } | Self::Missing {} => None,
         }
     }
 
     /// Returns whether the source carried no usable external document identity.
     pub fn is_missing(&self) -> bool {
-        matches!(self, Self::Missing)
+        matches!(self, Self::Missing {})
     }
 }
 
 /// First-class external document reference without implicit loading.
 pub type ExternalDocumentReference = ExternalDocument;
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct ExternalDocumentReferenceWire {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    path: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    document_id: Option<String>,
-    resolution: ExternalResolutionWire,
-}
-
-#[derive(Clone, Copy, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-enum ExternalResolutionWire {
-    Unresolved,
-    MissingReference,
-}
-
-impl Serialize for ExternalDocument {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let (path, document_id, resolution) = match self {
-            Self::Path(path) => (
-                Some(path.as_str().to_owned()),
-                None,
-                ExternalResolutionWire::Unresolved,
-            ),
-            Self::DocumentId(document_id) => (
-                None,
-                Some(document_id.as_str().to_owned()),
-                ExternalResolutionWire::Unresolved,
-            ),
-            Self::Missing => (
-                Some(String::new()),
-                None,
-                ExternalResolutionWire::MissingReference,
-            ),
-        };
-        ExternalDocumentReferenceWire {
-            path,
-            document_id,
-            resolution,
-        }
-        .serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for ExternalDocument {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let wire = ExternalDocumentReferenceWire::deserialize(deserializer)?;
-        match (wire.path, wire.document_id, wire.resolution) {
-            (Some(path), None, ExternalResolutionWire::Unresolved) => {
-                NonEmptyString::new(path).map(Self::Path).ok_or_else(|| {
-                    serde::de::Error::custom(
-                        "external document path must not be empty when resolution is unresolved",
-                    )
-                })
-            }
-            (None, Some(document_id), ExternalResolutionWire::Unresolved) => {
-                NonEmptyString::new(document_id)
-                    .map(Self::DocumentId)
-                    .ok_or_else(|| {
-                        serde::de::Error::custom(
-                            "external document id must not be empty when resolution is unresolved",
-                        )
-                    })
-            }
-            (Some(path), None, ExternalResolutionWire::MissingReference) if path.is_empty() => {
-                Ok(Self::Missing)
-            }
-            (None, Some(document_id), ExternalResolutionWire::MissingReference)
-                if document_id.is_empty() =>
-            {
-                Ok(Self::Missing)
-            }
-            _ => {
-                Err(serde::de::Error::custom(
-                    "external document reference must contain one non-empty unresolved identity or one empty missing identity",
-                ))
-            }
-        }
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for ExternalDocument {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "ExternalDocumentReference".into()
-    }
-
-    fn schema_id() -> std::borrow::Cow<'static, str> {
-        concat!(module_path!(), "::ExternalDocumentReference").into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        ExternalDocumentReferenceWire::json_schema(generator)
-    }
-}
 
 /// Copy-on-change ownership behavior of a link.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -567,53 +471,65 @@ mod tests {
     }
 
     #[test]
-    fn external_document_wire_preserves_legacy_fields_and_rejects_split_states() {
+    fn an_external_document_states_its_resolution_and_carries_one_identity() {
         let path = ExternalDocument::path("parts/widget.FCStd");
         let path_wire = serde_json::to_value(&path).unwrap();
         assert_eq!(
             path_wire,
             serde_json::json!({
-                "path": "parts/widget.FCStd",
-                "resolution": "unresolved"
+                "resolution": "path",
+                "path": "parts/widget.FCStd"
             })
         );
         assert_eq!(
-            serde_json::from_value::<ExternalDocument>(path_wire).unwrap(),
+            serde_json::from_value::<ExternalDocument>(path_wire.clone()).unwrap(),
             path
+        );
+
+        let document_id = ExternalDocument::document_id("document-7");
+        let document_id_wire = serde_json::to_value(&document_id).unwrap();
+        assert_eq!(
+            document_id_wire,
+            serde_json::json!({"resolution": "document_id", "document_id": "document-7"})
+        );
+        assert_eq!(
+            serde_json::from_value::<ExternalDocument>(document_id_wire).unwrap(),
+            document_id
         );
 
         let missing = ExternalDocument::missing();
         assert_eq!(ExternalDocument::path(""), missing);
         assert_eq!(ExternalDocument::document_id(""), missing);
         let missing_wire = serde_json::to_value(&missing).unwrap();
-        assert_eq!(
-            missing_wire,
-            serde_json::json!({"path": "", "resolution": "missing_reference"})
-        );
+        assert_eq!(missing_wire, serde_json::json!({"resolution": "missing"}));
         assert_eq!(
             serde_json::from_value::<ExternalDocument>(missing_wire).unwrap(),
             missing
         );
-        assert_eq!(
-            serde_json::from_value::<ExternalDocument>(serde_json::json!({
-                "document_id": "",
-                "resolution": "missing_reference"
-            }))
-            .unwrap(),
-            missing
-        );
 
-        for invalid in [
-            serde_json::json!({"path": "", "resolution": "unresolved"}),
-            serde_json::json!({"path": "parts/widget.FCStd", "resolution": "missing_reference"}),
-            serde_json::json!({"document_id": "", "resolution": "unresolved"}),
-            serde_json::json!({
-                "path": "parts/widget.FCStd",
-                "document_id": "document-7",
-                "resolution": "unresolved"
-            }),
+        for (invalid, named) in [
+            (
+                serde_json::json!({"resolution": "path", "path": ""}),
+                "must not be empty",
+            ),
+            (
+                serde_json::json!({
+                    "resolution": "path",
+                    "path": "parts/widget.FCStd",
+                    "document_id": "document-7"
+                }),
+                "document_id",
+            ),
+            (
+                serde_json::json!({"resolution": "missing", "path": ""}),
+                "path",
+            ),
+            (serde_json::json!({"resolution": "path"}), "path"),
         ] {
-            assert!(serde_json::from_value::<ExternalDocument>(invalid).is_err());
+            let error = serde_json::from_value::<ExternalDocument>(invalid)
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains(named), "{error}");
         }
     }
 

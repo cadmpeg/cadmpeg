@@ -547,10 +547,12 @@ impl ExternalReferenceRecord {
         use cadmpeg_ir::products::ExternalDocumentReference;
         match &self.identity {
             ExternalReferenceIdentity::Path { path, .. } => {
-                ExternalDocumentReference::Path(path.clone())
+                ExternalDocumentReference::Path { path: path.clone() }
             }
             ExternalReferenceIdentity::DocumentId(document_id) => {
-                ExternalDocumentReference::DocumentId(document_id.clone())
+                ExternalDocumentReference::DocumentId {
+                    document_id: document_id.clone(),
+                }
             }
         }
     }
