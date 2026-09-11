@@ -222,7 +222,12 @@ pub type ExternalDocumentReference = ExternalDocument;
 /// Copy-on-change ownership behavior of a link.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "policy", content = "native_policy", rename_all = "snake_case")]
+#[serde(
+    tag = "policy",
+    content = "native_policy",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum CopyOnChangePolicy {
     /// Link follows its prototype without making an owned copy.
     Disabled,

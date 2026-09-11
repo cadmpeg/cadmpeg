@@ -56,7 +56,7 @@ fn surface_payload_admission_enforces_directed_nonzero_subset_ranges() {
 
 #[test]
 fn surface_law_admission_preserves_the_depth_boundary() {
-    let mut expression = LawExpression::Null;
+    let mut expression = LawExpression::Null {};
     for _ in 0..64 {
         expression = LawExpression::Algebraic {
             operator: "+".into(),

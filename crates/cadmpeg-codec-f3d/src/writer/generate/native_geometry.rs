@@ -2188,7 +2188,7 @@ fn native_law_expression(
         ));
     }
     match expression {
-        LawExpression::Null => native_string(bytes, "null_law")?,
+        LawExpression::Null {} => native_string(bytes, "null_law")?,
         LawExpression::Text { value } => native_string(bytes, value)?,
         LawExpression::Integer { value } => native_i64(bytes, *value),
         LawExpression::Double { value } => native_f64(bytes, *value),

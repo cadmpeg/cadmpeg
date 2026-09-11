@@ -893,7 +893,7 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
         feature("SurfaceSweep").evaluation.definition(), cadmpeg_ir::features::FeatureDefinition::Sweep {
             shape,
 
-            orientation: Some(cadmpeg_ir::features::SweepOrientation::CorrectedFrenet),
+            orientation: Some(cadmpeg_ir::features::SweepOrientation::CorrectedFrenet {}),
             transition: Some(cadmpeg_ir::features::SweepTransition::RoundCorner),
             transformation: Some(cadmpeg_ir::features::SweepTransformation::Constant),
             linearize: true,
@@ -978,7 +978,7 @@ fn transfers_remaining_pipe_orientation_and_transformation_modes() {
     assert!(matches!(
         definition("Fixed"),
         FeatureDefinition::Sweep {
-            orientation: Some(SweepOrientation::Fixed),
+            orientation: Some(SweepOrientation::Fixed {}),
             transition: Some(SweepTransition::Transformed),
             ..
         }
@@ -986,7 +986,7 @@ fn transfers_remaining_pipe_orientation_and_transformation_modes() {
     assert!(matches!(
         definition("Frenet"),
         FeatureDefinition::Sweep {
-            orientation: Some(SweepOrientation::Frenet),
+            orientation: Some(SweepOrientation::Frenet {}),
             transition: Some(SweepTransition::RightCorner),
             ..
         }
@@ -1177,7 +1177,7 @@ fn distinguishes_absent_and_malformed_loft_sweep_boolean_flags() {
     assert!(matches!(
         definition(&result, "SweepAbsent"), FeatureDefinition::Sweep {
             shape,
-            orientation: Some(SweepOrientation::Frenet),
+            orientation: Some(SweepOrientation::Frenet {}),
             path_tangent: false,
             linearize: false,
             allow_multi_profile_faces: None,
@@ -1186,7 +1186,7 @@ fn distinguishes_absent_and_malformed_loft_sweep_boolean_flags() {
     assert!(matches!(
         definition(&result, "SweepValid"), FeatureDefinition::Sweep {
             shape,
-            orientation: Some(SweepOrientation::CorrectedFrenet),
+            orientation: Some(SweepOrientation::CorrectedFrenet {}),
             path_tangent: false,
             linearize: true,
             allow_multi_profile_faces: None,
@@ -1195,7 +1195,7 @@ fn distinguishes_absent_and_malformed_loft_sweep_boolean_flags() {
     assert!(matches!(
         definition(&result, "PipeAbsent"), FeatureDefinition::Sweep {
             shape,
-            orientation: Some(SweepOrientation::CorrectedFrenet),
+            orientation: Some(SweepOrientation::CorrectedFrenet {}),
             path_tangent: false,
             allow_multi_profile_faces: Some(false),
             ..

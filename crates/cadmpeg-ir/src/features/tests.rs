@@ -1215,3 +1215,43 @@ mod local_admission;
 
 mod configurations;
 mod wire_forms;
+
+#[test]
+fn every_payload_free_feature_variant_the_freecad_sweep_reached_refuses_an_unknown_key() {
+    use crate::features::{ExtrusionDirectionSource, FuzzyTolerance, SweepOrientation};
+
+    for kind in ["custom", "profile_normal"] {
+        let wire = serde_json::json!({"kind": kind, "zz_bogus": 1});
+        let error = serde_json::from_value::<ExtrusionDirectionSource>(wire)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("zz_bogus"), "{kind}: {error}");
+    }
+    for kind in ["corrected_frenet", "fixed", "frenet"] {
+        let wire = serde_json::json!({"kind": kind, "zz_bogus": 1});
+        let error = serde_json::from_value::<SweepOrientation>(wire)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("zz_bogus"), "{kind}: {error}");
+    }
+    for kind in ["kernel_default", "automatic"] {
+        let wire = serde_json::json!({"kind": kind, "zz_bogus": 1});
+        let error = serde_json::from_value::<FuzzyTolerance>(wire)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("zz_bogus"), "{kind}: {error}");
+    }
+
+    assert_eq!(
+        serde_json::to_value(ExtrusionDirectionSource::Custom {}).unwrap(),
+        serde_json::json!({"kind": "custom"})
+    );
+    assert_eq!(
+        serde_json::to_value(SweepOrientation::Frenet {}).unwrap(),
+        serde_json::json!({"kind": "frenet"})
+    );
+    assert_eq!(
+        serde_json::to_value(FuzzyTolerance::KernelDefault).unwrap(),
+        serde_json::json!({"kind": "kernel_default"})
+    );
+}

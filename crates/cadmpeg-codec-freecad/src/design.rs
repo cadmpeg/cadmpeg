@@ -3708,7 +3708,7 @@ fn extrusion_definition(
         });
         let direction_mode = enumeration_selector(properties, "DirMode", 0)?;
         let (mut direction, direction_source) = match direction_mode {
-            0 => (raw_direction?.unit()?, ExtrusionDirectionSource::Custom),
+            0 => (raw_direction?.unit()?, ExtrusionDirectionSource::Custom {}),
             1 => {
                 let reference = property(properties, "DirLink")?;
                 if reference.links().len() != 1 {
@@ -3731,7 +3731,7 @@ fn extrusion_definition(
                         .or(profile_normal),
                     _ => profile_normal,
                 }?;
-                (normal.unit()?, ExtrusionDirectionSource::ProfileNormal)
+                (normal.unit()?, ExtrusionDirectionSource::ProfileNormal {})
             }
             _ => return None,
         };
@@ -3989,7 +3989,7 @@ fn extrusion_definition(
             vector: cadmpeg_ir::features::FeatureDirection3::new(
                 vector_property(properties, "Direction")?.unit()?,
             )?,
-            source: Some(ExtrusionDirectionSource::Custom),
+            source: Some(ExtrusionDirectionSource::Custom {}),
         }
     } else if let Some(reference_axis) = reference_axis {
         cadmpeg_ir::features::ExtrudeDirection::Explicit {
@@ -4015,7 +4015,7 @@ fn extrusion_definition(
         match normal {
             Some(vector) => cadmpeg_ir::features::ExtrudeDirection::Explicit {
                 vector: cadmpeg_ir::features::FeatureDirection3::new(vector)?,
-                source: Some(ExtrusionDirectionSource::ProfileNormal),
+                source: Some(ExtrusionDirectionSource::ProfileNormal {}),
             },
             None => cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
         }
@@ -4954,15 +4954,15 @@ fn sweep_definition(
     };
     let orientation = if kind == "Part::Sweep" {
         if bool_selector(properties, "Frenet", true)? {
-            SweepOrientation::Frenet
+            SweepOrientation::Frenet {}
         } else {
-            SweepOrientation::CorrectedFrenet
+            SweepOrientation::CorrectedFrenet {}
         }
     } else {
         match integer_property(properties, "Mode").unwrap_or(0) {
-            0 => SweepOrientation::CorrectedFrenet,
-            1 => SweepOrientation::Fixed,
-            2 => SweepOrientation::Frenet,
+            0 => SweepOrientation::CorrectedFrenet {},
+            1 => SweepOrientation::Fixed {},
+            2 => SweepOrientation::Frenet {},
             3 => {
                 let auxiliary = property(properties, "AuxiliarySpine")?;
                 singular_operand(properties, "AuxiliarySpine")?;

@@ -922,7 +922,7 @@ fn generated_skin_surface_round_trips_structural_law_nodes() {
     assert!(matches!(
         construction.formula.variables(),
         [
-            LawExpression::Null,
+            LawExpression::Null {},
             LawExpression::Transform {
                 enums: [4, 5, 6],
                 ..

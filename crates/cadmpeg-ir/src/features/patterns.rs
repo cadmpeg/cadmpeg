@@ -309,7 +309,7 @@ pub enum PatternTransform {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum PatternKindWire {
     Unresolved {
         #[serde(default, skip_serializing_if = "Option::is_none")]

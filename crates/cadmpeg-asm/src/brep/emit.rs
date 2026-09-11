@@ -1204,7 +1204,7 @@ fn map_law_expression(
     expression: EmbeddedLawExpression,
 ) -> cadmpeg_ir::geometry::LawExpression {
     match expression {
-        EmbeddedLawExpression::Null => cadmpeg_ir::geometry::LawExpression::Null,
+        EmbeddedLawExpression::Null {} => cadmpeg_ir::geometry::LawExpression::Null {},
         EmbeddedLawExpression::Text(value) => cadmpeg_ir::geometry::LawExpression::Text { value },
         EmbeddedLawExpression::Integer(value) => {
             cadmpeg_ir::geometry::LawExpression::Integer { value }

@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 /// A point in 3D model space, in the document's length unit.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct Point3 {
     /// X coordinate.
     pub x: f64,

@@ -622,9 +622,9 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 Some(SweepOrientation::Binormal { direction }) => direction.unit().is_some(),
                 None
                 | Some(
-                    SweepOrientation::CorrectedFrenet
-                    | SweepOrientation::Fixed
-                    | SweepOrientation::Frenet,
+                    SweepOrientation::CorrectedFrenet {}
+                    | SweepOrientation::Fixed {}
+                    | SweepOrientation::Frenet {},
                 ) => true,
             };
             let guide_is_resolved = guide_rail

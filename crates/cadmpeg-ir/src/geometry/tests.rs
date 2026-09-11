@@ -1396,3 +1396,38 @@ fn the_shared_math_carriers_reject_an_unknown_key_by_name() {
         .to_string();
     assert!(error.contains("zz_bogus"), "{error}");
 }
+
+#[test]
+fn a_law_expression_states_its_kind_and_carries_only_its_own_keys() {
+    let null = crate::geometry::LawExpression::Null {};
+    assert_eq!(
+        serde_json::to_value(&null).unwrap(),
+        serde_json::json!({"kind": "null"})
+    );
+    assert_eq!(
+        serde_json::from_value::<crate::geometry::LawExpression>(
+            serde_json::json!({"kind": "null"})
+        )
+        .unwrap(),
+        null
+    );
+    for wire in [
+        serde_json::json!({"kind": "null", "zz_bogus": 1}),
+        serde_json::json!({"kind": "text", "value": "x", "zz_bogus": 1}),
+    ] {
+        let error = serde_json::from_value::<crate::geometry::LawExpression>(wire)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("zz_bogus"), "{error}");
+    }
+
+    let formula = serde_json::json!({
+        "name": "law",
+        "variables": [],
+        "zz_bogus": 1,
+    });
+    let error = serde_json::from_value::<crate::geometry::LawFormula>(formula)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("zz_bogus"), "{error}");
+}
