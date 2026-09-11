@@ -19,8 +19,8 @@ use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
 use crate::drawings::Drawing;
 use crate::features::{
-    DesignConfiguration, DesignParameter, Feature,
-    FeatureInputTopology, FeatureReadWire, FeatureResultTopology, FeatureWriteWire,
+    DesignConfiguration, DesignParameter, Feature, FeatureInputTopology, FeatureReadWire,
+    FeatureResultTopology, FeatureWriteWire,
 };
 use crate::geometry::{
     Curve, CurveGeometry, Pcurve, ProceduralCurve, ProceduralCurveReadWire, ProceduralSurface,

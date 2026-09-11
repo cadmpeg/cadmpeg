@@ -1233,7 +1233,6 @@ fn explicit_body_selection(selection: &BodySelection) -> Option<Vec<BodyId>> {
         BodySelection::Unresolved
         | BodySelection::Historical { .. }
         | BodySelection::HistoricalSet { .. }
-        | BodySelection::HistoricalUnorderedSet { .. }
         | BodySelection::Generated { .. }
         | BodySelection::Local { .. }
         | BodySelection::Native(_)

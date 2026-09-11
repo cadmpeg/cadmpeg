@@ -175,7 +175,9 @@ fn feature_wire_refuses_the_deleted_parent_key() {
             }
         ]
     });
-    let error = serde_json::from_value::<Model>(wire).unwrap_err().to_string();
+    let error = serde_json::from_value::<Model>(wire)
+        .unwrap_err()
+        .to_string();
     assert!(error.contains("unknown field `parent`"), "{error}");
 }
 

@@ -1199,20 +1199,20 @@ pub(crate) fn bind_feature_body_selections(
                                 body_recipe_operands,
                                 inputs.construction_recipes,
                             ) {
-                                let Ok(selection) =
-                        cadmpeg_ir::features::HistoricalUnorderedBodySelection::try_from_parts(
-                            tool_slots
-                                .into_iter()
-                                .map(|slot| crate::ids::history_input_body_id(&prefix, slot))
-                                .collect(),
-                            native_tools,
-                        )
-                    else {
-                        return;
-                    };
-                                *tools = BodySelection::HistoricalUnorderedSet {
+                                let Ok(members) = cadmpeg_ir::features::BodyMembers::try_from_parts(
+                                    tool_slots
+                                        .into_iter()
+                                        .map(|slot| {
+                                            crate::ids::history_input_body_id(&prefix, slot)
+                                        })
+                                        .collect(),
+                                    native_tools,
+                                ) else {
+                                    return;
+                                };
+                                *tools = BodySelection::HistoricalSet {
                                     state: input_state,
-                                    selection,
+                                    members,
                                 };
                                 return;
                             }
@@ -1227,20 +1227,22 @@ pub(crate) fn bind_feature_body_selections(
                                     body,
                                     native_tools.len(),
                                 ) {
-                                    let Ok(selection) =
-                            cadmpeg_ir::features::HistoricalUnorderedBodySelection::try_from_parts(
-                                tool_slots
-                                    .into_iter()
-                                    .map(|slot| crate::ids::history_input_body_id(&prefix, slot))
-                                    .collect(),
-                                native_tools,
-                            )
-                        else {
-                            return;
-                        };
-                                    *tools = BodySelection::HistoricalUnorderedSet {
+                                    let Ok(members) =
+                                        cadmpeg_ir::features::BodyMembers::try_from_parts(
+                                            tool_slots
+                                                .into_iter()
+                                                .map(|slot| {
+                                                    crate::ids::history_input_body_id(&prefix, slot)
+                                                })
+                                                .collect(),
+                                            native_tools,
+                                        )
+                                    else {
+                                        return;
+                                    };
+                                    *tools = BodySelection::HistoricalSet {
                                         state: input_state,
-                                        selection,
+                                        members,
                                     };
                                 }
                             }
