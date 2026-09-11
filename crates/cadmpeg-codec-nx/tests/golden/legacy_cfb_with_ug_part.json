@@ -60,18 +60,20 @@
           "partition_streams": "1",
           "plain_streams": "0"
         },
-        "dialects": {
-          "extra": [],
-          "primary": {
-            "admission": "admitted",
-            "declared": {
-              "ugii_version": "50"
-            },
-            "dialect": "nx:legacy-cfb",
-            "format": "nx"
+        "identity": {
+          "classification": "classified",
+          "dialects": {
+            "extra": [],
+            "primary": {
+              "admission": "admitted",
+              "declared": {
+                "ugii_version": "50"
+              },
+              "dialect": "nx:legacy-cfb",
+              "format": "nx"
+            }
           }
-        },
-        "format": "nx"
+        }
       },
       "tolerances": {
         "angular": 1e-10,
@@ -82,19 +84,21 @@
       }
     },
     "report": {
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "admitted",
-          "declared": {
-            "ugii_version": "50"
-          },
-          "dialect": "nx:legacy-cfb",
-          "format": "nx"
+      "geometry_transferred": false,
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "ugii_version": "50"
+            },
+            "dialect": "nx:legacy-cfb",
+            "format": "nx"
+          }
         }
       },
-      "format": "nx",
-      "geometry_transferred": false,
       "losses": [
         {
           "code": {
@@ -146,17 +150,6 @@
   },
   "inspect": {
     "container_kind": "cfb",
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "declared": {
-          "ugii_version": "50"
-        },
-        "dialect": "nx:legacy-cfb",
-        "format": "nx"
-      }
-    },
     "entries": [
       {
         "attributes": {
@@ -206,7 +199,20 @@
         "uncompressed_size": 5111
       }
     ],
-    "format": "nx",
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "ugii_version": "50"
+          },
+          "dialect": "nx:legacy-cfb",
+          "format": "nx"
+        }
+      }
+    },
     "notes": [
       "legacy CFB container: 2 directory entries",
       "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"

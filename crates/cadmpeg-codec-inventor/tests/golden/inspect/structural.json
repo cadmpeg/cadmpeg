@@ -1,20 +1,5 @@
 {
   "container_kind": "cfb",
-  "dialects": {
-    "extra": [],
-    "primary": {
-      "admission": {
-        "unverified": {
-          "using": "inventor:cfb3-rse31-meta8"
-        }
-      },
-      "declared": {
-        "cfb_major_version": "3"
-      },
-      "dialect": "inventor:unknown",
-      "format": "inventor"
-    }
-  },
   "entries": [
     {
       "attributes": {
@@ -36,7 +21,24 @@
       "uncompressed_size": 0
     }
   ],
-  "format": "inventor",
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": {
+          "unverified": {
+            "using": "inventor:cfb3-rse31-meta8"
+          }
+        },
+        "declared": {
+          "cfb_major_version": "3"
+        },
+        "dialect": "inventor:unknown",
+        "format": "inventor"
+      }
+    }
+  },
   "losses": [
     {
       "code": {

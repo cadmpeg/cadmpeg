@@ -4219,6 +4219,35 @@
         "physical_ledger_spans": "92",
         "program_version": "1.1R20260414 (Git shallow)"
       },
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "file_version": "1",
+              "program_version": "1.1R20260414 (Git shallow)",
+              "schema_version": "4"
+            },
+            "dialect": "fcstd:schema-4",
+            "format": "fcstd"
+          }
+        }
+      }
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "geometry_transferred": true,
+    "identity": {
+      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
@@ -4231,33 +4260,8 @@
           "dialect": "fcstd:schema-4",
           "format": "fcstd"
         }
-      },
-      "format": "fcstd"
-    },
-    "tolerances": {
-      "angular": 1e-10,
-      "linear": 1e-6
-    },
-    "units": {
-      "length": "millimeter"
-    }
-  },
-  "report": {
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "declared": {
-          "file_version": "1",
-          "program_version": "1.1R20260414 (Git shallow)",
-          "schema_version": "4"
-        },
-        "dialect": "fcstd:schema-4",
-        "format": "fcstd"
       }
     },
-    "format": "fcstd",
-    "geometry_transferred": true,
     "losses": [],
     "notes": [
       "SchemaVersion=4",

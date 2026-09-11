@@ -1,17 +1,5 @@
 {
   "container_kind": "3dm-chunks",
-  "dialects": {
-    "extra": [],
-    "primary": {
-      "admission": "admitted",
-      "declared": {
-        "archive_version": "80",
-        "opennurbs_writer_version": "200712190"
-      },
-      "dialect": "rhino:archive-80",
-      "format": "rhino"
-    }
-  },
   "entries": [
     {
       "attributes": {
@@ -223,7 +211,21 @@
       "uncompressed_size": 175
     }
   ],
-  "format": "rhino",
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "archive_version": "80",
+          "opennurbs_writer_version": "200712190"
+        },
+        "dialect": "rhino:archive-80",
+        "format": "rhino"
+      }
+    }
+  },
   "notes": [
     "archive version 80"
   ]

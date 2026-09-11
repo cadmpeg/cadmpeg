@@ -79,18 +79,20 @@
           "partition_streams": "0",
           "plain_streams": "0"
         },
-        "dialects": {
-          "extra": [],
-          "primary": {
-            "admission": "admitted",
-            "declared": {
-              "splmsstr_version": "6"
-            },
-            "dialect": "nx:splmsstr",
-            "format": "nx"
+        "identity": {
+          "classification": "classified",
+          "dialects": {
+            "extra": [],
+            "primary": {
+              "admission": "admitted",
+              "declared": {
+                "splmsstr_version": "6"
+              },
+              "dialect": "nx:splmsstr",
+              "format": "nx"
+            }
           }
-        },
-        "format": "nx"
+        }
       },
       "tolerances": {
         "angular": 1e-10,
@@ -101,19 +103,21 @@
       }
     },
     "report": {
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "admitted",
-          "declared": {
-            "splmsstr_version": "6"
-          },
-          "dialect": "nx:splmsstr",
-          "format": "nx"
+      "geometry_transferred": false,
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "splmsstr_version": "6"
+            },
+            "dialect": "nx:splmsstr",
+            "format": "nx"
+          }
         }
       },
-      "format": "nx",
-      "geometry_transferred": false,
       "losses": [
         {
           "code": {
@@ -155,17 +159,6 @@
   },
   "inspect": {
     "container_kind": "splmsstr",
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "declared": {
-          "splmsstr_version": "6"
-        },
-        "dialect": "nx:splmsstr",
-        "format": "nx"
-      }
-    },
     "entries": [
       {
         "attributes": {
@@ -179,7 +172,20 @@
         "uncompressed_size": 28
       }
     ],
-    "format": "nx",
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "splmsstr_version": "6"
+          },
+          "dialect": "nx:splmsstr",
+          "format": "nx"
+        }
+      }
+    },
     "notes": [
       "SPLMSSTR container: file tag 0, footer offset 104, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"

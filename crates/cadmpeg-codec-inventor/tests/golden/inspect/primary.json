@@ -1,30 +1,5 @@
 {
   "container_kind": "cfb",
-  "dialects": {
-    "extra": [
-      {
-        "admission": "admitted",
-        "declared": {
-          "reference_width": "4",
-          "save_format_major": "7",
-          "save_format_minor": "0"
-        },
-        "dialect": "acis:asm-binaryfile-4",
-        "format": "acis"
-      }
-    ],
-    "primary": {
-      "admission": "admitted",
-      "declared": {
-        "cfb_major_version": "3",
-        "meta_stream_marker": "RSe Meta Stream Version 8",
-        "meta_stream_version": "8",
-        "rse_db_schema": "31"
-      },
-      "dialect": "inventor:cfb3-rse31-meta8",
-      "format": "inventor"
-    }
-  },
   "entries": [
     {
       "attributes": {
@@ -112,7 +87,34 @@
       "uncompressed_size": 8
     }
   ],
-  "format": "inventor",
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [
+        {
+          "admission": "admitted",
+          "declared": {
+            "reference_width": "4",
+            "save_format_major": "7",
+            "save_format_minor": "0"
+          },
+          "dialect": "acis:asm-binaryfile-4",
+          "format": "acis"
+        }
+      ],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "cfb_major_version": "3",
+          "meta_stream_marker": "RSe Meta Stream Version 8",
+          "meta_stream_version": "8",
+          "rse_db_schema": "31"
+        },
+        "dialect": "inventor:cfb3-rse31-meta8",
+        "format": "inventor"
+      }
+    }
+  },
   "notes": [
     "CFB v3 with 1 RSe segment pair(s) and 1 versioned database(s)"
   ]

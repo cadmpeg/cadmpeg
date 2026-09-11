@@ -363,11 +363,12 @@ fn current_document_excludes_source_byte_accounting() {
     assert!(json.get("byte_ledger").is_none());
 }
 
-/// A `SourceMeta` wire that omits `dialects` reads as unclassified. Writing it
-/// back states that absence explicitly as `"dialects":null`.
+/// The format identity is one tagged object, so an unclassified source states
+/// its format once and a classified one never restates its payload's format.
 #[test]
-fn unclassified_source_metadata_reads_back_and_writes_an_explicit_absence() {
-    let stored = "{\"format\":\"rhino\",\"attributes\":{\"object_count\":\"3\"}}";
+fn an_unclassified_source_states_its_format_inside_the_identity() {
+    let stored = "{\"identity\":{\"classification\":\"unclassified\",\"format\":\"rhino\"},\
+                  \"attributes\":{\"object_count\":\"3\"}}";
     let source: SourceMeta = serde_json::from_str(stored).unwrap();
 
     assert_eq!(source.format(), "rhino");
@@ -376,8 +377,8 @@ fn unclassified_source_metadata_reads_back_and_writes_an_explicit_absence() {
     let rewritten = serde_json::to_string(&source).unwrap();
     assert_eq!(
         rewritten,
-        "{\"format\":\"rhino\",\"attributes\":{\"object_count\":\"3\"},\
-         \"dialects\":null}"
+        "{\"identity\":{\"classification\":\"unclassified\",\"format\":\"rhino\"},\
+         \"attributes\":{\"object_count\":\"3\"}}"
     );
     assert_eq!(
         serde_json::from_str::<SourceMeta>(&rewritten).unwrap(),
@@ -386,7 +387,7 @@ fn unclassified_source_metadata_reads_back_and_writes_an_explicit_absence() {
 }
 
 #[test]
-fn classified_source_metadata_has_one_format_and_rejects_a_foreign_wire_match() {
+fn a_classified_source_carries_its_format_once() {
     let matched = cadmpeg_core::dialect::DialectMatch::admitted(
         cadmpeg_core::dialect::DialectId::pinned("rhino:archive-80"),
     );
@@ -399,35 +400,33 @@ fn classified_source_metadata_has_one_format_and_rejects_a_foreign_wire_match() 
     assert_eq!(source.format(), "rhino");
     assert_eq!(source.dialect(), Some(&matched));
     assert_eq!(source.dialects(), Some(&layers));
-    let rendered = serde_json::to_string(&source).unwrap();
+    let rendered = serde_json::to_value(&source).unwrap();
+    assert_eq!(rendered["identity"]["classification"], "classified");
+    assert!(rendered["identity"].get("format").is_none());
     assert_eq!(
-        rendered,
-        "{\"format\":\"rhino\",\"attributes\":{\"object_count\":\"3\"},\"dialects\":{\"primary\":{\"format\":\"rhino\",\"dialect\":\"rhino:archive-80\",\"admission\":\"admitted\"},\"extra\":[]}}"
+        rendered["identity"]["dialects"]["primary"]["format"],
+        "rhino"
     );
     assert_eq!(
-        serde_json::from_str::<SourceMeta>(&rendered).unwrap(),
+        serde_json::from_value::<SourceMeta>(rendered.clone()).unwrap(),
         source
     );
 
-    let malformed = rendered.replacen("\"format\":\"rhino\"", "\"format\":\"step\"", 1);
-    let error = serde_json::from_str::<SourceMeta>(&malformed)
-        .expect_err("a source format must match its dialect format");
-    assert!(
-        error
-            .to_string()
-            .contains("format \"step\" does not match classified payload format \"rhino\""),
-        "{error}"
-    );
+    let mut restated = rendered;
+    restated["identity"]["format"] = serde_json::json!("step");
+    let error = serde_json::from_value::<SourceMeta>(restated)
+        .expect_err("a classified identity carries no second format");
+    assert!(error.to_string().contains("format"), "{error}");
 }
 
 #[cfg(feature = "schema")]
 #[test]
-fn source_metadata_schema_requires_dialects_and_has_no_singular_dialect() {
+fn source_metadata_schema_requires_its_identity_and_has_no_singular_dialect() {
     let schema = serde_json::to_value(schemars::schema_for!(SourceMeta)).unwrap();
     let required = schema["required"].as_array().unwrap();
 
     assert!(
-        required.iter().any(|field| field == "dialects"),
+        required.iter().any(|field| field == "identity"),
         "{schema:#}"
     );
     assert!(schema["properties"].get("dialect").is_none(), "{schema:#}");

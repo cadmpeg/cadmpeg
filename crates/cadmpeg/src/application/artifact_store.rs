@@ -472,12 +472,11 @@ mod tests {
         let text = CadIr::empty().to_canonical_json().unwrap();
         std::fs::write(&path, &text).unwrap();
         let report: DecodeReport = serde_json::from_value(serde_json::json!({
-            "format": "test",
+            "identity": {"classification": "unclassified", "format": "test"},
             "transfer": "full",
             "geometry_transferred": false,
             "losses": [],
             "notes": [],
-            "dialects": null,
         }))
         .unwrap();
         let sidecar = DecodeSidecar::bind(text.as_bytes(), report, SourceFidelity::default());

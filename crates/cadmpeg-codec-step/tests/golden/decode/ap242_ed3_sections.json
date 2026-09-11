@@ -74,6 +74,38 @@
         "entity_instances": "2",
         "schema": "AP242"
       },
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": {
+              "unverified": {
+                "using": "step:ap242-e3"
+              }
+            },
+            "declared": {
+              "file_schema_identifier": "AP242",
+              "implementation_level": "4;2"
+            },
+            "dialect": "step:unknown",
+            "format": "step"
+          }
+        }
+      }
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "geometry_transferred": false,
+    "identity": {
+      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
@@ -89,36 +121,8 @@
           "dialect": "step:unknown",
           "format": "step"
         }
-      },
-      "format": "step"
-    },
-    "tolerances": {
-      "angular": 1e-10,
-      "linear": 1e-6
-    },
-    "units": {
-      "length": "millimeter"
-    }
-  },
-  "report": {
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": {
-          "unverified": {
-            "using": "step:ap242-e3"
-          }
-        },
-        "declared": {
-          "file_schema_identifier": "AP242",
-          "implementation_level": "4;2"
-        },
-        "dialect": "step:unknown",
-        "format": "step"
       }
     },
-    "format": "step",
-    "geometry_transferred": false,
     "losses": [
       {
         "code": {

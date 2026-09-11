@@ -1,28 +1,5 @@
 {
   "container_kind": "zip",
-  "dialects": {
-    "extra": [
-      {
-        "admission": "admitted",
-        "declared": {
-          "carrier": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-          "reference_width": "8",
-          "save_format_major": "231",
-          "save_format_minor": "0"
-        },
-        "dialect": "acis:asm-binaryfile-8",
-        "format": "acis"
-      }
-    ],
-    "primary": {
-      "admission": "admitted",
-      "declared": {
-        "top_level_manifest_version": "3-2-0-0"
-      },
-      "dialect": "f3d:manifest-3-2-0-0",
-      "format": "f3d"
-    }
-  },
   "entries": [
     {
       "attributes": {},
@@ -64,7 +41,32 @@
       "uncompressed_size": 1505
     }
   ],
-  "format": "f3d",
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [
+        {
+          "admission": "admitted",
+          "declared": {
+            "carrier": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+            "reference_width": "8",
+            "save_format_major": "231",
+            "save_format_minor": "0"
+          },
+          "dialect": "acis:asm-binaryfile-8",
+          "format": "acis"
+        }
+      ],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "top_level_manifest_version": "3-2-0-0"
+        },
+        "dialect": "f3d:manifest-3-2-0-0",
+        "format": "f3d"
+      }
+    }
+  },
   "notes": [
     "Design asset folder (from manifests): FusionAssetName[Active]",
     "1 ASM BREP stream(s); Design body-to-blob bindings select model geometry",

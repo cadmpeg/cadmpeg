@@ -2,7 +2,32 @@
   "ir": {
     "ir_version": "6",
     "source": {
-      "format": "f3d",
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "primary": {
+            "format": "f3d",
+            "dialect": "f3d:manifest-3-2-0-0",
+            "declared": {
+              "top_level_manifest_version": "3-2-0-0"
+            },
+            "admission": "admitted"
+          },
+          "extra": [
+            {
+              "format": "acis",
+              "dialect": "acis:asm-binaryfile-8",
+              "declared": {
+                "carrier": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+                "reference_width": "8",
+                "save_format_major": "231",
+                "save_format_minor": "0"
+              },
+              "admission": "admitted"
+            }
+          ]
+        }
+      },
       "attributes": {
         "active_brep": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
         "active_brep_sha256": "d5fcd26785b1153543a1bad4671de4aae53c168b6aa2a3e6aeeac5749e4e736b",
@@ -13,29 +38,6 @@
         "save_date": "Tue Mar 31 16:16:19 2026",
         "solved_record_len": "2878",
         "zip_entry_count": "3"
-      },
-      "dialects": {
-        "primary": {
-          "format": "f3d",
-          "dialect": "f3d:manifest-3-2-0-0",
-          "declared": {
-            "top_level_manifest_version": "3-2-0-0"
-          },
-          "admission": "admitted"
-        },
-        "extra": [
-          {
-            "format": "acis",
-            "dialect": "acis:asm-binaryfile-8",
-            "declared": {
-              "carrier": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-              "reference_width": "8",
-              "save_format_major": "231",
-              "save_format_minor": "0"
-            },
-            "admission": "admitted"
-          }
-        ]
       }
     },
     "units": {
@@ -643,7 +645,32 @@
     }
   },
   "report": {
-    "format": "f3d",
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "primary": {
+          "format": "f3d",
+          "dialect": "f3d:manifest-3-2-0-0",
+          "declared": {
+            "top_level_manifest_version": "3-2-0-0"
+          },
+          "admission": "admitted"
+        },
+        "extra": [
+          {
+            "format": "acis",
+            "dialect": "acis:asm-binaryfile-8",
+            "declared": {
+              "carrier": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+              "reference_width": "8",
+              "save_format_major": "231",
+              "save_format_minor": "0"
+            },
+            "admission": "admitted"
+          }
+        ]
+      }
+    },
     "transfer": "full",
     "geometry_transferred": true,
     "losses": [
@@ -672,30 +699,7 @@
       "Design asset folder (from manifests): FusionAssetName[Active]",
       "1 ASM BREP stream(s); Design body-to-blob bindings select model geometry",
       "history-bearing BREP: FusionAssetName[Active]/Breps.BlobParts/Body1.smbh (2891 bytes uncompressed)"
-    ],
-    "dialects": {
-      "primary": {
-        "format": "f3d",
-        "dialect": "f3d:manifest-3-2-0-0",
-        "declared": {
-          "top_level_manifest_version": "3-2-0-0"
-        },
-        "admission": "admitted"
-      },
-      "extra": [
-        {
-          "format": "acis",
-          "dialect": "acis:asm-binaryfile-8",
-          "declared": {
-            "carrier": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-            "reference_width": "8",
-            "save_format_major": "231",
-            "save_format_minor": "0"
-          },
-          "admission": "admitted"
-        }
-      ]
-    }
+    ]
   },
   "source_fidelity": {
     "annotations": {

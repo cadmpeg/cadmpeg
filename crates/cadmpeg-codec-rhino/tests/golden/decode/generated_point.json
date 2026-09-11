@@ -257,6 +257,34 @@
         "unit_system": "standard:2",
         "unit_value": "2"
       },
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "archive_version": "80",
+              "opennurbs_writer_version": "200712190"
+            },
+            "dialect": "rhino:archive-80",
+            "format": "rhino"
+          }
+        }
+      }
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "geometry_transferred": true,
+    "identity": {
+      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
@@ -268,32 +296,8 @@
           "dialect": "rhino:archive-80",
           "format": "rhino"
         }
-      },
-      "format": "rhino"
-    },
-    "tolerances": {
-      "angular": 1e-10,
-      "linear": 1e-6
-    },
-    "units": {
-      "length": "millimeter"
-    }
-  },
-  "report": {
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "declared": {
-          "archive_version": "80",
-          "opennurbs_writer_version": "200712190"
-        },
-        "dialect": "rhino:archive-80",
-        "format": "rhino"
       }
     },
-    "format": "rhino",
-    "geometry_transferred": true,
     "losses": [
       {
         "code": {

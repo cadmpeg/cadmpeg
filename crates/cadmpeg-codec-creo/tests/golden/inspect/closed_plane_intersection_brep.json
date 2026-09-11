@@ -1,16 +1,5 @@
 {
   "container_kind": "psb",
-  "dialects": {
-    "extra": [],
-    "primary": {
-      "admission": "residual",
-      "declared": {
-        "version_line": "#UGC:2 P c"
-      },
-      "dialect": "creo:unknown",
-      "format": "creo"
-    }
-  },
   "entries": [
     {
       "attributes": {
@@ -43,7 +32,20 @@
       "uncompressed_size": 22
     }
   ],
-  "format": "creo",
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "residual",
+        "declared": {
+          "version_line": "#UGC:2 P c"
+        },
+        "dialect": "creo:unknown",
+        "format": "creo"
+      }
+    }
+  },
   "losses": [
     {
       "code": {

@@ -1,17 +1,5 @@
 {
   "container_kind": "iso-10303-21-clear-text",
-  "dialects": {
-    "extra": [],
-    "primary": {
-      "admission": "admitted",
-      "declared": {
-        "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
-        "implementation_level": "2;1"
-      },
-      "dialect": "step:ap242",
-      "format": "step"
-    }
-  },
   "entries": [
     {
       "attributes": {},
@@ -29,7 +17,21 @@
       "role": "entity-records"
     }
   ],
-  "format": "step",
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
+          "implementation_level": "2;1"
+        },
+        "dialect": "step:ap242",
+        "format": "step"
+      }
+    }
+  },
   "notes": [
     "schema AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF; dialect step:ap242"
   ]

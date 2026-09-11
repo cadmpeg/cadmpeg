@@ -248,6 +248,40 @@
         "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>"
       },
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [
+            {
+              "admission": "admitted",
+              "declared": {
+                "carrier": "block@8:Contents/Config-0-Partition+0",
+                "schema": "SCH_SW_33103_11000"
+              },
+              "dialect": "parasolid:sch-sw-33103",
+              "format": "parasolid"
+            }
+          ],
+          "primary": {
+            "admission": "residual",
+            "dialect": "sldprt:unknown",
+            "format": "sldprt"
+          }
+        }
+      }
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "geometry_transferred": true,
+    "identity": {
+      "classification": "classified",
       "dialects": {
         "extra": [
           {
@@ -265,38 +299,8 @@
           "dialect": "sldprt:unknown",
           "format": "sldprt"
         }
-      },
-      "format": "sldprt"
-    },
-    "tolerances": {
-      "angular": 1e-10,
-      "linear": 1e-6
-    },
-    "units": {
-      "length": "millimeter"
-    }
-  },
-  "report": {
-    "dialects": {
-      "extra": [
-        {
-          "admission": "admitted",
-          "declared": {
-            "carrier": "block@8:Contents/Config-0-Partition+0",
-            "schema": "SCH_SW_33103_11000"
-          },
-          "dialect": "parasolid:sch-sw-33103",
-          "format": "parasolid"
-        }
-      ],
-      "primary": {
-        "admission": "residual",
-        "dialect": "sldprt:unknown",
-        "format": "sldprt"
       }
     },
-    "format": "sldprt",
-    "geometry_transferred": true,
     "losses": [
       {
         "code": {

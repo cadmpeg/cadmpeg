@@ -1,16 +1,5 @@
 {
   "container_kind": "3dm-chunks",
-  "dialects": {
-    "extra": [],
-    "primary": {
-      "admission": "admitted",
-      "declared": {
-        "archive_version": "60"
-      },
-      "dialect": "rhino:archive-60",
-      "format": "rhino"
-    }
-  },
   "entries": [
     {
       "attributes": {
@@ -79,7 +68,20 @@
       "uncompressed_size": 305
     }
   ],
-  "format": "rhino",
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "archive_version": "60"
+        },
+        "dialect": "rhino:archive-60",
+        "format": "rhino"
+      }
+    }
+  },
   "notes": [
     "archive version 60",
     "CRC mismatch at offset 582 for typecode 0x20008070: expected 0x0, got 0x9d88d481",

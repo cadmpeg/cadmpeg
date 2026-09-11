@@ -12,7 +12,7 @@ use super::{LossNote, Severity};
 
 /// Transfer status and loss details from a successful decode.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(into = "DecodeReportWire", try_from = "DecodeReportWire")]
+#[serde(into = "DecodeReportWire", from = "DecodeReportWire")]
 pub struct DecodeReport {
     classification: FormatIdentity<DialectLayers>,
     transfer: DecodeTransfer,
@@ -83,7 +83,7 @@ impl DecodeTransfer {
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DecodeReportWire {
-    format: String,
+    identity: FormatIdentity<DialectLayers>,
     #[serde(flatten)]
     transfer: DecodeTransfer,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -92,8 +92,6 @@ struct DecodeReportWire {
     notes: Vec<String>,
     #[serde(default, skip_serializing_if = "TransferLedger::is_empty")]
     transfer_ledger: TransferLedger,
-    #[serde(default)]
-    dialects: Option<DialectLayers>,
 }
 
 #[cfg(test)]
@@ -102,14 +100,14 @@ mod tests {
 
     #[cfg(feature = "schema")]
     #[test]
-    fn current_decode_report_schema_requires_dialects() {
+    fn current_decode_report_schema_requires_its_format_identity() {
         let schema = serde_json::to_value(schemars::schema_for!(super::DecodeReport))
             .expect("decode report schema serializes");
         let required = schema["required"]
             .as_array()
             .expect("decode report schema has required fields");
         assert!(
-            required.iter().any(|field| field == "dialects"),
+            required.iter().any(|field| field == "identity"),
             "{schema:#}"
         );
     }
@@ -177,31 +175,27 @@ impl From<DecodeReport> for DecodeReportWire {
             notes,
             transfer_ledger,
         } = report;
-        let (format, dialects) = classification.into_wire_parts();
         Self {
-            format,
+            identity: classification,
             transfer,
             coverage: coverage.into_wire(),
             losses,
             notes,
             transfer_ledger,
-            dialects,
         }
     }
 }
 
-impl TryFrom<DecodeReportWire> for DecodeReport {
-    type Error = cadmpeg_core::dialect::FormatIdentityError;
-
-    fn try_from(wire: DecodeReportWire) -> Result<Self, Self::Error> {
-        Ok(Self {
-            classification: FormatIdentity::from_wire(wire.format, wire.dialects)?,
+impl From<DecodeReportWire> for DecodeReport {
+    fn from(wire: DecodeReportWire) -> Self {
+        Self {
+            classification: wire.identity,
             transfer: wire.transfer,
             coverage: Coverage::from_wire(wire.coverage),
             losses: wire.losses,
             notes: wire.notes,
             transfer_ledger: wire.transfer_ledger,
-        })
+        }
     }
 }
 
@@ -216,9 +210,7 @@ impl JsonSchema for DecodeReport {
     }
 
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        let mut schema = DecodeReportWire::json_schema(generator);
-        crate::schema::require_object_fields(&mut schema, ["dialects"]);
-        schema
+        DecodeReportWire::json_schema(generator)
     }
 }
 

@@ -198,18 +198,20 @@
         "unit_system": "standard:2",
         "unit_value": "2"
       },
-      "dialects": {
-        "extra": [],
-        "primary": {
-          "admission": "admitted",
-          "declared": {
-            "archive_version": "50"
-          },
-          "dialect": "rhino:archive-50",
-          "format": "rhino"
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "archive_version": "50"
+            },
+            "dialect": "rhino:archive-50",
+            "format": "rhino"
+          }
         }
-      },
-      "format": "rhino"
+      }
     },
     "tolerances": {
       "angular": 0.1,
@@ -220,19 +222,21 @@
     }
   },
   "report": {
-    "dialects": {
-      "extra": [],
-      "primary": {
-        "admission": "admitted",
-        "declared": {
-          "archive_version": "50"
-        },
-        "dialect": "rhino:archive-50",
-        "format": "rhino"
+    "geometry_transferred": false,
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "archive_version": "50"
+          },
+          "dialect": "rhino:archive-50",
+          "format": "rhino"
+        }
       }
     },
-    "format": "rhino",
-    "geometry_transferred": false,
     "losses": [
       {
         "code": {

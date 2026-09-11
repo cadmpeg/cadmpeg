@@ -1,21 +1,5 @@
 {
   "container_kind": "iso-10303-21-clear-text",
-  "dialects": {
-    "extra": [],
-    "primary": {
-      "admission": {
-        "unverified": {
-          "using": "step:ap242-e3"
-        }
-      },
-      "declared": {
-        "file_schema_identifier": "AP242",
-        "implementation_level": "4;2"
-      },
-      "dialect": "step:unknown",
-      "format": "step"
-    }
-  },
   "entries": [
     {
       "attributes": {},
@@ -67,7 +51,25 @@
       "uncompressed_size": 143
     }
   ],
-  "format": "step",
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": {
+          "unverified": {
+            "using": "step:ap242-e3"
+          }
+        },
+        "declared": {
+          "file_schema_identifier": "AP242",
+          "implementation_level": "4;2"
+        },
+        "dialect": "step:unknown",
+        "format": "step"
+      }
+    }
+  },
   "losses": [
     {
       "code": {
