@@ -1433,7 +1433,7 @@ fn spline_extrusion_preserves_directrix_basis_and_weights() {
     assert_eq!(surface.u_knots(), directrix.knots());
     assert_eq!(surface.v_knots(), [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(
-        surface.control_points(),
+        surface.poles().copied().collect::<Vec<_>>(),
         [
             Point3::new(1.0, 2.0, 3.0),
             Point3::new(1.0, 2.0, 7.0),
@@ -1443,7 +1443,12 @@ fn spline_extrusion_preserves_directrix_basis_and_weights() {
             Point3::new(7.0, 8.0, 13.0),
         ]
     );
-    assert_eq!(surface.weights(), Some(&[1.0, 1.0, 0.5, 0.5, 1.0, 1.0][..]));
+    assert_eq!(
+        surface
+            .pole_weights()
+            .map(std::iter::Iterator::collect::<Vec<_>>),
+        Some([1.0, 1.0, 0.5, 0.5, 1.0, 1.0].to_vec())
+    );
 }
 
 #[test]

@@ -145,10 +145,16 @@ fn decode_surfaces(
                         descriptor.v_degree as u32,
                         full_u,
                         full_v,
-                        descriptor.u_count as u32,
-                        descriptor.v_count as u32,
-                        control_points,
-                        weights,
+                        control_points
+                            .chunks(descriptor.v_count as u32 as usize)
+                            .map(<[_]>::to_vec)
+                            .collect(),
+                        weights.map(|values| {
+                            values
+                                .chunks(descriptor.v_count as u32 as usize)
+                                .map(<[_]>::to_vec)
+                                .collect()
+                        }),
                         node.byte_at(18)? == b'-',
                         descriptor.u_periodic,
                         descriptor.v_periodic,

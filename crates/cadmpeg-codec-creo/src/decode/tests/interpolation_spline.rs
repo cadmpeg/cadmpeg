@@ -217,13 +217,26 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
     assert_eq!((side.u_degree(), side.v_degree()), (3, 1));
     assert_eq!(side.u_knots(), [2.0, 2.0, 2.0, 2.0, 5.0, 5.0, 5.0, 5.0]);
     assert_eq!(side.v_knots(), [0.0, 0.0, 1.0, 1.0]);
-    assert_eq!(side.control_points()[0], Point3::new(11.0, 20.0, 28.0));
-    assert_eq!(side.control_points()[1], Point3::new(11.0, 20.0, 33.0));
-    assert_eq!(side.control_points()[6], Point3::new(10.0, 21.0, 28.0));
-    assert_eq!(side.control_points()[7], Point3::new(10.0, 21.0, 33.0));
     assert_eq!(
-        side.weights(),
-        Some(&[1.0, 1.0, 0.75, 0.75, 0.75, 0.75, 1.0, 1.0][..])
+        side.poles().nth(0).copied().unwrap(),
+        Point3::new(11.0, 20.0, 28.0)
+    );
+    assert_eq!(
+        side.poles().nth(1).copied().unwrap(),
+        Point3::new(11.0, 20.0, 33.0)
+    );
+    assert_eq!(
+        side.poles().nth(6).copied().unwrap(),
+        Point3::new(10.0, 21.0, 28.0)
+    );
+    assert_eq!(
+        side.poles().nth(7).copied().unwrap(),
+        Point3::new(10.0, 21.0, 33.0)
+    );
+    assert_eq!(
+        side.pole_weights()
+            .map(std::iter::Iterator::collect::<Vec<_>>),
+        Some([1.0, 1.0, 0.75, 0.75, 0.75, 0.75, 1.0, 1.0].to_vec())
     );
 }
 

@@ -41,14 +41,10 @@ pub(crate) fn surface_is_supported(surface: &SurfaceGeometry) -> bool {
 }
 
 fn valid_nurbs_surface(n: &NurbsSurface) -> bool {
-    n.control_points()
-        .iter()
+    n.poles()
         .all(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite())
-        && n.weights().is_none_or(|weights| {
-            weights
-                .iter()
-                .all(|weight| weight.is_finite() && *weight > 0.0)
-        })
+        && n.pole_weights()
+            .is_none_or(|mut weights| weights.all(|weight| weight.is_finite() && weight > 0.0))
         && knots_nondecreasing(n.u_knots())
         && knots_nondecreasing(n.v_knots())
 }
@@ -606,12 +602,10 @@ fn nurbs_surface(e: &mut Emitter, n: &NurbsSurface) -> Option<Ref> {
     let u_count = n.u_count() as usize;
     let v_count = n.v_count() as usize;
     let mut rows: Vec<String> = Vec::with_capacity(u_count);
-    for i in 0..u_count {
+    for grid_row in n.control_grid() {
         let mut row: Vec<Ref> = Vec::with_capacity(v_count);
-        for j in 0..v_count {
-            let idx = i * v_count + j;
-            let p = n.control_points()[idx];
-            row.push(point(e, p));
+        for p in grid_row {
+            row.push(point(e, *p));
         }
         rows.push(refs(&row));
     }
@@ -641,9 +635,8 @@ fn nurbs_surface(e: &mut Emitter, n: &NurbsSurface) -> Option<Ref> {
         Some(w) => {
             // Rational surface weights are LIST(u) OF LIST(v), matching the grid.
             let mut wrows: Vec<String> = Vec::with_capacity(u_count);
-            for i in 0..u_count {
-                let slice: Vec<f64> = (0..v_count).map(|j| w[i * v_count + j]).collect();
-                wrows.push(real_list(&slice));
+            for row in w {
+                wrows.push(real_list(row));
             }
             let wgrid = format!("({})", wrows.join(","));
             let body = format!(

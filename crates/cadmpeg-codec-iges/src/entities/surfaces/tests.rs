@@ -461,7 +461,7 @@ fn decode_solves_a_surface_of_revolution_as_rational_quadratic_spans() {
         panic!("expected an exact rational revolution cache");
     };
     assert_eq!(surface.v_degree(), 2);
-    assert_eq!(surface.weights().unwrap().len(), 6);
+    assert_eq!(surface.pole_weights().unwrap().count(), 6);
     let point =
         cadmpeg_ir::eval::nurbs_surface_point(surface, 0.5, std::f64::consts::FRAC_PI_4).unwrap();
     let expected = 0.5_f64.sqrt();
@@ -779,7 +779,7 @@ fn decode_places_a_surface_of_revolution_and_its_procedural_carriers_once() {
     else {
         panic!("expected an exact rational revolution cache");
     };
-    assert_eq!(surface.control_points()[0].x, 11.0);
+    assert_eq!(surface.poles().nth(0).copied().unwrap().x, 11.0);
     let procedural = &result.ir().model.procedural_surfaces[0];
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(definition_payload) =
         procedural.definition()
@@ -1446,7 +1446,7 @@ fn decode_projects_a_bspline_surface_with_u_major_control_order() {
     assert_eq!((nurbs.u_degree(), nurbs.v_degree()), (1, 1));
     assert_eq!((nurbs.u_count(), nurbs.v_count()), (2, 2));
     assert_eq!(
-        nurbs.control_points(),
+        nurbs.poles().copied().collect::<Vec<_>>(),
         [
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
             cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
@@ -1637,8 +1637,10 @@ fn decode_applies_rational_surface_weight_declaration_in_iges_4_and_5_0() {
                     panic!("expected a NURBS surface carrier");
                 };
                 assert_eq!(
-                    surface.weights(),
-                    Some([1.0, 1.0, 0.99, 1.0].as_slice())
+                    surface
+                        .pole_weights()
+                        .map(std::iter::Iterator::collect::<Vec<_>>),
+                    Some(vec![1.0, 1.0, 0.99, 1.0])
                 );
             } else {
                 assert!(result

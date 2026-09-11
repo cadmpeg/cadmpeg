@@ -1329,6 +1329,7 @@ fn legacy_surface(
             weights.push(weight);
         }
     }
+    let row_len = counts[1];
     NurbsSurface::new(
         u32::try_from(orders[0] - 1)
             .map_err(|_| CodecError::Malformed("V1 surface degree overflow".to_string()))?,
@@ -1336,12 +1337,8 @@ fn legacy_surface(
             .map_err(|_| CodecError::Malformed("V1 surface degree overflow".to_string()))?,
         u_knots,
         v_knots,
-        u32::try_from(counts[0])
-            .map_err(|_| CodecError::Malformed("V1 surface pole count overflow".to_string()))?,
-        u32::try_from(counts[1])
-            .map_err(|_| CodecError::Malformed("V1 surface pole count overflow".to_string()))?,
-        control_points,
-        weights,
+        control_points.chunks(row_len).map(<[_]>::to_vec).collect(),
+        weights.map(|values| values.chunks(row_len).map(<[_]>::to_vec).collect()),
         false,
         closed[0] == 2,
         closed[1] == 2,

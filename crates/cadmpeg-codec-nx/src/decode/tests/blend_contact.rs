@@ -23,7 +23,7 @@ use cadmpeg_ir::math::{Point2, Vector3};
 
 fn test_surface(
     u_knots: Vec<f64>,
-    u_count: u32,
+    _u_count: u32,
     control_points: Vec<cadmpeg_ir::math::Point3>,
     weights: Option<Vec<f64>>,
     u_periodic: bool,
@@ -33,10 +33,11 @@ fn test_surface(
         1,
         u_knots,
         vec![0.0, 0.0, 1.0, 1.0],
-        u_count,
-        2,
-        control_points,
-        weights,
+        control_points
+            .chunks(2 as usize)
+            .map(<[_]>::to_vec)
+            .collect(),
+        weights.map(|values| values.chunks(2 as usize).map(<[_]>::to_vec).collect()),
         false,
         u_periodic,
         false,

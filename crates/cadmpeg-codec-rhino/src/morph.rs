@@ -494,7 +494,7 @@ fn surface_properties(
     properties.insert(format!("{prefix}_v_count"), surface.v_count().to_string());
     properties.insert(
         format!("{prefix}_control_points"),
-        points(surface.control_points()),
+        points(&surface.poles().copied().collect::<Vec<_>>()),
     );
     properties.insert(
         format!("{prefix}_u_periodic"),
@@ -504,11 +504,8 @@ fn surface_properties(
         format!("{prefix}_v_periodic"),
         surface.v_periodic().to_string(),
     );
-    if let Some(weights) = surface.weights() {
-        properties.insert(
-            format!("{prefix}_weights"),
-            numbers(weights.iter().copied()),
-        );
+    if let Some(weights) = surface.pole_weights() {
+        properties.insert(format!("{prefix}_weights"), numbers(weights));
     }
 }
 

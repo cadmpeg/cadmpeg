@@ -4963,7 +4963,7 @@ fn encode_nurbs_surface(nurbs: &NurbsSurface) -> Result<Entity, CodecError> {
         || nurbs.v_knots().iter().any(|value| !value.is_finite())
         || !knots_nondecreasing(nurbs.u_knots())
         || !knots_nondecreasing(nurbs.v_knots())
-        || nurbs.control_points().iter().any(|point| {
+        || nurbs.poles().any(|point| {
             [point.x, point.y, point.z]
                 .iter()
                 .any(|value| !value.is_finite())
@@ -4973,9 +4973,10 @@ fn encode_nurbs_surface(nurbs: &NurbsSurface) -> Result<Entity, CodecError> {
             "IGES NURBS surface dimensions, knots, or poles are invalid".into(),
         ));
     }
-    let weights = match nurbs.weights() {
-        Some(weights) => {
-            if weights
+    let weights = match nurbs.pole_weights() {
+        Some(values) => {
+            let values = values.collect::<Vec<_>>();
+            if values
                 .iter()
                 .any(|weight| !weight.is_finite() || *weight <= 0.0)
             {
@@ -4983,7 +4984,7 @@ fn encode_nurbs_surface(nurbs: &NurbsSurface) -> Result<Entity, CodecError> {
                     "IGES NURBS surface weights must be finite and positive".into(),
                 ));
             }
-            weights.to_vec()
+            values
         }
         None => alloc_filled(pole_count, 1.0, "iges NURBS surface weights")?,
     };
@@ -5024,7 +5025,7 @@ fn encode_nurbs_surface(nurbs: &NurbsSurface) -> Result<Entity, CodecError> {
     }
     for v in 0..v_count {
         for u in 0..u_count {
-            let point = nurbs.control_points()[u * v_count + v];
+            let point = nurbs.control_grid()[u][v];
             for value in [point.x, point.y, point.z] {
                 parameters.push(',');
                 parameters.push_str(&number(value));

@@ -2044,9 +2044,10 @@ fn zero_entity_nurbs_surface(data: &[u8], record: usize) -> Option<SurfaceGeomet
             layout.v_degree,
             expand_knots(&layout.u_distinct, &layout.u_mults)?,
             expand_knots(&layout.v_distinct, &layout.v_mults)?,
-            layout.u_count,
-            layout.v_count,
-            control_points,
+            control_points
+                .chunks(layout.v_count as usize)
+                .map(<[_]>::to_vec)
+                .collect(),
             None,
             false,
             false,

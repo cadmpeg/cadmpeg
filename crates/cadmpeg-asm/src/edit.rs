@@ -1598,16 +1598,14 @@ fn patch_nurbs_surface_record(
     } else {
         3
     };
-    let weights = surface.weights();
     let values = (0..v_count).flat_map(|v| {
         (0..u_count).flat_map(move |u| {
-            let ir_index = u * v_count + v;
-            let point = surface.control_points()[ir_index];
+            let point = surface.pole(u, v).copied();
             [
-                point.x / LEN_TO_MM,
-                point.y / LEN_TO_MM,
-                point.z / LEN_TO_MM,
-                weights.map_or(0.0, |weights| weights[ir_index]),
+                point.map_or(0.0, |point| point.x / LEN_TO_MM),
+                point.map_or(0.0, |point| point.y / LEN_TO_MM),
+                point.map_or(0.0, |point| point.z / LEN_TO_MM),
+                surface.weight(u, v).unwrap_or(0.0),
             ]
             .into_iter()
             .take(components)

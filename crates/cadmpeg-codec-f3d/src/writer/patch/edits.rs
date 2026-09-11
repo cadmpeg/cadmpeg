@@ -3373,11 +3373,9 @@ pub(crate) fn validate_surface_edits(
                     && before.u_count() == after.u_count()
                     && before.v_count() == after.v_count()
                     && before.weights().is_some() == after.weights().is_some()
-                    && after.control_points().iter().copied().all(finite_point)
-                    && after.weights().is_none_or(|weights| {
-                        weights
-                            .iter()
-                            .all(|weight| weight.is_finite() && *weight > 0.0)
+                    && after.poles().copied().all(finite_point)
+                    && after.pole_weights().is_none_or(|mut weights| {
+                        weights.all(|weight| weight.is_finite() && weight > 0.0)
                     })
             }
             _ => {

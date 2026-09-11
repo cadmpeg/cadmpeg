@@ -1418,8 +1418,8 @@ fn scale_surface_geometry(geometry: &mut SurfaceGeometry, scale: f64) -> Result<
         }
         SurfaceGeometry::Nurbs(surface) => {
             surface
-                .edit_control_points(|points| {
-                    for point in points {
+                .edit_control_points(|rows| {
+                    for point in rows.iter_mut().flatten() {
                         scale_point3(point, scale);
                     }
                 })

@@ -377,7 +377,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs) => {
             assert_eq!((nurbs.u_degree(), nurbs.v_degree()), (1, 1));
             assert_eq!((nurbs.u_count(), nurbs.v_count()), (2, 2));
-            assert_eq!(nurbs.control_points().len(), 4);
+            assert_eq!(nurbs.poles().count(), 4);
             assert_eq!(nurbs.u_knots(), [0.0, 0.0, 1.0, 1.0]);
             assert_eq!(nurbs.v_knots(), [0.0, 0.0, 1.0, 1.0]);
             assert!(nurbs.weights().is_none());

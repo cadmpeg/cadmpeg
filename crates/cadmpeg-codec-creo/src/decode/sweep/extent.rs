@@ -373,6 +373,10 @@ pub(in super::super) fn nurbs_translation_candidate(
     let u_count = usize::try_from(nurbs.u_count()).ok()?;
     let v_count = usize::try_from(nurbs.v_count()).ok()?;
     let pair_count = if along_v { u_count } else { v_count };
+    let poles = nurbs.poles().copied().collect::<Vec<_>>();
+    let pole_weights = nurbs
+        .pole_weights()
+        .map(std::iter::Iterator::collect::<Vec<f64>>);
     let mut starts = Vec::with_capacity(pair_count);
     let mut vector: Option<[f64; 3]> = None;
     for index in 0..pair_count {
@@ -381,8 +385,8 @@ pub(in super::super) fn nurbs_translation_candidate(
         } else {
             (index, v_count + index)
         };
-        let start = *nurbs.control_points().get(start_index)?;
-        let end = *nurbs.control_points().get(end_index)?;
+        let start = *poles.get(start_index)?;
+        let end = *poles.get(end_index)?;
         let start = [start.x, start.y, start.z];
         let end = [end.x, end.y, end.z];
         start
@@ -390,7 +394,7 @@ pub(in super::super) fn nurbs_translation_candidate(
             .chain(end)
             .all(f64::is_finite)
             .then_some(())?;
-        if let Some(weights) = nurbs.weights() {
+        if let Some(weights) = &pole_weights {
             let start_weight = *weights.get(start_index)?;
             let end_weight = *weights.get(end_index)?;
             (start_weight.is_finite()

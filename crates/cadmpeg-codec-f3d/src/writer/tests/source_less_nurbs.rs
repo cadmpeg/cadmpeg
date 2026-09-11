@@ -72,13 +72,15 @@ fn generated_source_less_face_writes_nurbs_surface_carrier() {
             1,
             vec![-1.0, -1.0, 2.0, 2.0],
             vec![-2.0, -2.0, 3.0, 3.0],
-            2,
-            2,
             vec![
-                cadmpeg_ir::math::Point3::new(0.0, 0.0, 1.0),
-                cadmpeg_ir::math::Point3::new(0.0, 10.0, 2.0),
-                cadmpeg_ir::math::Point3::new(20.0, 0.0, 3.0),
-                cadmpeg_ir::math::Point3::new(20.0, 10.0, 4.0),
+                vec![
+                    cadmpeg_ir::math::Point3::new(0.0, 0.0, 1.0),
+                    cadmpeg_ir::math::Point3::new(0.0, 10.0, 2.0),
+                ],
+                vec![
+                    cadmpeg_ir::math::Point3::new(20.0, 0.0, 3.0),
+                    cadmpeg_ir::math::Point3::new(20.0, 10.0, 4.0),
+                ],
             ],
             None,
             false,
@@ -123,15 +125,18 @@ fn generated_source_less_face_writes_rational_nurbs_surface_carrier() {
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![0.0, 0.0, 1.0, 1.0],
-            2,
-            2,
             vec![
-                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                cadmpeg_ir::math::Point3::new(0.0, 8.0, 1.0),
-                cadmpeg_ir::math::Point3::new(12.0, 0.0, 2.0),
-                cadmpeg_ir::math::Point3::new(12.0, 8.0, 3.0),
+                vec![
+                    cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Point3::new(0.0, 8.0, 1.0),
+                ],
+                vec![
+                    cadmpeg_ir::math::Point3::new(12.0, 0.0, 2.0),
+                    cadmpeg_ir::math::Point3::new(12.0, 8.0, 3.0),
+                ],
             ],
-            Some(vec![1.0, 0.75, 1.25, 1.0]),
+            Some(vec![1.0, 0.75, 1.25, 1.0])
+                .map(|values| values.chunks(2 as usize).map(<[_]>::to_vec).collect()),
             false,
             false,
             true,
@@ -565,15 +570,18 @@ fn generated_source_less_multi_face_writes_nurbs_carriers_and_pcurve() {
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![0.0, 0.0, 1.0, 1.0],
-            2,
-            2,
             vec![
-                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                cadmpeg_ir::math::Point3::new(0.0, 10.0, 1.0),
-                cadmpeg_ir::math::Point3::new(10.0, 0.0, 2.0),
-                cadmpeg_ir::math::Point3::new(10.0, 10.0, 3.0),
+                vec![
+                    cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Point3::new(0.0, 10.0, 1.0),
+                ],
+                vec![
+                    cadmpeg_ir::math::Point3::new(10.0, 0.0, 2.0),
+                    cadmpeg_ir::math::Point3::new(10.0, 10.0, 3.0),
+                ],
             ],
-            Some(vec![1.0, 0.8, 1.2, 1.0]),
+            Some(vec![1.0, 0.8, 1.2, 1.0])
+                .map(|values| values.chunks(2 as usize).map(<[_]>::to_vec).collect()),
             false,
             false,
             true,

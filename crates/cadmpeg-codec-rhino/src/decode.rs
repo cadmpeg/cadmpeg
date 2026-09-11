@@ -5334,8 +5334,8 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
     surface.geometry = match geometry {
         SurfaceGeometry::Nurbs(mut nurbs) => {
             nurbs
-                .edit_control_points(|points| {
-                    for pole in points {
+                .edit_control_points(|rows| {
+                    for pole in rows.iter_mut().flatten() {
                         *pole = transform.apply_point(*pole);
                     }
                 })

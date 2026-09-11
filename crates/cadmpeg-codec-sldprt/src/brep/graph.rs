@@ -4012,8 +4012,7 @@ fn nurbs_boundary_pcurve(
     }
     let tolerance = inverse_coordinate_tolerance(
         surface
-            .control_points()
-            .iter()
+            .poles()
             .copied()
             .chain(curve.control_points().iter().copied()),
     );
@@ -4136,12 +4135,15 @@ fn nurbs_strict_isocurve_pcurve(
             SurfaceParameterAxis::U => (varying, vc + varying),
             SurfaceParameterAxis::V => (varying * vc, varying * vc + 1),
         };
-        let expected_weights = surface.weights().map(|weights| {
+        let surface_weights = surface
+            .pole_weights()
+            .map(std::iter::Iterator::collect::<Vec<f64>>);
+        let expected_weights = surface_weights.as_ref().map(|weights| {
             (0..varying_count)
                 .map(|varying| weights[pole_indices(varying).0])
                 .collect::<Vec<_>>()
         });
-        if surface.weights().is_some_and(|weights| {
+        if surface_weights.as_ref().is_some_and(|weights| {
             (0..varying_count).any(|varying| {
                 let (a, b) = pole_indices(varying);
                 (weights[a] - weights[b]).abs() > EPS_NURBS_WEIGHT
@@ -4159,12 +4161,13 @@ fn nurbs_strict_isocurve_pcurve(
         } {
             return InverseResolution::NoMatch;
         }
+        let surface_poles = surface.poles().copied().collect::<Vec<_>>();
         let mut delta_squared = 0.0;
         let mut relative_dot_delta = 0.0;
         for (varying, point) in curve.control_points().iter().enumerate() {
             let (a_index, b_index) = pole_indices(varying);
-            let a = surface.control_points()[a_index];
-            let b = surface.control_points()[b_index];
+            let a = surface_poles[a_index];
+            let b = surface_poles[b_index];
             let delta = [b.x - a.x, b.y - a.y, b.z - a.z];
             let relative = [point.x - a.x, point.y - a.y, point.z - a.z];
             delta_squared += delta.iter().map(|value| value * value).sum::<f64>();
@@ -4176,14 +4179,13 @@ fn nurbs_strict_isocurve_pcurve(
         }
         let tolerance = inverse_coordinate_tolerance(
             surface
-                .control_points()
-                .iter()
+                .poles()
                 .copied()
                 .chain(curve.control_points().iter().copied()),
         );
         if delta_squared <= f64::EPSILON {
             let all_equal = (0..varying_count).all(|varying| {
-                let a = surface.control_points()[pole_indices(varying).0];
+                let a = surface_poles[pole_indices(varying).0];
                 let point = curve.control_points()[varying];
                 (point.x - a.x).powi(2) + (point.y - a.y).powi(2) + (point.z - a.z).powi(2)
                     <= tolerance * tolerance
@@ -4198,8 +4200,8 @@ fn nurbs_strict_isocurve_pcurve(
         let residual_squared = (0..varying_count)
             .map(|varying| {
                 let (a_index, b_index) = pole_indices(varying);
-                let a = surface.control_points()[a_index];
-                let b = surface.control_points()[b_index];
+                let a = surface_poles[a_index];
+                let b = surface_poles[b_index];
                 let point = curve.control_points()[varying];
                 (point.x - (a.x + factor * (b.x - a.x))).powi(2)
                     + (point.y - (a.y + factor * (b.y - a.y))).powi(2)
@@ -4542,11 +4544,7 @@ fn extended_nurbs_isocurve_axis_candidate(
             parameter,
         ) {
             let tolerance = inverse_coordinate_tolerance(
-                surface
-                    .control_points()
-                    .iter()
-                    .copied()
-                    .chain(std::iter::once(point)),
+                surface.poles().copied().chain(std::iter::once(point)),
             );
             if let Some(parameters) =
                 nurbs_seeded_surface_projection(surface, point, None).filter(|parameters| {
@@ -4697,14 +4695,8 @@ fn nurbs_edge_endpoint_parameters(
     let [Some(first), Some(last)] = curve_points else {
         return None;
     };
-    let tolerance = inverse_coordinate_tolerance(
-        surface
-            .control_points()
-            .iter()
-            .copied()
-            .chain([first, last]),
-    )
-    .max(NURBS_ENDPOINT_TOLERANCE_MM);
+    let tolerance = inverse_coordinate_tolerance(surface.poles().copied().chain([first, last]))
+        .max(NURBS_ENDPOINT_TOLERANCE_MM);
     let project = |point| {
         let parameters = nurbs_seeded_surface_projection(surface, point, None)?;
         let mapped = nurbs_surface_point(surface, parameters.u, parameters.v)?;
@@ -4886,15 +4878,18 @@ fn ruled_surface_line_pcurve(
         || !varying_min.is_finite()
         || !varying_max.is_finite()
         || varying_min >= varying_max
-        || surface.weights().is_some_and(|weights| {
-            (0..fixed_count).any(|fixed| {
-                let (a, b) = match fixed_axis {
-                    SurfaceParameterAxis::U => (fixed * vc, fixed * vc + 1),
-                    SurfaceParameterAxis::V => (fixed, vc + fixed),
-                };
-                (weights[a] - weights[b]).abs() > EPS_NURBS_WEIGHT
+        || surface
+            .pole_weights()
+            .map(std::iter::Iterator::collect::<Vec<f64>>)
+            .is_some_and(|weights| {
+                (0..fixed_count).any(|fixed| {
+                    let (a, b) = match fixed_axis {
+                        SurfaceParameterAxis::U => (fixed * vc, fixed * vc + 1),
+                        SurfaceParameterAxis::V => (fixed, vc + fixed),
+                    };
+                    (weights[a] - weights[b]).abs() > EPS_NURBS_WEIGHT
+                })
             })
-        })
     {
         return InverseResolution::NoMatch;
     }
@@ -4951,13 +4946,7 @@ fn ruled_surface_line_pcurve(
     };
     let resolution = unique_inverse_parameter(
         candidates,
-        inverse_coordinate_tolerance(
-            surface
-                .control_points()
-                .iter()
-                .copied()
-                .chain(std::iter::once(line_origin)),
-        ),
+        inverse_coordinate_tolerance(surface.poles().copied().chain(std::iter::once(line_origin))),
         [fixed_min, fixed_max],
     );
     let fixed = match resolution {
@@ -5625,7 +5614,7 @@ mod tests {
         v_degree: u32,
         u_knots: Vec<f64>,
         v_knots: Vec<f64>,
-        u_count: u32,
+        _u_count: u32,
         v_count: u32,
         control_points: Vec<cadmpeg_ir::math::Point3>,
         weights: Option<Vec<f64>>,
@@ -5635,10 +5624,11 @@ mod tests {
             v_degree,
             u_knots,
             v_knots,
-            u_count,
-            v_count,
-            control_points,
-            weights,
+            control_points
+                .chunks(v_count as usize)
+                .map(<[_]>::to_vec)
+                .collect(),
+            weights.map(|values| values.chunks(v_count as usize).map(<[_]>::to_vec).collect()),
             false,
             false,
             false,

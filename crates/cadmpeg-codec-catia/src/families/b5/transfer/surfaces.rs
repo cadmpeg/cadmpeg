@@ -429,15 +429,14 @@ pub(super) fn revolve_nurbs(
             weights.push(profile_weight * angular_weight);
         }
     }
+    let row_len = usize::try_from(angular_count).ok()?;
     NurbsSurface::new(
         profile.degree(),
         2,
         profile.knots().to_vec(),
         v_knots,
-        u32::try_from(profile.control_points().len()).ok()?,
-        u32::try_from(angular_count).ok()?,
-        control_points,
-        Some(weights),
+        control_points.chunks(row_len).map(<[_]>::to_vec).collect(),
+        Some(weights).map(|values| values.chunks(row_len).map(<[_]>::to_vec).collect()),
         false,
         false,
         false,

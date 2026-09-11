@@ -5249,10 +5249,11 @@ fn nurbs_surface(
         v_degree,
         u_knots,
         v_knots,
-        u_count,
-        v_count,
-        control_points,
-        weights,
+        control_points
+            .chunks(v_count as usize)
+            .map(<[_]>::to_vec)
+            .collect(),
+        weights.map(|values| values.chunks(v_count as usize).map(<[_]>::to_vec).collect()),
         false,
         u_periodic,
         v_periodic,

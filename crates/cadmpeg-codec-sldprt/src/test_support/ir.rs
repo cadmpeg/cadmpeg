@@ -204,8 +204,8 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 .unwrap();
             }
             SurfaceGeometry::Nurbs(nurbs) => {
-                let _ = nurbs.edit_control_points(|points| {
-                    for pole in points {
+                let _ = nurbs.edit_control_points(|rows| {
+                    for pole in rows.iter_mut().flatten() {
                         pole.x += dx;
                     }
                 });

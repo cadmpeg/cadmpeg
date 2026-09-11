@@ -475,9 +475,16 @@ fn surface_bytes_preserve_asymmetric_u_major_rational_poles() {
     let bytes = surface_payload(2, 2, 2, 3, true, &[0.0, 1.0], &[0.0, 1.0, 2.0]);
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
     let surface = read_nurbs_surface(&mut reader, 1.0).expect("required invariant");
-    assert_eq!(surface.control_points()[1].y, 1.0 / 2.0);
-    assert_eq!(surface.control_points()[3].x, 1.0 / 2.0);
-    assert_eq!(surface.weights().expect("rational surface")[5], 4.0);
+    assert_eq!(surface.poles().nth(1).copied().unwrap().y, 1.0 / 2.0);
+    assert_eq!(surface.poles().nth(3).copied().unwrap().x, 1.0 / 2.0);
+    assert_eq!(
+        surface
+            .pole_weights()
+            .expect("rational surface")
+            .nth(5)
+            .unwrap(),
+        4.0
+    );
 }
 
 #[test]
@@ -501,7 +508,10 @@ fn surface_reads_a_valid_two_dimensional_lattice_and_lifts_zero_z() {
     let surface = read_nurbs_surface(&mut reader, 2.0).expect("valid two-dimensional surface");
     assert_eq!(reader.remaining(), 0);
     assert_eq!((surface.u_count(), surface.v_count()), (3, 2));
-    assert_eq!(surface.control_points()[1], Point3::new(200.0, 402.0, 0.0));
+    assert_eq!(
+        surface.poles().nth(1).copied().unwrap(),
+        Point3::new(200.0, 402.0, 0.0)
+    );
     assert_eq!(surface.u_knots(), vec![10.0, 10.0, 11.0, 12.0, 12.0]);
     assert_eq!(surface.v_knots(), vec![20.0, 20.0, 21.0, 21.0]);
 }
@@ -512,8 +522,16 @@ fn surface_reads_a_rational_two_dimensional_lattice() {
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
     let surface = read_nurbs_surface(&mut reader, 2.0).expect("valid rational surface");
     assert_eq!(reader.remaining(), 0);
-    assert_eq!(surface.control_points()[1], Point3::new(200.0, 402.0, 0.0));
-    assert_eq!(surface.weights(), Some(&[1.0, 2.0, 2.0, 3.0, 3.0, 4.0][..]));
+    assert_eq!(
+        surface.poles().nth(1).copied().unwrap(),
+        Point3::new(200.0, 402.0, 0.0)
+    );
+    assert_eq!(
+        surface
+            .pole_weights()
+            .map(std::iter::Iterator::collect::<Vec<_>>),
+        Some([1.0, 2.0, 2.0, 3.0, 3.0, 4.0].to_vec())
+    );
 }
 
 #[test]
@@ -573,8 +591,14 @@ fn sum_surface_preserves_asymmetric_domains_and_u_major_order() {
     assert_eq!((surface.u_count(), surface.v_count()), (2, 3));
     assert_eq!(surface.u_knots(), first.knots());
     assert_eq!(surface.v_knots(), second.knots());
-    assert_eq!(surface.control_points()[0], Point3::new(11.5, 3.5, 5.5));
-    assert_eq!(surface.control_points()[3], Point3::new(14.5, 6.5, 8.5));
+    assert_eq!(
+        surface.poles().nth(0).copied().unwrap(),
+        Point3::new(11.5, 3.5, 5.5)
+    );
+    assert_eq!(
+        surface.poles().nth(3).copied().unwrap(),
+        Point3::new(14.5, 6.5, 8.5)
+    );
     assert!(surface.weights().is_none());
 }
 
@@ -601,8 +625,17 @@ fn sum_surface_multiplies_each_rational_weight_pair() {
         );
         let surface =
             sum_nurbs(&first, &second, Vector3::new(9.0, 8.0, 7.0), 0).expect("required invariant");
-        assert_eq!(surface.weights().expect("rational surface"), expected);
-        assert_eq!(surface.control_points()[3], Point3::new(11.0, 12.0, 7.0));
+        assert_eq!(
+            surface
+                .pole_weights()
+                .expect("rational surface")
+                .collect::<Vec<_>>(),
+            expected
+        );
+        assert_eq!(
+            surface.poles().nth(3).copied().unwrap(),
+            Point3::new(11.0, 12.0, 7.0)
+        );
     }
 }
 
@@ -632,15 +665,29 @@ fn extrusion_tensor_preserves_rational_profile_knots_weights_and_transpose() {
     assert_eq!((plain.u_degree(), plain.v_degree()), (2, 1));
     assert_eq!(plain.u_knots(), start.knots());
     assert_eq!(plain.v_knots(), vec![10.0, 10.0, 20.0, 20.0]);
-    assert_eq!(plain.weights(), Some(&[1.0, 1.0, 0.5, 0.5, 1.0, 1.0][..]));
-    assert_eq!(plain.control_points()[3], end.control_points()[1]);
+    assert_eq!(
+        plain
+            .pole_weights()
+            .map(std::iter::Iterator::collect::<Vec<_>>),
+        Some([1.0, 1.0, 0.5, 0.5, 1.0, 1.0].to_vec())
+    );
+    assert_eq!(
+        plain.poles().nth(3).copied().unwrap(),
+        end.control_points()[1]
+    );
     let transposed =
         super::extrusion_nurbs(&start, &end, [10.0, 20.0], true, 0).expect("required invariant");
     assert_eq!((transposed.u_degree(), transposed.v_degree()), (1, 2));
     assert_eq!((transposed.u_count(), transposed.v_count()), (2, 3));
     assert_eq!(transposed.u_knots(), vec![10.0, 10.0, 20.0, 20.0]);
-    assert_eq!(transposed.control_points()[1], start.control_points()[1]);
-    assert_eq!(transposed.control_points()[3], end.control_points()[0]);
+    assert_eq!(
+        transposed.poles().nth(1).copied().unwrap(),
+        start.control_points()[1]
+    );
+    assert_eq!(
+        transposed.poles().nth(3).copied().unwrap(),
+        end.control_points()[0]
+    );
 }
 
 #[test]
@@ -663,14 +710,30 @@ fn revolution_preserves_partial_angle_parameter_domain_and_product_weights() {
     assert_eq!((surface.u_count(), surface.v_count()), (3, 2));
     assert_eq!(surface.u_knots(), vec![20.0, 20.0, 20.0, 30.0, 30.0, 30.0]);
     assert_eq!(surface.v_knots(), profile.knots());
-    assert_eq!(surface.weights().expect("rational surface")[0], 2.0);
+    assert_eq!(
+        surface
+            .pole_weights()
+            .expect("rational surface")
+            .nth(0)
+            .unwrap(),
+        2.0
+    );
     assert!(
-        (surface.weights().expect("rational surface")[2] - 2.0 / 2.0_f64.sqrt()).abs()
+        (surface
+            .pole_weights()
+            .expect("rational surface")
+            .nth(2)
+            .unwrap()
+            - 2.0 / 2.0_f64.sqrt())
+        .abs()
             < EPS_EXACT_GEOMETRY
     );
-    assert_eq!(surface.control_points()[0], profile.control_points()[0]);
-    assert!((surface.control_points()[4].x - 1.0).abs() < EPS_EXACT_GEOMETRY);
-    assert!((surface.control_points()[4].y - 2.0).abs() < EPS_EXACT_GEOMETRY);
+    assert_eq!(
+        surface.poles().nth(0).copied().unwrap(),
+        profile.control_points()[0]
+    );
+    assert!((surface.poles().nth(4).copied().unwrap().x - 1.0).abs() < EPS_EXACT_GEOMETRY);
+    assert!((surface.poles().nth(4).copied().unwrap().y - 2.0).abs() < EPS_EXACT_GEOMETRY);
 }
 
 #[test]
@@ -693,7 +756,7 @@ fn revolution_moves_singular_control_rows_exactly_onto_axis() {
         0,
     )
     .expect("required invariant");
-    for point in surface.control_points().iter().step_by(2) {
+    for point in surface.poles().step_by(2) {
         assert_eq!(*point, Point3::new(1.0, 0.0, 2.0));
     }
 }
@@ -728,8 +791,14 @@ fn revolution_transpose_swaps_shape_and_reindexes_u_major_poles() {
     assert_eq!((transposed.u_count(), transposed.v_count()), (2, 3));
     assert_eq!((transposed.u_degree(), transposed.v_degree()), (1, 2));
     assert_eq!(transposed.u_knots(), profile.knots());
-    assert_eq!(transposed.control_points()[1], plain.control_points()[2]);
-    assert_eq!(transposed.control_points()[3], plain.control_points()[1]);
+    assert_eq!(
+        transposed.poles().nth(1).copied().unwrap(),
+        plain.poles().nth(2).copied().unwrap()
+    );
+    assert_eq!(
+        transposed.poles().nth(3).copied().unwrap(),
+        plain.poles().nth(1).copied().unwrap()
+    );
 }
 
 #[test]
@@ -851,9 +920,9 @@ fn sum_surface_decodes_ordered_children_and_scales_once() {
     assert!((basepoint.x - 25.4).abs() < 1.0e-12);
     assert!((basepoint.y - 50.8).abs() < 1.0e-12);
     assert!((basepoint.z - 76.2).abs() < 1.0e-12);
-    assert!((geometry.control_points()[0].x - 177.8).abs() < EPS_EXACT_GEOMETRY);
-    assert!((geometry.control_points()[0].y - 50.8).abs() < EPS_EXACT_GEOMETRY);
-    assert!((geometry.control_points()[0].z - 76.2).abs() < EPS_EXACT_GEOMETRY);
+    assert!((geometry.poles().nth(0).copied().unwrap().x - 177.8).abs() < EPS_EXACT_GEOMETRY);
+    assert!((geometry.poles().nth(0).copied().unwrap().y - 50.8).abs() < EPS_EXACT_GEOMETRY);
+    assert!((geometry.poles().nth(0).copied().unwrap().z - 76.2).abs() < EPS_EXACT_GEOMETRY);
     let CurveGeometry::Nurbs(first) = children[0].reported_geometry() else {
         panic!("expected first NURBS child");
     };

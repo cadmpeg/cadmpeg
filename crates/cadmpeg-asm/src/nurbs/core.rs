@@ -107,10 +107,15 @@ pub(crate) fn surface_block(toks: &[Token], marker_pos: usize) -> Option<(NurbsS
         degree_v as u32,
         u_knots,
         v_knots,
-        n_poles_u as u32,
-        n_poles_v as u32,
-        grid,
-        weights,
+        grid.chunks(n_poles_v as u32 as usize)
+            .map(<[_]>::to_vec)
+            .collect(),
+        weights.map(|values| {
+            values
+                .chunks(n_poles_v as u32 as usize)
+                .map(<[_]>::to_vec)
+                .collect()
+        }),
         false,
         is_periodic(enums[0]),
         is_periodic(enums[1]),
@@ -280,7 +285,7 @@ impl SurfacePatchLayout {
         } else {
             3
         };
-        (0..self.surface.control_points().len() * components)
+        (0..self.surface.poles().count() * components)
             .map(|ordinal| self.control_start + ordinal * 9 + 1)
     }
 }
@@ -353,10 +358,16 @@ pub(crate) fn decode_surface_block(
         degree_v as u32,
         u_knots,
         v_knots,
-        n_poles_u as u32,
-        n_poles_v as u32,
-        control_points,
-        weights,
+        control_points
+            .chunks(n_poles_v as u32 as usize)
+            .map(<[_]>::to_vec)
+            .collect(),
+        weights.map(|values| {
+            values
+                .chunks(n_poles_v as u32 as usize)
+                .map(<[_]>::to_vec)
+                .collect()
+        }),
         false,
         is_periodic(enums[0]),
         is_periodic(enums[1]),

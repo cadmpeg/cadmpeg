@@ -171,8 +171,8 @@ pub(crate) fn certified_offset_cache_fit_with_budget(
         && nurbs_active_domain(support)
             .zip(nurbs_active_domain(candidate))
             .is_some_and(|(support, candidate)| support == candidate)
-        && positive_weights(support.weights())
-        && positive_weights(candidate.weights());
+        && positive_weights(support.pole_weights())
+        && positive_weights(candidate.pole_weights());
     if !compatible_parameterization
         || !distance.is_finite()
         || !tolerance.is_finite()
@@ -195,9 +195,8 @@ pub(crate) fn certified_offset_cache_fit_with_budget(
                 distance * normal.z,
             );
             let maximum_error = support
-                .control_points()
-                .iter()
-                .zip(candidate.control_points())
+                .poles()
+                .zip(candidate.poles())
                 .map(|(support, candidate)| {
                     let expected = Point3::new(
                         support.x + translation.x,
@@ -325,8 +324,8 @@ impl HomogeneousSurfaceNet {
         for ((control, support), candidate) in net
             .controls
             .iter_mut()
-            .zip(support.control_points())
-            .zip(candidate.control_points())
+            .zip(support.poles())
+            .zip(candidate.poles())
         {
             control[0] = (candidate.x - support.x) * control[3];
             control[1] = (candidate.y - support.y) * control[3];
@@ -355,21 +354,22 @@ impl HomogeneousSurfaceNet {
             || !knots_nondecreasing(surface.u_knots())
             || !knots_nondecreasing(surface.v_knots())
             || surface
-                .control_points()
-                .iter()
+                .poles()
                 .any(|point| !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite())
-            || !positive_weights(surface.weights())
+            || !positive_weights(surface.pole_weights())
         {
             return None;
         }
+        let pole_weights = surface
+            .pole_weights()
+            .map(std::iter::Iterator::collect::<Vec<f64>>);
         let controls = surface
-            .control_points()
-            .iter()
+            .poles()
             .enumerate()
             .map(|(index, point)| {
                 components(
                     *point,
-                    surface.weights().map_or(1.0, |weights| weights[index]),
+                    pole_weights.as_ref().map_or(1.0, |weights| weights[index]),
                 )
             })
             .collect::<Vec<_>>();
@@ -766,7 +766,7 @@ pub(crate) fn translation_net_normal(surface: &NurbsSurface) -> Option<Vector3> 
     let v_count = usize::try_from(surface.v_count()).ok()?;
     let u_degree = usize::try_from(surface.u_degree()).ok()?;
     let v_degree = usize::try_from(surface.v_degree()).ok()?;
-    let point = |u: usize, v: usize| surface.control_points()[u * v_count + v];
+    let point = |u: usize, v: usize| surface.control_grid()[u][v];
     let difference = |end: Point3, start: Point3| {
         Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z)
     };
@@ -820,14 +820,18 @@ fn oriented_nurbs_normal(surface: &NurbsSurface, normal: Vector3) -> Option<Vect
     })
 }
 
-pub(crate) fn positive_weights(weights: Option<&[f64]>) -> bool {
+pub(crate) fn positive_weights(weights: Option<impl Iterator<Item = f64>>) -> bool {
     let Some(weights) = weights else {
         return true;
     };
-    !weights.is_empty()
-        && weights
-            .iter()
-            .all(|weight| weight.is_finite() && *weight > 0.0)
+    let mut any = false;
+    for weight in weights {
+        any = true;
+        if !weight.is_finite() || weight <= 0.0 {
+            return false;
+        }
+    }
+    any
 }
 
 fn offset_support_control_hull_excludes_point(
@@ -845,12 +849,12 @@ fn offset_support_control_hull_excludes_point(
             .surfaces(surface.as_str())
             .is_some_and(|carrier| match &carrier.geometry {
                 SurfaceGeometry::Nurbs(nurbs)
-                    if positive_weights(nurbs.weights())
-                        && nurbs.control_points().iter().all(|control| {
+                    if positive_weights(nurbs.pole_weights())
+                        && nurbs.poles().all(|control| {
                             control.x.is_finite() && control.y.is_finite() && control.z.is_finite()
                         }) =>
                 {
-                    let (minimum, maximum) = nurbs.control_points().iter().fold(
+                    let (minimum, maximum) = nurbs.poles().fold(
                         (
                             Point3::new(f64::INFINITY, f64::INFINITY, f64::INFINITY),
                             Point3::new(f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY),
@@ -2292,17 +2296,17 @@ mod tests {
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            3,
-            3,
             (0..3)
-                .flat_map(|u| {
-                    (0..3).map(move |v| {
-                        Point3::new(
-                            coordinates[u],
-                            coordinates[v],
-                            square_controls[u] + square_controls[v],
-                        )
-                    })
+                .map(|u| {
+                    (0..3)
+                        .map(|v| {
+                            Point3::new(
+                                coordinates[u],
+                                coordinates[v],
+                                square_controls[u] + square_controls[v],
+                            )
+                        })
+                        .collect()
                 })
                 .collect(),
             None,
@@ -2313,7 +2317,7 @@ mod tests {
         .expect("valid offset support");
         let mut candidate = support.clone();
         candidate
-            .edit_control_points(|points| points[4].z += 1.0)
+            .edit_control_points(|rows| rows[1][1].z += 1.0)
             .expect("finite offset-support test pole edit");
         let support = SurfaceGeometry::Nurbs(support);
         let candidate = SurfaceGeometry::Nurbs(candidate);
@@ -2340,15 +2344,12 @@ mod tests {
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![0.0, 0.0, 1.0, 1.0],
-                    2,
-                    2,
                     vec![
-                        Point3::new(0.0, 0.0, 0.0),
-                        Point3::new(0.0, 1.0, 0.0),
-                        Point3::new(1.0, 0.0, 0.0),
-                        Point3::new(1.0, 1.0, 0.0),
+                        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                        vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
                     ],
-                    Some(vec![1.0; 4]),
+                    Some(vec![1.0; 4])
+                        .map(|values| values.chunks(2 as usize).map(<[_]>::to_vec).collect()),
                     false,
                     false,
                     false,
@@ -2394,13 +2395,9 @@ mod tests {
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![0.0, 0.0, 1.0, 1.0],
-                    2,
-                    2,
                     vec![
-                        Point3::new(0.0, 0.0, 0.0),
-                        Point3::new(0.0, 1.0, 0.0),
-                        Point3::new(1.0, 0.0, 0.0),
-                        Point3::new(1.0, 1.0, 0.0),
+                        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                        vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
                     ],
                     None,
                     false,

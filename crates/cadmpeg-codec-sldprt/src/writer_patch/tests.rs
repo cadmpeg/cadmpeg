@@ -22,7 +22,7 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
         panic!("compact NURBS surface");
     };
     let mut new = old.clone();
-    new.edit_control_points(|points| points[3].z = 750.0)
+    new.edit_control_points(|rows| rows[1][1].z = 750.0)
         .unwrap();
     new.edit_u_knots(|knots| knots[2..].fill(2.0)).unwrap();
     new.edit_v_knots(|knots| knots[2..].fill(3.0)).unwrap();
@@ -111,7 +111,7 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
             })
             .unwrap();
         surface
-            .edit_control_points(|points| points[3].z = 750.0)
+            .edit_control_points(|rows| rows[1][1].z = 750.0)
             .unwrap();
         surface.edit_u_knots(|knots| knots[2..].fill(2.0)).unwrap();
         surface.edit_v_knots(|knots| knots[2..].fill(3.0)).unwrap();

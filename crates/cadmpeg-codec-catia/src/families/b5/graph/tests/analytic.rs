@@ -1224,9 +1224,10 @@ fn offset_surface_accepts_an_identity_checked_class_31_cache() {
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![0.0, 0.0, 1.0, 1.0],
-            2,
-            2,
-            vec![cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0); 4],
+            vec![cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0); 4]
+                .chunks(2 as usize)
+                .map(<[_]>::to_vec)
+                .collect(),
             None,
             false,
             false,

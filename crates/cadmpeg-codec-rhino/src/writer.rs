@@ -1721,7 +1721,7 @@ fn check_nurbs_surface(
         || i32::try_from(v_order).is_err()
         || i32::try_from(u_count).is_err()
         || i32::try_from(v_count).is_err()
-        || i32::try_from(surface.control_points().len()).is_err()
+        || i32::try_from(surface.poles().count()).is_err()
     {
         return Err(CodecError::malformed(format_args!(
             "surface {id} cannot be represented by Rhino NURBS counts"
@@ -1993,18 +1993,12 @@ fn nurbs_surface_payload(surface: &cadmpeg_ir::geometry::NurbsSurface) -> Vec<u8
     ] {
         payload.extend(value.to_le_bytes());
     }
-    let min = surface
-        .control_points()
-        .iter()
-        .fold([f64::INFINITY; 3], |a, p| {
-            [a[0].min(p.x), a[1].min(p.y), a[2].min(p.z)]
-        });
-    let max = surface
-        .control_points()
-        .iter()
-        .fold([f64::NEG_INFINITY; 3], |a, p| {
-            [a[0].max(p.x), a[1].max(p.y), a[2].max(p.z)]
-        });
+    let min = surface.poles().fold([f64::INFINITY; 3], |a, p| {
+        [a[0].min(p.x), a[1].min(p.y), a[2].min(p.z)]
+    });
+    let max = surface.poles().fold([f64::NEG_INFINITY; 3], |a, p| {
+        [a[0].max(p.x), a[1].max(p.y), a[2].max(p.z)]
+    });
     for value in min.into_iter().chain(max) {
         payload.extend(value.to_le_bytes());
     }
@@ -2014,9 +2008,12 @@ fn nurbs_surface_payload(surface: &cadmpeg_ir::geometry::NurbsSurface) -> Vec<u8
             payload.extend(knot.to_le_bytes());
         }
     }
-    payload.extend((surface.control_points().len() as i32).to_le_bytes());
-    for (index, point) in surface.control_points().iter().enumerate() {
-        let weight = surface.weights().map_or(1.0, |weights| weights[index]);
+    payload.extend((surface.poles().count() as i32).to_le_bytes());
+    let pole_weights = surface
+        .pole_weights()
+        .map(std::iter::Iterator::collect::<Vec<f64>>);
+    for (index, point) in surface.poles().enumerate() {
+        let weight = pole_weights.as_ref().map_or(1.0, |weights| weights[index]);
         payload.extend((point.x * weight).to_le_bytes());
         payload.extend((point.y * weight).to_le_bytes());
         payload.extend((point.z * weight).to_le_bytes());

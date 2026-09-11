@@ -845,7 +845,7 @@ pub(super) fn project(
             v_knots.extend([*breakpoint; 3]);
         }
         v_knots.extend([v_breakpoints[v_segments]; 4]);
-        let (Ok(u_count), Ok(v_count)) = (u32::try_from(u_count), u32::try_from(v_count)) else {
+        let (Ok(_u_count), Ok(v_count)) = (u32::try_from(u_count), u32::try_from(v_count)) else {
             losses.push(entity_loss(
                 entry,
                 "spline-surface pole dimensions exceed u32",
@@ -857,9 +857,10 @@ pub(super) fn project(
             3,
             u_knots,
             v_knots,
-            u_count,
-            v_count,
-            control_points,
+            control_points
+                .chunks(v_count as usize)
+                .map(<[_]>::to_vec)
+                .collect(),
             None,
             false,
             false,

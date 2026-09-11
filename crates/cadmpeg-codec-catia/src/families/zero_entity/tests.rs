@@ -236,8 +236,8 @@ fn decode_zero_entity_transfers_inline_nurbs_surface() {
                 surface.u_knots(),
                 [0.0, 0.0, 0.0, 0.0, 0.25, 0.5, 0.75, 1.0, 1.0, 1.0, 1.0]
             );
-            assert_eq!(surface.control_points().len(), 49);
-            assert_eq!(surface.control_points()[48].x, 48.0);
+            assert_eq!(surface.poles().count(), 49);
+            assert_eq!(surface.poles().nth(48).copied().unwrap().x, 48.0);
         }
         other => panic!("expected NURBS surface, got {other:?}"),
     }

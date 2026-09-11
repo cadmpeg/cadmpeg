@@ -408,10 +408,11 @@ pub(in super::super) fn revolved_nurbs_surface(
             std::f64::consts::TAU,
             std::f64::consts::TAU,
         ],
-        u32::try_from(directrix.control_points().len()).ok()?,
-        9,
-        control_points,
-        Some(weights),
+        control_points
+            .chunks(9 as usize)
+            .map(<[_]>::to_vec)
+            .collect(),
+        Some(weights).map(|values| values.chunks(9 as usize).map(<[_]>::to_vec).collect()),
         false,
         false,
         false,

@@ -325,26 +325,27 @@ fn rational_surface_patches_with_budget(
             .any(|knot| !knot.is_finite())
         || !knots_nondecreasing(surface.u_knots())
         || !knots_nondecreasing(surface.v_knots())
-        || surface.control_points().iter().any(|control| {
+        || surface.poles().any(|control| {
             !control.x.is_finite() || !control.y.is_finite() || !control.z.is_finite()
         })
     {
         return None;
     }
-    let weights = match surface.weights() {
-        Some(weights)
-            if weights
+    let weights = match surface.pole_weights() {
+        Some(values) => {
+            let values = values.collect::<Vec<_>>();
+            if !values
                 .iter()
-                .all(|weight| weight.is_finite() && *weight > 0.0) =>
-        {
-            weights.to_vec()
+                .all(|weight| weight.is_finite() && *weight > 0.0)
+            {
+                return None;
+            }
+            values
         }
-        Some(_) => return None,
         None => alloc_filled(control_count, 1.0, "ir_nurbs_surface_weights").ok()?,
     };
     let homogeneous_controls = surface
-        .control_points()
-        .iter()
+        .poles()
         .zip(weights)
         .map(|(control, weight)| {
             [
@@ -2329,13 +2330,10 @@ pub fn nurbs_surface_point(surface: &NurbsSurface, u_at: f64, v_at: f64) -> Opti
     let mut weight_sum = 0.0;
     for (i, u_value) in u_basis.iter().enumerate() {
         for (j, v_value) in v_basis.iter().enumerate() {
-            let index = (u_span - u_degree + i) * v_count + (v_span - v_degree + j);
-            let weight = surface
-                .weights()
-                .and_then(|weights| weights.get(index).copied())
-                .unwrap_or(1.0);
+            let (pole_u, pole_v) = (u_span - u_degree + i, v_span - v_degree + j);
+            let weight = surface.weight(pole_u, pole_v).unwrap_or(1.0);
             let factor = u_value * v_value * weight;
-            let pole = surface.control_points().get(index)?;
+            let pole = surface.pole(pole_u, pole_v)?;
             x += factor * pole.x;
             y += factor * pole.y;
             z += factor * pole.z;
@@ -2422,16 +2420,13 @@ pub fn nurbs_surface_isocurve(
         let mut weight_sum = 0.0;
         for (local, basis) in fixed_basis.iter().copied().enumerate() {
             let fixed = fixed_span - fixed_degree + local;
-            let index = match fixed_axis {
-                SurfaceParameterAxis::U => fixed * v_count + varying,
-                SurfaceParameterAxis::V => varying * v_count + fixed,
+            let (pole_u, pole_v) = match fixed_axis {
+                SurfaceParameterAxis::U => (fixed, varying),
+                SurfaceParameterAxis::V => (varying, fixed),
             };
-            let weight = surface
-                .weights()
-                .and_then(|weights| weights.get(index).copied())
-                .unwrap_or(1.0);
+            let weight = surface.weight(pole_u, pole_v).unwrap_or(1.0);
             let factor = basis * weight;
-            let point = surface.control_points().get(index)?;
+            let point = surface.pole(pole_u, pole_v)?;
             weighted[0] += factor * point.x;
             weighted[1] += factor * point.y;
             weighted[2] += factor * point.z;
@@ -2574,9 +2569,9 @@ pub fn nurbs_surface_second_partials(
     let mut weight_vv = 0.0;
     for i in 0..=u_degree {
         for j in 0..=v_degree {
-            let index = (u_span - u_degree + i) * v_count + (v_span - v_degree + j);
-            let pole = surface.control_points().get(index)?;
-            let pole_weight = surface.weights().map_or(1.0, |weights| weights[index]);
+            let (pole_u, pole_v) = (u_span - u_degree + i, v_span - v_degree + j);
+            let pole = surface.pole(pole_u, pole_v)?;
+            let pole_weight = surface.weight(pole_u, pole_v).unwrap_or(1.0);
             let basis = u_basis[i] * v_basis[j] * pole_weight;
             let basis_u = u_derivative[i] * v_basis[j] * pole_weight;
             let basis_v = u_basis[i] * v_derivative[j] * pole_weight;

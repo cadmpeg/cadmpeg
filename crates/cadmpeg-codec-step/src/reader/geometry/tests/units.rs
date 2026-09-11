@@ -289,7 +289,10 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
             && nurbs.v_count() == 2
             && nurbs.u_knots() == [0.0, 0.0, 1.0, 1.0]
             && nurbs.v_knots() == [0.0, 0.0, 1.0, 1.0]
-            && nurbs.weights() == Some(&[1.0, 1.0, 1.0, 0.75][..])
+            && nurbs
+                .pole_weights()
+                .map(std::iter::Iterator::collect::<Vec<_>>)
+                == Some(vec![1.0, 1.0, 1.0, 0.75])
     )));
     assert!(result.ir().model.surfaces.iter().any(
         |surface| matches!(surface.geometry, SurfaceGeometry::Cylinder(cylinder_surface)

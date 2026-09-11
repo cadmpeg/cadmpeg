@@ -40,7 +40,7 @@ fn faces_decode_nurbs_surface() {
         .expect("NURBS surface");
     assert_eq!((nurbs.u_degree(), nurbs.v_degree()), (1, 1));
     assert_eq!((nurbs.u_count(), nurbs.v_count()), (2, 2));
-    assert_eq!(nurbs.control_points().len(), 4);
+    assert_eq!(nurbs.poles().count(), 4);
 }
 
 #[test]
@@ -69,8 +69,8 @@ fn faces_decode_compact_counted_nurbs_surface_arrays() {
     assert_eq!((surface.u_count(), surface.v_count()), (2, 2));
     assert_eq!(surface.u_knots(), [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(surface.v_knots(), [0.0, 0.0, 1.0, 1.0]);
-    assert_eq!(surface.control_points().len(), 4);
-    assert_eq!(surface.control_points()[3].z, 500.0);
+    assert_eq!(surface.poles().count(), 4);
+    assert_eq!(surface.poles().nth(3).copied().unwrap().z, 500.0);
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
@@ -325,8 +325,8 @@ fn surface_descriptor_uses_terminal_array_references() {
     let SurfaceGeometry::Nurbs(surface) = carrier.geometry else {
         panic!("expected NURBS surface");
     };
-    assert_eq!(surface.control_points()[0].x, 10_000.0);
-    assert_eq!(surface.control_points()[3].y, 1_000.0);
+    assert_eq!(surface.poles().nth(0).copied().unwrap().x, 10_000.0);
+    assert_eq!(surface.poles().nth(3).copied().unwrap().y, 1_000.0);
 }
 
 #[test]

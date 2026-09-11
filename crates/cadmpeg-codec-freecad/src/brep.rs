@@ -2789,14 +2789,8 @@ fn parse_binary_surface(
                     })?,
                     clamped_bezier_knots(u_degree),
                     clamped_bezier_knots(v_degree),
-                    u32::try_from(u_count).map_err(|_| {
-                        CodecError::Malformed("binary Bezier u count exceeds u32".into())
-                    })?,
-                    u32::try_from(v_count).map_err(|_| {
-                        CodecError::Malformed("binary Bezier v count exceeds u32".into())
-                    })?,
-                    control_points,
-                    weights,
+                    control_points.chunks(v_count).map(<[_]>::to_vec).collect(),
+                    weights.map(|values| values.chunks(v_count).map(<[_]>::to_vec).collect()),
                     false,
                     false,
                     false,
@@ -4435,10 +4429,16 @@ fn parse_bezier_surface(cursor: &mut TokenCursor<'_>) -> Result<NurbsSurface, Co
         v_degree as u32,
         clamped_bezier_knots(u_degree),
         clamped_bezier_knots(v_degree),
-        u_count as u32,
-        v_count as u32,
-        control_points,
-        weights,
+        control_points
+            .chunks(v_count as u32 as usize)
+            .map(<[_]>::to_vec)
+            .collect(),
+        weights.map(|values| {
+            values
+                .chunks(v_count as u32 as usize)
+                .map(<[_]>::to_vec)
+                .collect()
+        }),
         false,
         false,
         false,
@@ -4605,8 +4605,6 @@ fn normalize_periodic_surface(
     } else {
         (control_points, weights)
     };
-    let u_count = u32::try_from(new_u)
-        .map_err(|_| CodecError::Malformed("periodic B-spline u pole count exceeds u32".into()))?;
     let v_count = u32::try_from(new_v)
         .map_err(|_| CodecError::Malformed("periodic B-spline v pole count exceeds u32".into()))?;
     NurbsSurface::new(
@@ -4614,10 +4612,11 @@ fn normalize_periodic_surface(
         degrees[1],
         u_knots,
         v_knots,
-        u_count,
-        v_count,
-        control_points,
-        weights,
+        control_points
+            .chunks(v_count as usize)
+            .map(<[_]>::to_vec)
+            .collect(),
+        weights.map(|values| values.chunks(v_count as usize).map(<[_]>::to_vec).collect()),
         false,
         periodic[0],
         periodic[1],
@@ -5529,14 +5528,14 @@ pub(crate) mod tests {
             normalized.u_knots(),
             [-0.5, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 1.5]
         );
-        assert_eq!(normalized.control_points().len(), 14);
+        assert_eq!(normalized.poles().count(), 14);
         assert_eq!(
-            normalized.control_points()[12],
-            normalized.control_points()[0]
+            normalized.poles().nth(12).copied().unwrap(),
+            normalized.poles().nth(0).copied().unwrap()
         );
         assert_eq!(
-            normalized.control_points()[13],
-            normalized.control_points()[1]
+            normalized.poles().nth(13).copied().unwrap(),
+            normalized.poles().nth(1).copied().unwrap()
         );
         let start = cadmpeg_ir::eval::nurbs_surface_point(&normalized, 0.0, 0.5)
             .expect("periodic start point");
