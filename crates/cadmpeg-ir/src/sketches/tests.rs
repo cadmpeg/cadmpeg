@@ -638,7 +638,7 @@ fn a_rectangular_pattern_states_its_grid_as_rows() {
 }
 
 #[test]
-fn circular_pattern_derives_count_and_indices_on_the_wire() {
+fn a_circular_pattern_states_its_count_only_as_instances() {
     use crate::scalar::Angle;
     use crate::sketches::{
         SketchCircularPattern, SketchCircularPatternInstance, SketchConstraintDefinitionInput,
@@ -664,20 +664,46 @@ fn circular_pattern_derives_count_and_indices_on_the_wire() {
     .unwrap();
     let definition = SketchConstraintDefinitionInput::CircularPattern { pattern };
     let wire = serde_json::to_value(&definition).unwrap();
-    assert_eq!(wire["count"], 2);
-    assert_eq!(wire["instances"][0]["index"], 0);
-    assert_eq!(wire["instances"][1]["index"], 1);
+    assert!(wire.get("count").is_none());
+    assert!(wire["instances"][0].get("index").is_none());
+    assert_eq!(
+        wire["instances"],
+        serde_json::json!([
+            { "angle": 0.0, "entities": ["test:test:sketch-entity#0"] },
+            { "angle": 1.0, "entities": ["test:test:sketch-entity#1"] }
+        ])
+    );
     assert_eq!(
         serde_json::from_value::<SketchConstraintDefinitionInput>(wire.clone()).unwrap(),
         definition
     );
 
-    let mut split_count = wire.clone();
-    split_count["count"] = serde_json::json!(3);
-    assert!(serde_json::from_value::<SketchConstraintDefinitionInput>(split_count).is_err());
-    let mut displaced = wire;
-    displaced["instances"][1]["index"] = serde_json::json!(0);
-    assert!(serde_json::from_value::<SketchConstraintDefinitionInput>(displaced).is_err());
+    let mut pattern_wire = wire.clone();
+    pattern_wire.as_object_mut().unwrap().remove("kind");
+
+    let mut restated_count = pattern_wire.clone();
+    restated_count
+        .as_object_mut()
+        .unwrap()
+        .insert("count".to_string(), serde_json::json!(2));
+    let error = serde_json::from_value::<SketchCircularPattern>(restated_count)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("count"), "{error}");
+
+    let mut restated_index = pattern_wire;
+    restated_index["instances"][0]
+        .as_object_mut()
+        .unwrap()
+        .insert("index".to_string(), serde_json::json!(0));
+    let error = serde_json::from_value::<SketchCircularPattern>(restated_index)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("index"), "{error}");
+
+    let mut unseeded = wire;
+    unseeded["instances"][0]["angle"] = serde_json::json!(1.0);
+    assert!(serde_json::from_value::<SketchConstraintDefinitionInput>(unseeded).is_err());
 }
 
 #[test]

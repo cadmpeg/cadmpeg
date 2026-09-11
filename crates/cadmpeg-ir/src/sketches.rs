@@ -1638,7 +1638,9 @@ pub struct SketchPatternInstance {
 }
 
 /// One resolved circular-pattern instance.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct SketchCircularPatternInstance {
     /// Signed rotation from the seed instance in radians.
     pub angle: Angle,
@@ -1719,7 +1721,12 @@ impl SketchRectangularPattern {
 }
 
 /// Checked circular sketch pattern.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    try_from = "SketchCircularPatternWire",
+    into = "SketchCircularPatternWire"
+)]
 pub struct SketchCircularPattern {
     center: SketchEntityId,
     angle: Angle,
@@ -1851,14 +1858,6 @@ impl SketchPatternDirectionWire {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct SketchCircularPatternInstanceWire {
-    index: u32,
-    angle: Angle,
-    entities: Vec<SketchEntityId>,
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(rename = "SketchRectangularPattern"))]
 #[serde(deny_unknown_fields)]
 struct SketchRectangularPatternWire {
@@ -1868,15 +1867,16 @@ struct SketchRectangularPatternWire {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(rename = "SketchCircularPattern"))]
+#[serde(deny_unknown_fields)]
 struct SketchCircularPatternWire {
     center: SketchEntityId,
     angle: Angle,
-    count: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     angle_parameter: Option<ParameterId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     count_parameter: Option<ParameterId>,
-    instances: Vec<SketchCircularPatternInstanceWire>,
+    instances: Vec<SketchCircularPatternInstance>,
 }
 
 impl From<SketchRectangularPattern> for SketchRectangularPatternWire {
@@ -1903,86 +1903,35 @@ impl TryFrom<SketchRectangularPatternWire> for SketchRectangularPattern {
     }
 }
 
-impl Serialize for SketchCircularPattern {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        SketchCircularPatternWire {
-            center: self.center.clone(),
-            angle: self.angle,
-            count: self.count(),
-            angle_parameter: self.angle_parameter.clone(),
-            count_parameter: self.count_parameter.clone(),
-            instances: self
-                .instances
-                .iter()
-                .enumerate()
-                .map(|(index, instance)| SketchCircularPatternInstanceWire {
-                    index: index as u32,
-                    angle: instance.angle,
-                    entities: instance.entities.clone(),
-                })
-                .collect(),
+impl From<SketchCircularPattern> for SketchCircularPatternWire {
+    fn from(pattern: SketchCircularPattern) -> Self {
+        Self {
+            center: pattern.center,
+            angle: pattern.angle,
+            angle_parameter: pattern.angle_parameter,
+            count_parameter: pattern.count_parameter,
+            instances: pattern.instances,
         }
-        .serialize(serializer)
     }
 }
 
-impl<'de> Deserialize<'de> for SketchCircularPattern {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let wire = SketchCircularPatternWire::deserialize(deserializer)?;
-        if usize::try_from(wire.count).ok() != Some(wire.instances.len()) {
-            return Err(serde::de::Error::custom(
-                "circular pattern count must match instances",
-            ));
-        }
-        if wire
-            .instances
-            .iter()
-            .enumerate()
-            .any(|(index, instance)| u32::try_from(index).ok() != Some(instance.index))
-        {
-            return Err(serde::de::Error::custom(
-                "circular pattern instance index must match its position",
-            ));
-        }
-        let instances = wire
-            .instances
-            .into_iter()
-            .map(|instance| SketchCircularPatternInstance {
-                angle: instance.angle,
-                entities: instance.entities,
-            })
-            .collect();
+impl TryFrom<SketchCircularPatternWire> for SketchCircularPattern {
+    type Error = &'static str;
+
+    fn try_from(wire: SketchCircularPatternWire) -> Result<Self, Self::Error> {
         Self::new(
             wire.center,
             wire.angle,
             wire.angle_parameter,
             wire.count_parameter,
-            instances,
+            wire.instances,
         )
-        .ok_or_else(|| {
-            serde::de::Error::custom(
-                "circular pattern instances require one fixed positive entity arity",
-            )
-        })
+        .ok_or(
+            "circular pattern instances must start at the seed and have one fixed positive entity arity",
+        )
     }
 }
 
-#[cfg(feature = "schema")]
-impl JsonSchema for SketchCircularPattern {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "SketchCircularPattern".into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        SketchCircularPatternWire::json_schema(generator)
-    }
-}
 
 /// One independently measured pair within a repeated linear dimension.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
