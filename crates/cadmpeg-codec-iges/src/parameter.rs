@@ -2717,7 +2717,7 @@ impl QuarantinedParameterRecord {
                 self.cards()
             ))
         .with_provenance(
-            SourceProvenance::in_stream("iges", "iges", self.failing_offset.unwrap_or_else(|| self.source_offset()))
+            SourceProvenance::in_stream("iges", const { cadmpeg_ir::StreamName::literal("iges") }, self.failing_offset.unwrap_or_else(|| self.source_offset()))
                 .with_tag(format!("D{}:parameter", self.sequence)),
         )
     }

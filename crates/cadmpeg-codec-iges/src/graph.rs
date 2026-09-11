@@ -592,7 +592,7 @@ pub(crate) fn losses(
                     ));
                     if let Some((offset, tag)) = location {
         note = note.with_provenance(
-            SourceProvenance::in_stream("iges", "iges", offset).with_tag(tag),
+            SourceProvenance::in_stream("iges", const { cadmpeg_ir::StreamName::literal("iges") }, offset).with_tag(tag),
         );
                     }
                     note

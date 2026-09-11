@@ -151,7 +151,6 @@
         "provenance": {
           "format": "rhino",
           "offset": 87,
-          "stream": "",
           "tag": "OBJECT_RECORD/class=c3101a1d-f157-11d3-bfe7-0010830122f0/type=0x00000001"
         },
         "severity": "warning"

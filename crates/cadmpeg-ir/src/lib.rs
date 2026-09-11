@@ -115,8 +115,8 @@ pub use products::{
 };
 /// Source location attached to a [`LossNote`].
 pub use provenance::{
-    AnnotationLocation, AnnotationProvenance, CodecFormat, Exactness, Provenance, SourceLocation,
-    SourceObjectAssociation, SourceProvenance,
+    AnnotationLocation, AnnotationProvenance, CodecFormat, EmptyStreamName, Exactness, Provenance,
+    SourceLocation, SourceObjectAssociation, SourceProvenance, StreamName,
 };
 pub use references::{ReferenceSelection, ReferenceTarget};
 

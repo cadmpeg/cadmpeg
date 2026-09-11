@@ -211,7 +211,6 @@
         "provenance": {
           "format": "rhino",
           "offset": 111,
-          "stream": "",
           "tag": "INSTANCE_DEFINITION_TABLE"
         },
         "severity": "warning"
@@ -226,7 +225,6 @@
         "provenance": {
           "format": "rhino",
           "offset": 534,
-          "stream": "",
           "tag": "OBJECT_RECORD/class=f9cfb638-b9d4-4340-87e3-c56e7865d96a/type=0x00001000"
         },
         "severity": "warning"
