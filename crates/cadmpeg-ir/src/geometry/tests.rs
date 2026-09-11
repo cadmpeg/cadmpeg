@@ -97,7 +97,7 @@ fn support_side_rejects_orphan_legacy_parameter_range() {
 }
 
 #[test]
-fn asm_inline_pcurve_metadata_keeps_the_flat_wire_shape() {
+fn asm_inline_pcurve_metadata_lives_under_its_own_nested_key() {
     let pcurve = crate::geometry::Pcurve {
         id: crate::ids::PcurveId::mint("test:model:pcurve#inline").expect("valid identity"),
         geometry: crate::geometry::PcurveGeometry::Line(
@@ -107,15 +107,15 @@ fn asm_inline_pcurve_metadata_keeps_the_flat_wire_shape() {
             )
             .unwrap(),
         ),
-        metadata: crate::geometry::PcurveMetadata::AsmInline(
-            crate::geometry::PcurveInlineForm::try_new(
+        metadata: crate::geometry::PcurveMetadata::AsmInline {
+            form: crate::geometry::PcurveInlineForm::try_new(
                 false,
                 [true, false, true, false],
                 [-1.0, 2.0],
                 0.001,
             )
             .unwrap(),
-        ),
+        },
     };
     let value = serde_json::to_value(&pcurve).unwrap();
     assert_eq!(
@@ -127,10 +127,15 @@ fn asm_inline_pcurve_metadata_keeps_the_flat_wire_shape() {
                 "origin": {"u": 1.0, "v": 2.0},
                 "direction": {"u": 3.0, "v": 4.0}
             },
-            "wrapper_reversed": false,
-            "native_tail_flags": [true, false, true, false],
-            "parameter_range": [-1.0, 2.0],
-            "fit_tolerance": 0.001
+            "metadata": {
+                "source": "asm_inline",
+                "form": {
+                    "wrapper_reversed": false,
+                    "native_tail_flags": [true, false, true, false],
+                    "parameter_range": [-1.0, 2.0],
+                    "fit_tolerance": 0.001
+                }
+            }
         })
     );
     assert_eq!(

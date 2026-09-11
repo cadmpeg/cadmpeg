@@ -225,7 +225,6 @@
       "parameters": [],
       "pcurves": [
         {
-          "fit_tolerance": 0.04,
           "geometry": {
             "control_points": [
               {
@@ -248,14 +247,19 @@
             "periodic": false
           },
           "id": "rhino:object:pcurve#record-000000-offset-177.trim-0",
-          "parameter_range": [
-            0.0,
-            1.0
-          ],
-          "wrapper_reversed": false
+          "metadata": {
+            "form": {
+              "fit_tolerance": 0.04,
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "wrapper_reversed": false
+            },
+            "source": "general"
+          }
         },
         {
-          "fit_tolerance": 0.04,
           "geometry": {
             "control_points": [
               {
@@ -278,14 +282,19 @@
             "periodic": false
           },
           "id": "rhino:object:pcurve#record-000000-offset-177.trim-1",
-          "parameter_range": [
-            0.0,
-            1.0
-          ],
-          "wrapper_reversed": false
+          "metadata": {
+            "form": {
+              "fit_tolerance": 0.04,
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "wrapper_reversed": false
+            },
+            "source": "general"
+          }
         },
         {
-          "fit_tolerance": 0.04,
           "geometry": {
             "control_points": [
               {
@@ -308,11 +317,17 @@
             "periodic": false
           },
           "id": "rhino:object:pcurve#record-000000-offset-177.trim-2",
-          "parameter_range": [
-            0.0,
-            1.0
-          ],
-          "wrapper_reversed": false
+          "metadata": {
+            "form": {
+              "fit_tolerance": 0.04,
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "wrapper_reversed": false
+            },
+            "source": "general"
+          }
         }
       ],
       "pmi": [],

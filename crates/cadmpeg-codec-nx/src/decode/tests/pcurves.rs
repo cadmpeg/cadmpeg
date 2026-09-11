@@ -1271,7 +1271,8 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         }
     ));
     for pcurve in &mut ir.model.pcurves {
-        let cadmpeg_ir::geometry::PcurveMetadata::General(metadata) = &mut pcurve.metadata else {
+        let cadmpeg_ir::geometry::PcurveMetadata::General { form: metadata } = &mut pcurve.metadata
+        else {
             panic!("fixture uses general pcurve metadata")
         };
         metadata.set_fit_tolerance(Some(0.01)).unwrap();
@@ -1397,7 +1398,8 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             Some(cadmpeg_ir::geometry::DirectedParameterRange::new(range).unwrap());
     }
     for pcurve in &mut ir.model.pcurves {
-        let cadmpeg_ir::geometry::PcurveMetadata::General(metadata) = &mut pcurve.metadata else {
+        let cadmpeg_ir::geometry::PcurveMetadata::General { form: metadata } = &mut pcurve.metadata
+        else {
             panic!("fixture uses general pcurve metadata")
         };
         metadata.set_parameter_range(Some(range)).unwrap();

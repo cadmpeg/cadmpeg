@@ -538,10 +538,15 @@
             }
           },
           "id": "creo:visibgeom:pcurve#10:1",
-          "parameter_range": [
-            0.0,
-            0.5
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                0.5
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -556,10 +561,15 @@
             }
           },
           "id": "creo:visibgeom:pcurve#10:2",
-          "parameter_range": [
-            0.0,
-            0.5
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                0.5
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -574,10 +584,15 @@
             }
           },
           "id": "creo:visibgeom:pcurve#11:1",
-          "parameter_range": [
-            0.0,
-            0.5
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                0.5
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -592,10 +607,15 @@
             }
           },
           "id": "creo:visibgeom:pcurve#11:3",
-          "parameter_range": [
-            0.0,
-            0.5
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                0.5
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -610,10 +630,15 @@
             }
           },
           "id": "creo:visibgeom:pcurve#12:1",
-          "parameter_range": [
-            0.0,
-            0.7071067811865476
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                0.7071067811865476
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -628,10 +653,15 @@
             }
           },
           "id": "creo:visibgeom:pcurve#12:4",
-          "parameter_range": [
-            0.0,
-            0.7071067811865476
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                0.7071067811865476
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -646,10 +676,15 @@
             }
           },
           "id": "creo:visibgeom:pcurve#13:2",
-          "parameter_range": [
-            0.0,
-            1.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                1.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -664,10 +699,15 @@
             }
           },
           "id": "creo:visibgeom:pcurve#13:3",
-          "parameter_range": [
-            0.0,
-            1.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                1.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -682,10 +722,15 @@
             }
           },
           "id": "creo:visibgeom:pcurve#14:2",
-          "parameter_range": [
-            0.0,
-            1.118033988749895
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                1.118033988749895
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -700,10 +745,15 @@
             }
           },
           "id": "creo:visibgeom:pcurve#14:4",
-          "parameter_range": [
-            0.0,
-            1.118033988749895
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                1.118033988749895
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -718,10 +768,15 @@
             }
           },
           "id": "creo:visibgeom:pcurve#15:3",
-          "parameter_range": [
-            0.0,
-            1.118033988749895
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                1.118033988749895
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -736,10 +791,15 @@
             }
           },
           "id": "creo:visibgeom:pcurve#15:4",
-          "parameter_range": [
-            0.0,
-            1.118033988749895
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                1.118033988749895
+              ]
+            },
+            "source": "general"
+          }
         }
       ],
       "pmi": [],

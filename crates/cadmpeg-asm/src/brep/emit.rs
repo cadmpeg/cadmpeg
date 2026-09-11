@@ -3362,15 +3362,15 @@ pub(crate) fn emit_pcurves(
                         Some(native_tail_flags),
                         Some(parameter_range),
                         Some(fit_tolerance),
-                    ) => PcurveMetadata::AsmInline(
-                        PcurveInlineForm::try_new(
+                    ) => PcurveMetadata::AsmInline {
+                        form: PcurveInlineForm::try_new(
                             wrapper_reversed,
                             native_tail_flags,
                             parameter_range,
                             fit_tolerance,
                         )
                         .map_err(cadmpeg_core::CodecError::malformed)?,
-                    ),
+                    },
                     (wrapper_reversed, _, parameter_range, fit_tolerance) => {
                         PcurveMetadata::try_general(
                             wrapper_reversed,

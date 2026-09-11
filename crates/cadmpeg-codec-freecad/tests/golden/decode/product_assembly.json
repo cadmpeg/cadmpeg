@@ -2940,10 +2940,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:13%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            6.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -2958,10 +2963,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:13%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            6.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -2976,10 +2986,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:15%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            12.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                12.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -2994,10 +3009,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:15%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            12.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                12.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3012,10 +3032,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:17%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            6.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3030,10 +3055,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:17%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            6.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3048,10 +3078,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:18%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            12.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                12.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3066,10 +3101,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:18%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            12.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                12.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3084,10 +3124,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:21%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3102,10 +3147,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:21%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3120,10 +3170,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:22%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3138,10 +3193,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:22%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3156,10 +3216,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:25%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3174,10 +3239,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:25%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3192,10 +3262,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:26%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3210,10 +3285,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:26%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3228,10 +3308,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:3%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            6.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3246,10 +3331,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:3%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            6.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3264,10 +3354,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:5%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            12.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                12.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3282,10 +3377,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:5%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            12.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                12.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3300,10 +3400,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:7%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            6.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3318,10 +3423,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:7%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            6.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3336,10 +3446,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:8%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            12.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                12.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3354,10 +3469,15 @@
             }
           },
           "id": "fcstd:model:pcurve#BracketPrototype:Shape:BracketPrototype.Shape.brp:8%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            12.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                12.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3372,10 +3492,15 @@
             }
           },
           "id": "fcstd:model:pcurve#PinPrototype:Shape:PinPrototype.Shape.brp:2%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            6.283185307179586
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.283185307179586
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3395,10 +3520,15 @@
             }
           },
           "id": "fcstd:model:pcurve#PinPrototype:Shape:PinPrototype.Shape.brp:2%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            6.283185307179586
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.283185307179586
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3413,10 +3543,15 @@
             }
           },
           "id": "fcstd:model:pcurve#PinPrototype:Shape:PinPrototype.Shape.brp:4%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3431,10 +3566,15 @@
             }
           },
           "id": "fcstd:model:pcurve#PinPrototype:Shape:PinPrototype.Shape.brp:4%3A2%3A2",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3449,10 +3589,15 @@
             }
           },
           "id": "fcstd:model:pcurve#PinPrototype:Shape:PinPrototype.Shape.brp:5%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            6.283185307179586
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.283185307179586
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -3472,10 +3617,15 @@
             }
           },
           "id": "fcstd:model:pcurve#PinPrototype:Shape:PinPrototype.Shape.brp:5%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            6.283185307179586
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.283185307179586
+              ]
+            },
+            "source": "general"
+          }
         }
       ],
       "pmi": [],

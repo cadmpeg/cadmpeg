@@ -257,10 +257,15 @@
             ],
             "periodic": false
           },
-          "parameter_range": [
-            -2.0,
-            4.0
-          ]
+          "metadata": {
+            "source": "general",
+            "form": {
+              "parameter_range": [
+                -2.0,
+                4.0
+              ]
+            }
+          }
         }
       ],
       "procedural_surfaces": [],

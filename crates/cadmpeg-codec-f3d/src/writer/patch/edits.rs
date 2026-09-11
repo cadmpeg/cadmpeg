@@ -3220,7 +3220,7 @@ pub(crate) fn validate_pcurve_edits(
             .then_some(after.parameter_range())
             .flatten();
         let edit = match &before.metadata {
-            cadmpeg_ir::geometry::PcurveMetadata::General(metadata)
+            cadmpeg_ir::geometry::PcurveMetadata::General { form: metadata }
                 if metadata.wrapper_reversed.is_none() && metadata.fit_tolerance().is_none() =>
             {
                 PcurveEdit::Ref {
@@ -3229,8 +3229,8 @@ pub(crate) fn validate_pcurve_edits(
                     parameter_range,
                 }
             }
-            cadmpeg_ir::geometry::PcurveMetadata::AsmInline(_)
-            | cadmpeg_ir::geometry::PcurveMetadata::General(_) => PcurveEdit::Inline {
+            cadmpeg_ir::geometry::PcurveMetadata::AsmInline { .. }
+            | cadmpeg_ir::geometry::PcurveMetadata::General { .. } => PcurveEdit::Inline {
                 native_geometry: after_native,
                 periodic,
                 wrapper_reversed: (before.wrapper_reversed() != after.wrapper_reversed())

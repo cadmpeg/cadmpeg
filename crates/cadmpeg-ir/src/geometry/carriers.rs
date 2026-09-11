@@ -3340,13 +3340,14 @@ impl PcurveGeometry {
 /// parameter dimension is a length (relevant to unit scaling, see [F3D spec §5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/asm.md#5-topology-records)).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct Pcurve {
     /// Arena id.
     pub id: PcurveId,
     /// Parameter-space shape.
     pub geometry: PcurveGeometry,
     /// Source parameterization metadata.
-    #[serde(flatten)]
+    #[serde(default)]
     pub metadata: PcurveMetadata,
 }
 
@@ -3373,19 +3374,28 @@ impl Pcurve {
 }
 
 /// Source-specific pcurve parameterization metadata.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(untagged)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "source", rename_all = "snake_case", deny_unknown_fields)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum PcurveMetadata {
     /// An ASM inline `exp_par_cur` record and its complete native tail.
-    AsmInline(PcurveInlineForm),
+    AsmInline {
+        /// Complete inline record fields.
+        form: PcurveInlineForm,
+    },
     /// Metadata that does not assert the ASM inline-record contract.
-    General(PcurveGeneralForm),
+    General {
+        /// Optional fields carried without an inline-record claim.
+        #[serde(default)]
+        form: PcurveGeneralForm,
+    },
 }
 
 impl Default for PcurveMetadata {
     fn default() -> Self {
-        Self::General(PcurveGeneralForm::default())
+        Self::General {
+            form: PcurveGeneralForm::default(),
+        }
     }
 }
 
@@ -3397,83 +3407,38 @@ impl PcurveMetadata {
         fit_tolerance: Option<f64>,
     ) -> Result<Self, &'static str> {
         PcurveGeneralForm::try_new(wrapper_reversed, parameter_range, fit_tolerance)
-            .map(Self::General)
+            .map(|form| Self::General { form })
     }
 
     /// Native wrapper reversal, when the source stores one.
     pub fn wrapper_reversed(&self) -> Option<bool> {
         match self {
-            Self::AsmInline(inline) => Some(inline.wrapper_reversed),
-            Self::General(general) => general.wrapper_reversed,
+            Self::AsmInline { form: inline } => Some(inline.wrapper_reversed),
+            Self::General { form: general } => general.wrapper_reversed,
         }
     }
 
     /// Four ASM booleans following an inline subtype scope.
     pub fn native_tail_flags(&self) -> Option<[bool; 4]> {
         match self {
-            Self::AsmInline(inline) => Some(inline.native_tail_flags),
-            Self::General(_) => None,
+            Self::AsmInline { form: inline } => Some(inline.native_tail_flags),
+            Self::General { .. } => None,
         }
     }
 
     /// Directed native parameter interval on which this pcurve is evaluated.
     pub fn parameter_range(&self) -> Option<[f64; 2]> {
         match self {
-            Self::AsmInline(inline) => Some(inline.parameter_range),
-            Self::General(general) => general.parameter_range,
+            Self::AsmInline { form: inline } => Some(inline.parameter_range),
+            Self::General { form: general } => general.parameter_range,
         }
     }
 
     /// Parameter-space fit tolerance following a solved UV cache.
     pub fn fit_tolerance(&self) -> Option<f64> {
         match self {
-            Self::AsmInline(inline) => Some(inline.fit_tolerance()),
-            Self::General(general) => general.fit_tolerance(),
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for PcurveMetadata {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        fn present_flags<'de, D: serde::Deserializer<'de>>(
-            deserializer: D,
-        ) -> Result<Option<[bool; 4]>, D::Error> {
-            <[bool; 4]>::deserialize(deserializer).map(Some)
-        }
-
-        #[derive(Deserialize)]
-        #[serde(deny_unknown_fields)]
-        struct Wire {
-            #[serde(default)]
-            wrapper_reversed: Option<bool>,
-            #[serde(default, deserialize_with = "present_flags")]
-            native_tail_flags: Option<[bool; 4]>,
-            #[serde(default)]
-            parameter_range: Option<[f64; 2]>,
-            #[serde(default)]
-            fit_tolerance: Option<f64>,
-        }
-        let wire = Wire::deserialize(deserializer)?;
-        if let Some(flags) = wire.native_tail_flags {
-            let wrapper = wire
-                .wrapper_reversed
-                .ok_or_else(|| serde::de::Error::missing_field("wrapper_reversed"))?;
-            let range = wire
-                .parameter_range
-                .ok_or_else(|| serde::de::Error::missing_field("parameter_range"))?;
-            let tolerance = wire
-                .fit_tolerance
-                .ok_or_else(|| serde::de::Error::missing_field("fit_tolerance"))?;
-            PcurveInlineForm::try_new(wrapper, flags, range, tolerance)
-                .map(Self::AsmInline)
-                .map_err(serde::de::Error::custom)
-        } else {
-            Self::try_general(
-                wire.wrapper_reversed,
-                wire.parameter_range,
-                wire.fit_tolerance,
-            )
-            .map_err(serde::de::Error::custom)
+            Self::AsmInline { form: inline } => Some(inline.fit_tolerance()),
+            Self::General { form: general } => general.fit_tolerance(),
         }
     }
 }

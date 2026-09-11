@@ -8050,10 +8050,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Compound:Shape:Compound.Shape.brp:11%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            6.283185307179586
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.283185307179586
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8068,10 +8073,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Compound:Shape:Compound.Shape.brp:11%3A2%3A2",
-          "parameter_range": [
-            0.0,
-            6.283185307179586
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.283185307179586
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8086,10 +8096,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Compound:Shape:Compound.Shape.brp:12%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            6.283185307179586
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.283185307179586
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8104,10 +8119,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Compound:Shape:Compound.Shape.brp:12%3A2%3A2",
-          "parameter_range": [
-            0.0,
-            6.283185307179586
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.283185307179586
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8122,10 +8142,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Compound:Shape:Compound.Shape.brp:2%3A1%3A1",
-          "parameter_range": [
-            0.0,
-            6.283185307179586
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.283185307179586
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8140,10 +8165,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Compound:Shape:Compound.Shape.brp:4%3A2%3A1",
-          "parameter_range": [
-            4.71238898038469,
-            7.853981633974483
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                4.71238898038469,
+                7.853981633974483
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8158,10 +8188,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Compound:Shape:Compound.Shape.brp:4%3A2%3A2",
-          "parameter_range": [
-            4.71238898038469,
-            7.853981633974483
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                4.71238898038469,
+                7.853981633974483
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8176,10 +8211,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Compound:Shape:Compound.Shape.brp:5%3A1%3A1",
-          "parameter_range": [
-            0.0,
-            6.283185307179586
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.283185307179586
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8214,10 +8254,15 @@
             ]
           },
           "id": "fcstd:model:pcurve#Degenerate:Shape:Degenerate.Shape.brp:2%3A1%3A1",
-          "parameter_range": [
-            0.0,
-            6.283185307179586
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.283185307179586
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8252,10 +8297,15 @@
             ]
           },
           "id": "fcstd:model:pcurve#Degenerate:Shape:Degenerate.Shape.brp:4%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            17.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                17.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8290,10 +8340,15 @@
             ]
           },
           "id": "fcstd:model:pcurve#Degenerate:Shape:Degenerate.Shape.brp:4%3A2%3A2",
-          "parameter_range": [
-            0.0,
-            17.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                17.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8328,10 +8383,15 @@
             ]
           },
           "id": "fcstd:model:pcurve#Degenerate:Shape:Degenerate.Shape.brp:5%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            6.283185307179586
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.283185307179586
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8351,10 +8411,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Degenerate:Shape:Degenerate.Shape.brp:5%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            6.283185307179586
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.283185307179586
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8369,10 +8434,15 @@
             }
           },
           "id": "fcstd:model:pcurve#FreeformSurface:Shape:FreeformSurface.Shape.brp:3%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            1.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                1.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8387,10 +8457,15 @@
             }
           },
           "id": "fcstd:model:pcurve#FreeformSurface:Shape:FreeformSurface.Shape.brp:5%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            1.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                1.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8405,10 +8480,15 @@
             }
           },
           "id": "fcstd:model:pcurve#FreeformSurface:Shape:FreeformSurface.Shape.brp:7%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            1.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                1.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8423,10 +8503,15 @@
             }
           },
           "id": "fcstd:model:pcurve#FreeformSurface:Shape:FreeformSurface.Shape.brp:8%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            1.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                1.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8441,10 +8526,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:13%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8459,10 +8549,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:13%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8477,10 +8572,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:15%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8495,10 +8595,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:15%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8513,10 +8618,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:17%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8531,10 +8641,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:17%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8549,10 +8664,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:18%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8567,10 +8687,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:18%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8585,10 +8710,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:21%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8603,10 +8733,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:21%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8621,10 +8756,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:22%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8639,10 +8779,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:22%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8657,10 +8802,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:25%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8675,10 +8825,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:25%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8693,10 +8848,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:26%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8711,10 +8871,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:26%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8729,10 +8894,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:3%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8747,10 +8917,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:3%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8765,10 +8940,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:36%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8783,10 +8963,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:36%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8801,10 +8986,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:38%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8819,10 +9009,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:38%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8837,10 +9032,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:40%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8855,10 +9055,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:40%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8873,10 +9078,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:41%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8891,10 +9101,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:41%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8909,10 +9124,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:46%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8927,10 +9147,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:46%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8945,10 +9170,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:48%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8963,10 +9193,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:48%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8981,10 +9216,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:5%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -8999,10 +9239,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:5%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9017,10 +9262,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:50%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9035,10 +9285,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:50%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9053,10 +9308,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:51%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9071,10 +9331,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:51%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9089,10 +9354,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:54%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9107,10 +9377,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:54%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9125,10 +9400,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:55%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9143,10 +9423,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:55%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9161,10 +9446,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:58%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9179,10 +9469,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:58%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9197,10 +9492,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:59%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9215,10 +9515,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:59%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9233,10 +9538,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:7%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9251,10 +9561,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:7%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9269,10 +9584,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:8%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9287,10 +9607,15 @@
             }
           },
           "id": "fcstd:model:pcurve#MultiShell:Shape:MultiShell.Shape.brp:8%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            5.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                5.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9305,10 +9630,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Revolved:Shape:Revolved.Shape.brp:10%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            8.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                8.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9323,10 +9653,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Revolved:Shape:Revolved.Shape.brp:10%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            8.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                8.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9346,10 +9681,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Revolved:Shape:Revolved.Shape.brp:14%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            4.71238898038469
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                4.71238898038469
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9384,10 +9724,15 @@
             ]
           },
           "id": "fcstd:model:pcurve#Revolved:Shape:Revolved.Shape.brp:14%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            4.71238898038469
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                4.71238898038469
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9402,10 +9747,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Revolved:Shape:Revolved.Shape.brp:15%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            3.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                3.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9420,10 +9770,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Revolved:Shape:Revolved.Shape.brp:15%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            3.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                3.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9458,10 +9813,15 @@
             ]
           },
           "id": "fcstd:model:pcurve#Revolved:Shape:Revolved.Shape.brp:18%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            8.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                8.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9496,10 +9856,15 @@
             ]
           },
           "id": "fcstd:model:pcurve#Revolved:Shape:Revolved.Shape.brp:18%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            8.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                8.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9539,10 +9904,15 @@
             ]
           },
           "id": "fcstd:model:pcurve#Revolved:Shape:Revolved.Shape.brp:2%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            4.71238898038469
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                4.71238898038469
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9577,10 +9947,15 @@
             ]
           },
           "id": "fcstd:model:pcurve#Revolved:Shape:Revolved.Shape.brp:2%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            4.71238898038469
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                4.71238898038469
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9620,10 +9995,15 @@
             ]
           },
           "id": "fcstd:model:pcurve#Revolved:Shape:Revolved.Shape.brp:4%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            4.71238898038469
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                4.71238898038469
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9638,10 +10018,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Revolved:Shape:Revolved.Shape.brp:4%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            4.71238898038469
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                4.71238898038469
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9676,10 +10061,15 @@
             ]
           },
           "id": "fcstd:model:pcurve#Revolved:Shape:Revolved.Shape.brp:5%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            3.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                3.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9714,10 +10104,15 @@
             ]
           },
           "id": "fcstd:model:pcurve#Revolved:Shape:Revolved.Shape.brp:5%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            3.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                3.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9732,10 +10127,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Revolved:Shape:Revolved.Shape.brp:9%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            4.71238898038469
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                4.71238898038469
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9755,10 +10155,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Revolved:Shape:Revolved.Shape.brp:9%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            4.71238898038469
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                4.71238898038469
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9773,10 +10178,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Seam:Shape:Seam.Shape.brp:2%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            6.283185307179586
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.283185307179586
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9796,10 +10206,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Seam:Shape:Seam.Shape.brp:2%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            6.283185307179586
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.283185307179586
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9814,10 +10229,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Seam:Shape:Seam.Shape.brp:4%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            18.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                18.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9832,10 +10252,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Seam:Shape:Seam.Shape.brp:4%3A2%3A2",
-          "parameter_range": [
-            0.0,
-            18.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                18.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9850,10 +10275,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Seam:Shape:Seam.Shape.brp:5%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            6.283185307179586
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.283185307179586
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9873,10 +10303,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Seam:Shape:Seam.Shape.brp:5%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            6.283185307179586
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.283185307179586
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9891,10 +10326,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Solid:Shape:Solid.Shape.brp:13%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            10.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9909,10 +10349,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Solid:Shape:Solid.Shape.brp:13%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            10.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9927,10 +10372,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Solid:Shape:Solid.Shape.brp:15%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            15.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                15.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9945,10 +10395,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Solid:Shape:Solid.Shape.brp:15%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            15.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                15.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9963,10 +10418,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Solid:Shape:Solid.Shape.brp:17%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            10.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9981,10 +10441,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Solid:Shape:Solid.Shape.brp:17%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            10.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -9999,10 +10464,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Solid:Shape:Solid.Shape.brp:18%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            15.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                15.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10017,10 +10487,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Solid:Shape:Solid.Shape.brp:18%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            15.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                15.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10035,10 +10510,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Solid:Shape:Solid.Shape.brp:21%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10053,10 +10533,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Solid:Shape:Solid.Shape.brp:21%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10071,10 +10556,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Solid:Shape:Solid.Shape.brp:22%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10089,10 +10579,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Solid:Shape:Solid.Shape.brp:22%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10107,10 +10602,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Solid:Shape:Solid.Shape.brp:25%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10125,10 +10625,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Solid:Shape:Solid.Shape.brp:25%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10143,10 +10648,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Solid:Shape:Solid.Shape.brp:26%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10161,10 +10671,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Solid:Shape:Solid.Shape.brp:26%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10179,10 +10694,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Solid:Shape:Solid.Shape.brp:3%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            10.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10197,10 +10717,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Solid:Shape:Solid.Shape.brp:3%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            10.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10215,10 +10740,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Solid:Shape:Solid.Shape.brp:5%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            15.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                15.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10233,10 +10763,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Solid:Shape:Solid.Shape.brp:5%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            15.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                15.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10251,10 +10786,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Solid:Shape:Solid.Shape.brp:7%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            10.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10269,10 +10809,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Solid:Shape:Solid.Shape.brp:7%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            10.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10287,10 +10832,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Solid:Shape:Solid.Shape.brp:8%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            15.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                15.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10305,10 +10855,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Solid:Shape:Solid.Shape.brp:8%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            15.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                15.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10331,10 +10886,15 @@
             "same_sense": true
           },
           "id": "fcstd:model:pcurve#Swept:Shape:Swept.Shape.brp:3%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10349,10 +10909,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Swept:Shape:Swept.Shape.brp:3%3A2%3A2",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10367,10 +10932,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Swept:Shape:Swept.Shape.brp:4%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            6.283185307179586
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.283185307179586
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10385,10 +10955,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Swept:Shape:Swept.Shape.brp:5%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            6.283185307179586
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.283185307179586
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10403,10 +10978,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:12%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10421,10 +11001,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:12%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10439,10 +11024,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:14%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10457,10 +11047,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:14%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10475,10 +11070,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:15%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10493,10 +11093,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:15%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10511,10 +11116,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:19%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10529,10 +11139,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:19%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10547,10 +11162,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:20%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10565,10 +11185,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:20%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10583,10 +11208,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:24%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10601,10 +11231,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:24%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10619,10 +11254,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:25%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10637,10 +11277,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:25%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10655,10 +11300,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:28%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10673,10 +11323,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:28%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10691,10 +11346,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:3%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10709,10 +11369,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:3%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10727,10 +11392,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:36%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            10.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10745,10 +11415,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:36%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            10.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10763,10 +11438,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:38%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            10.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10781,10 +11461,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:38%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            10.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10799,10 +11484,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:40%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            10.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10817,10 +11507,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:40%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            10.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10835,10 +11530,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:41%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            10.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10853,10 +11553,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:41%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            10.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10871,10 +11576,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:45%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            10.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10889,10 +11599,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:45%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            10.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10907,10 +11622,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:47%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            10.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10925,10 +11645,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:47%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            10.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10943,10 +11668,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:48%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            10.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10961,10 +11691,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:48%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            10.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10979,10 +11714,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:5%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -10997,10 +11737,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:5%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -11015,10 +11760,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:52%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            10.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -11033,10 +11783,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:52%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            10.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -11051,10 +11806,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:53%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            10.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -11069,10 +11829,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:53%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            10.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -11087,10 +11852,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:57%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            10.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -11105,10 +11875,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:57%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            10.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -11123,10 +11898,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:58%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            10.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -11141,10 +11921,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:58%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            10.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -11159,10 +11944,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:61%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            10.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -11177,10 +11967,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:61%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            10.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                10.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -11195,10 +11990,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:7%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -11213,10 +12013,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:7%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -11231,10 +12036,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:8%3A2%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -11249,10 +12059,15 @@
             }
           },
           "id": "fcstd:model:pcurve#Void:Shape:Void.Shape.brp:8%3A3%3A1",
-          "parameter_range": [
-            0.0,
-            20.0
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                20.0
+              ]
+            },
+            "source": "general"
+          }
         }
       ],
       "pmi": [],

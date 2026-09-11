@@ -6317,13 +6317,13 @@ fn native_embedded_cone(
 
 pub(crate) fn pcurve_uses_ref_form(pcurve: &Pcurve) -> Result<bool, CodecError> {
     match &pcurve.metadata {
-        cadmpeg_ir::geometry::PcurveMetadata::AsmInline(_) => Ok(false),
-        cadmpeg_ir::geometry::PcurveMetadata::General(metadata)
+        cadmpeg_ir::geometry::PcurveMetadata::AsmInline { .. } => Ok(false),
+        cadmpeg_ir::geometry::PcurveMetadata::General { form: metadata }
             if metadata.wrapper_reversed.is_none() && metadata.fit_tolerance().is_none() =>
         {
             Ok(true)
         }
-        cadmpeg_ir::geometry::PcurveMetadata::General(_) => {
+        cadmpeg_ir::geometry::PcurveMetadata::General { .. } => {
             Err(CodecError::malformed(format_args!(
                 "pcurve {} has non-ASM wrapper or tolerance metadata",
                 pcurve.id
@@ -6339,7 +6339,7 @@ pub(crate) fn native_pcurve(
     support: &SurfaceGeometry,
 ) -> Result<(), CodecError> {
     let inline = match &pcurve.metadata {
-        cadmpeg_ir::geometry::PcurveMetadata::General(metadata) => {
+        cadmpeg_ir::geometry::PcurveMetadata::General { form: metadata } => {
             if metadata.wrapper_reversed.is_some() || metadata.fit_tolerance().is_some() {
                 return Err(CodecError::malformed(format_args!(
                     "pcurve {} has non-ASM wrapper or tolerance metadata",
@@ -6368,7 +6368,7 @@ pub(crate) fn native_pcurve(
             native_f64(bytes, range[1]);
             return Ok(());
         }
-        cadmpeg_ir::geometry::PcurveMetadata::AsmInline(inline) => inline,
+        cadmpeg_ir::geometry::PcurveMetadata::AsmInline { form: inline } => inline,
     };
     if companion_ref.is_some() {
         return Err(CodecError::malformed(format_args!(

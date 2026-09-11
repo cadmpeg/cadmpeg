@@ -411,7 +411,7 @@ fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
         )
         .unwrap(),
     );
-    let PcurveMetadata::General(metadata) = &mut ir.model.pcurves[0].metadata else {
+    let PcurveMetadata::General { form: metadata } = &mut ir.model.pcurves[0].metadata else {
         panic!("fixture uses general pcurve metadata")
     };
     metadata

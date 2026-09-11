@@ -241,10 +241,15 @@
             }
           },
           "id": "sldprt:brep:pcurve#sphere-seam-face:0",
-          "parameter_range": [
-            0.0,
-            6.283185307179586
-          ]
+          "metadata": {
+            "form": {
+              "parameter_range": [
+                0.0,
+                6.283185307179586
+              ]
+            },
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -258,7 +263,11 @@
               "v": 0.0
             }
           },
-          "id": "sldprt:brep:pcurve#sphere:30"
+          "id": "sldprt:brep:pcurve#sphere:30",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -272,7 +281,11 @@
               "v": 0.0
             }
           },
-          "id": "sldprt:brep:pcurve#sphere:31"
+          "id": "sldprt:brep:pcurve#sphere:31",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
         },
         {
           "geometry": {
@@ -286,7 +299,11 @@
               "v": 0.0
             }
           },
-          "id": "sldprt:brep:pcurve#sphere:32"
+          "id": "sldprt:brep:pcurve#sphere:32",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
         }
       ],
       "pmi": [],

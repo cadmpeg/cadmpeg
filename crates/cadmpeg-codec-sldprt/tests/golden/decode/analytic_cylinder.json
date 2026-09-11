@@ -118,7 +118,11 @@
               "v": 0.0
             }
           },
-          "id": "sldprt:brep:pcurve#cylinder:30"
+          "id": "sldprt:brep:pcurve#cylinder:30",
+          "metadata": {
+            "form": {},
+            "source": "general"
+          }
         }
       ],
       "pmi": [],
