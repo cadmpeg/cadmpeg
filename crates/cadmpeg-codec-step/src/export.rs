@@ -3182,7 +3182,8 @@ impl<'a> Builder<'a> {
                         );
                     }
                     if let Some(
-                        DimensionTolerance::Fit(fit) | DimensionTolerance::PlusMinusFit { fit, .. },
+                        DimensionTolerance::Fit { fit }
+                        | DimensionTolerance::PlusMinusFit { fit, .. },
                     ) = tolerance
                     {
                         let fit = self.emitter.emit(

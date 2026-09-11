@@ -392,7 +392,7 @@ pub(super) fn decode(
         } else if let (Some(index), Some((fit_id, fit))) = (dimension, fit) {
             if set_dimension_tolerance(
                 &mut ir.model.pmi[index.get()].definition,
-                DimensionTolerance::Fit(fit),
+                DimensionTolerance::Fit { fit },
             ) {
                 typed.extend([id, fit_id]);
             } else {
@@ -715,8 +715,8 @@ fn set_dimension_tolerance(definition: &mut PmiDefinition, value: DimensionToler
     };
     let merged = match (tolerance.take(), value) {
         (None, value) => value,
-        (Some(DimensionTolerance::PlusMinus { lower, upper }), DimensionTolerance::Fit(fit))
-        | (Some(DimensionTolerance::Fit(fit)), DimensionTolerance::PlusMinus { lower, upper }) => {
+        (Some(DimensionTolerance::PlusMinus { lower, upper }), DimensionTolerance::Fit { fit })
+        | (Some(DimensionTolerance::Fit { fit }), DimensionTolerance::PlusMinus { lower, upper }) => {
             DimensionTolerance::PlusMinusFit { lower, upper, fit }
         }
         (Some(existing), _) => {
