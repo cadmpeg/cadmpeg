@@ -46,8 +46,15 @@ fn indexed_polygon_admits_only_aligned_parameters() {
     let node = Point3::new(0.0, 0.0, 0.0);
     assert!(IndexedPolygon::try_new(vec![node], Some(vec![]), 0.0).is_err());
     let polygon = IndexedPolygon::try_new(vec![node], Some(vec![2.0]), 0.0).unwrap();
-    assert_eq!(polygon.nodes, [node]);
-    assert_eq!(polygon.parameters, Some(vec![2.0]));
+    assert_eq!(
+        polygon.samples,
+        cadmpeg_ir::geometry::PolylineSamples::Parameterized {
+            vertices: vec![cadmpeg_ir::geometry::PolylineVertex {
+                parameter: 2.0,
+                point: node
+            }]
+        }
+    );
     assert!(IndexedPolygon::try_new(vec![node], None, 0.0).is_ok());
 }
 

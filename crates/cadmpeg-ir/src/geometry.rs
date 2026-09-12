@@ -76,7 +76,8 @@ pub use carriers::{
     LineCurve, LinePcurve, NurbsCurve, NurbsError, NurbsSurface, OffsetPcurve, ParabolaCurve,
     ParabolaPcurve, Pcurve, PcurveGeneralForm, PcurveGeometry, PcurveInlineForm, PcurveMetadata,
     PcurveNurbs, PlaneSurface, PolarHarmonicPcurve, PolarNurbsPole, PolarPcurveNurbs,
-    PolygonalSurface, PolylineCurve, SphereSurface, SphericalGreatCirclePcurve,
+    PolygonalSurface, PolylineCurve, PolylineSamples, PolylineVertex, SphereSurface,
+    SphericalGreatCirclePcurve,
     SurfaceParameterAxis, TorusSurface, TrimmedPcurve,
 };
 

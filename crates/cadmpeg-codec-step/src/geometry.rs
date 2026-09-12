@@ -485,8 +485,7 @@ pub fn curve(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
         SolvedCurveGeometry::Polyline(polyline) => {
             let points = polyline
                 .points()
-                .iter()
-                .map(|position| point(e, *position).to_string())
+                .map(|position| point(e, position).to_string())
                 .collect::<Vec<_>>()
                 .join(",");
             e.emit("POLYLINE", &format!("'',({points})"))

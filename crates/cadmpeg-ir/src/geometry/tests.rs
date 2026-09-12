@@ -917,19 +917,37 @@ fn pcurve_coordinate_scaling_keeps_the_original_when_a_nested_result_overflows()
 
 #[test]
 fn sampled_carriers_admit_finite_numeric_payloads_and_preserve_failed_edits() {
-    use super::{PolygonalSurface, PolylineCurve};
+    use super::{PolygonalSurface, PolylineCurve, PolylineSamples, PolylineVertex};
     let points = vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
-    assert!(PolylineCurve::new(points.clone(), Some(vec![1.0, 1.0]), 0.0).is_err());
-    assert!(PolylineCurve::new(points.clone(), Some(vec![0.0, f64::INFINITY]), 0.0).is_err());
-    assert!(PolylineCurve::new(points.clone(), None, -1.0).is_err());
-    let mut polyline = PolylineCurve::new(points, Some(vec![2.0, 1.0]), 0.0).unwrap();
+    let parameterized = |parameters: [f64; 2]| PolylineSamples::Parameterized {
+        vertices: points
+            .iter()
+            .copied()
+            .zip(parameters)
+            .map(|(point, parameter)| PolylineVertex { parameter, point })
+            .collect(),
+    };
+    assert!(PolylineCurve::new(parameterized([1.0, 1.0]), 0.0).is_err());
+    assert!(PolylineCurve::new(parameterized([0.0, f64::INFINITY]), 0.0).is_err());
+    assert!(PolylineCurve::new(
+        PolylineSamples::Unparameterized {
+            points: points.clone()
+        },
+        -1.0
+    )
+    .is_err());
+    let mut polyline = PolylineCurve::new(parameterized([2.0, 1.0]), 0.0).unwrap();
     let original = polyline.clone();
     assert!(polyline
-        .edit_points(|points| points[0].x = f64::NAN)
+        .edit_samples(|samples| samples.edit_points(|point| point.x = f64::NAN))
         .is_err());
     assert_eq!(polyline, original);
     assert!(polyline
-        .edit_parameters(|parameters| parameters.unwrap()[1] = 2.0)
+        .edit_samples(|samples| {
+            if let PolylineSamples::Parameterized { vertices } = samples {
+                vertices[1].parameter = 2.0;
+            }
+        })
         .is_err());
     assert_eq!(polyline, original);
     assert!(polyline.set_chordal_deflection(f64::INFINITY).is_err());

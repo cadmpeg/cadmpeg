@@ -8,6 +8,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, Pcurve, PcurveGeometry, PcurveNurbs, PolygonalSurface, PolylineCurve,
+    PolylineSamples, PolylineVertex,
     ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
     Surface, SurfaceGeometry,
 };
@@ -40,30 +41,37 @@ const EPS_TOPOLOGY_TRANSFER_DEGENERATE: f64 = 1.0e-10;
 const EPS_TOPOLOGY_TRANSFER_EXACT_GEOMETRY: f64 = 1.0e-12;
 
 struct IndexedPolygon {
-    nodes: Vec<Point3>,
-    parameters: Option<Vec<f64>>,
+    samples: PolylineSamples,
     deflection: f64,
 }
 
 impl IndexedPolygon {
+    /// Pair the polygon's two native lanes into sample rows.
+    ///
+    /// FreeCAD states nodes and parameters as two properties, so the codec
+    /// pairs them here and refuses a polygon whose lanes disagree. The IR
+    /// carries the rows only.
     fn try_new(
         nodes: Vec<Point3>,
         parameters: Option<Vec<f64>>,
         deflection: f64,
     ) -> Result<Self, CodecError> {
-        if parameters
-            .as_ref()
-            .is_some_and(|values| values.len() != nodes.len())
-        {
-            return Err(CodecError::Malformed(
-                "polygon parameters length must equal nodes length".into(),
-            ));
-        }
-        Ok(Self {
-            nodes,
-            parameters,
-            deflection,
-        })
+        let samples = match parameters {
+            None => PolylineSamples::Unparameterized { points: nodes },
+            Some(parameters) => {
+                if parameters.len() != nodes.len() {
+                    return Err(CodecError::Malformed(
+                        "polygon parameters length must equal nodes length".into(),
+                    ));
+                }
+                let mut vertices = Vec::with_capacity(nodes.len());
+                for (point, parameter) in nodes.into_iter().zip(parameters) {
+                    vertices.push(PolylineVertex { parameter, point });
+                }
+                PolylineSamples::Parameterized { vertices }
+            }
+        };
+        Ok(Self { samples, deflection })
     }
 }
 type FacePcurve = (PcurveId, Option<[f64; 2]>);
@@ -1128,8 +1136,7 @@ impl<'a> Builder<'a> {
             .map_err(location_transform_error)?;
         let scale = uniform_scale(carrier_transform)?;
         let IndexedPolygon {
-            nodes: points,
-            parameters,
+            mut samples,
             deflection,
         } = match representation {
             TextEdgeRepresentation::Polygon3d { polygon, .. } => {
@@ -1160,17 +1167,11 @@ impl<'a> Builder<'a> {
             CurveId::mint(format!("{edge}:polygon:{}", ordinal + 1)).expect("identity grammar");
         ir.model.curves.push(Curve {
             id: id.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline(
-                PolylineCurve::new(
-                    points
-                        .iter()
-                        .map(|point| carrier_transform.apply_point(*point))
-                        .collect(),
-                    parameters,
-                    deflection * scale,
-                )
-                .map_err(|error| CodecError::Malformed(error.to_string()))?,
-            )),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline({
+                samples.edit_points(|point| *point = carrier_transform.apply_point(*point));
+                PolylineCurve::new(samples, deflection * scale)
+                    .map_err(|error| CodecError::Malformed(error.to_string()))?
+            })),
             source_object: Some(self.source_association()),
         });
         if let TextEdgeRepresentation::PolygonPair {
@@ -1180,24 +1181,17 @@ impl<'a> Builder<'a> {
         } = representation
         {
             let IndexedPolygon {
-                nodes: points,
-                parameters,
+                mut samples,
                 deflection,
             } = self.indexed_polygon(polygons[1], *triangulation)?;
             ir.model.curves.push(Curve {
                 id: CurveId::mint(format!("{edge}:polygon:{}:secondary", ordinal + 1))
                     .expect("identity grammar"),
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline(
-                    PolylineCurve::new(
-                        points
-                            .iter()
-                            .map(|point| carrier_transform.apply_point(*point))
-                            .collect(),
-                        parameters,
-                        deflection * scale,
-                    )
-                    .map_err(|error| CodecError::Malformed(error.to_string()))?,
-                )),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline({
+                    samples.edit_points(|point| *point = carrier_transform.apply_point(*point));
+                    PolylineCurve::new(samples, deflection * scale)
+                        .map_err(|error| CodecError::Malformed(error.to_string()))?
+                })),
                 source_object: Some(self.source_association()),
             });
         }

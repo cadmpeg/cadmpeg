@@ -916,8 +916,7 @@ pub enum PolylineSamples {
 #[cfg_attr(feature = "schema", schemars(with = "PolylineCurveWire"))]
 #[serde(try_from = "PolylineCurveWire", into = "PolylineCurveWire")]
 pub struct PolylineCurve {
-    points: Vec<Point3>,
-    parameters: Option<Vec<f64>>,
+    samples: PolylineSamples,
     chordal_deflection: f64,
 }
 
@@ -931,21 +930,8 @@ struct PolylineCurveWire {
 
 impl From<PolylineCurve> for PolylineCurveWire {
     fn from(curve: PolylineCurve) -> Self {
-        let samples = match curve.parameters {
-            None => PolylineSamples::Unparameterized {
-                points: curve.points,
-            },
-            Some(parameters) => PolylineSamples::Parameterized {
-                vertices: curve
-                    .points
-                    .into_iter()
-                    .zip(parameters)
-                    .map(|(point, parameter)| PolylineVertex { parameter, point })
-                    .collect(),
-            },
-        };
         Self {
-            samples,
+            samples: curve.samples,
             chordal_deflection: curve.chordal_deflection,
         }
     }
@@ -955,47 +941,76 @@ impl TryFrom<PolylineCurveWire> for PolylineCurve {
     type Error = GeometryLayoutError;
 
     fn try_from(wire: PolylineCurveWire) -> Result<Self, Self::Error> {
-        let (points, parameters) = match wire.samples {
-            PolylineSamples::Unparameterized { points } => (points, None),
-            PolylineSamples::Parameterized { vertices } => {
-                let mut points = Vec::with_capacity(vertices.len());
-                let mut parameters = Vec::with_capacity(vertices.len());
-                for vertex in vertices {
-                    points.push(vertex.point);
-                    parameters.push(vertex.parameter);
-                }
-                (points, Some(parameters))
-            }
+        Self::new(wire.samples, wire.chordal_deflection)
+    }
+}
+
+impl PolylineSamples {
+    /// Number of samples.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        match self {
+            Self::Unparameterized { points } => points.len(),
+            Self::Parameterized { vertices } => vertices.len(),
+        }
+    }
+
+    /// True when the polyline states no sample.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Ordered model-space samples.
+    pub fn points(&self) -> impl Iterator<Item = Point3> + '_ {
+        let (points, vertices) = match self {
+            Self::Unparameterized { points } => (Some(points), None),
+            Self::Parameterized { vertices } => (None, Some(vertices)),
         };
-        Self::new(points, parameters, wire.chordal_deflection)
+        points
+            .into_iter()
+            .flatten()
+            .copied()
+            .chain(vertices.into_iter().flatten().map(|vertex| vertex.point))
+    }
+
+    /// Source parameters, absent when the source stated none.
+    pub fn parameters(&self) -> Option<impl Iterator<Item = f64> + '_> {
+        match self {
+            Self::Unparameterized { .. } => None,
+            Self::Parameterized { vertices } => {
+                Some(vertices.iter().map(|vertex| vertex.parameter))
+            }
+        }
+    }
+
+    /// Edit each sample point in place.
+    pub fn edit_points(&mut self, mut edit: impl FnMut(&mut Point3)) {
+        match self {
+            Self::Unparameterized { points } => points.iter_mut().for_each(&mut edit),
+            Self::Parameterized { vertices } => vertices
+                .iter_mut()
+                .for_each(|vertex| edit(&mut vertex.point)),
+        }
     }
 }
 
 impl PolylineCurve {
-    /// Build a polyline whose optional parameters match the sample count.
+    /// Build a polyline from its sample rows.
+    ///
+    /// A parameterized sample carries its parameter in the row, so there is no
+    /// second list to pair up and no count to compare.
     pub fn new(
-        points: Vec<Point3>,
-        parameters: Option<Vec<f64>>,
+        samples: PolylineSamples,
         chordal_deflection: f64,
     ) -> Result<Self, GeometryLayoutError> {
-        if points.len() < 2 {
+        if samples.len() < 2 {
             return Err(geometry_layout_error(
                 "polyline must contain at least two points",
             ));
         }
-        // A producer door: the wire carries one sample row per point, so the
-        // two lists it builds always agree and only a caller that built them
-        // separately can reach this count agreement.
-        if parameters
-            .as_ref()
-            .is_some_and(|parameters| parameters.len() != points.len())
-        {
-            return Err(geometry_layout_error(
-                "polyline parameters do not match the point count",
-            ));
-        }
-        if points
-            .iter()
+        if samples
+            .points()
             .any(|point| ![point.x, point.y, point.z].into_iter().all(f64::is_finite))
         {
             return Err(geometry_layout_error("points must be finite"));
@@ -1005,53 +1020,53 @@ impl PolylineCurve {
                 "chordal_deflection must be finite and non-negative",
             ));
         }
-        if parameters.as_ref().is_some_and(|parameters| {
-            !parameters.iter().all(|value| value.is_finite())
+        if let Some(parameters) = samples.parameters() {
+            let parameters: Vec<f64> = parameters.collect();
+            if !parameters.iter().all(|value| value.is_finite())
                 || !(parameters.windows(2).all(|pair| pair[0] < pair[1])
                     || parameters.windows(2).all(|pair| pair[0] > pair[1]))
-        }) {
-            return Err(geometry_layout_error(
-                "parameters must be finite and strictly monotonic",
-            ));
+            {
+                return Err(geometry_layout_error(
+                    "parameters must be finite and strictly monotonic",
+                ));
+            }
         }
         Ok(Self {
-            points,
-            parameters,
+            samples,
             chordal_deflection,
         })
     }
 
+    /// The polyline's sample rows.
+    #[must_use]
+    pub const fn samples(&self) -> &PolylineSamples {
+        &self.samples
+    }
+
     /// Ordered model-space samples.
-    #[must_use]
-    pub fn points(&self) -> &[Point3] {
-        &self.points
+    pub fn points(&self) -> impl Iterator<Item = Point3> + '_ {
+        self.samples.points()
     }
 
-    /// Edit finite points transactionally.
-    pub fn edit_points(
+    /// Number of samples.
+    #[must_use]
+    pub fn point_count(&self) -> usize {
+        self.samples.len()
+    }
+
+    /// Source parameters, absent when the source stated none.
+    pub fn parameters(&self) -> Option<impl Iterator<Item = f64> + '_> {
+        self.samples.parameters()
+    }
+
+    /// Edit the sample rows transactionally.
+    pub fn edit_samples(
         &mut self,
-        edit: impl FnOnce(&mut [Point3]),
+        edit: impl FnOnce(&mut PolylineSamples),
     ) -> Result<(), GeometryLayoutError> {
-        let mut candidate = self.points.clone();
+        let mut candidate = self.samples.clone();
         edit(&mut candidate);
-        *self = Self::new(candidate, self.parameters.clone(), self.chordal_deflection)?;
-        Ok(())
-    }
-
-    /// Optional source parameters parallel to [`Self::points`].
-    #[must_use]
-    pub fn parameters(&self) -> Option<&[f64]> {
-        self.parameters.as_deref()
-    }
-
-    /// Edit finite strictly monotonic source parameters transactionally.
-    pub fn edit_parameters(
-        &mut self,
-        edit: impl FnOnce(Option<&mut [f64]>),
-    ) -> Result<(), GeometryLayoutError> {
-        let mut candidate = self.parameters.clone();
-        edit(candidate.as_deref_mut());
-        *self = Self::new(self.points.clone(), candidate, self.chordal_deflection)?;
+        *self = Self::new(candidate, self.chordal_deflection)?;
         Ok(())
     }
 

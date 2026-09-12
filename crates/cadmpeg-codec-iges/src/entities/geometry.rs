@@ -1153,7 +1153,7 @@ pub(super) fn curve_geometry_coplanar(
             curve.control_points().iter().copied().all(point_valid)
         }
         SolvedCurveGeometry::Polyline(polyline) => {
-            polyline.points().iter().copied().all(point_valid)
+            polyline.points().all(point_valid)
         }
         SolvedCurveGeometry::Composite { segments, .. } => segments.iter().all(|segment| {
             let Some(curve) = index.curves(segment.curve.as_str()) else {
