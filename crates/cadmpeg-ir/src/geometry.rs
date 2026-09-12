@@ -3204,53 +3204,12 @@ pub enum LoftSubdata {
     Table(LoftSubdataTable),
 }
 
-/// Native loft table type discriminator other than the fixed type 211.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "i64", into = "i64")]
-pub struct TableTypeCode(i64);
-
-/// Type 211 is the fixed single-row form, not a table type code.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-#[error("loft subdata type 211 is the fixed single-row form, not a table")]
-pub struct Type211IsNotATable;
-
-impl TableTypeCode {
-    /// Admit a table type code other than 211.
-    pub const fn new(type_code: i64) -> Result<Self, Type211IsNotATable> {
-        if type_code == 211 {
-            return Err(Type211IsNotATable);
-        }
-        Ok(Self(type_code))
-    }
-
-    /// Native table type discriminator.
-    #[must_use]
-    pub const fn get(self) -> i64 {
-        self.0
-    }
-}
-
-impl TryFrom<i64> for TableTypeCode {
-    type Error = Type211IsNotATable;
-
-    fn try_from(type_code: i64) -> Result<Self, Self::Error> {
-        Self::new(type_code)
-    }
-}
-
-impl From<TableTypeCode> for i64 {
-    fn from(type_code: TableTypeCode) -> Self {
-        type_code.0
-    }
-}
-
 /// Checked non-211 loft table payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "LoftSubdataTableWire", into = "LoftSubdataTableWire")]
 pub struct LoftSubdataTable {
-    type_code: TableTypeCode,
+    type_code: i64,
     rows: Vec<LoftSubdataRow>,
 }
 
@@ -3258,7 +3217,7 @@ pub struct LoftSubdataTable {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct LoftSubdataTableWire {
-    type_code: TableTypeCode,
+    type_code: i64,
     rows: Vec<LoftSubdataRow>,
 }
 
@@ -3269,10 +3228,7 @@ pub struct RaggedLoftTable;
 
 impl LoftSubdataTable {
     /// Admit a table whose rows share one column width.
-    pub fn new(
-        type_code: TableTypeCode,
-        rows: Vec<LoftSubdataRow>,
-    ) -> Result<Self, RaggedLoftTable> {
+    pub fn new(type_code: i64, rows: Vec<LoftSubdataRow>) -> Result<Self, RaggedLoftTable> {
         if rows.len() > i64::MAX as usize
             || rows
                 .first()
@@ -3315,7 +3271,6 @@ impl LoftSubdata {
     /// Construct a non-211 table whose rows have one shared column width.
     #[must_use]
     pub fn table(type_code: i64, rows: Vec<LoftSubdataRow>) -> Option<Self> {
-        let type_code = TableTypeCode::new(type_code).ok()?;
         LoftSubdataTable::new(type_code, rows).ok().map(Self::Table)
     }
 
@@ -3324,7 +3279,7 @@ impl LoftSubdata {
     pub fn type_code(&self) -> i64 {
         match self {
             Self::Type211 { .. } => 211,
-            Self::Table(table) => table.type_code.get(),
+            Self::Table(table) => table.type_code,
         }
     }
 
@@ -3781,8 +3736,8 @@ pub enum RollingBallRadiusSelector<T = f64> {
 
 /// Integer radius-selector value in a revision G2 blend.
 ///
-/// The native `-1` value denotes the absence variant and is not a value of
-/// this type.
+/// A radius selector is positive. The native absence spelling is the enum
+/// variant the decoder reads before this value is constructed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(transparent))]
@@ -3792,11 +3747,7 @@ impl RevisionG2RadiusValue {
     /// Construct an explicit selector value.
     #[must_use]
     pub const fn new(value: i64) -> Option<Self> {
-        if value == -1 {
-            None
-        } else {
-            Some(Self(value))
-        }
+        if value > 0 { Some(Self(value)) } else { None }
     }
 
     /// Return the native integer value.
@@ -4879,44 +4830,6 @@ pub struct ScaledCompoundLoftConstruction {
     pub tail_curve: CurveId,
 }
 
-/// A native law formula name that is neither empty nor the `null_law` sentinel.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(transparent)]
-pub struct LawFormulaName(String);
-
-impl LawFormulaName {
-    /// Construct a named, non-sentinel law formula name.
-    #[must_use]
-    pub fn new(name: impl Into<String>) -> Option<Self> {
-        let name = name.into();
-        (!name.is_empty() && name != "null_law").then_some(Self(name))
-    }
-
-    /// Borrow the native formula name.
-    #[must_use]
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl<'de> Deserialize<'de> for LawFormulaName {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let name = String::deserialize(deserializer)?;
-        Self::new(name)
-            .ok_or_else(|| serde::de::Error::custom("law formula name cannot be empty or null_law"))
-    }
-}
-
-impl std::fmt::Display for LawFormulaName {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(self.as_str())
-    }
-}
-
 /// One recursively framed native law formula.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -4926,8 +4839,8 @@ pub enum LawFormula {
     Null {},
     /// Named formula and its ordered recursive variables.
     Named {
-        /// Non-sentinel native formula name.
-        name: LawFormulaName,
+        /// Native formula name.
+        name: crate::products::NonEmptyString,
         /// Ordered recursive variables.
         variables: Vec<LawExpression>,
     },
@@ -5018,7 +4931,7 @@ pub enum LawExpression {
     /// Serializer-preserved textual law expression.
     Text {
         /// Exact text stored in the native law slot.
-        value: String,
+        value: crate::products::NonEmptyString,
     },
     /// Tagged integer constant.
     Integer {

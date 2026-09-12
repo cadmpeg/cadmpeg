@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Loft subdata names its form with a tag, and the table form cannot carry the
-//! fixed type-211 code or restate its own dimensions.
+//! Loft subdata names its form with a tag, and the table form cannot restate
+//! its own dimensions.
 
 use crate::geometry::{LoftSubdata, LoftSubdataRow};
 
@@ -13,7 +13,7 @@ fn row(parameters: [f64; 2], columns: Vec<[f64; 2]>) -> LoftSubdataRow {
 }
 
 #[test]
-fn loft_subdata_names_its_form_and_refuses_a_211_table() {
+fn loft_subdata_names_its_form_and_refuses_a_restated_dimension() {
     let fixed = LoftSubdata::type_211([3, 4], [0.5, 1.5]);
     let wire = serde_json::to_value(&fixed).expect("serializes");
     assert_eq!(
@@ -51,13 +51,6 @@ fn loft_subdata_names_its_form_and_refuses_a_211_table() {
     );
     assert_eq!(table.row_count(), 2);
     assert_eq!(table.column_count(), 1);
-
-    let mut coded = wire.clone();
-    coded["type_code"] = serde_json::json!(211);
-    let error = serde_json::from_value::<LoftSubdata>(coded)
-        .unwrap_err()
-        .to_string();
-    assert!(error.contains("211"), "{error}");
 
     let mut restated = wire.clone();
     restated

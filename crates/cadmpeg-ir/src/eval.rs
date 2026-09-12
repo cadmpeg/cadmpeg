@@ -5182,7 +5182,7 @@ fn scalar_sweep_law_differential(
         LawExpression::Integer { value } => finite_sweep_differential(*value as f64, 0.0),
         LawExpression::Double { value } => finite_sweep_differential(*value, 0.0),
         LawExpression::Text { value } => {
-            let value = value.trim();
+            let value = value.as_str().trim();
             if value == "X" {
                 return finite_sweep_differential(parameter, 1.0);
             }
@@ -5377,6 +5377,7 @@ fn sweep_scale(expression: &LawExpression) -> Option<Vector3> {
         LawExpression::Null {} => Some(Vector3::new(1.0, 1.0, 1.0)),
         LawExpression::Text { value } => {
             let value = value
+                .as_str()
                 .chars()
                 .filter(|character| !character.is_whitespace())
                 .collect::<String>();
