@@ -1795,4 +1795,8 @@ fn a_full_round_fillet_triple_needs_three_ordered_selections_per_lane() {
     ];
     let disagreeing = lane.iter().chain(&other_lane).collect::<Vec<_>>();
     assert!(full_round_fillet_selection_triple(&disagreeing).is_none());
+
+    let fourth = [selection("lane-one", 80, 4)];
+    let over_long = lane.iter().chain(&fourth).collect::<Vec<_>>();
+    assert!(full_round_fillet_selection_triple(&over_long).is_none());
 }
