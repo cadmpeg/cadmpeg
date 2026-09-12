@@ -57,6 +57,7 @@ ITEM_RE = re.compile(
     r"^\s*(?:pub(?:\s*\([^)]*\))?\s+)?(struct|enum)\s+(\$?\w+)"
 )
 
+
 class Item:
     def __init__(self, path, line, kind, name, attrs, body):
         self.path = path
