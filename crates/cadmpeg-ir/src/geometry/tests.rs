@@ -486,7 +486,7 @@ fn a_law_formula_names_its_variant_with_a_tag() {
     );
 
     let named = crate::geometry::LawFormula::Named {
-        name: crate::geometry::LawFormulaName::new("distance-law").unwrap(),
+        name: crate::nonempty_literal!("distance-law"),
         variables: vec![crate::geometry::LawExpression::Double { value: 2.0 }],
     };
     let named_wire = serde_json::to_value(&named).unwrap();
@@ -503,7 +503,6 @@ fn a_law_formula_names_its_variant_with_a_tag() {
         named
     );
 
-    assert!(crate::geometry::LawFormulaName::new("null_law").is_none());
     let error = serde_json::from_value::<crate::geometry::LawFormula>(serde_json::json!({
         "kind": "null",
         "variables": []
@@ -512,19 +511,19 @@ fn a_law_formula_names_its_variant_with_a_tag() {
     .to_string();
     assert!(error.contains("variables"), "{error}");
 
-    let error = serde_json::from_value::<crate::geometry::LawFormula>(serde_json::json!({
+    // The IR names no native sentinel: `null_law` is the `null` variant, and
+    // the name field carries whatever the decoder hands it.
+    let sentinel = serde_json::from_value::<crate::geometry::LawFormula>(serde_json::json!({
         "kind": "named",
         "name": "null_law",
         "variables": []
     }))
-    .unwrap_err()
-    .to_string();
-    assert!(error.contains("null_law"), "{error}");
+    .unwrap();
+    assert_eq!(sentinel.name(), "null_law");
 }
 
 #[test]
 fn a_law_formula_name_refuses_the_empty_string() {
-    assert!(crate::geometry::LawFormulaName::new("").is_none());
     let error = serde_json::from_value::<crate::geometry::LawFormula>(serde_json::json!({
         "kind": "named",
         "name": "",
@@ -1408,4 +1407,32 @@ fn a_law_expression_states_its_kind_and_carries_only_its_own_keys() {
         .unwrap_err()
         .to_string();
     assert!(error.contains("zz_bogus"), "{error}");
+}
+
+#[test]
+fn the_ir_scalar_mints_name_no_native_sentinel() {
+    use crate::geometry::{LoftSubdata, LoftSubdataRow, RevisionG2RadiusValue};
+
+    // A radius selector is positive. The native `-1` absence spelling fails
+    // that without being named, and the decoder reads it as the `none` variant
+    // before this value is constructed.
+    assert!(RevisionG2RadiusValue::new(-1).is_none());
+    assert!(RevisionG2RadiusValue::new(0).is_none());
+    assert_eq!(
+        RevisionG2RadiusValue::new(3).map(RevisionG2RadiusValue::get),
+        Some(3)
+    );
+
+    // The loft table type code is the native discriminator and states no
+    // sentinel: type 211 is a variant of `LoftSubdata`, which the decoder
+    // selects before a table is constructed.
+    let rows = vec![LoftSubdataRow {
+        parameters: [0.0, 1.0],
+        columns: Vec::new(),
+        extra: None,
+    }];
+    assert_eq!(
+        LoftSubdata::table(211, rows).map(|table| table.type_code()),
+        Some(211)
+    );
 }

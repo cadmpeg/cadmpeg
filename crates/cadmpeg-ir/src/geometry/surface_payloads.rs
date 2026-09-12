@@ -2512,7 +2512,7 @@ fn law_valid(expression: &crate::geometry::LawExpression, depth: usize) -> bool 
     match expression {
         crate::geometry::LawExpression::Null {}
         | crate::geometry::LawExpression::Integer { .. } => true,
-        crate::geometry::LawExpression::Text { value } => !value.is_empty(),
+        crate::geometry::LawExpression::Text { .. } => true,
         crate::geometry::LawExpression::Double { value } => value.is_finite(),
         crate::geometry::LawExpression::Point { value } => {
             value.x.is_finite() && value.y.is_finite() && value.z.is_finite()

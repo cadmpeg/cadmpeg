@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::geometry::{
-    LawExpression, LawFormula, LawFormulaName, LawSurfaceConstruction, LawSurfaceTail,
+    LawExpression, LawFormula, LawSurfaceConstruction, LawSurfaceTail,
     ProceduralSurface, ProceduralSurfaceDefinition,
 };
 use crate::ids::{ProceduralSurfaceId, SurfaceId};
@@ -66,7 +66,7 @@ fn surface_law_admission_preserves_the_depth_boundary() {
     let construction = |expression| LawSurfaceConstruction {
         parameter_ranges: None,
         primary: LawFormula::Named {
-            name: LawFormulaName::new("test").unwrap(),
+            name: crate::nonempty_literal!("test"),
             variables: vec![expression],
         },
         additional: Vec::new(),
@@ -85,15 +85,15 @@ fn surface_law_admission_preserves_the_depth_boundary() {
         operands: vec![expression],
     };
     assert!(law(expression).is_err());
-    let invalid = LawExpression::Text {
-        value: String::new(),
-    };
-    assert!(law(invalid.clone()).is_err());
-    let wire = serde_json::json!({"kind": "law", "construction": construction(invalid)});
-    assert!(serde_json::from_value::<ProceduralSurfaceDefinition>(wire).is_err());
+    // A blank law text has no spelling: the member type refuses it on the wire,
+    // so no construction can carry one.
+    assert!(
+        serde_json::from_value::<LawExpression>(serde_json::json!({"kind": "text", "value": ""}))
+            .is_err()
+    );
     assert!(ProceduralSurface::new(
         id(),
-        law(LawExpression::Text { value: " ".into() }).unwrap(),
+        law(LawExpression::Text { value: crate::nonempty_literal!(" ") }).unwrap(),
         None
     )
     .is_ok());
