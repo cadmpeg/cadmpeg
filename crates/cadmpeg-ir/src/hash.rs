@@ -2,7 +2,6 @@
 //! Content hashing helpers shared by codecs.
 
 use std::collections::BTreeMap;
-use std::fmt::Write as _;
 use std::io::Write as _;
 
 use serde::Serialize;
@@ -24,13 +23,36 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 /// buffer rather than a serialized copy of it. The bytes hashed are the ones
 /// `serde_json::to_string_pretty` produces, which is what
 /// [`CadIr::to_canonical_json`] returns.
-pub fn canonical_json_sha256<T: Serialize>(value: &T) -> String {
+pub fn canonical_json_sha256<T: Serialize>(value: &T) -> Result<String, DigestError> {
     let mut hasher = Sha256::new();
     let mut writer = std::io::BufWriter::new(DigestWriter(&mut hasher));
-    serde_json::to_writer_pretty(&mut writer, value).expect("canonical JSON serialization");
-    writer.flush().expect("a digest accepts every byte");
+    serde_json::to_writer_pretty(&mut writer, value).map_err(DigestError::Serialize)?;
+    writer.flush().map_err(DigestError::Write)?;
     drop(writer);
-    encode_hex(&hasher.finalize())
+    Ok(encode_hex(&hasher.finalize()))
+}
+
+/// A digest could not be computed.
+///
+/// The IR carries raw `f64` in places, and `serde_json` refuses a non-finite
+/// one, so canonical JSON is not total over every constructible document.
+#[derive(Debug, thiserror::Error)]
+pub enum DigestError {
+    /// A record the unknown arena cannot state.
+    #[error(transparent)]
+    Record(#[from] NativeConvertError),
+    /// The document does not serialize as canonical JSON.
+    #[error("canonical JSON serialization: {0}")]
+    Serialize(serde_json::Error),
+    /// The digest sink refused a byte.
+    #[error("digest sink: {0}")]
+    Write(std::io::Error),
+}
+
+impl From<DigestError> for cadmpeg_core::CodecError {
+    fn from(error: DigestError) -> Self {
+        Self::Malformed(error.to_string())
+    }
 }
 
 /// The source-attribute key under which a codec records
@@ -61,13 +83,13 @@ pub fn document_local_sha256(
     ir: &CadIr,
     format: &str,
     source_image_id: &str,
-) -> Result<String, NativeConvertError> {
+) -> Result<String, DigestError> {
     document_local_sha256_with_source_and_charge(
         ir,
         ir.source.as_ref(),
         format,
         source_image_id,
-        |_| Ok::<(), NativeConvertError>(()),
+        |_| Ok::<(), DigestError>(()),
     )
 }
 
@@ -82,9 +104,9 @@ pub fn document_local_sha256_with_source(
     source: &SourceMeta,
     format: &str,
     source_image_id: &str,
-) -> Result<String, NativeConvertError> {
+) -> Result<String, DigestError> {
     document_local_sha256_with_source_and_charge(ir, Some(source), format, source_image_id, |_| {
-        Ok::<(), NativeConvertError>(())
+        Ok::<(), DigestError>(())
     })
 }
 
@@ -95,7 +117,7 @@ pub fn document_local_sha256_with_source(
 /// [`document_local_sha256`]. A decoder can therefore apply its work budget
 /// to the real digest cost and refuse before an oversized document spends the
 /// remaining budget on an unbounded whole-document walk.
-pub fn document_local_sha256_with_charge<E: From<NativeConvertError>>(
+pub fn document_local_sha256_with_charge<E: From<DigestError>>(
     ir: &CadIr,
     format: &str,
     source_image_id: &str,
@@ -110,14 +132,14 @@ pub fn document_local_sha256_with_charge<E: From<NativeConvertError>>(
     )
 }
 
-fn document_local_sha256_with_source_and_charge<E: From<NativeConvertError>>(
+fn document_local_sha256_with_source_and_charge<E: From<DigestError>>(
     ir: &CadIr,
     source: Option<&SourceMeta>,
     format: &str,
     source_image_id: &str,
     charge: impl FnMut(u64) -> Result<(), E>,
 ) -> Result<String, E> {
-    let unknowns = reduced_unknowns(ir, format, source_image_id)?;
+    let unknowns = reduced_unknowns(ir, format, source_image_id).map_err(DigestError::from)?;
     let document = NormalizedDocument {
         ir_version: ir.ir_version(),
         source: source.map(|source| {
@@ -143,12 +165,12 @@ fn document_local_sha256_with_source_and_charge<E: From<NativeConvertError>>(
     if let Some(error) = writer.get_mut().error.take() {
         return Err(error);
     }
-    serialized.expect("canonical JSON serialization");
-    if writer.flush().is_err() {
-        if let Some(error) = writer.get_mut().error.take() {
-            return Err(error);
+    serialized.map_err(|error| E::from(DigestError::Serialize(error)))?;
+    if let Err(error) = writer.flush() {
+        if let Some(charged) = writer.get_mut().error.take() {
+            return Err(charged);
         }
-        panic!("a digest accepts every byte");
+        return Err(E::from(DigestError::Write(error)));
     }
     drop(writer);
     Ok(encode_hex(&hasher.finalize()))
@@ -264,11 +286,20 @@ where
     }
 }
 
+/// Lowercase hexadecimal digits, indexed by nibble.
+const HEX_DIGITS: [char; 16] = [
+    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
+];
+
 /// Render a digest as lowercase hexadecimal.
+///
+/// A nibble indexes the digit table, so this writes without a formatter and
+/// has no failure to report.
 fn encode_hex(digest: &[u8]) -> String {
     let mut encoded = String::with_capacity(digest.len() * 2);
     for byte in digest {
-        write!(encoded, "{byte:02x}").expect("writing to a String cannot fail");
+        encoded.push(HEX_DIGITS[usize::from(byte >> 4)]);
+        encoded.push(HEX_DIGITS[usize::from(byte & 0x0f)]);
     }
     encoded
 }
@@ -279,12 +310,12 @@ mod tests {
 
     use super::{
         canonical_json_sha256, document_local_sha256, document_local_sha256_with_charge,
-        sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE,
+        sha256_hex, DigestError, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE,
     };
     use crate::document::CadIr;
     use crate::examples::unit_cube;
     use crate::ids::UnknownId;
-    use crate::native::{Native, NativeConvertError, NativeRecord};
+    use crate::native::{Native, NativeRecord};
     use crate::unknown::UnknownRecord;
     use cadmpeg_core::CodecError;
 
@@ -403,7 +434,7 @@ mod tests {
     #[test]
     fn pins_native_arena_digest() {
         assert_eq!(
-            canonical_json_sha256(&pinned_native()),
+            canonical_json_sha256(&pinned_native()).unwrap(),
             "7249c236a39ac27b8614a9ef11d6b1e1c416e1242d909e6d0e94a96c1d6507d4"
         );
     }
@@ -489,7 +520,7 @@ mod tests {
     fn pins_document_digests() {
         let ir = pinned_document();
         assert_eq!(
-            canonical_json_sha256(&ir),
+            canonical_json_sha256(&ir).unwrap(),
             "d1ba8ac967bf02f410e362b0ba5cdefaa410bbbab7c21d4180443b16906ff487"
         );
         assert_eq!(
@@ -503,7 +534,7 @@ mod tests {
         let ir = pinned_document();
         let expected = document_local_sha256(&ir, "pin", "pin:test:source-image#0").unwrap();
         let mut charged = 0;
-        let actual = document_local_sha256_with_charge::<NativeConvertError>(
+        let actual = document_local_sha256_with_charge::<DigestError>(
             &ir,
             "pin",
             "pin:test:source-image#0",
@@ -629,7 +660,10 @@ mod tests {
         let json = ir.to_canonical_json().unwrap();
         let mut reparsed = CadIr::from_json(&json).unwrap();
         reparsed.finalize();
-        assert_eq!(canonical_json_sha256(&ir), canonical_json_sha256(&reparsed));
+        assert_eq!(
+            canonical_json_sha256(&ir).unwrap(),
+            canonical_json_sha256(&reparsed).unwrap()
+        );
         assert_eq!(ir.to_canonical_json().unwrap(), json);
     }
 

@@ -71,7 +71,7 @@ pub(crate) fn write_semantic_with_records(
     sort_arenas(&mut normalized);
     assign_configuration_indices(&mut normalized.model.configurations)?;
     let source_scan = source_image(retained_records).map(crate::container::scan_bytes);
-    let retained_partition = retained_partition(&normalized, source_scan.as_ref());
+    let retained_partition = retained_partition(&normalized, source_scan.as_ref())?;
     let feature_name_changes = crate::history::feature_name_changes(&normalized, native.as_ref());
     let feature_parameter_changes_authorized = !feature_name_changes.is_empty()
         && crate::history::native_parameters_match_source(&normalized, native.as_ref());
@@ -164,7 +164,7 @@ pub(crate) fn write_semantic_with_records(
                     .get(SWOBJECTS_METADATA_IDENTITY_LOCAL_DIGEST_ATTRIBUTE)
             });
             if material_baseline != Some(&swobjects_material_local_sha256(ir)?)
-                || identity_baseline != Some(&swobjects_metadata_identity_local_sha256(ir))
+                || identity_baseline != Some(&swobjects_metadata_identity_local_sha256(ir)?)
             {
                 return Err(CodecError::NotImplemented(
                     "SLDPRT writer cannot edit retained SWObjects semantics without replacing opaque record bytes"
@@ -481,17 +481,25 @@ fn retained_cache_cells(
 fn retained_partition(
     ir: &CadIr,
     source_scan: Option<&crate::container::ContainerScan<'_>>,
-) -> Option<(String, Vec<u8>)> {
-    let source = ir.source.as_ref()?;
-    let expected = source.attributes.get("brep_local_sha256")?;
-    if crate::decode::brep_local_sha256(ir) != *expected {
-        return None;
+) -> Result<Option<(String, Vec<u8>)>, CodecError> {
+    let Some(source) = ir.source.as_ref() else {
+        return Ok(None);
+    };
+    let Some(expected) = source.attributes.get("brep_local_sha256") else {
+        return Ok(None);
+    };
+    if crate::decode::brep_local_sha256(ir)? != *expected {
+        return Ok(None);
     }
-    let scan = source_scan?;
-    let site = crate::container::select_active_parasolid_site(scan)?;
+    let Some(scan) = source_scan else {
+        return Ok(None);
+    };
+    let Some(site) = crate::container::select_active_parasolid_site(scan) else {
+        return Ok(None);
+    };
     let original_section = site.name();
     let section = remapped_partition_section(ir, &original_section).unwrap_or(original_section);
-    Some((section, site.section.payload().to_vec()))
+    Ok(Some((section, site.section.payload().to_vec())))
 }
 
 fn remapped_partition_section(ir: &CadIr, section: &str) -> Option<String> {
@@ -1682,22 +1690,22 @@ pub(crate) fn swobjects_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
     let materials = swobjects_materials(ir)?;
     Ok(cadmpeg_ir::hash::canonical_json_sha256(&(
         attributes, materials,
-    )))
+    ))?)
 }
 
 pub(crate) fn swobjects_material_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
     Ok(cadmpeg_ir::hash::canonical_json_sha256(
         &swobjects_materials(ir)?,
-    ))
+    )?)
 }
 
-pub(crate) fn swobjects_metadata_identity_local_sha256(ir: &CadIr) -> String {
+pub(crate) fn swobjects_metadata_identity_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
     let identities = metadata_attributes(ir)
         .into_iter()
         .filter(|attribute| attribute.name != "source_linear_unit_code")
         .map(|attribute| (&attribute.id, attribute.name.as_str()))
         .collect::<Vec<_>>();
-    cadmpeg_ir::hash::canonical_json_sha256(&identities)
+    Ok(cadmpeg_ir::hash::canonical_json_sha256(&identities)?)
 }
 
 fn history_payload(history: &crate::records::FeatureHistory) -> Result<Vec<u8>, CodecError> {
