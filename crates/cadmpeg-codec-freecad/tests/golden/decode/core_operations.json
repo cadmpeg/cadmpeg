@@ -11437,18 +11437,6 @@
         },
         {
           "geometry": {
-            "control_points": [
-              {
-                "x": 4.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              {
-                "x": 4.0,
-                "y": 0.0,
-                "z": 14.0
-              }
-            ],
             "degree": 1,
             "kind": "nurbs",
             "knots": [
@@ -11457,7 +11445,22 @@
               1.0,
               1.0
             ],
-            "periodic": false
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 4.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 4.0,
+                  "y": 0.0,
+                  "z": 14.0
+                }
+              ]
+            }
           },
           "id": "fcstd:model:curve#Loft:Shape:Loft.Shape.brp:2",
           "source_object": {
@@ -13558,18 +13561,6 @@
         },
         {
           "geometry": {
-            "control_points": [
-              {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              {
-                "x": -0.31444667569824736,
-                "y": -0.31444667569824736,
-                "z": 6.0
-              }
-            ],
             "degree": 1,
             "kind": "nurbs",
             "knots": [
@@ -13578,7 +13569,22 @@
               1.0,
               1.0
             ],
-            "periodic": false
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                {
+                  "x": -0.31444667569824736,
+                  "y": -0.31444667569824736,
+                  "z": 6.0
+                }
+              ]
+            }
           },
           "id": "fcstd:model:curve#SymmetricExtrusion:Shape:SymmetricExtrusion.Shape.brp:11",
           "source_object": {
@@ -13588,18 +13594,6 @@
         },
         {
           "geometry": {
-            "control_points": [
-              {
-                "x": 8.0,
-                "y": 6.0,
-                "z": 0.0
-              },
-              {
-                "x": 8.314446675698246,
-                "y": 6.314446675698247,
-                "z": 6.0
-              }
-            ],
             "degree": 1,
             "kind": "nurbs",
             "knots": [
@@ -13608,7 +13602,22 @@
               1.0,
               1.0
             ],
-            "periodic": false
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 8.0,
+                  "y": 6.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 8.314446675698246,
+                  "y": 6.314446675698247,
+                  "z": 6.0
+                }
+              ]
+            }
           },
           "id": "fcstd:model:curve#SymmetricExtrusion:Shape:SymmetricExtrusion.Shape.brp:12",
           "source_object": {
@@ -13638,18 +13647,6 @@
         },
         {
           "geometry": {
-            "control_points": [
-              {
-                "x": 0.0,
-                "y": 6.0,
-                "z": 0.0
-              },
-              {
-                "x": -0.314446675698246,
-                "y": 6.314446675698248,
-                "z": 6.0
-              }
-            ],
             "degree": 1,
             "kind": "nurbs",
             "knots": [
@@ -13658,7 +13655,22 @@
               1.0,
               1.0
             ],
-            "periodic": false
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 0.0,
+                  "y": 6.0,
+                  "z": 0.0
+                },
+                {
+                  "x": -0.314446675698246,
+                  "y": 6.314446675698248,
+                  "z": 6.0
+                }
+              ]
+            }
           },
           "id": "fcstd:model:curve#SymmetricExtrusion:Shape:SymmetricExtrusion.Shape.brp:14",
           "source_object": {
@@ -13708,18 +13720,6 @@
         },
         {
           "geometry": {
-            "control_points": [
-              {
-                "x": 8.0,
-                "y": 0.0,
-                "z": -6.0
-              },
-              {
-                "x": 8.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            ],
             "degree": 1,
             "kind": "nurbs",
             "knots": [
@@ -13728,7 +13728,22 @@
               1.0,
               1.0
             ],
-            "periodic": false
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 8.0,
+                  "y": 0.0,
+                  "z": -6.0
+                },
+                {
+                  "x": 8.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              ]
+            }
           },
           "id": "fcstd:model:curve#SymmetricExtrusion:Shape:SymmetricExtrusion.Shape.brp:2",
           "source_object": {
@@ -13738,18 +13753,6 @@
         },
         {
           "geometry": {
-            "control_points": [
-              {
-                "x": 0.0,
-                "y": 0.0,
-                "z": -6.0
-              },
-              {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            ],
             "degree": 1,
             "kind": "nurbs",
             "knots": [
@@ -13758,7 +13761,22 @@
               1.0,
               1.0
             ],
-            "periodic": false
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": -6.0
+                },
+                {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              ]
+            }
           },
           "id": "fcstd:model:curve#SymmetricExtrusion:Shape:SymmetricExtrusion.Shape.brp:3",
           "source_object": {
@@ -13831,18 +13849,6 @@
         },
         {
           "geometry": {
-            "control_points": [
-              {
-                "x": 8.0,
-                "y": 6.0,
-                "z": -6.0
-              },
-              {
-                "x": 8.0,
-                "y": 6.0,
-                "z": 0.0
-              }
-            ],
             "degree": 1,
             "kind": "nurbs",
             "knots": [
@@ -13851,7 +13857,22 @@
               1.0,
               1.0
             ],
-            "periodic": false
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 8.0,
+                  "y": 6.0,
+                  "z": -6.0
+                },
+                {
+                  "x": 8.0,
+                  "y": 6.0,
+                  "z": 0.0
+                }
+              ]
+            }
           },
           "id": "fcstd:model:curve#SymmetricExtrusion:Shape:SymmetricExtrusion.Shape.brp:5",
           "source_object": {
@@ -13924,18 +13945,6 @@
         },
         {
           "geometry": {
-            "control_points": [
-              {
-                "x": 0.0,
-                "y": 6.0,
-                "z": -6.0
-              },
-              {
-                "x": 0.0,
-                "y": 6.0,
-                "z": 0.0
-              }
-            ],
             "degree": 1,
             "kind": "nurbs",
             "knots": [
@@ -13944,7 +13953,22 @@
               1.0,
               1.0
             ],
-            "periodic": false
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 0.0,
+                  "y": 6.0,
+                  "z": -6.0
+                },
+                {
+                  "x": 0.0,
+                  "y": 6.0,
+                  "z": 0.0
+                }
+              ]
+            }
           },
           "id": "fcstd:model:curve#SymmetricExtrusion:Shape:SymmetricExtrusion.Shape.brp:7",
           "source_object": {
@@ -14017,18 +14041,6 @@
         },
         {
           "geometry": {
-            "control_points": [
-              {
-                "x": 8.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              {
-                "x": 8.314446675698246,
-                "y": -0.31444667569824736,
-                "z": 6.0
-              }
-            ],
             "degree": 1,
             "kind": "nurbs",
             "knots": [
@@ -14037,7 +14049,22 @@
               1.0,
               1.0
             ],
-            "periodic": false
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 8.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 8.314446675698246,
+                  "y": -0.31444667569824736,
+                  "z": 6.0
+                }
+              ]
+            }
           },
           "id": "fcstd:model:curve#SymmetricExtrusion:Shape:SymmetricExtrusion.Shape.brp:9",
           "source_object": {
@@ -28282,16 +28309,6 @@
         },
         {
           "geometry": {
-            "control_points": [
-              {
-                "u": 6.283185307179586,
-                "v": 0.0
-              },
-              {
-                "u": 6.283185307179586,
-                "v": 14.0
-              }
-            ],
             "degree": 1,
             "kind": "nurbs",
             "knots": [
@@ -28300,7 +28317,20 @@
               1.0,
               1.0
             ],
-            "periodic": false
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "u": 6.283185307179586,
+                  "v": 0.0
+                },
+                {
+                  "u": 6.283185307179586,
+                  "v": 14.0
+                }
+              ]
+            }
           },
           "id": "fcstd:model:pcurve#Loft:Shape:Loft.Shape.brp:4%3A2%3A1",
           "metadata": {
@@ -28315,16 +28345,6 @@
         },
         {
           "geometry": {
-            "control_points": [
-              {
-                "u": 0.0,
-                "v": 0.0
-              },
-              {
-                "u": 0.0,
-                "v": 14.0
-              }
-            ],
             "degree": 1,
             "kind": "nurbs",
             "knots": [
@@ -28333,7 +28353,20 @@
               1.0,
               1.0
             ],
-            "periodic": false
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "u": 0.0,
+                  "v": 0.0
+                },
+                {
+                  "u": 0.0,
+                  "v": 14.0
+                }
+              ]
+            }
           },
           "id": "fcstd:model:pcurve#Loft:Shape:Loft.Shape.brp:4%3A2%3A2",
           "metadata": {
@@ -31519,16 +31552,6 @@
         },
         {
           "geometry": {
-            "control_points": [
-              {
-                "u": -0.31444667569824736,
-                "v": 0.0
-              },
-              {
-                "u": 8.314446675698246,
-                "v": 0.0
-              }
-            ],
             "degree": 1,
             "kind": "nurbs",
             "knots": [
@@ -31537,7 +31560,20 @@
               8.0,
               8.0
             ],
-            "periodic": false
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "u": -0.31444667569824736,
+                  "v": 0.0
+                },
+                {
+                  "u": 8.314446675698246,
+                  "v": 0.0
+                }
+              ]
+            }
           },
           "id": "fcstd:model:pcurve#SymmetricExtrusion:Shape:SymmetricExtrusion.Shape.brp:14%3A2%3A1",
           "metadata": {
@@ -31552,16 +31588,6 @@
         },
         {
           "geometry": {
-            "control_points": [
-              {
-                "u": -0.3144466756982469,
-                "v": 0.0
-              },
-              {
-                "u": 6.314446675698247,
-                "v": 0.0
-              }
-            ],
             "degree": 1,
             "kind": "nurbs",
             "knots": [
@@ -31570,7 +31596,20 @@
               6.0,
               6.0
             ],
-            "periodic": false
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "u": -0.3144466756982469,
+                  "v": 0.0
+                },
+                {
+                  "u": 6.314446675698247,
+                  "v": 0.0
+                }
+              ]
+            }
           },
           "id": "fcstd:model:pcurve#SymmetricExtrusion:Shape:SymmetricExtrusion.Shape.brp:18%3A2%3A1",
           "metadata": {
@@ -31746,16 +31785,6 @@
         },
         {
           "geometry": {
-            "control_points": [
-              {
-                "u": -0.31444667569824736,
-                "v": 0.0
-              },
-              {
-                "u": 8.314446675698246,
-                "v": 0.0
-              }
-            ],
             "degree": 1,
             "kind": "nurbs",
             "knots": [
@@ -31764,7 +31793,20 @@
               8.0,
               8.0
             ],
-            "periodic": false
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "u": -0.31444667569824736,
+                  "v": 0.0
+                },
+                {
+                  "u": 8.314446675698246,
+                  "v": 0.0
+                }
+              ]
+            }
           },
           "id": "fcstd:model:pcurve#SymmetricExtrusion:Shape:SymmetricExtrusion.Shape.brp:3%3A2%3A1",
           "metadata": {
@@ -31894,16 +31936,6 @@
         },
         {
           "geometry": {
-            "control_points": [
-              {
-                "u": -0.3144466756982469,
-                "v": 0.0
-              },
-              {
-                "u": 6.314446675698247,
-                "v": 0.0
-              }
-            ],
             "degree": 1,
             "kind": "nurbs",
             "knots": [
@@ -31912,7 +31944,20 @@
               6.0,
               6.0
             ],
-            "periodic": false
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "u": -0.3144466756982469,
+                  "v": 0.0
+                },
+                {
+                  "u": 6.314446675698247,
+                  "v": 0.0
+                }
+              ]
+            }
           },
           "id": "fcstd:model:pcurve#SymmetricExtrusion:Shape:SymmetricExtrusion.Shape.brp:9%3A2%3A1",
           "metadata": {
@@ -41079,33 +41124,36 @@
         },
         {
           "geometry": {
-            "control_points": [
-              [
-                {
-                  "x": 0.0,
-                  "y": 0.0,
-                  "z": 0.0
-                },
-                {
-                  "x": -0.31444667569824736,
-                  "y": -0.31444667569824736,
-                  "z": 6.0
-                }
-              ],
-              [
-                {
-                  "x": 8.0,
-                  "y": 0.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 8.314446675698246,
-                  "y": -0.31444667569824736,
-                  "z": 6.0
-                }
-              ]
-            ],
             "kind": "nurbs",
+            "poles": {
+              "form": "polynomial",
+              "rows": [
+                [
+                  {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": -0.31444667569824736,
+                    "y": -0.31444667569824736,
+                    "z": 6.0
+                  }
+                ],
+                [
+                  {
+                    "x": 8.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 8.314446675698246,
+                    "y": -0.31444667569824736,
+                    "z": 6.0
+                  }
+                ]
+              ]
+            },
             "u_degree": 1,
             "u_knots": [
               -0.31444667569824736,
@@ -41206,33 +41254,36 @@
         },
         {
           "geometry": {
-            "control_points": [
-              [
-                {
-                  "x": 8.0,
-                  "y": 0.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 8.314446675698246,
-                  "y": -0.3144466756982469,
-                  "z": 6.0
-                }
-              ],
-              [
-                {
-                  "x": 8.0,
-                  "y": 6.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 8.314446675698246,
-                  "y": 6.314446675698247,
-                  "z": 6.0
-                }
-              ]
-            ],
             "kind": "nurbs",
+            "poles": {
+              "form": "polynomial",
+              "rows": [
+                [
+                  {
+                    "x": 8.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 8.314446675698246,
+                    "y": -0.3144466756982469,
+                    "z": 6.0
+                  }
+                ],
+                [
+                  {
+                    "x": 8.0,
+                    "y": 6.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 8.314446675698246,
+                    "y": 6.314446675698247,
+                    "z": 6.0
+                  }
+                ]
+              ]
+            },
             "u_degree": 1,
             "u_knots": [
               -0.3144466756982469,
@@ -41283,33 +41334,36 @@
         },
         {
           "geometry": {
-            "control_points": [
-              [
-                {
-                  "x": 8.0,
-                  "y": 6.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 8.314446675698248,
-                  "y": 6.314446675698248,
-                  "z": 6.0
-                }
-              ],
-              [
-                {
-                  "x": 0.0,
-                  "y": 6.0,
-                  "z": 0.0
-                },
-                {
-                  "x": -0.314446675698246,
-                  "y": 6.314446675698248,
-                  "z": 6.0
-                }
-              ]
-            ],
             "kind": "nurbs",
+            "poles": {
+              "form": "polynomial",
+              "rows": [
+                [
+                  {
+                    "x": 8.0,
+                    "y": 6.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 8.314446675698248,
+                    "y": 6.314446675698248,
+                    "z": 6.0
+                  }
+                ],
+                [
+                  {
+                    "x": 0.0,
+                    "y": 6.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": -0.314446675698246,
+                    "y": 6.314446675698248,
+                    "z": 6.0
+                  }
+                ]
+              ]
+            },
             "u_degree": 1,
             "u_knots": [
               -0.31444667569824736,
@@ -41335,33 +41389,36 @@
         },
         {
           "geometry": {
-            "control_points": [
-              [
-                {
-                  "x": 0.0,
-                  "y": 6.0,
-                  "z": 0.0
-                },
-                {
-                  "x": -0.3144466756982469,
-                  "y": 6.314446675698247,
-                  "z": 6.0
-                }
-              ],
-              [
-                {
-                  "x": 0.0,
-                  "y": 0.0,
-                  "z": 0.0
-                },
-                {
-                  "x": -0.3144466756982469,
-                  "y": -0.3144466756982469,
-                  "z": 6.0
-                }
-              ]
-            ],
             "kind": "nurbs",
+            "poles": {
+              "form": "polynomial",
+              "rows": [
+                [
+                  {
+                    "x": 0.0,
+                    "y": 6.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": -0.3144466756982469,
+                    "y": 6.314446675698247,
+                    "z": 6.0
+                  }
+                ],
+                [
+                  {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": -0.3144466756982469,
+                    "y": -0.3144466756982469,
+                    "z": 6.0
+                  }
+                ]
+              ]
+            },
             "u_degree": 1,
             "u_knots": [
               -0.3144466756982469,

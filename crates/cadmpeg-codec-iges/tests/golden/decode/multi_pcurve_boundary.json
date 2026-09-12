@@ -45,33 +45,6 @@
       "curves": [
         {
           "geometry": {
-            "control_points": [
-              {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 0.0
-              },
-              {
-                "x": 0.0,
-                "y": 1.0,
-                "z": 0.0
-              },
-              {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            ],
             "degree": 1,
             "kind": "nurbs",
             "knots": [
@@ -83,7 +56,37 @@
               4.0,
               4.0
             ],
-            "periodic": false
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 1.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 1.0,
+                  "y": 1.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 0.0,
+                  "y": 1.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              ]
+            }
           },
           "id": "iges:model:curve#D3",
           "source_object": {
@@ -96,18 +99,6 @@
         },
         {
           "geometry": {
-            "control_points": [
-              {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 0.0
-              }
-            ],
             "degree": 1,
             "kind": "nurbs",
             "knots": [
@@ -116,7 +107,22 @@
               1.0,
               1.0
             ],
-            "periodic": false
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 1.0,
+                  "y": 1.0,
+                  "z": 0.0
+                }
+              ]
+            }
           },
           "id": "iges:model:curve#D5",
           "source_object": {
@@ -129,18 +135,6 @@
         },
         {
           "geometry": {
-            "control_points": [
-              {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 0.0
-              },
-              {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            ],
             "degree": 1,
             "kind": "nurbs",
             "knots": [
@@ -149,7 +143,22 @@
               1.0,
               1.0
             ],
-            "periodic": false
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 1.0,
+                  "y": 1.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              ]
+            }
           },
           "id": "iges:model:curve#D7",
           "source_object": {
@@ -247,16 +256,6 @@
       "pcurves": [
         {
           "geometry": {
-            "control_points": [
-              {
-                "u": 0.0,
-                "v": 0.0
-              },
-              {
-                "u": 1.0,
-                "v": 1.0
-              }
-            ],
             "degree": 1,
             "kind": "nurbs",
             "knots": [
@@ -265,7 +264,20 @@
               1.0,
               1.0
             ],
-            "periodic": false
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "u": 0.0,
+                  "v": 0.0
+                },
+                {
+                  "u": 1.0,
+                  "v": 1.0
+                }
+              ]
+            }
           },
           "id": "iges:model:pcurve#D11:0:0:0",
           "metadata": {
@@ -280,16 +292,6 @@
         },
         {
           "geometry": {
-            "control_points": [
-              {
-                "u": 1.0,
-                "v": 1.0
-              },
-              {
-                "u": 0.0,
-                "v": 0.0
-              }
-            ],
             "degree": 1,
             "kind": "nurbs",
             "knots": [
@@ -298,7 +300,20 @@
               1.0,
               1.0
             ],
-            "periodic": false
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "u": 1.0,
+                  "v": 1.0
+                },
+                {
+                  "u": 0.0,
+                  "v": 0.0
+                }
+              ]
+            }
           },
           "id": "iges:model:pcurve#D11:0:0:1",
           "metadata": {

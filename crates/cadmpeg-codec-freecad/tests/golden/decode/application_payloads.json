@@ -80,48 +80,48 @@
         {
           "channels": [],
           "id": "fcstd:native:property#Mesh:Mesh:mesh",
+          "mesh": {
+            "kind": "list",
+            "triangles": [
+              [
+                0,
+                1,
+                2
+              ],
+              [
+                1,
+                3,
+                2
+              ]
+            ],
+            "vertices": [
+              {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 10.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 0.0,
+                "y": 10.0,
+                "z": 0.0
+              },
+              {
+                "x": 10.0,
+                "y": 10.0,
+                "z": 0.0
+              }
+            ]
+          },
           "source_object": {
             "format": "fcstd",
             "name": "Mesh",
             "object_id": "fcstd:native:object#Mesh"
-          },
-          "topology": {
-            "kind": "list"
-          },
-          "triangles": [
-            [
-              0,
-              1,
-              2
-            ],
-            [
-              1,
-              3,
-              2
-            ]
-          ],
-          "vertices": [
-            {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            {
-              "x": 10.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            {
-              "x": 0.0,
-              "y": 10.0,
-              "z": 0.0
-            },
-            {
-              "x": 10.0,
-              "y": 10.0,
-              "z": 0.0
-            }
-          ]
+          }
         }
       ],
       "vertices": [],

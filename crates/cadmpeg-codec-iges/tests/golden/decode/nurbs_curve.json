@@ -21,23 +21,6 @@
       "curves": [
         {
           "geometry": {
-            "control_points": [
-              {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 0.0
-              },
-              {
-                "x": 2.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            ],
             "degree": 2,
             "kind": "nurbs",
             "knots": [
@@ -49,11 +32,35 @@
               1.0
             ],
             "periodic": false,
-            "weights": [
-              1.0,
-              0.5,
-              1.0
-            ]
+            "poles": {
+              "form": "rational",
+              "points": [
+                {
+                  "point": {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  "weight": 1.0
+                },
+                {
+                  "point": {
+                    "x": 1.0,
+                    "y": 1.0,
+                    "z": 0.0
+                  },
+                  "weight": 0.5
+                },
+                {
+                  "point": {
+                    "x": 2.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  "weight": 1.0
+                }
+              ]
+            }
           },
           "id": "iges:model:curve#D1",
           "source_object": {

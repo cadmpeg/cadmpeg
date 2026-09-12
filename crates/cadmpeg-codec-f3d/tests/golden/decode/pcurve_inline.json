@@ -248,16 +248,19 @@
               1.0,
               1.0
             ],
-            "control_points": [
-              {
-                "u": 0.25,
-                "v": 0.5
-              },
-              {
-                "u": 0.75,
-                "v": 1.5
-              }
-            ],
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "u": 0.25,
+                  "v": 0.5
+                },
+                {
+                  "u": 0.75,
+                  "v": 1.5
+                }
+              ]
+            },
             "periodic": false
           },
           "metadata": {

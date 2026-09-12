@@ -106,32 +106,6 @@
                 {
                   "pcurve": {
                     "geometry": {
-                      "control_points": [
-                        {
-                          "u": 0.0,
-                          "v": 0.0
-                        },
-                        {
-                          "u": 0.1,
-                          "v": 0.0
-                        },
-                        {
-                          "u": 0.2,
-                          "v": 0.0
-                        },
-                        {
-                          "u": 0.3,
-                          "v": 1.0
-                        },
-                        {
-                          "u": 0.4,
-                          "v": 1.0
-                        },
-                        {
-                          "u": 0.5,
-                          "v": 1.0
-                        }
-                      ],
                       "degree": 5,
                       "kind": "nurbs",
                       "knots": [
@@ -148,7 +122,36 @@
                         1.0,
                         1.0
                       ],
-                      "periodic": false
+                      "periodic": false,
+                      "poles": {
+                        "form": "polynomial",
+                        "points": [
+                          {
+                            "u": 0.0,
+                            "v": 0.0
+                          },
+                          {
+                            "u": 0.1,
+                            "v": 0.0
+                          },
+                          {
+                            "u": 0.2,
+                            "v": 0.0
+                          },
+                          {
+                            "u": 0.3,
+                            "v": 1.0
+                          },
+                          {
+                            "u": 0.4,
+                            "v": 1.0
+                          },
+                          {
+                            "u": 0.5,
+                            "v": 1.0
+                          }
+                        ]
+                      }
                     }
                   },
                   "surface": "catia:consolidated:cylinder#2"
@@ -156,32 +159,6 @@
                 {
                   "pcurve": {
                     "geometry": {
-                      "control_points": [
-                        {
-                          "u": 0.0,
-                          "v": 0.0
-                        },
-                        {
-                          "u": 0.1,
-                          "v": 0.0
-                        },
-                        {
-                          "u": 0.2,
-                          "v": 0.0
-                        },
-                        {
-                          "u": 0.3,
-                          "v": 1.0
-                        },
-                        {
-                          "u": 0.4,
-                          "v": 1.0
-                        },
-                        {
-                          "u": 0.5,
-                          "v": 1.0
-                        }
-                      ],
                       "degree": 5,
                       "kind": "nurbs",
                       "knots": [
@@ -198,7 +175,36 @@
                         1.0,
                         1.0
                       ],
-                      "periodic": false
+                      "periodic": false,
+                      "poles": {
+                        "form": "polynomial",
+                        "points": [
+                          {
+                            "u": 0.0,
+                            "v": 0.0
+                          },
+                          {
+                            "u": 0.1,
+                            "v": 0.0
+                          },
+                          {
+                            "u": 0.2,
+                            "v": 0.0
+                          },
+                          {
+                            "u": 0.3,
+                            "v": 1.0
+                          },
+                          {
+                            "u": 0.4,
+                            "v": 1.0
+                          },
+                          {
+                            "u": 0.5,
+                            "v": 1.0
+                          }
+                        ]
+                      }
                     }
                   },
                   "surface": "catia:consolidated:cylinder#2"
