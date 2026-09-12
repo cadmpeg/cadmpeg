@@ -37,22 +37,29 @@ fn rolling_ball_jet_station_rows_preserve_the_flat_wire() {
         .unwrap(),
     );
     let wire = serde_json::to_value(&definition).unwrap();
-    assert_eq!(wire["knots"], json!([2.0, 4.0, 8.0]));
-    assert_eq!(wire["multiplicities"], json!([6, 3, 6]));
+    assert_eq!(wire["stations"][0]["knot"], json!(2.0));
+    assert_eq!(wire["stations"][1]["multiplicity"], json!(3));
     assert_eq!(
-        wire["sites"][1]["center"],
+        wire["stations"][1]["site"]["center"],
         json!({"x": 0.0, "y": 0.0, "z": 4.0})
     );
-    assert!(wire.get("stations").is_none());
+    // The three columns travel as one row each, so a knot without its
+    // multiplicity or its site has no spelling.
+    assert!(wire.get("knots").is_none());
+    assert!(wire.get("multiplicities").is_none());
+    assert!(wire.get("sites").is_none());
     assert_eq!(
         serde_json::from_value::<ProceduralSurfaceDefinition>(wire.clone()).unwrap(),
         definition
     );
-    for column in ["knots", "multiplicities", "sites"] {
+    for column in ["knot", "multiplicity", "site"] {
         let mut malformed = wire.clone();
-        malformed[column].as_array_mut().unwrap().pop();
+        malformed["stations"][1]
+            .as_object_mut()
+            .unwrap()
+            .remove(column);
         let error = serde_json::from_value::<ProceduralSurfaceDefinition>(malformed).unwrap_err();
-        assert!(error.to_string().contains("must have equal lengths"));
+        assert!(error.to_string().contains(column), "{error}");
     }
 }
 
@@ -108,14 +115,21 @@ fn rolling_ball_jet_admits_only_clamped_finite_station_payloads() {
     for (field, value) in [
         ("degree", json!(0)),
         ("degree", json!(u32::MAX)),
-        ("knots", json!([8.0, 2.0])),
-        ("multiplicities", json!([5, 6])),
     ] {
         let mut malformed = wire.clone();
         malformed[field] = value;
         assert!(serde_json::from_value::<ProceduralSurfaceDefinition>(malformed).is_err());
     }
+    for (path, value) in [
+        (["stations", "0", "knot"], json!(8.0)),
+        (["stations", "1", "knot"], json!(2.0)),
+        (["stations", "0", "multiplicity"], json!(5)),
+    ] {
+        let mut malformed = wire.clone();
+        malformed[path[0]][path[1].parse::<usize>().unwrap()][path[2]] = value;
+        assert!(serde_json::from_value::<ProceduralSurfaceDefinition>(malformed).is_err());
+    }
     let mut malformed = wire;
-    malformed["sites"][0]["first_limit"]["x"] = json!(2.0);
+    malformed["stations"][0]["site"]["first_limit"]["x"] = json!(2.0);
     assert!(serde_json::from_value::<ProceduralSurfaceDefinition>(malformed).is_err());
 }

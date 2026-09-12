@@ -1301,13 +1301,17 @@ mod tests {
                 vertices.clone(),
             );
             assert_eq!(admitted.is_ok(), mask != 0);
-            let mut wire = serde_json::json!({"id":id,"region":region,"faces":faces});
-            if !edges.is_empty() {
-                wire["wire_edges"] = serde_json::json!(edges);
+            let mut members = Vec::new();
+            for face in &faces {
+                members.push(serde_json::json!({"kind": "face", "id": face}));
             }
-            if !vertices.is_empty() {
-                wire["free_vertices"] = serde_json::json!(vertices);
+            for edge in &edges {
+                members.push(serde_json::json!({"kind": "wire_edge", "id": edge}));
             }
+            for vertex in &vertices {
+                members.push(serde_json::json!({"kind": "free_vertex", "id": vertex}));
+            }
+            let wire = serde_json::json!({"id":id,"region":region,"members":members});
             let decoded = serde_json::from_value::<super::Shell>(wire.clone());
             assert_eq!(decoded.is_ok(), mask != 0);
             if let Ok(shell) = decoded {
