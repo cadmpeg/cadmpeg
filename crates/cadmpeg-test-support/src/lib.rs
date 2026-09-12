@@ -12,6 +12,7 @@ use cadmpeg_ir::{CadIr, DecodeReport, SourceFidelity};
 
 pub mod golden;
 pub mod roundtrip;
+pub mod unknown_keys;
 
 /// Editable parts of a consumed decode result for writer tests.
 ///
