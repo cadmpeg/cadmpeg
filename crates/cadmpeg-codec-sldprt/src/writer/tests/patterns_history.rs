@@ -633,11 +633,14 @@ fn semantic_writer_round_trips_typed_sweep() {
             shape.set_referenced_profile(cadmpeg_ir::features::PlanarProfileRef::Feature(
                 profile_b.clone(),
             ));
-            shape
-                .set_mode(cadmpeg_ir::features::SweepMode::Solid {
-                    op: cadmpeg_ir::features::SolidSweepOperation::Join,
-                })
-                .unwrap();
+            let (section, sections) =
+                std::mem::replace(shape, cadmpeg_ir::features::SweepShape::unresolved(None))
+                    .into_sections();
+            *shape = cadmpeg_ir::features::SweepShape::solid_sections(
+                cadmpeg_ir::features::SolidSweepOperation::Join,
+                section,
+                sections,
+            );
             *twist = Some(Angle::new(std::f64::consts::PI).unwrap());
             *scale = Some(cadmpeg_ir::scalar::PositiveReal::new(2.0).unwrap());
         });

@@ -323,12 +323,15 @@ fn generated_sweep_sections_round_trip_and_validate() {
         Some(crate::scalar::PositiveLength::new(2.0).unwrap()),
     )
     .is_err());
-    let FeatureDefinition::Operation(FeatureOperation::Sweep { mut shape, .. }) = definition else {
+    // The mode is fixed at construction: there is no mutator left to refuse a
+    // sheet result for a sweep that generates its own geometry, and the sheet
+    // section type is uninhabited in the generated arm, so the shape has no
+    // spelling to reach.
+    let FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) = definition else {
         panic!("sweep fixture");
     };
-    let before = shape.clone();
-    assert!(shape.set_mode(SweepMode::Surface {}).is_err());
-    assert_eq!(shape, before);
+    assert!(matches!(shape.mode(), SweepMode::Solid { .. }));
+    assert!(shape.generated_section().is_some());
 }
 
 #[test]
