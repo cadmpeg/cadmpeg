@@ -2773,8 +2773,9 @@ pub struct BlendSupport {
 }
 
 /// One parameter station of a rolling-ball jet, with its complete value rows.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct RollingBallJetStation {
     /// Native spine parameter.
     pub knot: f64,
@@ -2879,54 +2880,28 @@ impl RollingBallJetStations {
 #[serde(deny_unknown_fields)]
 struct RollingBallJetReadWire {
     degree: u32,
-    knots: Vec<f64>,
-    multiplicities: Vec<u32>,
-    sites: Vec<RollingBallJetSite>,
+    stations: Vec<RollingBallJetStation>,
 }
 
 impl TryFrom<RollingBallJetReadWire> for RollingBallJetStations {
     type Error = &'static str;
 
     fn try_from(wire: RollingBallJetReadWire) -> Result<Self, Self::Error> {
-        if wire.knots.len() != wire.multiplicities.len() || wire.knots.len() != wire.sites.len() {
-            return Err(
-                "rolling-ball jet knots, multiplicities, and sites must have equal lengths",
-            );
-        }
-        let stations = wire
-            .knots
-            .into_iter()
-            .zip(wire.multiplicities)
-            .zip(wire.sites)
-            .map(|((knot, multiplicity), site)| RollingBallJetStation {
-                knot,
-                multiplicity,
-                site,
-            })
-            .collect();
-        Self::try_new(wire.degree, stations)
+        Self::try_new(wire.degree, wire.stations)
     }
 }
 
 #[derive(Serialize)]
 struct RollingBallJetWriteWire<'a> {
     degree: u32,
-    knots: Vec<f64>,
-    multiplicities: Vec<u32>,
-    sites: Vec<&'a RollingBallJetSite>,
+    stations: &'a [RollingBallJetStation],
 }
 
 impl Serialize for RollingBallJetStations {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         RollingBallJetWriteWire {
             degree: self.degree,
-            knots: self.stations.iter().map(|station| station.knot).collect(),
-            multiplicities: self
-                .stations
-                .iter()
-                .map(|station| station.multiplicity)
-                .collect(),
-            sites: self.stations.iter().map(|station| &station.site).collect(),
+            stations: &self.stations,
         }
         .serialize(serializer)
     }
