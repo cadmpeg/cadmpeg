@@ -26,12 +26,11 @@ use cadmpeg_ir::{
         HelicalSweepConstruction, HelicalSweepLaw, HelixConstructionStyle, HoleBottom,
         HoleConstruction, HoleKind, HoleProfileFilter, HoleSpecification, HoleThreadDepth,
         InnerWireTaper, LinearTermination, ParameterId, ParameterValue, PathRef, PatternKind,
-        PatternScaleCenter, PatternSeed, PatternStage, PatternStageCombination, PatternTransform,
-        PlanarProfileRef, PrimitiveSolid, PrimitiveSolidKind, ProfileRef, RadiusSpec,
-        RevolutionAxis, RevolutionFuseOrder, RevolveConstruction, RevolveExtent,
-        RuledCurveOrientation, ScaleCenter, ScaleFactors, ShellJoin, ShellMode,
-        SurfaceProjectionMode, SweepMode, SweepOrientation, SweepTransformation, SweepTransition,
-        ThreadHand, TreeChildren,
+        PatternScaleCenter, PatternSeed, PatternStage, PatternTransform, PlanarProfileRef,
+        PrimitiveSolid, PrimitiveSolidKind, ProfileRef, RadiusSpec, RevolutionAxis,
+        RevolutionFuseOrder, RevolveConstruction, RevolveExtent, RuledCurveOrientation,
+        ScaleCenter, ScaleFactors, ShellJoin, ShellMode, SurfaceProjectionMode, SweepMode,
+        SweepOrientation, SweepTransformation, SweepTransition, ThreadHand, TreeChildren,
     },
     scalar::Length,
 };
@@ -5637,8 +5636,7 @@ fn pattern_definition(
         let stages = transformations
             .links()
             .iter()
-            .enumerate()
-            .map(|(index, link)| {
+            .map(|link| {
                 let target = link.as_ref()?.object()?;
                 let object = objects.iter().find(|object| object.id == target)?;
                 let owned = properties_by_owner.get(target).map(Vec::as_slice)?;
@@ -5649,16 +5647,8 @@ fn pattern_definition(
                     properties_by_owner,
                     entries,
                 )?;
-                let combination = if index == 0 {
-                    PatternStageCombination::Initialize
-                } else if matches!(pattern.definition(), PatternTransform::Scale { .. }) {
-                    PatternStageCombination::AlignedSlices
-                } else {
-                    PatternStageCombination::CartesianProduct
-                };
                 Some(PatternStage {
                     pattern: Box::new(pattern),
-                    combination,
                 })
             })
             .collect::<Option<Vec<_>>>()?;
@@ -5803,11 +5793,9 @@ fn pattern_kind(
                 stages: cadmpeg_ir::features::CompositePattern::new(vec![
                     PatternStage {
                         pattern: Box::new(first),
-                        combination: PatternStageCombination::Initialize,
                     },
                     PatternStage {
                         pattern: Box::new(second),
-                        combination: PatternStageCombination::CartesianProduct,
                     },
                 ])
                 .ok()?,

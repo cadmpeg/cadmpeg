@@ -337,10 +337,10 @@ pub(crate) fn pattern_occurrence_count(pattern: &PatternKind) -> Option<usize> {
         PatternTransform::Mirror { .. } | PatternTransform::MirrorReference { .. } => Some(2),
         PatternTransform::Composite { stages } => {
             stages
-                .iter()
-                .try_fold(None::<usize>, |occurrences, stage| {
+                .combinations()
+                .try_fold(None::<usize>, |occurrences, (stage, combination)| {
                     let stage_count = pattern_occurrence_count(&stage.pattern)?;
-                    match stage.combination {
+                    match combination {
                         cadmpeg_ir::features::PatternStageCombination::Initialize => {
                             occurrences.is_none().then_some(Some(stage_count))
                         }

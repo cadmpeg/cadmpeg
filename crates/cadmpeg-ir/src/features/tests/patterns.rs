@@ -4,7 +4,7 @@ use crate::math::{Point3, Vector3};
 use crate::{
     features::{
         CompositePattern, FaceSelection, LinearPatternDirection, PatternKind, PatternScaleCenter,
-        PatternStage, PatternStageCombination, PatternTransform,
+        PatternStage, PatternTransform,
     },
     scalar::{Angle, Length},
 };
@@ -19,10 +19,9 @@ fn linear(count: u32) -> PatternTransform {
     }
 }
 
-fn stage(transform: PatternTransform, combination: PatternStageCombination) -> PatternStage {
+fn stage(transform: PatternTransform) -> PatternStage {
     PatternStage {
         pattern: Box::new(PatternKind::new(transform).unwrap()),
-        combination,
     }
 }
 
@@ -164,49 +163,34 @@ fn pattern_admission_preserves_singletons_and_unresolved_references() {
 
 #[test]
 fn composite_pattern_admission_enforces_stage_structure_and_counts() {
-    use PatternStageCombination::{AlignedSlices, CartesianProduct, Initialize};
     let scale = || PatternTransform::Scale {
         center: PatternScaleCenter::FirstSeedCentroid,
         final_factor: 2.0,
         count: 2,
     };
+    // A stage's combination rule is its position and its transform, so a
+    // mismatched rule has no spelling; what remains to refuse is the count
+    // composition and a nested composite.
     for stages in [
         vec![],
-        vec![stage(linear(1), CartesianProduct)],
+        vec![stage(linear(3)), stage(scale())],
         vec![
-            stage(linear(1), Initialize),
-            stage(linear(2), AlignedSlices),
+            stage(linear(u32::MAX)),
+            stage(linear(u32::MAX)),
+            stage(linear(u32::MAX)),
         ],
-        vec![
-            stage(linear(2), Initialize),
-            stage(scale(), CartesianProduct),
-        ],
-        vec![stage(linear(3), Initialize), stage(scale(), AlignedSlices)],
-        vec![
-            stage(linear(u32::MAX), Initialize),
-            stage(linear(u32::MAX), CartesianProduct),
-            stage(linear(u32::MAX), CartesianProduct),
-        ],
-        vec![stage(
-            PatternTransform::Composite {
-                stages: CompositePattern::new(vec![stage(linear(1), Initialize)]).unwrap(),
-            },
-            Initialize,
-        )],
+        vec![stage(PatternTransform::Composite {
+            stages: CompositePattern::new(vec![stage(linear(1))]).unwrap(),
+        })],
     ] {
         assert!(CompositePattern::new(stages).is_err());
     }
-    assert!(CompositePattern::new(vec![
-        stage(linear(4), Initialize),
-        stage(scale(), AlignedSlices)
-    ])
-    .is_ok());
+    assert!(CompositePattern::new(vec![stage(linear(4)), stage(scale())]).is_ok());
     assert!(CompositePattern::new(vec![
         PatternStage {
-            pattern: Box::new(PatternKind::UNRESOLVED),
-            combination: Initialize
+            pattern: Box::new(PatternKind::UNRESOLVED)
         },
-        stage(linear(2), CartesianProduct),
+        stage(linear(2)),
     ])
     .is_ok());
 }
@@ -247,7 +231,7 @@ fn admitted_pattern_wire_preserves_tags_and_optional_fields() {
         json!({"kind":"mirror","plane_origin":{"x":0.0,"y":0.0,"z":0.0},"plane_normal":{"x":0.0,"y":0.0,"z":1.0}}),
         json!({"kind":"mirror_reference","plane":{"kind":"native","value":"plane"}}),
         json!({"kind":"scale","center":{"kind":"native","value":""},"final_factor":2.0,"count":2}),
-        json!({"kind":"composite","stages":[{"pattern":{"kind":"unresolved"},"combination":"initialize"}]}),
+        json!({"kind":"composite","stages":[{"pattern":{"kind":"unresolved"}}]}),
     ] {
         let pattern: PatternKind = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(&pattern).unwrap(), wire);
@@ -271,11 +255,7 @@ fn composite_pattern_counts_use_primary_instance_counts() {
         final_factor: 2.0,
         count: 3,
     };
-    assert!(CompositePattern::new(vec![
-        stage(first, PatternStageCombination::Initialize),
-        stage(scale, PatternStageCombination::AlignedSlices),
-    ])
-    .is_err());
+    assert!(CompositePattern::new(vec![stage(first), stage(scale),]).is_err());
 }
 
 #[test]

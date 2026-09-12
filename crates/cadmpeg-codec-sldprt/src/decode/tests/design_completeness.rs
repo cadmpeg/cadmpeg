@@ -517,7 +517,6 @@ fn design_completeness_recurses_through_pattern_operands() {
                             })
                             .unwrap(),
                         ),
-                        combination: cadmpeg_ir::features::PatternStageCombination::Initialize,
                     },
                 ])
                 .unwrap(),
