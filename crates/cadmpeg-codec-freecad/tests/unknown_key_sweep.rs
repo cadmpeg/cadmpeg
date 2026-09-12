@@ -41,13 +41,33 @@ fn every_decoded_shape_refuses_an_unknown_key() {
         accepting.extend(shapes);
     }
     assert!(swept > 0, "the sweep walked {swept} shapes");
+    let unexpected = accepting
+        .iter()
+        .filter(|shape| !is_free_form(shape))
+        .cloned()
+        .collect::<Vec<_>>();
     assert!(
-        accepting.is_empty(),
+        unexpected.is_empty(),
         "{} decoded shapes accept an unknown key:\n{}",
-        accepting.len(),
-        accepting.into_iter().collect::<Vec<_>>().join("\n")
+        unexpected.len(),
+        unexpected.join("\n")
     );
 }
+
+/// The one non-native node a document may accept an unknown key on.
+///
+/// `Appearance::properties` is a free-form `BTreeMap<String, f64>`
+/// (`crates/cadmpeg-ir/src/appearance.rs`): its keys are the source's renderer
+/// property names, so it declares no key set for a deny to bind. Its owner
+/// `Appearance` does declare `deny_unknown_fields`, and that deny is live one
+/// level up. Every other accepting node is a failure.
+const FREE_FORM_SHAPES: &[&str] = &["/model/appearances/#/properties"];
+
+/// Whether `shape` is the one free-form map the document admits.
+fn is_free_form(shape: &str) -> bool {
+    FREE_FORM_SHAPES.contains(&shape)
+}
+
 
 /// The charter fixtures this codec's goldens decode, in directory order.
 fn fixture_inputs() -> Vec<PathBuf> {

@@ -79,12 +79,31 @@ fn every_golden_shape_refuses_an_unknown_key() {
         swept_documents > 0 && shapes_swept > 0,
         "the sweep walked {swept_documents} documents and {shapes_swept} shapes"
     );
+    let unexpected = accepting
+        .iter()
+        .filter(|shape| !is_free_form(shape))
+        .cloned()
+        .collect::<Vec<_>>();
     assert!(
-        accepting.is_empty(),
+        unexpected.is_empty(),
         "{} golden shapes accept an unknown key:\n{}",
-        accepting.len(),
-        accepting.into_iter().collect::<Vec<_>>().join("\n")
+        unexpected.len(),
+        unexpected.join("\n")
     );
+}
+
+/// The one non-native node a document may accept an unknown key on.
+///
+/// `Appearance::properties` is a free-form `BTreeMap<String, f64>`
+/// (`crates/cadmpeg-ir/src/appearance.rs`): its keys are the source's renderer
+/// property names, so it declares no key set for a deny to bind. Its owner
+/// `Appearance` does declare `deny_unknown_fields`, and that deny is live one
+/// level up. Every other accepting node is a failure.
+const FREE_FORM_SHAPES: &[&str] = &["/model/appearances/#/properties"];
+
+/// Whether `shape` is the one free-form map the document admits.
+fn is_free_form(shape: &str) -> bool {
+    FREE_FORM_SHAPES.contains(&shape)
 }
 
 /// Member a golden harness stores a document under.
@@ -179,6 +198,206 @@ fn collect_goldens(directory: &Path, found: &mut Vec<PathBuf>) {
             .extension()
             .is_some_and(|extension| extension == "json")
         {
+            found.push(path);
+        }
+    }
+}
+
+/// Every hand-written `Deserialize` in the two wire crates, with how it is
+/// covered.
+///
+/// A hand impl never reaches `scripts/check-deny-census.py`, which reads
+/// `derive(Deserialize)` items only, so its coverage is stated here. The test
+/// below greps the source at run time and fails when this table and the source
+/// disagree in either direction, so a new hand impl cannot land uncovered and a
+/// deleted one cannot leave a stale entry.
+///
+/// The coverage classes are:
+///
+/// * `wire` - the impl reads one named or inner wire type that declares
+///   `deny_unknown_fields`, so the key set is refused by that type;
+/// * `keyless` - the impl reads a scalar, a string, a byte string, a fixed
+///   array or a list, so it has no object key set at all;
+/// * `free-form` - the impl reads an open map by design; `FIXTURES` below
+///   states what refuses instead.
+const HAND_IMPLS: &[(&str, &str, &str)] = &[
+    ("crates/cadmpeg-core/src/dialect.rs", "DialectId", "keyless"),
+    ("crates/cadmpeg-core/src/dialect.rs", "DialectLayers", "wire"),
+    ("crates/cadmpeg-ir/src/assets.rs", "AssetData", "keyless"),
+    ("crates/cadmpeg-ir/src/container.rs", "ContainerKind", "keyless"),
+    ("crates/cadmpeg-ir/src/document.rs", "CadIr", "wire"),
+    ("crates/cadmpeg-ir/src/document.rs", "CensusKey", "keyless"),
+    ("crates/cadmpeg-ir/src/document.rs", "Model", "wire"),
+    (
+        "crates/cadmpeg-ir/src/features/edge_treatments.rs",
+        "FullRoundFilletGroup",
+        "wire",
+    ),
+    ("crates/cadmpeg-ir/src/features/holes.rs", "HoleShape", "wire"),
+    ("crates/cadmpeg-ir/src/features.rs", "$name", "wire"),
+    ("crates/cadmpeg-ir/src/features.rs", "ConfigurationEvaluation", "wire"),
+    ("crates/cadmpeg-ir/src/features.rs", "FaceMaker", "keyless"),
+    ("crates/cadmpeg-ir/src/features.rs", "Feature", "wire"),
+    ("crates/cadmpeg-ir/src/features.rs", "FeatureContent", "keyless"),
+    ("crates/cadmpeg-ir/src/features.rs", "GeometryImportPath", "keyless"),
+    ("crates/cadmpeg-ir/src/features.rs", "NativeFeatureKind", "keyless"),
+    ("crates/cadmpeg-ir/src/features.rs", "NativeSelections", "keyless"),
+    ("crates/cadmpeg-ir/src/features.rs", "PolygonSideCount", "keyless"),
+    ("crates/cadmpeg-ir/src/features.rs", "SelectionReference", "keyless"),
+    ("crates/cadmpeg-ir/src/features.rs", "SewBodySelection", "wire"),
+    (
+        "crates/cadmpeg-ir/src/features.rs",
+        "SheetMetalFlangeEdgeWidths",
+        "keyless",
+    ),
+    ("crates/cadmpeg-ir/src/features.rs", "SketchProfileRegions", "keyless"),
+    ("crates/cadmpeg-ir/src/features.rs", "SplitFacePlanes", "keyless"),
+    ("crates/cadmpeg-ir/src/features.rs", "SweepCircularRegion", "wire"),
+    ("crates/cadmpeg-ir/src/features.rs", "ThreePointSelection", "keyless"),
+    ("crates/cadmpeg-ir/src/features.rs", "TreeChildren", "wire"),
+    ("crates/cadmpeg-ir/src/geometry/carriers.rs", "BsplineSurface", "wire"),
+    ("crates/cadmpeg-ir/src/geometry/carriers.rs", "NurbsCurve", "wire"),
+    ("crates/cadmpeg-ir/src/geometry/carriers.rs", "NurbsSurface", "wire"),
+    ("crates/cadmpeg-ir/src/geometry/carriers.rs", "PcurveNurbs", "wire"),
+    ("crates/cadmpeg-ir/src/geometry/carriers.rs", "PolarPcurveNurbs", "wire"),
+    ("crates/cadmpeg-ir/src/geometry/carriers.rs", "PolygonalSurface", "wire"),
+    ("crates/cadmpeg-ir/src/geometry.rs", "DirectedParameterRange", "keyless"),
+    ("crates/cadmpeg-ir/src/geometry.rs", "ProceduralCurveDefinition", "wire"),
+    ("crates/cadmpeg-ir/src/geometry.rs", "ProceduralSurfaceDefinition", "wire"),
+    ("crates/cadmpeg-ir/src/geometry.rs", "ProjectionRole", "keyless"),
+    ("crates/cadmpeg-ir/src/geometry.rs", "RevisionG2RadiusValue", "keyless"),
+    ("crates/cadmpeg-ir/src/native/mod.rs", "NativeRecord", "free-form"),
+    ("crates/cadmpeg-ir/src/pmi.rs", "PmiMagnitude", "keyless"),
+    ("crates/cadmpeg-ir/src/products.rs", "NonEmptyString", "keyless"),
+    ("crates/cadmpeg-ir/src/provenance.rs", "CodecFormat", "keyless"),
+    (
+        "crates/cadmpeg-ir/src/provenance.rs",
+        "Provenance<AnnotationLocation>",
+        "wire",
+    ),
+    (
+        "crates/cadmpeg-ir/src/provenance.rs",
+        "Provenance<SourceLocation>",
+        "wire",
+    ),
+    ("crates/cadmpeg-ir/src/scalar.rs", "$name", "keyless"),
+    ("crates/cadmpeg-ir/src/sketches.rs", "SpatialSketchNurbsCurve", "wire"),
+];
+
+/// The coverage classes a `HAND_IMPLS` entry may state.
+const COVERAGE_CLASSES: &[&str] = &["wire", "keyless", "free-form"];
+
+#[test]
+fn every_hand_written_deserialize_states_its_coverage() {
+    let found = hand_written_impls();
+    assert!(
+        !found.is_empty(),
+        "the hand-impl census found no impls to classify"
+    );
+    let listed: BTreeSet<(String, String)> = HAND_IMPLS
+        .iter()
+        .map(|(path, name, class)| {
+            assert!(
+                COVERAGE_CLASSES.contains(class),
+                "{path} {name} states the unknown coverage class {class}"
+            );
+            ((*path).to_owned(), (*name).to_owned())
+        })
+        .collect();
+    let missing: Vec<String> = found
+        .difference(&listed)
+        .map(|(path, name)| format!("{path} {name}"))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "{} hand-written Deserialize impl(s) state no coverage in HAND_IMPLS:\n{}",
+        missing.len(),
+        missing.join("\n")
+    );
+    let stale: Vec<String> = listed
+        .difference(&found)
+        .map(|(path, name)| format!("{path} {name}"))
+        .collect();
+    assert!(
+        stale.is_empty(),
+        "{} HAND_IMPLS entry/entries name no hand-written Deserialize impl:\n{}",
+        stale.len(),
+        stale.join("\n")
+    );
+
+    // The one free-form impl reads codec-owned fields by design and declares no
+    // key set. Both levels above it do refuse, which is what keeps an unknown
+    // key out of the document.
+    for wire in [
+        serde_json::json!({"rhino": {"objects": []}, "zz_bogus": true}),
+        serde_json::json!({"rhino": {"objects": [], "zz_bogus": true}}),
+    ] {
+        assert!(
+            serde_json::from_value::<cadmpeg_ir::native::Native>(wire).is_err(),
+            "the native namespace levels refuse an unknown key"
+        );
+    }
+}
+
+/// Every `impl<'de> Deserialize<'de> for T` in the two wire crates, outside
+/// test modules and test files, as (crate-relative path, type text).
+fn hand_written_impls() -> BTreeSet<(String, String)> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("the repository root sits two levels above the crate manifest")
+        .to_path_buf();
+    let mut found = BTreeSet::new();
+    for source in ["crates/cadmpeg-ir/src", "crates/cadmpeg-core/src"] {
+        let mut files = Vec::new();
+        collect_rust_sources(&root.join(source), &mut files);
+        for file in files {
+            let relative = file
+                .strip_prefix(&root)
+                .expect("a collected source sits under the repository root")
+                .to_string_lossy()
+                .replace('\\', "/");
+            if is_test_path(&relative) {
+                continue;
+            }
+            for line in std::fs::read_to_string(&file)
+                .expect("read source")
+                .lines()
+            {
+                let trimmed = line.trim();
+                for prefix in [
+                    "impl<'de> Deserialize<'de> for ",
+                    "impl<'de> serde::Deserialize<'de> for ",
+                ] {
+                    if let Some(rest) = trimmed.strip_prefix(prefix) {
+                        let name = rest.trim_end_matches('{').trim();
+                        found.insert((relative.clone(), name.to_owned()));
+                    }
+                }
+            }
+        }
+    }
+    found
+}
+
+/// Whether this crate-relative path is a test file or sits in a test tree.
+fn is_test_path(relative: &str) -> bool {
+    relative.ends_with("/tests.rs")
+        || relative.ends_with("_tests.rs")
+        || relative.contains("/tests/")
+        || relative.contains("/test_support")
+}
+
+/// Appends every `*.rs` under `directory`, recursively.
+fn collect_rust_sources(directory: &Path, found: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(directory) else {
+        return;
+    };
+    for entry in entries {
+        let path = entry.expect("source entry").path();
+        if path.is_dir() {
+            collect_rust_sources(&path, found);
+        } else if path.extension().is_some_and(|extension| extension == "rs") {
             found.push(path);
         }
     }
