@@ -1109,8 +1109,8 @@ impl SubsetCurveConstruction {
     }
 
     /// Mutable legacy solved-cache slot this construction states.
-    pub(super) fn legacy_cache_slot_mut(&mut self) -> Option<LegacyCacheSlot<'_>> {
-        Some(LegacyCacheSlot::Optional(&mut self.cache))
+    pub(super) const fn legacy_cache_slot_mut(&mut self) -> LegacyCacheSlot<'_> {
+        LegacyCacheSlot::Optional(&mut self.cache)
     }
 }
 
@@ -1127,8 +1127,8 @@ impl VectorOffsetCurveConstruction {
     }
 
     /// Mutable legacy solved-cache slot this construction states.
-    pub(super) fn legacy_cache_slot_mut(&mut self) -> Option<LegacyCacheSlot<'_>> {
-        Some(LegacyCacheSlot::Optional(&mut self.cache))
+    pub(super) const fn legacy_cache_slot_mut(&mut self) -> LegacyCacheSlot<'_> {
+        LegacyCacheSlot::Optional(&mut self.cache)
     }
 }
 
@@ -1145,8 +1145,8 @@ impl TwoSidedOffsetCurveConstruction {
     }
 
     /// Mutable legacy solved-cache slot this construction states.
-    pub(super) fn legacy_cache_slot_mut(&mut self) -> Option<LegacyCacheSlot<'_>> {
-        Some(LegacyCacheSlot::Optional(&mut self.cache))
+    pub(super) const fn legacy_cache_slot_mut(&mut self) -> LegacyCacheSlot<'_> {
+        LegacyCacheSlot::Optional(&mut self.cache)
     }
 }
 

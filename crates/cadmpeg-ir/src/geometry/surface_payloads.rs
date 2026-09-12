@@ -2436,12 +2436,6 @@ impl VariableBlendSurfacePayload {
     pub(super) fn cache_mut(&mut self) -> &mut super::VariableBlendCache {
         &mut self.construction.cache
     }
-
-    /// A variable blend states its tolerance in its own cache form, so it
-    /// states no legacy slot.
-    pub(super) const fn legacy_cache_slot_mut(&mut self) -> Option<LegacyCacheSlot<'_>> {
-        None
-    }
 }
 
 impl BlendSurfacePayload {
@@ -2568,8 +2562,8 @@ impl CompoundSurfacePayload {
     }
 
     /// Mutable legacy solved-cache slot this construction states.
-    pub(super) fn legacy_cache_slot_mut(&mut self) -> Option<LegacyCacheSlot<'_>> {
-        Some(LegacyCacheSlot::Optional(&mut self.cache))
+    pub(super) const fn legacy_cache_slot_mut(&mut self) -> LegacyCacheSlot<'_> {
+        LegacyCacheSlot::Optional(&mut self.cache)
     }
 }
 
@@ -2586,8 +2580,8 @@ impl CompoundLoftSurfacePayload {
     }
 
     /// Mutable legacy solved-cache slot this construction states.
-    pub(super) fn legacy_cache_slot_mut(&mut self) -> Option<LegacyCacheSlot<'_>> {
-        Some(LegacyCacheSlot::Optional(&mut self.cache))
+    pub(super) const fn legacy_cache_slot_mut(&mut self) -> LegacyCacheSlot<'_> {
+        LegacyCacheSlot::Optional(&mut self.cache)
     }
 }
 
@@ -2604,8 +2598,8 @@ impl ScaledCompoundLoftSurfacePayload {
     }
 
     /// Mutable legacy solved-cache slot this construction states.
-    pub(super) fn legacy_cache_slot_mut(&mut self) -> Option<LegacyCacheSlot<'_>> {
-        Some(LegacyCacheSlot::Optional(&mut self.cache))
+    pub(super) const fn legacy_cache_slot_mut(&mut self) -> LegacyCacheSlot<'_> {
+        LegacyCacheSlot::Optional(&mut self.cache)
     }
 }
 
@@ -2622,8 +2616,8 @@ impl SkinSurfacePayload {
     }
 
     /// Mutable legacy solved-cache slot this construction states.
-    pub(super) fn legacy_cache_slot_mut(&mut self) -> Option<LegacyCacheSlot<'_>> {
-        Some(LegacyCacheSlot::Optional(&mut self.cache))
+    pub(super) const fn legacy_cache_slot_mut(&mut self) -> LegacyCacheSlot<'_> {
+        LegacyCacheSlot::Optional(&mut self.cache)
     }
 }
 
@@ -2663,8 +2657,8 @@ impl NetSurfacePayload {
     }
 
     /// Mutable legacy solved-cache slot this construction states.
-    pub(super) fn legacy_cache_slot_mut(&mut self) -> Option<LegacyCacheSlot<'_>> {
-        Some(LegacyCacheSlot::Optional(&mut self.cache))
+    pub(super) const fn legacy_cache_slot_mut(&mut self) -> LegacyCacheSlot<'_> {
+        LegacyCacheSlot::Optional(&mut self.cache)
     }
 }
 
@@ -2681,8 +2675,8 @@ impl G2BlendSurfacePayload {
     }
 
     /// Mutable legacy solved-cache slot this construction states.
-    pub(super) fn legacy_cache_slot_mut(&mut self) -> Option<LegacyCacheSlot<'_>> {
-        Some(LegacyCacheSlot::Optional(&mut self.cache))
+    pub(super) const fn legacy_cache_slot_mut(&mut self) -> LegacyCacheSlot<'_> {
+        LegacyCacheSlot::Optional(&mut self.cache)
     }
 }
 
@@ -2699,8 +2693,8 @@ impl SubsetSurfaceConstruction {
     }
 
     /// Mutable legacy solved-cache slot this construction states.
-    pub(super) fn legacy_cache_slot_mut(&mut self) -> Option<LegacyCacheSlot<'_>> {
-        Some(LegacyCacheSlot::Optional(&mut self.cache))
+    pub(super) const fn legacy_cache_slot_mut(&mut self) -> LegacyCacheSlot<'_> {
+        LegacyCacheSlot::Optional(&mut self.cache)
     }
 }
 
