@@ -883,7 +883,7 @@ fn bind_base_feature_output_selection(feature: &mut cadmpeg_ir::features::Featur
 pub(crate) fn bind_sweep_result_modes(
     features: &mut [cadmpeg_ir::features::Feature],
     bodies: &[cadmpeg_ir::topology::Body],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, SweepMode};
     use cadmpeg_ir::topology::BodyKind;
 
@@ -932,8 +932,6 @@ pub(crate) fn bind_sweep_result_modes(
         }
         feature.evaluation.set_definition(definition);
     }
-
-    Ok(())
 }
 
 /// Native history and neutral topology used to resolve feature body operands.
