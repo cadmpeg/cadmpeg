@@ -558,22 +558,26 @@
                 "sides": [
                   {
                     "support_kind": "surface",
-                    "surface": "f3d:brep:procedural_surface#9:native_side0:surface",
-                    "surface_ranges": [
-                      [
-                        null,
-                        null
-                      ],
-                      [
+                    "surface": {
+                      "surface": "f3d:brep:procedural_surface#9:native_side0:surface",
+                      "parameter_ranges": [
+                        [
+                          null,
+                          null
+                        ],
+                        [
+                          null,
+                          null
+                        ]
+                      ]
+                    },
+                    "curve": {
+                      "curve": "f3d:brep:procedural_surface#9:native_side0:curve",
+                      "parameter_range": [
                         null,
                         null
                       ]
-                    ],
-                    "curve": "f3d:brep:procedural_surface#9:native_side0:curve",
-                    "curve_range": [
-                      null,
-                      null
-                    ],
+                    },
                     "pcurve": {
                       "kind": "nurbs",
                       "degree": 1,
@@ -600,26 +604,33 @@
                       "y": 20.0,
                       "z": 30.0
                     },
-                    "extension": 3
+                    "extension": {
+                      "value": 3,
+                      "pcurve": null
+                    }
                   },
                   {
                     "support_kind": "curve",
-                    "surface": "f3d:brep:procedural_surface#9:native_side1:surface",
-                    "surface_ranges": [
-                      [
-                        null,
-                        null
-                      ],
-                      [
+                    "surface": {
+                      "surface": "f3d:brep:procedural_surface#9:native_side1:surface",
+                      "parameter_ranges": [
+                        [
+                          null,
+                          null
+                        ],
+                        [
+                          null,
+                          null
+                        ]
+                      ]
+                    },
+                    "curve": {
+                      "curve": "f3d:brep:procedural_surface#9:native_side1:curve",
+                      "parameter_range": [
                         null,
                         null
                       ]
-                    ],
-                    "curve": "f3d:brep:procedural_surface#9:native_side1:curve",
-                    "curve_range": [
-                      null,
-                      null
-                    ],
+                    },
                     "pcurve": {
                       "kind": "nurbs",
                       "degree": 1,
@@ -646,7 +657,10 @@
                       "y": 20.0,
                       "z": 30.0
                     },
-                    "extension": 4
+                    "extension": {
+                      "value": 4,
+                      "pcurve": null
+                    }
                   }
                 ],
                 "slice": "f3d:brep:procedural_surface#9:native_slice",
