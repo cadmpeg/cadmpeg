@@ -1491,7 +1491,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             ref continuity,
             merge_result: Some(false),
         })) if matches!(continuity.resolved(), Some(
-            cadmpeg_ir::features::FilledSurfaceContinuity::PerBoundary {
+            cadmpeg_ir::features::FilledSurfaceContinuity {
                 first: cadmpeg_ir::features::SurfaceContinuity::Contact,
                 rest,
             }
