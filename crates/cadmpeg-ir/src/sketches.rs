@@ -1602,12 +1602,21 @@ impl SketchPatternDirection {
 }
 
 /// Distance form controlled by a rectangular-pattern parameter.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SketchPatternDistance {
     /// The parameter controls adjacent-instance spacing.
-    Spacing(ParameterId),
+    Spacing {
+        /// Driving parameter identity.
+        parameter: ParameterId,
+    },
     /// The parameter controls the seed-to-final-instance span.
-    Span(ParameterId),
+    Span {
+        /// Driving parameter identity.
+        parameter: ParameterId,
+    },
 }
 
 impl SketchPatternDistance {
@@ -1615,7 +1624,7 @@ impl SketchPatternDistance {
     #[must_use]
     pub fn parameter(&self) -> &ParameterId {
         match self {
-            Self::Spacing(parameter) | Self::Span(parameter) => parameter,
+            Self::Spacing { parameter } | Self::Span { parameter } => parameter,
         }
     }
 }
@@ -1810,9 +1819,7 @@ struct SketchPatternDirectionWire {
     direction: [f64; 2],
     spacing: Length,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    spacing_parameter: Option<ParameterId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    span_parameter: Option<ParameterId>,
+    distance: Option<SketchPatternDistance>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     count_parameter: Option<ParameterId>,
 }
@@ -1822,29 +1829,19 @@ impl SketchPatternDirectionWire {
         Self {
             direction: value.direction,
             spacing: value.spacing,
-            spacing_parameter: match &value.distance {
-                Some(SketchPatternDistance::Spacing(parameter)) => Some(parameter.clone()),
-                _ => None,
-            },
-            span_parameter: match &value.distance {
-                Some(SketchPatternDistance::Span(parameter)) => Some(parameter.clone()),
-                _ => None,
-            },
+            distance: value.distance.clone(),
             count_parameter: value.count_parameter.clone(),
         }
     }
 
     fn into_direction(self) -> Result<SketchPatternDirection, &'static str> {
-        let distance = match (self.spacing_parameter, self.span_parameter) {
-            (None, None) => None,
-            (Some(parameter), None) => Some(SketchPatternDistance::Spacing(parameter)),
-            (None, Some(parameter)) => Some(SketchPatternDistance::Span(parameter)),
-            (Some(_), Some(_)) => {
-                return Err("spacing_parameter and span_parameter are mutually exclusive")
-            }
-        };
-        SketchPatternDirection::new(self.direction, self.spacing, distance, self.count_parameter)
-            .ok_or("pattern direction must be finite and unit, with finite spacing")
+        SketchPatternDirection::new(
+            self.direction,
+            self.spacing,
+            self.distance,
+            self.count_parameter,
+        )
+        .ok_or("pattern direction must be finite and unit, with finite spacing")
     }
 }
 

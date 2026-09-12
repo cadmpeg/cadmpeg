@@ -568,10 +568,10 @@ fn a_rectangular_pattern_states_its_grid_as_rows() {
     };
 
     let mut first_direction = pattern_direction([1.0, 0.0]);
-    first_direction.distance = Some(SketchPatternDistance::Spacing(
-        crate::features::ParameterId::mint("test:test:parameter#spacing")
+    first_direction.distance = Some(SketchPatternDistance::Spacing {
+        parameter: crate::features::ParameterId::mint("test:test:parameter#spacing")
             .expect("identity grammar"),
-    ));
+    });
     let pattern = SketchRectangularPattern::new(
         [first_direction, pattern_direction([0.0, 1.0])],
         vec![
@@ -589,12 +589,10 @@ fn a_rectangular_pattern_states_its_grid_as_rows() {
     assert!(wire["pattern"]["directions"][0].get("count").is_none());
     assert!(wire["pattern"]["directions"][1].get("count").is_none());
     assert_eq!(
-        wire["pattern"]["directions"][0]["spacing_parameter"],
-        "test:test:parameter#spacing"
+        wire["pattern"]["directions"][0]["distance"],
+        serde_json::json!({"kind": "spacing", "parameter": "test:test:parameter#spacing"})
     );
-    assert!(wire["pattern"]["directions"][0]
-        .get("span_parameter")
-        .is_none());
+    assert!(wire["pattern"]["directions"][1].get("distance").is_none());
     assert!(wire.get("instances").is_none());
     assert!(wire["pattern"].get("instances").is_none());
     assert_eq!(
@@ -629,12 +627,22 @@ fn a_rectangular_pattern_states_its_grid_as_rows() {
         .to_string();
     assert!(error.contains("indices"), "{error}");
 
-    let mut conflicting_distance = wire.clone();
-    conflicting_distance["pattern"]["directions"][0]["span_parameter"] =
-        serde_json::json!("test:parameter#span");
-    assert!(
-        serde_json::from_value::<SketchConstraintDefinitionInput>(conflicting_distance).is_err()
-    );
+    let mut orphan_distance = wire.clone();
+    orphan_distance["pattern"]["directions"][0]["span_parameter"] =
+        serde_json::json!("test:test:parameter#span");
+    let error = serde_json::from_value::<SketchConstraintDefinitionInput>(orphan_distance)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("unknown field"), "{error}");
+    assert!(error.contains("span_parameter"), "{error}");
+
+    let mut two_distance_kinds = wire.clone();
+    two_distance_kinds["pattern"]["directions"][0]["distance"]["span"] =
+        serde_json::json!("test:test:parameter#span");
+    let error = serde_json::from_value::<SketchConstraintDefinitionInput>(two_distance_kinds)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("span"), "{error}");
 
     let mut ragged = wire;
     ragged["pattern"]["rows"][1] = serde_json::json!([]);
