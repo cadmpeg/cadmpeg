@@ -65,6 +65,14 @@ if git diff --cached --name-only | grep -qE '\.rs$|^scripts/check-source-policy\
   python3 scripts/check-source-policy.py
 fi
 
+# Every non-test deserializable item in the two wire crates must refuse an
+# unknown key. The property is static, so it is checked over the declarations
+# rather than over the shapes the goldens happen to carry.
+if git diff --cached --name-only | grep -qE '\.rs$|^scripts/check-deny-census\.py$'; then
+  echo "pre-commit: scripts/check-deny-census.py"
+  python3 scripts/check-deny-census.py
+fi
+
 # Only run the Rust gate when the commit stages files that can change its
 # outcome: Rust sources, the manifests or lockfile, the Cargo config (aliases
 # and build flags), or the toolchain pin. A docs-, CI-, or config-only commit
