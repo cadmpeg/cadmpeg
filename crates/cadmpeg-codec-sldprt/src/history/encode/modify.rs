@@ -848,14 +848,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 .map(|record| record.parameters.clone())
                 .unwrap_or_default();
             match factors {
-                ScaleFactors::Unresolved => {}
-                ScaleFactors::Uniform(factor) => {
+                ScaleFactors::Unresolved {} => {}
+                ScaleFactors::Uniform { factor } => {
                     parameters.insert("Factor".into(), factor.get().to_string());
                     parameters.remove("ScaleX");
                     parameters.remove("ScaleY");
                     parameters.remove("ScaleZ");
                 }
-                ScaleFactors::PerAxis(factors) => {
+                ScaleFactors::PerAxis { factors } => {
                     parameters.remove("Factor");
                     parameters.insert("ScaleX".into(), factors[0].get().to_string());
                     parameters.insert("ScaleY".into(), factors[1].get().to_string());

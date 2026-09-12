@@ -40,21 +40,27 @@
         {
           "channels": [
             {
-              "count": 4,
+              "addressing": {
+                "domain": "vertex"
+              },
               "data": "AAAAAAAAAAAAAIA/AAAAAAAAgD8AAIA/AAAAAAAAgD8=",
               "flags": 0,
               "item_size": 8,
               "kind": 1380450305
             },
             {
-              "count": 4,
+              "addressing": {
+                "domain": "vertex"
+              },
               "data": "/wAA//8AAP//AAD//wAA/w==",
               "flags": 0,
               "item_size": 4,
               "kind": 1380450306
             },
             {
-              "count": 4,
+              "addressing": {
+                "domain": "vertex"
+              },
               "data": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAADwPwAAAAAAAPA/AAAAAAAAAAAAAAAAAADwPw==",
               "flags": 0,
               "item_size": 16,

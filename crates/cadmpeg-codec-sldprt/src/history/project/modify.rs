@@ -527,9 +527,9 @@ pub(crate) fn project_scale(feature: &Feature) -> FeatureDefinition {
         factor("ScaleY"),
         factor("ScaleZ"),
     ) {
-        (Some(uniform), None, None, None) => ScaleFactors::Uniform(uniform),
-        (None, Some(x), Some(y), Some(z)) => ScaleFactors::PerAxis([x, y, z]),
-        _ => ScaleFactors::Unresolved,
+        (Some(uniform), None, None, None) => ScaleFactors::Uniform { factor: uniform },
+        (None, Some(x), Some(y), Some(z)) => ScaleFactors::PerAxis { factors: [x, y, z] },
+        _ => ScaleFactors::Unresolved {},
     };
     FeatureDefinition::Operation(FeatureOperation::Scale {
         bodies: feature

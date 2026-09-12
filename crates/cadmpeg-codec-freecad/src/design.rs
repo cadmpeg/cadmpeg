@@ -4138,9 +4138,13 @@ fn scale_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition>
     let factor =
         |name| scalar_named(properties, name).and_then(cadmpeg_ir::scalar::NonZeroReal::new);
     let factors = if bool_selector(properties, "Uniform", true)? {
-        ScaleFactors::Uniform(factor("UniformScale")?)
+        ScaleFactors::Uniform {
+            factor: factor("UniformScale")?,
+        }
     } else {
-        ScaleFactors::PerAxis([factor("XScale")?, factor("YScale")?, factor("ZScale")?])
+        ScaleFactors::PerAxis {
+            factors: [factor("XScale")?, factor("YScale")?, factor("ZScale")?],
+        }
     };
     Some(FeatureDefinition::Operation(FeatureOperation::Scale {
         bodies: BodySelection::Native(base.id.clone()),

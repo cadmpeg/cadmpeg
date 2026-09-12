@@ -1232,9 +1232,13 @@ fn vertex_blend_boundary(cur: &mut Cur<'_>) -> Option<EmbeddedVertexBlendBoundar
                 ))
             };
             let twists = match form {
-                0 => cadmpeg_ir::geometry::VertexBlendTwists::None,
-                1 => cadmpeg_ir::geometry::VertexBlendTwists::One(read_twist()?),
-                3 => cadmpeg_ir::geometry::VertexBlendTwists::Two([read_twist()?, read_twist()?]),
+                0 => cadmpeg_ir::geometry::VertexBlendTwists::None {},
+                1 => cadmpeg_ir::geometry::VertexBlendTwists::One {
+                    twist: read_twist()?,
+                },
+                3 => cadmpeg_ir::geometry::VertexBlendTwists::Two {
+                    twists: [read_twist()?, read_twist()?],
+                },
                 _ => return None,
             };
             let parameters = [cur.take_f64()?, cur.take_f64()?];
@@ -1335,9 +1339,13 @@ fn revision_vertex_blend_boundary(
                 ))
             };
             let twists = match form {
-                0 => cadmpeg_ir::geometry::VertexBlendTwists::None,
-                1 => cadmpeg_ir::geometry::VertexBlendTwists::One(read_twist()?),
-                3 => cadmpeg_ir::geometry::VertexBlendTwists::Two([read_twist()?, read_twist()?]),
+                0 => cadmpeg_ir::geometry::VertexBlendTwists::None {},
+                1 => cadmpeg_ir::geometry::VertexBlendTwists::One {
+                    twist: read_twist()?,
+                },
+                3 => cadmpeg_ir::geometry::VertexBlendTwists::Two {
+                    twists: [read_twist()?, read_twist()?],
+                },
                 _ => return None,
             };
             let parameters = [cur.take_f64()?, cur.take_f64()?];

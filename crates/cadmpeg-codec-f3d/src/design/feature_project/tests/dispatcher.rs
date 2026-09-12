@@ -119,7 +119,7 @@ fn dispatcher_projects_scale_point_center_in_neutral_units() {
     }
     assert!(matches!(
         factors,
-        cadmpeg_ir::features::ScaleFactors::Uniform(uniform)
+        cadmpeg_ir::features::ScaleFactors::Uniform { factor: uniform }
             if (uniform.get() - 2.5).abs() < f64::EPSILON
     ));
 }

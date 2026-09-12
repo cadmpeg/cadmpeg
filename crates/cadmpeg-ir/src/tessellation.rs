@@ -169,25 +169,28 @@ pub enum TessellationChannelDomain {
     Triangle,
 }
 
-impl TessellationChannelDomain {
-    #[allow(
-        clippy::trivially_copy_pass_by_ref,
-        reason = "Serde skip_serializing_if requires a reference predicate."
-    )]
-    fn is_vertex(&self) -> bool {
-        matches!(self, Self::Vertex)
-    }
-}
-
 /// Index table that addresses a tessellation channel payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// The domain is the wire's tag, so the selector table exists only on the two
+/// domains that address one: vertex-order addressing has no `indices` key to
+/// leave empty and none to refuse.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "domain", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum ChannelAddressing {
     /// Vertex-order addressing with no explicit index table.
-    Vertex,
+    Vertex {},
     /// One selector per triangle corner.
-    Corner(Vec<u32>),
+    Corner {
+        /// One selector per triangle corner.
+        indices: Vec<u32>,
+    },
     /// One selector per triangle.
-    Triangle(Vec<u32>),
+    Triangle {
+        /// One selector per triangle.
+        indices: Vec<u32>,
+    },
 }
 
 impl ChannelAddressing {
@@ -195,9 +198,9 @@ impl ChannelAddressing {
     #[must_use]
     pub const fn domain(&self) -> TessellationChannelDomain {
         match self {
-            Self::Vertex => TessellationChannelDomain::Vertex,
-            Self::Corner(_) => TessellationChannelDomain::Corner,
-            Self::Triangle(_) => TessellationChannelDomain::Triangle,
+            Self::Vertex {} => TessellationChannelDomain::Vertex,
+            Self::Corner { .. } => TessellationChannelDomain::Corner,
+            Self::Triangle { .. } => TessellationChannelDomain::Triangle,
         }
     }
 
@@ -205,8 +208,8 @@ impl ChannelAddressing {
     #[must_use]
     pub fn indices(&self) -> &[u32] {
         match self {
-            Self::Vertex => &[],
-            Self::Corner(indices) | Self::Triangle(indices) => indices,
+            Self::Vertex {} => &[],
+            Self::Corner { indices } | Self::Triangle { indices } => indices,
         }
     }
 }
@@ -252,17 +255,13 @@ struct TessellationWire {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct TessellationChannelWire {
-    #[serde(default, skip_serializing_if = "TessellationChannelDomain::is_vertex")]
-    domain: TessellationChannelDomain,
+    addressing: ChannelAddressing,
     item_size: u32,
     kind: u32,
     flags: u32,
-    count: u32,
     #[serde(with = "crate::bytes")]
     #[cfg_attr(feature = "schema", schemars(with = "String"))]
     data: Vec<u8>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    indices: Vec<u32>,
 }
 
 /// One indexed triangle mesh decoded from a source display or facet stream.
@@ -454,9 +453,9 @@ fn require_channel_indices(
         .ok_or_else(|| tessellation_error("tessellation corner count overflows usize"))?;
     for channel in channels {
         let expected = match channel.addressing() {
-            ChannelAddressing::Vertex => 0,
-            ChannelAddressing::Corner(_) => corner_count,
-            ChannelAddressing::Triangle(_) => triangles.len(),
+            ChannelAddressing::Vertex {} => 0,
+            ChannelAddressing::Corner { .. } => corner_count,
+            ChannelAddressing::Triangle { .. } => triangles.len(),
         };
         if channel.indices().len() != expected
             || channel
@@ -984,17 +983,12 @@ impl TryFrom<TessellationWire> for Tessellation {
 
 impl From<TessellationChannel> for TessellationChannelWire {
     fn from(channel: TessellationChannel) -> Self {
-        let domain = channel.domain();
-        let count = channel.count();
-        let indices = channel.indices().to_vec();
         Self {
-            domain,
+            addressing: channel.addressing,
             item_size: channel.item_size,
             kind: channel.kind,
             flags: channel.flags,
-            count,
             data: channel.data,
-            indices,
         }
     }
 }
@@ -1003,31 +997,13 @@ impl TryFrom<TessellationChannelWire> for TessellationChannel {
     type Error = TessellationError;
 
     fn try_from(wire: TessellationChannelWire) -> Result<Self, Self::Error> {
-        let item_size = usize::try_from(wire.item_size)
-            .map_err(|_| tessellation_error("tessellation channel item size overflows usize"))?;
-        let count = usize::try_from(wire.count)
-            .map_err(|_| tessellation_error("tessellation channel count overflows usize"))?;
-        let expected_len = item_size
-            .checked_mul(count)
-            .ok_or_else(|| tessellation_error("tessellation channel size overflow"))?;
-        if wire.data.len() != expected_len {
-            return Err(tessellation_error(
-                "contains a malformed tessellation channel",
-            ));
-        }
-        let addressing = match wire.domain {
-            TessellationChannelDomain::Vertex => {
-                if !wire.indices.is_empty() {
-                    return Err(tessellation_error(
-                        "contains invalid tessellation channel indices",
-                    ));
-                }
-                ChannelAddressing::Vertex
-            }
-            TessellationChannelDomain::Corner => ChannelAddressing::Corner(wire.indices),
-            TessellationChannelDomain::Triangle => ChannelAddressing::Triangle(wire.indices),
-        };
-        Self::new(addressing, wire.item_size, wire.kind, wire.flags, wire.data)
+        Self::new(
+            wire.addressing,
+            wire.item_size,
+            wire.kind,
+            wire.flags,
+            wire.data,
+        )
     }
 }
 

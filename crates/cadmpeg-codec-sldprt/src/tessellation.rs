@@ -371,7 +371,7 @@ fn parse_table(bytes: &[u8], mut at: usize) -> Option<(Mesh, usize)> {
         }
         channels.push(
             TessellationChannel::new(
-                cadmpeg_ir::tessellation::ChannelAddressing::Vertex,
+                cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
                 item_size as u32,
                 kind,
                 flags,

@@ -488,10 +488,10 @@ fn hole_construction_forms_preserve_the_nested_shape_wire_layout() {
             "construction": "form",
             "kind": {"kind": "simple"},
             "specification": {
+                "kind": "clearance",
                 "standard": "ISO metric",
                 "designation": "M8",
                 "fit": "normal",
-                "threaded": false,
                 "modeled": false,
                 "cosmetic": false,
                 "hand": "right",
@@ -588,10 +588,10 @@ fn an_unknown_key_beside_the_hole_shape_is_rejected_by_name() {
 fn hole_wire_rejects_cross_form_thread_fields() {
     use crate::features::{FeatureDefinition, HoleSpecification};
 
-    let specification = |threaded| {
+    let specification = |kind| {
         serde_json::json!({
+            "kind": kind,
             "standard": "ISO metric",
-            "threaded": threaded,
             "modeled": false,
             "cosmetic": false,
             "hand": "right",
@@ -599,13 +599,37 @@ fn hole_wire_rejects_cross_form_thread_fields() {
         })
     };
 
-    let mut clearance_with_class = specification(false);
-    clearance_with_class["class"] = serde_json::json!("6H");
-    assert!(serde_json::from_value::<HoleSpecification>(clearance_with_class).is_err());
-
-    let mut thread_with_fit = specification(true);
-    thread_with_fit["fit"] = serde_json::json!("normal");
-    assert!(serde_json::from_value::<HoleSpecification>(thread_with_fit).is_err());
+    // Thread data has no key on the clearance arm and a fit has none on the
+    // threaded arm, so each is an unknown field rather than a refused value.
+    for (kind, orphan, value) in [
+        ("clearance", "class", serde_json::json!("6H")),
+        ("clearance", "pitch", serde_json::json!(1.25)),
+        ("clearance", "major_diameter", serde_json::json!(8.0)),
+        ("threaded", "fit", serde_json::json!("normal")),
+    ] {
+        let mut wire = specification(kind);
+        wire[orphan] = value;
+        let error = serde_json::from_value::<HoleSpecification>(wire)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("unknown field"), "{kind}/{orphan}: {error}");
+        assert!(error.contains(orphan), "{kind}/{orphan}: {error}");
+    }
+    let error = serde_json::from_value::<HoleSpecification>(specification("threaded"))
+        .map(|_| String::new())
+        .unwrap_or_else(|error| error.to_string());
+    assert!(error.is_empty(), "{error}");
+    let error = serde_json::from_value::<HoleSpecification>(serde_json::json!({
+        "standard": "ISO metric",
+        "threaded": true,
+        "modeled": false,
+        "cosmetic": false,
+        "hand": "right",
+        "depth": {"kind": "hole_depth"}
+    }))
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("kind"), "{error}");
 
     let mut native_with_standard = serde_json::json!({
         "definition": "hole",
@@ -618,7 +642,7 @@ fn hole_wire_rejects_cross_form_thread_fields() {
             }
         }
     });
-    native_with_standard["shape"]["specification"] = specification(true);
+    native_with_standard["shape"]["specification"] = specification("threaded");
     assert!(serde_json::from_value::<FeatureDefinition>(native_with_standard).is_err());
 }
 
@@ -1127,8 +1151,8 @@ fn an_unknown_hole_wire_key_is_rejected_by_name() {
             "thread_depth": 12.0,
             "drill_point_angle": 2.0,
             "specification": {
+                "kind": "clearance",
                 "standard": "ISO metric",
-                "threaded": false,
                 "modeled": false,
                 "cosmetic": false,
                 "hand": "right",
@@ -1142,8 +1166,8 @@ fn an_unknown_hole_wire_key_is_rejected_by_name() {
     assert!(error.contains("unknown field `specification`"), "{error}");
 
     let error = serde_json::from_value::<HoleSpecification>(serde_json::json!({
+        "kind": "clearance",
         "standard": "iso",
-        "threaded": false,
         "modeled": false,
         "cosmetic": false,
         "hand": "right",

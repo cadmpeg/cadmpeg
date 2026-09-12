@@ -613,29 +613,48 @@ fn scale_factors_admit_only_finite_nonzero_components() {
         assert!(NonZeroReal::new(value).is_none());
     }
     for value in [-2.0, 0.5] {
-        let factors = ScaleFactors::Uniform(NonZeroReal::new(value).unwrap());
+        let factors = ScaleFactors::Uniform {
+            factor: NonZeroReal::new(value).unwrap(),
+        };
         let wire = serde_json::to_value(factors).unwrap();
-        assert_eq!(wire, serde_json::json!({"uniform": value}));
+        assert_eq!(
+            wire,
+            serde_json::json!({"kind": "uniform", "factor": value})
+        );
         assert_eq!(
             serde_json::from_value::<ScaleFactors>(wire).unwrap(),
             factors
         );
     }
-    let factors =
-        ScaleFactors::PerAxis([-1.0, 2.0, -3.0].map(|value| NonZeroReal::new(value).unwrap()));
+    let factors = ScaleFactors::PerAxis {
+        factors: [-1.0, 2.0, -3.0].map(|value| NonZeroReal::new(value).unwrap()),
+    };
     let wire = serde_json::to_value(factors).unwrap();
-    assert_eq!(wire, serde_json::json!({"x": -1.0, "y": 2.0, "z": -3.0}));
+    assert_eq!(
+        wire,
+        serde_json::json!({"kind": "per_axis", "factors": [-1.0, 2.0, -3.0]})
+    );
     assert_eq!(
         serde_json::from_value::<ScaleFactors>(wire).unwrap(),
         factors
     );
+    assert_eq!(
+        serde_json::to_value(ScaleFactors::Unresolved {}).unwrap(),
+        serde_json::json!({"kind": "unresolved"})
+    );
+
+    // A partial axis set, a mixed set and an untagged object have no name, so
+    // the wire cannot state them.
     for wire in [
-        serde_json::json!({"uniform": 0.0}),
-        serde_json::json!({"x": 0.0, "y": 1.0, "z": 1.0}),
-        serde_json::json!({"x": 1.0, "y": 0.0, "z": 1.0}),
-        serde_json::json!({"x": 1.0, "y": 1.0, "z": 0.0}),
-        serde_json::json!({"x": 1.0, "y": 1.0}),
-        serde_json::json!({"uniform": 1.0, "x": 1.0}),
+        serde_json::json!({"kind": "uniform", "factor": 0.0}),
+        serde_json::json!({"kind": "per_axis", "factors": [0.0, 1.0, 1.0]}),
+        serde_json::json!({"kind": "per_axis", "factors": [1.0, 0.0, 1.0]}),
+        serde_json::json!({"kind": "per_axis", "factors": [1.0, 1.0, 0.0]}),
+        serde_json::json!({"kind": "per_axis", "factors": [1.0, 1.0]}),
+        serde_json::json!({"kind": "uniform", "factor": 1.0, "factors": [1.0, 1.0, 1.0]}),
+        serde_json::json!({"kind": "unresolved", "factor": 1.0}),
+        serde_json::json!({"uniform": 1.0}),
+        serde_json::json!({"x": 1.0, "y": 1.0, "z": 1.0}),
     ] {
         assert!(serde_json::from_value::<ScaleFactors>(wire).is_err());
     }

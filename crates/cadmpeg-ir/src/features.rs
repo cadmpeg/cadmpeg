@@ -3107,7 +3107,6 @@ pub enum FeatureOperation {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         center: Option<ScaleCenter>,
         /// Uniform, per-axis, or unresolved scale factors.
-        #[cfg_attr(feature = "schema", schemars(with = "ScaleFactorsWire"))]
         factors: ScaleFactors,
     },
     /// Drilled or machined hole.
@@ -4891,14 +4890,21 @@ pub enum ScaleCenter {
 /// Factors of a body-scale transform.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "ScaleFactorsWire", into = "ScaleFactorsWire")]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum ScaleFactors {
     /// No complete scale factor is available.
-    Unresolved,
+    Unresolved {},
     /// One factor applies on all three axes.
-    Uniform(NonZeroReal),
+    Uniform {
+        /// The one factor.
+        factor: NonZeroReal,
+    },
     /// Independent factors apply on the model-space axes.
-    PerAxis([NonZeroReal; 3]),
+    PerAxis {
+        /// Factors on the model-space axes, in order.
+        factors: [NonZeroReal; 3],
+    },
 }
 
 impl ScaleFactors {
@@ -4906,78 +4912,15 @@ impl ScaleFactors {
     #[must_use]
     pub fn resolved(self) -> Option<Vector3> {
         match self {
-            Self::Unresolved => None,
-            Self::Uniform(factor) => Some(Vector3::new(factor.get(), factor.get(), factor.get())),
-            Self::PerAxis(factors) => Some(Vector3::new(
+            Self::Unresolved {} => None,
+            Self::Uniform { factor } => {
+                Some(Vector3::new(factor.get(), factor.get(), factor.get()))
+            }
+            Self::PerAxis { factors } => Some(Vector3::new(
                 factors[0].get(),
                 factors[1].get(),
                 factors[2].get(),
             )),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-struct ScaleFactorsWire {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    uniform: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    x: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    y: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    z: Option<f64>,
-}
-
-impl From<ScaleFactors> for ScaleFactorsWire {
-    fn from(value: ScaleFactors) -> Self {
-        match value {
-            ScaleFactors::Unresolved => Self {
-                uniform: None,
-                x: None,
-                y: None,
-                z: None,
-            },
-            ScaleFactors::Uniform(factor) => Self {
-                uniform: Some(factor.get()),
-                x: None,
-                y: None,
-                z: None,
-            },
-            ScaleFactors::PerAxis(factors) => Self {
-                uniform: None,
-                x: Some(factors[0].get()),
-                y: Some(factors[1].get()),
-                z: Some(factors[2].get()),
-            },
-        }
-    }
-}
-
-impl TryFrom<ScaleFactorsWire> for ScaleFactors {
-    type Error = String;
-
-    fn try_from(value: ScaleFactorsWire) -> Result<Self, Self::Error> {
-        match (value.uniform, value.x, value.y, value.z) {
-            (None, None, None, None) => Ok(Self::Unresolved),
-            (Some(factor), None, None, None) => Ok(Self::Uniform(
-                NonZeroReal::try_from(factor)
-                    .map_err(|_| "scale uniform factor must be finite and nonzero")?,
-            )),
-            (None, Some(x), Some(y), Some(z)) => Ok(Self::PerAxis([
-                NonZeroReal::try_from(x)
-                    .map_err(|_| "scale x factor must be finite and nonzero")?,
-                NonZeroReal::try_from(y)
-                    .map_err(|_| "scale y factor must be finite and nonzero")?,
-                NonZeroReal::try_from(z)
-                    .map_err(|_| "scale z factor must be finite and nonzero")?,
-            ])),
-            _ => Err(
-                "scale factors must be uniformly resolved, resolved on all axes, or absent"
-                    .to_string(),
-            ),
         }
     }
 }

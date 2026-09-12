@@ -1490,7 +1490,7 @@ fn v5_synchronization_ok(double: &[[f64; 3]], float: &[[f32; 3]]) -> bool {
 
 fn channel(kind: u32, item_size: u32, data: Vec<u8>) -> Result<TessellationChannel, GeometryError> {
     TessellationChannel::new(
-        cadmpeg_ir::tessellation::ChannelAddressing::Vertex,
+        cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
         item_size,
         kind,
         0,

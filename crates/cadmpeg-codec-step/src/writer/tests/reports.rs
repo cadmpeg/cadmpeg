@@ -810,7 +810,7 @@ fn writer_reports_reduced_tessellation_metadata_and_body_links() {
             Vec::new(),
             cadmpeg_ir::tessellation::TessellationNormals::None,
             vec![cadmpeg_ir::tessellation::TessellationChannel::new(
-                cadmpeg_ir::tessellation::ChannelAddressing::Vertex,
+                cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
                 2,
                 1,
                 0,

@@ -241,7 +241,7 @@ fn semantic_writer_round_trips_typed_scale() {
         FeatureDefinition::Operation(FeatureOperation::Scale {
             bodies: BodySelection::Native(selection),
             center: Some(ScaleCenter::Point(checked_geometry_1)),
-            factors: ScaleFactors::Uniform(factor),
+            factors: ScaleFactors::Uniform { factor },
         }) if (selection == "body:1" && factor.get() == 2.0) && matches!(checked_geometry_1.get(), Point3 { x: 1.0, y: 2.0, z: 3.0 })
     ));
     assert!(matches!(
@@ -281,9 +281,10 @@ fn semantic_writer_round_trips_typed_scale() {
             *center = Some(ScaleCenter::Point(
                 cadmpeg_ir::features::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0)).unwrap(),
             ));
-            *factors = ScaleFactors::PerAxis(
-                [1.5, 2.0, 2.5].map(|value| cadmpeg_ir::scalar::NonZeroReal::new(value).unwrap()),
-            );
+            *factors = ScaleFactors::PerAxis {
+                factors: [1.5, 2.0, 2.5]
+                    .map(|value| cadmpeg_ir::scalar::NonZeroReal::new(value).unwrap()),
+            };
         });
     }
 
@@ -315,7 +316,7 @@ fn semantic_writer_round_trips_typed_scale() {
         regenerated.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Scale {
             center: Some(ScaleCenter::Point(checked_geometry_1)),
-            factors: ScaleFactors::PerAxis(factors),
+            factors: ScaleFactors::PerAxis { factors },
             ..
         }) if (factors.map(cadmpeg_ir::scalar::NonZeroReal::get) == [1.5, 2.0, 2.5]) && matches!(checked_geometry_1.get(), Point3 {
                 x: 4.0,
@@ -370,7 +371,7 @@ fn semantic_writer_retains_partial_native_scale_construction() {
         FeatureDefinition::Operation(FeatureOperation::Scale {
             bodies: BodySelection::Native(bodies),
             center: None,
-            factors: ScaleFactors::Unresolved,
+            factors: ScaleFactors::Unresolved {},
         }) if bodies == "body:1"
     ));
     assert!(matches!(
@@ -378,7 +379,7 @@ fn semantic_writer_retains_partial_native_scale_construction() {
         FeatureDefinition::Operation(FeatureOperation::Scale {
             bodies: BodySelection::Unresolved,
             center: Some(ScaleCenter::Centroid),
-            factors: ScaleFactors::Unresolved,
+            factors: ScaleFactors::Unresolved {},
         })
     ));
 

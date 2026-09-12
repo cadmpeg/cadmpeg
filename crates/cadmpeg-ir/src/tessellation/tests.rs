@@ -163,7 +163,7 @@ fn valid_metadata_retains_group_order_and_distinct_resources_for_one_asset() {
 #[test]
 fn vertex_channels_may_retain_auxiliary_descriptors_with_a_different_count() {
     let base = mesh();
-    let channel = TessellationChannel::new(ChannelAddressing::Vertex, 1, 0, 0, vec![7]).unwrap();
+    let channel = TessellationChannel::new(ChannelAddressing::Vertex {}, 1, 0, 0, vec![7]).unwrap();
     let value = Tessellation::new(
         "test:mesh:tessellation#auxiliary",
         base.vertices().to_vec(),
@@ -418,4 +418,57 @@ fn a_strip_run_outside_the_topology_is_an_unknown_key() {
     wire["topology"] = serde_json::json!({"kind": "strips", "strip_lengths": []});
     let error = serde_json::from_value::<Tessellation>(wire).unwrap_err();
     assert!(error.to_string().contains("empty"), "{error}");
+}
+
+// The domain is the wire's tag, so the selector table exists only on the two
+// domains that address one. A vertex channel has no `indices` key to carry,
+// and the payload length is the data itself, not a restated `count`.
+#[test]
+fn a_channel_states_its_addressing_by_name() {
+    let value = TessellationChannel::new(ChannelAddressing::Vertex {}, 1, 0, 0, vec![7]).unwrap();
+    let wire = serde_json::to_value(&value).unwrap();
+    assert_eq!(wire["addressing"], serde_json::json!({"domain": "vertex"}));
+    assert!(wire.get("indices").is_none());
+    assert!(wire.get("count").is_none());
+    assert_eq!(
+        serde_json::from_value::<TessellationChannel>(wire.clone()).unwrap(),
+        value
+    );
+
+    let corner = TessellationChannel::new(
+        ChannelAddressing::Corner {
+            indices: vec![0, 0, 0],
+        },
+        1,
+        0,
+        0,
+        vec![7],
+    )
+    .unwrap();
+    let corner_wire = serde_json::to_value(&corner).unwrap();
+    assert_eq!(
+        corner_wire["addressing"],
+        serde_json::json!({"domain": "corner", "indices": [0, 0, 0]})
+    );
+    assert_eq!(
+        serde_json::from_value::<TessellationChannel>(corner_wire).unwrap(),
+        corner
+    );
+
+    for orphan in [
+        serde_json::json!({"domain": "vertex", "indices": [0]}),
+        serde_json::json!({"domain": "corner"}),
+        serde_json::json!({"domain": "triangle"}),
+    ] {
+        let mut invalid = wire.clone();
+        invalid["addressing"] = orphan;
+        assert!(serde_json::from_value::<TessellationChannel>(invalid).is_err());
+    }
+
+    let mut restated = wire;
+    restated["count"] = serde_json::json!(1);
+    let error = serde_json::from_value::<TessellationChannel>(restated)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("count"), "{error}");
 }

@@ -537,12 +537,6 @@
                       "curve": "f3d:brep:procedural_surface#9:scaled_cloft:scale0:member:0:curve",
                       "data": {
                         "surface": "f3d:brep:procedural_surface#9:scaled_cloft:scale0:member:0:surface",
-                        "support_bounds": [
-                          null,
-                          null,
-                          null,
-                          null
-                        ],
                         "pcurve": {
                           "kind": "nurbs",
                           "degree": 1,

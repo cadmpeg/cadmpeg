@@ -1158,16 +1158,20 @@
     "transfer_ledger": {
       "entries": [
         {
-          "disposition": "retained",
-          "note": "native record retained; semantic projection omitted with an attributed loss",
-          "source": "D1",
-          "target": "iges:entity:directory#1"
+          "outcome": {
+            "disposition": "retained",
+            "note": "native record retained; semantic projection omitted with an attributed loss",
+            "target": "iges:entity:directory#1"
+          },
+          "source": "D1"
         },
         {
-          "disposition": "retained",
-          "note": "quarantined parameter data retained; tokens were not recovered",
-          "source": "D1:parameter",
-          "target": "iges:quarantine:parameter#1"
+          "outcome": {
+            "disposition": "retained",
+            "note": "quarantined parameter data retained; tokens were not recovered",
+            "target": "iges:quarantine:parameter#1"
+          },
+          "source": "D1:parameter"
         }
       ]
     }

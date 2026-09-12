@@ -1638,10 +1638,12 @@
     "transfer_ledger": {
       "entries": [
         {
-          "disposition": "retained",
-          "note": "native record retained; semantic projection emitted with an attributed loss",
-          "source": "D1",
-          "target": "iges:entity:directory#1"
+          "outcome": {
+            "disposition": "retained",
+            "note": "native record retained; semantic projection emitted with an attributed loss",
+            "target": "iges:entity:directory#1"
+          },
+          "source": "D1"
         }
       ]
     }

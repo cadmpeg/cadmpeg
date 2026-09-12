@@ -441,14 +441,14 @@ fn transfers_uniform_and_anisotropic_part_scale() {
         definition("Uniform"),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Scale {
             center: Some(cadmpeg_ir::features::ScaleCenter::ModelOrigin),
-            factors: cadmpeg_ir::features::ScaleFactors::Uniform(factor),
+            factors: cadmpeg_ir::features::ScaleFactors::Uniform { factor },
             ..
         }) if factor.get() == -2.0
     ));
     assert!(matches!(
         definition("Anisotropic"),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Scale {
-            factors: cadmpeg_ir::features::ScaleFactors::PerAxis(factors),
+            factors: cadmpeg_ir::features::ScaleFactors::PerAxis { factors },
             ..
         }) if factors.map(cadmpeg_ir::scalar::NonZeroReal::get) == [2.0, 3.0, 4.0]
     ));
@@ -502,7 +502,7 @@ fn distinguishes_absent_and_malformed_part_scale_uniform_flag() {
     assert!(matches!(
         definition(&absent, "Scale"),
         FeatureDefinition::Operation(FeatureOperation::Scale {
-            factors: cadmpeg_ir::features::ScaleFactors::Uniform(factor),
+            factors: cadmpeg_ir::features::ScaleFactors::Uniform { factor },
             ..
         }) if factor.get() == 2.0
     ));
@@ -519,7 +519,7 @@ fn distinguishes_absent_and_malformed_part_scale_uniform_flag() {
     assert!(matches!(
         definition(&valid, "Scale"),
         FeatureDefinition::Operation(FeatureOperation::Scale {
-            factors: cadmpeg_ir::features::ScaleFactors::PerAxis(factors),
+            factors: cadmpeg_ir::features::ScaleFactors::PerAxis { factors },
             ..
         }) if factors.map(cadmpeg_ir::scalar::NonZeroReal::get) == [3.0, 4.0, 5.0]
     ));
