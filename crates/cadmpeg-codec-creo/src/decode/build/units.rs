@@ -1291,8 +1291,8 @@ fn scale_hole_specification(
     Ok(())
 }
 
-fn scale_pattern_kind(
-    pattern: &mut cadmpeg_ir::features::PatternKind,
+fn scale_pattern_kind<C: cadmpeg_ir::features::CompositeStages + Clone>(
+    pattern: &mut cadmpeg_ir::features::PatternKind<C>,
     scale: f64,
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::PatternTransform;
@@ -1317,11 +1317,11 @@ fn scale_pattern_kind(
         PatternTransform::CircularAngles { axis_origin, .. } => scale_point3(axis_origin, scale),
         PatternTransform::Mirror { plane_origin, .. } => scale_point3(plane_origin, scale),
         PatternTransform::Composite { stages } => {
-            let mut scaled = stages.to_vec();
+            let mut scaled = stages.stages().to_vec();
             for stage in &mut scaled {
                 scale_pattern_kind(&mut stage.pattern, scale)?;
             }
-            *stages = cadmpeg_ir::features::CompositePattern::new(scaled)
+            *stages = C::rebuild(scaled)
                 .map_err(|message| CodecError::Malformed(message.into()))?;
         }
         PatternTransform::Scale { center, .. } => {
@@ -2106,11 +2106,13 @@ mod tests {
 
     #[test]
     fn scales_explicit_pattern_scale_center() {
-        let mut pattern = PatternKind::new(PatternTransform::Scale {
-            center: PatternScaleCenter::Point(Point3::new(1.0, 2.0, 3.0)),
-            final_factor: 2.0,
-            count: 3,
-        })
+        let mut pattern = PatternKind::<cadmpeg_ir::features::CompositePattern>::new(
+            PatternTransform::Scale {
+                center: PatternScaleCenter::Point(Point3::new(1.0, 2.0, 3.0)),
+                final_factor: 2.0,
+                count: 3,
+            },
+        )
         .expect("valid test fixture");
         scale_pattern_kind(&mut pattern, 25.4).expect("valid test fixture");
         let PatternTransform::Scale {

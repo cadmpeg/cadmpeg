@@ -6,11 +6,62 @@ use crate::scalar::{Angle, Length};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// An admitted pattern with valid geometry, repetition counts, and stage composition.
-#[derive(Debug, Clone, PartialEq)]
-pub struct PatternKind(PatternTransform);
+/// The stages of a composite pattern nested inside a composite stage.
+///
+/// A composite stage applies one transform, never another sequence of stages,
+/// so this type has no value and [`PatternTransform::Composite`] is
+/// unreachable for a stage transform.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub enum NoNestedComposite {}
 
-impl PatternKind {
+/// A pattern transform a composite stage may apply.
+pub type StagePatternKind = PatternKind<NoNestedComposite>;
+
+/// What a composite pattern arm applies.
+///
+/// A top-level pattern applies a [`CompositePattern`]; a composite stage
+/// applies nothing, so its implementation is over an uninhabited type and its
+/// methods are unreachable.
+pub trait CompositeStages: Sized {
+    /// The stages, in application order.
+    fn stages(&self) -> &[PatternStage];
+
+    /// Rebuilds the same kind of arm from edited stages.
+    ///
+    /// # Errors
+    ///
+    /// Returns the admission message when the stages do not compose.
+    fn rebuild(stages: Vec<PatternStage>) -> Result<Self, &'static str>;
+}
+
+impl CompositeStages for CompositePattern {
+    fn stages(&self) -> &[PatternStage] {
+        &self.0
+    }
+
+    fn rebuild(stages: Vec<PatternStage>) -> Result<Self, &'static str> {
+        Self::new(stages)
+    }
+}
+
+impl CompositeStages for NoNestedComposite {
+    fn stages(&self) -> &[PatternStage] {
+        match *self {}
+    }
+
+    fn rebuild(_stages: Vec<PatternStage>) -> Result<Self, &'static str> {
+        Err("a composite stage applies no nested sequence of stages")
+    }
+}
+
+/// An admitted pattern with valid geometry, repetition counts, and stage composition.
+///
+/// `C` names the stages a composite arm applies.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PatternKind<C = CompositePattern>(PatternTransform<C>);
+
+impl<C> PatternKind<C> {
     /// An unresolved pattern with no identified form.
     pub const UNRESOLVED: Self = Self(PatternTransform::Unresolved { form: None });
 
@@ -45,7 +96,7 @@ impl PatternKind {
     });
 
     /// Admits pattern geometry, repetition counts, and ordered stage composition.
-    pub fn new(transform: PatternTransform) -> Result<Self, &'static str> {
+    pub fn new(transform: PatternTransform<C>) -> Result<Self, &'static str> {
         let require =
             |condition: bool, message: &'static str| condition.then_some(()).ok_or(message);
         match &transform {
@@ -168,8 +219,23 @@ impl PatternKind {
     }
 
     /// Returns the admitted transform definition.
-    pub fn definition(&self) -> &PatternTransform {
+    pub fn definition(&self) -> &PatternTransform<C> {
         &self.0
+    }
+
+    /// Edits the transform and re-admits it, preserving the pattern on refusal.
+    ///
+    /// # Errors
+    ///
+    /// Returns the admission message when the edited transform is inadmissible.
+    pub fn try_edit(&mut self, edit: impl FnOnce(&mut PatternTransform<C>)) -> Result<(), &'static str>
+    where
+        C: Clone,
+    {
+        let mut candidate = self.0.clone();
+        edit(&mut candidate);
+        *self = Self::new(candidate)?;
+        Ok(())
     }
 
     /// Returns the curve path slot without exposing repetition geometry.
@@ -183,6 +249,85 @@ impl PatternKind {
     /// Returns whether the pattern form lacks its required operands.
     pub const fn is_unresolved(&self) -> bool {
         matches!(self.0, PatternTransform::Unresolved { .. })
+    }
+}
+
+impl PatternTransform<NoNestedComposite> {
+    /// The same transform under an arm that may apply a sequence of stages.
+    #[must_use]
+    pub fn widen<C>(self) -> PatternTransform<C> {
+        match self {
+            Self::Unresolved { form } => PatternTransform::Unresolved { form },
+            Self::Linear {
+                direction,
+                spacing,
+                count,
+                second,
+            } => PatternTransform::Linear {
+                direction,
+                spacing,
+                count,
+                second,
+            },
+            Self::LinearOffsets { direction, offsets } => {
+                PatternTransform::LinearOffsets { direction, offsets }
+            }
+            Self::Circular {
+                axis_origin,
+                axis_dir,
+                angle,
+                count,
+            } => PatternTransform::Circular {
+                axis_origin,
+                axis_dir,
+                angle,
+                count,
+            },
+            Self::CircularAngles {
+                axis_origin,
+                axis_dir,
+                angles,
+            } => PatternTransform::CircularAngles {
+                axis_origin,
+                axis_dir,
+                angles,
+            },
+            Self::CurveDriven {
+                path,
+                spacing,
+                count,
+            } => PatternTransform::CurveDriven {
+                path,
+                spacing,
+                count,
+            },
+            Self::Mirror {
+                plane_origin,
+                plane_normal,
+            } => PatternTransform::Mirror {
+                plane_origin,
+                plane_normal,
+            },
+            Self::MirrorReference { plane } => PatternTransform::MirrorReference { plane },
+            Self::Scale {
+                center,
+                final_factor,
+                count,
+            } => PatternTransform::Scale {
+                center,
+                final_factor,
+                count,
+            },
+            Self::Composite { stages } => match stages {},
+        }
+    }
+}
+
+impl StagePatternKind {
+    /// The same admitted pattern under an arm that may apply a sequence.
+    #[must_use]
+    pub fn widen<C>(self) -> PatternKind<C> {
+        PatternKind(self.0.widen())
     }
 }
 
@@ -210,7 +355,7 @@ pub enum PatternForm {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum PatternTransform {
+pub enum PatternTransform<C = CompositePattern> {
     /// Pattern construction that is not resolved; `form` names it when the
     /// source identified one.
     Unresolved {
@@ -293,7 +438,7 @@ pub enum PatternTransform {
     /// Applies an ordered sequence of pattern stages.
     Composite {
         /// Stages in application order.
-        stages: CompositePattern,
+        stages: C,
     },
 }
 
@@ -309,14 +454,6 @@ impl CompositePattern {
     pub fn new(stages: Vec<PatternStage>) -> Result<Self, &'static str> {
         if stages.is_empty() {
             return Err("pattern stages must be nonempty");
-        }
-        for stage in &stages {
-            if matches!(
-                stage.pattern.definition(),
-                PatternTransform::Composite { .. }
-            ) {
-                return Err("pattern stages must not contain a composite pattern");
-            }
         }
         if !composite_composition_is_valid(&stages) {
             return Err("pattern stage counts must not overflow and must divide aligned slices");
@@ -390,7 +527,7 @@ impl<'a> IntoIterator for &'a CompositePattern {
     }
 }
 
-impl Serialize for PatternKind {
+impl<C: Serialize> Serialize for PatternKind<C> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -399,23 +536,24 @@ impl Serialize for PatternKind {
     }
 }
 
-impl<'de> Deserialize<'de> for PatternKind {
+impl<'de, C: Deserialize<'de>> Deserialize<'de> for PatternKind<C> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        Self::new(PatternTransform::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+        Self::new(PatternTransform::<C>::deserialize(deserializer)?)
+            .map_err(serde::de::Error::custom)
     }
 }
 
 #[cfg(feature = "schema")]
-impl JsonSchema for PatternKind {
+impl<C: JsonSchema> JsonSchema for PatternKind<C> {
     fn schema_name() -> std::borrow::Cow<'static, str> {
         "PatternKind".into()
     }
 
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        PatternTransform::json_schema(generator)
+        PatternTransform::<C>::json_schema(generator)
     }
 }
 
@@ -446,7 +584,7 @@ fn composite_composition_is_valid(stages: &[crate::features::PatternStage]) -> b
     })
 }
 
-fn pattern_occurrence_count(pattern: &PatternTransform) -> Option<usize> {
+fn pattern_occurrence_count<C>(pattern: &PatternTransform<C>) -> Option<usize> {
     match pattern {
         PatternTransform::Linear { count, .. }
         | PatternTransform::Circular { count, .. }
@@ -491,8 +629,8 @@ pub enum PatternScaleCenter {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct PatternStage {
-    /// Pattern transform sequence contributed by this stage.
-    pub pattern: Box<PatternKind>,
+    /// Pattern transform contributed by this stage; never a nested sequence.
+    pub pattern: Box<StagePatternKind>,
 }
 
 /// Combination rule for a composite-pattern stage.

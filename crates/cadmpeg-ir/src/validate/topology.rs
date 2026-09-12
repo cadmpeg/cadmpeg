@@ -20,10 +20,23 @@ fn collect_pattern_paths<'a>(
         } => paths.push(path),
         PatternTransform::Composite { stages } => {
             for stage in stages {
-                collect_pattern_paths(&stage.pattern, paths);
+                collect_stage_pattern_paths(&stage.pattern, paths);
             }
         }
         _ => {}
+    }
+}
+
+/// A composite stage applies one transform, so its paths do not recurse.
+fn collect_stage_pattern_paths<'a>(
+    pattern: &'a crate::features::StagePatternKind,
+    paths: &mut Vec<&'a crate::features::PathRef>,
+) {
+    if let PatternTransform::CurveDriven {
+        path: Some(path), ..
+    } = pattern.definition()
+    {
+        paths.push(path);
     }
 }
 use crate::index::ModelIndex;

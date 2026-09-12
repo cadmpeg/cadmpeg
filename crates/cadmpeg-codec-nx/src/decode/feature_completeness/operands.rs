@@ -280,7 +280,9 @@ pub(crate) fn sweep_orientation_is_incomplete(orientation: &SweepOrientation) ->
     }
 }
 
-pub(crate) fn pattern_is_incomplete(pattern: &PatternKind) -> bool {
+pub(crate) fn pattern_is_incomplete<C: cadmpeg_ir::features::CompositeStages>(
+    pattern: &PatternKind<C>,
+) -> bool {
     match pattern.definition() {
         PatternTransform::Unresolved { .. } => true,
         PatternTransform::Linear {
@@ -300,6 +302,7 @@ pub(crate) fn pattern_is_incomplete(pattern: &PatternKind) -> bool {
             matches!(center, cadmpeg_ir::features::PatternScaleCenter::Native(_))
         }
         PatternTransform::Composite { stages } => stages
+            .stages()
             .iter()
             .any(|stage| pattern_is_incomplete(&stage.pattern)),
     }
@@ -326,7 +329,9 @@ pub(crate) fn pattern_feature_is_incomplete(
         || pattern_is_incomplete(pattern)
 }
 
-pub(crate) fn pattern_occurrence_count(pattern: &PatternKind) -> Option<usize> {
+pub(crate) fn pattern_occurrence_count<C: cadmpeg_ir::features::CompositeStages>(
+    pattern: &PatternKind<C>,
+) -> Option<usize> {
     match pattern.definition() {
         PatternTransform::Linear { count, .. }
         | PatternTransform::Circular { count, .. }
@@ -337,7 +342,24 @@ pub(crate) fn pattern_occurrence_count(pattern: &PatternKind) -> Option<usize> {
         PatternTransform::Mirror { .. } | PatternTransform::MirrorReference { .. } => Some(2),
         PatternTransform::Composite { stages } => {
             stages
-                .combinations()
+                .stages()
+                .iter()
+                .enumerate()
+                .map(|(index, stage)| {
+                    (
+                        stage,
+                        if index == 0 {
+                            cadmpeg_ir::features::PatternStageCombination::Initialize
+                        } else if matches!(
+                            stage.pattern.definition(),
+                            PatternTransform::Scale { .. }
+                        ) {
+                            cadmpeg_ir::features::PatternStageCombination::AlignedSlices
+                        } else {
+                            cadmpeg_ir::features::PatternStageCombination::CartesianProduct
+                        },
+                    )
+                })
                 .try_fold(None::<usize>, |occurrences, (stage, combination)| {
                     let stage_count = pattern_occurrence_count(&stage.pattern)?;
                     match combination {

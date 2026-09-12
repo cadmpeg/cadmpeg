@@ -402,7 +402,7 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
     .unwrap();
     assert!(!pattern_is_incomplete(&linear));
     assert!(pattern_is_incomplete(
-        &PatternKind::new(PatternTransform::Linear {
+        &PatternKind::<cadmpeg_ir::features::CompositePattern>::new(PatternTransform::Linear {
             direction: None,
             spacing: Length::new(10.0).unwrap(),
             count: 3,
@@ -411,7 +411,7 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
         .unwrap()
     ));
     assert!(pattern_is_incomplete(
-        &PatternKind::new(PatternTransform::Linear {
+        &PatternKind::<cadmpeg_ir::features::CompositePattern>::new(PatternTransform::Linear {
             direction: Some(Vector3::new(1.0, 0.0, 0.0)),
             spacing: Length::new(10.0).unwrap(),
             count: 1,
@@ -420,7 +420,7 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
         .unwrap()
     ));
     assert!(pattern_is_incomplete(
-        &PatternKind::new(PatternTransform::CurveDriven {
+        &PatternKind::<cadmpeg_ir::features::CompositePattern>::new(PatternTransform::CurveDriven {
             path: Some(PathRef::Native("nx:path".into())),
             spacing: Length::new(10.0).unwrap(),
             count: 3,

@@ -175,8 +175,8 @@ fn decode_result(
     })
 }
 
-fn incomplete_pattern(
-    pattern: &cadmpeg_ir::features::PatternKind,
+fn incomplete_pattern<C: cadmpeg_ir::features::CompositeStages>(
+    pattern: &cadmpeg_ir::features::PatternKind<C>,
     incomplete_path: &dyn Fn(&cadmpeg_ir::features::PathRef) -> bool,
 ) -> bool {
     use cadmpeg_ir::features::{PatternScaleCenter, PatternTransform};
@@ -191,6 +191,7 @@ fn incomplete_pattern(
         PatternTransform::CurveDriven { path, .. } => path.as_ref().is_none_or(incomplete_path),
         PatternTransform::Scale { center, .. } => matches!(center, PatternScaleCenter::Native(_)),
         PatternTransform::Composite { stages } => stages
+            .stages()
             .iter()
             .any(|stage| incomplete_pattern(&stage.pattern, incomplete_path)),
     }

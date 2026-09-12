@@ -10,7 +10,7 @@ use crate::{
 };
 use serde_json::json;
 
-fn linear(count: u32) -> PatternTransform {
+fn linear<C>(count: u32) -> PatternTransform<C> {
     PatternTransform::Linear {
         direction: None,
         spacing: Length::new(1.0).unwrap(),
@@ -19,7 +19,7 @@ fn linear(count: u32) -> PatternTransform {
     }
 }
 
-fn stage(transform: PatternTransform) -> PatternStage {
+fn stage(transform: PatternTransform<crate::features::NoNestedComposite>) -> PatternStage {
     PatternStage {
         pattern: Box::new(PatternKind::new(transform).unwrap()),
     }
@@ -30,7 +30,7 @@ fn pattern_admission_rejects_invalid_numeric_operands() {
     let origin = Point3::new(0.0, 0.0, 0.0);
     let axis = Vector3::new(0.0, 0.0, 1.0);
     for transform in [
-        linear(0),
+        linear::<CompositePattern>(0),
         PatternTransform::Linear {
             direction: None,
             spacing: Length::ZERO,
@@ -112,24 +112,24 @@ fn pattern_locations_start_at_zero_and_increase() {
             .iter()
             .map(|value| Angle::new(*value).unwrap())
             .collect();
-        assert!(PatternKind::new(PatternTransform::LinearOffsets {
+        assert!(PatternKind::<CompositePattern>::new(PatternTransform::LinearOffsets {
             direction: None,
             offsets
         })
         .is_err());
-        assert!(PatternKind::new(PatternTransform::CircularAngles {
+        assert!(PatternKind::<CompositePattern>::new(PatternTransform::CircularAngles {
             axis_origin: Point3::new(0.0, 0.0, 0.0),
             axis_dir: Vector3::new(0.0, 0.0, 1.0),
             angles,
         })
         .is_err());
     }
-    assert!(PatternKind::new(PatternTransform::LinearOffsets {
+    assert!(PatternKind::<CompositePattern>::new(PatternTransform::LinearOffsets {
         direction: None,
         offsets: vec![Length::ZERO],
     })
     .is_ok());
-    assert!(PatternKind::new(PatternTransform::CircularAngles {
+    assert!(PatternKind::<CompositePattern>::new(PatternTransform::CircularAngles {
         axis_origin: Point3::new(0.0, 0.0, 0.0),
         axis_dir: Vector3::new(0.0, 0.0, 1.0),
         angles: vec![Angle::ZERO],
@@ -140,7 +140,7 @@ fn pattern_locations_start_at_zero_and_increase() {
 #[test]
 fn pattern_admission_preserves_singletons_and_unresolved_references() {
     for transform in [
-        linear(1),
+        linear::<CompositePattern>(1),
         PatternTransform::Mirror {
             plane_origin: Point3::new(0.0, 0.0, 0.0),
             plane_normal: Vector3::new(f64::EPSILON / 2.0, 0.0, 0.0),
@@ -179,16 +179,15 @@ fn composite_pattern_admission_enforces_stage_structure_and_counts() {
             stage(linear(u32::MAX)),
             stage(linear(u32::MAX)),
         ],
-        vec![stage(PatternTransform::Composite {
-            stages: CompositePattern::new(vec![stage(linear(1))]).unwrap(),
-        })],
     ] {
         assert!(CompositePattern::new(stages).is_err());
     }
+    // A stage that applies another sequence of stages does not compile: the
+    // stage transform's composite arm carries an uninhabited type.
     assert!(CompositePattern::new(vec![stage(linear(4)), stage(scale())]).is_ok());
     assert!(CompositePattern::new(vec![
         PatternStage {
-            pattern: Box::new(PatternKind::UNRESOLVED)
+            pattern: Box::new(crate::features::StagePatternKind::UNRESOLVED)
         },
         stage(linear(2)),
     ])

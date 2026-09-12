@@ -8361,8 +8361,9 @@ pub enum FlexForm {
 
 mod patterns;
 pub use patterns::{
-    CompositePattern, LinearPatternDirection, PatternForm, PatternKind, PatternScaleCenter,
-    PatternStage, PatternStageCombination, PatternTransform,
+    CompositePattern, CompositeStages, LinearPatternDirection, NoNestedComposite, PatternForm,
+    PatternKind, PatternScaleCenter, PatternStage, PatternStageCombination, PatternTransform,
+    StagePatternKind,
 };
 
 #[cfg(test)]

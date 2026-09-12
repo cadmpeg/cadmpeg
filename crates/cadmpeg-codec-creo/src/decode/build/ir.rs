@@ -105,7 +105,11 @@ pub(in super::super) fn surface_boundary_has_unresolved_operands(
     }
 }
 
-pub(in super::super) fn pattern_kind_has_unresolved_operands(pattern: &PatternKind) -> bool {
+pub(in super::super) fn pattern_kind_has_unresolved_operands<
+    C: cadmpeg_ir::features::CompositeStages,
+>(
+    pattern: &PatternKind<C>,
+) -> bool {
     match pattern.definition() {
         PatternTransform::Unresolved { .. } => true,
         PatternTransform::Linear { direction, .. }
@@ -117,6 +121,7 @@ pub(in super::super) fn pattern_kind_has_unresolved_operands(pattern: &PatternKi
             matches!(center, cadmpeg_ir::features::PatternScaleCenter::Native(_))
         }
         PatternTransform::Composite { stages } => stages
+            .stages()
             .iter()
             .any(|stage| pattern_kind_has_unresolved_operands(&stage.pattern)),
         PatternTransform::Circular { .. }
