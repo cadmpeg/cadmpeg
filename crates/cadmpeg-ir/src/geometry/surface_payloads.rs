@@ -2916,7 +2916,10 @@ impl DeformableSurfacePayload {
     /// Mutable legacy solved-cache slot, absent when a revision-gated form
     /// states the tolerance instead.
     pub(super) fn legacy_cache_slot_mut(&mut self) -> Option<LegacyCacheSlot<'_>> {
-        self.construction.cache.legacy_cache_mut().map(LegacyCacheSlot::Optional)
+        self.construction
+            .cache
+            .legacy_cache_mut()
+            .map(LegacyCacheSlot::Optional)
     }
 }
 
