@@ -701,7 +701,10 @@ mod tests {
 
         let error = serde_json::from_value::<DialectMatch>(restated)
             .expect_err("the format is read from the dialect, so the wire carries no format key");
-        assert!(error.to_string().contains("unknown field `format`"), "{error}");
+        assert!(
+            error.to_string().contains("unknown field `format`"),
+            "{error}"
+        );
         assert_eq!(
             DialectMatch::admitted(DialectId::pinned("rhino:archive-80")).format(),
             "rhino"
@@ -786,8 +789,17 @@ mod tests {
 
     #[test]
     fn grammar_parsing_rejects_a_name_outside_the_format_local_class() {
-        for name in ["", "rhino:archive-80", "Archive-80", "archive_80", "-archive"] {
-            assert!(Grammar::parse(name).is_err(), "invalid grammar name {name:?}");
+        for name in [
+            "",
+            "rhino:archive-80",
+            "Archive-80",
+            "archive_80",
+            "-archive",
+        ] {
+            assert!(
+                Grammar::parse(name).is_err(),
+                "invalid grammar name {name:?}"
+            );
         }
         assert_eq!(
             Grammar::parse("save-format-218").unwrap(),
