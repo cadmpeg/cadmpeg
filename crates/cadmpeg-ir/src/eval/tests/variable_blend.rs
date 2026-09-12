@@ -171,13 +171,11 @@ fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
             first: first.clone(),
             second: first,
         };
-        let restored_cache = definition_payload.legacy_cache();
         *definition_payload =
             crate::geometry::surface_payloads::VariableBlendSurfacePayload::try_new(Box::new(
                 construction,
             ))
             .unwrap();
-        definition_payload.set_legacy_cache(restored_cache);
     });
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
@@ -203,13 +201,11 @@ fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
         construction.cross_section = Some(VariableBlendCrossSection::RoundedChamfer {
             radius: Some(Box::new(zero_radius.clone())),
         });
-        let restored_cache = definition_payload.legacy_cache();
         *definition_payload =
             crate::geometry::surface_payloads::VariableBlendSurfacePayload::try_new(Box::new(
                 construction,
             ))
             .unwrap();
-        definition_payload.set_legacy_cache(restored_cache);
     });
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
@@ -257,13 +253,11 @@ fn current_variable_blend_uses_the_solved_cache_for_points_and_partials() {
             shape_prefix: std::num::NonZeroI64::new(1).unwrap(),
             fit_tolerance: crate::geometry::FitTolerance::try_new(0.0).unwrap(),
         };
-        let restored_cache = definition_payload.legacy_cache();
         *definition_payload =
             crate::geometry::surface_payloads::VariableBlendSurfacePayload::try_new(Box::new(
                 construction,
             ))
             .unwrap();
-        definition_payload.set_legacy_cache(restored_cache);
     });
 
     let index = crate::index::ModelIndex::new(&ir);
@@ -284,13 +278,11 @@ fn current_variable_blend_uses_the_solved_cache_for_points_and_partials() {
         let mut construction = definition_payload.construction().clone();
 
         construction.cache = crate::geometry::VariableBlendCache::Stale {};
-        let restored_cache = definition_payload.legacy_cache();
         *definition_payload =
             crate::geometry::surface_payloads::VariableBlendSurfacePayload::try_new(Box::new(
                 construction,
             ))
             .unwrap();
-        definition_payload.set_legacy_cache(restored_cache);
     });
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
@@ -369,13 +361,11 @@ fn cacheless_circular_variable_blend_rejects_an_undetermined_center_tangent() {
             crate::geometry::LinePcurve::try_new(Point2::new(0.5, 2.0), Point2::new(0.0, 2.0))
                 .unwrap(),
         ));
-        let restored_cache = definition_payload.legacy_cache();
         *definition_payload =
             crate::geometry::surface_payloads::VariableBlendSurfacePayload::try_new(Box::new(
                 construction,
             ))
             .unwrap();
-        definition_payload.set_legacy_cache(restored_cache);
     });
 
     let index = crate::index::ModelIndex::new(&ir);

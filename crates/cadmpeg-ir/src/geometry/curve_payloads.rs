@@ -6,7 +6,9 @@ use super::{
     DeformableCurveSource, IntcurveSupportContext, OffsetSide, ProceduralGeometryError,
     SilhouetteKind, VectorOffsetRoles,
 };
-use super::{CacheContract, IntcurveSupportSide, LegacyCache, ProjectionTail, SpringLayout};
+use super::{
+    CacheContract, IntcurveSupportSide, LegacyCache, LegacyCacheSlot, ProjectionTail, SpringLayout,
+};
 use crate::features::FiniteVector3;
 use crate::ids::{CurveId, SurfaceId};
 use crate::math::Vector3;
@@ -1105,6 +1107,11 @@ impl SubsetCurveConstruction {
     pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
         self.cache = cache;
     }
+
+    /// Mutable legacy solved-cache slot this construction states.
+    pub(super) fn legacy_cache_slot_mut(&mut self) -> Option<LegacyCacheSlot<'_>> {
+        Some(LegacyCacheSlot::Optional(&mut self.cache))
+    }
 }
 
 impl VectorOffsetCurveConstruction {
@@ -1118,6 +1125,11 @@ impl VectorOffsetCurveConstruction {
     pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
         self.cache = cache;
     }
+
+    /// Mutable legacy solved-cache slot this construction states.
+    pub(super) fn legacy_cache_slot_mut(&mut self) -> Option<LegacyCacheSlot<'_>> {
+        Some(LegacyCacheSlot::Optional(&mut self.cache))
+    }
 }
 
 impl TwoSidedOffsetCurveConstruction {
@@ -1130,6 +1142,11 @@ impl TwoSidedOffsetCurveConstruction {
     /// Replace the solved-cache fit contract this construction states.
     pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
         self.cache = cache;
+    }
+
+    /// Mutable legacy solved-cache slot this construction states.
+    pub(super) fn legacy_cache_slot_mut(&mut self) -> Option<LegacyCacheSlot<'_>> {
+        Some(LegacyCacheSlot::Optional(&mut self.cache))
     }
 }
 
@@ -1147,6 +1164,15 @@ impl SpringCurvePayload {
     pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
         if let SpringLayout::ContextFirst { cache: slot, .. } = &mut self.layout {
             *slot = cache;
+        }
+    }
+
+    /// Mutable legacy solved-cache slot of the context-first layout. The
+    /// cache-first layout states its tolerance in its cache form.
+    pub(super) fn legacy_cache_slot_mut(&mut self) -> Option<LegacyCacheSlot<'_>> {
+        match &mut self.layout {
+            SpringLayout::ContextFirst { cache, .. } => Some(LegacyCacheSlot::Optional(cache)),
+            SpringLayout::CacheFirst { .. } => None,
         }
     }
 }
@@ -1167,6 +1193,12 @@ impl SurfaceOffsetCurveConstruction {
             Some(cache) => Some(cache.fit_tolerance),
             None => None,
         });
+    }
+
+    /// Mutable legacy solved-cache slot, absent when a revision-gated form
+    /// states the tolerance instead.
+    pub(super) fn legacy_cache_slot_mut(&mut self) -> Option<LegacyCacheSlot<'_>> {
+        self.cache.legacy_cache_mut().map(LegacyCacheSlot::Optional)
     }
 }
 

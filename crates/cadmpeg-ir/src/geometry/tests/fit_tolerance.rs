@@ -72,7 +72,7 @@ fn a_non_full_law_surface_tail_states_no_fit_tolerance() {
                 LegacyCache::try_new(0.25).expect("admissible fit tolerance")
             )),
             Err(CacheContractError::Layout(
-                "only a full law surface tail states a solved-cache fit tolerance"
+                "this construction states no solved-cache fit tolerance"
             ))
         );
         assert_eq!(definition.cache_fit_tolerance(), None);
@@ -120,14 +120,58 @@ fn a_construction_with_no_cache_slot_refuses_a_fit_tolerance() {
     curve.raise_cache_fit_tolerance(FitTolerance::try_new(f64::MAX).expect("admissible"));
     assert_eq!(curve.cache_fit_tolerance(), Some(f64::MAX));
 
-    let mut replica = ProceduralCurveDefinition::Replica {
-        source: crate::ids::CurveId::mint("synthetic:test:curve#0").expect("valid identity"),
-        transform: crate::transform::Transform::identity(),
-    };
+    let mut replica = replica_definition();
     assert!(replica
         .set_legacy_cache(Some(
             LegacyCache::try_new(0.5).expect("admissible fit tolerance")
         ))
         .is_err());
     assert_eq!(replica.cache_fit_tolerance(), None);
+}
+
+fn replica_definition() -> ProceduralCurveDefinition {
+    ProceduralCurveDefinition::Replica {
+        source: crate::ids::CurveId::mint("synthetic:test:curve#0").expect("valid identity"),
+        transform: crate::transform::Transform::identity(),
+    }
+}
+
+#[test]
+fn raising_the_fit_tolerance_of_a_slotless_construction_leaves_it_unchanged() {
+    let untouched = ProceduralCurve::new(curve_id(), replica_definition()).expect("procedural");
+    let mut raised = ProceduralCurve::new(curve_id(), replica_definition()).expect("procedural");
+
+    raised.raise_cache_fit_tolerance(FitTolerance::try_new(0.5).expect("admissible"));
+
+    assert_eq!(raised, untouched);
+    assert_eq!(raised.cache_fit_tolerance(), None);
+}
+
+#[test]
+fn raising_the_fit_tolerance_of_a_legacy_slot_keeps_the_higher_of_the_two() {
+    let legacy = |fit_tolerance: f64| {
+        ProceduralCurve::new(
+            curve_id(),
+            ProceduralCurveDefinition::Exact {
+                cache: Some(LegacyCache::try_new(fit_tolerance).expect("admissible")),
+            },
+        )
+        .expect("procedural")
+    };
+
+    let mut curve = legacy(0.25);
+    curve.raise_cache_fit_tolerance(FitTolerance::try_new(0.75).expect("admissible"));
+    assert_eq!(curve.cache_fit_tolerance(), Some(0.75));
+
+    let mut curve = legacy(0.75);
+    curve.raise_cache_fit_tolerance(FitTolerance::try_new(0.25).expect("admissible"));
+    assert_eq!(curve.cache_fit_tolerance(), Some(0.75));
+
+    let mut empty = ProceduralCurve::new(
+        curve_id(),
+        ProceduralCurveDefinition::Exact { cache: None },
+    )
+    .expect("procedural");
+    empty.raise_cache_fit_tolerance(FitTolerance::try_new(0.25).expect("admissible"));
+    assert_eq!(empty.cache_fit_tolerance(), Some(0.25));
 }
