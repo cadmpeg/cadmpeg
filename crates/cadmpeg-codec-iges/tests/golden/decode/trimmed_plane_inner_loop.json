@@ -341,16 +341,13 @@
       "faces": [
         {
           "id": "iges:model:face#D15",
-          "loops": [
-            {
-              "id": "iges:model:loop#D15:0",
-              "role": "outer"
-            },
-            {
-              "id": "iges:model:loop#D15:1",
-              "role": "inner"
-            }
-          ],
+          "loops": {
+            "classification": "classified",
+            "inner": [
+              "iges:model:loop#D15:1"
+            ],
+            "outer": "iges:model:loop#D15:0"
+          },
           "sense": "forward",
           "shell": "iges:model:shell#D15",
           "surface": "iges:model:surface#D1",

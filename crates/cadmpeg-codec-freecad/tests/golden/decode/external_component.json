@@ -233,12 +233,12 @@
       "faces": [
         {
           "id": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:11",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:11%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:11%3A1"
+            ]
+          },
           "sense": "reversed",
           "shell": "fcstd:model:shell#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:12",
           "surface": "fcstd:model:surface#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:3",
@@ -246,12 +246,12 @@
         },
         {
           "id": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:12",
           "surface": "fcstd:model:surface#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:1",
@@ -259,12 +259,12 @@
         },
         {
           "id": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:12",
           "surface": "fcstd:model:surface#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:2",

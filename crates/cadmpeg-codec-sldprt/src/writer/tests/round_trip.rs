@@ -164,7 +164,7 @@ fn bake_transform_is_applied_and_output_stays_valid() {
         Transform::affine([
             [1.0, 0.0, 0.0, 10.0],
             [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0]
+            [0.0, 0.0, 1.0, 0.0],
         ])
         .expect("affine transform"),
     );

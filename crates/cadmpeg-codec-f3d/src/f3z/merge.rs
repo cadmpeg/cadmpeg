@@ -454,7 +454,7 @@ mod tests {
         let transform = cadmpeg_ir::transform::Transform::affine([
             [1.0, 0.0, 0.0, f64::MAX],
             [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0]
+            [0.0, 0.0, 1.0, 0.0],
         ])
         .unwrap();
         let error = compose_transforms(transform, transform).unwrap_err();

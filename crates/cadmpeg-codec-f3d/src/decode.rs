@@ -949,9 +949,9 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                         | cadmpeg_ir::features::SurfaceContinuity::Curvature
                 )
             };
-            let support_is_required = continuity.resolved().is_some_and(|continuity| {
-                continuity.conditions.iter().copied().any(needs_support)
-            });
+            let support_is_required = continuity
+                .resolved()
+                .is_some_and(|continuity| continuity.conditions.iter().copied().any(needs_support));
 
             !boundary_is_resolved
                 || !continuity_is_resolved
@@ -3348,7 +3348,10 @@ fn project_mesh_bodies(
             body.vertices,
             body.triangles,
             Vec::new(),
-            cadmpeg_ir::tessellation::NormalSamples::new(body.corner_normals).map_or(cadmpeg_ir::tessellation::TessellationNormals::None, cadmpeg_ir::tessellation::TessellationNormals::per_corner),
+            cadmpeg_ir::tessellation::NormalSamples::new(body.corner_normals).map_or(
+                cadmpeg_ir::tessellation::TessellationNormals::None,
+                cadmpeg_ir::tessellation::TessellationNormals::per_corner,
+            ),
             channels,
         )
         .map_err(|err| CodecError::Malformed(err.to_string()))?

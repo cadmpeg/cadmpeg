@@ -100,12 +100,12 @@
       "faces": [
         {
           "id": "rhino:object:face#record-000000-offset-177.cap-0",
-          "loops": [
-            {
-              "id": "rhino:object:loop#record-000000-offset-177.cap-0.profile-0",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "rhino:object:loop#record-000000-offset-177.cap-0.profile-0"
+            ]
+          },
           "sense": "reversed",
           "shell": "rhino:object:shell#record-000000-offset-177.cap-0",
           "surface": "rhino:object:surface#record-000000-offset-177.cap-0"

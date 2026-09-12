@@ -302,7 +302,7 @@ fn transformed_curves_and_surfaces_round_trip_through_step_replicas() {
     let transform = Transform::affine([
         [0.0, -2.0, 0.0, 10.0],
         [2.0, 0.0, 0.0, 20.0],
-        [0.0, 0.0, 2.0, 30.0]
+        [0.0, 0.0, 2.0, 30.0],
     ])
     .expect("affine transform");
     let curve_geometry = SolvedCurveGeometry::Transformed {
@@ -495,7 +495,7 @@ fn forward_replica_dependencies_resolve_to_nested_transforms() {
     let transform = Transform::affine([
         [2.0, 0.0, 0.0, 10.0],
         [0.0, 2.0, 0.0, 20.0],
-        [0.0, 0.0, 2.0, 30.0]
+        [0.0, 0.0, 2.0, 30.0],
     ])
     .expect("affine transform");
     let base_curve = CurveGeometry::Solved(SolvedCurveGeometry::Line(

@@ -1485,7 +1485,7 @@ pub(crate) fn hidden_body_geometry_and_visibility_round_trip() {
         cadmpeg_ir::transform::Transform::affine([
             [1.0, 0.0, 0.0, 10.0],
             [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0]
+            [0.0, 0.0, 1.0, 0.0],
         ])
         .expect("affine transform"),
     );
@@ -1743,7 +1743,7 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
             transform: Transform::affine([
                 [1.0, 0.0, 0.0, 25.0],
                 [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0]
+                [0.0, 0.0, 1.0, 0.0],
             ])
             .expect("affine transform"),
             linked_prototype: None,

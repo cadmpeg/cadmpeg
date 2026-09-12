@@ -687,7 +687,7 @@ fn generated_source_less_writes_two_independent_wire_bodies() {
         cadmpeg_ir::transform::Transform::affine([
             [1.0, 0.0, 0.0, 25.0],
             [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0]
+            [0.0, 0.0, 1.0, 0.0],
         ])
         .expect("affine transform"),
     );

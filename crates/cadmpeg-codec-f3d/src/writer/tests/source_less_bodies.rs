@@ -27,7 +27,7 @@ fn generated_source_less_unit_cube_writes_body_transform() {
     let expected = cadmpeg_ir::transform::Transform::affine([
         [0.0, -1.0, 0.0, 20.0],
         [1.0, 0.0, 0.0, -30.0],
-        [0.0, 0.0, 1.0, 40.0]
+        [0.0, 0.0, 1.0, 40.0],
     ])
     .expect("affine transform");
     source_less.model.bodies[0].transform = Some(expected);
@@ -439,7 +439,7 @@ fn generated_source_less_writes_two_independent_cube_bodies() {
         cadmpeg_ir::transform::Transform::affine([
             [1.0, 0.0, 0.0, 30.0],
             [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0]
+            [0.0, 0.0, 1.0, 0.0],
         ])
         .expect("affine transform"),
     );

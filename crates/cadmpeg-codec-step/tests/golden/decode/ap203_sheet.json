@@ -155,12 +155,11 @@
       "faces": [
         {
           "id": "step:data:face#29",
-          "loops": [
-            {
-              "id": "step:data:loop#25-face-29",
-              "role": "outer"
-            }
-          ],
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "step:data:loop#25-face-29"
+          },
           "sense": "forward",
           "shell": "step:data:shell#30",
           "surface": "step:data:surface#37"

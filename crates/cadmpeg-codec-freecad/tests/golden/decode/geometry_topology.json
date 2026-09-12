@@ -3879,12 +3879,6 @@
                 0.0,
                 1.0,
                 0.0
-              ],
-              [
-                0.0,
-                0.0,
-                0.0,
-                1.0
               ]
             ]
           },
@@ -3974,12 +3968,6 @@
                 0.0,
                 1.0,
                 0.0
-              ],
-              [
-                0.0,
-                0.0,
-                0.0,
-                1.0
               ]
             ]
           },
@@ -4069,12 +4057,6 @@
                 0.0,
                 1.0,
                 0.0
-              ],
-              [
-                0.0,
-                0.0,
-                0.0,
-                1.0
               ]
             ]
           },
@@ -4138,12 +4120,6 @@
                 0.0,
                 1.0,
                 0.0
-              ],
-              [
-                0.0,
-                0.0,
-                0.0,
-                1.0
               ]
             ]
           },
@@ -6439,12 +6415,12 @@
       "faces": [
         {
           "id": "fcstd:model:face#Compound:Shape:Compound.Shape.brp:14",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#Compound:Shape:Compound.Shape.brp:14%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Compound:Shape:Compound.Shape.brp:14%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#Compound:Shape:Compound.Shape.brp:15",
           "surface": "fcstd:model:surface#Compound:Shape:Compound.Shape.brp:2",
@@ -6452,12 +6428,12 @@
         },
         {
           "id": "fcstd:model:face#Compound:Shape:Compound.Shape.brp:7",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#Compound:Shape:Compound.Shape.brp:7%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Compound:Shape:Compound.Shape.brp:7%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#Compound:Shape:Compound.Shape.brp:8",
           "surface": "fcstd:model:surface#Compound:Shape:Compound.Shape.brp:1",
@@ -6465,12 +6441,12 @@
         },
         {
           "id": "fcstd:model:face#Degenerate:Shape:Degenerate.Shape.brp:7",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#Degenerate:Shape:Degenerate.Shape.brp:7%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Degenerate:Shape:Degenerate.Shape.brp:7%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#Degenerate:Shape:Degenerate.Shape.brp:10",
           "surface": "fcstd:model:surface#Degenerate:Shape:Degenerate.Shape.brp:1",
@@ -6478,12 +6454,12 @@
         },
         {
           "id": "fcstd:model:face#Degenerate:Shape:Degenerate.Shape.brp:9",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#Degenerate:Shape:Degenerate.Shape.brp:9%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Degenerate:Shape:Degenerate.Shape.brp:9%3A1"
+            ]
+          },
           "sense": "reversed",
           "shell": "fcstd:model:shell#Degenerate:Shape:Degenerate.Shape.brp:10",
           "surface": "fcstd:model:surface#Degenerate:Shape:Degenerate.Shape.brp:2",
@@ -6491,12 +6467,12 @@
         },
         {
           "id": "fcstd:model:face#FreeformSurface:Shape:FreeformSurface.Shape.brp:10",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#FreeformSurface:Shape:FreeformSurface.Shape.brp:10%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#FreeformSurface:Shape:FreeformSurface.Shape.brp:10%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#FreeformSurface:Shape:FreeformSurface.Shape.brp:10",
           "surface": "fcstd:model:surface#FreeformSurface:Shape:FreeformSurface.Shape.brp:1",
@@ -6504,12 +6480,12 @@
         },
         {
           "id": "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:10",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#MultiShell:Shape:MultiShell.Shape.brp:10%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#MultiShell:Shape:MultiShell.Shape.brp:10%3A1"
+            ]
+          },
           "sense": "reversed",
           "shell": "fcstd:model:shell#MultiShell:Shape:MultiShell.Shape.brp:33",
           "surface": "fcstd:model:surface#MultiShell:Shape:MultiShell.Shape.brp:1",
@@ -6517,12 +6493,12 @@
         },
         {
           "id": "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:20",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#MultiShell:Shape:MultiShell.Shape.brp:20%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#MultiShell:Shape:MultiShell.Shape.brp:20%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#MultiShell:Shape:MultiShell.Shape.brp:33",
           "surface": "fcstd:model:surface#MultiShell:Shape:MultiShell.Shape.brp:6",
@@ -6530,12 +6506,12 @@
         },
         {
           "id": "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:24",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#MultiShell:Shape:MultiShell.Shape.brp:24%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#MultiShell:Shape:MultiShell.Shape.brp:24%3A1"
+            ]
+          },
           "sense": "reversed",
           "shell": "fcstd:model:shell#MultiShell:Shape:MultiShell.Shape.brp:33",
           "surface": "fcstd:model:surface#MultiShell:Shape:MultiShell.Shape.brp:2",
@@ -6543,12 +6519,12 @@
         },
         {
           "id": "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:28",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#MultiShell:Shape:MultiShell.Shape.brp:28%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#MultiShell:Shape:MultiShell.Shape.brp:28%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#MultiShell:Shape:MultiShell.Shape.brp:33",
           "surface": "fcstd:model:surface#MultiShell:Shape:MultiShell.Shape.brp:4",
@@ -6556,12 +6532,12 @@
         },
         {
           "id": "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:30",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#MultiShell:Shape:MultiShell.Shape.brp:30%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#MultiShell:Shape:MultiShell.Shape.brp:30%3A1"
+            ]
+          },
           "sense": "reversed",
           "shell": "fcstd:model:shell#MultiShell:Shape:MultiShell.Shape.brp:33",
           "surface": "fcstd:model:surface#MultiShell:Shape:MultiShell.Shape.brp:5",
@@ -6569,12 +6545,12 @@
         },
         {
           "id": "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:32",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#MultiShell:Shape:MultiShell.Shape.brp:32%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#MultiShell:Shape:MultiShell.Shape.brp:32%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#MultiShell:Shape:MultiShell.Shape.brp:33",
           "surface": "fcstd:model:surface#MultiShell:Shape:MultiShell.Shape.brp:3",
@@ -6582,12 +6558,12 @@
         },
         {
           "id": "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:43",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#MultiShell:Shape:MultiShell.Shape.brp:43%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#MultiShell:Shape:MultiShell.Shape.brp:43%3A1"
+            ]
+          },
           "sense": "reversed",
           "shell": "fcstd:model:shell#MultiShell:Shape:MultiShell.Shape.brp:66",
           "surface": "fcstd:model:surface#MultiShell:Shape:MultiShell.Shape.brp:7",
@@ -6595,12 +6571,12 @@
         },
         {
           "id": "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:53",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#MultiShell:Shape:MultiShell.Shape.brp:53%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#MultiShell:Shape:MultiShell.Shape.brp:53%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#MultiShell:Shape:MultiShell.Shape.brp:66",
           "surface": "fcstd:model:surface#MultiShell:Shape:MultiShell.Shape.brp:12",
@@ -6608,12 +6584,12 @@
         },
         {
           "id": "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:57",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#MultiShell:Shape:MultiShell.Shape.brp:57%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#MultiShell:Shape:MultiShell.Shape.brp:57%3A1"
+            ]
+          },
           "sense": "reversed",
           "shell": "fcstd:model:shell#MultiShell:Shape:MultiShell.Shape.brp:66",
           "surface": "fcstd:model:surface#MultiShell:Shape:MultiShell.Shape.brp:8",
@@ -6621,12 +6597,12 @@
         },
         {
           "id": "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:61",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#MultiShell:Shape:MultiShell.Shape.brp:61%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#MultiShell:Shape:MultiShell.Shape.brp:61%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#MultiShell:Shape:MultiShell.Shape.brp:66",
           "surface": "fcstd:model:surface#MultiShell:Shape:MultiShell.Shape.brp:10",
@@ -6634,12 +6610,12 @@
         },
         {
           "id": "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:63",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#MultiShell:Shape:MultiShell.Shape.brp:63%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#MultiShell:Shape:MultiShell.Shape.brp:63%3A1"
+            ]
+          },
           "sense": "reversed",
           "shell": "fcstd:model:shell#MultiShell:Shape:MultiShell.Shape.brp:66",
           "surface": "fcstd:model:surface#MultiShell:Shape:MultiShell.Shape.brp:11",
@@ -6647,12 +6623,12 @@
         },
         {
           "id": "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:65",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#MultiShell:Shape:MultiShell.Shape.brp:65%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#MultiShell:Shape:MultiShell.Shape.brp:65%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#MultiShell:Shape:MultiShell.Shape.brp:66",
           "surface": "fcstd:model:surface#MultiShell:Shape:MultiShell.Shape.brp:9",
@@ -6660,12 +6636,12 @@
         },
         {
           "id": "fcstd:model:face#Revolved:Shape:Revolved.Shape.brp:12",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#Revolved:Shape:Revolved.Shape.brp:12%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Revolved:Shape:Revolved.Shape.brp:12%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#Revolved:Shape:Revolved.Shape.brp:23",
           "surface": "fcstd:model:surface#Revolved:Shape:Revolved.Shape.brp:3",
@@ -6673,12 +6649,12 @@
         },
         {
           "id": "fcstd:model:face#Revolved:Shape:Revolved.Shape.brp:17",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#Revolved:Shape:Revolved.Shape.brp:17%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Revolved:Shape:Revolved.Shape.brp:17%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#Revolved:Shape:Revolved.Shape.brp:23",
           "surface": "fcstd:model:surface#Revolved:Shape:Revolved.Shape.brp:4",
@@ -6686,12 +6662,12 @@
         },
         {
           "id": "fcstd:model:face#Revolved:Shape:Revolved.Shape.brp:20",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#Revolved:Shape:Revolved.Shape.brp:20%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Revolved:Shape:Revolved.Shape.brp:20%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#Revolved:Shape:Revolved.Shape.brp:23",
           "surface": "fcstd:model:surface#Revolved:Shape:Revolved.Shape.brp:2",
@@ -6699,12 +6675,12 @@
         },
         {
           "id": "fcstd:model:face#Revolved:Shape:Revolved.Shape.brp:22",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#Revolved:Shape:Revolved.Shape.brp:22%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Revolved:Shape:Revolved.Shape.brp:22%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#Revolved:Shape:Revolved.Shape.brp:23",
           "surface": "fcstd:model:surface#Revolved:Shape:Revolved.Shape.brp:5",
@@ -6712,12 +6688,12 @@
         },
         {
           "id": "fcstd:model:face#Revolved:Shape:Revolved.Shape.brp:22%40eee53fba37791917",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#Revolved:Shape:Revolved.Shape.brp:22%40eee53fba37791917%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Revolved:Shape:Revolved.Shape.brp:22%40eee53fba37791917%3A1"
+            ]
+          },
           "sense": "reversed",
           "shell": "fcstd:model:shell#Revolved:Shape:Revolved.Shape.brp:23",
           "surface": "fcstd:model:surface#Revolved:Shape:Revolved.Shape.brp:5%40eee53fba37791917",
@@ -6725,12 +6701,12 @@
         },
         {
           "id": "fcstd:model:face#Revolved:Shape:Revolved.Shape.brp:7",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#Revolved:Shape:Revolved.Shape.brp:7%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Revolved:Shape:Revolved.Shape.brp:7%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#Revolved:Shape:Revolved.Shape.brp:23",
           "surface": "fcstd:model:surface#Revolved:Shape:Revolved.Shape.brp:1",
@@ -6738,12 +6714,12 @@
         },
         {
           "id": "fcstd:model:face#Seam:Shape:Seam.Shape.brp:11",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#Seam:Shape:Seam.Shape.brp:11%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Seam:Shape:Seam.Shape.brp:11%3A1"
+            ]
+          },
           "sense": "reversed",
           "shell": "fcstd:model:shell#Seam:Shape:Seam.Shape.brp:12",
           "surface": "fcstd:model:surface#Seam:Shape:Seam.Shape.brp:3",
@@ -6751,12 +6727,12 @@
         },
         {
           "id": "fcstd:model:face#Seam:Shape:Seam.Shape.brp:7",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#Seam:Shape:Seam.Shape.brp:7%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Seam:Shape:Seam.Shape.brp:7%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#Seam:Shape:Seam.Shape.brp:12",
           "surface": "fcstd:model:surface#Seam:Shape:Seam.Shape.brp:1",
@@ -6764,12 +6740,12 @@
         },
         {
           "id": "fcstd:model:face#Seam:Shape:Seam.Shape.brp:9",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#Seam:Shape:Seam.Shape.brp:9%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Seam:Shape:Seam.Shape.brp:9%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#Seam:Shape:Seam.Shape.brp:12",
           "surface": "fcstd:model:surface#Seam:Shape:Seam.Shape.brp:2",
@@ -6777,12 +6753,12 @@
         },
         {
           "id": "fcstd:model:face#Sheet:Shape:Sheet.Shape.brp:10",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#Sheet:Shape:Sheet.Shape.brp:10%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Sheet:Shape:Sheet.Shape.brp:10%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#Sheet:Shape:Sheet.Shape.brp:10",
           "surface": "fcstd:model:surface#Sheet:Shape:Sheet.Shape.brp:1",
@@ -6790,12 +6766,12 @@
         },
         {
           "id": "fcstd:model:face#Solid:Shape:Solid.Shape.brp:10",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#Solid:Shape:Solid.Shape.brp:10%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Solid:Shape:Solid.Shape.brp:10%3A1"
+            ]
+          },
           "sense": "reversed",
           "shell": "fcstd:model:shell#Solid:Shape:Solid.Shape.brp:33",
           "surface": "fcstd:model:surface#Solid:Shape:Solid.Shape.brp:1",
@@ -6803,12 +6779,12 @@
         },
         {
           "id": "fcstd:model:face#Solid:Shape:Solid.Shape.brp:20",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#Solid:Shape:Solid.Shape.brp:20%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Solid:Shape:Solid.Shape.brp:20%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#Solid:Shape:Solid.Shape.brp:33",
           "surface": "fcstd:model:surface#Solid:Shape:Solid.Shape.brp:6",
@@ -6816,12 +6792,12 @@
         },
         {
           "id": "fcstd:model:face#Solid:Shape:Solid.Shape.brp:24",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#Solid:Shape:Solid.Shape.brp:24%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Solid:Shape:Solid.Shape.brp:24%3A1"
+            ]
+          },
           "sense": "reversed",
           "shell": "fcstd:model:shell#Solid:Shape:Solid.Shape.brp:33",
           "surface": "fcstd:model:surface#Solid:Shape:Solid.Shape.brp:2",
@@ -6829,12 +6805,12 @@
         },
         {
           "id": "fcstd:model:face#Solid:Shape:Solid.Shape.brp:28",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#Solid:Shape:Solid.Shape.brp:28%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Solid:Shape:Solid.Shape.brp:28%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#Solid:Shape:Solid.Shape.brp:33",
           "surface": "fcstd:model:surface#Solid:Shape:Solid.Shape.brp:4",
@@ -6842,12 +6818,12 @@
         },
         {
           "id": "fcstd:model:face#Solid:Shape:Solid.Shape.brp:30",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#Solid:Shape:Solid.Shape.brp:30%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Solid:Shape:Solid.Shape.brp:30%3A1"
+            ]
+          },
           "sense": "reversed",
           "shell": "fcstd:model:shell#Solid:Shape:Solid.Shape.brp:33",
           "surface": "fcstd:model:surface#Solid:Shape:Solid.Shape.brp:5",
@@ -6855,12 +6831,12 @@
         },
         {
           "id": "fcstd:model:face#Solid:Shape:Solid.Shape.brp:32",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#Solid:Shape:Solid.Shape.brp:32%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Solid:Shape:Solid.Shape.brp:32%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#Solid:Shape:Solid.Shape.brp:33",
           "surface": "fcstd:model:surface#Solid:Shape:Solid.Shape.brp:3",
@@ -6868,12 +6844,12 @@
         },
         {
           "id": "fcstd:model:face#Swept:Shape:Swept.Shape.brp:11",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#Swept:Shape:Swept.Shape.brp:11%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Swept:Shape:Swept.Shape.brp:11%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#Swept:Shape:Swept.Shape.brp:12",
           "surface": "fcstd:model:surface#Swept:Shape:Swept.Shape.brp:3",
@@ -6881,12 +6857,12 @@
         },
         {
           "id": "fcstd:model:face#Swept:Shape:Swept.Shape.brp:7",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#Swept:Shape:Swept.Shape.brp:7%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Swept:Shape:Swept.Shape.brp:7%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#Swept:Shape:Swept.Shape.brp:12",
           "surface": "fcstd:model:surface#Swept:Shape:Swept.Shape.brp:1",
@@ -6894,12 +6870,12 @@
         },
         {
           "id": "fcstd:model:face#Swept:Shape:Swept.Shape.brp:9",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#Swept:Shape:Swept.Shape.brp:9%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Swept:Shape:Swept.Shape.brp:9%3A1"
+            ]
+          },
           "sense": "reversed",
           "shell": "fcstd:model:shell#Swept:Shape:Swept.Shape.brp:12",
           "surface": "fcstd:model:surface#Swept:Shape:Swept.Shape.brp:2",
@@ -6907,12 +6883,12 @@
         },
         {
           "id": "fcstd:model:face#Void:Shape:Void.Shape.brp:10",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#Void:Shape:Void.Shape.brp:10%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Void:Shape:Void.Shape.brp:10%3A1"
+            ]
+          },
           "sense": "reversed",
           "shell": "fcstd:model:shell#Void:Shape:Void.Shape.brp:33",
           "surface": "fcstd:model:surface#Void:Shape:Void.Shape.brp:1",
@@ -6920,12 +6896,12 @@
         },
         {
           "id": "fcstd:model:face#Void:Shape:Void.Shape.brp:17",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#Void:Shape:Void.Shape.brp:17%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Void:Shape:Void.Shape.brp:17%3A1"
+            ]
+          },
           "sense": "reversed",
           "shell": "fcstd:model:shell#Void:Shape:Void.Shape.brp:33",
           "surface": "fcstd:model:surface#Void:Shape:Void.Shape.brp:2",
@@ -6933,12 +6909,12 @@
         },
         {
           "id": "fcstd:model:face#Void:Shape:Void.Shape.brp:22",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#Void:Shape:Void.Shape.brp:22%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Void:Shape:Void.Shape.brp:22%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#Void:Shape:Void.Shape.brp:33",
           "surface": "fcstd:model:surface#Void:Shape:Void.Shape.brp:3",
@@ -6946,12 +6922,12 @@
         },
         {
           "id": "fcstd:model:face#Void:Shape:Void.Shape.brp:27",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#Void:Shape:Void.Shape.brp:27%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Void:Shape:Void.Shape.brp:27%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#Void:Shape:Void.Shape.brp:33",
           "surface": "fcstd:model:surface#Void:Shape:Void.Shape.brp:4",
@@ -6959,12 +6935,12 @@
         },
         {
           "id": "fcstd:model:face#Void:Shape:Void.Shape.brp:30",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#Void:Shape:Void.Shape.brp:30%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Void:Shape:Void.Shape.brp:30%3A1"
+            ]
+          },
           "sense": "reversed",
           "shell": "fcstd:model:shell#Void:Shape:Void.Shape.brp:33",
           "surface": "fcstd:model:surface#Void:Shape:Void.Shape.brp:5",
@@ -6972,12 +6948,12 @@
         },
         {
           "id": "fcstd:model:face#Void:Shape:Void.Shape.brp:32",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#Void:Shape:Void.Shape.brp:32%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Void:Shape:Void.Shape.brp:32%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#Void:Shape:Void.Shape.brp:33",
           "surface": "fcstd:model:surface#Void:Shape:Void.Shape.brp:6",
@@ -6985,12 +6961,12 @@
         },
         {
           "id": "fcstd:model:face#Void:Shape:Void.Shape.brp:43",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#Void:Shape:Void.Shape.brp:43%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Void:Shape:Void.Shape.brp:43%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#Void:Shape:Void.Shape.brp:66",
           "surface": "fcstd:model:surface#Void:Shape:Void.Shape.brp:7",
@@ -6998,12 +6974,12 @@
         },
         {
           "id": "fcstd:model:face#Void:Shape:Void.Shape.brp:50",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#Void:Shape:Void.Shape.brp:50%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Void:Shape:Void.Shape.brp:50%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#Void:Shape:Void.Shape.brp:66",
           "surface": "fcstd:model:surface#Void:Shape:Void.Shape.brp:8",
@@ -7011,12 +6987,12 @@
         },
         {
           "id": "fcstd:model:face#Void:Shape:Void.Shape.brp:55",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#Void:Shape:Void.Shape.brp:55%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Void:Shape:Void.Shape.brp:55%3A1"
+            ]
+          },
           "sense": "reversed",
           "shell": "fcstd:model:shell#Void:Shape:Void.Shape.brp:66",
           "surface": "fcstd:model:surface#Void:Shape:Void.Shape.brp:9",
@@ -7024,12 +7000,12 @@
         },
         {
           "id": "fcstd:model:face#Void:Shape:Void.Shape.brp:60",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#Void:Shape:Void.Shape.brp:60%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Void:Shape:Void.Shape.brp:60%3A1"
+            ]
+          },
           "sense": "reversed",
           "shell": "fcstd:model:shell#Void:Shape:Void.Shape.brp:66",
           "surface": "fcstd:model:surface#Void:Shape:Void.Shape.brp:10",
@@ -7037,12 +7013,12 @@
         },
         {
           "id": "fcstd:model:face#Void:Shape:Void.Shape.brp:63",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#Void:Shape:Void.Shape.brp:63%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Void:Shape:Void.Shape.brp:63%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#Void:Shape:Void.Shape.brp:66",
           "surface": "fcstd:model:surface#Void:Shape:Void.Shape.brp:11",
@@ -7050,12 +7026,12 @@
         },
         {
           "id": "fcstd:model:face#Void:Shape:Void.Shape.brp:65",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#Void:Shape:Void.Shape.brp:65%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#Void:Shape:Void.Shape.brp:65%3A1"
+            ]
+          },
           "sense": "reversed",
           "shell": "fcstd:model:shell#Void:Shape:Void.Shape.brp:66",
           "surface": "fcstd:model:surface#Void:Shape:Void.Shape.brp:12",
@@ -8090,11 +8066,6 @@
                 0.0,
                 0.8823529411764706,
                 0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0
               ]
             ]
           },
@@ -8133,11 +8104,6 @@
                 0.0,
                 0.8823529411764706,
                 0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0
               ]
             ]
           },
@@ -8176,11 +8142,6 @@
                 0.0,
                 0.8823529411764706,
                 0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0
               ]
             ]
           },
@@ -8219,11 +8180,6 @@
                 0.0,
                 0.8823529411764706,
                 0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0
               ]
             ]
           },
@@ -9560,11 +9516,6 @@
                 0.0,
                 1.0,
                 0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0
               ]
             ]
           },
@@ -9649,11 +9600,6 @@
                 0.0,
                 1.0,
                 0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0
               ]
             ]
           },
@@ -9692,11 +9638,6 @@
                 0.0,
                 1.0,
                 0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0
               ]
             ]
           },
@@ -9740,11 +9681,6 @@
                 0.0,
                 -1.0,
                 0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0
               ]
             ]
           },
@@ -9783,11 +9719,6 @@
                 0.0,
                 1.0,
                 0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0
               ]
             ]
           },
@@ -9831,11 +9762,6 @@
                 0.0,
                 -1.0,
                 0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0
               ]
             ]
           },
@@ -9897,11 +9823,6 @@
                 0.0,
                 -1.0,
                 0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0
               ]
             ]
           },
@@ -9940,11 +9861,6 @@
                 0.0,
                 -1.0,
                 0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0
               ]
             ]
           },
@@ -14073,12 +13989,6 @@
                 0.0,
                 1.0,
                 0.0
-              ],
-              [
-                0.0,
-                0.0,
-                0.0,
-                1.0
               ]
             ]
           },

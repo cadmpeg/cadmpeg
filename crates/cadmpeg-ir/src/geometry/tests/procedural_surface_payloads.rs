@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::geometry::{
-    LawExpression, LawFormula, LawSurfaceConstruction, LawSurfaceTail,
-    ProceduralSurface, ProceduralSurfaceDefinition,
+    LawExpression, LawFormula, LawSurfaceConstruction, LawSurfaceTail, ProceduralSurface,
+    ProceduralSurfaceDefinition,
 };
 use crate::ids::{ProceduralSurfaceId, SurfaceId};
 
@@ -87,13 +87,16 @@ fn surface_law_admission_preserves_the_depth_boundary() {
     assert!(law(expression).is_err());
     // A blank law text has no spelling: the member type refuses it on the wire,
     // so no construction can carry one.
-    assert!(
-        serde_json::from_value::<LawExpression>(serde_json::json!({"kind": "text", "value": ""}))
-            .is_err()
-    );
+    assert!(serde_json::from_value::<LawExpression>(
+        serde_json::json!({"kind": "text", "value": ""})
+    )
+    .is_err());
     assert!(ProceduralSurface::new(
         id(),
-        law(LawExpression::Text { value: crate::nonempty_literal!(" ") }).unwrap(),
+        law(LawExpression::Text {
+            value: crate::nonempty_literal!(" ")
+        })
+        .unwrap(),
         None
     )
     .is_ok());

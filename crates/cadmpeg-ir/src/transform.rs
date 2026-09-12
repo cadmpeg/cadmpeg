@@ -202,7 +202,9 @@ impl Transform {
         let mut rows = [[0.0; 4]; 3];
         for (row, values) in rows.iter_mut().enumerate() {
             for (column, value) in values.iter_mut().enumerate() {
-                *value = (0..4).map(|inner| left[row][inner] * right[inner][column]).sum();
+                *value = (0..4)
+                    .map(|inner| left[row][inner] * right[inner][column])
+                    .sum();
             }
         }
         Self::affine(rows).ok_or(TransformError::NonFinite)

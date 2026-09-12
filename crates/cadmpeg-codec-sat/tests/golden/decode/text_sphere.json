@@ -23,7 +23,10 @@
       "faces": [
         {
           "id": "sat:brep:entity#4",
-          "loops": [],
+          "loops": {
+            "classification": "unspecified",
+            "loops": []
+          },
           "sense": "forward",
           "shell": "sat:brep:entity#3",
           "surface": "sat:brep:entity#5"

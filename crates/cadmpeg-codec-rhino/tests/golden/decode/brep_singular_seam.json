@@ -133,12 +133,12 @@
       "faces": [
         {
           "id": "rhino:object:face#record-000000-offset-177.slot-0",
-          "loops": [
-            {
-              "id": "rhino:object:loop#record-000000-offset-177.slot-0",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "rhino:object:loop#record-000000-offset-177.slot-0"
+            ]
+          },
           "sense": "forward",
           "shell": "rhino:object:shell#record-000000-offset-177.component-0",
           "surface": "rhino:object:surface#record-000000-offset-177.slot-0"

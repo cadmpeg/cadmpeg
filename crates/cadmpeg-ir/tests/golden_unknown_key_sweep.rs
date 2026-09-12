@@ -92,14 +92,48 @@ fn every_golden_shape_refuses_an_unknown_key() {
     );
 }
 
-/// The one non-native node a document may accept an unknown key on.
+/// The non-native nodes a document may accept an unknown key on.
 ///
-/// `Appearance::properties` is a free-form `BTreeMap<String, f64>`
-/// (`crates/cadmpeg-ir/src/appearance.rs`): its keys are the source's renderer
-/// property names, so it declares no key set for a deny to bind. Its owner
-/// `Appearance` does declare `deny_unknown_fields`, and that deny is live one
-/// level up. Every other accepting node is a failure.
-const FREE_FORM_SHAPES: &[&str] = &["/model/appearances/#/properties"];
+/// Each is a free-form map whose keys are source names, so it declares no key
+/// set for a deny to bind. Every owner declares `deny_unknown_fields`, and that
+/// deny is live one level up; the map itself is the node the source fills.
+/// Probing four value kinds is what makes them visible: a
+/// `BTreeMap<String, String>` refuses `true` and accepts `"zz"`, so the earlier
+/// single-value probe read eight of these as refusing.
+///
+/// * `/model/appearance_bindings/#/channels` - `AppearanceBinding::channels`,
+///   `BTreeMap<String, String>` of source channel names;
+/// * `/model/appearances/#/properties` - `Appearance::properties`,
+///   `BTreeMap<String, f64>` of source renderer properties;
+/// * `/model/configurations/#/properties` - `DesignConfiguration::properties`,
+///   configuration-local named values;
+/// * `/model/drawings/#/parameters` - `DrawingView::parameters`, retained view
+///   parameters by source name;
+/// * `/model/features/#/definition/parameters` -
+///   `FeatureOperation::Native::parameters`, the native operation's own fields;
+/// * `/model/features/#/source_properties` - `Feature::source_properties`,
+///   source operation attributes the neutral definition does not consume;
+/// * `/model/parameters/#/properties` - `Parameter::properties`, source
+///   parameter properties no other field represents;
+/// * `/source/attributes` - `SourceMeta::attributes`, format-specific
+///   attributes;
+/// * `/source/identity/dialects/primary/declared` and
+///   `/source/identity/dialects/extra/#/declared` - `DialectMatch::declared`,
+///   the version fields the source declared verbatim.
+///
+/// Every other accepting node is a failure.
+const FREE_FORM_SHAPES: &[&str] = &[
+    "/model/appearance_bindings/#/channels",
+    "/model/appearances/#/properties",
+    "/model/configurations/#/properties",
+    "/model/drawings/#/parameters",
+    "/model/features/#/definition/parameters",
+    "/model/features/#/source_properties",
+    "/model/parameters/#/properties",
+    "/source/attributes",
+    "/source/identity/dialects/extra/#/declared",
+    "/source/identity/dialects/primary/declared",
+];
 
 /// Whether `shape` is the one free-form map the document admits.
 fn is_free_form(shape: &str) -> bool {
@@ -222,9 +256,17 @@ fn collect_goldens(directory: &Path, found: &mut Vec<PathBuf>) {
 ///   states what refuses instead.
 const HAND_IMPLS: &[(&str, &str, &str)] = &[
     ("crates/cadmpeg-core/src/dialect.rs", "DialectId", "keyless"),
-    ("crates/cadmpeg-core/src/dialect.rs", "DialectLayers", "wire"),
+    (
+        "crates/cadmpeg-core/src/dialect.rs",
+        "DialectLayers",
+        "wire",
+    ),
     ("crates/cadmpeg-ir/src/assets.rs", "AssetData", "keyless"),
-    ("crates/cadmpeg-ir/src/container.rs", "ContainerKind", "keyless"),
+    (
+        "crates/cadmpeg-ir/src/container.rs",
+        "ContainerKind",
+        "keyless",
+    ),
     ("crates/cadmpeg-ir/src/document.rs", "CadIr", "wire"),
     ("crates/cadmpeg-ir/src/document.rs", "CensusKey", "keyless"),
     ("crates/cadmpeg-ir/src/document.rs", "Model", "wire"),
@@ -233,43 +275,151 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
         "FullRoundFilletGroup",
         "wire",
     ),
-    ("crates/cadmpeg-ir/src/features/holes.rs", "HoleShape", "wire"),
+    (
+        "crates/cadmpeg-ir/src/features/holes.rs",
+        "HoleShape",
+        "wire",
+    ),
     ("crates/cadmpeg-ir/src/features.rs", "$name", "wire"),
-    ("crates/cadmpeg-ir/src/features.rs", "ConfigurationEvaluation", "wire"),
+    (
+        "crates/cadmpeg-ir/src/features.rs",
+        "ConfigurationEvaluation",
+        "wire",
+    ),
     ("crates/cadmpeg-ir/src/features.rs", "FaceMaker", "keyless"),
     ("crates/cadmpeg-ir/src/features.rs", "Feature", "wire"),
-    ("crates/cadmpeg-ir/src/features.rs", "FeatureContent", "keyless"),
-    ("crates/cadmpeg-ir/src/features.rs", "GeometryImportPath", "keyless"),
-    ("crates/cadmpeg-ir/src/features.rs", "NativeFeatureKind", "keyless"),
-    ("crates/cadmpeg-ir/src/features.rs", "NativeSelections", "keyless"),
-    ("crates/cadmpeg-ir/src/features.rs", "PolygonSideCount", "keyless"),
-    ("crates/cadmpeg-ir/src/features.rs", "SelectionReference", "keyless"),
-    ("crates/cadmpeg-ir/src/features.rs", "SewBodySelection", "wire"),
+    (
+        "crates/cadmpeg-ir/src/features.rs",
+        "FeatureContent",
+        "keyless",
+    ),
+    (
+        "crates/cadmpeg-ir/src/features.rs",
+        "GeometryImportPath",
+        "keyless",
+    ),
+    (
+        "crates/cadmpeg-ir/src/features.rs",
+        "NativeFeatureKind",
+        "keyless",
+    ),
+    (
+        "crates/cadmpeg-ir/src/features.rs",
+        "NativeSelections",
+        "keyless",
+    ),
+    (
+        "crates/cadmpeg-ir/src/features.rs",
+        "PolygonSideCount",
+        "keyless",
+    ),
+    (
+        "crates/cadmpeg-ir/src/features.rs",
+        "SelectionReference",
+        "keyless",
+    ),
+    (
+        "crates/cadmpeg-ir/src/features.rs",
+        "SewBodySelection",
+        "wire",
+    ),
     (
         "crates/cadmpeg-ir/src/features.rs",
         "SheetMetalFlangeEdgeWidths",
         "keyless",
     ),
-    ("crates/cadmpeg-ir/src/features.rs", "SketchProfileRegions", "keyless"),
-    ("crates/cadmpeg-ir/src/features.rs", "SplitFacePlanes", "keyless"),
-    ("crates/cadmpeg-ir/src/features.rs", "SweepCircularRegion", "wire"),
-    ("crates/cadmpeg-ir/src/features.rs", "ThreePointSelection", "keyless"),
+    (
+        "crates/cadmpeg-ir/src/features.rs",
+        "SketchProfileRegions",
+        "keyless",
+    ),
+    (
+        "crates/cadmpeg-ir/src/features.rs",
+        "SplitFacePlanes",
+        "keyless",
+    ),
+    (
+        "crates/cadmpeg-ir/src/features.rs",
+        "SweepCircularRegion",
+        "wire",
+    ),
+    (
+        "crates/cadmpeg-ir/src/features.rs",
+        "ThreePointSelection",
+        "keyless",
+    ),
     ("crates/cadmpeg-ir/src/features.rs", "TreeChildren", "wire"),
-    ("crates/cadmpeg-ir/src/geometry/carriers.rs", "BsplineSurface", "wire"),
-    ("crates/cadmpeg-ir/src/geometry/carriers.rs", "NurbsCurve", "wire"),
-    ("crates/cadmpeg-ir/src/geometry/carriers.rs", "NurbsSurface", "wire"),
-    ("crates/cadmpeg-ir/src/geometry/carriers.rs", "PcurveNurbs", "wire"),
-    ("crates/cadmpeg-ir/src/geometry/carriers.rs", "PolarPcurveNurbs", "wire"),
-    ("crates/cadmpeg-ir/src/geometry/carriers.rs", "PolygonalSurface", "wire"),
-    ("crates/cadmpeg-ir/src/geometry.rs", "DirectedParameterRange", "keyless"),
-    ("crates/cadmpeg-ir/src/geometry.rs", "ProceduralCurveDefinition", "wire"),
-    ("crates/cadmpeg-ir/src/geometry.rs", "ProceduralSurfaceDefinition", "wire"),
-    ("crates/cadmpeg-ir/src/geometry.rs", "ProjectionRole", "keyless"),
-    ("crates/cadmpeg-ir/src/geometry.rs", "RevisionG2RadiusValue", "keyless"),
-    ("crates/cadmpeg-ir/src/native/mod.rs", "NativeRecord", "free-form"),
+    (
+        "crates/cadmpeg-ir/src/geometry/carriers.rs",
+        "BsplineSurface",
+        "wire",
+    ),
+    (
+        "crates/cadmpeg-ir/src/geometry/carriers.rs",
+        "NurbsCurve",
+        "wire",
+    ),
+    (
+        "crates/cadmpeg-ir/src/geometry/carriers.rs",
+        "NurbsSurface",
+        "wire",
+    ),
+    (
+        "crates/cadmpeg-ir/src/geometry/carriers.rs",
+        "PcurveNurbs",
+        "wire",
+    ),
+    (
+        "crates/cadmpeg-ir/src/geometry/carriers.rs",
+        "PolarPcurveNurbs",
+        "wire",
+    ),
+    (
+        "crates/cadmpeg-ir/src/geometry/carriers.rs",
+        "PolygonalSurface",
+        "wire",
+    ),
+    (
+        "crates/cadmpeg-ir/src/geometry.rs",
+        "DirectedParameterRange",
+        "keyless",
+    ),
+    (
+        "crates/cadmpeg-ir/src/geometry.rs",
+        "ProceduralCurveDefinition",
+        "wire",
+    ),
+    (
+        "crates/cadmpeg-ir/src/geometry.rs",
+        "ProceduralSurfaceDefinition",
+        "wire",
+    ),
+    (
+        "crates/cadmpeg-ir/src/geometry.rs",
+        "ProjectionRole",
+        "keyless",
+    ),
+    (
+        "crates/cadmpeg-ir/src/geometry.rs",
+        "RevisionG2RadiusValue",
+        "keyless",
+    ),
+    (
+        "crates/cadmpeg-ir/src/native/mod.rs",
+        "NativeRecord",
+        "free-form",
+    ),
     ("crates/cadmpeg-ir/src/pmi.rs", "PmiMagnitude", "keyless"),
-    ("crates/cadmpeg-ir/src/products.rs", "NonEmptyString", "keyless"),
-    ("crates/cadmpeg-ir/src/provenance.rs", "CodecFormat", "keyless"),
+    (
+        "crates/cadmpeg-ir/src/products.rs",
+        "NonEmptyString",
+        "keyless",
+    ),
+    (
+        "crates/cadmpeg-ir/src/provenance.rs",
+        "CodecFormat",
+        "keyless",
+    ),
     (
         "crates/cadmpeg-ir/src/provenance.rs",
         "Provenance<AnnotationLocation>",
@@ -281,7 +431,11 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
         "wire",
     ),
     ("crates/cadmpeg-ir/src/scalar.rs", "$name", "keyless"),
-    ("crates/cadmpeg-ir/src/sketches.rs", "SpatialSketchNurbsCurve", "wire"),
+    (
+        "crates/cadmpeg-ir/src/sketches.rs",
+        "SpatialSketchNurbsCurve",
+        "wire",
+    ),
 ];
 
 /// The coverage classes a `HAND_IMPLS` entry may state.
@@ -360,10 +514,7 @@ fn hand_written_impls() -> BTreeSet<(String, String)> {
             if is_test_path(&relative) {
                 continue;
             }
-            for line in std::fs::read_to_string(&file)
-                .expect("read source")
-                .lines()
-            {
+            for line in std::fs::read_to_string(&file).expect("read source").lines() {
                 let trimmed = line.trim();
                 for prefix in [
                     "impl<'de> Deserialize<'de> for ",

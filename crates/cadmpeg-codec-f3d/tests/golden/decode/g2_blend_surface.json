@@ -86,24 +86,24 @@
           "shell": "f3d:brep:entity#3",
           "surface": "f3d:brep:entity#8",
           "sense": "forward",
-          "loops": [
-            {
-              "id": "f3d:brep:entity#6",
-              "role": "unspecified"
-            }
-          ]
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "f3d:brep:entity#6"
+            ]
+          }
         },
         {
           "id": "f3d:brep:entity#5",
           "shell": "f3d:brep:entity#3",
           "surface": "f3d:brep:entity#9",
           "sense": "forward",
-          "loops": [
-            {
-              "id": "f3d:brep:entity#7",
-              "role": "unspecified"
-            }
-          ]
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "f3d:brep:entity#7"
+            ]
+          }
         }
       ],
       "loops": [

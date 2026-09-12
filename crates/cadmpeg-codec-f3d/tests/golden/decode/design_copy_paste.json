@@ -89,12 +89,12 @@
           "shell": "f3d:brep:entity#3",
           "surface": "f3d:brep:entity#6",
           "sense": "forward",
-          "loops": [
-            {
-              "id": "f3d:brep:entity#5",
-              "role": "unspecified"
-            }
-          ]
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "f3d:brep:entity#5"
+            ]
+          }
         }
       ],
       "loops": [
@@ -294,12 +294,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ],
           "scale": [
@@ -337,12 +331,6 @@
               0.0,
               1.0,
               40.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ],
           "scale": [

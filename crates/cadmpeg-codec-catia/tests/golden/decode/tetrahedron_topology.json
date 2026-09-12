@@ -302,48 +302,44 @@
       "faces": [
         {
           "id": "catia:standard:face#0",
-          "loops": [
-            {
-              "id": "catia:standard:loop#0:0",
-              "role": "outer"
-            }
-          ],
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "catia:standard:loop#0:0"
+          },
           "sense": "forward",
           "shell": "catia:standard:shell#0-0",
           "surface": "catia:standard:surf#0"
         },
         {
           "id": "catia:standard:face#1",
-          "loops": [
-            {
-              "id": "catia:standard:loop#1:0",
-              "role": "outer"
-            }
-          ],
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "catia:standard:loop#1:0"
+          },
           "sense": "forward",
           "shell": "catia:standard:shell#0-0",
           "surface": "catia:standard:surf#1"
         },
         {
           "id": "catia:standard:face#2",
-          "loops": [
-            {
-              "id": "catia:standard:loop#2:0",
-              "role": "outer"
-            }
-          ],
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "catia:standard:loop#2:0"
+          },
           "sense": "forward",
           "shell": "catia:standard:shell#0-0",
           "surface": "catia:standard:surf#2"
         },
         {
           "id": "catia:standard:face#3",
-          "loops": [
-            {
-              "id": "catia:standard:loop#3:0",
-              "role": "outer"
-            }
-          ],
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "catia:standard:loop#3:0"
+          },
           "sense": "forward",
           "shell": "catia:standard:shell#0-0",
           "surface": "catia:standard:surf#3"

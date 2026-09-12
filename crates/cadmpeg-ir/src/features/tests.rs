@@ -480,29 +480,22 @@ fn topology_membership_admission() {
         None
     )
     .is_err());
-    assert!(
-        FeatureResultTopology::new(
-            id.clone(),
-            feature.clone(),
-            vec![
-                crate::nonempty_literal!("a"),
-                crate::nonempty_literal!("a"),
-            ],
-            vec![],
-            vec![],
-            vec![],
-            None
-        )
-        .is_err()
-    );
+    assert!(FeatureResultTopology::new(
+        id.clone(),
+        feature.clone(),
+        vec![crate::nonempty_literal!("a"), crate::nonempty_literal!("a"),],
+        vec![],
+        vec![],
+        vec![],
+        None
+    )
+    .is_err());
     // A blank member identity is refused by the member type, so the wire cannot
     // spell one and the constructor cannot be handed one.
-    assert!(
-        serde_json::from_value::<super::SelectionMember>(
-            serde_json::json!({"kind": "body", "id": ""})
-        )
-        .is_err()
-    );
+    assert!(serde_json::from_value::<super::SelectionMember>(
+        serde_json::json!({"kind": "body", "id": ""})
+    )
+    .is_err());
     assert!(DistinctMembers::<String>::try_from(vec!["a".into(), "a".into()]).is_err());
     assert!(
         serde_json::from_value::<super::ConfigurationBodies>(serde_json::json!([

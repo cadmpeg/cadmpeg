@@ -85,7 +85,7 @@ fn body_instance_transform_composes_before_existing_body_transform() {
             Transform::affine([
                 [2.0, 0.0, 0.0, 0.0],
                 [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0]
+                [0.0, 0.0, 1.0, 0.0],
             ])
             .expect("affine transform"),
         ),
@@ -96,7 +96,7 @@ fn body_instance_transform_composes_before_existing_body_transform() {
     let instance = Transform::affine([
         [1.0, 0.0, 0.0, 10.0],
         [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0]
+        [0.0, 0.0, 1.0, 0.0],
     ])
     .expect("affine transform");
     compose_body_transform(&mut body, instance).unwrap();

@@ -8,7 +8,9 @@ fn cacheless_law_differential_applies_algebraic_product_rule() {
         operator: "MUL".into(),
         operands: vec![
             LawExpression::Double { value: 2.0 },
-            LawExpression::Text { value: crate::nonempty_literal!("X") },
+            LawExpression::Text {
+                value: crate::nonempty_literal!("X"),
+            },
         ],
     };
     let differential = scalar_sweep_law_differential(&law, 3.0).expect("law differential");
@@ -22,7 +24,9 @@ fn cacheless_law_differential_applies_elementary_functions_and_composition() {
         operator: "MUL".into(),
         operands: vec![
             LawExpression::Double { value: 2.0 },
-            LawExpression::Text { value: crate::nonempty_literal!("X") },
+            LawExpression::Text {
+                value: crate::nonempty_literal!("X"),
+            },
         ],
     };
     let law = LawExpression::Algebraic {
@@ -38,7 +42,9 @@ fn cacheless_law_differential_applies_elementary_functions_and_composition() {
         operands: vec![
             LawExpression::Algebraic {
                 operator: "COS".into(),
-                operands: vec![LawExpression::Text { value: crate::nonempty_literal!("X") }],
+                operands: vec![LawExpression::Text {
+                    value: crate::nonempty_literal!("X"),
+                }],
             },
             inner,
         ],
@@ -53,13 +59,17 @@ fn cacheless_law_differential_applies_elementary_functions_and_composition() {
 fn cacheless_law_differential_rejects_undefined_domains() {
     let absolute = LawExpression::Algebraic {
         operator: "ABS".into(),
-        operands: vec![LawExpression::Text { value: crate::nonempty_literal!("X") }],
+        operands: vec![LawExpression::Text {
+            value: crate::nonempty_literal!("X"),
+        }],
     };
     assert!(scalar_sweep_law_differential(&absolute, 0.0).is_none());
 
     let inverse = LawExpression::Algebraic {
         operator: "ARCSIN".into(),
-        operands: vec![LawExpression::Text { value: crate::nonempty_literal!("X") }],
+        operands: vec![LawExpression::Text {
+            value: crate::nonempty_literal!("X"),
+        }],
     };
     assert!(scalar_sweep_law_differential(&inverse, 1.0).is_none());
 }

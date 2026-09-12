@@ -75,23 +75,26 @@ impl FeatureProjection {
                     .features
                     .iter()
                     .find(|feature| feature.id == *id)
-                    .map_or_else(|| "missing".to_owned(), |feature| feature.ordinal.to_string())
+                    .map_or_else(
+                        || "missing".to_owned(),
+                        |feature| feature.ordinal.to_string(),
+                    )
             };
             let child_ordinal = ordinal(&child);
             let parent_ordinal = ordinal(&parent);
             if let Err(error) = model.set_feature_regeneration_parent(child.clone(), parent.clone())
             {
-                losses.push(crate::loss::SldprtLossCode::FeatureIncoherentEdges.note(format!(
+                losses.push(
+                    crate::loss::SldprtLossCode::FeatureIncoherentEdges.note(format!(
                     "regeneration edge from child `{child}` (ordinal {child_ordinal}) to parent \
                      `{parent}` (ordinal {parent_ordinal}) was not installed: {error}"
-                )));
+                )),
+                );
             }
         }
     }
 
-    pub(crate) fn into_model(
-        self,
-    ) -> (cadmpeg_ir::document::Model, Vec<cadmpeg_ir::LossNote>) {
+    pub(crate) fn into_model(self) -> (cadmpeg_ir::document::Model, Vec<cadmpeg_ir::LossNote>) {
         let mut model = cadmpeg_ir::document::Model::default();
         let mut losses = Vec::new();
         self.install(&mut model, &mut losses);

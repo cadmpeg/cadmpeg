@@ -24,12 +24,11 @@
       "faces": [
         {
           "id": "iges:model:face#D11:D9",
-          "loops": [
-            {
-              "id": "iges:model:loop#D11:D7",
-              "role": "outer"
-            }
-          ],
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "iges:model:loop#D11:D7"
+          },
           "sense": "forward",
           "shell": "iges:model:shell#D11",
           "surface": "iges:model:surface#D3"

@@ -79,12 +79,12 @@
       "faces": [
         {
           "id": "sldprt:brep:face#10",
-          "loops": [
-            {
-              "id": "sldprt:brep:loop#20",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "sldprt:brep:loop#20"
+            ]
+          },
           "sense": "forward",
           "shell": "sldprt:brep:shell#0",
           "surface": "sldprt:brep:surf#10"

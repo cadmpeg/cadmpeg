@@ -107,13 +107,13 @@ fn occurrence_transform_composes_outside_existing_body_transform() {
     let outer = Transform::affine([
         [0.0, -1.0, 0.0, 20.0],
         [1.0, 0.0, 0.0, 30.0],
-        [0.0, 0.0, 1.0, 40.0]
+        [0.0, 0.0, 1.0, 40.0],
     ])
     .expect("affine transform");
     let inner = Transform::affine([
         [1.0, 0.0, 0.0, 5.0],
         [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0]
+        [0.0, 0.0, 1.0, 0.0],
     ])
     .expect("affine transform");
 

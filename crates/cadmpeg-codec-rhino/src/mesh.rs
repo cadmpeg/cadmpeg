@@ -533,7 +533,10 @@ pub(crate) fn decode(
             vertices,
             triangles,
             Vec::new(),
-            cadmpeg_ir::tessellation::NormalSamples::new(decoded.normals).map_or(cadmpeg_ir::tessellation::TessellationNormals::None, cadmpeg_ir::tessellation::TessellationNormals::per_vertex),
+            cadmpeg_ir::tessellation::NormalSamples::new(decoded.normals).map_or(
+                cadmpeg_ir::tessellation::TessellationNormals::None,
+                cadmpeg_ir::tessellation::TessellationNormals::per_vertex,
+            ),
             decoded.channels,
         )
         .map_err(|err| error(reader.position(), &err.to_string()))?

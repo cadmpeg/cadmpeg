@@ -5292,7 +5292,7 @@ fn cartesian_transformation_operator(
                 axis_y.z * scale,
                 axis_z.z * scale,
                 origin.z,
-            ]
+            ],
         ])
         .expect("affine transform"),
     )
@@ -5331,7 +5331,7 @@ fn cartesian_transformation_operator_2d(
     Some(
         Transform2::affine([
             [axis1.u * scale, axis2.u * scale, origin.u],
-            [axis1.v * scale, axis2.v * scale, origin.v]
+            [axis1.v * scale, axis2.v * scale, origin.v],
         ])
         .expect("affine transform"),
     )

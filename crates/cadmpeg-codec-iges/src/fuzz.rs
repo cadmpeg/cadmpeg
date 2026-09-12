@@ -35,7 +35,8 @@ pub fn parameters(data: &[u8]) {
         return;
     };
     let (directory, quarantined) = crate::directory::parse(&scan, global.global_table());
-    let _probe = crate::parameter::assemble_with_context(&scan, &directory, &quarantined, &global, None);
+    let _probe =
+        crate::parameter::assemble_with_context(&scan, &directory, &quarantined, &global, None);
 }
 
 #[cfg(test)]

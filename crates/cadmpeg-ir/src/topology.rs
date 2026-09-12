@@ -6,11 +6,11 @@
 //! edges, coedges, and vertices reference surface, curve, pcurve, and point
 //! carriers by typed ID.
 
+use crate::features::{BodySelectionError, NonEmptyMembers};
 use crate::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
     SurfaceId, VertexId,
 };
-use crate::features::{BodySelectionError, NonEmptyMembers};
 use crate::math::Point3;
 use crate::transform::Transform;
 #[cfg(feature = "schema")]
@@ -640,7 +640,6 @@ impl FaceLoops {
             FaceLoopClassification::Classified { .. } => LoopBoundaryRole::Inner,
         }
     }
-
 }
 
 impl From<Vec<LoopId>> for FaceLoops {

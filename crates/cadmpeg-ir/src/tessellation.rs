@@ -465,7 +465,8 @@ fn shading_from_wire(
                     "tessellation normals do not match vertex count",
                 ));
             }
-            Ok(NormalSamples::new(values).map_or(TessellationNormals::None, TessellationNormals::per_vertex))
+            Ok(NormalSamples::new(values)
+                .map_or(TessellationNormals::None, TessellationNormals::per_vertex))
         }
         Some(TessellationShadingWire::PerCorner { values }) => {
             if triangles.len().checked_mul(3) != Some(values.len()) {
@@ -473,7 +474,8 @@ fn shading_from_wire(
                     "tessellation corner normals do not match triangle corners",
                 ));
             }
-            Ok(NormalSamples::new(values).map_or(TessellationNormals::None, TessellationNormals::per_corner))
+            Ok(NormalSamples::new(values)
+                .map_or(TessellationNormals::None, TessellationNormals::per_corner))
         }
     }
 }

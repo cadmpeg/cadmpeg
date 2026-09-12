@@ -4648,7 +4648,10 @@ pub(crate) fn display_jt_tessellations(
                     vertices,
                     triangles,
                     Vec::new(),
-                    cadmpeg_ir::tessellation::NormalSamples::new(normal_vectors).map_or(cadmpeg_ir::tessellation::TessellationNormals::None, cadmpeg_ir::tessellation::TessellationNormals::per_vertex),
+                    cadmpeg_ir::tessellation::NormalSamples::new(normal_vectors).map_or(
+                        cadmpeg_ir::tessellation::TessellationNormals::None,
+                        cadmpeg_ir::tessellation::TessellationNormals::per_vertex,
+                    ),
                     channels,
                 )
                 .ok()?

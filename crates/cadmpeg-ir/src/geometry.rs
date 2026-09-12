@@ -3747,7 +3747,11 @@ impl RevisionG2RadiusValue {
     /// Construct an explicit selector value.
     #[must_use]
     pub const fn new(value: i64) -> Option<Self> {
-        if value > 0 { Some(Self(value)) } else { None }
+        if value > 0 {
+            Some(Self(value))
+        } else {
+            None
+        }
     }
 
     /// Return the native integer value.
