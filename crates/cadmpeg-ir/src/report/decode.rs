@@ -13,6 +13,7 @@ use super::{LossNote, Severity};
 /// Transfer status and loss details from a successful decode.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(into = "DecodeReportWire", from = "DecodeReportWire")]
+#[serde(deny_unknown_fields)]
 pub struct DecodeReport {
     classification: FormatIdentity<DialectLayers>,
     transfer: DecodeTransfer,
@@ -218,6 +219,7 @@ impl JsonSchema for DecodeReport {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum TransferDisposition {
     /// Transferred as an exact neutral or native entity.
     Emitted,
@@ -267,6 +269,7 @@ pub struct TransferRecord {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct TransferRecordWire {
     source: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -382,6 +385,7 @@ impl TransferRecord {
 /// Complete source-to-result accounting for a decode.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct TransferLedger {
     /// Entries in deterministic source traversal order.
     pub entries: Vec<TransferRecord>,

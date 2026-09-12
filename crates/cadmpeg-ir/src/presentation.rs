@@ -14,6 +14,7 @@ crate::ids::id_type!(
 /// Persisted camera pose.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct CameraState {
     /// Camera position in document coordinates.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -32,6 +33,7 @@ pub struct CameraState {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "type", content = "value")]
+#[serde(deny_unknown_fields)]
 pub enum PresentationStateKind {
     /// Persisted camera pose.
     Camera(CameraState),
@@ -53,6 +55,7 @@ impl PresentationStateKind {
 /// Ordered non-provider GUI state such as clipping or section state.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct PresentationState {
     /// Persisted state element family.
     pub kind: PresentationStateKind,
@@ -87,6 +90,7 @@ pub struct PresentationDocument {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct PresentationDocumentWire {
     id: PresentationId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -191,6 +195,7 @@ impl JsonSchema for PresentationDocument {
 /// Presentation state owned by one persisted view provider.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct ViewPresentation {
     /// Globally unique view-provider identity.
     pub id: PresentationId,
@@ -238,6 +243,7 @@ use crate::ids::{
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum PresentationItem {
     /// Shape body.
     Body {
@@ -305,6 +311,7 @@ pub enum PresentationItem {
 /// One presentation layer.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct PresentationLayer {
     /// Stable layer identity.
     pub id: LayerId,

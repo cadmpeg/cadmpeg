@@ -532,7 +532,7 @@ fn procedural_curve_admission_failures_keep_the_carrier() {
                 std::array::from_fn(|_| Vec::new()),
             )
             .unwrap(),
-            SilhouetteKind::Standard,
+            SilhouetteKind::Standard {},
             SurfaceId::mint("f3d:brep:entity#support").unwrap(),
             Vector3::new(0.0, 0.0, 0.0),
         ),

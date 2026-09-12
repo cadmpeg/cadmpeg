@@ -844,7 +844,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
             face: FaceSelection::Native(groups[3].id.clone()),
             diameter: Some(cadmpeg_ir::scalar::PositiveLength::new(3.5).unwrap()),
-            extent: Some(cadmpeg_ir::features::CosmeticThreadExtent::Through),
+            extent: Some(cadmpeg_ir::features::CosmeticThreadExtent::Through {}),
         })
     );
 }

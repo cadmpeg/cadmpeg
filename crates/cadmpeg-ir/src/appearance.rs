@@ -13,6 +13,7 @@ use crate::topology::Color;
 /// A decoded appearance/material asset.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct Appearance {
     /// Stable arena id.
     pub id: AppearanceId,
@@ -52,6 +53,7 @@ pub struct Appearance {
 /// One texture asset connected to an appearance shader slot.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct TextureRef {
     /// Stable source asset GUID.
     pub asset_guid: String,
@@ -75,6 +77,7 @@ pub struct TextureRef {
 /// Neutral two-dimensional texture-coordinate mapping.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct TextureMap2d {
     /// Source mapping channel.
     pub map_channel: u32,
@@ -107,6 +110,7 @@ pub struct TextureMap2d {
 /// Bump-map interpretation and amplitudes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct BumpMap {
     /// Whether the bitmap stores tangent-space normals instead of heights.
     pub normal_map: bool,
@@ -120,6 +124,7 @@ pub struct BumpMap {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "id", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum AppearanceTarget {
     /// Whole-body appearance.
     Body(BodyId),
@@ -147,6 +152,7 @@ pub enum AppearanceTarget {
 /// An explicit appearance assignment.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct AppearanceBinding {
     /// Globally unique deterministic assignment identity.
     pub id: crate::ids::AppearanceBindingId,

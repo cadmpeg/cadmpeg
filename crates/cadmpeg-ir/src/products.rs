@@ -20,6 +20,7 @@ crate::ids::id_type!(
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum ProductDefinitionKind {
     /// Product part or assembly container.
     Part,
@@ -34,6 +35,7 @@ pub enum ProductDefinitionKind {
 /// A reusable product definition or structural container.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct ProductDefinition {
     /// Globally unique definition identity.
     pub id: ProductDefinitionId,
@@ -66,6 +68,7 @@ pub struct ProductDefinition {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "scope", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum PrototypeReference {
     /// Prototype resolves to a definition in this document.
     Local {
@@ -81,7 +84,7 @@ pub enum PrototypeReference {
         object: Option<String>,
     },
     /// The source intentionally carries no resolvable prototype.
-    Unresolved,
+    Unresolved {},
 }
 
 /// A source string that is not empty.
@@ -245,9 +248,10 @@ pub enum CopyOnChangePolicy {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum OccurrenceParent {
     /// A root occurrence has no containing occurrence.
-    Root,
+    Root {},
     /// A child is placed inside another occurrence.
     Occurrence {
         /// Containing occurrence identity.
@@ -258,6 +262,7 @@ pub enum OccurrenceParent {
 /// One placed use, including an element of a link array.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct Occurrence {
     /// Globally unique instance identity.
     pub id: OccurrenceId,
@@ -606,7 +611,7 @@ mod tests {
     fn occurrence(id: &str, parent: OccurrenceParent, x: f64) -> Occurrence {
         Occurrence {
             id: OccurrenceId::mint(id).expect("valid identity"),
-            prototype: PrototypeReference::Unresolved,
+            prototype: PrototypeReference::Unresolved {},
             parent,
             ordinal: 0,
             transform: translation(x),
@@ -621,7 +626,7 @@ mod tests {
 
     #[test]
     fn resolves_parent_chains_and_conditional_prototype_placement() {
-        let root = occurrence("test:model:entity#root", OccurrenceParent::Root, 1.0);
+        let root = occurrence("test:model:entity#root", OccurrenceParent::Root {}, 1.0);
         let mut child = occurrence(
             "test:model:entity#child",
             OccurrenceParent::Occurrence {
@@ -645,7 +650,11 @@ mod tests {
 
     #[test]
     fn an_absent_linked_prototype_key_is_the_only_spelling_of_absence() {
-        let plain = occurrence("test:model:occurrence#plain", OccurrenceParent::Root, 1.0);
+        let plain = occurrence(
+            "test:model:occurrence#plain",
+            OccurrenceParent::Root {},
+            1.0,
+        );
         let plain_wire = serde_json::to_value(&plain).expect("plain occurrence wire");
         assert!(plain_wire.get("linked_prototype").is_none());
         assert_eq!(
@@ -707,7 +716,7 @@ mod tests {
         assert!(LinkState::new(Vec::new(), None, Some(false), None).is_some());
         let plain = occurrence(
             "test:model:occurrence#empty-link",
-            OccurrenceParent::Root,
+            OccurrenceParent::Root {},
             0.0,
         );
         let wire = serde_json::to_value(&plain).unwrap();
@@ -719,7 +728,7 @@ mod tests {
 
     #[test]
     fn the_link_state_is_one_nested_object_with_its_own_copy_on_change() {
-        let mut linked = occurrence("test:model:occurrence#link", OccurrenceParent::Root, 1.0);
+        let mut linked = occurrence("test:model:occurrence#link", OccurrenceParent::Root {}, 1.0);
         linked.link = LinkState::new(
             vec!["Face1".into()],
             Some(ProductDefinitionId::mint("test:model:product#element").expect("valid identity")),
@@ -773,7 +782,7 @@ mod tests {
 
         let mut empty = serde_json::to_value(occurrence(
             "test:model:occurrence#empty-link",
-            OccurrenceParent::Root,
+            OccurrenceParent::Root {},
             1.0,
         ))
         .unwrap();
@@ -783,7 +792,7 @@ mod tests {
 
     #[test]
     fn rejects_duplicate_missing_and_cyclic_parent_links() {
-        let duplicate = occurrence("test:model:entity#same", OccurrenceParent::Root, 0.0);
+        let duplicate = occurrence("test:model:entity#same", OccurrenceParent::Root {}, 0.0);
         assert!(matches!(
             AssemblyGraph::new(&[duplicate.clone(), duplicate]),
             Err(AssemblyGraphError::DuplicateOccurrence(_))
@@ -868,7 +877,7 @@ fn resolve_occurrence<'a>(
         return Err(AssemblyGraphError::ParentCycle(occurrence.id.clone()));
     }
     let parent = match &occurrence.parent {
-        OccurrenceParent::Root => Transform::identity(),
+        OccurrenceParent::Root {} => Transform::identity(),
         OccurrenceParent::Occurrence {
             occurrence: parent_id,
         } => {
@@ -1000,6 +1009,7 @@ impl JointLimits {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct JointLimitsWire {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     minimum: Option<f64>,

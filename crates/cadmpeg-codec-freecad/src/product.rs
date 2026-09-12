@@ -362,11 +362,13 @@ pub(crate) fn transfer_neutral(
                         definition: definition_id(prototype),
                     }
                 } else {
-                    PrototypeReference::Unresolved
+                    PrototypeReference::Unresolved {}
                 },
-                parent: parent.clone().map_or(OccurrenceParent::Root, |occurrence| {
-                    OccurrenceParent::Occurrence { occurrence }
-                }),
+                parent: parent
+                    .clone()
+                    .map_or(OccurrenceParent::Root {}, |occurrence| {
+                        OccurrenceParent::Occurrence { occurrence }
+                    }),
                 ordinal: u32::try_from(index).unwrap_or(u32::MAX),
                 transform: local_transform,
                 linked_prototype: (record.link_transform() == Some(true))
@@ -469,7 +471,7 @@ pub(crate) fn transfer_neutral(
             prototype: PrototypeReference::Local {
                 definition: definition_id(object),
             },
-            parent: parent.map_or(OccurrenceParent::Root, |parent| {
+            parent: parent.map_or(OccurrenceParent::Root {}, |parent| {
                 OccurrenceParent::Occurrence {
                     occurrence: container_occurrence_id(parent),
                 }
@@ -487,7 +489,7 @@ pub(crate) fn transfer_neutral(
     let mut next_ordinal = HashMap::<Option<String>, u32>::new();
     for occurrence in &mut occurrences {
         let parent = match &occurrence.parent {
-            OccurrenceParent::Root => None,
+            OccurrenceParent::Root {} => None,
             OccurrenceParent::Occurrence { occurrence } => Some(occurrence.as_str().to_owned()),
         };
         let ordinal = next_ordinal.entry(parent).or_default();

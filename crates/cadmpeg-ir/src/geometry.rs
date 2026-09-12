@@ -85,6 +85,7 @@ pub use carriers::{
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SolvedSurfaceGeometry {
     /// Infinite plane through `origin` with the given `normal`.
     Plane(PlaneSurface),
@@ -129,6 +130,7 @@ pub enum SolvedSurfaceGeometry {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SurfaceGeometry {
     /// Exact surface defined by a procedural construction in the same model.
     Procedural {
@@ -177,6 +179,7 @@ impl SurfaceGeometry {
 /// An identified surface carrier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct Surface {
     /// Arena id.
     pub id: SurfaceId,
@@ -192,6 +195,7 @@ pub struct Surface {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SolvedCurveGeometry {
     /// Infinite line.
     Line(LineCurve),
@@ -235,6 +239,7 @@ pub enum SolvedCurveGeometry {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum CurveGeometry {
     /// Exact curve defined by a procedural construction in the same model.
     Procedural {
@@ -331,6 +336,7 @@ impl<'a> IntoIterator for &'a CompositeCurveSegments {
 /// One directed child use in a composite curve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct CompositeCurveSegment {
     /// Referenced child curve carrier.
     pub curve: CurveId,
@@ -344,6 +350,7 @@ pub struct CompositeCurveSegment {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum CompositeCurveTransition {
     /// No positional continuity is asserted.
     Discontinuous,
@@ -389,6 +396,7 @@ pub fn derive_reference_direction(axis: Vector3) -> Vector3 {
 /// A 3D curve carrier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct Curve {
     /// Arena id.
     pub id: CurveId,
@@ -420,6 +428,7 @@ pub struct ProceduralSurface {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SplineSurfaceParameters {
     /// Ordered semantic U and V intervals in the legacy layout.
     OrderedRanges {
@@ -1503,6 +1512,7 @@ pub enum DeformableSurfaceData {
 /// Four-vector frame used by full deformable surfaces.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct DeformableVectorFrame {
     /// Four ordered vectors.
     pub vectors: [Vector3; 4],
@@ -1515,6 +1525,7 @@ pub struct DeformableVectorFrame {
 /// Shared frame payload of deformable-surface modes 1 and 3.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct DeformableSurfaceFrame {
     /// Four leading deformation vectors.
     pub leading_vectors: [Vector3; 4],
@@ -1537,6 +1548,7 @@ pub struct DeformableSurfaceFrame {
 /// Complete native deformable-surface construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct DeformableSurfaceConstruction {
     /// Surface being deformed.
     pub support: SurfaceId,
@@ -1572,6 +1584,7 @@ pub struct HelixPathConstruction {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct HelixPathConstructionWire {
     angle_range: [f64; 2],
     center: Point3,
@@ -1702,6 +1715,7 @@ pub struct HelixCurveConstruction {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct HelixCurveConstructionWire {
     angle_range: [f64; 2],
     center: Point3,
@@ -1868,6 +1882,7 @@ pub struct HelixCircleProfile {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct HelixCircleProfileWire {
     length: f64,
     radius: f64,
@@ -1915,6 +1930,7 @@ pub struct HelixLineProfile {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct HelixLineProfileWire {
     direction: Vector3,
 }
@@ -1950,6 +1966,7 @@ impl TryFrom<HelixLineProfileWire> for HelixLineProfile {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum HelixSurfaceProfile {
     /// Circular profile swept along the helix.
     Circle(HelixCircleProfile),
@@ -1970,6 +1987,7 @@ pub struct HelixSurfaceConstruction {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct HelixSurfaceConstructionWire {
     angle_range: [f64; 2],
     dimension_range: [f64; 2],
@@ -2089,6 +2107,7 @@ pub struct InlineTSplineSubtransform {
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 enum InlineTSplineSubtransformWire {
     Inline {
         program: String,
@@ -2145,6 +2164,7 @@ pub enum TSplineSubtransform {
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 enum TSplineSubtransformWire {
     Inline {
         program: String,
@@ -2622,6 +2642,7 @@ impl TSplineProgram {
 /// One oriented support of a procedural blend.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct BlendSupport {
     /// The support surface.
     pub surface: SurfaceId,
@@ -2734,6 +2755,7 @@ impl RollingBallJetStations {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct RollingBallJetReadWire {
     degree: u32,
     knots: Vec<f64>,
@@ -2792,6 +2814,7 @@ impl Serialize for RollingBallJetStations {
 /// One aligned knot site of an exact rolling-ball surface jet.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct RollingBallJetSite {
     /// First limiting point at the knot.
     pub first_limit: Point3,
@@ -2810,6 +2833,7 @@ pub struct RollingBallJetSite {
 /// One derivative row for the four channels of a rolling-ball jet.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct RollingBallJetDerivative {
     /// Derivative of the first limiting point.
     pub first_limit: Vector3,
@@ -2825,6 +2849,7 @@ pub struct RollingBallJetDerivative {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum BlendCrossSection {
     /// Constant-radius circular cross-section.
     Circular,
@@ -2840,6 +2865,7 @@ pub enum BlendCrossSection {
 /// arrays, tail boolean, and post-tail boolean run.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct RevisionSurfaceForm<F: Default = Vec<bool>> {
     /// Positive serializer-revision integer following the subtype name.
     pub revision: i64,
@@ -2981,6 +3007,7 @@ impl VariableBlendCache {
 /// the order the fields appear below.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct RevisionSurfaceParameterization {
     /// U parameter interval, an ordered `[lo, hi]` pair of optional bounds.
     /// `None` is a false bound-presence flag.
@@ -3004,9 +3031,10 @@ pub struct RevisionSurfaceParameterization {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum TaperSurfaceKind {
     /// Standard taper without a subtype-specific tail.
-    Standard,
+    Standard {},
     /// Orthogonal taper with a native sense flag.
     Orthogonal {
         /// Native orientation sense.
@@ -3248,6 +3276,7 @@ impl LoftSubdata {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(rename = "LoftProfileData"))]
+#[serde(deny_unknown_fields)]
 struct LoftProfileDataWire {
     /// Constraint support surface, absent for the native `null_surface`
     /// sentinel.
@@ -3496,6 +3525,7 @@ pub struct LoftPath {
 /// One parameterized entry in a native loft section.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct LoftSectionEntry {
     /// Native section parameter.
     pub parameter: f64,
@@ -3508,6 +3538,7 @@ pub struct LoftSectionEntry {
 /// Revision-gated `loft_spl_sur` form fields.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct LoftRevisionForm {
     /// Positive serializer-revision integer following the subtype name.
     pub revision: i64,
@@ -3529,6 +3560,7 @@ pub struct LoftRevisionForm {
 /// Ordered native loft section.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct LoftSection {
     /// Ordered entries in the section.
     pub entries: Vec<LoftSectionEntry>,
@@ -3538,6 +3570,7 @@ pub struct LoftSection {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum LoftBridgeToken {
     /// Native boolean token.
     Boolean(bool),
@@ -3554,6 +3587,7 @@ pub enum LoftBridgeToken {
 /// Common carrier fields of one G2 blend side.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct G2BlendSide {
     /// Native side label.
     pub label: String,
@@ -3607,6 +3641,7 @@ pub struct G2BlendFullSupport {
 /// Full native G2 blend construction graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct G2BlendConstruction {
     /// First side common fields.
     pub first: G2BlendSide,
@@ -3635,6 +3670,7 @@ pub struct G2BlendConstruction {
 /// A present rolling-ball support surface and its native UV bounds.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct RollingBallSupportSurface<S = SurfaceId> {
     /// Support surface or embedded geometry.
     pub surface: S,
@@ -3645,6 +3681,7 @@ pub struct RollingBallSupportSurface<S = SurfaceId> {
 /// A present rolling-ball side curve and its native parameter bounds.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct RollingBallSupportCurve<C = CurveId> {
     /// Side curve or embedded geometry.
     pub curve: C,
@@ -3655,6 +3692,7 @@ pub struct RollingBallSupportCurve<C = CurveId> {
 /// The optional rolling-ball extension clause.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct RollingBallSideExtension<P = PcurveGeometry> {
     /// Native integer introducing the clause.
     pub value: i64,
@@ -3686,6 +3724,7 @@ pub struct RollingBallSide<S = SurfaceId, C = CurveId, P = PcurveGeometry> {
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(bound(deserialize = "S: Deserialize<'de>, C: Deserialize<'de>, P: Deserialize<'de>"))]
+#[serde(deny_unknown_fields)]
 struct RollingBallSideWire<S, C, P> {
     support_kind: VariableBlendSupportKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3787,6 +3826,7 @@ impl<'de, S: Deserialize<'de>, C: Deserialize<'de>, P: Deserialize<'de>> Deseria
 /// Third support graph appended by `sss_blend_spl_sur`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct RollingBallThirdSide {
     /// Native side label.
     pub label: String,
@@ -3876,6 +3916,7 @@ impl<'de> Deserialize<'de> for RevisionG2RadiusValue {
 /// Complete byte-backed rolling-ball or three-surface blend context.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct RollingBallConstruction {
     /// Native subtype definition-table index.
     pub definition_index: i64,
@@ -3919,6 +3960,7 @@ pub struct RollingBallConstruction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum VariableBlendSupportKind {
     /// Support defined by a cosine curve.
     CosineCurve,
@@ -3936,6 +3978,7 @@ pub enum VariableBlendSupportKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum VariableBlendConvexity {
     /// The blend bends toward the support intersection.
     Convex,
@@ -3947,6 +3990,7 @@ pub enum VariableBlendConvexity {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum VariableBlendRenderMode {
     /// The solved surface is the rolling-ball envelope.
     RollingBallEnvelope,
@@ -3957,6 +4001,7 @@ pub enum VariableBlendRenderMode {
 /// One interpolation control point in a variable blend-value law.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct VariableBlendInterpolationPoint {
     /// Law parameter.
     pub parameter: f64,
@@ -4023,6 +4068,7 @@ impl From<EdgeOffsetDiscriminator> for i64 {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum VariableBlendTerminal {
     /// Native double token.
     Double(f64),
@@ -4205,9 +4251,10 @@ impl VariableBlendRadii {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum VariableBlendCrossSection {
     /// Circular section with no additional parameters.
-    Circular,
+    Circular {},
     /// Thumbweight-controlled section with two ordered shape parameters.
     Thumbweights {
         /// Ordered native shape parameters.
@@ -4237,6 +4284,7 @@ pub enum VariableBlendCrossSection {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[repr(i64)]
+#[serde(deny_unknown_fields)]
 pub enum VariableBlendBareCrossSection {
     /// Native selector `2`.
     Selector2 = 2,
@@ -4273,6 +4321,7 @@ impl TryFrom<i64> for VariableBlendBareCrossSection {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum VariableBlendSurfaceSubtype {
     /// General variable-blend surface.
     #[default]
@@ -4290,6 +4339,7 @@ pub enum VariableBlendSurfaceSubtype {
 /// Complete native variable-radius blend construction graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct VariableBlendConstruction {
     /// Native surface subtype selecting the variable-blend behavior class.
     #[serde(default)]
@@ -4358,6 +4408,7 @@ pub struct VariableBlendConstruction {
 /// layout and ends with the shared revision-gated surface tail.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct RevisionG2BlendConstruction {
     /// Positive serializer-revision integer following the subtype name.
     pub revision: i64,
@@ -4402,6 +4453,7 @@ pub struct RevisionG2BlendConstruction {
 /// revision-gated surface tail precede the construction fields.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct RevisionCompoundLoftConstruction {
     /// Positive serializer-revision integer following the subtype name.
     pub revision: i64,
@@ -4500,6 +4552,7 @@ impl<T> RevisionCompoundLoftTail<T> {
 /// One boundary record in a native vertex-blend patch.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct VertexBlendBoundary {
     /// Native cross flag. The wire form is a logical, so the value is the
     /// tag itself and no payload follows.
@@ -4554,6 +4607,7 @@ impl VertexBlendTwists {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct VertexBlendTwistsWire {
     form: i64,
     twists: Vec<Point3>,
@@ -4643,6 +4697,7 @@ pub enum VertexBlendBoundaryGeometry {
 /// Complete native vertex-blend surface construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct VertexBlendConstruction {
     /// Positive serializer-revision integer selecting the revision-gated
     /// layout; absent from the pre-revision layout.
@@ -4659,6 +4714,7 @@ pub struct VertexBlendConstruction {
 /// One member of a compound-loft scale block.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct CompoundLoftScaleMember {
     /// Native member integer.
     pub type_code: i64,
@@ -4671,6 +4727,7 @@ pub struct CompoundLoftScaleMember {
 /// Complete `_readScaleClLoft` payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct CompoundLoftScale {
     /// Ordered scale members.
     pub members: Vec<CompoundLoftScaleMember>,
@@ -4716,6 +4773,7 @@ impl CompoundLoftDirection {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum CompoundLoftTail {
     /// Native kind `6` tail.
     Six {
@@ -4844,9 +4902,10 @@ pub struct CompoundLoftConstruction {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum ScaledCompoundLoftShape {
     /// A solved NURBS cache follows the singularity enum.
-    Full,
+    Full {},
     /// The cache is replaced by two intervals and two scalar arrays.
     None {
         /// Two ordered native intervals.
@@ -4860,6 +4919,7 @@ pub enum ScaledCompoundLoftShape {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum ScaledCompoundLoftBranch {
     /// Extended branch ending in a direction vector.
     ExtendedVector {
@@ -4897,6 +4957,7 @@ pub enum ScaledCompoundLoftBranch {
 /// Complete native scaled compound-loft construction graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct ScaledCompoundLoftConstruction {
     /// Native leading singularity enum.
     pub singularity: i64,
@@ -5003,6 +5064,7 @@ impl LawFormula {
 /// Complete recursive construction stored by a native law spline surface.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct LawSurfaceConstruction {
     /// Legacy U and V parameter intervals; absent from modern layouts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -5134,6 +5196,7 @@ pub enum LawExpression {
 /// One profile entry in the expanded skin layout.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct SkinSurfaceProfile {
     /// Native profile type integer.
     pub type_code: i64,
@@ -5218,6 +5281,7 @@ pub struct SkinSurfaceConstruction {
 /// Complete native `net_spl_sur` construction graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct NetSurfaceConstruction {
     /// Two ordered loft-section graphs.
     pub sections: Box<[LoftSection; 2]>,
@@ -5239,6 +5303,7 @@ pub struct NetSurfaceConstruction {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SweepSurfaceLayout {
     /// Profile-first modern ASM sweep layout.
     ProfileFirst {
@@ -5382,6 +5447,7 @@ pub enum SweepSurfaceLayout {
 /// Revision-gated `sweep_sur` form fields.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct SweepRevisionForm {
     /// Positive serializer-revision integer following the subtype name.
     pub revision: i64,
@@ -5400,6 +5466,7 @@ pub struct SweepRevisionForm {
 /// Complete native `sweep_spl_sur` construction graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct SweepSurfaceConstruction {
     /// Leading native sweep enum.
     pub primary_kind: i64,
@@ -5419,6 +5486,7 @@ pub struct SweepSurfaceConstruction {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum BlendRadiusLaw {
     /// Constant blend radius along the whole spine.
     Constant {
@@ -5617,6 +5685,7 @@ impl IntcurveSupportSide {
 /// `law_int_cur` serializer form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct LawCurveVersionForm {
     /// Serializer version stamp emitted after the subtype name.
     pub stamp: i64,
@@ -5638,6 +5707,7 @@ pub struct IntcurveSupportContext {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct IntcurveSupportContextWire {
     sides: [IntcurveSupportSide; 2],
     parameter_range: [f64; 2],
@@ -5765,6 +5835,7 @@ pub struct TolerantIntersectionConstruction {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct TolerantIntersectionConstructionWire {
     supports: [SurfaceId; 2],
     endpoints: [Point3; 2],
@@ -5834,6 +5905,7 @@ pub struct TolerantIntersectionParameterization {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct TolerantIntersectionParameterizationWire {
     pcurves: [PcurveGeometry; 2],
     parameter_range: [f64; 2],
@@ -5875,6 +5947,7 @@ impl TolerantIntersectionParameterization {
 /// Cache-first shared-context fields absent from the context-first layout.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct CacheFirstCurveForm {
     /// Positive serializer-revision integer selecting the cache-first layout.
     pub revision: i64,
@@ -6023,6 +6096,7 @@ impl SpringLayout {
 /// the order the fields appear below.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct CacheFirstCurveParameterization {
     /// Curve interval, an ordered `[lo, hi]` pair of optional bounds. `None` is
     /// a false bound-presence flag.
@@ -6186,6 +6260,7 @@ pub enum SurfaceCurveFamily {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SurfaceCurveFamilyKind {
     /// Blend edge curve whose construction details live on its blend support.
     Blend,
@@ -6274,11 +6349,12 @@ impl SurfaceCurveFamily {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SilhouetteKind {
     /// Standard implicit silhouette.
-    Standard,
+    Standard {},
     /// Parametric silhouette.
-    Parametric,
+    Parametric {},
     /// Draft/taper silhouette with an explicit factor.
     Taper {
         /// Native unscaled draft factor.
@@ -6290,6 +6366,7 @@ pub enum SilhouetteKind {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum DeformableCurveData {
     /// Mode 8 vector field followed by ordered scalar pairs.
     VectorField {
@@ -6329,6 +6406,7 @@ pub enum DeformableCurveData {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum DeformableCurveSource {
     /// Source geometry resolved to a neutral curve carrier.
     Curve {
@@ -6770,6 +6848,7 @@ impl ProceduralCurveRow {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum CurveOffsetLawBasis {
     /// Distance measured along the source curve from the offset interval start.
     ArcLength,

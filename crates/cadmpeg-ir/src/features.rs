@@ -124,6 +124,7 @@ pub struct FeatureUnitPlaneFrame {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct FeatureUnitPlaneFrameWire {
     origin: Point3,
     u_axis: Vector3,
@@ -344,6 +345,7 @@ pub struct FeatureLineSegment {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct FeatureLineSegmentWire {
     start: Point3,
     end: Point3,
@@ -386,6 +388,7 @@ pub struct FeaturePolyline {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct FeaturePolylineWire {
     points: Vec<Point3>,
     closed: bool,
@@ -440,6 +443,7 @@ pub struct FeatureEquationCurve {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct FeatureEquationCurveWire {
     parameter: String,
     x_expression: String,
@@ -532,6 +536,7 @@ pub struct FeatureCircularArc {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct FeatureCircularArcWire {
     center: Point3,
     normal: Vector3,
@@ -615,6 +620,7 @@ pub struct FeatureEllipticArc {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct FeatureEllipticArcWire {
     center: Point3,
     normal: Vector3,
@@ -966,7 +972,7 @@ pub struct ConfigurationFeatureState {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ConfigurationEvaluation {
     /// The feature is suppressed for this configuration.
-    Suppressed,
+    Suppressed {},
     /// The feature is active; the output list may be empty for operations
     /// whose neutral result is carried by the surrounding topology.
     Active {
@@ -991,7 +997,7 @@ impl<'de> Deserialize<'de> for ConfigurationEvaluation {
             },
         }
         Ok(match Wire::deserialize(deserializer)? {
-            Wire::Suppressed {} => Self::Suppressed,
+            Wire::Suppressed {} => Self::Suppressed {},
             Wire::Active { outputs } => Self::Active {
                 outputs: outputs
                     .try_into()
@@ -1005,14 +1011,14 @@ impl ConfigurationEvaluation {
     /// Whether evaluation of the feature is suppressed.
     #[must_use]
     pub const fn is_suppressed(&self) -> bool {
-        matches!(self, Self::Suppressed)
+        matches!(self, Self::Suppressed {})
     }
 
     /// Bodies produced or modified by an active feature.
     #[must_use]
     pub fn outputs(&self) -> &[BodyId] {
         match self {
-            Self::Suppressed => &[],
+            Self::Suppressed {} => &[],
             Self::Active { outputs } => outputs,
         }
     }
@@ -1026,6 +1032,7 @@ crate::ids::id_type!(
 /// A named design expression, optionally owned by a construction feature.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct DesignParameter {
     /// Globally unique parameter id.
     pub id: ParameterId,
@@ -1066,6 +1073,7 @@ pub struct DesignParameter {
 /// Product-manufacturing semantics attached to a design parameter.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct ParameterPmi {
     /// Semantic dimension family.
     pub subtype: PmiDimensionSubtype,
@@ -1088,6 +1096,7 @@ pub struct ParameterPmi {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "native_kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum PmiDimensionSubtype {
     /// Linear distance.
     Linear,
@@ -1109,6 +1118,7 @@ pub enum PmiDimensionSubtype {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum DimensionDisplay {
     /// Displays the dimension as a diameter.
     Diameter,
@@ -1416,6 +1426,7 @@ impl JsonSchema for Feature {
 /// Typed topology membership at one feature's evaluation input.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct FeatureInputTopology {
     /// Globally unique state id.
     pub id: FeatureInputTopologyId,
@@ -1469,6 +1480,7 @@ pub struct FeatureResultTopology {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct FeatureResultTopologyWire {
     id: FeatureResultTopologyId,
     output_of: FeatureId,
@@ -1628,6 +1640,7 @@ impl<'de> Deserialize<'de> for FeatureContent {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum FeatureSourceContent {
     /// Literal text between child records.
     Text(String),
@@ -1664,6 +1677,7 @@ pub enum DatumPlaneReference {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SketchPointSelection {
     /// Selection exists semantically but its sketch entity is not resolved.
     Unresolved,
@@ -1693,6 +1707,7 @@ pub enum SketchPointSelection {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum DatumPointConstruction {
     /// Center of one selected circular edge.
     CircleCenter {
@@ -1739,6 +1754,7 @@ pub enum DatumPointConstruction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum DecalMapping {
     /// Scale the complete raster to the selected faces' native parameter domain.
     FitToFaces,
@@ -3185,6 +3201,7 @@ pub enum FeatureDefinition {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum UnresolvedFamily {
     /// The `datum_plane` operation family.
     DatumPlane,
@@ -3392,6 +3409,7 @@ impl Default for ExtrudeDirection {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum HolePlacement {
     /// Position and directed drilling vector recorded by the feature definition.
     Directed {
@@ -3435,6 +3453,7 @@ pub enum PatternSeed {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum GeometryImportFormat {
     /// ISO 10303 STEP model data.
     Step,
@@ -3470,6 +3489,7 @@ const fn default_true() -> bool {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum ShellMode {
     /// Offsets the selected boundary as a skin.
     Skin,
@@ -3483,6 +3503,7 @@ pub enum ShellMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum ShellJoin {
     /// Continues corners with rounded arcs.
     Arc,
@@ -3496,6 +3517,7 @@ pub enum ShellJoin {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum RuledCurveOrientation {
     /// Select curve traversal automatically from endpoint proximity.
     Automatic,
@@ -4212,6 +4234,7 @@ impl RevolveConstruction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum RevolutionFuseOrder {
     /// Existing body is the first fuse operand.
     BaseFirst,
@@ -4236,6 +4259,7 @@ pub struct RevolutionAxis {
 /// Independently decoded inputs of a thin rib operation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct RibConstruction {
     /// Rib centerline or open profile, when resolved.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4258,6 +4282,7 @@ pub struct RibConstruction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum RibSide {
     /// Thickness lies on one side of the profile.
     OneSided,
@@ -4269,6 +4294,7 @@ pub enum RibSide {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "angle", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum RibDraft {
     /// Draft semantics are present but unresolved.
     #[default]
@@ -4283,6 +4309,7 @@ pub enum RibDraft {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum FeatureTreeNodeRole {
     /// Annotation container.
     Annotations,
@@ -4342,6 +4369,7 @@ pub enum FeatureTreeNodeRole {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum CosmeticThreadExtent {
     /// Fixed thread length along the cylindrical face.
     Blind {
@@ -4349,13 +4377,14 @@ pub enum CosmeticThreadExtent {
         length: PositiveLength,
     },
     /// Thread annotation spans the complete cylindrical face.
-    Through,
+    Through {},
 }
 
 /// Canonical role of a built-in reference plane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum PrincipalPlane {
     /// Front plane through the model origin.
     Front,
@@ -4369,6 +4398,7 @@ pub enum PrincipalPlane {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(from = "SketchFeatureBindingWire", into = "SketchFeatureBindingWire")]
+#[serde(deny_unknown_fields)]
 pub enum SketchFeatureBinding {
     /// The feature's sketch space is unresolved.
     Unresolved,
@@ -4419,6 +4449,7 @@ impl From<SketchFeatureBindingWire> for SketchFeatureBinding {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 /// Side retained by a body-trim operation.
+#[serde(deny_unknown_fields)]
 pub enum BodyTrimSide {
     /// Retained side is unresolved.
     Unresolved,
@@ -4449,6 +4480,7 @@ impl Default for CurveProjectionDirection {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 /// Direction state for projection without an explicit vector.
+#[serde(deny_unknown_fields)]
 pub enum CurveProjectionDirectionState {
     /// Projection direction remains unresolved.
     Unresolved,
@@ -4460,6 +4492,7 @@ pub enum CurveProjectionDirectionState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum BodyRetentionMode {
     /// The operation family is known but the selected retention mode is unavailable.
     Unresolved,
@@ -4492,6 +4525,7 @@ pub enum WrapMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SurfaceContinuity {
     /// Positional continuity only.
     Contact,
@@ -4591,6 +4625,7 @@ impl FilledSurfaceContinuityState {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct FilledSurfaceContinuityWire {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     continuity: Option<SurfaceContinuity>,
@@ -4651,6 +4686,7 @@ impl TryFrom<FilledSurfaceContinuityWire> for FilledSurfaceContinuityState {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SurfaceBoundary {
     /// Boundary selected as topological edges.
     Edges(EdgeSelection),
@@ -4662,6 +4698,7 @@ pub enum SurfaceBoundary {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum TrimRegion {
     /// Source trim exists but the retained region is unresolved.
     Unresolved,
@@ -4735,6 +4772,7 @@ impl TryFrom<TrimCellSelectionWire> for TrimCellSelection {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SurfaceExtension {
     /// Extension law is unresolved.
     Unresolved,
@@ -4750,6 +4788,7 @@ pub enum SurfaceExtension {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum RuledSurfaceMode {
     /// Extend normal to the support faces.
     Normal {
@@ -4774,6 +4813,7 @@ pub enum RuledSurfaceMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum RuledSurfaceCorner {
     /// Join adjacent ruled strips with rounded corners.
     Rounded,
@@ -4785,6 +4825,7 @@ pub enum RuledSurfaceCorner {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum ScaleCenter {
     /// Combined centroid of the selected bodies.
     Centroid,
@@ -4827,6 +4868,7 @@ impl ScaleFactors {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct ScaleFactorsWire {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     uniform: Option<f64>,
@@ -4893,6 +4935,7 @@ impl TryFrom<ScaleFactorsWire> for ScaleFactors {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum ThickenSide {
     /// Add material along the selected-face normal.
     Forward,
@@ -4906,6 +4949,7 @@ pub enum ThickenSide {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SheetMetalHeightDatum {
     /// The height is measured from the inner faces of the sheet.
     InnerFaces,
@@ -4917,6 +4961,7 @@ pub enum SheetMetalHeightDatum {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SheetMetalBendPosition {
     /// The bend lies outside the selected edge.
     Outside,
@@ -4937,6 +4982,7 @@ pub enum SheetMetalBendPosition {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SheetMetalHemForm {
     /// Flat hem with its developed length.
     Flat {
@@ -4979,6 +5025,7 @@ pub enum SheetMetalHemForm {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SheetMetalHemDirection {
     /// Fold in the source operation's forward direction.
     Forward,
@@ -4992,6 +5039,7 @@ pub enum SheetMetalHemDirection {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SheetMetalFlangeHeightTarget {
     /// A neutral construction feature in the same design history.
     Feature(FeatureId),
@@ -5003,6 +5051,7 @@ pub enum SheetMetalFlangeHeightTarget {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SheetMetalFlangeHeight {
     /// Fixed distance from the operation's height datum.
     Distance(PositiveLength),
@@ -5019,6 +5068,7 @@ pub enum SheetMetalFlangeHeight {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SheetMetalFlangeWidth {
     /// The flange spans the complete selected edge.
     FullEdge,
@@ -5084,6 +5134,7 @@ impl<'de> Deserialize<'de> for SheetMetalFlangeEdgeWidths {
 /// Two-sided extent assigned to one selected sheet-metal flange edge.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct SheetMetalFlangeTwoSidedWidth {
     /// Distance measured from the edge's first end.
     #[serde(deserialize_with = "deserialize_flange_first")]
@@ -5097,6 +5148,7 @@ pub struct SheetMetalFlangeTwoSidedWidth {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SheetMetalThicknessSide {
     /// Thickness lies along the profile plane's positive normal.
     Forward,
@@ -5208,6 +5260,7 @@ pub enum EdgeSelection {
 /// Persistent identity of an edge in one regenerated feature result.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct GeneratedEdgeRef {
     /// Feature whose regenerated result owns the edge.
     pub feature: FeatureId,
@@ -5219,6 +5272,7 @@ pub struct GeneratedEdgeRef {
 /// Persistent identity of a face in one regenerated feature result.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct GeneratedFaceRef {
     /// Feature whose regenerated result owns the face.
     pub feature: FeatureId,
@@ -5230,6 +5284,7 @@ pub struct GeneratedFaceRef {
 /// Persistent identity of a vertex in one regenerated feature result.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct GeneratedVertexRef {
     /// Feature whose regenerated result owns the vertex.
     pub feature: FeatureId,
@@ -5242,6 +5297,7 @@ pub struct GeneratedVertexRef {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum VertexSelection {
     /// Selection exists semantically but its operand is not resolved.
     Unresolved,
@@ -5884,6 +5940,7 @@ where
         D: serde::Deserializer<'de>,
     {
         #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
         struct Wire<B> {
             body: B,
             native: String,
@@ -6089,6 +6146,7 @@ impl BodySelection {
 /// Persistent identity of a body in one regenerated feature result.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct GeneratedBodyRef {
     /// Feature whose regenerated result owns the body.
     pub feature: FeatureId,
@@ -6110,6 +6168,7 @@ impl GeneratedBodyRef {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum FaceMotion {
     /// Offset along each face normal.
     Offset {
@@ -6137,6 +6196,7 @@ pub enum FaceMotion {
 /// Model-space axis-angle rotation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct AxisAngle {
     /// Point on the rotation axis.
     pub origin: FinitePoint3,
@@ -6442,6 +6502,7 @@ impl JsonSchema for FaceMaker {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum InnerWireTaper {
     /// Inner wires taper opposite to outer wires.
     Inverted,
@@ -6453,6 +6514,7 @@ pub enum InnerWireTaper {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum HelixConstructionStyle {
     /// Historical construction retained for document compatibility.
     Legacy,
@@ -6488,6 +6550,7 @@ pub enum HelixShape {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SurfaceProjectionMode {
     /// Retain all projected result shapes.
     All,
@@ -6501,6 +6564,7 @@ pub enum SurfaceProjectionMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum BooleanOp {
     /// Source operation is retained but not semantically resolved.
     Unresolved,
@@ -6518,6 +6582,7 @@ pub enum BooleanOp {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum BooleanKind {
     /// Union with existing bodies.
     Join,
@@ -6578,6 +6643,7 @@ impl TryFrom<BooleanOp> for SolidSweepOperation {
 /// Placement and parameterization of a solid Coil primitive.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct CoilConstruction {
     /// Axis frame and angular origin.
     pub placement: CoilPlacement,
@@ -6615,6 +6681,7 @@ pub enum CoilPlacement {
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 enum CoilPlacementWire {
     Explicit {
         origin: Point3,
@@ -6659,6 +6726,7 @@ impl From<CoilPlacement> for CoilPlacementWire {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum CoilExtent {
     /// Axial coil driven by revolution count and total signed height.
     RevolutionsHeight {
@@ -6694,6 +6762,7 @@ pub enum CoilExtent {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum CoilSection {
     /// Circular section whose size is its diameter.
     Circular {
@@ -6721,6 +6790,7 @@ pub enum CoilSection {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum CoilSectionPlacement {
     /// Section lies inside the reference trajectory.
     Inside,
@@ -6734,9 +6804,10 @@ pub enum CoilSectionPlacement {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum CoilResult {
     /// Create an independent body.
-    NewBody,
+    NewBody {},
     /// Combine the swept volume with selected existing bodies.
     Boolean {
         /// Join, cut, or intersection operation.
@@ -6766,6 +6837,7 @@ pub enum SweepMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SolidSweepOperation {
     /// Create an independent body.
     NewBody,
@@ -6780,6 +6852,7 @@ pub enum SolidSweepOperation {
 /// Directed fractions of a sweep path consumed from the profile location.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct SweepPathExtent {
     /// Fraction consumed in the path's forward traversal direction.
     pub along_fraction: Fraction,
@@ -6790,6 +6863,7 @@ pub struct SweepPathExtent {
 /// Guide rail controlling a sweep, with its directed consumed extent.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct SweepGuideRail {
     /// Ordered guide trajectory.
     pub path: PathRef,
@@ -6843,6 +6917,7 @@ pub struct SweepCircularRegion {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct SweepCircularRegionWire {
     outer_radius: PositiveLength,
     #[serde(default)]
@@ -6991,6 +7066,7 @@ pub enum GeneratedSweepSection {
 /// One directed use of a solved sketch curve in an arrangement boundary.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct SketchProfileBoundaryUse {
     /// Sketch entity supplying the curve geometry.
     pub entity: crate::sketches::SketchEntityId,
@@ -7014,6 +7090,7 @@ pub struct SketchProfileLoops {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct SketchProfileLoopsWire {
     outer: u32,
     #[serde(default)]
@@ -7175,6 +7252,7 @@ pub enum SweepOrientation {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SweepTransition {
     /// Transform the section continuously across the corner.
     Transformed,
@@ -7188,6 +7266,7 @@ pub enum SweepTransition {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SweepTransformation {
     /// Keep one constant section along the path.
     Constant,
@@ -7212,6 +7291,7 @@ pub struct HelicalSweepTravel {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct HelicalSweepTravelWire {
     height: Length,
     radial_growth: Length,
@@ -7282,6 +7362,7 @@ pub struct HelicalSweepConstruction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum HelicalSweepLaw {
     /// Pitch, height, and cone angle are independent.
     PitchHeightAngle,
@@ -7296,6 +7377,7 @@ pub enum HelicalSweepLaw {
 /// One object or subelement selection consumed by a design binder.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct BinderSource {
     /// Bound object identity.
     pub target: BinderTarget,
@@ -7309,6 +7391,7 @@ pub struct BinderSource {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum BinderTarget {
     /// Feature in this CADIR document.
     Feature {
@@ -7336,6 +7419,7 @@ pub enum BinderTarget {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum BinderConstruction {
     /// Simple binder over one support object.
     Shape {
@@ -7373,6 +7457,7 @@ pub enum BinderConstruction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum BinderLifecycle {
     /// Automatically tracks changes to its sources.
     Synchronized,
@@ -7386,6 +7471,7 @@ pub enum BinderLifecycle {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum BinderPlacement {
     /// Interpret source placement relative to the binder context.
     Relative,
@@ -7397,6 +7483,7 @@ pub enum BinderPlacement {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum BinderCopyOnChange {
     /// Do not clone configurable source properties.
     Disabled,
@@ -7409,6 +7496,7 @@ pub enum BinderCopyOnChange {
 /// Two-dimensional offset applied to bound faces or wires.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct BinderOffset {
     /// Signed offset distance.
     pub distance: NonZeroLength,
@@ -7426,6 +7514,7 @@ pub struct BinderOffset {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum BinderOffsetJoin {
     /// Circular corner arcs.
     Arcs,
@@ -7581,6 +7670,7 @@ pub enum LoftSection {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum LoftPointSection {
     /// Source-native point-selection record whose position is not resolved.
     #[serde(rename = "native_point")]
@@ -7594,6 +7684,7 @@ pub enum LoftPointSection {
 /// Persistent identity of a curve in one regenerated feature result.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct GeneratedCurveRef {
     /// Feature whose regenerated result owns the curve.
     pub feature: FeatureId,
@@ -7949,6 +8040,7 @@ fn same_vertex_target(
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SplitFaceTool {
     /// Sketch or model-space path projected onto the target faces.
     Path(PathRef),
@@ -8008,6 +8100,7 @@ pub enum FlexMode {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 enum FlexModeWire {
     Unresolved {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -8076,6 +8169,7 @@ impl TryFrom<FlexModeWire> for FlexMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum FlexForm {
     /// Angular bending.
     Bending,

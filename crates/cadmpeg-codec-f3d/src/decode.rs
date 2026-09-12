@@ -700,7 +700,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
 
             matches!(construction.placement, CoilPlacement::Native { .. })
                 || match result {
-                    CoilResult::NewBody => false,
+                    CoilResult::NewBody {} => false,
                     CoilResult::Boolean { targets, .. } => !body_selection_is_resolved(targets),
                 }
         }

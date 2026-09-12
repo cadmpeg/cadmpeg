@@ -42,7 +42,7 @@ pub(super) fn make_sibling_ordinals_unique(occurrences: &mut [cadmpeg_ir::produc
     let mut used = HashMap::<Option<String>, HashSet<u32>>::new();
     for occurrence in occurrences {
         let parent = match &occurrence.parent {
-            cadmpeg_ir::products::OccurrenceParent::Root => None,
+            cadmpeg_ir::products::OccurrenceParent::Root {} => None,
             cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence } => {
                 Some(occurrence.as_str().to_owned())
             }

@@ -65,9 +65,9 @@ impl TryFrom<ExportReportWire> for ExportReport {
         match (wire.write_path, &wire.fidelity) {
             (
                 WritePath::VerbatimReplay,
-                FidelityResolution::NotConsumed | FidelityResolution::Degraded { .. },
+                FidelityResolution::NotConsumed {} | FidelityResolution::Degraded { .. },
             ) => Err("verbatim_replay cannot pair with not_consumed or degraded fidelity"),
-            (WritePath::Synthesized, FidelityResolution::Replayed) => {
+            (WritePath::Synthesized, FidelityResolution::Replayed {}) => {
                 Err("synthesized cannot pair with replayed fidelity")
             }
             _ => Ok(Self {
@@ -116,6 +116,7 @@ mod schema_tests {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum WritePath {
     /// Retained source bytes were copied to the output unchanged. No writer code
     /// ran, so the output says nothing about the writer.
@@ -141,13 +142,14 @@ impl fmt::Display for WritePath {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", tag = "status")]
+#[serde(deny_unknown_fields)]
 pub enum FidelityResolution {
     /// The input had no decode-time fidelity state.
-    NotProvided,
+    NotProvided {},
     /// Preserved source content was consumed successfully.
-    Replayed,
+    Replayed {},
     /// The encoder does not consume source fidelity.
-    NotConsumed,
+    NotConsumed {},
     /// Fidelity was available but could not be consumed.
     Degraded {
         /// Explanation of the degradation.
@@ -159,6 +161,7 @@ pub enum FidelityResolution {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum CensusBasis {
     /// Counts describe records emitted in the target format.
     TargetRecords,
@@ -169,6 +172,7 @@ pub enum CensusBasis {
 /// Explicitly based entity counts for one export.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct EntityCensus {
     /// Semantic basis of `counts`.
     pub basis: CensusBasis,

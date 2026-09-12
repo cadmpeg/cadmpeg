@@ -30,6 +30,7 @@ pub struct Color {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct ColorWire {
     r: f32,
     g: f32,
@@ -110,6 +111,7 @@ impl Color {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum Sense {
     /// Same direction as the referenced geometry.
     Forward,
@@ -121,6 +123,7 @@ pub enum Sense {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum BodyKind {
     /// A closed, volume-bounding solid body.
     #[default]
@@ -136,6 +139,7 @@ pub enum BodyKind {
 /// A top-level solid, sheet, wire, or general body.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct Body {
     /// Arena id.
     pub id: BodyId,
@@ -162,6 +166,7 @@ pub struct Body {
 /// A connected region of a body.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct Region {
     /// Arena id.
     pub id: RegionId,
@@ -309,6 +314,7 @@ impl Shell {
 impl<'de> Deserialize<'de> for Shell {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
         struct ShellWire {
             id: ShellId,
             region: RegionId,
@@ -333,6 +339,7 @@ impl<'de> Deserialize<'de> for Shell {
 /// A face: a bounded region of a surface.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct Face {
     /// Arena id.
     pub id: FaceId,
@@ -643,6 +650,7 @@ impl<'a> IntoIterator for &'a FaceLoops {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum LoopBoundaryRole {
     /// The source does not classify this loop as outer or inner.
     #[default]
@@ -1028,6 +1036,7 @@ pub struct EdgeCarrier {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct EdgeCarrierWire {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     curve: Option<CurveId>,
@@ -1127,6 +1136,7 @@ impl Edge {
 /// A vertex: a topological point referencing a position carrier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct Vertex {
     /// Arena id.
     pub id: VertexId,
@@ -1141,6 +1151,7 @@ pub struct Vertex {
 /// A position carrier for a vertex.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct Point {
     /// Arena id.
     pub id: PointId,

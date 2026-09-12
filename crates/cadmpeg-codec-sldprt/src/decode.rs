@@ -1126,7 +1126,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                     construction.placement,
                     cadmpeg_ir::features::CoilPlacement::Native { .. }
                 ) || match result {
-                    cadmpeg_ir::features::CoilResult::NewBody => false,
+                    cadmpeg_ir::features::CoilResult::NewBody {} => false,
                     cadmpeg_ir::features::CoilResult::Boolean { targets, .. } => {
                         incomplete_body_selection(targets)
                     }
@@ -3815,7 +3815,7 @@ fn snapshot_active_configuration(ir: &mut CadIr) {
                 feature.id.clone(),
                 cadmpeg_ir::features::ConfigurationFeatureState {
                     evaluation: if feature.suppressed.unwrap_or(false) {
-                        cadmpeg_ir::features::ConfigurationEvaluation::Suppressed
+                        cadmpeg_ir::features::ConfigurationEvaluation::Suppressed {}
                     } else {
                         cadmpeg_ir::features::ConfigurationEvaluation::Active {
                             outputs: feature.evaluation.outputs().iter().cloned().collect(),

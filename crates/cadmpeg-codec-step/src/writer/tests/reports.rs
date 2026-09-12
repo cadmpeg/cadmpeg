@@ -283,7 +283,7 @@ fn writer_reports_root_occurrence_scale() {
         prototype: cadmpeg_ir::products::PrototypeReference::Local {
             definition: product,
         },
-        parent: cadmpeg_ir::products::OccurrenceParent::Root,
+        parent: cadmpeg_ir::products::OccurrenceParent::Root {},
         ordinal: 0,
         transform: Transform::identity(),
         linked_prototype: None,
@@ -438,8 +438,8 @@ fn writer_reports_occurrence_with_parent_without_local_product() {
         .expect("identity grammar");
     ir.model.occurrences.push(cadmpeg_ir::products::Occurrence {
         id: parent.clone(),
-        prototype: cadmpeg_ir::products::PrototypeReference::Unresolved,
-        parent: cadmpeg_ir::products::OccurrenceParent::Root,
+        prototype: cadmpeg_ir::products::PrototypeReference::Unresolved {},
+        parent: cadmpeg_ir::products::OccurrenceParent::Root {},
         ordinal: 0,
         transform: cadmpeg_ir::transform::Transform::identity(),
         linked_prototype: None,

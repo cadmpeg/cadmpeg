@@ -26,6 +26,7 @@ pub struct SpreadsheetCell {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct SpreadsheetCellWire {
     address: String,
     parameter: ParameterId,
@@ -118,6 +119,7 @@ pub struct Spreadsheet {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct SpreadsheetWire {
     id: SpreadsheetId,
     feature: FeatureId,
@@ -228,6 +230,7 @@ pub struct SpreadsheetDimension {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct SpreadsheetDimensionWire {
     name: String,
     pixels: u32,
@@ -244,6 +247,7 @@ pub struct SpreadsheetRange {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct SpreadsheetRangeWire {
     start: String,
     end: String,

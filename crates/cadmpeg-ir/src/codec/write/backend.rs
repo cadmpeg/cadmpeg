@@ -267,7 +267,7 @@ pub enum Consumption {
 impl From<Consumption> for FidelityResolution {
     fn from(consumption: Consumption) -> Self {
         match consumption {
-            Consumption::NotConsumed => Self::NotConsumed,
+            Consumption::NotConsumed => Self::NotConsumed {},
             Consumption::Degraded { reason } => Self::Degraded { reason },
         }
     }
@@ -312,19 +312,19 @@ impl WritePath {
             Self::Synthesized { consumption } => (ReportWritePath::Synthesized, consumption.into()),
             Self::Patched {
                 consumption: PatchConsumption::Replayed,
-            } => (ReportWritePath::Patched, FidelityResolution::Replayed),
+            } => (ReportWritePath::Patched, FidelityResolution::Replayed {}),
             Self::Patched {
                 consumption: PatchConsumption::Independent(consumption),
             } => (ReportWritePath::Patched, consumption.into()),
             Self::VerbatimReplay => (
                 ReportWritePath::VerbatimReplay,
-                FidelityResolution::Replayed,
+                FidelityResolution::Replayed {},
             ),
         };
         if fidelity_provided {
             (write_path, fidelity)
         } else {
-            (write_path, FidelityResolution::NotProvided)
+            (write_path, FidelityResolution::NotProvided {})
         }
     }
 }

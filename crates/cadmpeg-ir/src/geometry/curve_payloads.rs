@@ -59,6 +59,7 @@ pub struct SurfaceOffsetCurveConstruction {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct SurfaceOffsetCurveConstructionWire {
     /// Shared first two support pairs.
     context: IntcurveSupportContext,
@@ -212,6 +213,7 @@ pub struct DeformableCurveConstruction {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct DeformableCurveConstructionWire {
     /// Shared cache-first support context.
     context: IntcurveSupportContext,
@@ -490,6 +492,7 @@ pub struct SpatialOffsetCurveConstruction {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct SpatialOffsetCurveConstructionWire {
     /// Curve being offset.
     source: CurveId,
@@ -579,6 +582,7 @@ pub struct TwoSidedOffsetCurveConstruction {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct TwoSidedOffsetCurveConstructionWire {
     /// Shared surfaces, UV curves, interval, and discontinuity metadata.
     context: IntcurveSupportContext,
@@ -653,6 +657,7 @@ pub struct VectorOffsetCurveConstruction {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct VectorOffsetCurveConstructionWire {
     /// Curve being offset.
     source: CurveId,
@@ -733,6 +738,7 @@ pub struct SubsetCurveConstruction {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct SubsetCurveConstructionWire {
     /// Parent curve being restricted.
     source: CurveId,
@@ -800,6 +806,7 @@ pub struct SilhouetteCurveConstruction {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct SilhouetteCurveConstructionWire {
     /// Shared first two support pairs.
     context: IntcurveSupportContext,
@@ -875,6 +882,7 @@ pub struct SpringCurvePayload {
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct SpringCurvePayloadWire {
     layout: SpringLayout,
 
@@ -944,6 +952,7 @@ pub struct ThreeSurfaceIntersectionCurvePayload {
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct ThreeSurfaceIntersectionCurvePayloadWire {
     context: IntcurveSupportContext,
 
@@ -1010,6 +1019,7 @@ pub struct ProjectionCurvePayload {
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct ProjectionCurvePayloadWire {
     context: IntcurveSupportContext,
 

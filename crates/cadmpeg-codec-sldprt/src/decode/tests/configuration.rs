@@ -420,7 +420,7 @@ fn configuration_suppression_and_override_references_are_coherent() {
         feature_states: BTreeMap::from([(
             feature,
             ConfigurationFeatureState {
-                evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed,
+                evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed {},
                 dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                 definition,
             },

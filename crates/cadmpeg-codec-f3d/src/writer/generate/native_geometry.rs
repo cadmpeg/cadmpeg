@@ -580,7 +580,7 @@ fn native_procedural_surface_definition(
                     native_pcurve_knot_domain(pcurve.as_ref())?,
                 )?;
                 let subtype = match taper {
-                    cadmpeg_ir::geometry::TaperSurfaceKind::Standard => "taper_spl_sur",
+                    cadmpeg_ir::geometry::TaperSurfaceKind::Standard {} => "taper_spl_sur",
                     cadmpeg_ir::geometry::TaperSurfaceKind::Orthogonal { .. } => "ortho_spl_sur",
                     cadmpeg_ir::geometry::TaperSurfaceKind::Edge { .. } => "edge_tpr_spl_sur",
                     cadmpeg_ir::geometry::TaperSurfaceKind::Shadow { .. } => "shadow_tpr_spl_sur",
@@ -646,7 +646,7 @@ fn native_procedural_surface_definition(
                     native_vector(bytes, [draft.x, draft.y, draft.z]);
                 };
                 match taper {
-                    cadmpeg_ir::geometry::TaperSurfaceKind::Standard => {}
+                    cadmpeg_ir::geometry::TaperSurfaceKind::Standard {} => {}
                     cadmpeg_ir::geometry::TaperSurfaceKind::Orthogonal { sense } => {
                         bytes.push(native_bool(*sense));
                     }
@@ -1807,7 +1807,7 @@ fn encode_native_scaled_compound_loft(
     native_ident(bytes, "scaled_cloft_spl_sur")?;
     native_enum(bytes, construction.singularity);
     match &construction.shape {
-        ScaledCompoundLoftShape::Full => {
+        ScaledCompoundLoftShape::Full {} => {
             let solved_cache = solved_cache.ok_or_else(|| {
                 CodecError::Malformed(
                     "scaled compound-loft full shape requires a solved NURBS cache".into(),
@@ -3916,7 +3916,7 @@ fn encode_native_variable_blend(
     if let Some(cross_section) = &construction.cross_section {
         use cadmpeg_ir::geometry::VariableBlendCrossSection as CrossSection;
         match cross_section {
-            CrossSection::Circular => native_enum(bytes, 0),
+            CrossSection::Circular {} => native_enum(bytes, 0),
             CrossSection::Thumbweights { parameters } => {
                 native_enum(bytes, 1);
                 for parameter in parameters {
@@ -5058,8 +5058,8 @@ pub(crate) fn native_procedural_curve(
         let cast_surface = definition_payload.cast_surface();
         let light_direction = definition_payload.light_direction();
         let (name, draft_factor) = match definition_payload.silhouette() {
-            cadmpeg_ir::geometry::SilhouetteKind::Standard => ("silh_int_cur", None),
-            cadmpeg_ir::geometry::SilhouetteKind::Parametric => ("para_silh_int_cur", None),
+            cadmpeg_ir::geometry::SilhouetteKind::Standard {} => ("silh_int_cur", None),
+            cadmpeg_ir::geometry::SilhouetteKind::Parametric {} => ("para_silh_int_cur", None),
             cadmpeg_ir::geometry::SilhouetteKind::Taper { draft_factor } => {
                 ("taper_silh_int_cur", Some(draft_factor.get()))
             }

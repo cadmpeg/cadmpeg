@@ -228,7 +228,7 @@ fn silhouette_admission_requires_a_nondegenerate_light_direction_and_finite_draf
         Vector3::new(f64::NAN, 0.0, 1.0),
         Vector3::new(0.0, f64::INFINITY, 0.0),
     ] {
-        assert!(silhouette(SilhouetteKind::Standard, light_direction).is_err());
+        assert!(silhouette(SilhouetteKind::Standard {}, light_direction).is_err());
         let mut invalid = wire.clone();
         invalid["definition"]["light_direction"] = serde_json::to_value(light_direction).unwrap();
         assert!(

@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum RadiusForm {
     /// Same radius along the whole edge chain.
     Constant,
@@ -89,6 +90,7 @@ pub struct FullRoundFilletGroup {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct FullRoundFilletGroupWire {
     #[serde(rename = "center_faces")]
     center: FaceSelection,
@@ -170,6 +172,7 @@ impl<'de> Deserialize<'de> for FullRoundFilletGroup {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum FullRoundSideSelection {
     /// The kernel infers this side from the center-face selection.
     Automatic,
@@ -238,6 +241,7 @@ impl From<VariableRadii> for Vec<VariableRadius> {
 /// Radius at a normalized position along a filleted edge chain.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct VariableRadius {
     /// Position in `[0, 1]` along the edge chain.
     pub parameter: f64,
@@ -249,6 +253,7 @@ pub struct VariableRadius {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum ChamferForm {
     /// Equal setback distance on both faces.
     Distance,

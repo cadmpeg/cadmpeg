@@ -35,7 +35,10 @@ fn encode_reports_a_version_mismatch_as_dialect_displacement() {
         .unwrap();
 
     assert_eq!(plan.report().write_path(), WritePath::Synthesized);
-    assert_eq!(&plan.report().fidelity(), &FidelityResolution::NotConsumed);
+    assert_eq!(
+        &plan.report().fidelity(),
+        &FidelityResolution::NotConsumed {}
+    );
     let displacement = plan
         .report()
         .losses
@@ -71,7 +74,10 @@ fn encode_does_not_attempt_replay_when_the_source_records_no_dialect() {
         .unwrap();
 
     assert_eq!(plan.report().write_path(), WritePath::Synthesized);
-    assert_eq!(&plan.report().fidelity(), &FidelityResolution::NotConsumed);
+    assert_eq!(
+        &plan.report().fidelity(),
+        &FidelityResolution::NotConsumed {}
+    );
 }
 
 #[test]

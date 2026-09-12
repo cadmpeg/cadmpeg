@@ -1724,7 +1724,7 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
             prototype: cadmpeg_ir::products::PrototypeReference::Local {
                 definition: parent_product.clone(),
             },
-            parent: OccurrenceParent::Root,
+            parent: OccurrenceParent::Root {},
             ordinal: 0,
             transform: Transform::identity(),
             linked_prototype: None,

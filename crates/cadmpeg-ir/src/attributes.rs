@@ -11,6 +11,7 @@ use crate::ids::{AttributeId, BodyId, CoedgeId, EdgeId, FaceId, LoopId, ShellId,
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "id", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum AttributeTarget {
     /// Attribute is owned by the document as a whole, not a specific entity.
     Document,
@@ -34,6 +35,7 @@ pub enum AttributeTarget {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum AttributeValue {
     /// A signed integer value.
     Integer(i64),
@@ -52,6 +54,7 @@ pub enum AttributeValue {
 /// A linked source attribute record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct SourceAttribute {
     /// Stable id of this attribute record.
     pub id: AttributeId,

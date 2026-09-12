@@ -161,7 +161,7 @@ pub(super) fn transfer_part_product(
         prototype: PrototypeReference::Local {
             definition: product_id,
         },
-        parent: OccurrenceParent::Root,
+        parent: OccurrenceParent::Root {},
         ordinal: 0,
         transform: Transform::identity(),
         linked_prototype: None,

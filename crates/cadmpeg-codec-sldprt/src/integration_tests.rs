@@ -370,7 +370,7 @@ fn an_explicit_catalog_row_synthesizes_without_consuming_a_different_dialect() {
     );
     assert_eq!(
         plan.report().fidelity(),
-        cadmpeg_ir::FidelityResolution::NotConsumed
+        cadmpeg_ir::FidelityResolution::NotConsumed {}
     );
 
     let mut written = Vec::new();

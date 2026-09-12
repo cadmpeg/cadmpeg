@@ -185,7 +185,7 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
         );
         assert_eq!(
             &plan.report().fidelity(),
-            &cadmpeg_ir::FidelityResolution::NotConsumed
+            &cadmpeg_ir::FidelityResolution::NotConsumed {}
         );
         let mut edited_bytes = Vec::new();
         let export = plan

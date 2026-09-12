@@ -1150,7 +1150,7 @@ impl<'a> Builder<'a> {
                 PrototypeReference::Local { definition } => {
                     Some((occurrence.id.clone(), definition.clone()))
                 }
-                PrototypeReference::External { .. } | PrototypeReference::Unresolved => None,
+                PrototypeReference::External { .. } | PrototypeReference::Unresolved {} => None,
             })
             .collect::<HashMap<OccurrenceId, ProductDefinitionId>>();
         let mut product_origins = HashMap::<ProductDefinitionId, Ref>::new();
@@ -4250,7 +4250,7 @@ impl<'a> Builder<'a> {
             .filter(|occurrence| {
                 matches!(
                     &occurrence.prototype,
-                    cadmpeg_ir::products::PrototypeReference::Unresolved
+                    cadmpeg_ir::products::PrototypeReference::Unresolved {}
                 )
             })
             .count();

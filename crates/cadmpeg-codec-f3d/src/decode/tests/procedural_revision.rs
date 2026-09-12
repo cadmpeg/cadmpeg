@@ -342,7 +342,7 @@ fn generated_single_radius_variable_blend_decodes_explicit_circular_cross_sectio
 
     assert!(matches!(
         &construction.cross_section,
-        Some(cadmpeg_ir::geometry::VariableBlendCrossSection::Circular)
+        Some(cadmpeg_ir::geometry::VariableBlendCrossSection::Circular {})
     ));
     let expected = construction.clone();
     let (mut source_less, _, _) = decoded.into_parts();

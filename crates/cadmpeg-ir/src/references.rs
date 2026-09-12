@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(from = "ReferenceTargetWire", into = "ReferenceTargetWire")]
+#[serde(deny_unknown_fields)]
 pub enum ReferenceTarget {
     /// Explicit null reference.
     Null,

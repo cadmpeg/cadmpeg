@@ -15,6 +15,7 @@ use crate::document::CensusKey;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum Check {
     /// Entity identifiers are empty, duplicated, or not globally unique.
     Identity,
@@ -81,6 +82,7 @@ impl fmt::Display for Check {
 /// A single validation finding.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct Finding {
     /// Which check produced this finding.
     pub check: Check,
@@ -96,6 +98,7 @@ pub struct Finding {
 /// Entity counts, findings, and propagated decode losses for one document.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct ValidationReport {
     /// Count of entities per arena, keyed by entity kind (sorted).
     pub entity_counts: BTreeMap<CensusKey, usize>,

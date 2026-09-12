@@ -143,6 +143,7 @@ impl<'de> Deserialize<'de> for BsplineSurface {
         D: serde::Deserializer<'de>,
     {
         #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
         struct Wire {
             u_degree: u32,
             v_degree: u32,
@@ -559,6 +560,7 @@ impl<'de> Deserialize<'de> for NurbsSurface {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SurfaceParameterAxis {
     /// Hold the surface U parameter constant and vary V.
     U,
@@ -705,6 +707,7 @@ impl<'de> Deserialize<'de> for NurbsCurve {
         D: serde::Deserializer<'de>,
     {
         #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
         struct Wire {
             degree: u32,
             knots: Vec<f64>,
@@ -861,6 +864,7 @@ impl<'de> Deserialize<'de> for PolygonalSurface {
         D: serde::Deserializer<'de>,
     {
         #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
         struct Wire {
             vertices: Vec<Point3>,
             triangles: Vec<[u32; 3]>,
@@ -990,6 +994,7 @@ impl<'de> Deserialize<'de> for PolylineCurve {
         D: serde::Deserializer<'de>,
     {
         #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
         struct Wire {
             points: Vec<Point3>,
             #[serde(default)]
@@ -1014,6 +1019,7 @@ pub struct PlaneSurface {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct PlaneSurfaceWire {
     origin: Point3,
     normal: Vector3,
@@ -1077,6 +1083,7 @@ pub struct CylinderSurface {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct CylinderSurfaceWire {
     origin: Point3,
     axis: Vector3,
@@ -1161,6 +1168,7 @@ pub struct ConeSurface {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct ConeSurfaceWire {
     origin: Point3,
     axis: Vector3,
@@ -1274,6 +1282,7 @@ pub struct SphereSurface {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct SphereSurfaceWire {
     center: Point3,
     axis: Vector3,
@@ -1359,6 +1368,7 @@ pub struct TorusSurface {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct TorusSurfaceWire {
     center: Point3,
     axis: Vector3,
@@ -1461,6 +1471,7 @@ pub struct LineCurve {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct LineCurveWire {
     origin: Point3,
     direction: Vector3,
@@ -1512,6 +1523,7 @@ pub struct CircleCurve {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct CircleCurveWire {
     center: Point3,
     axis: Vector3,
@@ -1600,6 +1612,7 @@ pub struct EllipseCurve {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct EllipseCurveWire {
     center: Point3,
     axis: Vector3,
@@ -1708,6 +1721,7 @@ pub struct ParabolaCurve {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct ParabolaCurveWire {
     vertex: Point3,
     axis: Vector3,
@@ -1796,6 +1810,7 @@ pub struct HyperbolaCurve {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct HyperbolaCurveWire {
     center: Point3,
     axis: Vector3,
@@ -1901,6 +1916,7 @@ pub struct DegenerateCurve {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct DegenerateCurveWire {
     point: Point3,
 }
@@ -2833,6 +2849,7 @@ pub struct PolarPcurveNurbs {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct PolarPcurveNurbsWire {
     degree: u32,
     knots: Vec<f64>,
@@ -3153,6 +3170,7 @@ impl<'de> Deserialize<'de> for PcurveNurbs {
         D: serde::Deserializer<'de>,
     {
         #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
         struct Wire {
             degree: u32,
             knots: Vec<f64>,

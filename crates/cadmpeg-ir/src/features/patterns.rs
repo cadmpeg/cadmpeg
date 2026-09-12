@@ -190,6 +190,7 @@ impl PatternKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum PatternForm {
     /// Repeats seeds along a straight direction.
     Linear,
@@ -451,6 +452,7 @@ fn valid_increasing_locations(locations: impl Iterator<Item = f64>) -> bool {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum PatternScaleCenter {
     /// Volume centroid of the first seed feature.
     FirstSeedCentroid,
@@ -463,6 +465,7 @@ pub enum PatternScaleCenter {
 /// One stage of an ordered composite pattern.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct PatternStage {
     /// Pattern transform sequence contributed by this stage.
     pub pattern: Box<PatternKind>,
@@ -474,6 +477,7 @@ pub struct PatternStage {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum PatternStageCombination {
     /// Establishes the initial transform sequence.
     Initialize,
@@ -486,6 +490,7 @@ pub enum PatternStageCombination {
 /// Complete secondary direction of a two-direction linear pattern.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct LinearPatternDirection {
     /// Unit translation direction.
     pub direction: Vector3,

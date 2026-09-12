@@ -1747,9 +1747,9 @@ const ZERO_DRAFT_FACTOR: cadmpeg_ir::scalar::FiniteReal =
 fn embedded_silhouette(toks: &[Token]) -> Option<EmbeddedSilhouette> {
     use cadmpeg_ir::geometry::SilhouetteKind;
     let names = [
-        ("silh_int_cur", SilhouetteKind::Standard),
-        ("para_silh_int_cur", SilhouetteKind::Parametric),
-        ("parasil", SilhouetteKind::Parametric),
+        ("silh_int_cur", SilhouetteKind::Standard {}),
+        ("para_silh_int_cur", SilhouetteKind::Parametric {}),
+        ("parasil", SilhouetteKind::Parametric {}),
         (
             "taper_silh_int_cur",
             SilhouetteKind::Taper {
@@ -1805,8 +1805,8 @@ pub fn silhouette_patch_layout(
 ) -> Option<SilhouettePatchLayout> {
     use cadmpeg_ir::geometry::SilhouetteKind;
     let (names, tapered): (&[&[u8]], bool) = match silhouette {
-        SilhouetteKind::Standard => (&[b"silh_int_cur"], false),
-        SilhouetteKind::Parametric => (&[b"para_silh_int_cur", b"parasil"], false),
+        SilhouetteKind::Standard {} => (&[b"silh_int_cur"], false),
+        SilhouetteKind::Parametric {} => (&[b"para_silh_int_cur", b"parasil"], false),
         SilhouetteKind::Taper { .. } => (&[b"taper_silh_int_cur"], true),
     };
     let (marker, name) = find_owned_subtype_marker(bytes, names, int_width)?;

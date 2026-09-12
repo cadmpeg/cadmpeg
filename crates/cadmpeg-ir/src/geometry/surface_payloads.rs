@@ -38,6 +38,7 @@ pub struct SubSurfaceConstruction {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct SubSurfaceConstructionWire {
     /// Embedded support surface whose parameterization is retained.
     support: SurfaceId,
@@ -105,6 +106,7 @@ pub struct TaperSurfaceConstruction {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct TaperSurfaceConstructionWire {
     /// Base surface being tapered.
     support: SurfaceId,
@@ -139,7 +141,7 @@ impl TaperSurfaceConstruction {
         let vector_finite =
             |vector: &Vector3| vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite();
         let tail_finite = match &taper {
-            crate::geometry::TaperSurfaceKind::Standard
+            crate::geometry::TaperSurfaceKind::Standard {}
             | crate::geometry::TaperSurfaceKind::Orthogonal { .. } => true,
             crate::geometry::TaperSurfaceKind::Edge { draft } => vector_finite(draft),
             crate::geometry::TaperSurfaceKind::Shadow {
@@ -250,6 +252,7 @@ pub struct ExtrusionSurfaceConstruction {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct ExtrusionSurfaceConstructionWire {
     /// Curve swept along `direction` to form the surface.
     directrix: CurveId,
@@ -379,6 +382,7 @@ pub struct RevolutionSurfaceConstruction {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct RevolutionSurfaceConstructionWire {
     /// Curve revolved about the axis to form the surface.
     directrix: CurveId,
@@ -670,6 +674,7 @@ pub struct SubsetSurfaceConstruction {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct SubsetSurfaceConstructionWire {
     /// Surface being restricted.
     support: SurfaceId,
@@ -767,6 +772,7 @@ pub struct ParallelOffsetSurfaceConstruction {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct ParallelOffsetSurfaceConstructionWire {
     /// Surface being offset.
     support: SurfaceId,
@@ -829,6 +835,7 @@ pub struct LinearSweepSurfaceConstruction {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct LinearSweepSurfaceConstructionWire {
     /// Curve swept along `direction`.
     directrix: CurveId,
@@ -891,6 +898,7 @@ pub struct AxisRevolutionSurfaceConstruction {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct AxisRevolutionSurfaceConstructionWire {
     /// Curve revolved about the axis.
     directrix: CurveId,
@@ -959,6 +967,7 @@ pub struct SumSurfaceConstruction {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct SumSurfaceConstructionWire {
     /// First curve, varying in the first surface parameter.
     first: CurveId,
@@ -1142,6 +1151,7 @@ pub struct LoftSurfacePayload {
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct LoftSurfacePayloadWire {
     sections: [LoftSection; 2],
 
@@ -1270,6 +1280,7 @@ pub struct CompoundLoftSurfacePayload {
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct CompoundLoftSurfacePayloadWire {
     construction: Box<CompoundLoftConstruction>,
     #[serde(default)]
@@ -1357,6 +1368,7 @@ pub struct ScaledCompoundLoftSurfacePayload {
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct ScaledCompoundLoftSurfacePayloadWire {
     construction: Box<ScaledCompoundLoftConstruction>,
     #[serde(default)]
@@ -1370,7 +1382,7 @@ impl ScaledCompoundLoftSurfacePayload {
         let vector_finite =
             |vector: &Vector3| vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite();
         let shape_valid = match &construction.shape {
-            crate::geometry::ScaledCompoundLoftShape::Full => true,
+            crate::geometry::ScaledCompoundLoftShape::Full {} => true,
             crate::geometry::ScaledCompoundLoftShape::None {
                 parameter_ranges,
                 parameters,
@@ -1455,6 +1467,7 @@ pub struct LawSurfacePayload {
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct LawSurfacePayloadWire {
     construction: Box<LawSurfaceConstruction>,
 }
@@ -1522,6 +1535,7 @@ pub struct SkinSurfacePayload {
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct SkinSurfacePayloadWire {
     construction: Box<SkinSurfaceConstruction>,
     #[serde(default)]
@@ -1596,6 +1610,7 @@ pub struct NetSurfacePayload {
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct NetSurfacePayloadWire {
     construction: Box<NetSurfaceConstruction>,
     #[serde(default)]
@@ -1668,6 +1683,7 @@ pub struct SweepSurfacePayload {
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct SweepSurfacePayloadWire {
     profile: CurveId,
 
@@ -1854,6 +1870,7 @@ pub struct DeformableSurfacePayload {
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct DeformableSurfacePayloadWire {
     construction: Box<DeformableSurfaceConstruction>,
 }
@@ -1984,6 +2001,7 @@ pub struct G2BlendSurfacePayload {
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct G2BlendSurfacePayloadWire {
     construction: Box<G2BlendConstruction>,
     #[serde(default)]
@@ -2063,6 +2081,7 @@ pub struct VariableBlendSurfacePayload {
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct VariableBlendSurfacePayloadWire {
     construction: Box<VariableBlendConstruction>,
 }
@@ -2105,7 +2124,7 @@ impl VariableBlendSurfacePayload {
             .cross_section
             .as_ref()
             .is_none_or(|cross_section| match cross_section {
-                crate::geometry::VariableBlendCrossSection::Circular => true,
+                crate::geometry::VariableBlendCrossSection::Circular {} => true,
                 crate::geometry::VariableBlendCrossSection::Thumbweights { parameters }
                 | crate::geometry::VariableBlendCrossSection::G2Round { parameters } => {
                     parameters.iter().all(|value| value.is_finite())
@@ -2147,6 +2166,7 @@ pub struct VertexBlendSurfacePayload {
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct VertexBlendSurfacePayloadWire {
     construction: Box<VertexBlendConstruction>,
 }
@@ -2234,6 +2254,7 @@ pub struct BlendSurfacePayload {
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct BlendSurfacePayloadWire {
     supports: [Option<BlendSupport>; 2],
 

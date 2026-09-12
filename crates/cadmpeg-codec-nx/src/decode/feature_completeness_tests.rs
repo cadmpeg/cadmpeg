@@ -1288,7 +1288,7 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
     ir.model.configurations[0].feature_states.insert(
         suppressed.id.clone(),
         ConfigurationFeatureState {
-            evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed,
+            evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed {},
             dependencies: suppressed.dependencies,
             definition: suppressed.evaluation.definition().clone(),
         },
