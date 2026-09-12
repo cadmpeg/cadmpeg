@@ -16,6 +16,18 @@ use serde_json::{Map, Value};
 /// The key inserted into every swept shape.
 pub const UNKNOWN_KEY: &str = "zz_bogus";
 
+/// The values the key is probed with. A node refuses only when it refuses all
+/// four: a free-form map typed by its value kind accepts one spelling and
+/// refuses the others, and one probe value alone cannot see that.
+fn probe_values() -> [Value; 4] {
+    [
+        Value::Null,
+        Value::from(1),
+        Value::from("zz"),
+        Value::Bool(true),
+    ]
+}
+
 /// One object shape found in a document: where it sits and what it holds.
 struct Shape {
     /// Path with every array index replaced by `#`.
@@ -23,6 +35,11 @@ struct Shape {
     /// Path to the concrete node the key is inserted into.
     concrete: Vec<Step>,
 }
+
+/// The identity of a shape: its normalised path, its key set, and the value of
+/// every string-valued key. The tag value separates two internally tagged
+/// variants that share a key set.
+type ShapeIdentity = (String, Vec<String>, Vec<(String, String)>);
 
 /// One step of a concrete JSON path.
 #[derive(Clone)]
@@ -51,10 +68,13 @@ pub fn accepting_shapes(ir: &Value) -> Result<(BTreeSet<String>, usize), serde_j
     let swept = shapes.len();
     let mut accepting = BTreeSet::new();
     for shape in shapes {
-        let mut probe = ir.clone();
-        insert_unknown_key(&mut probe, &shape.concrete);
-        if serde_json::from_value::<CadIr>(probe).is_ok() {
-            accepting.insert(shape.normalised);
+        for value in probe_values() {
+            let mut probe = ir.clone();
+            insert_unknown_key(&mut probe, &shape.concrete, value);
+            if serde_json::from_value::<CadIr>(probe).is_ok() {
+                accepting.insert(shape.normalised.clone());
+                break;
+            }
         }
     }
     Ok((accepting, swept))
@@ -64,7 +84,7 @@ pub fn accepting_shapes(ir: &Value) -> Result<(BTreeSet<String>, usize), serde_j
 fn collect_shapes(
     value: &Value,
     path: &mut Vec<Step>,
-    seen: &mut BTreeSet<(String, Vec<String>)>,
+    seen: &mut BTreeSet<ShapeIdentity>,
     found: &mut Vec<Shape>,
 ) {
     match value {
@@ -72,7 +92,15 @@ fn collect_shapes(
             let normalised = normalise(path);
             if !normalised.starts_with("/native") {
                 let keys: Vec<String> = fields.keys().cloned().collect();
-                if seen.insert((normalised.clone(), keys)) {
+                let tags: Vec<(String, String)> = fields
+                    .iter()
+                    .filter_map(|(key, field)| {
+                        field
+                            .as_str()
+                            .map(|text| (key.clone(), text.to_owned()))
+                    })
+                    .collect();
+                if seen.insert((normalised.clone(), keys, tags)) {
                     found.push(Shape {
                         normalised,
                         concrete: path.clone(),
@@ -110,7 +138,7 @@ fn normalise(path: &[Step]) -> String {
 }
 
 /// Inserts the unknown key into the object the path names.
-fn insert_unknown_key(value: &mut Value, path: &[Step]) {
+fn insert_unknown_key(value: &mut Value, path: &[Step], probe: Value) {
     let mut node = value;
     for step in path {
         node = match (step, node) {
@@ -125,5 +153,5 @@ fn insert_unknown_key(value: &mut Value, path: &[Step]) {
     }
     let fields: &mut Map<String, Value> =
         node.as_object_mut().expect("the swept node is an object");
-    fields.insert(UNKNOWN_KEY.into(), Value::Bool(true));
+    fields.insert(UNKNOWN_KEY.into(), probe);
 }

@@ -19,7 +19,9 @@ of:
   refuse a key and fails. The same rule holds for a single arm that carries
   ``#[serde(untagged)]`` inside an otherwise tagged enum, where the container's
   deny does not reach the arm's own keys;
-* every variant is a unit variant - the read is a bare name with no key to deny.
+* every variant is a unit variant - the read is a bare name with no key to deny;
+* the enum has no variant at all - it is uninhabited, no document can name a
+  variant of it, and serde refuses every input before a key is read.
 
 Anything else fails, unless it is one of the named exceptions below.
 
@@ -35,13 +37,15 @@ from pathlib import Path
 
 ROOTS = ("crates/cadmpeg-ir/src", "crates/cadmpeg-core/src")
 
-# Items admitted by name, each with the reason it cannot carry a deny. Every
-# entry is load-bearing: the item derives ``Deserialize``, reaches the check,
-# and fails it without the entry. An item with a hand-written or
-# ``Serialize``-only impl never reaches the check and states nothing here.
+# Items admitted by declaring file and name, each with the reason it cannot
+# carry a deny. Every entry is load-bearing: the item derives ``Deserialize``,
+# reaches the check, and fails it without the entry. An item with a
+# hand-written or ``Serialize``-only impl never reaches the check and states
+# nothing here. The key is the declaring path, so a type that reuses an
+# exception's name in another file is not admitted by it.
 EXCEPTIONS = {
-    "NativeUnknownRecord": "narrowing projection over the /native unknown record: it reads only id and links out of a wider stored record, so it has no field map of its own for a deny to bind; hash.rs reads the arena through it and pins_document_digests covers that read",
-    "VersionProbe": "private one-field pre-pass; the document is re-read through CadIrReadWire, which denies",
+    "crates/cadmpeg-ir/src/unknown.rs:NativeUnknownRecord": "narrowing projection over the /native unknown record: it reads only id and links out of a wider stored record, so it has no field map of its own for a deny to bind; hash.rs reads the arena through it and pins_document_digests covers that read",
+    "crates/cadmpeg-ir/src/document.rs:VersionProbe": "private one-field pre-pass; the document is re-read through CadIrReadWire, which denies",
 }
 
 SKIP_BASENAMES = {
@@ -224,13 +228,23 @@ def strip_variant_attributes(raw):
     return re.sub(r"//[^\n]*", " ", text).strip()
 
 
-def all_unit_variants(item):
+def enum_variants(item):
     if item.kind != "enum":
-        return False
-    variants = [
+        return None
+    return [
         strip_variant_attributes(raw)
         for raw in split_variants(strip_macro_repetition(enum_body(item)))
     ]
+
+
+def is_uninhabited_enum(item):
+    """An enum with no variant: no document can name one, so no key is read."""
+    variants = enum_variants(item)
+    return variants is not None and not variants
+
+
+def all_unit_variants(item):
+    variants = enum_variants(item)
     if not variants:
         return False
     return all("(" not in text and "{" not in text for text in variants)
@@ -336,7 +350,7 @@ def main():
         return admitted
 
     def passes(item):
-        if item.name in EXCEPTIONS:
+        if f"{item.path.as_posix()}:{item.name}" in EXCEPTIONS:
             return True
         if item.name in checking:
             return True
@@ -356,6 +370,8 @@ def main():
                 )
             if re.search(r"\buntagged\b", attrs):
                 return check_untagged_arms(item, untagged_arms(item))
+            if is_uninhabited_enum(item):
+                return True
             if all_unit_variants(item):
                 return True
             return False
