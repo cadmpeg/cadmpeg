@@ -615,10 +615,10 @@ fn hole_wire_rejects_cross_form_thread_fields() {
         assert!(error.contains("unknown field"), "{kind}/{orphan}: {error}");
         assert!(error.contains(orphan), "{kind}/{orphan}: {error}");
     }
-    let error = serde_json::from_value::<HoleSpecification>(specification("threaded"))
-        .map(|_| String::new())
-        .unwrap_or_else(|error| error.to_string());
-    assert!(error.is_empty(), "{error}");
+    assert!(
+        serde_json::from_value::<HoleSpecification>(specification("threaded")).is_ok(),
+        "the threaded arm reads without the thread fields"
+    );
     let error = serde_json::from_value::<HoleSpecification>(serde_json::json!({
         "standard": "ISO metric",
         "threaded": true,
@@ -702,13 +702,13 @@ fn unresolved_filled_surface_continuity_omits_both_wire_fields() {
 }
 
 #[test]
-fn scale_factor_forms_preserve_the_legacy_wire_layout() {
+fn scale_factor_forms_name_themselves_on_the_wire() {
     use crate::features::ScaleFactors;
 
     for wire in [
-        serde_json::json!({}),
-        serde_json::json!({"uniform": 2.0}),
-        serde_json::json!({"x": 1.0, "y": 2.0, "z": 3.0}),
+        serde_json::json!({"kind": "unresolved"}),
+        serde_json::json!({"kind": "uniform", "factor": 2.0}),
+        serde_json::json!({"kind": "per_axis", "factors": [1.0, 2.0, 3.0]}),
     ] {
         let factors: ScaleFactors = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(factors).unwrap(), wire);
@@ -719,9 +719,15 @@ fn scale_factor_forms_preserve_the_legacy_wire_layout() {
 fn scale_factor_wire_rejects_mixed_and_partial_forms() {
     use crate::features::ScaleFactors;
 
+    // The old flat wire spelled the form by which of four optional keys were
+    // present, so a mixed or partial set was representable. Each form now
+    // names itself and carries only its own field.
     for wire in [
         serde_json::json!({"uniform": 2.0, "x": 1.0}),
         serde_json::json!({"x": 1.0, "z": 3.0}),
+        serde_json::json!({"kind": "uniform", "factor": 2.0, "factors": [1.0, 2.0, 3.0]}),
+        serde_json::json!({"kind": "per_axis", "factors": [1.0, 3.0]}),
+        serde_json::json!({}),
     ] {
         assert!(serde_json::from_value::<ScaleFactors>(wire).is_err());
     }
