@@ -180,7 +180,7 @@ pub(crate) fn project_configuration_design_states(
         histories,
         lanes,
         form_padding,
-    )?;
+    );
     let base_definitions = ir
         .model
         .features
@@ -252,7 +252,7 @@ pub(crate) fn project_configuration_design_states(
             histories,
             scoped_lanes,
             form_padding,
-        )?;
+        );
         crate::resolved_features::operations::inherit_configuration_operations(
             &mut features,
             &resolved_base_features,

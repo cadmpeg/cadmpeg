@@ -2242,7 +2242,7 @@ fn build_geometry_ir(
         &histories,
         &lanes,
         form_padding,
-    )?;
+    );
     crate::pmi::apply_to_parameters(
         &mut ir.model.parameters,
         &ir.model.features,
@@ -3301,7 +3301,7 @@ fn build_metadata_ir(
         &histories,
         &lanes,
         form_padding,
-    )?;
+    );
     crate::pmi::apply_to_parameters(
         &mut ir.model.parameters,
         &ir.model.features,
