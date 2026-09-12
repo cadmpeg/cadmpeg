@@ -568,8 +568,7 @@ fn form_and_primitive_completeness_requires_construction_payloads() {
             "placement": [
                 [1.0, 0.0, 0.0, 0.0],
                 [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0]
+                [0.0, 0.0, 1.0, 0.0]
             ],
             "op": "join"
         }),
