@@ -81,7 +81,7 @@ fn construction_rejects_invalid_knots_and_non_finite_poles() {
         assert!(NurbsCurve::from_lanes(
             1,
             knots.clone(),
-            curve().control_points().to_vec(),
+            curve().control_points(),
             None,
             false
         )
@@ -89,7 +89,7 @@ fn construction_rejects_invalid_knots_and_non_finite_poles() {
         assert!(PcurveNurbs::from_lanes(
             1,
             knots.clone(),
-            pcurve().control_points().to_vec(),
+            pcurve().control_points(),
             None,
             false
         )
@@ -109,7 +109,7 @@ fn construction_rejects_invalid_knots_and_non_finite_poles() {
         )
         .is_err());
 
-        let mut points = curve().control_points().to_vec();
+        let mut points = curve().control_points();
         points[1].z = invalid;
         assert!(NurbsCurve::from_lanes(1, curve().knots().to_vec(), points, None, false).is_err());
         assert!(PcurveNurbs::from_lanes(
@@ -136,7 +136,7 @@ fn construction_rejects_invalid_knots_and_non_finite_poles() {
         .is_err());
 
         let source = surface();
-        let mut points = source.control_grid().to_vec();
+        let mut points = source.control_grid();
         points[0][1].x = invalid;
         assert!(NurbsSurface::from_lanes(
             1,
@@ -389,7 +389,7 @@ fn a_nurbs_surface_states_its_pole_counts_in_its_control_grid() {
     let wire = serde_json::to_value(&surface).expect("serializes");
     assert!(wire.get("u_count").is_none());
     assert!(wire.get("v_count").is_none());
-    assert_eq!(wire["control_points"].as_array().expect("rows").len(), 2);
+    assert_eq!(wire["poles"]["rows"].as_array().expect("rows").len(), 2);
     assert_eq!(surface.u_count(), 2);
     assert_eq!(surface.v_count(), 2);
     assert_eq!(
@@ -405,7 +405,8 @@ fn a_nurbs_surface_states_its_pole_counts_in_its_control_grid() {
     assert!(error.contains("u_count"), "{error}");
 
     let mut ragged = wire;
-    ragged["control_points"][1] = serde_json::json!([{"x": 0.0, "y": 0.0, "z": 0.0}]);
+    ragged["poles"]["rows"][1] =
+        serde_json::json!([{"point": {"x": 0.0, "y": 0.0, "z": 0.0}, "weight": 1.0}]);
     let error = serde_json::from_value::<NurbsSurface>(ragged)
         .unwrap_err()
         .to_string();

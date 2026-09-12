@@ -546,8 +546,14 @@ fn spatial_nurbs_wire_preserves_flat_fields_and_checks_cardinality() {
         "curve": {
             "degree": 1,
             "knots": [0.0, 0.0, 1.0, 1.0],
-            "control_points": [{"x": 2.0, "y": 3.0, "z": 4.0}, {"x": 5.0, "y": 6.0, "z": 7.0}],
-            "weights": [1.0, 0.5], "periodic": false
+            "poles": {
+                "form": "rational",
+                "points": [
+                    {"point": {"x": 2.0, "y": 3.0, "z": 4.0}, "weight": 1.0},
+                    {"point": {"x": 5.0, "y": 6.0, "z": 7.0}, "weight": 0.5}
+                ]
+            },
+            "periodic": false
         }
     });
     let geometry: SpatialSketchGeometry = serde_json::from_value(wire.clone()).unwrap();
@@ -555,8 +561,17 @@ fn spatial_nurbs_wire_preserves_flat_fields_and_checks_cardinality() {
     for (field, value) in [
         ("degree", serde_json::json!(2)),
         ("knots", serde_json::json!([0.0, 1.0])),
-        ("control_points", serde_json::json!([])),
-        ("weights", serde_json::json!([1.0])),
+        (
+            "poles",
+            serde_json::json!({"form": "polynomial", "points": []}),
+        ),
+        (
+            "poles",
+            serde_json::json!({
+                "form": "rational",
+                "points": [{"point": {"x": 2.0, "y": 3.0, "z": 4.0}, "weight": 1.0}]
+            }),
+        ),
     ] {
         let mut invalid = wire.clone();
         invalid["curve"][field] = value;

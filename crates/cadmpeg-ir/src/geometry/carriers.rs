@@ -119,7 +119,9 @@ impl NurbsPoles3 {
         match self {
             Self::Polynomial { points } => points.iter_mut().for_each(&mut edit),
             Self::Rational { points } => {
-                points.iter_mut().for_each(|pole| edit(&mut pole.point));
+                for pole in points {
+                    edit(&mut pole.point);
+                }
             }
         }
     }
@@ -246,9 +248,11 @@ impl NurbsPoleGrid {
             Self::Polynomial { rows } => rows
                 .iter_mut()
                 .for_each(|row| row.iter_mut().for_each(&mut edit)),
-            Self::Rational { rows } => rows.iter_mut().for_each(|row| {
-                row.iter_mut().for_each(|pole| edit(&mut pole.point));
-            }),
+            Self::Rational { rows } => {
+                for pole in rows.iter_mut().flatten() {
+                    edit(&mut pole.point);
+                }
+            }
         }
     }
 }
@@ -357,7 +361,9 @@ impl PcurveNurbsPoles {
         match self {
             Self::Polynomial { points } => points.iter_mut().for_each(&mut edit),
             Self::Rational { points } => {
-                points.iter_mut().for_each(|pole| edit(&mut pole.point));
+                for pole in points {
+                    edit(&mut pole.point);
+                }
             }
         }
     }
