@@ -1837,7 +1837,7 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
             Vec::new(),
             Vec::new(),
         )
-        .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?,
+        .map_err(|message| cadmpeg_core::CodecError::Malformed(message.to_string()))?,
     );
     ir.model.regions.push(Region {
         id: region_id.clone(),

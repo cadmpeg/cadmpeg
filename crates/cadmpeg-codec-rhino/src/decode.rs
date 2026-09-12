@@ -2734,7 +2734,7 @@ impl<'a> DecodeContext<'a> {
                     ) {
                         Ok(shell) => shell,
                         Err(error) => {
-                            self.scan_warning(source_order, error);
+                            self.scan_warning(source_order, &error.to_string());
                             return false;
                         }
                     },
@@ -4327,7 +4327,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
                     Vec::new()
                 },
             )
-            .map_err(|message| crate::curves::GeometryError::malformed(0, message))?,
+            .map_err(|message| crate::curves::GeometryError::malformed(0, message.to_string()))?,
         );
         if !regions.iter().any(|region: &Region| region.id == region_id) {
             regions.push(Region {

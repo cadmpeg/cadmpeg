@@ -1057,6 +1057,9 @@ pub enum ProceduralGeometryError {
     /// The cache contract is invalid for the definition.
     #[error(transparent)]
     Cache(#[from] CacheContractError),
+    /// A member list violates its member contract.
+    #[error(transparent)]
+    Members(#[from] crate::features::BodySelectionError),
 }
 
 /// A construction whose layout states no solved-cache fit tolerance.

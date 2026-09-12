@@ -1058,7 +1058,7 @@ fn boolean_target_is_an_independent_intermediate_result_writer() {
     assert_eq!(
         super::native_result_body_identity(None, Some(&boolean)),
         Some((
-            "nx:test:boolean#0:target".into(),
+            cadmpeg_ir::nonempty_literal!("nx:test:boolean#0:target"),
             "nx:test:boolean#0".into(),
         ))
     );
@@ -1072,7 +1072,10 @@ fn boolean_target_is_an_independent_intermediate_result_writer() {
     };
     assert_eq!(
         super::native_result_body_identity(Some(&primary), Some(&boolean)),
-        Some(("nx:test:primary#0".into(), "nx:test:primary#0".into(),))
+        Some((
+            cadmpeg_ir::nonempty_literal!("nx:test:primary#0"),
+            "nx:test:primary#0".into(),
+        ))
     );
 }
 

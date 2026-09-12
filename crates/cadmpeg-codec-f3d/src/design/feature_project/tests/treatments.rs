@@ -1490,12 +1490,10 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             support_faces: cadmpeg_ir::features::FaceSelection::Faces(ref faces),
             ref continuity,
             merge_result: Some(false),
-        })) if matches!(continuity.resolved(), Some(
-            cadmpeg_ir::features::FilledSurfaceContinuity {
-                first: cadmpeg_ir::features::SurfaceContinuity::Contact,
-                rest,
-            }
-        ) if rest.is_empty()) && native == &patch_group.id && faces.is_empty()
+        })) if continuity.resolved().map(|resolved| resolved.conditions.as_slice())
+            == Some(&[cadmpeg_ir::features::SurfaceContinuity::Contact][..])
+            && native == &patch_group.id
+            && faces.is_empty()
     ));
 
     patch_scope
