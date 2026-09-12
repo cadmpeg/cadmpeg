@@ -233,9 +233,8 @@ pub(crate) fn validate_surface_sweep_profile_edits(
             else {
                 return None;
             };
-            let section = shape.section();
             let profile @ (PlanarProfileRef::Feature(_) | PlanarProfileRef::Generated { .. }) =
-                section.referenced_profile()?
+                shape.referenced_profile()?
             else {
                 return None;
             };
@@ -256,8 +255,7 @@ pub(crate) fn validate_surface_sweep_profile_edits(
                 feature.id
             )));
         };
-        let section = shape.section();
-        let Some(profile) = section.referenced_profile() else {
+        let Some(profile) = shape.referenced_profile() else {
             return Err(CodecError::NotImplemented(format!(
                 "SLDPRT feature {} changes a reference-curve sweep profile",
                 feature.id

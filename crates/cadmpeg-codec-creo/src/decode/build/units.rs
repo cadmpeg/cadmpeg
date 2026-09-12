@@ -603,14 +603,9 @@ fn scale_feature_operation(
         } => {}
         FeatureOperation::Primitive { solid, .. } => scale_primitive_solid(solid, scale)?,
         FeatureOperation::Sweep { shape, .. } => {
-            let mut section = shape.section().clone();
-            let mut sections = shape.sections().to_vec();
-            scale_sweep_section(&mut section, scale)?;
-            for section in &mut sections {
-                scale_sweep_section(section, scale)?;
+            for generated in shape.generated_sections_mut() {
+                scale_sweep_section(generated, scale)?;
             }
-            *shape = cadmpeg_ir::features::SweepShape::new(section, sections, shape.mode())
-                .map_err(CodecError::malformed)?;
         }
         FeatureOperation::HelicalSweep { construction, .. } => {
             scale_finite_point3(&mut construction.axis_origin, scale)?;
@@ -862,20 +857,16 @@ fn scale_primitive_solid(
 }
 
 fn scale_sweep_section(
-    section: &mut cadmpeg_ir::features::SweepSection,
+    section: &mut cadmpeg_ir::features::GeneratedSweepSection,
     scale: f64,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    if let cadmpeg_ir::features::SweepSection::Generated(
-        cadmpeg_ir::features::GeneratedSweepSection::CircularRegion { region },
-    ) = section
-    {
-        let mut outer_radius = region.outer_radius();
-        let mut wall_thickness = region.wall_thickness();
-        scale_positive_length(&mut outer_radius, scale)?;
-        scale_optional_positive_length(&mut wall_thickness, scale)?;
-        *region = cadmpeg_ir::features::SweepCircularRegion::new(outer_radius, wall_thickness)
-            .map_err(CodecError::malformed)?;
-    }
+    let cadmpeg_ir::features::GeneratedSweepSection::CircularRegion { region } = section;
+    let mut outer_radius = region.outer_radius();
+    let mut wall_thickness = region.wall_thickness();
+    scale_positive_length(&mut outer_radius, scale)?;
+    scale_optional_positive_length(&mut wall_thickness, scale)?;
+    *region = cadmpeg_ir::features::SweepCircularRegion::new(outer_radius, wall_thickness)
+        .map_err(CodecError::malformed)?;
     Ok(())
 }
 

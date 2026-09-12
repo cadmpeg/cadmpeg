@@ -372,14 +372,9 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 scale,
                 allow_multi_profile_faces,
             }) => {
-                let section = shape.section();
-                let sections = shape.sections();
-                let mode = &shape.mode();
                 self.encode_sweep(
-                    section,
-                    sections,
+                    shape,
                     path,
-                    mode,
                     orientation,
                     transition,
                     transformation,

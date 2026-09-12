@@ -133,25 +133,27 @@ fn hole_and_sweep_edits_preserve_the_previous_admitted_shape() {
     let circular = SweepSection::Generated(GeneratedSweepSection::CircularRegion {
         region: SweepCircularRegion::new(positive(2.0), Some(positive(1.0))).unwrap(),
     });
-    assert!(SweepShape::new(
+    let sweep = SweepShape::Solid {
+        op: crate::features::SolidSweepOperation::NewBody,
+        section: SweepSection::Unresolved(None),
+        sections: vec![circular],
+    };
+    assert!(sweep.generated_section().is_none());
+    assert_eq!(sweep.additional_section_count(), 1);
+    // A sheet result carries sections whose generated arm is uninhabited, so a
+    // circular region under one has no spelling in the type or on the wire.
+    let mut sheet = SweepShape::sheet_sections(
+        SweepMode::Surface {},
         SweepSection::Unresolved(None),
-        vec![circular.clone()],
-        SweepMode::Unresolved {}
-    )
-    .is_err());
-    let mut sweep = SweepShape::new(
-        SweepSection::Unresolved(None),
-        vec![circular],
-        SweepMode::Solid {
-            op: crate::features::SolidSweepOperation::NewBody,
-        },
-    )
-    .unwrap();
-    let before = sweep.clone();
-    assert!(sweep
-        .try_edit(|_, _, mode| *mode = SweepMode::Surface {})
-        .is_err());
-    assert_eq!(sweep, before);
+        Vec::new(),
+    );
+    assert!(sheet.generated_sections_mut().is_empty());
+    let wire = serde_json::to_value(&sweep).expect("a sweep shape serializes");
+    assert_eq!(wire["mode"], "solid");
+    let mut sheet_wire = serde_json::to_value(&sheet).expect("a sweep shape serializes");
+    sheet_wire["sections"] = wire["sections"].clone();
+    serde_json::from_value::<SweepShape>(sheet_wire)
+        .expect_err("a sheet result generates no geometry");
 }
 
 #[test]

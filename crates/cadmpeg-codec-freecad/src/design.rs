@@ -5084,7 +5084,14 @@ fn sweep_definition(
         }
     };
     Some(FeatureDefinition::Operation(FeatureOperation::Sweep {
-        shape: cadmpeg_ir::features::SweepShape::new(
+        shape: cadmpeg_ir::features::SweepShape::sheet_sections(
+            if solid {
+                SweepMode::Solid {
+                    op: operation_boolean(kind).try_into().ok()?,
+                }
+            } else {
+                SweepMode::Surface {}
+            },
             cadmpeg_ir::features::SweepSection::Profile(profile.planar().cloned()?),
             profiles
                 .into_iter()
@@ -5095,15 +5102,7 @@ fn sweep_definition(
                         .map(cadmpeg_ir::features::SweepSection::Profile)
                 })
                 .collect::<Option<Vec<_>>>()?,
-            if solid {
-                SweepMode::Solid {
-                    op: operation_boolean(kind).try_into().ok()?,
-                }
-            } else {
-                SweepMode::Surface {}
-            },
-        )
-        .ok()?,
+        ),
 
         path: Some(PathRef::Native(path_property.id.clone())),
 

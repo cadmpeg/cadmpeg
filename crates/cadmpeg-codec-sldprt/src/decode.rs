@@ -1233,15 +1233,12 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                 orientation,
                 ..
             } => {
-                let section = shape.section();
-                let sections = shape.sections();
                 let mode = shape.mode();
-                matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_))
-                    || section.referenced_profile().is_some_and(incomplete_planar_profile)
-                    || sections.iter().any(|section| {
-                        matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_))
-                            || section.referenced_profile().is_some_and(incomplete_planar_profile)
-                    })
+                shape.any_section_is_unresolved()
+                    || shape
+                        .referenced_profiles()
+                        .into_iter()
+                        .any(incomplete_planar_profile)
                     || path.as_ref().is_none_or(incomplete_path)
                     || matches!(
                         orientation,

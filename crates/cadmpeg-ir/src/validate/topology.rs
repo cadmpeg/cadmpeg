@@ -3762,13 +3762,7 @@ fn definition_profiles(
             profiles.extend(construction.profile.as_ref());
         }
         crate::features::FeatureOperation::Sweep { shape, .. } => {
-            profiles.extend(shape.section().referenced_profile());
-            profiles.extend(
-                shape
-                    .sections()
-                    .iter()
-                    .filter_map(crate::features::SweepSection::referenced_profile),
-            );
+            profiles.extend(shape.referenced_profiles());
         }
         crate::features::FeatureOperation::HelicalSweep { construction, .. } => {
             profiles.push(&construction.profile);
@@ -4155,15 +4149,8 @@ fn check_feature_sketch_references(
             } => {
                 profiles.extend(
                     shape
-                        .section()
-                        .referenced_profile()
-                        .map(|profile| ProfileRef::Planar(profile.clone())),
-                );
-                profiles.extend(
-                    shape
-                        .sections()
-                        .iter()
-                        .filter_map(crate::features::SweepSection::referenced_profile)
+                        .referenced_profiles()
+                        .into_iter()
                         .map(|profile| ProfileRef::Planar(profile.clone())),
                 );
                 paths.extend(path);

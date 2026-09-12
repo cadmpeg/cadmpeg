@@ -172,14 +172,13 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
             allow_multi_profile_faces: None,
         }),
         FeatureDefinition::Operation(FeatureOperation::Sweep {
-            shape: crate::features::SweepShape::new(
-                crate::features::SweepSection::Profile(PlanarProfileRef::Sketch(sketch.clone())),
-                Vec::new(),
+            shape: crate::features::SweepShape::sheet_sections(
                 crate::features::SweepMode::Solid {
                     op: crate::features::SolidSweepOperation::NewBody,
                 },
-            )
-            .unwrap(),
+                crate::features::SweepSection::Profile(PlanarProfileRef::Sketch(sketch.clone())),
+                Vec::new(),
+            ),
 
             path: Some(PathRef::Sketch(sketch.clone())),
 

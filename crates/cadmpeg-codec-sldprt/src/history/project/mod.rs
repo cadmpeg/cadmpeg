@@ -736,16 +736,9 @@ pub(crate) fn bind_native_construction_features(
                 }
             }
             FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) => {
-                let mut section = shape.section().clone();
-                if let Some(profile) = section.referenced_profile_mut() {
+                if let Some(profile) = shape.referenced_profile_mut() {
                     bind_planar(profile);
                 }
-                *shape = cadmpeg_ir::features::SweepShape::new(
-                    section,
-                    shape.sections().to_vec(),
-                    shape.mode(),
-                )
-                .map_err(cadmpeg_core::CodecError::malformed)?;
             }
             FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. }) => {
                 for section in sections {

@@ -156,18 +156,9 @@ pub(crate) fn bind_sketch_profiles(
                 }
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::Sweep { shape, .. },
-                ) if matches!(
-                    shape.section(),
-                    cadmpeg_ir::features::SweepSection::Unresolved(_)
-                ) =>
+                ) if shape.section_is_unresolved() =>
                 {
-                    shape
-                        .try_edit(|section, _, _| {
-                            *section = cadmpeg_ir::features::SweepSection::Profile(
-                                sketch.id.clone().into(),
-                            );
-                        })
-                        .map_err(cadmpeg_core::CodecError::malformed)?;
+                    shape.set_referenced_profile(sketch.id.clone().into());
                 }
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::Extrude { profile, .. },

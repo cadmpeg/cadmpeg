@@ -107,7 +107,7 @@ fn decode_resolves_feature_topology_selections() {
             shape,
             path: Some(PathRef::Edges(edges)),
             ..
-        }) if matches!((shape.section(),), (cadmpeg_ir::features::SweepSection::Profile(profile),) if matches!((profile,), (PlanarProfileRef::Faces(faces),) if faces == std::slice::from_ref(&face_id) && edges == std::slice::from_ref(&edge_id)))));
+        }) if matches!((shape.referenced_profile(),), (Some(PlanarProfileRef::Faces(faces)),) if faces == std::slice::from_ref(&face_id) && edges == std::slice::from_ref(&edge_id))));
 
     decoded.ir_mut().model.features[0]
         .evaluation
@@ -773,7 +773,7 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
         sweep.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep {
             shape,
             ..
-        }) if matches!((shape.section(),), (cadmpeg_ir::features::SweepSection::Profile(profile),) if matches!((profile,), (PlanarProfileRef::Feature(feature),) if feature == &helix.id))));
+        }) if matches!((shape.referenced_profile(),), (Some(PlanarProfileRef::Feature(feature)),) if feature == &helix.id)));
     assert!(sweep.dependencies.contains(&helix.id));
 
     let mut changed_profile = decoded.ir().clone();
@@ -791,18 +791,7 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
     else {
         unreachable!("typed surface sweep");
     };
-    let mut edited_section = shape.section().clone();
-    let section = &mut edited_section;
-    *section = cadmpeg_ir::features::SweepSection::Profile(
-        cadmpeg_ir::features::PlanarProfileRef::Native("other".into()),
-    );
-
-    *shape = cadmpeg_ir::features::SweepShape::new(
-        edited_section,
-        shape.sections().to_vec(),
-        shape.mode(),
-    )
-    .unwrap();
+    shape.set_referenced_profile(cadmpeg_ir::features::PlanarProfileRef::Native("other".into()));
     updated_changed_profile_evaluation.set_definition(updated_changed_profile_definition);
     let error = crate::test_support::plan_inherited_write(
         &changed_profile,
@@ -842,7 +831,7 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
             .map(|feature| feature.evaluation.definition()), Some(FeatureDefinition::Operation(FeatureOperation::Sweep {
             shape,
             ..
-        })) if matches!((shape.section(),), (cadmpeg_ir::features::SweepSection::Profile(profile),) if matches!((profile,), (PlanarProfileRef::Feature(_),)))));
+        })) if matches!((shape.referenced_profile(),), (Some(PlanarProfileRef::Feature(_)),))));
 }
 
 #[test]
@@ -915,13 +904,13 @@ fn decode_projects_generated_surface_sweep_profile_path() {
         second.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep {
             shape,
             ..
-        }) if matches!((shape.section(),), (cadmpeg_ir::features::SweepSection::Profile(profile),) if matches!((profile,), (PlanarProfileRef::Generated {
+        }) if matches!((shape.referenced_profile(),), (Some(PlanarProfileRef::Generated {
                 curves,
                 native,
-            },) if curves.len() == 1
+            }),) if curves.len() == 1
             && curves[0].feature == first.id
             && curves[0].local_id == "7"
-            && native.ends_with(&wrapper.to_string())))));
+            && native.ends_with(&wrapper.to_string()))));
     assert!(second.dependencies.contains(&first.id));
 }
 

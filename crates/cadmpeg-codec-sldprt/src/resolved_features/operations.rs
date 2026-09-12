@@ -215,55 +215,56 @@ pub(crate) fn bind_sweep_operations(
             else {
                 break 'feature_edit;
             };
-            shape
-                .try_edit(|_, _, mode| {
-                    if !matches!(*mode, cadmpeg_ir::features::SweepMode::Unresolved { .. }) {
-                        return;
-                    }
-                    let Some(history) = feature
-                        .native_ref
-                        .as_deref()
-                        .and_then(|native| history_features.get(native).copied())
-                    else {
-                        return;
-                    };
-                    let mut operations = lanes.iter().filter_map(|lane| {
-                        let name = feature_object_name(history, lane)?;
-                        match (
+            'sweep_mode: {
+                if !matches!(shape.mode(), cadmpeg_ir::features::SweepMode::Unresolved { .. }) {
+                    break 'sweep_mode;
+                }
+                let Some(history) = feature
+                    .native_ref
+                    .as_deref()
+                    .and_then(|native| history_features.get(native).copied())
+                else {
+                    break 'sweep_mode;
+                };
+                let mut operations = lanes.iter().filter_map(|lane| {
+                    let name = feature_object_name(history, lane)?;
+                    match (
+                        history.input_class.as_deref(),
+                        feature_operation_code(
+                            lane,
+                            name,
                             history.input_class.as_deref(),
-                            feature_operation_code(
-                                lane,
-                                name,
-                                history.input_class.as_deref(),
-                                form_padding,
-                            )?,
-                        ) {
-                            (Some("moSweep_c"), 15) => Some(BooleanOp::Join),
-                            _ => None,
-                        }
-                    });
-                    let Some(first) = operations.next() else {
-                        return;
-                    };
-                    if operations.all(|operation| operation == first) {
-                        *mode = match first {
-                            BooleanOp::Join => cadmpeg_ir::features::SweepMode::Solid {
-                                op: cadmpeg_ir::features::SolidSweepOperation::Join,
-                            },
-                            BooleanOp::Cut => cadmpeg_ir::features::SweepMode::Solid {
-                                op: cadmpeg_ir::features::SolidSweepOperation::Cut,
-                            },
-                            BooleanOp::Intersect => cadmpeg_ir::features::SweepMode::Solid {
-                                op: cadmpeg_ir::features::SolidSweepOperation::Intersect,
-                            },
-                            BooleanOp::NewBody => cadmpeg_ir::features::SweepMode::Solid {
-                                op: cadmpeg_ir::features::SolidSweepOperation::NewBody,
-                            },
-                            BooleanOp::Unresolved => return,
-                        };
+                            form_padding,
+                        )?,
+                    ) {
+                        (Some("moSweep_c"), 15) => Some(BooleanOp::Join),
+                        _ => None,
                     }
-                })
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+                });
+                let Some(first) = operations.next() else {
+                    break 'sweep_mode;
+                };
+                if operations.all(|operation| operation == first) {
+                    let mode = match first {
+                        BooleanOp::Join => cadmpeg_ir::features::SweepMode::Solid {
+                            op: cadmpeg_ir::features::SolidSweepOperation::Join,
+                        },
+                        BooleanOp::Cut => cadmpeg_ir::features::SweepMode::Solid {
+                            op: cadmpeg_ir::features::SolidSweepOperation::Cut,
+                        },
+                        BooleanOp::Intersect => cadmpeg_ir::features::SweepMode::Solid {
+                            op: cadmpeg_ir::features::SolidSweepOperation::Intersect,
+                        },
+                        BooleanOp::NewBody => cadmpeg_ir::features::SweepMode::Solid {
+                            op: cadmpeg_ir::features::SolidSweepOperation::NewBody,
+                        },
+                        BooleanOp::Unresolved => break 'sweep_mode,
+                    };
+                    shape
+                        .set_mode(mode)
+                        .map_err(cadmpeg_core::CodecError::malformed)?;
+                }
+            }
         }
         feature.evaluation.set_definition(definition);
     }

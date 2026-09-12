@@ -2741,12 +2741,10 @@ pub fn bind_sketch_feature_geometry(
                 guide_rail,
                 ..
             }) => {
-                let section = shape.section();
-                let sections = shape.sections();
                 dependencies.extend(
-                    std::iter::once(section)
-                        .chain(sections)
-                        .filter_map(|section| section.referenced_profile())
+                    shape
+                        .referenced_profiles()
+                        .into_iter()
                         .filter_map(planar_profile_dependency),
                 );
                 dependencies.extend(path.as_ref().and_then(path_dependency));
@@ -6915,7 +6913,7 @@ pub(crate) fn project_fixed_sweep(
     use cadmpeg_ir::{
         features::{
             FaceSelection, FeatureDefinition, FeatureOperation, PlanarProfileRef, SweepGuideRail,
-            SweepMode, SweepOrientation, SweepPathExtent,
+            SweepOrientation, SweepPathExtent,
         },
         scalar::Angle,
     };
@@ -7058,22 +7056,17 @@ pub(crate) fn project_fixed_sweep(
             .unwrap_or_else(|| FaceSelection::Native(group.id.clone())),
         });
     Some(FeatureDefinition::Operation(FeatureOperation::Sweep {
-        shape: cadmpeg_ir::features::SweepShape::new(
-            cadmpeg_ir::features::SweepSection::Profile(PlanarProfileRef::Native(
+        shape: cadmpeg_ir::features::SweepShape::Solid {
+            op: if *operation == DesignExtrudeOperation::NewBody {
+                cadmpeg_ir::features::SolidSweepOperation::NewBody
+            } else {
+                fixed_boolean_operation(*operation).try_into().ok()?
+            },
+            section: cadmpeg_ir::features::SweepSection::Profile(PlanarProfileRef::Native(
                 profile.id.clone(),
             )),
-            Vec::new(),
-            if *operation == DesignExtrudeOperation::NewBody {
-                SweepMode::Solid {
-                    op: cadmpeg_ir::features::SolidSweepOperation::NewBody,
-                }
-            } else {
-                SweepMode::Solid {
-                    op: fixed_boolean_operation(*operation).try_into().ok()?,
-                }
-            },
-        )
-        .ok()?,
+            sections: Vec::new(),
+        },
 
         path: Some(path),
 
@@ -7102,7 +7095,7 @@ fn project_fixed_pipe(
     edge_identity_operands: &[DesignEdgeIdentityOperand],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, GeneratedSweepSection, SweepMode, SweepSection,
+        FeatureDefinition, FeatureOperation, GeneratedSweepSection, SweepSection,
     };
 
     let crate::records::feature::DesignScopePayload::Pipe(Some(
@@ -7246,20 +7239,17 @@ fn project_fixed_pipe(
         scope,
     );
     Some(FeatureDefinition::Operation(FeatureOperation::Sweep {
-        shape: cadmpeg_ir::features::SweepShape::new(
-            SweepSection::Generated(GeneratedSweepSection::CircularRegion {
+        shape: cadmpeg_ir::features::SweepShape::Solid {
+            op: cadmpeg_ir::features::SolidSweepOperation::NewBody,
+            section: SweepSection::Generated(GeneratedSweepSection::CircularRegion {
                 region: cadmpeg_ir::features::SweepCircularRegion::new(
                     cadmpeg_ir::scalar::PositiveLength::new(section_size.get() / 2.0)?,
                     wall_thickness,
                 )
                 .ok()?,
             }),
-            Vec::new(),
-            SweepMode::Solid {
-                op: cadmpeg_ir::features::SolidSweepOperation::NewBody,
-            },
-        )
-        .ok()?,
+            sections: Vec::new(),
+        },
 
         path: Some(path),
 

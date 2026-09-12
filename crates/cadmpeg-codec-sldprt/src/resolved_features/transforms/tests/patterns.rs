@@ -818,14 +818,13 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     features[0]
         .evaluation
         .set_definition(FeatureDefinition::Operation(FeatureOperation::Sweep {
-            shape: cadmpeg_ir::features::SweepShape::new(
-                cadmpeg_ir::features::SweepSection::Unresolved(None),
-                Vec::new(),
+            shape: cadmpeg_ir::features::SweepShape::sheet_sections(
                 SweepMode::Solid {
                     op: cadmpeg_ir::features::SolidSweepOperation::Join,
                 },
-            )
-            .unwrap(),
+                cadmpeg_ir::features::SweepSection::Unresolved(None),
+                Vec::new(),
+            ),
 
             path: Some(PathRef::Native("curve-reference".into())),
 
@@ -848,7 +847,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             shape,
             path: Some(PathRef::Sketch(ref path)),
             ..
-        }) if matches!((shape.section(),), (cadmpeg_ir::features::SweepSection::Profile(profile),) if matches!((profile,), (cadmpeg_ir::features::PlanarProfileRef::Sketch(ref profile),) if profile == &sketch && path == &path_sketch))));
+        }) if matches!((shape.referenced_profile(),), (Some(cadmpeg_ir::features::PlanarProfileRef::Sketch(ref profile)),) if profile == &sketch && path == &path_sketch)));
     assert_eq!(
         features[0].dependencies.as_slice(),
         [features[1].id.clone(), features[2].id.clone()]

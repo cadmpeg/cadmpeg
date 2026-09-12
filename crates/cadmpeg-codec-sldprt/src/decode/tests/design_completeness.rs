@@ -574,12 +574,11 @@ fn design_completeness_checks_secondary_sweep_and_loft_paths() {
     let path = PathRef::Sketch(sketch);
     let sweep = |sections, orientation| {
         FeatureDefinition::Operation(FeatureOperation::Sweep {
-            shape: cadmpeg_ir::features::SweepShape::new(
+            shape: cadmpeg_ir::features::SweepShape::sheet_sections(
+                cadmpeg_ir::features::SweepMode::Surface {},
                 cadmpeg_ir::features::SweepSection::Profile(planar_profile.clone()),
                 sections,
-                cadmpeg_ir::features::SweepMode::Surface {},
-            )
-            .unwrap(),
+            ),
 
             path: Some(path.clone()),
 

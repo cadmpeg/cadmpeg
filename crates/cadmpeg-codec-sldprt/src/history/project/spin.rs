@@ -196,15 +196,14 @@ pub(crate) fn project_sweep(
         None => None,
     };
     Some(FeatureDefinition::Operation(FeatureOperation::Sweep {
-        shape: cadmpeg_ir::features::SweepShape::new(
+        shape: cadmpeg_ir::features::SweepShape::sheet_sections(
+            mode,
             profile.map_or(
                 cadmpeg_ir::features::SweepSection::Unresolved(None),
                 cadmpeg_ir::features::SweepSection::Profile,
             ),
             Vec::new(),
-            mode,
-        )
-        .ok()?,
+        ),
 
         path,
 

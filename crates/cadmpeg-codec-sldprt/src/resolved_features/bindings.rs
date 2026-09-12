@@ -860,7 +860,7 @@ pub(crate) fn bind_sweep_adjacent_profiles(
                 model_features[model_index].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep {
                     shape,
                     ..
-                }) if matches!((shape.section(),), (cadmpeg_ir::features::SweepSection::Unresolved(_),)))
+                }) if shape.section_is_unresolved())
             {
                 continue;
             }
@@ -916,15 +916,10 @@ pub(crate) fn bind_sweep_adjacent_profiles(
             ..
         }) = &mut definition
         {
-            shape
-                .try_edit(|section, _, _| {
-                    if matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_)) {
-                        *section =
-                            cadmpeg_ir::features::SweepSection::Profile((sketch.clone()).into());
-                        profile_bound = true;
-                    }
-                })
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            if shape.section_is_unresolved() {
+                shape.set_referenced_profile((sketch.clone()).into());
+                profile_bound = true;
+            }
             if let Some((_, path)) = path {
                 if path_slot
                     .as_ref()

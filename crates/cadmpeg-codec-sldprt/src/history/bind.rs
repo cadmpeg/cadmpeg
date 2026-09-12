@@ -489,14 +489,9 @@ pub(crate) fn bind_definition_sketch(
             construction.profile_mut().is_some_and(bind_planar_profile)
         }
         FeatureDefinition::Operation(FeatureOperation::Sweep { shape, path, .. }) => {
-            let mut profile_bound = false;
-            shape
-                .try_edit(|section, _, _| {
-                    profile_bound = section
-                        .referenced_profile_mut()
-                        .is_some_and(bind_planar_profile);
-                })
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            let profile_bound = shape
+                .referenced_profile_mut()
+                .is_some_and(bind_planar_profile);
             profile_bound | path.as_mut().is_some_and(bind_path)
         }
         FeatureDefinition::Operation(FeatureOperation::TrimSurface { tool, .. }) => bind_path(tool),
