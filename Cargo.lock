@@ -397,6 +397,7 @@ version = "0.6.0"
 dependencies = [
  "base64",
  "cadmpeg-core",
+ "cadmpeg-test-support",
  "proptest",
  "schemars",
  "serde",
