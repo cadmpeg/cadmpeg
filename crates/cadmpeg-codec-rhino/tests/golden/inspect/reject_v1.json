@@ -10,8 +10,7 @@
         "declared": {
           "archive_version": "1"
         },
-        "dialect": "rhino:archive-1",
-        "format": "rhino"
+        "dialect": "rhino:archive-1"
       }
     }
   },

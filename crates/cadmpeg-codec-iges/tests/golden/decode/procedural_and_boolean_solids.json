@@ -5476,8 +5476,7 @@
               "representation": "fixed-ascii",
               "version_flag": "11"
             },
-            "dialect": "iges:5.3-fixed-ascii",
-            "format": "iges"
+            "dialect": "iges:5.3-fixed-ascii"
           }
         }
       }
@@ -5502,8 +5501,7 @@
             "representation": "fixed-ascii",
             "version_flag": "11"
           },
-          "dialect": "iges:5.3-fixed-ascii",
-          "format": "iges"
+          "dialect": "iges:5.3-fixed-ascii"
         }
       }
     },

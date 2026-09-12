@@ -210,8 +210,7 @@
                   "carrier": "stream@76",
                   "schema": "SCH_TEST_1_9999"
                 },
-                "dialect": "parasolid:unknown",
-                "format": "parasolid"
+                "dialect": "parasolid:unknown"
               }
             ],
             "primary": {
@@ -219,8 +218,7 @@
               "declared": {
                 "splmsstr_version": "6"
               },
-              "dialect": "nx:splmsstr",
-              "format": "nx"
+              "dialect": "nx:splmsstr"
             }
           }
         }
@@ -244,8 +242,7 @@
                 "carrier": "stream@76",
                 "schema": "SCH_TEST_1_9999"
               },
-              "dialect": "parasolid:unknown",
-              "format": "parasolid"
+              "dialect": "parasolid:unknown"
             }
           ],
           "primary": {
@@ -253,8 +250,7 @@
             "declared": {
               "splmsstr_version": "6"
             },
-            "dialect": "nx:splmsstr",
-            "format": "nx"
+            "dialect": "nx:splmsstr"
           }
         }
       },
@@ -470,8 +466,7 @@
               "carrier": "stream@76",
               "schema": "SCH_TEST_1_9999"
             },
-            "dialect": "parasolid:unknown",
-            "format": "parasolid"
+            "dialect": "parasolid:unknown"
           }
         ],
         "primary": {
@@ -479,8 +474,7 @@
           "declared": {
             "splmsstr_version": "6"
           },
-          "dialect": "nx:splmsstr",
-          "format": "nx"
+          "dialect": "nx:splmsstr"
         }
       }
     },

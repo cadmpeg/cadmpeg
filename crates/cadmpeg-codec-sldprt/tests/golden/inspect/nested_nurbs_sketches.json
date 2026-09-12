@@ -43,7 +43,6 @@
             "schema": "SCH_SW_33103_11000"
           },
           "dialect": "parasolid:sch-sw-33103",
-          "format": "parasolid",
           "instance": "block@8:Contents/Config-0-Partition+0"
         },
         {
@@ -53,7 +52,6 @@
             "schema": "SCH_SW_33103_11000"
           },
           "dialect": "parasolid:sch-sw-33103",
-          "format": "parasolid",
           "instance": "block@247:Contents/Config-0-ResolvedFeatures+407"
         },
         {
@@ -63,14 +61,12 @@
             "schema": "SCH_SW_33103_11000"
           },
           "dialect": "parasolid:sch-sw-33103",
-          "format": "parasolid",
           "instance": "block@247:Contents/Config-0-ResolvedFeatures+1154"
         }
       ],
       "primary": {
         "admission": "residual",
-        "dialect": "sldprt:unknown",
-        "format": "sldprt"
+        "dialect": "sldprt:unknown"
       }
     }
   },

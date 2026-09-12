@@ -247,8 +247,7 @@
             "declared": {
               "archive_version": "70"
             },
-            "dialect": "rhino:archive-70",
-            "format": "rhino"
+            "dialect": "rhino:archive-70"
           }
         }
       }
@@ -271,8 +270,7 @@
           "declared": {
             "archive_version": "70"
           },
-          "dialect": "rhino:archive-70",
-          "format": "rhino"
+          "dialect": "rhino:archive-70"
         }
       }
     },

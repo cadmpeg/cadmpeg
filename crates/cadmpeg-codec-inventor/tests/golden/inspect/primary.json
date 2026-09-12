@@ -98,8 +98,7 @@
             "save_format_major": "7",
             "save_format_minor": "0"
           },
-          "dialect": "acis:asm-binaryfile-4",
-          "format": "acis"
+          "dialect": "acis:asm-binaryfile-4"
         }
       ],
       "primary": {
@@ -110,8 +109,7 @@
           "meta_stream_version": "8",
           "rse_db_schema": "31"
         },
-        "dialect": "inventor:cfb3-rse31-meta8",
-        "format": "inventor"
+        "dialect": "inventor:cfb3-rse31-meta8"
       }
     }
   },

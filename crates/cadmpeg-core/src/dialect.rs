@@ -32,7 +32,6 @@ use std::fmt;
 
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
-use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// A registry dialect id, for example `"rhino:archive-80"`.
@@ -121,7 +120,19 @@ const fn valid_dialect_id(id: &str) -> bool {
         }
         index += 1;
     }
-    index = colon + 1;
+    valid_grammar_bytes(bytes, colon + 1)
+}
+
+/// States whether `bytes[start..]` is a format-local name.
+///
+/// The name is not empty, holds lowercase ASCII letters, digits, dots and
+/// hyphens only, and neither starts nor ends with a hyphen. A colon is outside
+/// the class, so a full `<format>:<name>` id is not a name.
+const fn valid_grammar_bytes(bytes: &[u8], start: usize) -> bool {
+    if start >= bytes.len() {
+        return false;
+    }
+    let mut index = start;
     while index < bytes.len() {
         let byte = bytes[index];
         if !byte.is_ascii_lowercase() && !byte.is_ascii_digit() && byte != b'-' && byte != b'.' {
@@ -129,7 +140,7 @@ const fn valid_dialect_id(id: &str) -> bool {
         }
         index += 1;
     }
-    bytes[colon + 1] != b'-' && bytes[bytes.len() - 1] != b'-'
+    bytes[start] != b'-' && bytes[bytes.len() - 1] != b'-'
 }
 
 /// A string is not a canonical dialect id.
@@ -177,9 +188,11 @@ impl<'de> Deserialize<'de> for DialectId {
 /// Identity and admission are orthogonal: a document can carry a registry row
 /// of its own while its bytes are read with another grammar, and a damaged
 /// frame can retain its identity while applying that row's grammar
-/// unverified. The wire form lives on [`DialectMatch`], which owns the format
-/// namespace the grammar name is local to.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// unverified. The grammar name is local to the owning [`DialectMatch`]'s
+/// format namespace.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum Admission {
     /// Parsed with the strategy declared for the identified dialect.
     Admitted,
@@ -201,8 +214,17 @@ pub enum Admission {
 /// Format-local name of a dialect grammar, for example `sch-sw-33103`.
 ///
 /// The namespace is the owning [`DialectMatch`]'s, so a grammar cannot name a
-/// foreign format by construction.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// foreign format by construction. The name holds the character class a
+/// [`DialectId`] admits after its separator, which excludes the separator
+/// itself: a full id has no spelling as a grammar name.
+///
+/// Serializes and deserializes as the plain string. `try_from` is the mint, so
+/// no read path reaches the field without the check. serde refuses
+/// `transparent` beside `try_from`; a newtype struct writes its inner string
+/// with no wrapper of its own, which is the same wire form.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "String")]
 pub struct Grammar(String);
 
 impl Grammar {
@@ -212,6 +234,18 @@ impl Grammar {
         Self(dialect.local().to_owned())
     }
 
+    /// Parses and validates a format-local grammar name.
+    ///
+    /// The only read path into the type, through its `TryFrom<String>`.
+    pub fn parse(name: impl Into<String>) -> Result<Self, GrammarError> {
+        let name = name.into();
+        if valid_grammar_bytes(name.as_bytes(), 0) {
+            Ok(Self(name))
+        } else {
+            Err(GrammarError(name))
+        }
+    }
+
     /// Returns the format-local grammar name.
     #[must_use]
     pub fn as_str(&self) -> &str {
@@ -219,24 +253,38 @@ impl Grammar {
     }
 }
 
-/// Wire form of [`Admission`], with the grammar as a full registry id.
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-#[serde(deny_unknown_fields)]
-enum AdmissionWire {
-    Admitted,
-    Unverified { using: DialectId },
-    Residual,
-    Refused,
+impl TryFrom<String> for Grammar {
+    type Error = GrammarError;
+
+    fn try_from(name: String) -> Result<Self, Self::Error> {
+        Self::parse(name)
+    }
 }
+
+/// A string is not a format-local grammar name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GrammarError(String);
+
+impl fmt::Display for GrammarError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "invalid grammar name {:?}: expected a format-local name in lowercase canonical form",
+            self.0
+        )
+    }
+}
+
+impl Error for GrammarError {}
 
 /// One format layer's identification of one document.
 ///
 /// A document carries several format layers: `.sldprt` contains Parasolid;
 /// `.f3d`, `.ipt`, and SAT contain ACIS; NX contains Parasolid and JT. One
 /// match describes one layer.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct DialectMatch {
     /// Registry dialect id, for example `"rhino:archive-80"`.
     dialect: DialectId,
@@ -245,105 +293,17 @@ pub struct DialectMatch {
     ///
     /// Declarations are evidence, never a control input: the dialect is what
     /// the bytes obey, not what they declare.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     declared: BTreeMap<String, String>,
     /// Instance of this format layer inside the containing document.
     ///
     /// `None` when the layer occurs once or has no report-local identity. This
     /// is not source-declared evidence and therefore does not belong in
     /// [`Self::declared`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     instance: Option<String>,
     /// How this layer was admitted.
     admission: Admission,
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-struct DialectMatchWire {
-    format: String,
-    dialect: DialectId,
-    #[serde(default)]
-    declared: BTreeMap<String, String>,
-    #[serde(default)]
-    instance: Option<String>,
-    admission: AdmissionWire,
-}
-
-impl<'de> Deserialize<'de> for DialectMatch {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = DialectMatchWire::deserialize(deserializer)?;
-        if wire.format != wire.dialect.namespace() {
-            return Err(serde::de::Error::custom(format_args!(
-                "dialect {:?} is not in format namespace {:?}",
-                wire.dialect.as_str(),
-                wire.format
-            )));
-        }
-        let grammar = |using: DialectId| {
-            if using.namespace() == wire.dialect.namespace() {
-                Ok(Grammar::of(&using))
-            } else {
-                Err(serde::de::Error::custom(format_args!(
-                    "unverified dialect {:?} cannot use grammar from foreign namespace {:?}",
-                    wire.dialect.as_str(),
-                    using.as_str()
-                )))
-            }
-        };
-        let admission = match wire.admission {
-            AdmissionWire::Admitted => Admission::Admitted,
-            AdmissionWire::Unverified { using } => Admission::Unverified {
-                using: grammar(using)?,
-            },
-            AdmissionWire::Residual => Admission::Residual,
-            AdmissionWire::Refused => Admission::Refused,
-        };
-        Ok(Self {
-            dialect: wire.dialect,
-            declared: wire.declared,
-            instance: wire.instance,
-            admission,
-        })
-    }
-}
-
-impl Serialize for DialectMatch {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut state = serializer.serialize_struct("DialectMatch", 5)?;
-        state.serialize_field("format", self.format())?;
-        state.serialize_field("dialect", &self.dialect)?;
-        if !self.declared.is_empty() {
-            state.serialize_field("declared", &self.declared)?;
-        }
-        if let Some(instance) = &self.instance {
-            state.serialize_field("instance", instance)?;
-        }
-        let admission = match &self.admission {
-            Admission::Admitted => AdmissionWire::Admitted,
-            Admission::Unverified { using } => AdmissionWire::Unverified {
-                using: self.grammar_id(using),
-            },
-            Admission::Residual => AdmissionWire::Residual,
-            Admission::Refused => AdmissionWire::Refused,
-        };
-        state.serialize_field("admission", &admission)?;
-        state.end()
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for DialectMatch {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "DialectMatch".into()
-    }
-
-    fn schema_id() -> std::borrow::Cow<'static, str> {
-        concat!(module_path!(), "::DialectMatch").into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        DialectMatchWire::json_schema(generator)
-    }
 }
 
 /// Whether a format layer is the sole instance or needs its carrier identity.
@@ -727,25 +687,24 @@ mod tests {
 
         assert_eq!(
             serde_json::to_string(&admitted).unwrap(),
-            "{\"format\":\"rhino\",\"dialect\":\"rhino:archive-80\",\"admission\":\"admitted\"}"
+            "{\"dialect\":\"rhino:archive-80\",\"admission\":\"admitted\"}"
         );
     }
 
     #[test]
-    fn dialect_match_deserialization_rejects_a_foreign_namespace() {
-        let malformed = serde_json::json!({
+    fn a_dialect_match_wire_states_its_format_once_through_its_dialect() {
+        let restated = serde_json::json!({
             "format": "rhino",
-            "dialect": "step:ap242-e3",
+            "dialect": "rhino:archive-80",
             "admission": "admitted",
         });
 
-        let error = serde_json::from_value::<DialectMatch>(malformed)
-            .expect_err("the dialect namespace must equal the classified format");
-        assert!(
-            error
-                .to_string()
-                .contains("dialect \"step:ap242-e3\" is not in format namespace \"rhino\""),
-            "{error}"
+        let error = serde_json::from_value::<DialectMatch>(restated)
+            .expect_err("the format is read from the dialect, so the wire carries no format key");
+        assert!(error.to_string().contains("unknown field `format`"), "{error}");
+        assert_eq!(
+            DialectMatch::admitted(DialectId::pinned("rhino:archive-80")).format(),
+            "rhino"
         );
     }
 
@@ -757,7 +716,7 @@ mod tests {
         assert_eq!(residual.using(), None);
         assert_eq!(
             serde_json::to_string(&residual).unwrap(),
-            "{\"format\":\"rhino\",\"dialect\":\"rhino:unknown\",\"admission\":\"residual\"}"
+            "{\"dialect\":\"rhino:unknown\",\"admission\":\"residual\"}"
         );
     }
 
@@ -781,7 +740,7 @@ mod tests {
         let serialized = serde_json::to_string(&unverified).unwrap();
         assert_eq!(
             serialized,
-            "{\"format\":\"acis\",\"dialect\":\"acis:save-format-217\",\"admission\":{\"unverified\":{\"using\":\"acis:save-format-218\"}}}"
+            "{\"dialect\":\"acis:save-format-217\",\"admission\":{\"unverified\":{\"using\":\"save-format-218\"}}}"
         );
         assert_eq!(
             serde_json::from_str::<DialectMatch>(&serialized).unwrap(),
@@ -792,10 +751,9 @@ mod tests {
     #[test]
     fn a_self_named_unverified_grammar_remains_opaque() {
         let self_named = serde_json::json!({
-            "format": "rhino",
             "dialect": "rhino:unknown",
             "admission": {
-                "unverified": { "using": "rhino:unknown" }
+                "unverified": { "using": "unknown" }
             },
         });
         let matched = serde_json::from_value::<DialectMatch>(self_named)
@@ -809,9 +767,8 @@ mod tests {
     }
 
     #[test]
-    fn dialect_match_deserialization_rejects_a_foreign_grammar_namespace() {
+    fn a_grammar_name_has_no_spelling_for_a_foreign_namespace() {
         let malformed = serde_json::json!({
-            "format": "rhino",
             "dialect": "rhino:unknown",
             "admission": {
                 "unverified": { "using": "step:ap242-e3" }
@@ -820,10 +777,21 @@ mod tests {
         let error = serde_json::from_value::<DialectMatch>(malformed)
             .expect_err("a grammar substitute belongs to the classified format layer");
         assert!(
-            error.to_string().contains(
-                "unverified dialect \"rhino:unknown\" cannot use grammar from foreign namespace \"step:ap242-e3\""
-            ),
+            error
+                .to_string()
+                .contains("invalid grammar name \"step:ap242-e3\""),
             "{error}"
+        );
+    }
+
+    #[test]
+    fn grammar_parsing_rejects_a_name_outside_the_format_local_class() {
+        for name in ["", "rhino:archive-80", "Archive-80", "archive_80", "-archive"] {
+            assert!(Grammar::parse(name).is_err(), "invalid grammar name {name:?}");
+        }
+        assert_eq!(
+            Grammar::parse("save-format-218").unwrap(),
+            Grammar::of(&DialectId::pinned("acis:save-format-218"))
         );
     }
 

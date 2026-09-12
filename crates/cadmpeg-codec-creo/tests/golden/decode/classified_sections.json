@@ -86,8 +86,7 @@
             "declared": {
               "version_line": "#UGC:2 P test"
             },
-            "dialect": "creo:unknown",
-            "format": "creo"
+            "dialect": "creo:unknown"
           }
         }
       }
@@ -473,8 +472,7 @@
           "declared": {
             "version_line": "#UGC:2 P test"
           },
-          "dialect": "creo:unknown",
-          "format": "creo"
+          "dialect": "creo:unknown"
         }
       }
     },

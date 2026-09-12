@@ -215,8 +215,7 @@
               "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
               "implementation_level": "2;1"
             },
-            "dialect": "step:ap242",
-            "format": "step"
+            "dialect": "step:ap242"
           }
         }
       }
@@ -240,8 +239,7 @@
             "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
             "implementation_level": "2;1"
           },
-          "dialect": "step:ap242",
-          "format": "step"
+          "dialect": "step:ap242"
         }
       }
     },

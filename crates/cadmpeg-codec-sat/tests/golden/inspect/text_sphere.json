@@ -31,8 +31,7 @@
             "save_format_major": "232",
             "save_format_minor": "0"
           },
-          "dialect": "acis:text-asm",
-          "format": "acis"
+          "dialect": "acis:text-asm"
         }
       ],
       "primary": {
@@ -41,8 +40,7 @@
           "encoding": "text",
           "terminator": "End-of-ASM-data"
         },
-        "dialect": "sat:text",
-        "format": "sat"
+        "dialect": "sat:text"
       }
     }
   },

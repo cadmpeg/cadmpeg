@@ -418,8 +418,7 @@
           "extra": [],
           "primary": {
             "admission": "admitted",
-            "dialect": "catia:zero-entity",
-            "format": "catia"
+            "dialect": "catia:zero-entity"
           }
         }
       }
@@ -781,8 +780,7 @@
         "extra": [],
         "primary": {
           "admission": "admitted",
-          "dialect": "catia:zero-entity",
-          "format": "catia"
+          "dialect": "catia:zero-entity"
         }
       }
     },

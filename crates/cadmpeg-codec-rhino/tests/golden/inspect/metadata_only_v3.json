@@ -64,8 +64,7 @@
         "declared": {
           "archive_version": "3"
         },
-        "dialect": "rhino:archive-3",
-        "format": "rhino"
+        "dialect": "rhino:archive-3"
       }
     }
   },

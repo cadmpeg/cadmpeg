@@ -6,7 +6,6 @@
         "classification": "classified",
         "dialects": {
           "primary": {
-            "format": "f3d",
             "dialect": "f3d:manifest-3-2-0-0",
             "declared": {
               "top_level_manifest_version": "3-2-0-0"
@@ -15,7 +14,6 @@
           },
           "extra": [
             {
-              "format": "acis",
               "dialect": "acis:asm-binaryfile-8",
               "declared": {
                 "carrier": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
@@ -456,7 +454,6 @@
       "classification": "classified",
       "dialects": {
         "primary": {
-          "format": "f3d",
           "dialect": "f3d:manifest-3-2-0-0",
           "declared": {
             "top_level_manifest_version": "3-2-0-0"
@@ -465,7 +462,6 @@
         },
         "extra": [
           {
-            "format": "acis",
             "dialect": "acis:asm-binaryfile-8",
             "declared": {
               "carrier": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",

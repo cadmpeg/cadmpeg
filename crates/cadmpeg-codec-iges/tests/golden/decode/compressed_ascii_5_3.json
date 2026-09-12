@@ -1530,8 +1530,7 @@
               "representation": "compressed-ascii",
               "version_flag": "11"
             },
-            "dialect": "iges:5.3-compressed-ascii",
-            "format": "iges"
+            "dialect": "iges:5.3-compressed-ascii"
           }
         }
       }
@@ -1556,8 +1555,7 @@
             "representation": "compressed-ascii",
             "version_flag": "11"
           },
-          "dialect": "iges:5.3-compressed-ascii",
-          "format": "iges"
+          "dialect": "iges:5.3-compressed-ascii"
         }
       }
     },

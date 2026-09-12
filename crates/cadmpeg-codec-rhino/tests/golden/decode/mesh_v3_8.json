@@ -214,8 +214,7 @@
             "declared": {
               "archive_version": "60"
             },
-            "dialect": "rhino:archive-60",
-            "format": "rhino"
+            "dialect": "rhino:archive-60"
           }
         }
       }
@@ -238,8 +237,7 @@
           "declared": {
             "archive_version": "60"
           },
-          "dialect": "rhino:archive-60",
-          "format": "rhino"
+          "dialect": "rhino:archive-60"
         }
       }
     },

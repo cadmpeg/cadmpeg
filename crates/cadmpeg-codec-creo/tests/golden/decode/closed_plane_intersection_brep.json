@@ -3777,8 +3777,7 @@
             "declared": {
               "version_line": "#UGC:2 P c"
             },
-            "dialect": "creo:unknown",
-            "format": "creo"
+            "dialect": "creo:unknown"
           }
         }
       }
@@ -4167,8 +4166,7 @@
           "declared": {
             "version_line": "#UGC:2 P c"
           },
-          "dialect": "creo:unknown",
-          "format": "creo"
+          "dialect": "creo:unknown"
         }
       }
     },

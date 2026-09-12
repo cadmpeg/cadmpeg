@@ -192,8 +192,7 @@
             "declared": {
               "version_line": "#UGC:2 P c"
             },
-            "dialect": "creo:depdb",
-            "format": "creo"
+            "dialect": "creo:depdb"
           }
         }
       }
@@ -579,8 +578,7 @@
           "declared": {
             "version_line": "#UGC:2 P c"
           },
-          "dialect": "creo:depdb",
-          "format": "creo"
+          "dialect": "creo:depdb"
         }
       }
     },

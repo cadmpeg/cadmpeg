@@ -29,8 +29,7 @@
             "save_format_major": "232",
             "save_format_minor": "0"
           },
-          "dialect": "acis:asm-binaryfile-8",
-          "format": "acis"
+          "dialect": "acis:asm-binaryfile-8"
         }
       ],
       "primary": {
@@ -38,8 +37,7 @@
         "declared": {
           "encoding": "binary"
         },
-        "dialect": "sat:asm-binary",
-        "format": "sat"
+        "dialect": "sat:asm-binary"
       }
     }
   },

@@ -34,8 +34,7 @@
       "extra": [],
       "primary": {
         "admission": "admitted",
-        "dialect": "catia:fbb-only",
-        "format": "catia"
+        "dialect": "catia:fbb-only"
       }
     }
   },

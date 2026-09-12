@@ -27,8 +27,7 @@
           "file_schema_identifier": "AUTOMOTIVE_DESIGN",
           "implementation_level": "2;1"
         },
-        "dialect": "step:ap214",
-        "format": "step"
+        "dialect": "step:ap214"
       }
     }
   },

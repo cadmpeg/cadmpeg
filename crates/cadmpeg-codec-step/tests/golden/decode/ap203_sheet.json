@@ -341,8 +341,7 @@
               "file_schema_identifier": "CONFIG_CONTROL_DESIGN",
               "implementation_level": "2;1"
             },
-            "dialect": "step:ap203-e1",
-            "format": "step"
+            "dialect": "step:ap203-e1"
           }
         }
       }
@@ -366,8 +365,7 @@
             "file_schema_identifier": "CONFIG_CONTROL_DESIGN",
             "implementation_level": "2;1"
           },
-          "dialect": "step:ap203-e1",
-          "format": "step"
+          "dialect": "step:ap203-e1"
         }
       }
     },

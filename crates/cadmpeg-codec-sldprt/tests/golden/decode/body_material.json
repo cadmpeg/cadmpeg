@@ -280,14 +280,12 @@
                 "carrier": "block@8:Contents/Config-0-Partition+0",
                 "schema": "SCH_SW_33103_11000"
               },
-              "dialect": "parasolid:sch-sw-33103",
-              "format": "parasolid"
+              "dialect": "parasolid:sch-sw-33103"
             }
           ],
           "primary": {
             "admission": "residual",
-            "dialect": "sldprt:unknown",
-            "format": "sldprt"
+            "dialect": "sldprt:unknown"
           }
         }
       }
@@ -311,14 +309,12 @@
               "carrier": "block@8:Contents/Config-0-Partition+0",
               "schema": "SCH_SW_33103_11000"
             },
-            "dialect": "parasolid:sch-sw-33103",
-            "format": "parasolid"
+            "dialect": "parasolid:sch-sw-33103"
           }
         ],
         "primary": {
           "admission": "residual",
-          "dialect": "sldprt:unknown",
-          "format": "sldprt"
+          "dialect": "sldprt:unknown"
         }
       }
     },

@@ -215,8 +215,7 @@
           "extra": [],
           "primary": {
             "admission": "admitted",
-            "dialect": "catia:e5-stream",
-            "format": "catia"
+            "dialect": "catia:e5-stream"
           }
         }
       }
@@ -570,8 +569,7 @@
         "extra": [],
         "primary": {
           "admission": "admitted",
-          "dialect": "catia:e5-stream",
-          "format": "catia"
+          "dialect": "catia:e5-stream"
         }
       }
     },
