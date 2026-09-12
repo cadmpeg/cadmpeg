@@ -556,7 +556,7 @@ fn revolution_nurbs(
         }
     }
     let profile_weights = match profile.weights() {
-        Some(weights) => weights.to_vec(),
+        Some(weights) => weights,
         None => alloc_filled(profile_count, 1.0, "Rhino revolution profile weights").map_err(
             |error| {
                 GeometryError::malformed(
@@ -625,7 +625,7 @@ fn sum_nurbs(
         .checked_mul(v_count)
         .ok_or_else(|| error(offset, "sum surface control count overflow"))?;
     let first_weights = match first.weights() {
-        Some(weights) => weights.to_vec(),
+        Some(weights) => weights,
         None => alloc_filled(u_count, 1.0, "Rhino sum-surface first weights").map_err(|error| {
             GeometryError::malformed(
                 offset,
@@ -634,7 +634,7 @@ fn sum_nurbs(
         })?,
     };
     let second_weights = match second.weights() {
-        Some(weights) => weights.to_vec(),
+        Some(weights) => weights,
         None => {
             alloc_filled(v_count, 1.0, "Rhino sum-surface second weights").map_err(|error| {
                 GeometryError::malformed(

@@ -619,8 +619,8 @@ fn mesh_from(
     Tessellation::new(
         id,
         cadmpeg_ir::tessellation::TessellationMesh::List {
-            vertices: vertices,
-            triangles: triangles,
+            vertices,
+            triangles,
         },
         Vec::new(),
     )

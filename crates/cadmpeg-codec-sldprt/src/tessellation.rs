@@ -72,20 +72,20 @@ impl Default for Mesh {
 impl Mesh {
     /// Pair the display list's three lanes into strip rows.
     ///
-    /// A SolidWorks display list states strip run lengths, vertex positions
+    /// A `SolidWorks` display list states strip run lengths, vertex positions
     /// and vertex normals as three descriptor channels, so the codec pairs
     /// them here: the run lengths cut the vertex lane into strips, and a
     /// normal lane that does not cover the vertices refuses the mesh. The IR
     /// carries the rows only.
     fn new(
         vertices: Vec<Point3>,
-        strip_lengths: Vec<u32>,
+        strip_lengths: &[u32],
         normals: Vec<Vector3>,
         channels: Vec<TessellationChannel>,
     ) -> Option<Self> {
         let mesh = if normals.is_empty() {
             TessellationMesh::Strips {
-                strips: Strips::new(split_strips(vertices, &strip_lengths)?)?,
+                strips: Strips::new(split_strips(vertices, strip_lengths)?)?,
             }
         } else {
             if normals.len() != vertices.len() {
@@ -97,7 +97,7 @@ impl Mesh {
                 .map(|(position, normal)| ShadedVertex { position, normal })
                 .collect();
             TessellationMesh::ShadedStrips {
-                strips: Strips::new(split_strips(rows, &strip_lengths)?)?,
+                strips: Strips::new(split_strips(rows, strip_lengths)?)?,
             }
         };
         Some(Self { mesh, channels })
@@ -449,7 +449,10 @@ fn parse_table(bytes: &[u8], mut at: usize) -> Option<(Mesh, usize)> {
     Some((
         Mesh::new(
             vertices,
-            strips.into_iter().map(|length| length as u32).collect(),
+            &strips
+                .into_iter()
+                .map(|length| length as u32)
+                .collect::<Vec<_>>(),
             normals,
             channels,
         )?,

@@ -5978,7 +5978,7 @@ fn encode_nurbs(
                     "IGES NURBS weights must be finite and positive".into(),
                 ));
             }
-            weights.to_vec()
+            weights
         }
         None => alloc_filled(control_count, 1.0, "iges NURBS weights")?,
     };

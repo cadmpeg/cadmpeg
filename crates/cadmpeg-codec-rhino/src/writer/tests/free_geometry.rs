@@ -459,7 +459,7 @@ fn mesh_auxiliary_channels_round_trip_by_kind() {
         cadmpeg_ir::tessellation::Tessellation::new(
             "cadir:model:tessellation#channels",
             cadmpeg_ir::tessellation::TessellationMesh::List {
-                vertices: vertices,
+                vertices,
                 triangles: vec![[0, 1, 2]],
             },
             channels.clone(),

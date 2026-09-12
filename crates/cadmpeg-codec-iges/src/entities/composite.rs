@@ -859,9 +859,9 @@ fn concatenate_nurbs<T>(
             .iter()
             .map(|knot| (knot - child_start) + cursor)
             .collect::<Vec<_>>();
-        let child_control_points = curve.control_points().to_vec();
+        let child_control_points = curve.control_points();
         let child_weights = match curve.weights() {
-            Some(weights) => weights.to_vec(),
+            Some(weights) => weights,
             None => alloc_filled(
                 child_control_points.len(),
                 1.0,

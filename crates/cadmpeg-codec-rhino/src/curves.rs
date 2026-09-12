@@ -841,7 +841,7 @@ fn elevate_to_degree(
         return Err(error(offset, "polycurve segment knot vector is invalid"));
     }
     let weights = match curve.weights() {
-        Some(weights) => weights.to_vec(),
+        Some(weights) => weights,
         None => alloc_filled(
             curve.control_points().len(),
             1.0,

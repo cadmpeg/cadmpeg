@@ -2163,7 +2163,7 @@ pub(super) fn sequential_tessellation(
     // One triangle per strip: the SLDPRT display list states strips, so a
     // triangle list is written as three-vertex runs.
     let rows = if normals.is_empty() {
-        strip_rows(positions)?.map_or(
+        strip_rows(&positions)?.map_or(
             cadmpeg_ir::tessellation::TessellationMesh::List {
                 vertices: Vec::new(),
                 triangles: Vec::new(),
@@ -2175,8 +2175,8 @@ pub(super) fn sequential_tessellation(
             .into_iter()
             .zip(normals)
             .map(|(position, normal)| cadmpeg_ir::tessellation::ShadedVertex { position, normal })
-            .collect();
-        strip_rows(shaded)?.map_or(
+            .collect::<Vec<_>>();
+        strip_rows(&shaded)?.map_or(
             cadmpeg_ir::tessellation::TessellationMesh::List {
                 vertices: Vec::new(),
                 triangles: Vec::new(),
@@ -2199,7 +2199,7 @@ pub(super) fn sequential_tessellation(
 
 /// Cut a corner-expanded vertex run into one three-vertex strip per triangle.
 fn strip_rows<V: Clone>(
-    vertices: Vec<V>,
+    vertices: &[V],
 ) -> Result<Option<cadmpeg_ir::tessellation::Strips<V>>, CodecError> {
     let mut strips = Vec::with_capacity(vertices.len() / 3);
     for corners in vertices.chunks(3) {

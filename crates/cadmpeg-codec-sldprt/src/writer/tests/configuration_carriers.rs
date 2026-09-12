@@ -319,7 +319,7 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
                         Point3::new(0.0, 1.0, 0.0),
                     ],
                     vec![Vector3::new(0.0, 0.0, 1.0); 3],
-                    &vec![3],
+                    &[3],
                 )
                 .expect("strip lanes line up"),
                 Vec::new(),

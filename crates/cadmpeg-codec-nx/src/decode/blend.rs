@@ -3777,7 +3777,7 @@ pub(crate) fn closest_nurbs_curve_parameter_with_budget(
                 .iter()
                 .all(|weight| weight.is_finite() && *weight > 0.0) =>
         {
-            weights.to_vec()
+            weights
         }
         Some(_) => return None,
         None => alloc_filled(count, 1.0, "nx blend curve weights").ok()?,

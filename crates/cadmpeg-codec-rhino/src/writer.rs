@@ -1233,7 +1233,7 @@ fn admit_pcurve<'a>(
             }
             (
                 (NURBS_CURVE_CLASS, nurbs_curve_payload_dimension(&curve, 2)),
-                nurbs.control_points().to_vec(),
+                nurbs.control_points(),
             )
         }
         _ => {

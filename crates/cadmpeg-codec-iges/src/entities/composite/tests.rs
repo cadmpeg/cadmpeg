@@ -923,12 +923,12 @@ fn composite_index_lookups_match_the_unindexed_scan() {
         assert_eq!(
             scanned.as_ref().map(|(carrier, range)| (
                 carrier.degree(),
-                carrier.control_points().to_vec(),
+                carrier.control_points(),
                 *range
             )),
             indexed.as_ref().map(|(carrier, range)| (
                 carrier.degree(),
-                carrier.control_points().to_vec(),
+                carrier.control_points(),
                 *range
             )),
         );
