@@ -12,18 +12,6 @@
       "curves": [
         {
           "geometry": {
-            "control_points": [
-              {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-              }
-            ],
             "degree": 1,
             "kind": "nurbs",
             "knots": [
@@ -32,7 +20,22 @@
               1.0,
               1.0
             ],
-            "periodic": false
+            "periodic": false,
+            "poles": {
+              "form": "polynomial",
+              "points": [
+                {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                {
+                  "x": 1.0,
+                  "y": 1.0,
+                  "z": 1.0
+                }
+              ]
+            }
           },
           "id": "rhino:object:curve#record-000000-offset-177",
           "source_object": {

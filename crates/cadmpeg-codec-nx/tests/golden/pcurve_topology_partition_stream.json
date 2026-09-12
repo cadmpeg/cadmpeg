@@ -94,16 +94,6 @@
         "pcurves": [
           {
             "geometry": {
-              "control_points": [
-                {
-                  "u": 10.0,
-                  "v": 20.0
-                },
-                {
-                  "u": 10.0,
-                  "v": 20.0
-                }
-              ],
               "degree": 1,
               "kind": "nurbs",
               "knots": [
@@ -112,7 +102,20 @@
                 1.0,
                 1.0
               ],
-              "periodic": false
+              "periodic": false,
+              "poles": {
+                "form": "polynomial",
+                "points": [
+                  {
+                    "u": 10.0,
+                    "v": 20.0
+                  },
+                  {
+                    "u": 10.0,
+                    "v": 20.0
+                  }
+                ]
+              }
             },
             "id": "nx:s0:pcurve#0",
             "metadata": {

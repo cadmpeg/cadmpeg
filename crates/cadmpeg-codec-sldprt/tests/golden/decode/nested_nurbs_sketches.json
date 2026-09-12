@@ -271,20 +271,6 @@
           ],
           "geometry": {
             "curve": {
-              "control_points": [
-                {
-                  "u": 0.0,
-                  "v": 0.0
-                },
-                {
-                  "u": 500.0,
-                  "v": 1000.0
-                },
-                {
-                  "u": 1000.0,
-                  "v": 0.0
-                }
-              ],
               "degree": 2,
               "knots": [
                 0.0,
@@ -294,7 +280,24 @@
                 1.0,
                 1.0
               ],
-              "periodic": false
+              "periodic": false,
+              "poles": {
+                "form": "polynomial",
+                "points": [
+                  {
+                    "u": 0.0,
+                    "v": 0.0
+                  },
+                  {
+                    "u": 500.0,
+                    "v": 1000.0
+                  },
+                  {
+                    "u": 1000.0,
+                    "v": 0.0
+                  }
+                ]
+              }
             },
             "kind": "nurbs"
           },
@@ -353,20 +356,6 @@
           ],
           "geometry": {
             "curve": {
-              "control_points": [
-                {
-                  "u": 0.0,
-                  "v": 0.0
-                },
-                {
-                  "u": 500.0,
-                  "v": 1000.0
-                },
-                {
-                  "u": 1000.0,
-                  "v": 0.0
-                }
-              ],
               "degree": 2,
               "knots": [
                 0.0,
@@ -377,11 +366,32 @@
                 1.0
               ],
               "periodic": false,
-              "weights": [
-                1.0,
-                0.5,
-                1.0
-              ]
+              "poles": {
+                "form": "rational",
+                "points": [
+                  {
+                    "point": {
+                      "u": 0.0,
+                      "v": 0.0
+                    },
+                    "weight": 1.0
+                  },
+                  {
+                    "point": {
+                      "u": 500.0,
+                      "v": 1000.0
+                    },
+                    "weight": 0.5
+                  },
+                  {
+                    "point": {
+                      "u": 1000.0,
+                      "v": 0.0
+                    },
+                    "weight": 1.0
+                  }
+                ]
+              }
             },
             "kind": "nurbs"
           },

@@ -12,23 +12,6 @@
       "curves": [
         {
           "geometry": {
-            "control_points": [
-              {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              {
-                "x": 2.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            ],
             "degree": 2,
             "kind": "nurbs",
             "knots": [
@@ -40,11 +23,35 @@
               1.0
             ],
             "periodic": false,
-            "weights": [
-              1.0,
-              1.0,
-              1.0
-            ]
+            "poles": {
+              "form": "rational",
+              "points": [
+                {
+                  "point": {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  "weight": 1.0
+                },
+                {
+                  "point": {
+                    "x": 1.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  "weight": 1.0
+                },
+                {
+                  "point": {
+                    "x": 2.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  "weight": 1.0
+                }
+              ]
+            }
           },
           "id": "step:data:curve#1",
           "source_object": {

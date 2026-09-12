@@ -248,20 +248,25 @@
               1.0,
               1.0
             ],
-            "control_points": [
-              {
-                "u": 0.25,
-                "v": 0.5
-              },
-              {
-                "u": 0.75,
-                "v": 1.5
-              }
-            ],
-            "weights": [
-              1.0,
-              0.5
-            ],
+            "poles": {
+              "form": "rational",
+              "points": [
+                {
+                  "point": {
+                    "u": 0.25,
+                    "v": 0.5
+                  },
+                  "weight": 1.0
+                },
+                {
+                  "point": {
+                    "u": 0.75,
+                    "v": 1.5
+                  },
+                  "weight": 0.5
+                }
+              ]
+            },
             "periodic": false
           },
           "metadata": {

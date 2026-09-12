@@ -62,18 +62,6 @@
           },
           {
             "geometry": {
-              "control_points": [
-                {
-                  "x": 0.0,
-                  "y": 0.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 10.0,
-                  "y": 0.0,
-                  "z": 0.0
-                }
-              ],
               "degree": 1,
               "kind": "nurbs",
               "knots": [
@@ -82,7 +70,22 @@
                 0.01,
                 0.01
               ],
-              "periodic": false
+              "periodic": false,
+              "poles": {
+                "form": "polynomial",
+                "points": [
+                  {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 10.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  }
+                ]
+              }
             },
             "id": "nx:s0:intersection-crv#0",
             "source_object": {
@@ -137,16 +140,6 @@
         "pcurves": [
           {
             "geometry": {
-              "control_points": [
-                {
-                  "u": 0.0,
-                  "v": 0.0
-                },
-                {
-                  "u": 10.0,
-                  "v": 0.0
-                }
-              ],
               "degree": 1,
               "kind": "nurbs",
               "knots": [
@@ -155,7 +148,20 @@
                 0.01,
                 0.01
               ],
-              "periodic": false
+              "periodic": false,
+              "poles": {
+                "form": "polynomial",
+                "points": [
+                  {
+                    "u": 0.0,
+                    "v": 0.0
+                  },
+                  {
+                    "u": 10.0,
+                    "v": 0.0
+                  }
+                ]
+              }
             },
             "id": "nx:s0:intersection-pcurve#13",
             "metadata": {
@@ -171,16 +177,6 @@
           },
           {
             "geometry": {
-              "control_points": [
-                {
-                  "u": 0.0,
-                  "v": 0.0
-                },
-                {
-                  "u": 10.0,
-                  "v": 0.0
-                }
-              ],
               "degree": 1,
               "kind": "nurbs",
               "knots": [
@@ -189,7 +185,20 @@
                 0.01,
                 0.01
               ],
-              "periodic": false
+              "periodic": false,
+              "poles": {
+                "form": "polynomial",
+                "points": [
+                  {
+                    "u": 0.0,
+                    "v": 0.0
+                  },
+                  {
+                    "u": 10.0,
+                    "v": 0.0
+                  }
+                ]
+              }
             },
             "id": "nx:s0:intersection-pcurve#7",
             "metadata": {
@@ -246,16 +255,6 @@
                   {
                     "pcurve": {
                       "geometry": {
-                        "control_points": [
-                          {
-                            "u": 0.0,
-                            "v": 0.0
-                          },
-                          {
-                            "u": 10.0,
-                            "v": 0.0
-                          }
-                        ],
                         "degree": 1,
                         "kind": "nurbs",
                         "knots": [
@@ -264,7 +263,20 @@
                           0.01,
                           0.01
                         ],
-                        "periodic": false
+                        "periodic": false,
+                        "poles": {
+                          "form": "polynomial",
+                          "points": [
+                            {
+                              "u": 0.0,
+                              "v": 0.0
+                            },
+                            {
+                              "u": 10.0,
+                              "v": 0.0
+                            }
+                          ]
+                        }
                       }
                     },
                     "surface": "nx:s0:surf#0"
