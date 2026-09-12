@@ -3096,7 +3096,6 @@ pub enum FeatureOperation {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         axis: Option<FeatureDirection3>,
         /// Applied deformation mode and magnitude.
-        #[cfg_attr(feature = "schema", schemars(with = "FlexModeWire"))]
         mode: FlexMode,
     },
     /// Scales selected bodies about a model-space point.
@@ -8063,12 +8062,21 @@ pub use holes::{
 };
 
 /// Deformation applied by a flex feature.
+///
+/// Each resolved arm carries the one magnitude its family needs, and the
+/// unresolved arm carries no magnitude at all, so a magnitude beside an
+/// unresolved family has no spelling.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "FlexModeWire", into = "FlexModeWire")]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum FlexMode {
     /// Deformation family whose required magnitude remains unresolved.
-    Unresolved(Option<FlexForm>),
+    Unresolved {
+        /// Deformation family, when the source named one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        form: Option<FlexForm>,
+    },
     /// Bend through a signed angle.
     Bending {
         /// Total bend angle.
@@ -8089,74 +8097,6 @@ pub enum FlexMode {
         /// Signed change in length.
         distance: Length,
     },
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
-#[serde(deny_unknown_fields)]
-enum FlexModeWire {
-    Unresolved {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        form: Option<FlexForm>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        angle: Option<Angle>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        factor: Option<PositiveReal>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        distance: Option<Length>,
-    },
-    Bending {
-        angle: Angle,
-    },
-    Twisting {
-        angle: Angle,
-    },
-    Tapering {
-        factor: PositiveReal,
-    },
-    Stretching {
-        distance: Length,
-    },
-}
-
-impl From<FlexMode> for FlexModeWire {
-    fn from(value: FlexMode) -> Self {
-        match value {
-            FlexMode::Unresolved(form) => Self::Unresolved {
-                form,
-                angle: None,
-                factor: None,
-                distance: None,
-            },
-            FlexMode::Bending { angle } => Self::Bending { angle },
-            FlexMode::Twisting { angle } => Self::Twisting { angle },
-            FlexMode::Tapering { factor } => Self::Tapering { factor },
-            FlexMode::Stretching { distance } => Self::Stretching { distance },
-        }
-    }
-}
-
-impl TryFrom<FlexModeWire> for FlexMode {
-    type Error = String;
-
-    fn try_from(value: FlexModeWire) -> Result<Self, Self::Error> {
-        Ok(match value {
-            FlexModeWire::Unresolved {
-                form,
-                angle: None,
-                factor: None,
-                distance: None,
-            } => Self::Unresolved(form),
-            FlexModeWire::Unresolved { .. } => {
-                return Err("unresolved flex magnitude fields must be absent".to_string());
-            }
-            FlexModeWire::Bending { angle } => Self::Bending { angle },
-            FlexModeWire::Twisting { angle } => Self::Twisting { angle },
-            FlexModeWire::Tapering { factor } => Self::Tapering { factor },
-            FlexModeWire::Stretching { distance } => Self::Stretching { distance },
-        })
-    }
 }
 
 /// Structural form of a flex deformation.

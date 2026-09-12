@@ -491,7 +491,7 @@ pub(crate) fn project_flex(feature: &Feature) -> FeatureDefinition {
         (Some(FlexForm::Twisting), Some(angle), _, _) => FlexMode::Twisting { angle },
         (Some(FlexForm::Tapering), _, Some(factor), _) => FlexMode::Tapering { factor },
         (Some(FlexForm::Stretching), _, _, Some(distance)) => FlexMode::Stretching { distance },
-        (form, _, _, _) => FlexMode::Unresolved(form),
+        (form, _, _, _) => FlexMode::Unresolved { form },
     };
     FeatureDefinition::Operation(FeatureOperation::Flex { axis, mode })
 }

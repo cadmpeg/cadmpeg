@@ -1489,7 +1489,7 @@ fn semantic_writer_retains_partial_native_flex_construction() {
             decoded.ir().model.features[index + 1].evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Flex {
                 axis: Some(_),
-                mode: FlexMode::Unresolved(Some(actual)),
+                mode: FlexMode::Unresolved { form: Some(actual) },
             }) if *actual == form
         ));
     }

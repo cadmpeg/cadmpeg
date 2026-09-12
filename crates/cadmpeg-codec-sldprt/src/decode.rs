@@ -1577,7 +1577,7 @@ incomplete_face_selection(targets) || incomplete_face_selection(replacements)},
             }
             FeatureOperation::Flex { axis, mode } => {
                 axis.is_none()
-                || matches!(mode, cadmpeg_ir::features::FlexMode::Unresolved(_))
+                || matches!(mode, cadmpeg_ir::features::FlexMode::Unresolved { .. })
             }
             FeatureOperation::Scale {
                 bodies,

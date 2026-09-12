@@ -1177,7 +1177,7 @@ fn scale_flex_mode(
     use cadmpeg_ir::features::FlexMode;
 
     match mode {
-        FlexMode::Unresolved(_) => {}
+        FlexMode::Unresolved { .. } => {}
         FlexMode::Stretching { distance } => scale_length(distance, scale)?,
         FlexMode::Bending { .. } | FlexMode::Twisting { .. } | FlexMode::Tapering { .. } => {}
     }
