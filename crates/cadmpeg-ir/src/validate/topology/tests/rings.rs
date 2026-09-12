@@ -263,6 +263,7 @@ fn spring_support_reference_findings_name_the_construction() {
                         parameter_range: [0.0, 1.0],
                         discontinuities: [Vec::new(), Vec::new(), Vec::new()],
                         discontinuity_flag: false,
+                        cache: None,
                     },
                     1,
                 )

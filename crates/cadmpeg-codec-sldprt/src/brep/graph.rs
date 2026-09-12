@@ -315,7 +315,7 @@ impl Brep {
                     );
                 }
                 _ => {}
-            })?;
+            });
         }
         for curve in &mut self.curves {
             curve.id = qualify(curve.id.as_str())
@@ -631,6 +631,7 @@ fn emit_offset_surface(
         false,
         cadmpeg_ir::geometry::OffsetExtension::Legacy {
             flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+            cache: None,
         },
     )
     .and_then(|admitted_payload| {

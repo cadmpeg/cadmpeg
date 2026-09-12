@@ -58,45 +58,43 @@ fn generated_projection_decodes_and_writes_source_less() {
     );
 
     let mut edited = result.ir().clone();
-    edited.model.procedural_curves[0]
-        .edit_definition(|definition| {
-            let ProceduralCurveDefinition::Projection(definition_payload) = definition else {
-                unreachable!()
-            };
-            let mut edited_context = definition_payload.context().clone();
-            let mut edited_discontinuity_flag = *definition_payload.discontinuity_flag();
-            let mut edited_tail = definition_payload.tail().clone();
-            let context = &mut edited_context;
-            let discontinuity_flag = &mut edited_discontinuity_flag;
-            let tail = &mut edited_tail;
+    edited.model.procedural_curves[0].edit_definition(|definition| {
+        let ProceduralCurveDefinition::Projection(definition_payload) = definition else {
+            unreachable!()
+        };
+        let mut edited_context = definition_payload.context().clone();
+        let mut edited_discontinuity_flag = *definition_payload.discontinuity_flag();
+        let mut edited_tail = definition_payload.tail().clone();
+        let context = &mut edited_context;
+        let discontinuity_flag = &mut edited_discontinuity_flag;
+        let tail = &mut edited_tail;
 
-            context
-                .edit(|_, context_parameter_range, _| {
-                    (*context_parameter_range) = [-1.0, 2.0];
-                    *discontinuity_flag = false;
-                    let ProjectionTail::Ranged {
-                        flag,
-                        parameter_range,
-                        role,
-                    } = tail
-                    else {
-                        unreachable!()
-                    };
-                    *flag = false;
-                    *parameter_range = [-4.0, 5.0];
-                    *role = ProjectionRole::Surf1;
-                })
-                .unwrap();
-            *definition_payload =
-                cadmpeg_ir::geometry::curve_payloads::ProjectionCurvePayload::try_new(
-                    edited_context,
-                    edited_discontinuity_flag,
-                    definition_payload.source().clone(),
-                    edited_tail,
-                )
-                .unwrap();
-        })
-        .unwrap();
+        context
+            .edit(|_, context_parameter_range, _| {
+                (*context_parameter_range) = [-1.0, 2.0];
+                *discontinuity_flag = false;
+                let ProjectionTail::Ranged {
+                    flag,
+                    parameter_range,
+                    role,
+                } = tail
+                else {
+                    unreachable!()
+                };
+                *flag = false;
+                *parameter_range = [-4.0, 5.0];
+                *role = ProjectionRole::Surf1;
+            })
+            .unwrap();
+        *definition_payload =
+            cadmpeg_ir::geometry::curve_payloads::ProjectionCurvePayload::try_new(
+                edited_context,
+                edited_discontinuity_flag,
+                definition_payload.source().clone(),
+                edited_tail,
+            )
+            .unwrap();
+    });
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut regenerated)
         .expect("projection context regeneration");
@@ -156,27 +154,25 @@ fn generated_early_close_projection_decodes_and_writes_source_less() {
         result.ir().model.procedural_curves[0].definition(), ProceduralCurveDefinition::Projection(definition_payload) if matches!((definition_payload.discontinuity_flag(), definition_payload.tail(),), (true, ProjectionTail::EarlyClose { flag: true },))));
 
     let mut edited = result.ir().clone();
-    edited.model.procedural_curves[0]
-        .edit_definition(|definition| {
-            let ProceduralCurveDefinition::Projection(definition_payload) = definition else {
-                unreachable!()
-            };
-            let mut edited_tail = definition_payload.tail().clone();
-            let (ProjectionTail::EarlyClose { flag },) = (&mut edited_tail,) else {
-                unreachable!()
-            };
+    edited.model.procedural_curves[0].edit_definition(|definition| {
+        let ProceduralCurveDefinition::Projection(definition_payload) = definition else {
+            unreachable!()
+        };
+        let mut edited_tail = definition_payload.tail().clone();
+        let (ProjectionTail::EarlyClose { flag },) = (&mut edited_tail,) else {
+            unreachable!()
+        };
 
-            *flag = false;
-            *definition_payload =
-                cadmpeg_ir::geometry::curve_payloads::ProjectionCurvePayload::try_new(
-                    definition_payload.context().clone(),
-                    *definition_payload.discontinuity_flag(),
-                    definition_payload.source().clone(),
-                    edited_tail,
-                )
-                .unwrap();
-        })
-        .unwrap();
+        *flag = false;
+        *definition_payload =
+            cadmpeg_ir::geometry::curve_payloads::ProjectionCurvePayload::try_new(
+                definition_payload.context().clone(),
+                *definition_payload.discontinuity_flag(),
+                definition_payload.source().clone(),
+                edited_tail,
+            )
+            .unwrap();
+    });
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut regenerated)
         .expect("early-close projection regeneration");
@@ -236,28 +232,30 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
     );
 
     let mut edited = result.ir().clone();
-    edited.model.procedural_curves[0]
-        .edit_definition(|definition| {
-            let ProceduralCurveDefinition::ThreeSurfaceIntersection(definition_payload) =
-                definition
-            else {
-                unreachable!()
-            };
-let mut edited_context = definition_payload.context().clone();
-let mut edited_selector = *definition_payload.selector();
-            let context = &mut edited_context;
-            let selector = &mut edited_selector;
+    edited.model.procedural_curves[0].edit_definition(|definition| {
+        let ProceduralCurveDefinition::ThreeSurfaceIntersection(definition_payload) = definition
+        else {
+            unreachable!()
+        };
+        let mut edited_context = definition_payload.context().clone();
+        let mut edited_selector = *definition_payload.selector();
+        let context = &mut edited_context;
+        let selector = &mut edited_selector;
 
-            context
-                .edit(|_, context_parameter_range, _| {
-                    (*context_parameter_range) = [-1.0, 2.0];
-                    *selector = -4;
-                })
-                .unwrap()
-        ;
-*definition_payload = cadmpeg_ir::geometry::curve_payloads::ThreeSurfaceIntersectionCurvePayload::try_new(edited_context, edited_selector, definition_payload.third().clone()).unwrap();
-})
-        .unwrap();
+        context
+            .edit(|_, context_parameter_range, _| {
+                (*context_parameter_range) = [-1.0, 2.0];
+                *selector = -4;
+            })
+            .unwrap();
+        *definition_payload =
+            cadmpeg_ir::geometry::curve_payloads::ThreeSurfaceIntersectionCurvePayload::try_new(
+                edited_context,
+                edited_selector,
+                definition_payload.third().clone(),
+            )
+            .unwrap();
+    });
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut regenerated)
         .expect("three-surface intersection regeneration");
@@ -327,17 +325,15 @@ fn generated_prefix_only_surface_curves_decode_and_write_source_less() {
         assert!(context.sides().iter().all(|side| side.surface.is_some()));
 
         let mut edited = result.ir().clone();
-        edited.model.procedural_curves[0]
-            .edit_definition(|definition| {
-                let ProceduralCurveDefinition::SurfaceCurve { family } = definition else {
-                    unreachable!()
-                };
-                family
-                    .context_mut()
-                    .edit(|_, range, _| *range = [-1.0, 2.0])
-                    .unwrap();
-            })
-            .unwrap();
+        edited.model.procedural_curves[0].edit_definition(|definition| {
+            let ProceduralCurveDefinition::SurfaceCurve { family } = definition else {
+                unreachable!()
+            };
+            family
+                .context_mut()
+                .edit(|_, range, _| *range = [-1.0, 2.0])
+                .unwrap();
+        });
         let mut regenerated = Vec::new();
         crate::test_support::plan_inherited_write(
             &edited,
@@ -423,27 +419,25 @@ fn generated_silhouette_curves_decode_and_write_source_less() {
         }
 
         let mut edited = result.ir().clone();
-        edited.model.procedural_curves[0]
-            .edit_definition(|definition| {
-                let ProceduralCurveDefinition::Silhouette(definition_payload) = definition else {
-                    unreachable!()
-                };
-                let silhouette = match definition_payload.silhouette() {
-                    SilhouetteKind::Taper { .. } => SilhouetteKind::Taper {
-                        draft_factor: cadmpeg_ir::scalar::FiniteReal::new(-0.2).unwrap(),
-                    },
-                    kind => kind.clone(),
-                };
-                *definition_payload =
-                    cadmpeg_ir::geometry::curve_payloads::SilhouetteCurveConstruction::try_new(
-                        definition_payload.context().clone(),
-                        silhouette,
-                        definition_payload.cast_surface().clone(),
-                        cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-                    )
-                    .unwrap();
-            })
-            .unwrap();
+        edited.model.procedural_curves[0].edit_definition(|definition| {
+            let ProceduralCurveDefinition::Silhouette(definition_payload) = definition else {
+                unreachable!()
+            };
+            let silhouette = match definition_payload.silhouette() {
+                SilhouetteKind::Taper { .. } => SilhouetteKind::Taper {
+                    draft_factor: cadmpeg_ir::scalar::FiniteReal::new(-0.2).unwrap(),
+                },
+                kind => kind.clone(),
+            };
+            *definition_payload =
+                cadmpeg_ir::geometry::curve_payloads::SilhouetteCurveConstruction::try_new(
+                    definition_payload.context().clone(),
+                    silhouette,
+                    definition_payload.cast_surface().clone(),
+                    cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap();
+        });
         let mut regenerated = Vec::new();
         crate::test_support::plan_inherited_write(
             &edited,

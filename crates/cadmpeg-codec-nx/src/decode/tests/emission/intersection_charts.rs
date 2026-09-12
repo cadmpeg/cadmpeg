@@ -84,6 +84,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
         construction: intersection,
         parameterization,
+        ..
     } = procedural.definition()
     else {
         panic!("tolerant intersection definition");
@@ -455,6 +456,7 @@ fn cylinder_plane_transfer_fixture(
                 )
                 .unwrap(),
                 discontinuity_flag: false,
+                cache: None,
             },
         )
         .unwrap(),
@@ -594,6 +596,7 @@ fn blend_contact_transfer_fixture(
                 )
                 .unwrap(),
                 discontinuity_flag: false,
+                cache: None,
             },
         )
         .unwrap(),
@@ -642,7 +645,7 @@ fn blend_contact_transfer_fixture(
             )),
             source_object: None,
         });
-        let procedural = ProceduralCurve::try_new(
+        let procedural = ProceduralCurve::new(
             ProceduralCurveId::mint(format!(
                 "test:model:entity#synthetic:blend-contact-intersection-{index}"
             ))
@@ -664,8 +667,10 @@ fn blend_contact_transfer_fixture(
                 )
                 .unwrap(),
                 discontinuity_flag: false,
+                cache: Some(
+                    cadmpeg_ir::geometry::LegacyCache::try_new(tolerance).expect("fit tolerance"),
+                ),
             },
-            Some(tolerance),
         )
         .unwrap();
         ir.model.add_procedural_curve(curve, procedural).unwrap();
@@ -807,6 +812,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
                 )
                 .unwrap(),
                 discontinuity_flag: false,
+                cache: None,
             },
         )
         .unwrap(),
@@ -915,6 +921,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
                 )
                 .unwrap(),
                 parameterization: None,
+                cache: None,
             },
         )
         .unwrap(),
@@ -1122,7 +1129,7 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
                 .expect("positive finite tolerance"),
         ),
     });
-    let procedural = ProceduralCurve::try_new(
+    let procedural = ProceduralCurve::new(
         ProceduralCurveId::mint("test:model:entity#nx:test:serialized-boundary")
             .expect("identity grammar"),
         ProceduralCurveDefinition::Intersection {
@@ -1142,8 +1149,8 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
             )
             .unwrap(),
             discontinuity_flag: false,
+            cache: Some(cadmpeg_ir::geometry::LegacyCache::try_new(0.25).expect("fit tolerance")),
         },
-        Some(0.25),
     )
     .unwrap();
     ir.model.add_procedural_curve(curve, procedural).unwrap();

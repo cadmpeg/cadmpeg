@@ -522,9 +522,11 @@
                 []
               ],
               "discontinuity_flag": true
+            },
+            "cache": {
+              "fit_tolerance": 0.06
             }
-          },
-          "cache_fit_tolerance": 0.06
+          }
         }
       ],
       "procedural_curves": [],

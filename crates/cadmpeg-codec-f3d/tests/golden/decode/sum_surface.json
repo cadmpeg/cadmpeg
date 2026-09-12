@@ -424,9 +424,14 @@
               "x": 10.0,
               "y": -20.0,
               "z": 30.0
+            },
+            "cache": {
+              "layout": "legacy",
+              "cache": {
+                "fit_tolerance": 0.035
+              }
             }
-          },
-          "cache_fit_tolerance": 0.035
+          }
         }
       ],
       "procedural_curves": [],

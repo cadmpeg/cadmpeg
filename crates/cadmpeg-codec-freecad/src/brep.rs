@@ -5341,6 +5341,7 @@ pub(crate) fn append_text_surface(
                     false,
                     cadmpeg_ir::geometry::OffsetExtension::Legacy {
                         flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                        cache: None,
                     },
                 )
                 .and_then(|admitted_payload| {

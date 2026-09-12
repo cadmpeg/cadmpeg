@@ -142,6 +142,7 @@ pub(super) fn b5_edge_support_definition(
             ProceduralCurveDefinition::Intersection {
                 context,
                 discontinuity_flag: false,
+                cache: None,
             },
         ))
     } else {
@@ -372,9 +373,17 @@ pub(super) fn emit_edges(
                     .derived(&procedural_id, "cache_fit_tolerance")
                     .map_err(cadmpeg_core::CodecError::malformed)?;
             }
-            let procedural =
-                ProceduralCurve::try_new(procedural_id, definition, cache_fit_tolerance)
+            let mut definition = definition;
+            if let Some(tolerance) = cache_fit_tolerance {
+                definition
+                    .set_legacy_cache(Some(
+                        cadmpeg_ir::geometry::LegacyCache::try_new(tolerance)
+                            .map_err(cadmpeg_core::CodecError::malformed)?,
+                    ))
                     .map_err(cadmpeg_core::CodecError::malformed)?;
+            }
+            let procedural = ProceduralCurve::new(procedural_id, definition)
+                .map_err(cadmpeg_core::CodecError::malformed)?;
 
             let _attached = ir.model.add_procedural_curve(curve_id.clone(), procedural);
         }

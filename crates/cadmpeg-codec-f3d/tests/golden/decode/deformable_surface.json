@@ -400,6 +400,12 @@
                 ],
                 "selector": 0
               },
+              "cache": {
+                "layout": "legacy",
+                "cache": {
+                  "fit_tolerance": 0.04
+                }
+              },
               "discontinuities": [
                 [
                   0.25
@@ -412,8 +418,7 @@
               ],
               "discontinuity_flag": true
             }
-          },
-          "cache_fit_tolerance": 0.04
+          }
         }
       ],
       "procedural_curves": [],

@@ -21,7 +21,11 @@ fn subset(range: [f64; 2]) -> ProceduralCurveDefinition {
 #[test]
 fn curve_payload_admission_requires_finite_ordered_subset_ranges() {
     use crate::geometry::curve_payloads::SubsetCurveConstruction;
-    let curve = ProceduralCurve::try_new(id(), subset([1.0, 1.0]), Some(0.5)).unwrap();
+    let mut definition = subset([1.0, 1.0]);
+    definition
+        .set_legacy_cache(Some(crate::geometry::LegacyCache::try_new(0.5).unwrap()))
+        .unwrap();
+    let curve = ProceduralCurve::new(id(), definition).unwrap();
     let wire = serde_json::to_value(&curve).unwrap();
     assert_eq!(
         wire["definition"]["parameter_range"],
@@ -149,7 +153,7 @@ fn intersection_context_mutation_keeps_checked_ranges_and_cache_tolerance() {
     use crate::geometry::{IntcurveSupportContext, IntcurveSupportSide};
     use crate::ids::SurfaceId;
 
-    let mut curve = ProceduralCurve::try_new(
+    let mut curve = ProceduralCurve::new(
         id(),
         ProceduralCurveDefinition::Intersection {
             context: IntcurveSupportContext::try_new(
@@ -162,8 +166,8 @@ fn intersection_context_mutation_keeps_checked_ranges_and_cache_tolerance() {
             )
             .unwrap(),
             discontinuity_flag: false,
+            cache: Some(crate::geometry::LegacyCache::try_new(0.5).unwrap()),
         },
-        Some(0.5),
     )
     .unwrap();
     let support = SurfaceId::mint("synthetic:test:surface#support").unwrap();
@@ -244,12 +248,14 @@ fn silhouette_admission_requires_a_nondegenerate_light_direction_and_finite_draf
 
 #[test]
 fn rejected_curve_definition_replacements_preserve_serialized_owner() {
-    let mut curve = ProceduralCurve::try_new(id(), subset([0.0, 1.0]), Some(0.5)).unwrap();
+    let mut definition = subset([0.0, 1.0]);
+    definition
+        .set_legacy_cache(Some(crate::geometry::LegacyCache::try_new(0.5).unwrap()))
+        .unwrap();
+    let curve = ProceduralCurve::new(id(), definition).unwrap();
     let before = serde_json::to_vec(&curve).unwrap();
     for tolerance in [-1.0, f64::NAN, f64::INFINITY] {
-        assert!(curve
-            .try_replace_definition(subset([2.0, 3.0]), Some(tolerance))
-            .is_err());
+        assert!(crate::geometry::LegacyCache::try_new(tolerance).is_err());
         assert_eq!(serde_json::to_vec(&curve).unwrap(), before);
     }
 }

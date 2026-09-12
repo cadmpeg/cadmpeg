@@ -947,33 +947,33 @@ fn generated_f3d_rewrites_translational_extrusion_header() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated extrusion decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
-    edited.model.procedural_surfaces[0]
-        .edit_definition(|definition| {
-            let ProceduralSurfaceDefinition::Extrusion(definition_payload) = definition else {
-                panic!("expected extrusion")
-            };
-            let mut parameter_interval_value = definition_payload.parameter_interval();
-            let parameter_interval = &mut parameter_interval_value;
-            let mut direction_value = *definition_payload.direction();
-            let direction = &mut direction_value;
-            let mut native_position_value = definition_payload.native_position();
-            let native_position = &mut native_position_value;
-            {
-                *parameter_interval = Some([-0.5, 1.25]);
-                *direction = cadmpeg_ir::math::Vector3::new(5.0, -10.0, 30.0);
-                *native_position = Some(cadmpeg_ir::math::Point3::new(-20.0, 70.0, 15.0));
-            };
-            *definition_payload =
-                cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
-                    definition_payload.directrix().clone(),
-                    parameter_interval_value,
-                    direction_value,
-                    native_position_value,
-                    definition_payload.revision_form().clone(),
-                )
-                .unwrap();
-        })
-        .unwrap();
+    edited.model.procedural_surfaces[0].edit_definition(|definition| {
+        let ProceduralSurfaceDefinition::Extrusion(definition_payload) = definition else {
+            panic!("expected extrusion")
+        };
+        let mut parameter_interval_value = definition_payload.parameter_interval();
+        let parameter_interval = &mut parameter_interval_value;
+        let mut direction_value = *definition_payload.direction();
+        let direction = &mut direction_value;
+        let mut native_position_value = definition_payload.native_position();
+        let native_position = &mut native_position_value;
+        {
+            *parameter_interval = Some([-0.5, 1.25]);
+            *direction = cadmpeg_ir::math::Vector3::new(5.0, -10.0, 30.0);
+            *native_position = Some(cadmpeg_ir::math::Point3::new(-20.0, 70.0, 15.0));
+        };
+        let restored_cache = definition_payload.legacy_cache();
+        *definition_payload =
+            cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+                definition_payload.directrix().clone(),
+                parameter_interval_value,
+                direction_value,
+                native_position_value,
+                definition_payload.revision_form().cloned(),
+            )
+            .unwrap();
+        definition_payload.set_legacy_cache(restored_cache);
+    });
 
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
@@ -1292,8 +1292,8 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
-    let (support_ids, spine_id) = source_less.model.procedural_surfaces[0]
-        .edit_definition(|definition| {
+    let (support_ids, spine_id) =
+        source_less.model.procedural_surfaces[0].edit_definition(|definition| {
             let ProceduralSurfaceDefinition::Blend(definition_payload) = definition else {
                 panic!("expected rolling-ball definition")
             };
@@ -1318,18 +1318,19 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
             *radius = BlendRadiusLaw::Constant {
                 signed_radius: -2.0,
             };
+            let restored_cache = definition_payload.legacy_cache();
             *definition_payload =
                 cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
                     edited_supports,
                     edited_spine,
                     edited_radius,
                     definition_payload.cross_section().clone(),
-                    definition_payload.native().clone(),
+                    definition_payload.native().cloned().map(Box::new),
                 )
                 .unwrap();
+            definition_payload.set_legacy_cache(restored_cache);
             (support_ids, spine_id)
-        })
-        .unwrap();
+        });
     let support_geometry = [
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::PlaneSurface::try_new(
@@ -1455,29 +1456,28 @@ fn generated_f3d_rewrites_rolling_ball_radius_law() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated rolling-ball decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
-    edited.model.procedural_surfaces[0]
-        .edit_definition(|definition| {
-            let ProceduralSurfaceDefinition::Blend(definition_payload) = definition else {
-                panic!("expected rolling-ball blend")
-            };
-            let mut edited_radius = definition_payload.radius().clone();
-            let radius = &mut edited_radius;
+    edited.model.procedural_surfaces[0].edit_definition(|definition| {
+        let ProceduralSurfaceDefinition::Blend(definition_payload) = definition else {
+            panic!("expected rolling-ball blend")
+        };
+        let mut edited_radius = definition_payload.radius().clone();
+        let radius = &mut edited_radius;
 
-            *radius = BlendRadiusLaw::Linear {
-                start: -2.0,
-                end: -4.0,
-            };
-            *definition_payload =
-                cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
-                    definition_payload.supports().clone(),
-                    definition_payload.spine().clone(),
-                    edited_radius,
-                    definition_payload.cross_section().clone(),
-                    definition_payload.native().clone(),
-                )
-                .unwrap();
-        })
+        *radius = BlendRadiusLaw::Linear {
+            start: -2.0,
+            end: -4.0,
+        };
+        let restored_cache = definition_payload.legacy_cache();
+        *definition_payload = cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
+            definition_payload.supports().clone(),
+            definition_payload.spine().clone(),
+            edited_radius,
+            definition_payload.cross_section().clone(),
+            definition_payload.native().cloned().map(Box::new),
+        )
         .unwrap();
+        definition_payload.set_legacy_cache(restored_cache);
+    });
 
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)

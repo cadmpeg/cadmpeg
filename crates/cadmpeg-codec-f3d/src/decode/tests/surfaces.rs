@@ -157,6 +157,10 @@ fn generated_exact_spline_surfaces_decode_and_write_source_less() {
                     ExactSpline::Legacy {
                         ranges: [[-2.0, 3.0], [-4.0, 5.0]],
                         extension: 7,
+                        cache: Some(
+                            cadmpeg_ir::geometry::LegacyCache::try_new(0.015)
+                                .expect("fit tolerance")
+                        ),
                     }
                 )
                 .unwrap()
@@ -181,6 +185,10 @@ fn generated_exact_spline_surfaces_decode_and_write_source_less() {
                     ExactSpline::Legacy {
                         ranges: [[-2.0, 3.0], [-4.0, 5.0]],
                         extension: 7,
+                        cache: Some(
+                            cadmpeg_ir::geometry::LegacyCache::try_new(0.015)
+                                .expect("fit tolerance")
+                        ),
                     }
                 )
                 .unwrap()
@@ -202,7 +210,8 @@ fn generated_ruled_spline_surfaces_decode_and_write_source_less() {
             .expect("ruled spline surface decode");
         let procedural = result.ir().model.procedural_surfaces.first().unwrap();
         assert_eq!(procedural.cache_fit_tolerance(), Some(0.025));
-        let ProceduralSurfaceDefinition::Ruled { first, second } = procedural.definition() else {
+        let ProceduralSurfaceDefinition::Ruled { first, second, .. } = procedural.definition()
+        else {
             panic!("expected ruled surface construction")
         };
         assert!(result
@@ -247,7 +256,7 @@ fn generated_ruled_spline_surfaces_decode_and_write_source_less() {
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("source-less ruled surface round trip");
-        let ProceduralSurfaceDefinition::Ruled { first, second } =
+        let ProceduralSurfaceDefinition::Ruled { first, second, .. } =
             &round_trip.ir().model.procedural_surfaces[0].definition()
         else {
             panic!("expected round-trip ruled surface")
@@ -543,7 +552,7 @@ fn generated_offset_spline_surfaces_decode_and_write_source_less() {
         let extension = definition_payload.extension();
         assert_eq!(*distance, -12.5);
         assert_eq!((*u_sense, *v_sense), (Some(3), Some(-4)));
-        let cadmpeg_ir::geometry::OffsetExtension::Legacy { flags } = extension else {
+        let cadmpeg_ir::geometry::OffsetExtension::Legacy { flags, .. } = extension else {
             panic!("expected legacy offset extension")
         };
         assert_eq!(*flags, expected_flags);
@@ -575,7 +584,7 @@ fn generated_offset_spline_surfaces_decode_and_write_source_less() {
         let v_sense = definition_payload.v_sense();
         let extension = definition_payload.extension();
         assert_eq!((*distance, *u_sense, *v_sense), (-12.5, Some(3), Some(-4)));
-        let cadmpeg_ir::geometry::OffsetExtension::Legacy { flags } = extension else {
+        let cadmpeg_ir::geometry::OffsetExtension::Legacy { flags, .. } = extension else {
             panic!("expected legacy offset extension")
         };
         assert_eq!(*flags, expected_flags);

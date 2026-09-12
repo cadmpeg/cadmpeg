@@ -262,7 +262,10 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
             surface.clone(),
             ProceduralSurface::new(
                 surface_construction,
-                ProceduralSurfaceDefinition::Unknown { record: None },
+                ProceduralSurfaceDefinition::Unknown {
+                    record: None,
+                    cache: None,
+                },
                 None,
             )
             .unwrap(),
@@ -283,7 +286,11 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
     ir.model
         .add_procedural_curve(
             curve.clone(),
-            ProceduralCurve::new(curve_construction, ProceduralCurveDefinition::Exact).unwrap(),
+            ProceduralCurve::new(
+                curve_construction,
+                ProceduralCurveDefinition::Exact { cache: None },
+            )
+            .unwrap(),
         )
         .unwrap();
 

@@ -57,6 +57,9 @@ pub enum OffsetExtension {
     Legacy {
         /// Conditional flag sequence in its positional wire form.
         flags: LegacyExtensionFlags,
+        /// Solved-cache fit contract this layout states itself.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache: Option<LegacyCache>,
     },
     /// Revision-gated fields with the required four-boolean carrier run.
     Revision {
@@ -397,15 +400,14 @@ pub struct Curve {
 }
 
 /// A neutral surface construction linked to the carrier it produces.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct ProceduralSurface {
     /// Stable construction identity.
     pub id: ProceduralSurfaceId,
-    /// Neutral construction definition.
+    /// Neutral construction definition, which states its own cache contract.
     definition: ProceduralSurfaceDefinition,
-    /// Fit contract of a legacy solved cache. Revision-gated forms carry the
-    /// same value in their [`RevisionCacheForm`].
-    legacy_cache_fit_tolerance: Option<FitTolerance>,
     /// Four optional U/V parameter bounds following the record's subtype
     /// scope. For a procedural extrusion or revolution, the first pair is
     /// the neutral surface-carrier interval; its definition retains the
@@ -449,6 +451,9 @@ pub enum ExactSpline {
         ranges: [[f64; 2]; 2],
         /// Native ASM extension integer following the ranges.
         extension: i64,
+        /// Solved-cache fit contract this layout states itself.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache: Option<LegacyCache>,
     },
     /// Revision-gated layout with optional interval bounds and shared form.
     Revision {
@@ -479,6 +484,9 @@ pub struct CompoundComponent<T> {
 pub struct CompoundCurveConstruction {
     parameters: Vec<f64>,
     components: Vec<CompoundComponent<CurveId>>,
+    /// Solved-cache fit contract this construction states itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cache: Option<LegacyCache>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -487,12 +495,16 @@ pub struct CompoundCurveConstruction {
 struct CompoundCurveConstructionWire {
     parameters: Vec<f64>,
     components: Vec<CompoundComponent<CurveId>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cache: Option<LegacyCache>,
 }
 
 impl TryFrom<CompoundCurveConstructionWire> for CompoundCurveConstruction {
     type Error = &'static str;
     fn try_from(wire: CompoundCurveConstructionWire) -> Result<Self, Self::Error> {
-        Self::try_new(wire.parameters, wire.components)
+        let mut payload = Self::try_new(wire.parameters, wire.components)?;
+        payload.cache = wire.cache;
+        Ok(payload)
     }
 }
 
@@ -501,6 +513,7 @@ impl Serialize for CompoundCurveConstruction {
         CompoundCurveConstructionWire {
             parameters: self.parameters.clone(),
             components: self.components.clone(),
+            cache: self.cache,
         }
         .serialize(serializer)
     }
@@ -523,6 +536,7 @@ impl CompoundCurveConstruction {
             return Err("compound curve parameters must be finite");
         }
         Ok(Self {
+            cache: None,
             parameters,
             components,
         })
@@ -647,6 +661,9 @@ pub enum ProceduralSurfaceDefinition {
         first: CurveId,
         /// Second bounding curve of the ruled surface.
         second: CurveId,
+        /// Solved-cache fit contract this construction states itself.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache: Option<LegacyCache>,
     },
     /// Rolling-ball or law-driven blend between two support surfaces.
     Blend(surface_payloads::BlendSurfacePayload),
@@ -657,6 +674,9 @@ pub enum ProceduralSurfaceDefinition {
         /// Reference to the preserved raw source record, when retained.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         record: Option<UnknownId>,
+        /// Solved-cache fit contract this construction states itself.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache: Option<LegacyCache>,
     },
 }
 
@@ -719,12 +739,18 @@ enum ProceduralSurfaceDefinitionWire {
     Ruled {
         first: CurveId,
         second: CurveId,
+        /// Solved-cache fit contract this construction states itself.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache: Option<LegacyCache>,
     },
     Blend(surface_payloads::BlendSurfacePayload),
     RollingBallJet(RollingBallJetStations),
     Unknown {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         record: Option<UnknownId>,
+        /// Solved-cache fit contract this construction states itself.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache: Option<LegacyCache>,
     },
 }
 
@@ -750,18 +776,16 @@ impl ProceduralSurfaceDefinition {
                 let revision_form = definition_payload.revision_form();
                 revision_form.as_ref().map(|form| &form.cache)
             }
-            Self::Sum(payload) => payload.revision_form().as_ref().map(|form| &form.cache),
+            Self::Sum(payload) => payload.revision_form().map(|form| &form.cache),
             Self::Offset(payload) => match payload.extension() {
                 OffsetExtension::Revision { form } => Some(&form.cache),
-                OffsetExtension::Legacy { flags: _ } => None,
+                OffsetExtension::Legacy { .. } => None,
             },
             Self::Loft(payload) => payload.revision_cache(),
             Self::RevisionCompoundLoft { construction } => Some(&construction.cache),
             Self::RevisionG2Blend { construction } => Some(&construction.cache),
             Self::Sweep(payload) => payload.revision_cache(),
-            Self::TSpline { construction } => {
-                construction.revision_form.as_ref().map(|form| &form.cache)
-            }
+            Self::TSpline { construction } => construction.cache.form().map(|form| &form.cache),
             Self::Deformable(payload) => payload.revision_cache(),
             Self::Blend(payload) => payload.revision_cache(),
             Self::Compound(_)
@@ -800,10 +824,9 @@ impl ProceduralSurfaceDefinition {
             Self::RevisionCompoundLoft { construction } => Some(&mut construction.cache),
             Self::RevisionG2Blend { construction } => Some(&mut construction.cache),
             Self::Sweep(payload) => payload.revision_cache_mut(),
-            Self::TSpline { construction } => construction
-                .revision_form
-                .as_mut()
-                .map(|form| &mut form.cache),
+            Self::TSpline { construction } => {
+                construction.cache.form_mut().map(|form| &mut form.cache)
+            }
             Self::Deformable(payload) => payload.revision_cache_mut(),
             Self::Blend(payload) => payload.revision_cache_mut(),
             Self::Compound(_)
@@ -836,17 +859,6 @@ impl ProceduralSurfaceDefinition {
     pub fn owns_revision_cache(&self) -> bool {
         self.revision_cache().is_some() || matches!(self, Self::VariableBlend(..))
     }
-
-    // Outer absence means no revision layout; inner absence means no cache tolerance.
-    #[allow(clippy::option_option)]
-    fn revision_cache_fit_tolerance(&self) -> Option<Option<f64>> {
-        if let Self::VariableBlend(definition_payload) = self {
-            let construction = definition_payload.construction();
-
-            return Some(construction.cache.fit_tolerance());
-        }
-        self.revision_cache().map(RevisionCacheForm::fit_tolerance)
-    }
 }
 
 /// A finite, non-negative fit tolerance.
@@ -857,11 +869,11 @@ pub struct FitTolerance(f64);
 
 impl FitTolerance {
     /// Admit a finite, non-negative fit tolerance.
-    pub fn try_new(value: f64) -> Result<Self, CacheFitToleranceError> {
+    pub fn try_new(value: f64) -> Result<Self, CacheContractError> {
         if value.is_finite() && value >= 0.0 {
             Ok(Self(value))
         } else {
-            Err(CacheFitToleranceError::InvalidValue { value })
+            Err(CacheContractError::InvalidValue { value })
         }
     }
 
@@ -873,7 +885,7 @@ impl FitTolerance {
 }
 
 impl TryFrom<f64> for FitTolerance {
-    type Error = CacheFitToleranceError;
+    type Error = CacheContractError;
 
     fn try_from(value: f64) -> Result<Self, Self::Error> {
         Self::try_new(value)
@@ -886,36 +898,141 @@ impl From<FitTolerance> for f64 {
     }
 }
 
-/// A top-level cache-fit field disagrees with the construction that owns it.
+/// Fit contract of a solved cache that the construction states itself, used by
+/// constructions with no revision-gated [`RevisionCacheForm`].
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct LegacyCache {
+    /// Fit tolerance of the solved cache.
+    pub fit_tolerance: FitTolerance,
+}
+
+impl LegacyCache {
+    /// A legacy cache with this fit tolerance.
+    #[must_use]
+    pub const fn new(fit_tolerance: FitTolerance) -> Self {
+        Self { fit_tolerance }
+    }
+
+    /// A legacy cache stating an admissible fit tolerance.
+    pub fn try_new(fit_tolerance: f64) -> Result<Self, CacheContractError> {
+        FitTolerance::try_new(fit_tolerance).map(Self::new)
+    }
+}
+
+/// The cache contract of a construction that has both a legacy and a
+/// revision-gated layout: the tolerance is stated in exactly one of them.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "layout", rename_all = "snake_case", deny_unknown_fields)]
+pub enum CacheContract<F> {
+    /// Legacy layout, which states its own solved-cache tolerance.
+    Legacy {
+        /// Solved-cache fit contract, absent when the record stated none.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache: Option<LegacyCache>,
+    },
+    /// Revision-gated layout, which states the tolerance in its cache form.
+    Revision {
+        /// Revision-gated form.
+        form: F,
+    },
+}
+
+impl<F> CacheContract<F> {
+    /// A legacy layout with no solved-cache tolerance.
+    #[must_use]
+    pub const fn legacy() -> Self {
+        Self::Legacy { cache: None }
+    }
+
+    /// The contract an optional revision-gated form states.
+    #[must_use]
+    pub fn from_form(form: Option<F>) -> Self {
+        match form {
+            Some(form) => Self::Revision { form },
+            None => Self::legacy(),
+        }
+    }
+
+    /// A legacy layout carrying `cache`.
+    #[must_use]
+    pub const fn legacy_cache(cache: Option<LegacyCache>) -> Self {
+        Self::Legacy { cache }
+    }
+
+    /// The revision-gated form, absent in the legacy layout.
+    #[must_use]
+    pub const fn form(&self) -> Option<&F> {
+        match self {
+            Self::Revision { form } => Some(form),
+            Self::Legacy { .. } => None,
+        }
+    }
+
+    /// Mutable revision-gated form, absent in the legacy layout.
+    pub const fn form_mut(&mut self) -> Option<&mut F> {
+        match self {
+            Self::Revision { form } => Some(form),
+            Self::Legacy { .. } => None,
+        }
+    }
+
+    /// The legacy solved-cache tolerance, absent in the revision layout.
+    #[must_use]
+    pub const fn legacy_fit_tolerance(&self) -> Option<FitTolerance> {
+        match self {
+            Self::Legacy { cache: Some(cache) } => Some(cache.fit_tolerance),
+            Self::Legacy { cache: None } | Self::Revision { .. } => None,
+        }
+    }
+
+    /// Replace the legacy solved-cache tolerance. A revision layout states its
+    /// tolerance in its cache form and is unchanged.
+    pub const fn set_legacy_fit_tolerance(&mut self, value: Option<FitTolerance>) {
+        if let Self::Legacy { cache } = self {
+            *cache = match value {
+                Some(fit_tolerance) => Some(LegacyCache { fit_tolerance }),
+                None => None,
+            };
+        }
+    }
+}
+
+impl<F> CacheContract<F> {
+    /// Whether this is the legacy layout with no stated tolerance, which is
+    /// what a record that states neither carries.
+    #[must_use]
+    pub const fn is_bare_legacy(&self) -> bool {
+        matches!(self, Self::Legacy { cache: None })
+    }
+}
+
+impl<F> Default for CacheContract<F> {
+    fn default() -> Self {
+        Self::legacy()
+    }
+}
+
+/// A fit tolerance, or the cache contract that states it, is not admissible.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
-pub enum CacheFitToleranceError {
+pub enum CacheContractError {
     /// A fit tolerance is negative or non-finite.
     #[error("fit_tolerance must be finite and non-negative, got {value}")]
     InvalidValue {
         /// Rejected tolerance.
         value: f64,
     },
-    /// A full law surface requires a solved-cache tolerance.
-    #[error("cache_fit_tolerance is required for a full law surface tail")]
-    MissingLawFull,
-    /// Other law surface tails do not carry a solved-cache tolerance.
-    #[error("cache_fit_tolerance must be absent for a non-full law surface tail")]
-    NonFullLaw,
-
-    /// A parameterized form cannot carry a solved-cache tolerance.
-    #[error("cache_fit_tolerance must be absent for a parameterized revision cache")]
+    /// A parameterized cache form states no solved-cache tolerance.
+    #[error("a parameterized cache form states no fit tolerance")]
     Parameterized,
-    /// A stale variable-blend cache cannot carry an active fit contract.
-    #[error("cache_fit_tolerance must be absent for a stale variable-blend cache")]
-    StaleVariableBlend,
-    /// A solved revision cache cannot lose its required tolerance.
-    #[error("cache_fit_tolerance is required for a solved revision cache")]
+    /// A solved cache form cannot lose its required tolerance.
+    #[error("a solved cache form states a fit tolerance")]
     MissingSolved,
-    /// A construction that owns a cache form states its tolerance there.
-    #[error(
-        "cache_fit_tolerance must be absent when the construction owns a revision-gated cache form"
-    )]
-    BesideCacheForm,
+    /// The construction's layout states no solved-cache tolerance.
+    #[error("{0}")]
+    Layout(&'static str),
 }
 
 /// A rejected procedural definition or cache contract.
@@ -924,35 +1041,307 @@ pub enum ProceduralGeometryError {
     /// A local construction field violates its numeric contract.
     #[error("{0}")]
     Payload(&'static str),
-    /// The effective cache tolerance is invalid for the definition.
+    /// The cache contract is invalid for the definition.
     #[error(transparent)]
-    Cache(#[from] CacheFitToleranceError),
+    Cache(#[from] CacheContractError),
+}
+
+/// A construction whose layout states no solved-cache fit tolerance.
+const NO_LEGACY_SLOT: &str = "this construction states no solved-cache fit tolerance";
+
+impl ProceduralSurfaceDefinition {
+    /// Solved-cache fit contract this construction states outside a
+    /// revision-gated cache form.
+    #[must_use]
+    pub fn legacy_cache(&self) -> Option<LegacyCache> {
+        match self {
+            Self::Exact(payload) => payload.legacy_cache(),
+            Self::Compound(payload) => payload.legacy_cache(),
+            Self::Taper(payload) => payload.legacy_cache(),
+            Self::Loft(payload) => payload.legacy_cache(),
+            Self::CompoundLoft(payload) => payload.legacy_cache(),
+            Self::ScaledCompoundLoft(payload) => payload.legacy_cache(),
+            Self::Skin(payload) => payload.legacy_cache(),
+            Self::Law(payload) => payload.legacy_cache(),
+            Self::Net(payload) => payload.legacy_cache(),
+            Self::G2Blend(payload) => payload.legacy_cache(),
+            Self::Extrusion(payload) => payload.legacy_cache(),
+            Self::Revolution(payload) => payload.legacy_cache(),
+            Self::Sum(payload) => payload.legacy_cache(),
+            Self::Sweep(payload) => payload.legacy_cache(),
+            Self::TSpline { construction } => construction.legacy_cache(),
+            Self::Deformable(payload) => payload.legacy_cache(),
+            Self::Offset(payload) => payload.legacy_cache(),
+            Self::Subset(payload) => payload.legacy_cache(),
+            Self::Blend(payload) => payload.legacy_cache(),
+            Self::Ruled { cache, .. } | Self::Unknown { cache, .. } => *cache,
+            Self::SubSurface(_)
+            | Self::RevisionCompoundLoft { .. }
+            | Self::RevisionG2Blend { .. }
+            | Self::VariableBlend(_)
+            | Self::VertexBlend(_)
+            | Self::LinearSweep(_)
+            | Self::AxisRevolution(_)
+            | Self::Helix { .. }
+            | Self::Replica { .. }
+            | Self::ParallelOffset(_)
+            | Self::DegenerateTorus { .. }
+            | Self::CurveBounded { .. }
+            | Self::RollingBallJet(_) => None,
+        }
+    }
+
+    /// State the legacy solved-cache fit contract. A construction whose
+    /// layout states none refuses a contract.
+    pub fn set_legacy_cache(
+        &mut self,
+        cache: Option<LegacyCache>,
+    ) -> Result<(), CacheContractError> {
+        match self {
+            Self::Exact(payload) => payload.set_legacy_cache(cache),
+            Self::Compound(payload) => payload.set_legacy_cache(cache),
+            Self::Taper(payload) => payload.set_legacy_cache(cache),
+            Self::Loft(payload) => payload.set_legacy_cache(cache),
+            Self::CompoundLoft(payload) => payload.set_legacy_cache(cache),
+            Self::ScaledCompoundLoft(payload) => payload.set_legacy_cache(cache),
+            Self::Skin(payload) => payload.set_legacy_cache(cache),
+            Self::Law(payload) => {
+                return payload
+                    .set_legacy_cache(cache)
+                    .map_err(CacheContractError::Layout)
+            }
+            Self::Net(payload) => payload.set_legacy_cache(cache),
+            Self::G2Blend(payload) => payload.set_legacy_cache(cache),
+            Self::Extrusion(payload) => payload.set_legacy_cache(cache),
+            Self::Revolution(payload) => payload.set_legacy_cache(cache),
+            Self::Sum(payload) => payload.set_legacy_cache(cache),
+            Self::Sweep(payload) => {
+                return payload
+                    .set_legacy_cache(cache)
+                    .map_err(CacheContractError::Layout)
+            }
+            Self::TSpline { construction } => construction.set_legacy_cache(cache),
+            Self::Deformable(payload) => payload.set_legacy_cache(cache),
+            Self::Offset(payload) => payload.set_legacy_cache(cache),
+            Self::Subset(payload) => payload.set_legacy_cache(cache),
+            Self::Blend(payload) => payload.set_legacy_cache(cache),
+            Self::Ruled { cache: slot, .. } | Self::Unknown { cache: slot, .. } => *slot = cache,
+            Self::SubSurface(_)
+            | Self::RevisionCompoundLoft { .. }
+            | Self::RevisionG2Blend { .. }
+            | Self::VariableBlend(_)
+            | Self::VertexBlend(_)
+            | Self::LinearSweep(_)
+            | Self::AxisRevolution(_)
+            | Self::Helix { .. }
+            | Self::Replica { .. }
+            | Self::ParallelOffset(_)
+            | Self::DegenerateTorus { .. }
+            | Self::CurveBounded { .. }
+            | Self::RollingBallJet(_) => {
+                if cache.is_some() {
+                    return Err(CacheContractError::Layout(NO_LEGACY_SLOT));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Effective fit tolerance of the solved cache: a revision-gated form
+    /// states it in its cache form, a legacy layout in the cache it holds.
+    #[must_use]
+    pub fn cache_fit_tolerance(&self) -> Option<FitTolerance> {
+        if let Self::VariableBlend(payload) = self {
+            return payload
+                .construction()
+                .cache
+                .fit_tolerance()
+                .map(FitTolerance);
+        }
+        match self.revision_cache() {
+            Some(RevisionCacheForm::SolvedCache { fit_tolerance }) => Some(*fit_tolerance),
+            Some(RevisionCacheForm::Parameterization(_)) => None,
+            None => self.legacy_cache().map(|cache| cache.fit_tolerance),
+        }
+    }
+
+    /// Change the effective fit tolerance without permitting a parameterized
+    /// cache to acquire one or a solved cache to lose it.
+    pub fn set_cache_fit_tolerance(
+        &mut self,
+        value: Option<FitTolerance>,
+    ) -> Result<(), CacheContractError> {
+        if let Self::VariableBlend(payload) = self {
+            return set_variable_blend_cache(payload.cache_mut(), value);
+        }
+        if self.owns_revision_cache() {
+            return set_revision_cache(self.revision_cache_mut(), value);
+        }
+        self.set_legacy_cache(value.map(LegacyCache::new))
+    }
+}
+
+impl ProceduralCurveDefinition {
+    /// Solved-cache fit contract this construction states outside a
+    /// revision-gated cache form.
+    #[must_use]
+    pub fn legacy_cache(&self) -> Option<LegacyCache> {
+        match self {
+            Self::Compound(construction) => construction.legacy_cache(),
+            Self::Helix(construction) => construction.legacy_cache(),
+            Self::Subset(payload) => payload.legacy_cache(),
+            Self::VectorOffset(payload) => payload.legacy_cache(),
+            Self::TwoSidedOffset(payload) => payload.legacy_cache(),
+            Self::Spring(payload) => payload.legacy_cache(),
+            Self::SurfaceOffset(payload) => payload.legacy_cache(),
+            Self::Exact { cache }
+            | Self::Law { cache, .. }
+            | Self::Intersection { cache, .. }
+            | Self::TolerantIntersection { cache, .. }
+            | Self::Unknown { cache, .. } => *cache,
+            Self::ThreeSurfaceIntersection(_)
+            | Self::SurfaceCurve { .. }
+            | Self::Silhouette(_)
+            | Self::Deformable(_)
+            | Self::Projection(_)
+            | Self::Offset(_)
+            | Self::SpatialOffset(_)
+            | Self::Replica { .. }
+            | Self::BlendSpine { .. } => None,
+        }
+    }
+
+    /// State the legacy solved-cache fit contract. A construction whose
+    /// layout states none refuses a contract.
+    pub fn set_legacy_cache(
+        &mut self,
+        cache: Option<LegacyCache>,
+    ) -> Result<(), CacheContractError> {
+        match self {
+            Self::Compound(construction) => construction.set_legacy_cache(cache),
+            Self::Helix(construction) => construction.set_legacy_cache(cache),
+            Self::Subset(payload) => payload.set_legacy_cache(cache),
+            Self::VectorOffset(payload) => payload.set_legacy_cache(cache),
+            Self::TwoSidedOffset(payload) => payload.set_legacy_cache(cache),
+            Self::Spring(payload) => payload.set_legacy_cache(cache),
+            Self::SurfaceOffset(payload) => payload.set_legacy_cache(cache),
+            Self::Exact { cache: slot }
+            | Self::Law { cache: slot, .. }
+            | Self::Intersection { cache: slot, .. }
+            | Self::TolerantIntersection { cache: slot, .. }
+            | Self::Unknown { cache: slot, .. } => *slot = cache,
+            Self::ThreeSurfaceIntersection(_)
+            | Self::SurfaceCurve { .. }
+            | Self::Silhouette(_)
+            | Self::Deformable(_)
+            | Self::Projection(_)
+            | Self::Offset(_)
+            | Self::SpatialOffset(_)
+            | Self::Replica { .. }
+            | Self::BlendSpine { .. } => {
+                if cache.is_some() {
+                    return Err(CacheContractError::Layout(NO_LEGACY_SLOT));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Effective fit tolerance of the solved cache.
+    #[must_use]
+    pub fn cache_fit_tolerance(&self) -> Option<FitTolerance> {
+        match self.revision_cache() {
+            Some(RevisionCacheForm::SolvedCache { fit_tolerance }) => Some(*fit_tolerance),
+            Some(RevisionCacheForm::Parameterization(_)) => None,
+            None => self.legacy_cache().map(|cache| cache.fit_tolerance),
+        }
+    }
+
+    /// Change the effective fit tolerance without permitting a parameterized
+    /// cache to acquire one or a solved cache to lose it.
+    pub fn set_cache_fit_tolerance(
+        &mut self,
+        value: Option<FitTolerance>,
+    ) -> Result<(), CacheContractError> {
+        if self.owns_revision_cache() {
+            return set_revision_cache(self.revision_cache_mut(), value);
+        }
+        self.set_legacy_cache(value.map(LegacyCache::new))
+    }
+
+    /// Raise the fit tolerance of an existing solved cache. Parameterized
+    /// forms have no solved cache and remain unchanged.
+    pub fn raise_cache_fit_tolerance(&mut self, value: FitTolerance) {
+        match self.revision_cache_mut() {
+            Some(RevisionCacheForm::SolvedCache { fit_tolerance }) => {
+                if value.get() > fit_tolerance.get() {
+                    *fit_tolerance = value;
+                }
+            }
+            Some(RevisionCacheForm::Parameterization(_)) => {}
+            None => {
+                let raised = match self.legacy_cache() {
+                    Some(cache) if cache.fit_tolerance.get() >= value.get() => cache.fit_tolerance,
+                    _ => value,
+                };
+                let _ = self.set_legacy_cache(Some(LegacyCache::new(raised)));
+            }
+        }
+    }
+}
+
+fn set_variable_blend_cache(
+    cache: &mut VariableBlendCache,
+    value: Option<FitTolerance>,
+) -> Result<(), CacheContractError> {
+    match (cache, value) {
+        (VariableBlendCache::Parameterization { .. }, Some(_)) => {
+            Err(CacheContractError::Parameterized)
+        }
+        (VariableBlendCache::Parameterization { .. } | VariableBlendCache::Stale {}, None) => {
+            Ok(())
+        }
+        (VariableBlendCache::Current { fit_tolerance, .. }, Some(value)) => {
+            *fit_tolerance = value;
+            Ok(())
+        }
+        (VariableBlendCache::Current { .. }, None) => Err(CacheContractError::MissingSolved),
+        (VariableBlendCache::Stale {}, Some(_)) => Err(CacheContractError::Layout(
+            "a stale variable-blend cache states no fit tolerance",
+        )),
+    }
+}
+
+fn set_revision_cache<P>(
+    cache: Option<&mut RevisionCacheForm<P>>,
+    value: Option<FitTolerance>,
+) -> Result<(), CacheContractError> {
+    match (cache, value) {
+        (Some(RevisionCacheForm::Parameterization(_)), Some(_)) => {
+            Err(CacheContractError::Parameterized)
+        }
+        (Some(RevisionCacheForm::SolvedCache { fit_tolerance }), Some(value)) => {
+            *fit_tolerance = value;
+            Ok(())
+        }
+        (Some(RevisionCacheForm::SolvedCache { .. }), None) => {
+            Err(CacheContractError::MissingSolved)
+        }
+        (Some(RevisionCacheForm::Parameterization(_)) | None, None) => Ok(()),
+        (None, Some(_)) => Err(CacheContractError::Layout(NO_LEGACY_SLOT)),
+    }
 }
 
 impl ProceduralSurface {
-    /// Build a procedural surface without a legacy top-level cache.
+    /// Build a procedural surface from its construction definition.
     pub fn new(
         id: ProceduralSurfaceId,
         definition: ProceduralSurfaceDefinition,
         record_bounds: Option<[Option<f64>; 4]>,
     ) -> Result<Self, ProceduralGeometryError> {
-        Self::try_new(id, definition, None, record_bounds)
-    }
-
-    /// Build a procedural surface and reconcile the legacy top-level cache
-    /// field with any revision-gated cache form in its definition.
-    pub fn try_new(
-        id: ProceduralSurfaceId,
-        definition: ProceduralSurfaceDefinition,
-        cache_fit_tolerance: Option<f64>,
-        record_bounds: Option<[Option<f64>; 4]>,
-    ) -> Result<Self, ProceduralGeometryError> {
-        let legacy_cache_fit_tolerance =
-            admit_surface_cache_fit_tolerance(&definition, cache_fit_tolerance)?;
         Ok(Self {
             id,
             definition,
-            legacy_cache_fit_tolerance,
             record_bounds,
         })
     }
@@ -963,170 +1352,43 @@ impl ProceduralSurface {
         &self.definition
     }
 
-    /// Replace the construction definition and discard a legacy cache value
-    /// when the new definition owns a revision cache.
-    pub fn replace_definition(
-        &mut self,
-        definition: ProceduralSurfaceDefinition,
-    ) -> Result<(), ProceduralGeometryError> {
-        let tolerance = if definition.owns_revision_cache() {
-            None
-        } else {
-            self.legacy_cache_fit_tolerance.map(FitTolerance::get)
-        };
-        self.try_replace_definition(definition, tolerance)
-    }
-
-    /// Replace the definition and effective cache-fit tolerance atomically.
-    pub fn try_replace_definition(
-        &mut self,
-        definition: ProceduralSurfaceDefinition,
-        cache_fit_tolerance: Option<f64>,
-    ) -> Result<(), ProceduralGeometryError> {
-        let legacy_cache_fit_tolerance =
-            admit_surface_cache_fit_tolerance(&definition, cache_fit_tolerance)?;
+    /// Replace the construction definition. The cache contract travels with
+    /// the definition, so nothing outside it changes.
+    pub fn replace_definition(&mut self, definition: ProceduralSurfaceDefinition) {
         self.definition = definition;
-        self.legacy_cache_fit_tolerance = legacy_cache_fit_tolerance;
-        Ok(())
     }
 
-    /// Edit the definition and normalize legacy cache storage before the edit
-    /// can escape this call.
+    /// Edit the definition in place.
     pub fn edit_definition<R>(
         &mut self,
         edit: impl FnOnce(&mut ProceduralSurfaceDefinition) -> R,
-    ) -> Result<R, ProceduralGeometryError> {
-        let mut definition = self.definition.clone();
-        let result = edit(&mut definition);
-        self.replace_definition(definition)?;
-        Ok(result)
+    ) -> R {
+        edit(&mut self.definition)
     }
 
     /// Effective fit tolerance of the solved cache.
     #[must_use]
     pub fn cache_fit_tolerance(&self) -> Option<f64> {
-        self.definition
-            .revision_cache_fit_tolerance()
-            .unwrap_or(self.legacy_cache_fit_tolerance.map(FitTolerance::get))
-    }
-
-    /// Fit tolerance held outside the definition, absent when a revision-gated
-    /// cache form in the definition carries it.
-    pub(crate) fn legacy_cache_fit_tolerance(&self) -> Option<f64> {
-        self.legacy_cache_fit_tolerance.map(FitTolerance::get)
+        self.definition.cache_fit_tolerance().map(FitTolerance::get)
     }
 
     /// Change the effective fit tolerance without permitting a parameterized
-    /// cache to acquire one or a solved revision cache to lose it.
+    /// cache to acquire one or a solved cache to lose it.
     pub fn set_cache_fit_tolerance(
         &mut self,
         value: Option<f64>,
-    ) -> Result<(), CacheFitToleranceError> {
+    ) -> Result<(), CacheContractError> {
         let value = value.map(FitTolerance::try_new).transpose()?;
-        validate_law_cache_fit_tolerance(&self.definition, value)?;
-        if let ProceduralSurfaceDefinition::VariableBlend(definition_payload) = &mut self.definition
-        {
-            return set_variable_blend_cache_fit_tolerance(definition_payload.cache_mut(), value);
-        }
-        set_cache_fit_tolerance(
-            self.definition.revision_cache_mut(),
-            &mut self.legacy_cache_fit_tolerance,
-            value,
-        )
+        self.definition.set_cache_fit_tolerance(value)
     }
 
     /// Scale the effective cache-fit tolerance in place.
-    pub fn scale_cache_fit_tolerance(&mut self, scale: f64) -> Result<(), CacheFitToleranceError> {
+    pub fn scale_cache_fit_tolerance(&mut self, scale: f64) -> Result<(), CacheContractError> {
         if let Some(value) = self.cache_fit_tolerance() {
             self.set_cache_fit_tolerance(Some(value * scale))?;
         }
         Ok(())
     }
-}
-
-/// Admits the record-level fit tolerance of a construction that owns no
-/// revision-gated cache form.
-///
-/// A construction that owns one states the tolerance inside it, so the record
-/// slot and the cache form are never both populated and the tolerance is on
-/// the wire once.
-fn admit_legacy_cache_fit_tolerance(
-    owns_cache_form: bool,
-    supplied: Option<f64>,
-) -> Result<Option<FitTolerance>, CacheFitToleranceError> {
-    let checked = supplied.map(FitTolerance::try_new).transpose()?;
-    if owns_cache_form && checked.is_some() {
-        return Err(CacheFitToleranceError::BesideCacheForm);
-    }
-    Ok(checked)
-}
-
-fn admit_surface_cache_fit_tolerance(
-    definition: &ProceduralSurfaceDefinition,
-    supplied: Option<f64>,
-) -> Result<Option<FitTolerance>, CacheFitToleranceError> {
-    let checked = supplied.map(FitTolerance::try_new).transpose()?;
-    validate_law_cache_fit_tolerance(definition, checked)?;
-    admit_legacy_cache_fit_tolerance(definition.owns_revision_cache(), supplied)
-}
-
-fn set_variable_blend_cache_fit_tolerance(
-    cache: &mut VariableBlendCache,
-    value: Option<FitTolerance>,
-) -> Result<(), CacheFitToleranceError> {
-    match (cache, value) {
-        (VariableBlendCache::Parameterization { .. }, Some(_)) => {
-            Err(CacheFitToleranceError::Parameterized)
-        }
-        (VariableBlendCache::Parameterization { .. }, None) => Ok(()),
-        (VariableBlendCache::Current { fit_tolerance, .. }, Some(value)) => {
-            *fit_tolerance = value;
-            Ok(())
-        }
-        (VariableBlendCache::Current { .. }, None) => Err(CacheFitToleranceError::MissingSolved),
-        (VariableBlendCache::Stale {}, Some(_)) => Err(CacheFitToleranceError::StaleVariableBlend),
-        (VariableBlendCache::Stale {}, None) => Ok(()),
-    }
-}
-
-fn set_cache_fit_tolerance<P>(
-    cache: Option<&mut RevisionCacheForm<P>>,
-    legacy: &mut Option<FitTolerance>,
-    value: Option<FitTolerance>,
-) -> Result<(), CacheFitToleranceError> {
-    match (cache, value) {
-        (Some(RevisionCacheForm::Parameterization(_)), Some(_)) => {
-            Err(CacheFitToleranceError::Parameterized)
-        }
-        (Some(RevisionCacheForm::Parameterization(_)), None) => Ok(()),
-        (Some(RevisionCacheForm::SolvedCache { fit_tolerance }), Some(value)) => {
-            *fit_tolerance = value;
-            Ok(())
-        }
-        (Some(RevisionCacheForm::SolvedCache { .. }), None) => {
-            Err(CacheFitToleranceError::MissingSolved)
-        }
-        (None, value) => {
-            *legacy = value;
-            Ok(())
-        }
-    }
-}
-
-fn validate_law_cache_fit_tolerance(
-    definition: &ProceduralSurfaceDefinition,
-    value: Option<FitTolerance>,
-) -> Result<(), CacheFitToleranceError> {
-    if let ProceduralSurfaceDefinition::Law(definition_payload) = definition {
-        let construction = definition_payload.construction();
-
-        match (&construction.tail, value) {
-            (LawSurfaceTail::Full {}, None) => return Err(CacheFitToleranceError::MissingLawFull),
-            (LawSurfaceTail::Full {}, Some(_)) | (_, None) => {}
-            (_, Some(_)) => return Err(CacheFitToleranceError::NonFullLaw),
-        }
-    }
-    Ok(())
 }
 
 /// Structurally selected deformable-surface payload.
@@ -1280,9 +1542,11 @@ pub struct DeformableSurfaceConstruction {
     pub support: SurfaceId,
     /// Discriminator-selected deformation data.
     pub data: DeformableSurfaceData,
-    /// Revision-gated fields surrounding the support and shared surface tail.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub revision_form: Option<RevisionSurfaceForm>,
+    /// Cache contract: the revision-gated fields surrounding the support and
+    /// shared surface tail, or the legacy solved-cache tolerance this
+    /// construction states instead.
+    #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
+    pub cache: CacheContract<RevisionSurfaceForm>,
     /// Six ordered solved-surface discontinuity arrays.
     pub discontinuities: [Vec<f64>; 6],
     /// Native discontinuity tail flag.
@@ -1431,6 +1695,9 @@ pub struct HelixCurveConstruction {
     pitch: FiniteVector3,
     apex_factor: FiniteScalar,
     axis: FiniteVector3,
+    /// Solved-cache fit contract this construction states itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cache: Option<LegacyCache>,
 }
 
 #[derive(Deserialize)]
@@ -1443,6 +1710,8 @@ struct HelixCurveConstructionWire {
     pitch: Vector3,
     apex_factor: f64,
     axis: Vector3,
+    #[serde(default)]
+    cache: Option<LegacyCache>,
 }
 
 impl HelixCurveConstruction {
@@ -1483,6 +1752,7 @@ impl HelixCurveConstruction {
             .ok_or("HelixCurveConstruction.apex_factor must be finite")?;
         let axis = FiniteVector3::new(axis).ok_or("HelixCurveConstruction.axis must be finite")?;
         Ok(Self {
+            cache: None,
             angle_range,
             center,
             major,
@@ -1538,7 +1808,7 @@ impl HelixCurveConstruction {
 impl TryFrom<HelixCurveConstructionWire> for HelixCurveConstruction {
     type Error = &'static str;
     fn try_from(wire: HelixCurveConstructionWire) -> Result<Self, Self::Error> {
-        Self::try_new(
+        let mut payload = Self::try_new(
             wire.angle_range,
             wire.center,
             wire.major,
@@ -1546,7 +1816,9 @@ impl TryFrom<HelixCurveConstructionWire> for HelixCurveConstruction {
             wire.pitch,
             wire.apex_factor,
             wire.axis,
-        )
+        )?;
+        payload.cache = wire.cache;
+        Ok(payload)
     }
 }
 
@@ -1576,7 +1848,11 @@ impl HelixCurveConstruction {
             self.apex_factor.get(),
             self.axis.get(),
         )?;
+        // The rebuilt construction is minted fresh; the solved-cache contract
+        // this construction states travels with it.
+        let cache = self.cache;
         *self = candidate;
+        self.cache = cache;
         Ok(())
     }
 }
@@ -1951,11 +2227,13 @@ pub struct TSplineSurfaceConstruction {
     discontinuities: [Vec<f64>; 6],
     /// Native discontinuity tail flag.
     discontinuity_flag: bool,
-    /// Revision-gated form fields; absent from the pre-revision layout. The
-    /// revision layout stores the shared tail first, then four optional
-    /// parameter values (`support_bounds`), the type code as an enum, the
-    /// nested subtransform scope, and the trailing integer.
-    revision_form: Option<RevisionSurfaceForm>,
+    /// Cache contract: the revision-gated form, or the legacy solved-cache
+    /// tolerance this construction states instead. The revision layout stores
+    /// the shared tail first, then four optional parameter values
+    /// (`support_bounds`), the type code as an enum, the nested subtransform
+    /// scope, and the trailing integer.
+    #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
+    cache: CacheContract<RevisionSurfaceForm>,
 }
 
 impl TSplineSurfaceConstruction {
@@ -1991,7 +2269,7 @@ impl TSplineSurfaceConstruction {
             trailing_value,
             discontinuities,
             discontinuity_flag,
-            revision_form,
+            cache: CacheContract::from_form(revision_form),
         })
     }
 
@@ -2028,7 +2306,7 @@ impl TSplineSurfaceConstruction {
 
     /// Return the native revision form value.
     pub const fn revision_form(&self) -> Option<&RevisionSurfaceForm> {
-        self.revision_form.as_ref()
+        self.cache.form()
     }
 
     /// Parse the semantic index of the effective topology program.
@@ -2055,8 +2333,8 @@ struct TSplineSurfaceConstructionWire {
     trailing_value: i64,
     discontinuities: [Vec<f64>; 6],
     discontinuity_flag: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    revision_form: Option<RevisionSurfaceForm>,
+    #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
+    cache: CacheContract<RevisionSurfaceForm>,
 }
 
 impl From<TSplineSurfaceConstruction> for TSplineSurfaceConstructionWire {
@@ -2068,7 +2346,7 @@ impl From<TSplineSurfaceConstruction> for TSplineSurfaceConstructionWire {
             trailing_value: construction.trailing_value,
             discontinuities: construction.discontinuities,
             discontinuity_flag: construction.discontinuity_flag,
-            revision_form: construction.revision_form,
+            cache: construction.cache,
         }
     }
 }
@@ -2084,8 +2362,12 @@ impl TryFrom<TSplineSurfaceConstructionWire> for TSplineSurfaceConstruction {
             wire.trailing_value,
             wire.discontinuities,
             wire.discontinuity_flag,
-            wire.revision_form,
+            wire.cache.form().cloned(),
         )
+        .map(|mut construction| {
+            construction.cache = wire.cache;
+            construction
+        })
     }
 }
 
@@ -4740,8 +5022,12 @@ pub struct LawSurfaceConstruction {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum LawSurfaceTail {
-    /// Selector 0; the surface record carries a solved NURBS cache.
-    Full {},
+    /// Selector 0; the surface record carries a solved NURBS cache, whose fit
+    /// contract this tail states.
+    Full {
+        /// Fit contract of the solved cache this tail requires.
+        cache: LegacyCache,
+    },
     /// Selector 1; compact parameter summaries replace the solved cache.
     Summary {
         /// Ordered U and V parameter summaries.
@@ -5117,9 +5403,10 @@ pub struct SweepRevisionForm {
 pub struct SweepSurfaceConstruction {
     /// Leading native sweep enum.
     pub primary_kind: i64,
-    /// Revision-gated form fields; absent from the pre-revision layout.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub revision_form: Option<SweepRevisionForm>,
+    /// Cache contract: the revision-gated form, or the legacy solved-cache
+    /// tolerance this construction states instead.
+    #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
+    pub cache: CacheContract<SweepRevisionForm>,
     /// Structurally selected sweep layout.
     pub layout: SweepSurfaceLayout,
     /// Six ordered solved-surface discontinuity arrays.
@@ -5153,15 +5440,14 @@ pub enum BlendRadiusLaw {
 }
 
 /// A neutral curve construction linked to its solved carrier.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct ProceduralCurve {
     /// Stable construction identity.
     pub id: ProceduralCurveId,
-    /// Neutral construction definition.
+    /// Neutral construction definition, which states its own cache contract.
     definition: ProceduralCurveDefinition,
-    /// Fit contract of a legacy solved cache. Revision-gated forms carry the
-    /// same value in their [`RevisionCacheForm`].
-    legacy_cache_fit_tolerance: Option<FitTolerance>,
 }
 
 /// A parameter-space support curve and its optional affine parameter map.
@@ -5658,6 +5944,9 @@ pub enum SpringLayout {
         discontinuities: [Vec<f64>; 3],
         /// Native boolean following the discontinuity arrays.
         discontinuity_flag: bool,
+        /// Solved-cache fit contract this layout states itself.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache: Option<LegacyCache>,
     },
     /// Cache-first layout, which carries no inline replacement ranges or
     /// context-first discontinuity flag.
@@ -6100,7 +6389,11 @@ pub enum CurveOffsetRange {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ProceduralCurveDefinition {
     /// An exact native intcurve whose solved NURBS cache is authoritative.
-    Exact,
+    Exact {
+        /// Solved-cache fit contract this construction states itself.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache: Option<LegacyCache>,
+    },
     /// Curve defined by recursive native law formulas.
     Law {
         /// Shared support surfaces, UV curves, interval, and discontinuities.
@@ -6114,6 +6407,9 @@ pub enum ProceduralCurveDefinition {
         primary: LawFormula,
         /// Counted additional recursive law formulas.
         additional: Vec<LawFormula>,
+        /// Solved-cache fit contract this construction states itself.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache: Option<LegacyCache>,
     },
     /// Ordered compound of native child curves with construction parameters.
     Compound(CompoundCurveConstruction),
@@ -6125,6 +6421,9 @@ pub enum ProceduralCurveDefinition {
         context: IntcurveSupportContext,
         /// Native boolean following the discontinuity arrays.
         discontinuity_flag: bool,
+        /// Solved-cache fit contract this construction states itself.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache: Option<LegacyCache>,
     },
     /// Tolerance-bounded intersection relation selected by topology endpoints.
     TolerantIntersection {
@@ -6134,6 +6433,9 @@ pub enum ProceduralCurveDefinition {
         /// Atomic neutral parameterization established by validated support charts.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         parameterization: Option<TolerantIntersectionParameterization>,
+        /// Solved-cache fit contract this construction states itself.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache: Option<LegacyCache>,
     },
     /// Intersection constrained by a third ordered support surface.
     ThreeSurfaceIntersection(curve_payloads::ThreeSurfaceIntersectionCurvePayload),
@@ -6185,6 +6487,9 @@ pub enum ProceduralCurveDefinition {
         /// Reference to the preserved raw source record, when retained.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         record: Option<UnknownId>,
+        /// Solved-cache fit contract this construction states itself.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache: Option<LegacyCache>,
     },
 }
 
@@ -6195,7 +6500,11 @@ pub enum ProceduralCurveDefinition {
     rename_all = "snake_case"
 )]
 enum ProceduralCurveDefinitionWire {
-    Exact,
+    Exact {
+        /// Solved-cache fit contract this construction states itself.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache: Option<LegacyCache>,
+    },
     Law {
         context: IntcurveSupportContext,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -6203,18 +6512,27 @@ enum ProceduralCurveDefinitionWire {
         extension: i64,
         primary: LawFormula,
         additional: Vec<LawFormula>,
+        /// Solved-cache fit contract this construction states itself.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache: Option<LegacyCache>,
     },
     Compound(CompoundCurveConstruction),
     Helix(HelixCurveConstruction),
     Intersection {
         context: IntcurveSupportContext,
         discontinuity_flag: bool,
+        /// Solved-cache fit contract this construction states itself.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache: Option<LegacyCache>,
     },
     TolerantIntersection {
         #[serde(flatten)]
         construction: TolerantIntersectionConstruction,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         parameterization: Option<TolerantIntersectionParameterization>,
+        /// Solved-cache fit contract this construction states itself.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache: Option<LegacyCache>,
     },
     ThreeSurfaceIntersection(curve_payloads::ThreeSurfaceIntersectionCurvePayload),
     SurfaceCurve {
@@ -6244,6 +6562,9 @@ enum ProceduralCurveDefinitionWire {
         native_kind: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         record: Option<UnknownId>,
+        /// Solved-cache fit contract this construction states itself.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache: Option<LegacyCache>,
     },
 }
 
@@ -6304,30 +6625,12 @@ impl ProceduralCurveDefinition {
 }
 
 impl ProceduralCurve {
-    /// Build a procedural curve without a legacy top-level cache.
+    /// Build a procedural curve from its construction definition.
     pub fn new(
         id: ProceduralCurveId,
         definition: ProceduralCurveDefinition,
     ) -> Result<Self, ProceduralGeometryError> {
-        Self::try_new(id, definition, None)
-    }
-
-    /// Build a procedural curve and reconcile the legacy top-level cache
-    /// field with any revision-gated cache form in its definition.
-    pub fn try_new(
-        id: ProceduralCurveId,
-        definition: ProceduralCurveDefinition,
-        cache_fit_tolerance: Option<f64>,
-    ) -> Result<Self, ProceduralGeometryError> {
-        let legacy_cache_fit_tolerance = admit_legacy_cache_fit_tolerance(
-            definition.owns_revision_cache(),
-            cache_fit_tolerance,
-        )?;
-        Ok(Self {
-            id,
-            definition,
-            legacy_cache_fit_tolerance,
-        })
+        Ok(Self { id, definition })
     }
 
     /// Borrow the neutral construction definition.
@@ -6336,45 +6639,18 @@ impl ProceduralCurve {
         &self.definition
     }
 
-    /// Replace the construction definition and discard a legacy cache value
-    /// when the new definition owns a revision cache.
-    pub fn replace_definition(
-        &mut self,
-        definition: ProceduralCurveDefinition,
-    ) -> Result<(), ProceduralGeometryError> {
-        let tolerance = if definition.revision_cache().is_some() {
-            None
-        } else {
-            self.legacy_cache_fit_tolerance.map(FitTolerance::get)
-        };
-        self.try_replace_definition(definition, tolerance)
-    }
-
-    /// Replace the definition and effective cache-fit tolerance atomically.
-    pub fn try_replace_definition(
-        &mut self,
-        definition: ProceduralCurveDefinition,
-        cache_fit_tolerance: Option<f64>,
-    ) -> Result<(), ProceduralGeometryError> {
-        let legacy_cache_fit_tolerance = admit_legacy_cache_fit_tolerance(
-            definition.owns_revision_cache(),
-            cache_fit_tolerance,
-        )?;
+    /// Replace the construction definition. The cache contract travels with
+    /// the definition, so nothing outside it changes.
+    pub fn replace_definition(&mut self, definition: ProceduralCurveDefinition) {
         self.definition = definition;
-        self.legacy_cache_fit_tolerance = legacy_cache_fit_tolerance;
-        Ok(())
     }
 
-    /// Edit the definition and normalize legacy cache storage before the edit
-    /// can escape this call.
+    /// Edit the definition in place.
     pub fn edit_definition<R>(
         &mut self,
         edit: impl FnOnce(&mut ProceduralCurveDefinition) -> R,
-    ) -> Result<R, ProceduralGeometryError> {
-        let mut definition = self.definition.clone();
-        let result = edit(&mut definition);
-        self.replace_definition(definition)?;
-        Ok(result)
+    ) -> R {
+        edit(&mut self.definition)
     }
 
     /// Mutable checked support context of an intersection construction.
@@ -6388,51 +6664,26 @@ impl ProceduralCurve {
     /// Effective fit tolerance of the solved cache.
     #[must_use]
     pub fn cache_fit_tolerance(&self) -> Option<f64> {
-        self.definition.revision_cache().map_or(
-            self.legacy_cache_fit_tolerance.map(FitTolerance::get),
-            RevisionCacheForm::fit_tolerance,
-        )
-    }
-
-    /// Fit tolerance held outside the definition, absent when a revision-gated
-    /// cache form in the definition carries it.
-    pub(crate) fn legacy_cache_fit_tolerance(&self) -> Option<f64> {
-        self.legacy_cache_fit_tolerance.map(FitTolerance::get)
+        self.definition.cache_fit_tolerance().map(FitTolerance::get)
     }
 
     /// Change the effective fit tolerance without permitting a parameterized
-    /// cache to acquire one or a solved revision cache to lose it.
+    /// cache to acquire one or a solved cache to lose it.
     pub fn set_cache_fit_tolerance(
         &mut self,
         value: Option<f64>,
-    ) -> Result<(), CacheFitToleranceError> {
-        set_cache_fit_tolerance(
-            self.definition.revision_cache_mut(),
-            &mut self.legacy_cache_fit_tolerance,
-            value.map(FitTolerance::try_new).transpose()?,
-        )
+    ) -> Result<(), CacheContractError> {
+        let value = value.map(FitTolerance::try_new).transpose()?;
+        self.definition.set_cache_fit_tolerance(value)
     }
 
-    /// Raise the fit tolerance of an existing solved cache. Parameterized
-    /// forms have no solved cache and remain unchanged.
+    /// Raise the fit tolerance of an existing solved cache.
     pub fn raise_cache_fit_tolerance(&mut self, value: FitTolerance) {
-        match self.definition.revision_cache_mut() {
-            Some(RevisionCacheForm::SolvedCache { fit_tolerance }) => {
-                *fit_tolerance = FitTolerance(fit_tolerance.get().max(value.get()));
-            }
-            Some(RevisionCacheForm::Parameterization(_)) => {}
-            None => {
-                self.legacy_cache_fit_tolerance = Some(FitTolerance(
-                    self.legacy_cache_fit_tolerance
-                        .map_or(0.0, FitTolerance::get)
-                        .max(value.get()),
-                ));
-            }
-        }
+        self.definition.raise_cache_fit_tolerance(value);
     }
 
     /// Scale the effective cache-fit tolerance in place.
-    pub fn scale_cache_fit_tolerance(&mut self, scale: f64) -> Result<(), CacheFitToleranceError> {
+    pub fn scale_cache_fit_tolerance(&mut self, scale: f64) -> Result<(), CacheContractError> {
         if let Some(value) = self.cache_fit_tolerance() {
             self.set_cache_fit_tolerance(Some(value * scale))?;
         }
@@ -6440,164 +6691,78 @@ impl ProceduralCurve {
     }
 }
 
-#[derive(Serialize)]
-struct ProceduralSurfaceWriteWire<'a> {
-    id: &'a ProceduralSurfaceId,
-    definition: &'a ProceduralSurfaceDefinition,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    cache_fit_tolerance: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    record_bounds: Option<[Option<f64>; 4]>,
-}
-
-#[derive(Deserialize)]
-pub(crate) struct ProceduralSurfaceReadWire {
-    id: ProceduralSurfaceId,
-    #[serde(default)]
-    surface: Option<SurfaceId>,
-    definition: ProceduralSurfaceDefinition,
-    #[serde(default)]
-    cache_fit_tolerance: Option<f64>,
-    #[serde(default)]
-    record_bounds: Option<[Option<f64>; 4]>,
-}
-
-#[cfg(feature = "schema")]
-#[derive(JsonSchema)]
-#[expect(dead_code, reason = "fields define the procedural-surface wire schema")]
-struct ProceduralSurfaceSchemaWire {
-    id: ProceduralSurfaceId,
-    surface: SurfaceId,
-    definition: ProceduralSurfaceDefinition,
+/// One procedural-surface row: the construction and the carrier it produces.
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ProceduralSurfaceRow {
+    /// Stable construction identity.
+    pub(crate) id: ProceduralSurfaceId,
+    /// Carrier surface this construction produces.
+    pub(crate) surface: SurfaceId,
+    /// Neutral construction definition.
+    pub(crate) definition: ProceduralSurfaceDefinition,
+    /// Four optional U/V parameter bounds following the record's subtype scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    cache_fit_tolerance: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    record_bounds: Option<[Option<f64>; 4]>,
+    pub(crate) record_bounds: Option<[Option<f64>; 4]>,
 }
 
-#[derive(Serialize)]
-struct ProceduralCurveWriteWire<'a> {
-    id: &'a ProceduralCurveId,
-    definition: &'a ProceduralCurveDefinition,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    cache_fit_tolerance: Option<f64>,
+/// One procedural-curve row: the construction and the carrier it produces.
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ProceduralCurveRow {
+    /// Stable construction identity.
+    pub(crate) id: ProceduralCurveId,
+    /// Carrier curve this construction produces.
+    pub(crate) curve: CurveId,
+    /// Neutral construction definition.
+    pub(crate) definition: ProceduralCurveDefinition,
 }
 
-#[derive(Deserialize)]
-pub(crate) struct ProceduralCurveReadWire {
-    id: ProceduralCurveId,
-    #[serde(default)]
-    curve: Option<CurveId>,
-    definition: ProceduralCurveDefinition,
-    #[serde(default)]
-    cache_fit_tolerance: Option<f64>,
-}
+impl ProceduralSurfaceRow {
+    /// The row a construction and its carrier state.
+    pub(crate) fn new(surface: SurfaceId, procedural: &ProceduralSurface) -> Self {
+        Self {
+            id: procedural.id.clone(),
+            surface,
+            definition: procedural.definition.clone(),
+            record_bounds: procedural.record_bounds,
+        }
+    }
 
-#[cfg(feature = "schema")]
-#[derive(JsonSchema)]
-#[expect(dead_code, reason = "fields define the procedural-curve wire schema")]
-struct ProceduralCurveSchemaWire {
-    id: ProceduralCurveId,
-    curve: CurveId,
-    definition: ProceduralCurveDefinition,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    cache_fit_tolerance: Option<f64>,
-}
-
-impl ProceduralSurfaceReadWire {
-    pub(crate) fn into_parts(self) -> Result<(Option<SurfaceId>, ProceduralSurface), String> {
-        let procedural = ProceduralSurface::try_new(
-            self.id,
-            self.definition,
-            self.cache_fit_tolerance,
-            self.record_bounds,
+    /// The carrier and the construction this row states.
+    pub(crate) fn into_parts(self) -> (SurfaceId, ProceduralSurface) {
+        (
+            self.surface,
+            ProceduralSurface {
+                id: self.id,
+                definition: self.definition,
+                record_bounds: self.record_bounds,
+            },
         )
-        .map_err(|error| error.to_string())?;
-        Ok((self.surface, procedural))
     }
 }
 
-impl ProceduralCurveReadWire {
-    pub(crate) fn into_parts(self) -> Result<(Option<CurveId>, ProceduralCurve), String> {
-        let procedural =
-            ProceduralCurve::try_new(self.id, self.definition, self.cache_fit_tolerance)
-                .map_err(|error| error.to_string())?;
-        Ok((self.curve, procedural))
-    }
-}
-
-impl Serialize for ProceduralSurface {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        ProceduralSurfaceWriteWire {
-            id: &self.id,
-            definition: &self.definition,
-            cache_fit_tolerance: self.legacy_cache_fit_tolerance.map(FitTolerance::get),
-            record_bounds: self.record_bounds,
+impl ProceduralCurveRow {
+    /// The row a construction and its carrier state.
+    pub(crate) fn new(curve: CurveId, procedural: &ProceduralCurve) -> Self {
+        Self {
+            id: procedural.id.clone(),
+            curve,
+            definition: procedural.definition.clone(),
         }
-        .serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for ProceduralSurface {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        ProceduralSurfaceReadWire::deserialize(deserializer)?
-            .into_parts()
-            .map(|(_, procedural)| procedural)
-            .map_err(serde::de::Error::custom)
-    }
-}
-
-impl Serialize for ProceduralCurve {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        ProceduralCurveWriteWire {
-            id: &self.id,
-            definition: &self.definition,
-            cache_fit_tolerance: self.legacy_cache_fit_tolerance.map(FitTolerance::get),
-        }
-        .serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for ProceduralCurve {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        ProceduralCurveReadWire::deserialize(deserializer)?
-            .into_parts()
-            .map(|(_, procedural)| procedural)
-            .map_err(serde::de::Error::custom)
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for ProceduralSurface {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "ProceduralSurface".into()
     }
 
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        ProceduralSurfaceSchemaWire::json_schema(generator)
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for ProceduralCurve {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "ProceduralCurve".into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        ProceduralCurveSchemaWire::json_schema(generator)
+    /// The carrier and the construction this row states.
+    pub(crate) fn into_parts(self) -> (CurveId, ProceduralCurve) {
+        (
+            self.curve,
+            ProceduralCurve {
+                id: self.id,
+                definition: self.definition,
+            },
+        )
     }
 }
 
@@ -6678,3 +6843,48 @@ pub enum CurveOffsetDistanceLaw {
 
 #[cfg(test)]
 mod tests;
+
+impl CompoundCurveConstruction {
+    /// Solved-cache fit contract this construction states.
+    #[must_use]
+    pub const fn legacy_cache(&self) -> Option<LegacyCache> {
+        self.cache
+    }
+
+    /// Replace the solved-cache fit contract this construction states.
+    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
+        self.cache = cache;
+    }
+}
+
+impl HelixCurveConstruction {
+    /// Solved-cache fit contract this construction states.
+    #[must_use]
+    pub const fn legacy_cache(&self) -> Option<LegacyCache> {
+        self.cache
+    }
+
+    /// Replace the solved-cache fit contract this construction states.
+    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
+        self.cache = cache;
+    }
+}
+
+impl TSplineSurfaceConstruction {
+    /// Solved-cache fit contract this construction states.
+    #[must_use]
+    pub const fn legacy_cache(&self) -> Option<LegacyCache> {
+        match self.cache.legacy_fit_tolerance() {
+            Some(fit_tolerance) => Some(LegacyCache { fit_tolerance }),
+            None => None,
+        }
+    }
+
+    /// Replace the legacy solved-cache fit contract.
+    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
+        self.cache.set_legacy_fit_tolerance(match cache {
+            Some(cache) => Some(cache.fit_tolerance),
+            None => None,
+        });
+    }
+}

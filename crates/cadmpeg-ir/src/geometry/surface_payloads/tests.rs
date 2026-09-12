@@ -43,6 +43,7 @@ fn offset_distance_mutation_preserves_the_previous_value_on_rejection() {
         false,
         OffsetExtension::Legacy {
             flags: LegacyExtensionFlags::Absent {},
+            cache: None,
         },
     )
     .unwrap();
@@ -80,6 +81,7 @@ fn an_offset_extension_layout_carries_only_the_keys_its_own_arm_owns() {
             secondary: true,
             tertiary: None,
         },
+        cache: None,
     });
     let revision = offset(OffsetExtension::Revision { form: form.clone() });
 
@@ -160,6 +162,7 @@ fn an_exact_spline_layout_carries_only_the_keys_its_own_arm_owns() {
     let legacy = ExactSurfacePayload::try_new(ExactSpline::Legacy {
         ranges: [[0.0, 1.0]; 2],
         extension: 0,
+        cache: None,
     })
     .unwrap();
     let revision = ExactSurfacePayload::try_new(ExactSpline::Revision {
@@ -212,6 +215,7 @@ fn exact_and_compound_payloads_reject_nonfinite_nested_parameters() {
         ExactSurfacePayload::try_new(ExactSpline::Legacy {
             ranges: [range, [0.0, 1.0]],
             extension: 0,
+            cache: None,
         })
     };
     let valid = ProceduralSurfaceDefinition::Exact(exact([1.0, 1.0]).unwrap());

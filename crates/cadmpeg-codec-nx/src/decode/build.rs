@@ -445,15 +445,17 @@ pub(crate) fn try_decode_geometry(
                     true,
                     cadmpeg_ir::geometry::OffsetExtension::Legacy {
                         flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                        cache: None,
                     },
                 )
                 .and_then(|admitted_payload| {
-                    ProceduralSurface::try_new(
-                        procedural_id,
-                        ProceduralSurfaceDefinition::Offset(admitted_payload),
-                        cache_fit_tolerance,
-                        None,
-                    )
+                    let mut definition = ProceduralSurfaceDefinition::Offset(admitted_payload);
+                    if let Some(tolerance) = cache_fit_tolerance {
+                        definition.set_legacy_cache(Some(
+                            cadmpeg_ir::geometry::LegacyCache::try_new(tolerance)?,
+                        ))?;
+                    }
+                    ProceduralSurface::new(procedural_id, definition, None)
                 })
                 .map_err(cadmpeg_core::CodecError::malformed)?;
 
@@ -549,13 +551,11 @@ pub(crate) fn try_decode_geometry(
             let Some(procedural) = ir.model.procedural_surfaces.get_mut(procedural_index) else {
                 continue;
             };
-            procedural
-                .edit_definition(|definition| {
-                    if let ProceduralSurfaceDefinition::Blend(definition_payload) = definition {
-                        definition_payload.set_supports(supports);
-                    }
-                })
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            procedural.edit_definition(|definition| {
+                if let ProceduralSurfaceDefinition::Blend(definition_payload) = definition {
+                    definition_payload.set_supports(supports);
+                }
+            });
         }
 
         for (ci, (geometry, node)) in ordered_curve_candidates(semantic, graph)
@@ -811,6 +811,7 @@ pub(crate) fn try_decode_geometry(
                     )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                     discontinuity_flag: false,
+                    cache: None,
                 }
             } else if let Some((supports, endpoints, tolerance)) = uncharted {
                 ProceduralCurveDefinition::TolerantIntersection {
@@ -819,19 +820,26 @@ pub(crate) fn try_decode_geometry(
                     )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                     parameterization: None,
+                    cache: None,
                 }
             } else {
                 ProceduralCurveDefinition::Unknown {
                     native_kind: Some("nx:intersection".into()),
                     record: Some(unknown_id),
+                    cache: None,
                 }
             };
-            let procedural = ProceduralCurve::try_new(
-                procedural_id,
-                definition,
-                charted.map(|charted| charted.fit_tolerance),
-            )
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+            let mut definition = definition;
+            if let Some(charted) = charted {
+                definition
+                    .set_legacy_cache(Some(
+                        cadmpeg_ir::geometry::LegacyCache::try_new(charted.fit_tolerance)
+                            .map_err(cadmpeg_core::CodecError::malformed)?,
+                    ))
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
+            }
+            let procedural = ProceduralCurve::new(procedural_id, definition)
+                .map_err(cadmpeg_core::CodecError::malformed)?;
 
             let _attached = ir.model.add_procedural_curve(curve_id.clone(), procedural);
 
@@ -845,13 +853,11 @@ pub(crate) fn try_decode_geometry(
             let Some(procedural) = ir.model.procedural_surfaces.get_mut(procedural_index) else {
                 continue;
             };
-            procedural
-                .edit_definition(|definition| {
-                    if let ProceduralSurfaceDefinition::Blend(definition_payload) = definition {
-                        definition_payload.set_spine(Some(spine));
-                    }
-                })
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            procedural.edit_definition(|definition| {
+                if let ProceduralSurfaceDefinition::Blend(definition_payload) = definition {
+                    definition_payload.set_spine(Some(spine));
+                }
+            });
         }
         let trimmed_curves = &view.trimmed_curves;
         let mut normalized_pcurves = BTreeSet::new();

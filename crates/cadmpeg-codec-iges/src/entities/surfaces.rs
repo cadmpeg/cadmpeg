@@ -1401,6 +1401,7 @@ pub(super) fn project(
                 ProceduralSurfaceDefinition::Ruled {
                     first: crate::ids::curve(&crate::ids::Stem::directory(first_sequence)),
                     second: crate::ids::curve(&crate::ids::Stem::directory(second_sequence)),
+                    cache: None,
                 },
                 Some([
                     Some(first_interval[0]),
@@ -2389,6 +2390,7 @@ pub(super) fn project(
                         cadmpeg_ir::geometry::ExactSpline::Legacy {
                             ranges: [u_range, v_range],
                             extension: 0,
+                            cache: None,
                         },
                     )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
@@ -2534,6 +2536,7 @@ pub(super) fn project(
                 false,
                 cadmpeg_ir::geometry::OffsetExtension::Legacy {
                     flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                    cache: None,
                 },
             )
             .and_then(|admitted_payload| {

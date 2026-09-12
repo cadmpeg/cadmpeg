@@ -65,6 +65,7 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
                 )
                 .unwrap(),
                 discontinuity_flag: false,
+                cache: None,
             },
         )
         .unwrap(),

@@ -580,7 +580,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     surfaces.insert(support.as_str());
                 }
             }
-            ProceduralSurfaceDefinition::Ruled { first, second } => {
+            ProceduralSurfaceDefinition::Ruled { first, second, .. } => {
                 curves.extend([first.as_str(), second.as_str()]);
             }
             ProceduralSurfaceDefinition::Sum(definition_payload) => {
@@ -650,7 +650,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             curves.insert(curve.as_str());
         }
         match procedural.definition() {
-            ProceduralCurveDefinition::Exact | ProceduralCurveDefinition::Helix(_) => {}
+            ProceduralCurveDefinition::Exact { .. } | ProceduralCurveDefinition::Helix(_) => {}
             ProceduralCurveDefinition::Law {
                 context,
                 primary,

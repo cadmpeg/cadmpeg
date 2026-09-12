@@ -160,25 +160,25 @@ fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
     assert_eq!(partials.du, Vector3::new(8.0, 3.5, 8.5));
     assert_eq!(partials.dv, Vector3::new(1.5, 3.75, 1.75));
 
-    ir.model.procedural_surfaces[0]
-        .edit_definition(|definition| {
-            let ProceduralSurfaceDefinition::VariableBlend(definition_payload) = definition else {
-                unreachable!()
-            };
-            let mut construction = definition_payload.construction().clone();
+    ir.model.procedural_surfaces[0].edit_definition(|definition| {
+        let ProceduralSurfaceDefinition::VariableBlend(definition_payload) = definition else {
+            unreachable!()
+        };
+        let mut construction = definition_payload.construction().clone();
 
-            let first = construction.radii.first().clone();
-            construction.radii = VariableBlendRadii::Two {
-                first: first.clone(),
-                second: first,
-            };
-            *definition_payload =
-                crate::geometry::surface_payloads::VariableBlendSurfacePayload::try_new(Box::new(
-                    construction,
-                ))
-                .unwrap();
-        })
-        .unwrap();
+        let first = construction.radii.first().clone();
+        construction.radii = VariableBlendRadii::Two {
+            first: first.clone(),
+            second: first,
+        };
+        let restored_cache = definition_payload.legacy_cache();
+        *definition_payload =
+            crate::geometry::surface_payloads::VariableBlendSurfacePayload::try_new(Box::new(
+                construction,
+            ))
+            .unwrap();
+        definition_payload.set_legacy_cache(restored_cache);
+    });
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
         model_surface_point_by_id(&index, &blend_surface, 0.25, 0.5),
@@ -194,23 +194,23 @@ fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
             radii: [0.0, 0.0],
         },
     };
-    ir.model.procedural_surfaces[0]
-        .edit_definition(|definition| {
-            let ProceduralSurfaceDefinition::VariableBlend(definition_payload) = definition else {
-                unreachable!()
-            };
-            let mut construction = definition_payload.construction().clone();
+    ir.model.procedural_surfaces[0].edit_definition(|definition| {
+        let ProceduralSurfaceDefinition::VariableBlend(definition_payload) = definition else {
+            unreachable!()
+        };
+        let mut construction = definition_payload.construction().clone();
 
-            construction.cross_section = Some(VariableBlendCrossSection::RoundedChamfer {
-                radius: Some(Box::new(zero_radius.clone())),
-            });
-            *definition_payload =
-                crate::geometry::surface_payloads::VariableBlendSurfacePayload::try_new(Box::new(
-                    construction,
-                ))
-                .unwrap();
-        })
-        .unwrap();
+        construction.cross_section = Some(VariableBlendCrossSection::RoundedChamfer {
+            radius: Some(Box::new(zero_radius.clone())),
+        });
+        let restored_cache = definition_payload.legacy_cache();
+        *definition_payload =
+            crate::geometry::surface_payloads::VariableBlendSurfacePayload::try_new(Box::new(
+                construction,
+            ))
+            .unwrap();
+        definition_payload.set_legacy_cache(restored_cache);
+    });
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
         model_surface_point_by_id(&index, &blend_surface, 0.25, 0.5),
@@ -247,24 +247,24 @@ fn current_variable_blend_uses_the_solved_cache_for_points_and_partials() {
         panic!("fixture surface must retain its construction");
     };
     *cache = Some(SolvedSurfaceGeometry::Nurbs(bilinear_surface()));
-    ir.model.procedural_surfaces[0]
-        .edit_definition(|definition| {
-            let ProceduralSurfaceDefinition::VariableBlend(definition_payload) = definition else {
-                unreachable!()
-            };
-            let mut construction = definition_payload.construction().clone();
+    ir.model.procedural_surfaces[0].edit_definition(|definition| {
+        let ProceduralSurfaceDefinition::VariableBlend(definition_payload) = definition else {
+            unreachable!()
+        };
+        let mut construction = definition_payload.construction().clone();
 
-            construction.cache = crate::geometry::VariableBlendCache::Current {
-                shape_prefix: std::num::NonZeroI64::new(1).unwrap(),
-                fit_tolerance: crate::geometry::FitTolerance::try_new(0.0).unwrap(),
-            };
-            *definition_payload =
-                crate::geometry::surface_payloads::VariableBlendSurfacePayload::try_new(Box::new(
-                    construction,
-                ))
-                .unwrap();
-        })
-        .unwrap();
+        construction.cache = crate::geometry::VariableBlendCache::Current {
+            shape_prefix: std::num::NonZeroI64::new(1).unwrap(),
+            fit_tolerance: crate::geometry::FitTolerance::try_new(0.0).unwrap(),
+        };
+        let restored_cache = definition_payload.legacy_cache();
+        *definition_payload =
+            crate::geometry::surface_payloads::VariableBlendSurfacePayload::try_new(Box::new(
+                construction,
+            ))
+            .unwrap();
+        definition_payload.set_legacy_cache(restored_cache);
+    });
 
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
@@ -277,21 +277,21 @@ fn current_variable_blend_uses_the_solved_cache_for_points_and_partials() {
     assert_eq!(partials.du, Vector3::new(1.0, 0.0, 0.0));
     assert_eq!(partials.dv, Vector3::new(0.0, 1.0, 0.0));
 
-    ir.model.procedural_surfaces[0]
-        .edit_definition(|definition| {
-            let ProceduralSurfaceDefinition::VariableBlend(definition_payload) = definition else {
-                unreachable!()
-            };
-            let mut construction = definition_payload.construction().clone();
+    ir.model.procedural_surfaces[0].edit_definition(|definition| {
+        let ProceduralSurfaceDefinition::VariableBlend(definition_payload) = definition else {
+            unreachable!()
+        };
+        let mut construction = definition_payload.construction().clone();
 
-            construction.cache = crate::geometry::VariableBlendCache::Stale {};
-            *definition_payload =
-                crate::geometry::surface_payloads::VariableBlendSurfacePayload::try_new(Box::new(
-                    construction,
-                ))
-                .unwrap();
-        })
-        .unwrap();
+        construction.cache = crate::geometry::VariableBlendCache::Stale {};
+        let restored_cache = definition_payload.legacy_cache();
+        *definition_payload =
+            crate::geometry::surface_payloads::VariableBlendSurfacePayload::try_new(Box::new(
+                construction,
+            ))
+            .unwrap();
+        definition_payload.set_legacy_cache(restored_cache);
+    });
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
         model_surface_point_by_id(&index, &blend_surface, 0.25, 0.5),
@@ -355,28 +355,28 @@ fn cacheless_circular_variable_blend_rejects_an_undetermined_center_tangent() {
         [2.0, 4.0],
         Some(VariableBlendCrossSection::Circular),
     );
-    ir.model.procedural_surfaces[0]
-        .edit_definition(|definition| {
-            let ProceduralSurfaceDefinition::VariableBlend(definition_payload) = definition else {
-                unreachable!()
-            };
-            let mut construction = definition_payload.construction().clone();
+    ir.model.procedural_surfaces[0].edit_definition(|definition| {
+        let ProceduralSurfaceDefinition::VariableBlend(definition_payload) = definition else {
+            unreachable!()
+        };
+        let mut construction = definition_payload.construction().clone();
 
-            construction.sides[0].pcurve = Some(crate::geometry::PcurveGeometry::Line(
-                crate::geometry::LinePcurve::try_new(Point2::new(3.0, 0.0), Point2::new(0.0, 1.0))
-                    .unwrap(),
-            ));
-            construction.sides[1].pcurve = Some(crate::geometry::PcurveGeometry::Line(
-                crate::geometry::LinePcurve::try_new(Point2::new(0.5, 2.0), Point2::new(0.0, 2.0))
-                    .unwrap(),
-            ));
-            *definition_payload =
-                crate::geometry::surface_payloads::VariableBlendSurfacePayload::try_new(Box::new(
-                    construction,
-                ))
-                .unwrap();
-        })
-        .unwrap();
+        construction.sides[0].pcurve = Some(crate::geometry::PcurveGeometry::Line(
+            crate::geometry::LinePcurve::try_new(Point2::new(3.0, 0.0), Point2::new(0.0, 1.0))
+                .unwrap(),
+        ));
+        construction.sides[1].pcurve = Some(crate::geometry::PcurveGeometry::Line(
+            crate::geometry::LinePcurve::try_new(Point2::new(0.5, 2.0), Point2::new(0.0, 2.0))
+                .unwrap(),
+        ));
+        let restored_cache = definition_payload.legacy_cache();
+        *definition_payload =
+            crate::geometry::surface_payloads::VariableBlendSurfacePayload::try_new(Box::new(
+                construction,
+            ))
+            .unwrap();
+        definition_payload.set_legacy_cache(restored_cache);
+    });
 
     let index = crate::index::ModelIndex::new(&ir);
     let point = model_surface_point_by_id(&index, &blend_surface, 0.5, 0.5)
@@ -422,41 +422,39 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
             reversed: false,
         })
     });
-    ir.model.procedural_surfaces[0]
-        .replace_definition(ProceduralSurfaceDefinition::Blend(
-            crate::geometry::surface_payloads::BlendSurfacePayload::try_new(
-                supports,
-                Some(slice.clone()),
-                BlendRadiusLaw::Constant { signed_radius: 3.0 },
-                BlendCrossSection::Circular,
-                Some(Box::new(RollingBallConstruction {
-                    definition_index: 0,
-                    sides,
-                    slice,
-                    slice_range: [Some(0.0), Some(1.0)],
-                    offsets: [3.0, 3.0],
-                    radius_selector: RollingBallRadiusSelector::None {},
-                    u_range: [Some(0.0), Some(1.0)],
-                    v_range: [Some(0.0), Some(1.0)],
-                    shape_prefix: 0,
-                    parameters: [0.0, 0.0],
-                    tail: 0,
-                    cache: crate::geometry::RevisionCacheForm::Parameterization(
-                        RevisionSurfaceParameterization {
-                            u_interval: [Some(0.0), Some(1.0)],
-                            v_interval: [Some(0.0), Some(1.0)],
-                            ..Default::default()
-                        },
-                    ),
-                    discontinuities: std::array::from_fn(|_| Vec::new()),
-                    tail_flag: false,
-                    third: None,
-                    tail_extensions: [0; 3],
-                })),
-            )
-            .unwrap(),
-        ))
-        .unwrap();
+    ir.model.procedural_surfaces[0].replace_definition(ProceduralSurfaceDefinition::Blend(
+        crate::geometry::surface_payloads::BlendSurfacePayload::try_new(
+            supports,
+            Some(slice.clone()),
+            BlendRadiusLaw::Constant { signed_radius: 3.0 },
+            BlendCrossSection::Circular,
+            Some(Box::new(RollingBallConstruction {
+                definition_index: 0,
+                sides,
+                slice,
+                slice_range: [Some(0.0), Some(1.0)],
+                offsets: [3.0, 3.0],
+                radius_selector: RollingBallRadiusSelector::None {},
+                u_range: [Some(0.0), Some(1.0)],
+                v_range: [Some(0.0), Some(1.0)],
+                shape_prefix: 0,
+                parameters: [0.0, 0.0],
+                tail: 0,
+                cache: crate::geometry::RevisionCacheForm::Parameterization(
+                    RevisionSurfaceParameterization {
+                        u_interval: [Some(0.0), Some(1.0)],
+                        v_interval: [Some(0.0), Some(1.0)],
+                        ..Default::default()
+                    },
+                ),
+                discontinuities: std::array::from_fn(|_| Vec::new()),
+                tail_flag: false,
+                third: None,
+                tail_extensions: [0; 3],
+            })),
+        )
+        .unwrap(),
+    ));
 
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
@@ -538,26 +536,26 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
     assert!(model_surface_point_by_id(&index, &blend_surface, 0.5, 0.5).is_some());
     assert!(model_surface_partials_by_id(&index, &blend_surface, 0.5, 0.5).is_none());
 
-    ir.model.procedural_surfaces[0]
-        .edit_definition(|definition| {
-            let ProceduralSurfaceDefinition::Blend(definition_payload) = definition else {
-                unreachable!()
-            };
-            let (Some(mut native),) = (definition_payload.native().clone(),) else {
-                unreachable!()
-            };
+    ir.model.procedural_surfaces[0].edit_definition(|definition| {
+        let ProceduralSurfaceDefinition::Blend(definition_payload) = definition else {
+            unreachable!()
+        };
+        let (Some(mut native),) = (definition_payload.native().cloned(),) else {
+            unreachable!()
+        };
 
-            native.offsets = [4.0, 4.0];
-            *definition_payload = crate::geometry::surface_payloads::BlendSurfacePayload::try_new(
-                definition_payload.supports().clone(),
-                definition_payload.spine().clone(),
-                definition_payload.radius().clone(),
-                definition_payload.cross_section().clone(),
-                Some(native),
-            )
-            .unwrap();
-        })
+        native.offsets = [4.0, 4.0];
+        let restored_cache = definition_payload.legacy_cache();
+        *definition_payload = crate::geometry::surface_payloads::BlendSurfacePayload::try_new(
+            definition_payload.supports().clone(),
+            definition_payload.spine().clone(),
+            definition_payload.radius().clone(),
+            definition_payload.cross_section().clone(),
+            Some(Box::new(native)),
+        )
         .unwrap();
+        definition_payload.set_legacy_cache(restored_cache);
+    });
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
         model_surface_point_by_id(&index, &blend_surface, 0.5, 0.5),
@@ -568,29 +566,29 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
         panic!("fixture surface must retain its construction");
     };
     *cache = Some(SolvedSurfaceGeometry::Nurbs(bilinear_surface()));
-    ir.model.procedural_surfaces[0]
-        .edit_definition(|definition| {
-            let ProceduralSurfaceDefinition::Blend(definition_payload) = definition else {
-                unreachable!()
-            };
-            let (Some(mut native),) = (definition_payload.native().clone(),) else {
-                unreachable!()
-            };
+    ir.model.procedural_surfaces[0].edit_definition(|definition| {
+        let ProceduralSurfaceDefinition::Blend(definition_payload) = definition else {
+            unreachable!()
+        };
+        let (Some(mut native),) = (definition_payload.native().cloned(),) else {
+            unreachable!()
+        };
 
-            native.offsets = [3.0, 3.0];
-            native.cache = crate::geometry::RevisionCacheForm::SolvedCache {
-                fit_tolerance: crate::geometry::FitTolerance::try_new(0.0).unwrap(),
-            };
-            *definition_payload = crate::geometry::surface_payloads::BlendSurfacePayload::try_new(
-                definition_payload.supports().clone(),
-                definition_payload.spine().clone(),
-                definition_payload.radius().clone(),
-                definition_payload.cross_section().clone(),
-                Some(native),
-            )
-            .unwrap();
-        })
+        native.offsets = [3.0, 3.0];
+        native.cache = crate::geometry::RevisionCacheForm::SolvedCache {
+            fit_tolerance: crate::geometry::FitTolerance::try_new(0.0).unwrap(),
+        };
+        let restored_cache = definition_payload.legacy_cache();
+        *definition_payload = crate::geometry::surface_payloads::BlendSurfacePayload::try_new(
+            definition_payload.supports().clone(),
+            definition_payload.spine().clone(),
+            definition_payload.radius().clone(),
+            definition_payload.cross_section().clone(),
+            Some(Box::new(native)),
+        )
         .unwrap();
+        definition_payload.set_legacy_cache(restored_cache);
+    });
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
         model_surface_point_by_id(&index, &blend_surface, 0.25, 0.5),
@@ -602,29 +600,29 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
     assert_eq!(cached_partials.du, Vector3::new(1.0, 0.0, 0.0));
     assert_eq!(cached_partials.dv, Vector3::new(0.0, 1.0, 0.0));
 
-    ir.model.procedural_surfaces[0]
-        .edit_definition(|definition| {
-            let ProceduralSurfaceDefinition::Blend(definition_payload) = definition else {
-                unreachable!()
-            };
-            let (Some(mut native),) = (definition_payload.native().clone(),) else {
-                unreachable!()
-            };
+    ir.model.procedural_surfaces[0].edit_definition(|definition| {
+        let ProceduralSurfaceDefinition::Blend(definition_payload) = definition else {
+            unreachable!()
+        };
+        let (Some(mut native),) = (definition_payload.native().cloned(),) else {
+            unreachable!()
+        };
 
-            native.offsets = [4.0, 4.0];
-            native.cache = crate::geometry::RevisionCacheForm::Parameterization(
-                RevisionSurfaceParameterization::default(),
-            );
-            *definition_payload = crate::geometry::surface_payloads::BlendSurfacePayload::try_new(
-                definition_payload.supports().clone(),
-                definition_payload.spine().clone(),
-                definition_payload.radius().clone(),
-                definition_payload.cross_section().clone(),
-                Some(native),
-            )
-            .unwrap();
-        })
+        native.offsets = [4.0, 4.0];
+        native.cache = crate::geometry::RevisionCacheForm::Parameterization(
+            RevisionSurfaceParameterization::default(),
+        );
+        let restored_cache = definition_payload.legacy_cache();
+        *definition_payload = crate::geometry::surface_payloads::BlendSurfacePayload::try_new(
+            definition_payload.supports().clone(),
+            definition_payload.spine().clone(),
+            definition_payload.radius().clone(),
+            definition_payload.cross_section().clone(),
+            Some(Box::new(native)),
+        )
         .unwrap();
+        definition_payload.set_legacy_cache(restored_cache);
+    });
     let index = crate::index::ModelIndex::new(&ir);
     assert!(model_surface_point_by_id(&index, &blend_surface, 0.25, 0.5).is_none());
     assert!(model_surface_partials_by_id(&index, &blend_surface, 0.25, 0.5).is_none());

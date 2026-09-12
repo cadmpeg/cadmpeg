@@ -301,9 +301,11 @@
               -1.5,
               3.5
             ],
-            "sense": true
-          },
-          "cache_fit_tolerance": 0.005999999999999999
+            "sense": true,
+            "cache": {
+              "fit_tolerance": 0.005999999999999999
+            }
+          }
         }
       ],
       "features": [],

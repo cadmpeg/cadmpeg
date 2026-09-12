@@ -1280,6 +1280,7 @@ pub(crate) fn append_freeform_surface_pools(
                 false,
                 cadmpeg_ir::geometry::OffsetExtension::Legacy {
                     flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                    cache: None,
                 },
             )
             .and_then(|admitted_payload| {
@@ -1855,7 +1856,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                         );
                         let _attached = ir.model.add_procedural_surface(
                             id.clone(),
-                            cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(support, *offset, None, None, false, cadmpeg_ir::geometry::OffsetExtension::Legacy { flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {}, }).and_then(|admitted_payload| ProceduralSurface::new(
+                            cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(support, *offset, None, None, false, cadmpeg_ir::geometry::OffsetExtension::Legacy { flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {}, cache: None }).and_then(|admitted_payload| ProceduralSurface::new(
                                 procedural_id,
                                 ProceduralSurfaceDefinition::Offset(admitted_payload),
                                 None,
@@ -2367,6 +2368,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
             ProceduralCurveDefinition::Intersection {
                 context,
                 discontinuity_flag: false,
+                cache: None,
             }
         } else {
             ProceduralCurveDefinition::SurfaceCurve {
@@ -2424,9 +2426,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                 .set_param_range(Some(resolved.block.parameters.range))
                 .map_err(cadmpeg_core::CodecError::malformed)?;
             let procedural = &mut ir.model.procedural_curves[procedure_index];
-            if procedural.try_replace_definition(definition, None).is_err() {
-                continue;
-            }
+            procedural.replace_definition(definition);
             annotate(
                 annotations,
                 &procedural.id,
@@ -3424,6 +3424,7 @@ mod tests {
                     )
                     .expect("valid IntcurveSupportContext fixture"),
                     discontinuity_flag: false,
+                    cache: None,
                 },
             )
             .expect("valid ProceduralCurve fixture"),
@@ -3711,6 +3712,7 @@ mod tests {
                     )
                     .expect("valid IntcurveSupportContext fixture"),
                     discontinuity_flag: false,
+                    cache: None,
                 },
             )
             .expect("valid ProceduralCurve fixture"),

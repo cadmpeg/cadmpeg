@@ -343,9 +343,11 @@
                 "parameter": 4.0,
                 "component": "f3d:brep:procedural_curve#19:component:1"
               }
-            ]
-          },
-          "cache_fit_tolerance": 0.0029999999999999996
+            ],
+            "cache": {
+              "fit_tolerance": 0.0029999999999999996
+            }
+          }
         }
       ],
       "features": [],

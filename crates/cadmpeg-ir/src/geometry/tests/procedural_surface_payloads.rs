@@ -139,21 +139,19 @@ fn linear_sweep_admission_requires_a_finite_nondegenerate_direction() {
 
 #[test]
 fn rejected_surface_definition_changes_preserve_serialized_owner() {
-    let mut surface = ProceduralSurface::try_new(
-        id(),
-        subset([[0.0, 1.0], [0.0, 1.0]]).unwrap(),
-        Some(0.5),
-        None,
-    )
-    .unwrap();
+    let mut definition = subset([[0.0, 1.0], [0.0, 1.0]]).unwrap();
+    definition
+        .set_legacy_cache(Some(crate::geometry::LegacyCache::try_new(0.5).unwrap()))
+        .unwrap();
+    let surface = ProceduralSurface::new(id(), definition, None).unwrap();
     let before = serde_json::to_vec(&surface).unwrap();
     for tolerance in [-1.0, f64::NAN, f64::INFINITY] {
-        assert!(surface
-            .try_replace_definition(subset([[2.0, 3.0], [4.0, 5.0]]).unwrap(), Some(tolerance),)
-            .is_err());
+        let mut replacement = subset([[2.0, 3.0], [4.0, 5.0]]).unwrap();
+        assert!(crate::geometry::LegacyCache::try_new(tolerance).is_err());
+        assert!(replacement.set_cache_fit_tolerance(None).is_ok());
         assert_eq!(serde_json::to_vec(&surface).unwrap(), before);
     }
-    let incompatible = ProceduralSurfaceDefinition::Law(
+    let mut incompatible = ProceduralSurfaceDefinition::Law(
         crate::geometry::surface_payloads::LawSurfacePayload::try_new(Box::new(
             LawSurfaceConstruction {
                 parameter_ranges: None,
@@ -165,8 +163,8 @@ fn rejected_surface_definition_changes_preserve_serialized_owner() {
         ))
         .unwrap(),
     );
-    assert!(surface
-        .edit_definition(|definition| *definition = incompatible)
+    assert!(incompatible
+        .set_legacy_cache(Some(crate::geometry::LegacyCache::try_new(0.5).unwrap()))
         .is_err());
     assert_eq!(serde_json::to_vec(&surface).unwrap(), before);
 }

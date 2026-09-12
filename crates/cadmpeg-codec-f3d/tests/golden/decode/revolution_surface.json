@@ -404,9 +404,14 @@
               0.0,
               1.0
             ],
-            "transposed": false
-          },
-          "cache_fit_tolerance": 0.045
+            "transposed": false,
+            "cache": {
+              "layout": "legacy",
+              "cache": {
+                "fit_tolerance": 0.045
+              }
+            }
+          }
         }
       ],
       "procedural_curves": [],

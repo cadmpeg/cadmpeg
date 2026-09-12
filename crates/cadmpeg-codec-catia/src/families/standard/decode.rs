@@ -562,6 +562,7 @@ mod consolidated_revolution_binding_tests {
                         )
                         .expect("valid IntcurveSupportContext fixture"),
                         discontinuity_flag: false,
+                        cache: None,
                     },
                 )
                 .expect("valid ProceduralCurve fixture"),
@@ -942,7 +943,7 @@ pub(crate) fn emit_standard_extrusion_definition(
                 "two_surface_pcurve_intersection",
                 Exactness::ByteExact,
             );
-            let procedure = ProceduralCurve::try_new(
+            let procedure = ProceduralCurve::new(
                 procedure_id,
                 ProceduralCurveDefinition::Intersection {
                     context: IntcurveSupportContext::try_new(
@@ -952,8 +953,11 @@ pub(crate) fn emit_standard_extrusion_definition(
                     )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                     discontinuity_flag: false,
+                    cache: Some(
+                        cadmpeg_ir::geometry::LegacyCache::try_new(cache_fit_tolerance)
+                            .map_err(cadmpeg_core::CodecError::malformed)?,
+                    ),
                 },
-                Some(cache_fit_tolerance),
             )
             .map_err(cadmpeg_core::CodecError::malformed)?;
 
@@ -1971,6 +1975,7 @@ fn try_decode_standard_population(
                             false,
                             cadmpeg_ir::geometry::OffsetExtension::Legacy {
                                 flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                                cache: None,
                             },
                         )
                         .ok()?,
@@ -8441,6 +8446,7 @@ pub(crate) fn build_standard_edge_curve(
                             Err(_) => return Ok((None, None)),
                         },
                         discontinuity_flag: false,
+                        cache: None,
                     },
                 ) else {
                     return Ok((None, None));

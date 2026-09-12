@@ -144,7 +144,7 @@ fn native_procedural_surface_definition(
                 .iter()
                 .find(|surface| surface.id == construction.support)
                 .ok_or_else(|| CodecError::Malformed("deformable support is missing".into()))?;
-            if let Some(form) = &construction.revision_form {
+            if let Some(form) = &construction.cache.form() {
                 if form.revision != 22_506 {
                     return Err(CodecError::Malformed(
                         "unsupported revision-gated deformable surface revision".into(),
@@ -486,7 +486,9 @@ fn native_procedural_surface_definition(
                     }
                     native_enum(bytes, *extension);
                 }
-                cadmpeg_ir::geometry::ExactSpline::Legacy { ranges, extension } => {
+                cadmpeg_ir::geometry::ExactSpline::Legacy {
+                    ranges, extension, ..
+                } => {
                     native_nurbs_surface(bytes, solved_cache)?;
                     native_solved_cache_fit_tolerance(
                         bytes,
@@ -693,7 +695,7 @@ fn native_procedural_surface_definition(
                 target,
                 procedural,
                 sections,
-                revision_form.as_ref(),
+                revision_form,
                 parameters,
                 closures,
                 singularities,
@@ -779,7 +781,7 @@ fn native_procedural_surface_definition(
                 procedural.id
             )));
         }
-        ProceduralSurfaceDefinition::Ruled { first, second } => {
+        ProceduralSurfaceDefinition::Ruled { first, second, .. } => {
             let profiles = [first, second]
                 .map(|id| {
                     target
@@ -1096,7 +1098,7 @@ fn native_procedural_surface_definition(
                         bytes.push(0x10);
                         return Ok(true);
                     }
-                    cadmpeg_ir::geometry::OffsetExtension::Legacy { flags } => {
+                    cadmpeg_ir::geometry::OffsetExtension::Legacy { flags, .. } => {
                         legacy_extension_flag_run(*flags)
                     }
                 };
@@ -1156,7 +1158,7 @@ fn native_procedural_surface_definition(
                         "source-less F3D extrusion lacks its native position".into(),
                     )
                 })?,
-                revision_form.as_ref(),
+                revision_form,
                 Some(solved_cache),
             )?;
         }
@@ -1958,7 +1960,7 @@ fn native_cacheless_procedural_surface_definition(
             native_position.ok_or_else(|| {
                 CodecError::Malformed("source-less F3D extrusion lacks its native position".into())
             })?,
-            revision_form.as_ref(),
+            revision_form,
             None,
         )?;
         return Ok(true);
@@ -2039,7 +2041,7 @@ fn native_cacheless_procedural_surface_definition(
         bytes.push(0x10);
         return Ok(true);
     }
-    if let ProceduralSurfaceDefinition::Ruled { first, second } = procedural.definition() {
+    if let ProceduralSurfaceDefinition::Ruled { first, second, .. } = procedural.definition() {
         if procedural.cache_fit_tolerance().is_some() {
             return Err(CodecError::Malformed(
                 "cacheless ruled surface cannot carry a cache-fit tolerance".into(),
@@ -2102,7 +2104,7 @@ fn native_cacheless_procedural_surface_definition(
 
         if !matches!(
             construction.tail,
-            cadmpeg_ir::geometry::LawSurfaceTail::Full {}
+            cadmpeg_ir::geometry::LawSurfaceTail::Full { .. }
         ) {
             encode_native_law_surface(bytes, target, procedural, construction, None)?;
             return Ok(true);
@@ -2140,8 +2142,8 @@ fn native_cacheless_procedural_surface_definition(
             definition_payload.native(),
         ) {
             if construction
-                .revision_form
-                .as_ref()
+                .cache
+                .form()
                 .is_some_and(|form| form.cache.parameterization().is_some())
             {
                 encode_native_sweep_surface(
@@ -2404,7 +2406,7 @@ fn encode_native_law_surface(
         native_law_formula(bytes, target, formula)?;
     }
     match &construction.tail {
-        cadmpeg_ir::geometry::LawSurfaceTail::Full {} => {
+        cadmpeg_ir::geometry::LawSurfaceTail::Full { .. } => {
             let cache_fit_tolerance = procedural.cache_fit_tolerance().ok_or_else(|| {
                 CodecError::Malformed("full law surface requires a cache-fit tolerance".into())
             })?;
@@ -2620,7 +2622,7 @@ fn encode_native_sweep_surface(
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::geometry::SweepSurfaceLayout;
     let cache_fit_tolerance = procedural.cache_fit_tolerance();
-    if let Some(form) = &construction.revision_form {
+    if let Some(form) = &construction.cache.form() {
         if let cadmpeg_ir::geometry::SweepSurfaceLayout::LawDriven {
             mode,
             profile_range,
@@ -4697,7 +4699,7 @@ pub(crate) fn native_procedural_curve(
     };
     if matches!(
         procedural.definition(),
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact { .. }
     ) {
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
@@ -4713,6 +4715,7 @@ pub(crate) fn native_procedural_curve(
         extension,
         primary,
         additional,
+        ..
     } = procedural.definition()
     {
         native_curve_base(bytes, "intcurve")?;
@@ -4980,6 +4983,7 @@ pub(crate) fn native_procedural_curve(
     if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection {
         context,
         discontinuity_flag,
+        ..
     } = procedural.definition()
     {
         native_curve_base(bytes, "intcurve")?;
@@ -5174,6 +5178,7 @@ pub(crate) fn native_procedural_curve(
                 parameter_range,
                 discontinuities,
                 discontinuity_flag,
+                ..
             } => (
                 supports,
                 first_pcurve,
@@ -5406,7 +5411,7 @@ pub(crate) fn native_procedural_curve(
                     procedural.id
                 )))
             }
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact { .. }
             | cadmpeg_ir::geometry::ProceduralCurveDefinition::Law { .. }
             | cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(_)
             | cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { .. }

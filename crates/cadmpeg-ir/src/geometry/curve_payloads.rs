@@ -6,7 +6,7 @@ use super::{
     DeformableCurveSource, IntcurveSupportContext, OffsetSide, ProceduralGeometryError,
     SilhouetteKind, VectorOffsetRoles,
 };
-use super::{IntcurveSupportSide, ProjectionTail, SpringLayout};
+use super::{CacheContract, IntcurveSupportSide, LegacyCache, ProjectionTail, SpringLayout};
 use crate::features::FiniteVector3;
 use crate::ids::{CurveId, SurfaceId};
 use crate::math::Vector3;
@@ -45,10 +45,10 @@ pub struct SurfaceOffsetCurveConstruction {
     /// the cache-first layout.
     #[serde(default)]
     base_endpoints: [Option<f64>; 2],
-    /// Cache-first shared-context fields; absent from the context-first
-    /// layout.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    cache_first: Option<CacheFirstCurveForm>,
+    /// Cache contract: the cache-first shared-context fields, or the legacy
+    /// solved-cache tolerance the context-first layout states instead.
+    #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
+    cache: CacheContract<CacheFirstCurveForm>,
     /// Signed model-space offset distance.
     distance: FiniteReal,
     /// Native unscaled parameter shift.
@@ -76,10 +76,10 @@ struct SurfaceOffsetCurveConstructionWire {
     /// the cache-first layout.
     #[serde(default)]
     base_endpoints: [Option<f64>; 2],
-    /// Cache-first shared-context fields; absent from the context-first
-    /// layout.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    cache_first: Option<CacheFirstCurveForm>,
+    /// Cache contract: the cache-first shared-context fields, or the legacy
+    /// solved-cache tolerance the context-first layout states instead.
+    #[serde(default)]
+    cache: CacheContract<CacheFirstCurveForm>,
     /// Signed model-space offset distance.
     distance: f64,
     /// Native unscaled parameter shift.
@@ -92,7 +92,7 @@ impl SurfaceOffsetCurveConstruction {
     pub(super) fn revision_cache_mut(
         &mut self,
     ) -> Option<&mut super::RevisionCacheForm<super::CacheFirstCurveParameterization>> {
-        self.cache_first.as_mut().map(|form| &mut form.cache)
+        self.cache.form_mut().map(|form| &mut form.cache)
     }
     /// Admit the construction parameters.
     pub fn try_new(
@@ -115,7 +115,7 @@ impl SurfaceOffsetCurveConstruction {
             base_range: ParameterInterval::new(base_range)
                 .map_err(ProceduralGeometryError::Payload)?,
             base_endpoints,
-            cache_first,
+            cache: CacheContract::from_form(cache_first),
             distance: FiniteReal::new(distance).ok_or(ProceduralGeometryError::Payload(
                 "SurfaceOffset.distance is not finite",
             ))?,
@@ -156,8 +156,8 @@ impl SurfaceOffsetCurveConstruction {
         &self.base_endpoints
     }
     /// Return the cache first.
-    pub fn cache_first(&self) -> &Option<CacheFirstCurveForm> {
-        &self.cache_first
+    pub const fn cache_first(&self) -> Option<&CacheFirstCurveForm> {
+        self.cache.form()
     }
     /// Return the distance.
     pub fn distance(&self) -> &f64 {
@@ -181,10 +181,14 @@ impl TryFrom<SurfaceOffsetCurveConstructionWire> for SurfaceOffsetCurveConstruct
             wire.discontinuity_flag,
             [wire.base_u_range, wire.base_v_range],
             (wire.base, wire.base_range, wire.base_endpoints),
-            wire.cache_first,
+            wire.cache.form().cloned(),
             wire.distance,
             [wire.shift, wire.scale],
         )
+        .map(|mut payload| {
+            payload.cache = wire.cache;
+            payload
+        })
     }
 }
 
@@ -568,6 +572,9 @@ pub struct TwoSidedOffsetCurveConstruction {
     discontinuity_flag: bool,
     /// Signed offset distance for each support side, in document length units.
     offsets: FiniteVector<2>,
+    /// Solved-cache fit contract this construction states itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cache: Option<LegacyCache>,
 }
 
 #[derive(Deserialize)]
@@ -579,6 +586,8 @@ struct TwoSidedOffsetCurveConstructionWire {
     discontinuity_flag: bool,
     /// Signed offset distance for each support side, in document length units.
     offsets: [f64; 2],
+    #[serde(default)]
+    cache: Option<LegacyCache>,
 }
 
 impl TwoSidedOffsetCurveConstruction {
@@ -589,6 +598,7 @@ impl TwoSidedOffsetCurveConstruction {
         offsets: [f64; 2],
     ) -> Result<Self, ProceduralGeometryError> {
         Ok(Self {
+            cache: None,
             context,
             discontinuity_flag,
             offsets: FiniteVector::new(offsets).ok_or(ProceduralGeometryError::Payload(
@@ -613,7 +623,9 @@ impl TwoSidedOffsetCurveConstruction {
 impl TryFrom<TwoSidedOffsetCurveConstructionWire> for TwoSidedOffsetCurveConstruction {
     type Error = ProceduralGeometryError;
     fn try_from(wire: TwoSidedOffsetCurveConstructionWire) -> Result<Self, Self::Error> {
-        Self::try_new(wire.context, wire.discontinuity_flag, wire.offsets)
+        let mut payload = Self::try_new(wire.context, wire.discontinuity_flag, wire.offsets)?;
+        payload.cache = wire.cache;
+        Ok(payload)
     }
 }
 
@@ -634,6 +646,9 @@ pub struct VectorOffsetCurveConstruction {
     offset: FiniteVector3,
     /// Integer codes attached to the two native roles.
     roles: VectorOffsetRoles,
+    /// Solved-cache fit contract this construction states itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cache: Option<LegacyCache>,
 }
 
 #[derive(Deserialize)]
@@ -647,6 +662,8 @@ struct VectorOffsetCurveConstructionWire {
     offset: Vector3,
     /// Integer codes attached to the two native roles.
     roles: VectorOffsetRoles,
+    #[serde(default)]
+    cache: Option<LegacyCache>,
 }
 
 impl VectorOffsetCurveConstruction {
@@ -658,6 +675,7 @@ impl VectorOffsetCurveConstruction {
         roles: VectorOffsetRoles,
     ) -> Result<Self, ProceduralGeometryError> {
         Ok(Self {
+            cache: None,
             source,
             parameter_range: ParameterInterval::new(parameter_range)
                 .map_err(ProceduralGeometryError::Payload)?,
@@ -688,7 +706,10 @@ impl VectorOffsetCurveConstruction {
 impl TryFrom<VectorOffsetCurveConstructionWire> for VectorOffsetCurveConstruction {
     type Error = ProceduralGeometryError;
     fn try_from(wire: VectorOffsetCurveConstructionWire) -> Result<Self, Self::Error> {
-        Self::try_new(wire.source, wire.parameter_range, wire.offset, wire.roles)
+        let mut payload =
+            Self::try_new(wire.source, wire.parameter_range, wire.offset, wire.roles)?;
+        payload.cache = wire.cache;
+        Ok(payload)
     }
 }
 
@@ -705,6 +726,9 @@ pub struct SubsetCurveConstruction {
     /// Whether the subset follows increasing parent parameters.
     #[serde(default = "default_true")]
     sense: bool,
+    /// Solved-cache fit contract this construction states itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cache: Option<LegacyCache>,
 }
 
 #[derive(Deserialize)]
@@ -717,6 +741,8 @@ struct SubsetCurveConstructionWire {
     /// Whether the subset follows increasing parent parameters.
     #[serde(default = "default_true")]
     sense: bool,
+    #[serde(default)]
+    cache: Option<LegacyCache>,
 }
 
 impl SubsetCurveConstruction {
@@ -727,6 +753,7 @@ impl SubsetCurveConstruction {
         sense: bool,
     ) -> Result<Self, ProceduralGeometryError> {
         Ok(Self {
+            cache: None,
             source,
             parameter_range: ParameterInterval::new(parameter_range)
                 .map_err(ProceduralGeometryError::Payload)?,
@@ -750,7 +777,9 @@ impl SubsetCurveConstruction {
 impl TryFrom<SubsetCurveConstructionWire> for SubsetCurveConstruction {
     type Error = ProceduralGeometryError;
     fn try_from(wire: SubsetCurveConstructionWire) -> Result<Self, Self::Error> {
-        Self::try_new(wire.source, wire.parameter_range, wire.sense)
+        let mut payload = Self::try_new(wire.source, wire.parameter_range, wire.sense)?;
+        payload.cache = wire.cache;
+        Ok(payload)
     }
 }
 /// Admitted silhouette curve parameters.
@@ -1053,6 +1082,82 @@ impl SpringCurvePayload {
         &mut self,
     ) -> Option<&mut super::RevisionCacheForm<super::CacheFirstCurveParameterization>> {
         self.layout.cache_first_mut().map(|form| &mut form.cache)
+    }
+}
+
+impl SubsetCurveConstruction {
+    /// Solved-cache fit contract this construction states.
+    #[must_use]
+    pub const fn legacy_cache(&self) -> Option<LegacyCache> {
+        self.cache
+    }
+
+    /// Replace the solved-cache fit contract this construction states.
+    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
+        self.cache = cache;
+    }
+}
+
+impl VectorOffsetCurveConstruction {
+    /// Solved-cache fit contract this construction states.
+    #[must_use]
+    pub const fn legacy_cache(&self) -> Option<LegacyCache> {
+        self.cache
+    }
+
+    /// Replace the solved-cache fit contract this construction states.
+    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
+        self.cache = cache;
+    }
+}
+
+impl TwoSidedOffsetCurveConstruction {
+    /// Solved-cache fit contract this construction states.
+    #[must_use]
+    pub const fn legacy_cache(&self) -> Option<LegacyCache> {
+        self.cache
+    }
+
+    /// Replace the solved-cache fit contract this construction states.
+    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
+        self.cache = cache;
+    }
+}
+
+impl SpringCurvePayload {
+    /// Solved-cache fit contract the context-first layout states.
+    #[must_use]
+    pub const fn legacy_cache(&self) -> Option<LegacyCache> {
+        match &self.layout {
+            SpringLayout::ContextFirst { cache, .. } => *cache,
+            SpringLayout::CacheFirst { .. } => None,
+        }
+    }
+
+    /// Replace the context-first layout's solved-cache fit contract.
+    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
+        if let SpringLayout::ContextFirst { cache: slot, .. } = &mut self.layout {
+            *slot = cache;
+        }
+    }
+}
+
+impl SurfaceOffsetCurveConstruction {
+    /// Solved-cache fit contract the context-first layout states.
+    #[must_use]
+    pub const fn legacy_cache(&self) -> Option<LegacyCache> {
+        match self.cache.legacy_fit_tolerance() {
+            Some(fit_tolerance) => Some(LegacyCache { fit_tolerance }),
+            None => None,
+        }
+    }
+
+    /// Replace the context-first layout's solved-cache fit contract.
+    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
+        self.cache.set_legacy_fit_tolerance(match cache {
+            Some(cache) => Some(cache.fit_tolerance),
+            None => None,
+        });
     }
 }
 

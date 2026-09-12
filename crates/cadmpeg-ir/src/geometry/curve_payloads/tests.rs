@@ -87,6 +87,7 @@ fn spring_payload_checks_inline_ranges_and_the_shared_context() {
                 parameter_range: shared,
                 discontinuities: std::array::from_fn(|_| Vec::new()),
                 discontinuity_flag: false,
+                cache: None,
             },
             0,
         )

@@ -543,156 +543,159 @@
               "end": -6.0
             },
             "cross_section": "circular",
-            "native": {
-              "definition_index": 22507,
-              "sides": [
-                {
-                  "support_kind": "surface",
-                  "surface": "f3d:brep:procedural_surface#9:native_side0:surface",
-                  "surface_ranges": [
-                    [
+            "cache": {
+              "layout": "revision",
+              "form": {
+                "definition_index": 22507,
+                "sides": [
+                  {
+                    "support_kind": "surface",
+                    "surface": "f3d:brep:procedural_surface#9:native_side0:surface",
+                    "surface_ranges": [
+                      [
+                        null,
+                        null
+                      ],
+                      [
+                        null,
+                        null
+                      ]
+                    ],
+                    "curve": "f3d:brep:procedural_surface#9:native_side0:curve",
+                    "curve_range": [
                       null,
                       null
                     ],
-                    [
+                    "pcurve": {
+                      "kind": "nurbs",
+                      "degree": 1,
+                      "knots": [
+                        0.0,
+                        0.0,
+                        1.0,
+                        1.0
+                      ],
+                      "control_points": [
+                        {
+                          "u": 0.25,
+                          "v": 0.5
+                        },
+                        {
+                          "u": 0.75,
+                          "v": 1.5
+                        }
+                      ],
+                      "periodic": false
+                    },
+                    "location": {
+                      "x": 10.0,
+                      "y": 20.0,
+                      "z": 30.0
+                    },
+                    "extension": 3
+                  },
+                  {
+                    "support_kind": "curve",
+                    "surface": "f3d:brep:procedural_surface#9:native_side1:surface",
+                    "surface_ranges": [
+                      [
+                        null,
+                        null
+                      ],
+                      [
+                        null,
+                        null
+                      ]
+                    ],
+                    "curve": "f3d:brep:procedural_surface#9:native_side1:curve",
+                    "curve_range": [
                       null,
                       null
-                    ]
-                  ],
-                  "curve": "f3d:brep:procedural_surface#9:native_side0:curve",
-                  "curve_range": [
-                    null,
-                    null
-                  ],
-                  "pcurve": {
-                    "kind": "nurbs",
-                    "degree": 1,
-                    "knots": [
-                      0.0,
-                      0.0,
-                      1.0,
-                      1.0
                     ],
-                    "control_points": [
-                      {
-                        "u": 0.25,
-                        "v": 0.5
-                      },
-                      {
-                        "u": 0.75,
-                        "v": 1.5
-                      }
-                    ],
-                    "periodic": false
-                  },
-                  "location": {
-                    "x": 10.0,
-                    "y": 20.0,
-                    "z": 30.0
-                  },
-                  "extension": 3
+                    "pcurve": {
+                      "kind": "nurbs",
+                      "degree": 1,
+                      "knots": [
+                        0.0,
+                        0.0,
+                        1.0,
+                        1.0
+                      ],
+                      "control_points": [
+                        {
+                          "u": 0.25,
+                          "v": 0.5
+                        },
+                        {
+                          "u": 0.75,
+                          "v": 1.5
+                        }
+                      ],
+                      "periodic": false
+                    },
+                    "location": {
+                      "x": 40.0,
+                      "y": 20.0,
+                      "z": 30.0
+                    },
+                    "extension": 4
+                  }
+                ],
+                "slice": "f3d:brep:procedural_surface#9:native_slice",
+                "slice_range": [
+                  null,
+                  null
+                ],
+                "offsets": [
+                  -3.0,
+                  -6.0
+                ],
+                "radius_selector": {
+                  "kind": "none"
                 },
-                {
-                  "support_kind": "curve",
-                  "surface": "f3d:brep:procedural_surface#9:native_side1:surface",
-                  "surface_ranges": [
-                    [
-                      null,
-                      null
-                    ],
-                    [
-                      null,
-                      null
-                    ]
+                "u_range": [
+                  -1.0,
+                  2.0
+                ],
+                "v_range": [
+                  null,
+                  null
+                ],
+                "shape_prefix": 1,
+                "parameters": [
+                  0.1,
+                  0.2
+                ],
+                "tail": 17,
+                "cache": {
+                  "kind": "solved_cache",
+                  "fit_tolerance": 0.04
+                },
+                "discontinuities": [
+                  [
+                    0.25
                   ],
-                  "curve": "f3d:brep:procedural_surface#9:native_side1:curve",
-                  "curve_range": [
-                    null,
-                    null
+                  [],
+                  [
+                    0.5,
+                    0.75
                   ],
-                  "pcurve": {
-                    "kind": "nurbs",
-                    "degree": 1,
-                    "knots": [
-                      0.0,
-                      0.0,
-                      1.0,
-                      1.0
-                    ],
-                    "control_points": [
-                      {
-                        "u": 0.25,
-                        "v": 0.5
-                      },
-                      {
-                        "u": 0.75,
-                        "v": 1.5
-                      }
-                    ],
-                    "periodic": false
-                  },
-                  "location": {
-                    "x": 40.0,
-                    "y": 20.0,
-                    "z": 30.0
-                  },
-                  "extension": 4
-                }
-              ],
-              "slice": "f3d:brep:procedural_surface#9:native_slice",
-              "slice_range": [
-                null,
-                null
-              ],
-              "offsets": [
-                -3.0,
-                -6.0
-              ],
-              "radius_selector": {
-                "kind": "none"
-              },
-              "u_range": [
-                -1.0,
-                2.0
-              ],
-              "v_range": [
-                null,
-                null
-              ],
-              "shape_prefix": 1,
-              "parameters": [
-                0.1,
-                0.2
-              ],
-              "tail": 17,
-              "cache": {
-                "kind": "solved_cache",
-                "fit_tolerance": 0.04
-              },
-              "discontinuities": [
-                [
-                  0.25
+                  [
+                    1.5
+                  ],
+                  [],
+                  [
+                    2.5,
+                    3.5
+                  ]
                 ],
-                [],
-                [
-                  0.5,
-                  0.75
-                ],
-                [
-                  1.5
-                ],
-                [],
-                [
-                  2.5,
-                  3.5
+                "tail_flag": false,
+                "tail_extensions": [
+                  11,
+                  12,
+                  13
                 ]
-              ],
-              "tail_flag": false,
-              "tail_extensions": [
-                11,
-                12,
-                13
-              ]
+              }
             }
           }
         }

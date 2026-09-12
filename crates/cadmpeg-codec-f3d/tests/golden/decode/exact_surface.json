@@ -362,9 +362,11 @@
                 5.0
               ]
             ],
-            "extension": 7
-          },
-          "cache_fit_tolerance": 0.015
+            "extension": 7,
+            "cache": {
+              "fit_tolerance": 0.015
+            }
+          }
         }
       ],
       "procedural_curves": [],

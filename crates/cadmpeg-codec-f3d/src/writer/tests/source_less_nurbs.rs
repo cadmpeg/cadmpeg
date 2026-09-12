@@ -1058,27 +1058,25 @@ fn generated_source_less_writes_revision_gated_extrusion_definition() {
 
     // The directrix sense Boolean is stored, not assumed: the opposite value
     // survives the same round trip.
-    source_less.model.procedural_surfaces[0]
-        .edit_definition(|definition| {
-            let ProceduralSurfaceDefinition::Extrusion(definition_payload_0) = definition else {
-                unreachable!("revision-gated extrusion")
-            };
-            let mut revision_form = definition_payload_0.revision_form().clone();
-            let Some(form) = &mut revision_form else {
-                unreachable!("revision-gated extrusion")
-            };
-            form.flags = vec![false];
-            *definition_payload_0 =
-                cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
-                    definition_payload_0.directrix().clone(),
-                    definition_payload_0.parameter_interval(),
-                    *definition_payload_0.direction(),
-                    definition_payload_0.native_position(),
-                    revision_form,
-                )
-                .unwrap();
-        })
-        .unwrap();
+    source_less.model.procedural_surfaces[0].edit_definition(|definition| {
+        let ProceduralSurfaceDefinition::Extrusion(definition_payload_0) = definition else {
+            unreachable!("revision-gated extrusion")
+        };
+        let mut revision_form = definition_payload_0.revision_form().cloned();
+        let Some(form) = &mut revision_form else {
+            unreachable!("revision-gated extrusion")
+        };
+        form.flags = vec![false];
+        *definition_payload_0 =
+            cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+                definition_payload_0.directrix().clone(),
+                definition_payload_0.parameter_interval(),
+                *definition_payload_0.direction(),
+                definition_payload_0.native_position(),
+                revision_form,
+            )
+            .unwrap();
+    });
     let expected = source_less.model.procedural_surfaces[0].clone();
     let mut encoded = Vec::new();
     F3dCodec
@@ -1278,23 +1276,23 @@ fn generated_cacheless_circle_extrusion_decodes_as_analytic_cylinder() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
-    let directrix = source_less.model.procedural_surfaces[0]
-        .edit_definition(|definition| {
-            let ProceduralSurfaceDefinition::Extrusion(definition_payload) = definition else {
-                panic!("expected extrusion definition")
-            };
-            *definition_payload =
-                cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
-                    definition_payload.directrix().clone(),
-                    Some([0.0, std::f64::consts::TAU]),
-                    Vector3::new(0.0, 0.0, -20.0),
-                    definition_payload.native_position(),
-                    definition_payload.revision_form().clone(),
-                )
-                .unwrap();
-            definition_payload.directrix().clone()
-        })
-        .unwrap();
+    let directrix = source_less.model.procedural_surfaces[0].edit_definition(|definition| {
+        let ProceduralSurfaceDefinition::Extrusion(definition_payload) = definition else {
+            panic!("expected extrusion definition")
+        };
+        let restored_cache = definition_payload.legacy_cache();
+        *definition_payload =
+            cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+                definition_payload.directrix().clone(),
+                Some([0.0, std::f64::consts::TAU]),
+                Vector3::new(0.0, 0.0, -20.0),
+                definition_payload.native_position(),
+                definition_payload.revision_form().cloned(),
+            )
+            .unwrap();
+        definition_payload.set_legacy_cache(restored_cache);
+        definition_payload.directrix().clone()
+    });
     source_less
         .model
         .curves

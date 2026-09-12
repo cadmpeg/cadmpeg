@@ -950,7 +950,7 @@ fn a_revision_cached_surface_refuses_a_record_level_cache_fit_tolerance() {
         .as_array_mut()
         .expect("procedural surfaces")
     {
-        let stored = surface["definition"]["native"]["cache"]["fit_tolerance"].clone();
+        let stored = surface["definition"]["cache"]["form"]["cache"]["fit_tolerance"].clone();
         if stored.is_f64() {
             assert!(surface.get("cache_fit_tolerance").is_none());
             surface["cache_fit_tolerance"] = stored;

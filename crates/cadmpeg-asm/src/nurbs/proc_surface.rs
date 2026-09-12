@@ -2690,9 +2690,12 @@ pub(crate) fn law_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
         0 => {
             let (_, cache_end) = surface_block(span, cur.pos())?;
             cur.set_pos(cache_end);
+            let fit_tolerance = cur.take_f64()? * LEN_TO_MM;
             (
-                cadmpeg_ir::geometry::LawSurfaceTail::Full {},
-                Some(cur.take_f64()? * LEN_TO_MM),
+                cadmpeg_ir::geometry::LawSurfaceTail::Full {
+                    cache: cadmpeg_ir::geometry::LegacyCache::try_new(fit_tolerance).ok()?,
+                },
+                Some(fit_tolerance),
             )
         }
         1 => {
@@ -3808,6 +3811,7 @@ fn exact_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
             spline: cadmpeg_ir::geometry::ExactSpline::Legacy {
                 ranges: parameter_ranges,
                 extension,
+                cache: None,
             },
         },
         cache_fit_tolerance,

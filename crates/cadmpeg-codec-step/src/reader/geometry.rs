@@ -1005,10 +1005,12 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                     sense,
                 )
                 .and_then(|admitted_payload| {
-                    ProceduralCurve::try_new(
+                    let mut definition = ProceduralCurveDefinition::Subset(admitted_payload);
+                    definition
+                        .set_legacy_cache(Some(cadmpeg_ir::geometry::LegacyCache::try_new(0.0)?))?;
+                    ProceduralCurve::new(
                         ProceduralCurveId::from(ids::construction(kind!("trimmed_curve"), id)),
-                        ProceduralCurveDefinition::Subset(admitted_payload),
-                        Some(0.0),
+                        definition,
                     )
                 }) {
                     Ok(procedural) => procedural,
@@ -2011,7 +2013,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         .filter_map(|pcurve| step_instance_id(pcurve.id.as_str()))
         .collect::<BTreeSet<_>>();
     for surface in &mut ir.model.procedural_surfaces {
-        if let Err(error) = surface.edit_definition(|definition| {
+        surface.edit_definition(|definition| {
             let ProceduralSurfaceDefinition::CurveBounded {
                 boundary_pcurves, ..
             } = definition
@@ -2022,12 +2024,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 step_instance_id(pcurve.as_str())
                     .is_some_and(|id| decoded_pcurve_steps.contains(&id))
             });
-        }) {
-            losses.push(
-                StepLossCode::DecodeWarning
-                    .note(format!("procedural surface {}: {error}", surface.id)),
-            );
-        }
+        });
     }
 
     for (id, record) in exchange.entities("DEGENERATE_TOROIDAL_SURFACE") {
