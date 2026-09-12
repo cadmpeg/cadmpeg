@@ -1043,71 +1043,109 @@ impl JointOperand {
 }
 
 /// Enabled bounds for one joint degree of freedom.
-#[derive(Debug, Clone, PartialEq)]
-pub struct JointLimits {
-    minimum: Option<f64>,
-    maximum: Option<f64>,
+///
+/// Each arm names the bounds the source enabled, so "neither bound" has no
+/// spelling. The two-bound arm mints the ordered pair.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "JointLimitsWire", into = "JointLimitsWire")]
+pub enum JointLimits {
+    /// Only the lower bound is enabled.
+    Minimum {
+        /// Lower bound.
+        minimum: FiniteReal,
+    },
+    /// Only the upper bound is enabled.
+    Maximum {
+        /// Upper bound.
+        maximum: FiniteReal,
+    },
+    /// Both bounds are enabled, in order.
+    Range {
+        /// Lower bound.
+        minimum: FiniteReal,
+        /// Upper bound, at or above `minimum`.
+        maximum: FiniteReal,
+    },
 }
 
 impl JointLimits {
     /// Constructs finite ordered limits with at least one enabled bound.
     pub fn new(minimum: Option<f64>, maximum: Option<f64>) -> Option<Self> {
-        if minimum.is_none() && maximum.is_none()
-            || minimum.is_some_and(|value| !value.is_finite())
-            || maximum.is_some_and(|value| !value.is_finite())
-            || minimum
-                .zip(maximum)
-                .is_some_and(|(minimum, maximum)| minimum > maximum)
-        {
-            return None;
+        let minimum = match minimum {
+            None => None,
+            Some(value) => Some(FiniteReal::new(value)?),
+        };
+        let maximum = match maximum {
+            None => None,
+            Some(value) => Some(FiniteReal::new(value)?),
+        };
+        match (minimum, maximum) {
+            (None, None) => None,
+            (Some(minimum), None) => Some(Self::Minimum { minimum }),
+            (None, Some(maximum)) => Some(Self::Maximum { maximum }),
+            (Some(minimum), Some(maximum)) => (minimum.get() <= maximum.get())
+                .then_some(Self::Range { minimum, maximum }),
         }
-        Some(Self { minimum, maximum })
     }
 
     /// Returns the lower bound, when enabled.
     pub fn minimum(&self) -> Option<f64> {
-        self.minimum
+        match self {
+            Self::Maximum { .. } => None,
+            Self::Minimum { minimum } | Self::Range { minimum, .. } => Some(minimum.get()),
+        }
     }
 
     /// Returns the upper bound, when enabled.
     pub fn maximum(&self) -> Option<f64> {
-        self.maximum
+        match self {
+            Self::Minimum { .. } => None,
+            Self::Maximum { maximum } | Self::Range { maximum, .. } => Some(maximum.get()),
+        }
     }
 }
 
+/// The wire spelling of [`JointLimits`], before the ordered-pair mint.
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "bounds", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
-struct JointLimitsWire {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    minimum: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    maximum: Option<f64>,
+enum JointLimitsWire {
+    Minimum {
+        minimum: FiniteReal,
+    },
+    Maximum {
+        maximum: FiniteReal,
+    },
+    Range {
+        minimum: FiniteReal,
+        maximum: FiniteReal,
+    },
 }
 
-impl Serialize for JointLimits {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        JointLimitsWire {
-            minimum: self.minimum(),
-            maximum: self.maximum(),
+impl From<JointLimits> for JointLimitsWire {
+    fn from(limits: JointLimits) -> Self {
+        match limits {
+            JointLimits::Minimum { minimum } => Self::Minimum { minimum },
+            JointLimits::Maximum { maximum } => Self::Maximum { maximum },
+            JointLimits::Range { minimum, maximum } => Self::Range { minimum, maximum },
         }
-        .serialize(serializer)
     }
 }
 
-impl<'de> Deserialize<'de> for JointLimits {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let wire = JointLimitsWire::deserialize(deserializer)?;
-        Self::new(wire.minimum, wire.maximum).ok_or_else(|| {
-            serde::de::Error::custom(
-                "joint limits minimum/maximum must be finite and ordered, with at least one bound",
-            )
+impl TryFrom<JointLimitsWire> for JointLimits {
+    type Error = &'static str;
+
+    fn try_from(wire: JointLimitsWire) -> Result<Self, Self::Error> {
+        Ok(match wire {
+            JointLimitsWire::Minimum { minimum } => Self::Minimum { minimum },
+            JointLimitsWire::Maximum { maximum } => Self::Maximum { maximum },
+            JointLimitsWire::Range { minimum, maximum } => {
+                if minimum.get() > maximum.get() {
+                    return Err("joint limit range must be ordered");
+                }
+                Self::Range { minimum, maximum }
+            }
         })
     }
 }
