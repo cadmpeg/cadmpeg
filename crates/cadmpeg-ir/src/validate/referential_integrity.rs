@@ -73,7 +73,7 @@ mod tests {
                 Point3::new(0.0, 1.0, 0.0),
             ],
             vec![[0, 1, 2]],
-            TessellationTopology::List,
+            TessellationTopology::List {},
             TessellationNormals::None,
             Vec::new(),
         )

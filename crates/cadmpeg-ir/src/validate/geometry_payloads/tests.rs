@@ -22,7 +22,7 @@ fn tessellation_counts_must_be_consistent() {
                 Point3::new(0.0, 1.0, 0.0),
             ],
             vec![[0, 1, 2]],
-            TessellationTopology::List,
+            TessellationTopology::List {},
             TessellationNormals::None,
             Vec::new(),
         )
@@ -58,7 +58,7 @@ fn tessellation_triangle_groups_and_texture_assignments_validate() {
             Point3::new(1.0, 1.0, 0.0),
         ],
         vec![[0, 1, 2], [1, 3, 2]],
-        TessellationTopology::List,
+        TessellationTopology::List {},
         TessellationNormals::None,
         Vec::new(),
     )
