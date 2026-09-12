@@ -58,9 +58,7 @@ mod tests {
     use crate::index::ModelIndex;
     use crate::math::Point3;
     use crate::report::{Check, Severity};
-    use crate::tessellation::{
-        Tessellation, TessellationMesh, TessellationTextureAssignment,
-    };
+    use crate::tessellation::{Tessellation, TessellationMesh, TessellationTextureAssignment};
 
     #[test]
     fn unresolved_asset_reference_is_reported() {
@@ -69,10 +67,10 @@ mod tests {
             "synthetic:test:tessellation#textured",
             TessellationMesh::List {
                 vertices: vec![
-                Point3::new(0.0, 0.0, 0.0),
-                Point3::new(1.0, 0.0, 0.0),
-                Point3::new(0.0, 1.0, 0.0),
-            ],
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(1.0, 0.0, 0.0),
+                    Point3::new(0.0, 1.0, 0.0),
+                ],
                 triangles: vec![[0, 1, 2]],
             },
             Vec::new(),

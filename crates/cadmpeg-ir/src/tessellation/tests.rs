@@ -379,7 +379,10 @@ fn the_wire_spells_the_shading_by_name() {
     let wire = serde_json::to_value(&shaded).unwrap();
     assert_eq!(wire["mesh"]["kind"], "shaded_list");
     assert_eq!(wire["mesh"]["vertices"][0]["normal"]["z"], 1.0);
-    assert_eq!(serde_json::from_value::<Tessellation>(wire).unwrap(), shaded);
+    assert_eq!(
+        serde_json::from_value::<Tessellation>(wire).unwrap(),
+        shaded
+    );
 
     // A lane of normals that does not cover the mesh has no rows to become, so
     // the pairing refuses it before a mesh exists.

@@ -7,13 +7,12 @@ use crate::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, LawExpression,
     LawFormula, LegacyExtensionFlags, NurbsCurve, NurbsSurface, OffsetExtension, PcurveGeometry,
     PolylineCurve, PolylineSamples, PolylineVertex, ProceduralCurve, ProceduralSurface,
-    ProceduralSurfaceDefinition,
-    RevisionCacheForm, RevisionSurfaceForm, RevisionSurfaceParameterization,
-    RollingBallConstruction, RollingBallJetDerivative, RollingBallJetSite,
-    RollingBallRadiusSelector, RollingBallSide, SolvedCurveGeometry, SolvedSurfaceGeometry,
-    Surface, SurfaceGeometry, SurfaceParameterAxis, SweepRevisionForm, SweepSurfaceConstruction,
-    SweepSurfaceLayout, VariableBlendConstruction, VariableBlendConvexity,
-    VariableBlendCrossSection, VariableBlendRadii, VariableBlendRenderMode,
+    ProceduralSurfaceDefinition, RevisionCacheForm, RevisionSurfaceForm,
+    RevisionSurfaceParameterization, RollingBallConstruction, RollingBallJetDerivative,
+    RollingBallJetSite, RollingBallRadiusSelector, RollingBallSide, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry, SurfaceParameterAxis, SweepRevisionForm,
+    SweepSurfaceConstruction, SweepSurfaceLayout, VariableBlendConstruction,
+    VariableBlendConvexity, VariableBlendCrossSection, VariableBlendRadii, VariableBlendRenderMode,
     VariableBlendSupportKind, VariableBlendSurfaceSubtype, VariableBlendValue,
     VariableBlendValuePayload,
 };
@@ -656,11 +655,16 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
     let cases = [
         (
             SolvedCurveGeometry::Polyline(
-                PolylineCurve::new(PolylineSamples::Unparameterized { points: vec![
-                        Point3::new(0.0, 0.0, 0.0),
-                        Point3::new(1.0, 0.0, 0.0),
-                        Point3::new(1.0, 1.0, 0.0),
-                    ] }, 0.0)
+                PolylineCurve::new(
+                    PolylineSamples::Unparameterized {
+                        points: vec![
+                            Point3::new(0.0, 0.0, 0.0),
+                            Point3::new(1.0, 0.0, 0.0),
+                            Point3::new(1.0, 1.0, 0.0),
+                        ],
+                    },
+                    0.0,
+                )
                 .unwrap(),
             ),
             Point3::new(0.5, 0.0, 0.0),
@@ -669,11 +673,20 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
         ),
         (
             SolvedCurveGeometry::Polyline(
-                PolylineCurve::new(PolylineSamples::Parameterized { vertices: vec![
-                        Point3::new(0.0, 0.0, 0.0),
-                        Point3::new(1.0, 0.0, 0.0),
-                        Point3::new(1.0, 1.0, 0.0),
-                    ].into_iter().zip(vec![4.0, 2.0, 0.0]).map(|(point, parameter)| PolylineVertex { parameter, point }).collect() }, 0.0)
+                PolylineCurve::new(
+                    PolylineSamples::Parameterized {
+                        vertices: vec![
+                            Point3::new(0.0, 0.0, 0.0),
+                            Point3::new(1.0, 0.0, 0.0),
+                            Point3::new(1.0, 1.0, 0.0),
+                        ]
+                        .into_iter()
+                        .zip(vec![4.0, 2.0, 0.0])
+                        .map(|(point, parameter)| PolylineVertex { parameter, point })
+                        .collect(),
+                    },
+                    0.0,
+                )
                 .unwrap(),
             ),
             Point3::new(1.0, 0.5, 0.0),
@@ -682,11 +695,20 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
         ),
         (
             SolvedCurveGeometry::Polyline(
-                PolylineCurve::new(PolylineSamples::Parameterized { vertices: vec![
-                        Point3::new(2.0, 3.0, 4.0),
-                        Point3::new(2.0, 3.0, 4.0),
-                        Point3::new(5.0, 3.0, 4.0),
-                    ].into_iter().zip(vec![0.0, 1.0, 2.0]).map(|(point, parameter)| PolylineVertex { parameter, point }).collect() }, 0.0)
+                PolylineCurve::new(
+                    PolylineSamples::Parameterized {
+                        vertices: vec![
+                            Point3::new(2.0, 3.0, 4.0),
+                            Point3::new(2.0, 3.0, 4.0),
+                            Point3::new(5.0, 3.0, 4.0),
+                        ]
+                        .into_iter()
+                        .zip(vec![0.0, 1.0, 2.0])
+                        .map(|(point, parameter)| PolylineVertex { parameter, point })
+                        .collect(),
+                    },
+                    0.0,
+                )
                 .unwrap(),
             ),
             Point3::new(2.0, 3.0, 4.0),
@@ -1798,11 +1820,20 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
     }
 
     let corner = SolvedCurveGeometry::Polyline(
-        PolylineCurve::new(PolylineSamples::Parameterized { vertices: vec![
-                Point3::new(0.0, 0.0, 0.0),
-                Point3::new(1.0, 0.0, 0.0),
-                Point3::new(1.0, 1.0, 0.0),
-            ].into_iter().zip(vec![0.0, 1.0, 2.0]).map(|(point, parameter)| PolylineVertex { parameter, point }).collect() }, 0.0)
+        PolylineCurve::new(
+            PolylineSamples::Parameterized {
+                vertices: vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(1.0, 0.0, 0.0),
+                    Point3::new(1.0, 1.0, 0.0),
+                ]
+                .into_iter()
+                .zip(vec![0.0, 1.0, 2.0])
+                .map(|(point, parameter)| PolylineVertex { parameter, point })
+                .collect(),
+            },
+            0.0,
+        )
         .unwrap(),
     );
     assert_eq!(

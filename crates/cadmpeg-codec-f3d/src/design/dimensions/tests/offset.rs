@@ -129,8 +129,14 @@ fn counted_offset_accepts_fitted_nurbs_with_exact_endpoint_frames() {
             SketchEntityId::mint(id).unwrap(),
             SketchId::mint("generated:test:sketch#0").unwrap(),
             SketchGeometry::nurbs(
-                cadmpeg_ir::geometry::PcurveNurbs::from_lanes(degree, knots, control_points, None, false)
-                    .unwrap(),
+                cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+                    degree,
+                    knots,
+                    control_points,
+                    None,
+                    false,
+                )
+                .unwrap(),
             ),
         )
     };

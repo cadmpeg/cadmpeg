@@ -3,8 +3,8 @@ use super::{default_true, CacheContractError, FitTolerance};
 use crate::features::FinitePoint3;
 use crate::ids::PcurveId;
 use crate::math::{Point2, Point3, Vector3};
-use crate::transform::Transform2;
 use crate::scalar::{FiniteReal, NonNegativeReal, NonZeroReal, PositiveReal};
+use crate::transform::Transform2;
 use crate::units::{FinitePoint2, NonzeroPoint2, OrthonormalFrame3, UnitVector3};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -743,7 +743,9 @@ impl NurbsSurface {
         v_periodic: bool,
     ) -> Result<Self, NurbsError> {
         let poles = NurbsPoleGrid::from_lanes(control_points, weights).ok_or_else(|| {
-            NurbsError("3D NURBS weights must cover the pole grid and be finite and non-zero".into())
+            NurbsError(
+                "3D NURBS weights must cover the pole grid and be finite and non-zero".into(),
+            )
         })?;
         Self::new(
             u_degree,
@@ -783,10 +785,7 @@ impl NurbsSurface {
     }
 
     /// Atomically edit pole positions and preserve finite coordinates.
-    pub fn edit_control_points(
-        &mut self,
-        edit: impl FnMut(&mut Point3),
-    ) -> Result<(), NurbsError> {
+    pub fn edit_control_points(&mut self, edit: impl FnMut(&mut Point3)) -> Result<(), NurbsError> {
         let mut poles = self.poles.clone();
         poles.edit_points(edit);
         for row in &poles.points() {
@@ -992,10 +991,7 @@ impl NurbsCurve {
     }
 
     /// Atomically edit pole positions and preserve finite coordinates.
-    pub fn edit_control_points(
-        &mut self,
-        edit: impl FnMut(&mut Point3),
-    ) -> Result<(), NurbsError> {
+    pub fn edit_control_points(&mut self, edit: impl FnMut(&mut Point3)) -> Result<(), NurbsError> {
         let mut poles = self.poles.clone();
         poles.edit_points(edit);
         require_finite_points_3("control_points", &poles.points())?;
@@ -3596,7 +3592,9 @@ impl PcurveNurbs {
         periodic: bool,
     ) -> Result<Self, NurbsError> {
         let poles = PcurveNurbsPoles::from_lanes(control_points, weights).ok_or_else(|| {
-            NurbsError("pcurve NURBS weights must cover the poles and be finite and positive".into())
+            NurbsError(
+                "pcurve NURBS weights must cover the poles and be finite and positive".into(),
+            )
         })?;
         Self::new(degree, knots, poles, periodic)
     }
@@ -3617,10 +3615,7 @@ impl PcurveNurbs {
     }
 
     /// Atomically edit pole positions and preserve finite coordinates.
-    pub fn edit_control_points(
-        &mut self,
-        edit: impl FnMut(&mut Point2),
-    ) -> Result<(), NurbsError> {
+    pub fn edit_control_points(&mut self, edit: impl FnMut(&mut Point2)) -> Result<(), NurbsError> {
         let mut poles = self.poles.clone();
         poles.edit_points(edit);
         require_finite_points_2("control_points", &poles.points())?;

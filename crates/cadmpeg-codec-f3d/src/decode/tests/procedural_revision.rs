@@ -1122,8 +1122,7 @@ fn generated_f3d_rewrites_rational_nurbs_surface_weights() {
     if let Some(rows) = &mut weight_rows {
         rows[0][1] = 0.65;
     }
-    let poles =
-        cadmpeg_ir::geometry::NurbsPoleGrid::from_lanes(nurbs.control_grid(), weight_rows);
+    let poles = cadmpeg_ir::geometry::NurbsPoleGrid::from_lanes(nurbs.control_grid(), weight_rows);
     nurbs.set_poles(poles.unwrap()).unwrap();
     *cache = SolvedSurfaceGeometry::Nurbs(nurbs.clone());
     let expected = nurbs.clone();

@@ -8,9 +8,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, Pcurve, PcurveGeometry, PcurveNurbs, PolygonalSurface, PolylineCurve,
-    PolylineSamples, PolylineVertex,
-    ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
-    Surface, SurfaceGeometry,
+    PolylineSamples, PolylineVertex, ProceduralSurface, ProceduralSurfaceDefinition,
+    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
@@ -71,7 +70,10 @@ impl IndexedPolygon {
                 PolylineSamples::Parameterized { vertices }
             }
         };
-        Ok(Self { samples, deflection })
+        Ok(Self {
+            samples,
+            deflection,
+        })
     }
 }
 type FacePcurve = (PcurveId, Option<[f64; 2]>);
@@ -368,9 +370,7 @@ impl<'a> Builder<'a> {
                         triangulation.normals().unwrap_or_default().to_vec(),
                     )
                     .ok_or_else(|| {
-                        CodecError::Malformed(
-                            "triangulation normals do not cover its nodes".into(),
-                        )
+                        CodecError::Malformed("triangulation normals do not cover its nodes".into())
                     })?,
                     Vec::new(),
                 )
@@ -898,9 +898,7 @@ impl<'a> Builder<'a> {
                         vertices, triangles, normals,
                     )
                     .ok_or_else(|| {
-                        CodecError::Malformed(
-                            "triangulation normals do not cover its nodes".into(),
-                        )
+                        CodecError::Malformed("triangulation normals do not cover its nodes".into())
                     })?,
                     Vec::new(),
                 )

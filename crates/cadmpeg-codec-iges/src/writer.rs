@@ -6229,17 +6229,12 @@ fn apply_rigid_transform(
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)) => {
-            CurveGeometry::Solved(SolvedCurveGeometry::Polyline(
-                {
-                    let mut samples = polyline.samples().clone();
-                    samples.edit_points(|sample| *sample = point(*sample));
-                    cadmpeg_ir::geometry::PolylineCurve::new(
-                        samples,
-                        polyline.chordal_deflection(),
-                    )
+            CurveGeometry::Solved(SolvedCurveGeometry::Polyline({
+                let mut samples = polyline.samples().clone();
+                samples.edit_points(|sample| *sample = point(*sample));
+                cadmpeg_ir::geometry::PolylineCurve::new(samples, polyline.chordal_deflection())
                     .map_err(|error| CodecError::malformed(format_args!("polyline: {error}")))?
-                },
-            ))
+            }))
         }
         other => {
             return Err(CodecError::NotImplemented(format!(

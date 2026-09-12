@@ -133,11 +133,7 @@ fn a8_surface_parser_accepts_a_valid_tail_after_inline_weights() {
         .try_into()
         .expect("one inline-weight-tail surface");
     let surface = surface.geometry;
-    assert_eq!(
-        surface
-            .pole_weights(),
-        Some(vec![2.0; 9])
-    );
+    assert_eq!(surface.pole_weights(), Some(vec![2.0; 9]));
 }
 
 #[test]
@@ -644,12 +640,7 @@ fn a5_pcurve_parser_accepts_frame_bounded_site_count() {
 #[test]
 fn a8_surface_parser_reads_rational_weight_grid() {
     let surfaces = crate::families::a5a8::records::a8_surfaces(&a8_rational_surface_stream());
-    assert_eq!(
-        surfaces[0]
-            .geometry
-            .pole_weights(),
-        Some(vec![2.0; 9])
-    );
+    assert_eq!(surfaces[0].geometry.pole_weights(), Some(vec![2.0; 9]));
 }
 
 #[test]
@@ -661,7 +652,12 @@ fn surface_parsers_require_finite_nonzero_weights() {
         .expect("one consolidated rational surface");
     let surface = surface.geometry;
     assert_eq!(
-        surface.pole_weights().expect("weights").into_iter().next().unwrap(),
+        surface
+            .pole_weights()
+            .expect("weights")
+            .into_iter()
+            .next()
+            .unwrap(),
         2e12
     );
     a5[146..154].copy_from_slice(&le_f64(f64::NAN));
@@ -674,7 +670,12 @@ fn surface_parsers_require_finite_nonzero_weights() {
         .expect("one common-form rational surface");
     let surface = surface.geometry;
     assert_eq!(
-        surface.pole_weights().expect("weights").into_iter().next().unwrap(),
+        surface
+            .pole_weights()
+            .expect("weights")
+            .into_iter()
+            .next()
+            .unwrap(),
         2e12
     );
     a8[275..283].copy_from_slice(&le_f64(f64::NAN));
@@ -786,12 +787,7 @@ fn consolidated_surface_parser_reads_width2_frame() {
 #[test]
 fn a5_surface_parser_reads_rational_weight_program() {
     let surfaces = crate::families::a5a8::records::a5_surfaces(&a5_rational_surface_stream());
-    assert_eq!(
-        surfaces[0]
-            .geometry
-            .pole_weights(),
-        Some(vec![2.0; 4])
-    );
+    assert_eq!(surfaces[0].geometry.pole_weights(), Some(vec![2.0; 4]));
 }
 
 #[test]

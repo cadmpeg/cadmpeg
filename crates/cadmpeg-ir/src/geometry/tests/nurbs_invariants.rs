@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::geometry::{
     DirectedParameterRange, IntcurveSupportSide, NurbsCurve, NurbsPoleGrid, NurbsPoles3,
-    NurbsSurface, PcurveGeometry, PcurveNurbs, PcurveNurbsPoles, PolarNurbsPoles,
-    PolarPcurveNurbs, SupportPcurve,
+    NurbsSurface, PcurveGeometry, PcurveNurbs, PcurveNurbsPoles, PolarNurbsPoles, PolarPcurveNurbs,
+    SupportPcurve,
 };
 use crate::math::{Point2, Point3};
 

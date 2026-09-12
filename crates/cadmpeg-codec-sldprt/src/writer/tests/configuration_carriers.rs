@@ -310,11 +310,20 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
         .iter()
         .enumerate()
         .map(|(index, body)| {
-            Tessellation::new(format!("synthetic:test:tessellation#{index}"), cadmpeg_ir::tessellation::TessellationMesh::from_strip_lanes(vec![
-                    Point3::new(0.0, 0.0, 0.0),
-                    Point3::new(1.0, 0.0, 0.0),
-                    Point3::new(0.0, 1.0, 0.0),
-                ], vec![Vector3::new(0.0, 0.0, 1.0); 3], &vec![3]).expect("strip lanes line up"), Vec::new())
+            Tessellation::new(
+                format!("synthetic:test:tessellation#{index}"),
+                cadmpeg_ir::tessellation::TessellationMesh::from_strip_lanes(
+                    vec![
+                        Point3::new(0.0, 0.0, 0.0),
+                        Point3::new(1.0, 0.0, 0.0),
+                        Point3::new(0.0, 1.0, 0.0),
+                    ],
+                    vec![Vector3::new(0.0, 0.0, 1.0); 3],
+                    &vec![3],
+                )
+                .expect("strip lanes line up"),
+                Vec::new(),
+            )
             .expect("valid tessellation")
             .with_body(Some(body.clone()))
         })

@@ -3499,10 +3499,10 @@ pub(crate) fn emit_vertices(
                                     Some(Token::Double(value)) => Some(
                                         cadmpeg_ir::scalar::PositiveReal::new(*value * LEN_TO_MM)
                                             .ok_or_else(|| {
-                                                cadmpeg_core::CodecError::malformed(
-                                                    "vertex tolerance must be positive and finite",
-                                                )
-                                            })?,
+                                            cadmpeg_core::CodecError::malformed(
+                                                "vertex tolerance must be positive and finite",
+                                            )
+                                        })?,
                                     ),
                                     _ => None,
                                 })

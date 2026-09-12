@@ -932,13 +932,14 @@ fn unequal_degree_c2_polycurve_elevates_lower_degree() {
 
 fn cap_boundary(points: &[Point3]) -> crate::extrusion::ExtrusionBoundary {
     let knots = vec![0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 4.0];
-    let start =
-        NurbsCurve::from_lanes(1, knots.clone(), points.to_vec(), None, false).expect("valid cap start");
+    let start = NurbsCurve::from_lanes(1, knots.clone(), points.to_vec(), None, false)
+        .expect("valid cap start");
     let end_points = points
         .iter()
         .map(|point| Point3::new(point.x, point.y, point.z + 5.0))
         .collect::<Vec<_>>();
-    let end = NurbsCurve::from_lanes(1, knots.clone(), end_points, None, false).expect("valid cap end");
+    let end =
+        NurbsCurve::from_lanes(1, knots.clone(), end_points, None, false).expect("valid cap end");
     let pcurve_points = points
         .iter()
         .map(|point| Point2::new(point.x, point.y))

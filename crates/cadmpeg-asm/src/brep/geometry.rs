@@ -843,12 +843,7 @@ pub(crate) fn rational_four_arc_circle(
         .iter()
         .zip(weights)
         .map(|(point, weight)| {
-            let homogeneous = [
-                point.x * weight,
-                point.y * weight,
-                point.z * weight,
-                weight,
-            ];
+            let homogeneous = [point.x * weight, point.y * weight, point.z * weight, weight];
             (point.x.is_finite()
                 && point.y.is_finite()
                 && point.z.is_finite()

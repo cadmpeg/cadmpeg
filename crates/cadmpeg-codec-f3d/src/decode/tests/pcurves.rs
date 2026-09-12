@@ -1119,8 +1119,7 @@ fn generated_f3d_rewrites_rational_pcurve_weights() {
     if let Some(weights) = &mut weights {
         weights[1] = 0.75;
     }
-    let poles =
-        cadmpeg_ir::geometry::PcurveNurbsPoles::from_lanes(nurbs.control_points(), weights);
+    let poles = cadmpeg_ir::geometry::PcurveNurbsPoles::from_lanes(nurbs.control_points(), weights);
     nurbs.set_poles(poles.unwrap()).unwrap();
     let expected = edited.model.pcurves[0].clone();
 

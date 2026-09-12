@@ -418,16 +418,10 @@ impl TessellationMesh {
         match self {
             Self::List { triangles, .. } | Self::ShadedList { triangles, .. } => triangles.len(),
             Self::CornerShadedList { triangles, .. } => triangles.len(),
-            Self::Strips { strips } => strips
-                .as_slice()
-                .iter()
-                .map(Strip::triangle_count)
-                .sum(),
-            Self::ShadedStrips { strips } => strips
-                .as_slice()
-                .iter()
-                .map(Strip::triangle_count)
-                .sum(),
+            Self::Strips { strips } => strips.as_slice().iter().map(Strip::triangle_count).sum(),
+            Self::ShadedStrips { strips } => {
+                strips.as_slice().iter().map(Strip::triangle_count).sum()
+            }
         }
     }
 
@@ -456,9 +450,10 @@ impl TessellationMesh {
             | Self::ShadedList { .. }
             | Self::Strips { .. }
             | Self::ShadedStrips { .. } => Vec::new(),
-            Self::CornerShadedList { triangles, .. } => {
-                triangles.iter().flat_map(|triangle| triangle.normals).collect()
-            }
+            Self::CornerShadedList { triangles, .. } => triangles
+                .iter()
+                .flat_map(|triangle| triangle.normals)
+                .collect(),
         }
     }
 

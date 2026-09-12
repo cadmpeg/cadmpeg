@@ -993,10 +993,8 @@ fn curved_offset_cache_fit_certifies_varying_positive_weights() {
     let weight_grid = (0..3)
         .map(|u| (0..3).map(|v| axis_weights[u] * axis_weights[v]).collect())
         .collect::<Vec<Vec<f64>>>();
-    let poles = cadmpeg_ir::geometry::NurbsPoleGrid::from_lanes(
-        surface.control_grid(),
-        Some(weight_grid),
-    );
+    let poles =
+        cadmpeg_ir::geometry::NurbsPoleGrid::from_lanes(surface.control_grid(), Some(weight_grid));
     surface.set_poles(poles.unwrap()).unwrap();
 
     assert_eq!(
@@ -1023,10 +1021,8 @@ fn rational_offset_cache_bounds_are_translation_invariant() {
     let weight_grid = (0..3)
         .map(|u| (0..3).map(|v| axis_weights[u] * axis_weights[v]).collect())
         .collect::<Vec<Vec<f64>>>();
-    let poles = cadmpeg_ir::geometry::NurbsPoleGrid::from_lanes(
-        surface.control_grid(),
-        Some(weight_grid),
-    );
+    let poles =
+        cadmpeg_ir::geometry::NurbsPoleGrid::from_lanes(surface.control_grid(), Some(weight_grid));
     surface.set_poles(poles.unwrap()).unwrap();
 
     let bound = certified_offset_cache_fit(&support, &support, 0.01, 0.02)

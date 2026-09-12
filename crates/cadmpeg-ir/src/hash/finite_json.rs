@@ -15,8 +15,8 @@ use std::cell::Cell;
 use std::fmt::Display;
 
 use serde::ser::{
-    Serialize, SerializeMap, SerializeSeq, SerializeStruct, SerializeStructVariant,
-    SerializeTuple, SerializeTupleStruct, SerializeTupleVariant, Serializer,
+    Serialize, SerializeMap, SerializeSeq, SerializeStruct, SerializeStructVariant, SerializeTuple,
+    SerializeTupleStruct, SerializeTupleVariant, Serializer,
 };
 
 /// Records the float that a [`FiniteSerializer`] walk refused.

@@ -748,7 +748,8 @@ pub(crate) fn scan_curve_carriers(bytes: &[u8]) -> HashMap<u16, CurveCarrier> {
         if knots.len() != expected {
             continue;
         }
-        let Ok(nurbs) = NurbsCurve::from_lanes(descriptor.degree, knots, points, weights, false) else {
+        let Ok(nurbs) = NurbsCurve::from_lanes(descriptor.degree, knots, points, weights, false)
+        else {
             continue;
         };
         out.entry(attr).or_insert(CurveCarrier {

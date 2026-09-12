@@ -88,10 +88,7 @@ fn assert_same_curves(actual: &[Curve], expected: &[Curve]) {
         assert_eq!(actual.periodic(), expected.periodic());
         assert_same_f64s(actual.knots(), expected.knots());
         assert_same_points3(&actual.control_points(), &expected.control_points());
-        assert_same_weights(
-            actual.weights().as_deref(),
-            expected.weights().as_deref(),
-        );
+        assert_same_weights(actual.weights().as_deref(), expected.weights().as_deref());
     }
 }
 
@@ -108,10 +105,7 @@ fn assert_same_pcurves(actual: &[Pcurve], expected: &[Pcurve]) {
         assert_eq!(actual.periodic(), expected.periodic());
         assert_same_f64s(actual.knots(), expected.knots());
         assert_same_points2(&actual.control_points(), &expected.control_points());
-        assert_same_weights(
-            actual.weights().as_deref(),
-            expected.weights().as_deref(),
-        );
+        assert_same_weights(actual.weights().as_deref(), expected.weights().as_deref());
     }
 }
 
