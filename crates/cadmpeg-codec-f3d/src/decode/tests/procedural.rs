@@ -295,7 +295,9 @@ fn generated_compound_loft_writes_every_tail_shape_source_less() {
                     edited_construction,
                 )
                 .unwrap();
-            definition_payload.set_legacy_cache(restored_cache);
+            definition
+                .set_legacy_cache(restored_cache)
+                .expect("the rebuilt construction states the same legacy cache slot");
         });
         let mut encoded = Vec::new();
         F3dCodec
@@ -506,7 +508,9 @@ fn generated_scaled_compound_loft_writes_all_middle_branches_source_less() {
                     edited_construction,
                 )
                 .unwrap();
-            definition_payload.set_legacy_cache(restored_cache);
+            definition
+                .set_legacy_cache(restored_cache)
+                .expect("the rebuilt construction states the same legacy cache slot");
         });
         let mut encoded = Vec::new();
         F3dCodec
@@ -1168,7 +1172,9 @@ fn source_less_writer_rejects_invalid_and_unframed_law_arities() {
             edited_construction,
         )
         .unwrap();
-        definition_payload.set_legacy_cache(restored_cache);
+        definition
+            .set_legacy_cache(restored_cache)
+            .expect("the rebuilt construction states the same legacy cache slot");
     });
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -1195,7 +1201,9 @@ fn source_less_writer_rejects_invalid_and_unframed_law_arities() {
             edited_construction,
         )
         .unwrap();
-        definition_payload.set_legacy_cache(restored_cache);
+        definition
+            .set_legacy_cache(restored_cache)
+            .expect("the rebuilt construction states the same legacy cache slot");
     });
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -1273,7 +1281,9 @@ fn generated_skin_surface_round_trips_set_compose_rotate_and_term_laws() {
             edited_construction,
         )
         .unwrap();
-        definition_payload.set_legacy_cache(restored_cache);
+        definition
+            .set_legacy_cache(restored_cache)
+            .expect("the rebuilt construction states the same legacy cache slot");
     });
 
     let mut encoded = Vec::new();

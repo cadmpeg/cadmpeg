@@ -2556,11 +2556,6 @@ impl CompoundSurfacePayload {
         self.cache
     }
 
-    /// Replace the solved-cache fit contract this construction states.
-    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
-        self.cache = cache;
-    }
-
     /// Mutable legacy solved-cache slot this construction states.
     pub(super) const fn legacy_cache_slot_mut(&mut self) -> LegacyCacheSlot<'_> {
         LegacyCacheSlot::Optional(&mut self.cache)
@@ -2572,11 +2567,6 @@ impl CompoundLoftSurfacePayload {
     #[must_use]
     pub const fn legacy_cache(&self) -> Option<LegacyCache> {
         self.cache
-    }
-
-    /// Replace the solved-cache fit contract this construction states.
-    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
-        self.cache = cache;
     }
 
     /// Mutable legacy solved-cache slot this construction states.
@@ -2592,11 +2582,6 @@ impl ScaledCompoundLoftSurfacePayload {
         self.cache
     }
 
-    /// Replace the solved-cache fit contract this construction states.
-    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
-        self.cache = cache;
-    }
-
     /// Mutable legacy solved-cache slot this construction states.
     pub(super) const fn legacy_cache_slot_mut(&mut self) -> LegacyCacheSlot<'_> {
         LegacyCacheSlot::Optional(&mut self.cache)
@@ -2608,11 +2593,6 @@ impl SkinSurfacePayload {
     #[must_use]
     pub const fn legacy_cache(&self) -> Option<LegacyCache> {
         self.cache
-    }
-
-    /// Replace the solved-cache fit contract this construction states.
-    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
-        self.cache = cache;
     }
 
     /// Mutable legacy solved-cache slot this construction states.
@@ -2651,11 +2631,6 @@ impl NetSurfacePayload {
         self.cache
     }
 
-    /// Replace the solved-cache fit contract this construction states.
-    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
-        self.cache = cache;
-    }
-
     /// Mutable legacy solved-cache slot this construction states.
     pub(super) const fn legacy_cache_slot_mut(&mut self) -> LegacyCacheSlot<'_> {
         LegacyCacheSlot::Optional(&mut self.cache)
@@ -2669,11 +2644,6 @@ impl G2BlendSurfacePayload {
         self.cache
     }
 
-    /// Replace the solved-cache fit contract this construction states.
-    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
-        self.cache = cache;
-    }
-
     /// Mutable legacy solved-cache slot this construction states.
     pub(super) const fn legacy_cache_slot_mut(&mut self) -> LegacyCacheSlot<'_> {
         LegacyCacheSlot::Optional(&mut self.cache)
@@ -2685,11 +2655,6 @@ impl SubsetSurfaceConstruction {
     #[must_use]
     pub const fn legacy_cache(&self) -> Option<LegacyCache> {
         self.cache
-    }
-
-    /// Replace the solved-cache fit contract this construction states.
-    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
-        self.cache = cache;
     }
 
     /// Mutable legacy solved-cache slot this construction states.
@@ -2707,15 +2672,6 @@ impl TaperSurfaceConstruction {
             Some(fit_tolerance) => Some(LegacyCache { fit_tolerance }),
             None => None,
         }
-    }
-
-    /// Replace the legacy solved-cache fit contract. A revision-gated form
-    /// states its own tolerance and is unchanged.
-    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
-        self.cache.set_legacy_fit_tolerance(match cache {
-            Some(cache) => Some(cache.fit_tolerance),
-            None => None,
-        });
     }
 
     /// Mutable legacy solved-cache slot, absent when a revision-gated form
@@ -2736,15 +2692,6 @@ impl ExtrusionSurfaceConstruction {
         }
     }
 
-    /// Replace the legacy solved-cache fit contract. A revision-gated form
-    /// states its own tolerance and is unchanged.
-    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
-        self.cache.set_legacy_fit_tolerance(match cache {
-            Some(cache) => Some(cache.fit_tolerance),
-            None => None,
-        });
-    }
-
     /// Mutable legacy solved-cache slot, absent when a revision-gated form
     /// states the tolerance instead.
     pub(super) fn legacy_cache_slot_mut(&mut self) -> Option<LegacyCacheSlot<'_>> {
@@ -2761,15 +2708,6 @@ impl RevolutionSurfaceConstruction {
             Some(fit_tolerance) => Some(LegacyCache { fit_tolerance }),
             None => None,
         }
-    }
-
-    /// Replace the legacy solved-cache fit contract. A revision-gated form
-    /// states its own tolerance and is unchanged.
-    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
-        self.cache.set_legacy_fit_tolerance(match cache {
-            Some(cache) => Some(cache.fit_tolerance),
-            None => None,
-        });
     }
 
     /// Mutable legacy solved-cache slot, absent when a revision-gated form
@@ -2790,15 +2728,6 @@ impl SumSurfaceConstruction {
         }
     }
 
-    /// Replace the legacy solved-cache fit contract. A revision-gated form
-    /// states its own tolerance and is unchanged.
-    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
-        self.cache.set_legacy_fit_tolerance(match cache {
-            Some(cache) => Some(cache.fit_tolerance),
-            None => None,
-        });
-    }
-
     /// Mutable legacy solved-cache slot, absent when a revision-gated form
     /// states the tolerance instead.
     pub(super) fn legacy_cache_slot_mut(&mut self) -> Option<LegacyCacheSlot<'_>> {
@@ -2817,15 +2746,6 @@ impl LoftSurfacePayload {
         }
     }
 
-    /// Replace the legacy solved-cache fit contract. A revision-gated form
-    /// states its own tolerance and is unchanged.
-    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
-        self.cache.set_legacy_fit_tolerance(match cache {
-            Some(cache) => Some(cache.fit_tolerance),
-            None => None,
-        });
-    }
-
     /// Mutable legacy solved-cache slot, absent when a revision-gated form
     /// states the tolerance instead.
     pub(super) fn legacy_cache_slot_mut(&mut self) -> Option<LegacyCacheSlot<'_>> {
@@ -2840,13 +2760,6 @@ impl ExactSurfacePayload {
         match &self.spline {
             ExactSpline::Legacy { cache, .. } => *cache,
             ExactSpline::Revision { .. } => None,
-        }
-    }
-
-    /// Replace the legacy spline layout's solved-cache fit contract.
-    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
-        if let ExactSpline::Legacy { cache: slot, .. } = &mut self.spline {
-            *slot = cache;
         }
     }
 
@@ -2870,13 +2783,6 @@ impl OffsetSurfaceConstruction {
         }
     }
 
-    /// Replace the legacy extension's solved-cache fit contract.
-    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
-        if let OffsetExtension::Legacy { cache: slot, .. } = &mut self.extension {
-            *slot = cache;
-        }
-    }
-
     /// Mutable legacy solved-cache slot, absent when the revision extension
     /// states the tolerance instead.
     pub(super) fn legacy_cache_slot_mut(&mut self) -> Option<LegacyCacheSlot<'_>> {
@@ -2895,16 +2801,6 @@ impl DeformableSurfacePayload {
             Some(fit_tolerance) => Some(LegacyCache { fit_tolerance }),
             None => None,
         }
-    }
-
-    /// Replace the legacy solved-cache fit contract.
-    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
-        self.construction
-            .cache
-            .set_legacy_fit_tolerance(match cache {
-                Some(cache) => Some(cache.fit_tolerance),
-                None => None,
-            });
     }
 
     /// Mutable legacy solved-cache slot, absent when a revision-gated form
@@ -2946,14 +2842,6 @@ impl BlendSurfacePayload {
             Some(fit_tolerance) => Some(LegacyCache { fit_tolerance }),
             None => None,
         }
-    }
-
-    /// Replace the legacy solved-cache fit contract.
-    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
-        self.cache.set_legacy_fit_tolerance(match cache {
-            Some(cache) => Some(cache.fit_tolerance),
-            None => None,
-        });
     }
 
     /// Mutable legacy solved-cache slot, absent when a revision-gated form

@@ -1005,17 +1005,6 @@ impl<F> CacheContract<F> {
             Self::Revision { .. } => None,
         }
     }
-
-    /// Replace the legacy solved-cache tolerance. A revision layout states its
-    /// tolerance in its cache form and is unchanged.
-    pub const fn set_legacy_fit_tolerance(&mut self, value: Option<FitTolerance>) {
-        if let Self::Legacy { cache } = self {
-            *cache = match value {
-                Some(fit_tolerance) => Some(LegacyCache { fit_tolerance }),
-                None => None,
-            };
-        }
-    }
 }
 
 impl<F> CacheContract<F> {
@@ -7000,11 +6989,6 @@ impl CompoundCurveConstruction {
         self.cache
     }
 
-    /// Replace the solved-cache fit contract this construction states.
-    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
-        self.cache = cache;
-    }
-
     /// Mutable legacy solved-cache slot this construction states.
     pub(crate) const fn legacy_cache_slot_mut(&mut self) -> LegacyCacheSlot<'_> {
         LegacyCacheSlot::Optional(&mut self.cache)
@@ -7016,11 +7000,6 @@ impl HelixCurveConstruction {
     #[must_use]
     pub const fn legacy_cache(&self) -> Option<LegacyCache> {
         self.cache
-    }
-
-    /// Replace the solved-cache fit contract this construction states.
-    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
-        self.cache = cache;
     }
 
     /// Mutable legacy solved-cache slot this construction states.
@@ -7037,14 +7016,6 @@ impl TSplineSurfaceConstruction {
             Some(fit_tolerance) => Some(LegacyCache { fit_tolerance }),
             None => None,
         }
-    }
-
-    /// Replace the legacy solved-cache fit contract.
-    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
-        self.cache.set_legacy_fit_tolerance(match cache {
-            Some(cache) => Some(cache.fit_tolerance),
-            None => None,
-        });
     }
 
     /// Mutable legacy solved-cache slot, absent when a revision-gated form
