@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Every document-reachable shape a live FreeCAD decode produces refuses an
+//! Every document-reachable shape a live `FreeCAD` decode produces refuses an
 //! unknown key.
 //!
-//! The committed FreeCAD decode goldens store `native` as an elision marker,
+//! The committed `FreeCAD` decode goldens store `native` as an elision marker,
 //! so their `ir` does not read back as a `CadIr` and the workspace-wide sweep
 //! in `cadmpeg-ir` skips them. This sweep decodes the charter fixtures instead
 //! and runs the same walk over the live document, which reaches the sketch,
