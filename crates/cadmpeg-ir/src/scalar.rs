@@ -84,6 +84,10 @@ checked_scalar!(
     PositiveAngle, value, value > 0.0, "PositiveAngle must be positive and finite"
 );
 checked_scalar!(
+    /// A finite nonzero signed angle in canonical radians.
+    NonZeroAngle, value, value != 0.0, "NonZeroAngle must be finite and nonzero"
+);
+checked_scalar!(
     /// A finite dimensionless scalar.
     FiniteReal, value, true, "FiniteReal must be finite"
 );
@@ -151,6 +155,7 @@ scalar_conversion!(NonNegativeLength => Length, "length must be nonnegative");
 scalar_conversion!(SlopeAngle => Angle, "angle must be strictly between -pi/2 and pi/2");
 scalar_conversion!(InteriorAngle => Angle, "angle must be strictly between zero and pi");
 scalar_conversion!(PositiveAngle => Angle, "angle must be positive");
+scalar_conversion!(NonZeroAngle => Angle, "angle must be nonzero");
 
 impl FiniteReal {
     /// Unit scalar value.

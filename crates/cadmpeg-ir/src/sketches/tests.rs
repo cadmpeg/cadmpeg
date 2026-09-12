@@ -662,16 +662,11 @@ fn a_circular_pattern_states_its_count_only_as_instances() {
         Angle::new(1.0).unwrap(),
         None,
         None,
-        vec![
-            SketchCircularPatternInstance {
-                angle: Angle::new(0.0).unwrap(),
-                entities: vec![SketchEntityId::mint("test:test:sketch-entity#0").unwrap()],
-            },
-            SketchCircularPatternInstance {
-                angle: Angle::new(1.0).unwrap(),
-                entities: vec![SketchEntityId::mint("test:test:sketch-entity#1").unwrap()],
-            },
-        ],
+        vec![SketchEntityId::mint("test:test:sketch-entity#0").unwrap()],
+        vec![SketchCircularPatternInstance {
+            angle: crate::scalar::NonZeroAngle::new(1.0).unwrap(),
+            entities: vec![SketchEntityId::mint("test:test:sketch-entity#1").unwrap()],
+        }],
     )
     .unwrap();
     let definition = SketchConstraintDefinitionInput::CircularPattern { pattern };
@@ -679,11 +674,12 @@ fn a_circular_pattern_states_its_count_only_as_instances() {
     assert!(wire["pattern"].get("count").is_none());
     assert!(wire["pattern"]["instances"][0].get("index").is_none());
     assert_eq!(
+        wire["pattern"]["seed"],
+        serde_json::json!(["test:test:sketch-entity#0"])
+    );
+    assert_eq!(
         wire["pattern"]["instances"],
-        serde_json::json!([
-            { "angle": 0.0, "entities": ["test:test:sketch-entity#0"] },
-            { "angle": 1.0, "entities": ["test:test:sketch-entity#1"] }
-        ])
+        serde_json::json!([{ "angle": 1.0, "entities": ["test:test:sketch-entity#1"] }])
     );
     assert_eq!(
         serde_json::from_value::<SketchConstraintDefinitionInput>(wire.clone()).unwrap(),
@@ -710,8 +706,10 @@ fn a_circular_pattern_states_its_count_only_as_instances() {
         .to_string();
     assert!(error.contains("index"), "{error}");
 
+    // The seed is not an instance, so an instance's rotation is a nonzero
+    // scalar mint and no arm compares an angle against zero.
     let mut unseeded = wire;
-    unseeded["pattern"]["instances"][0]["angle"] = serde_json::json!(1.0);
+    unseeded["pattern"]["instances"][0]["angle"] = serde_json::json!(0.0);
     assert!(serde_json::from_value::<SketchConstraintDefinitionInput>(unseeded).is_err());
 }
 
@@ -1339,40 +1337,27 @@ fn circular_pattern_admission_checks_angles_and_entity_ownership() {
     let center = SketchEntityId::mint("test:test:sketch-entity#center").unwrap();
     let seed = SketchEntityId::mint("test:test:sketch-entity#seed").unwrap();
     let copy = SketchEntityId::mint("test:test:sketch-entity#copy").unwrap();
-    let instances = vec![
-        SketchCircularPatternInstance {
-            angle: Angle::new(0.0).unwrap(),
-            entities: vec![seed.clone()],
-        },
-        SketchCircularPatternInstance {
-            angle: Angle::new(-1.0).unwrap(),
-            entities: vec![copy],
-        },
-    ];
+    let instances = vec![SketchCircularPatternInstance {
+        angle: crate::scalar::NonZeroAngle::new(-1.0).unwrap(),
+        entities: vec![copy],
+    }];
     let admit = |angle, instances| {
         SketchCircularPattern::new(
             center.clone(),
             Angle::new(angle).unwrap(),
             None,
             None,
+            vec![seed.clone()],
             instances,
         )
     };
     let pattern = admit(-1.0, instances.clone()).unwrap();
-    let mut invalid = instances.clone();
-    invalid[0].angle = Angle::new(f64::MIN_POSITIVE).unwrap();
-    assert!(admit(-1.0, invalid).is_none());
-    for entity in [center, seed] {
+    assert_eq!(pattern.count(), 2);
+    assert!(admit(-1.0, Vec::new()).is_none());
+    for entity in [center.clone(), seed.clone()] {
         let mut invalid = instances.clone();
-        invalid[1].entities[0] = entity;
-        assert!(SketchCircularPattern::new(
-            pattern.center().clone(),
-            Angle::new(-1.0).unwrap(),
-            None,
-            None,
-            invalid
-        )
-        .is_none());
+        invalid[0].entities[0] = entity;
+        assert!(admit(-1.0, invalid).is_none());
     }
     let wire = serde_json::to_value(&pattern).unwrap();
     assert_eq!(
@@ -1380,7 +1365,7 @@ fn circular_pattern_admission_checks_angles_and_entity_ownership() {
         pattern
     );
     for (path, value) in [
-        ("angle", serde_json::json!(f64::MIN_POSITIVE)),
+        ("angle", serde_json::json!(0.0)),
         ("entities", serde_json::json!([pattern.center()])),
     ] {
         let mut invalid = wire.clone();
@@ -1388,7 +1373,7 @@ fn circular_pattern_admission_checks_angles_and_entity_ownership() {
         assert!(serde_json::from_value::<SketchCircularPattern>(invalid).is_err());
     }
     let mut duplicate = wire;
-    duplicate["instances"][1]["entities"] = duplicate["instances"][0]["entities"].clone();
+    duplicate["instances"][0]["entities"] = duplicate["seed"].clone();
     assert!(serde_json::from_value::<SketchCircularPattern>(duplicate).is_err());
 }
 
