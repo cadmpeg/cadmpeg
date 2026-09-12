@@ -1064,7 +1064,7 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
             ref continuity,
             ..
         })) if matches!(continuity.resolved(), Some(
-            cadmpeg_ir::features::FilledSurfaceContinuity::PerBoundary {
+            cadmpeg_ir::features::FilledSurfaceContinuity {
                 first: SurfaceContinuity::Contact,
                 rest,
             }
@@ -1102,7 +1102,7 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
             ref continuity,
             ..
         })) if matches!(continuity.resolved(), Some(
-            cadmpeg_ir::features::FilledSurfaceContinuity::PerBoundary {
+            cadmpeg_ir::features::FilledSurfaceContinuity {
                 first: SurfaceContinuity::Contact,
                 rest,
             }
