@@ -292,9 +292,11 @@
               "x": 0.0,
               "y": 0.0,
               "z": 1.0
+            },
+            "cache": {
+              "fit_tolerance": 0.005
             }
-          },
-          "cache_fit_tolerance": 0.005
+          }
         }
       ],
       "features": [],

@@ -445,6 +445,7 @@ fn periodic_surface_lookup_rejects_a_cyclic_offset_graph() {
                         false,
                         cadmpeg_ir::geometry::OffsetExtension::Legacy {
                             flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                            cache: None,
                         },
                     )
                     .unwrap(),
@@ -881,26 +882,23 @@ fn blend_contact_matches_concentric_blend_carriers() {
                     .expect("identity grammar")
         })
         .unwrap();
-    outer_definition
-        .edit_definition(|definition| {
-            let ProceduralSurfaceDefinition::Blend(definition_payload) = definition else {
-                unreachable!()
-            };
-            let mut edited_supports = definition_payload.supports().clone();
-            let supports = &mut edited_supports;
+    outer_definition.edit_definition(|definition| {
+        let ProceduralSurfaceDefinition::Blend(definition_payload) = definition else {
+            unreachable!()
+        };
+        let mut edited_supports = definition_payload.supports().clone();
+        let supports = &mut edited_supports;
 
-            supports[0].as_mut().unwrap().reversed = true;
-            *definition_payload =
-                cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
-                    edited_supports,
-                    definition_payload.spine().clone(),
-                    definition_payload.radius().clone(),
-                    definition_payload.cross_section().clone(),
-                    definition_payload.native().clone(),
-                )
-                .unwrap();
-        })
+        supports[0].as_mut().unwrap().reversed = true;
+        *definition_payload = cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
+            edited_supports,
+            definition_payload.spine().clone(),
+            definition_payload.radius().clone(),
+            definition_payload.cross_section().clone(),
+            definition_payload.native().cloned().map(Box::new),
+        )
         .unwrap();
+    });
     assert!(constant_surface_offset_between(&ir, &inner, &outer, 0).is_none());
 }
 
@@ -987,6 +985,7 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
                     false,
                     cadmpeg_ir::geometry::OffsetExtension::Legacy {
                         flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                        cache: None,
                     },
                 )
                 .unwrap(),
@@ -1059,6 +1058,7 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
                 )
                 .unwrap(),
                 discontinuity_flag: false,
+                cache: None,
             },
         )
         .unwrap(),
@@ -1291,7 +1291,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         crate::decode::support_uv::blend_spine_cache_fit_tolerance(&ir, &surface, 0.25),
         0.25
     );
-    let procedural = ProceduralCurve::try_new(
+    let procedural = ProceduralCurve::new(
         ProceduralCurveId::mint("test:model:entity#synthetic:spine-construction")
             .expect("identity grammar"),
         ProceduralCurveDefinition::Intersection {
@@ -1329,8 +1329,8 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             )
             .unwrap(),
             discontinuity_flag: false,
+            cache: Some(cadmpeg_ir::geometry::LegacyCache::try_new(0.75).expect("fit tolerance")),
         },
-        Some(0.75),
     )
     .unwrap();
     ir.model
@@ -1456,8 +1456,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                     );
                 })
                 .unwrap();
-        })
-        .unwrap();
+        });
     let parameters = Point2::new(0.4, 0.35);
     let exact = blend_surface_u_derivative(&varying_frame, &surface, parameters.u, parameters.v, 0)
         .expect("complete rolling-ball frame has an exact derivative");
@@ -1566,6 +1565,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                 )
                 .unwrap(),
                 discontinuity_flag: false,
+                cache: None,
             },
         )
         .unwrap(),
@@ -1619,8 +1619,8 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         .replace_definition(ProceduralCurveDefinition::Unknown {
             native_kind: None,
             record: None,
-        })
-        .unwrap();
+            cache: None,
+        });
     assert_eq!(
         blend_boundary_parameter_from_support_spine(
             &ir,
@@ -1789,25 +1789,22 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                     .expect("identity grammar")
         })
         .unwrap();
-    outer_definition
-        .edit_definition(|definition| {
-            let ProceduralSurfaceDefinition::Blend(definition_payload) = definition else {
-                panic!("blend definition");
-            };
-            let mut edited_supports = definition_payload.supports().clone();
-            let supports = &mut edited_supports;
+    outer_definition.edit_definition(|definition| {
+        let ProceduralSurfaceDefinition::Blend(definition_payload) = definition else {
+            panic!("blend definition");
+        };
+        let mut edited_supports = definition_payload.supports().clone();
+        let supports = &mut edited_supports;
 
-            supports[0].as_mut().unwrap().surface = outer.clone();
-            *definition_payload =
-                cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
-                    edited_supports,
-                    definition_payload.spine().clone(),
-                    definition_payload.radius().clone(),
-                    definition_payload.cross_section().clone(),
-                    definition_payload.native().clone(),
-                )
-                .unwrap();
-        })
+        supports[0].as_mut().unwrap().surface = outer.clone();
+        *definition_payload = cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
+            edited_supports,
+            definition_payload.spine().clone(),
+            definition_payload.radius().clone(),
+            definition_payload.cross_section().clone(),
+            definition_payload.native().cloned().map(Box::new),
+        )
         .unwrap();
+    });
     assert!(blend_surface_point(&ir, &outer, expected.u, expected.v).is_none());
 }

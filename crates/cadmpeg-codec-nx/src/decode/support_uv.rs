@@ -1430,7 +1430,7 @@ fn complete_support_uv_wave(
             else {
                 continue;
             };
-            let Ok(completed) = procedural.edit_definition(|definition| {
+            let completed = procedural.edit_definition(|definition| {
                 let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
                     return false;
                 };
@@ -1445,9 +1445,7 @@ fn complete_support_uv_wave(
                 } else {
                     false
                 }
-            }) else {
-                continue;
-            };
+            });
             if completed && cache_backed_constructions.contains(&procedural.id) {
                 procedural.raise_cache_fit_tolerance(effective_fit_tolerance);
             }

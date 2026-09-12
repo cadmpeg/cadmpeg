@@ -5060,7 +5060,7 @@ pub fn model_surface_point(
                 *direction,
                 parameter_interval,
                 carrier_interval,
-                extrusion_directrix_reversed(revision_form.as_ref()),
+                extrusion_directrix_reversed(revision_form),
                 u,
                 v,
                 None,
@@ -5106,7 +5106,7 @@ pub fn model_surface_point(
                 None,
             )
         }
-        ProceduralSurfaceDefinition::Ruled { first, second } => {
+        ProceduralSurfaceDefinition::Ruled { first, second, .. } => {
             model_ruled_surface_partials(&index, first, second, u, v).map(|partials| partials.point)
         }
         ProceduralSurfaceDefinition::Sum(definition_payload) => model_sum_surface_partials(
@@ -5640,7 +5640,7 @@ fn cacheless_law_sweep_differentials(
     ScalarSweepDifferential,
     Point3,
 )> {
-    let form = construction.revision_form.as_ref()?;
+    let form = construction.cache.form()?;
     let parameterization = form.cache.parameterization()?;
     let path_origin = straight_sweep_path_origin(index, spine)?;
     let SweepSurfaceLayout::LawDriven {
@@ -5799,8 +5799,8 @@ fn variable_blend_has_current_cache(
 
 fn sweep_has_current_cache(construction: &crate::geometry::SweepSurfaceConstruction) -> bool {
     construction
-        .revision_form
-        .as_ref()
+        .cache
+        .form()
         .is_some_and(|form| revision_surface_tail_has_current_cache(&form.cache))
 }
 
@@ -6672,7 +6672,7 @@ fn model_surface_point_by_id_inner(
                     *direction,
                     parameter_interval,
                     carrier_interval,
-                    extrusion_directrix_reversed(revision_form.as_ref()),
+                    extrusion_directrix_reversed(revision_form),
                     u,
                     v,
                     budget,
@@ -6721,7 +6721,7 @@ fn model_surface_point_by_id_inner(
                     oriented_normal: None,
                 })
             }
-            Some(ProceduralSurfaceDefinition::Ruled { first, second }) => {
+            Some(ProceduralSurfaceDefinition::Ruled { first, second, .. }) => {
                 model_ruled_surface_partials(index, first, second, u, v).map(|partials| {
                     SurfaceEvaluation {
                         point: partials.point,
@@ -7200,7 +7200,7 @@ fn model_surface_mapping(
                     *direction,
                     parameter_interval,
                     carrier_interval,
-                    extrusion_directrix_reversed(revision_form.as_ref()),
+                    extrusion_directrix_reversed(revision_form),
                     u,
                     v,
                     budget,
@@ -7263,7 +7263,7 @@ fn model_surface_mapping(
                 orientation: 1.0,
             })
         }
-        Some(ProceduralSurfaceDefinition::Ruled { first, second }) => Some(SurfaceMapping {
+        Some(ProceduralSurfaceDefinition::Ruled { first, second, .. }) => Some(SurfaceMapping {
             base: model_ruled_surface_partials(index, first, second, u, v)?,
             offset_distance: 0.0,
             u_scale: 1.0,

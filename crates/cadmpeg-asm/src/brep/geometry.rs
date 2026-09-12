@@ -556,7 +556,7 @@ pub(crate) fn procedural_surface_definition_is_exact_carrier(
         ),
         DecodedProceduralSurfaceDefinition::Law(construction) => !matches!(
             construction.tail,
-            cadmpeg_ir::geometry::LawSurfaceTail::Full {}
+            cadmpeg_ir::geometry::LawSurfaceTail::Full { .. }
         ),
         DecodedProceduralSurfaceDefinition::ScaledCompoundLoft(construction) => matches!(
             construction.shape,

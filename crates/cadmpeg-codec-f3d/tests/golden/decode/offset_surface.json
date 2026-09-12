@@ -381,9 +381,11 @@
               "state": "enabled",
               "secondary": false,
               "tertiary": true
+            },
+            "cache": {
+              "fit_tolerance": 0.05499999999999999
             }
-          },
-          "cache_fit_tolerance": 0.05499999999999999
+          }
         }
       ],
       "procedural_curves": [],

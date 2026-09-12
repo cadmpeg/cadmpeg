@@ -253,10 +253,7 @@ fn generated_revision_deformable_mode3_decodes_and_writes_source_less() {
     };
     let construction = definition_payload.construction();
 
-    let revision_form = construction
-        .revision_form
-        .as_ref()
-        .expect("revision deformable form");
+    let revision_form = construction.cache.form().expect("revision deformable form");
     assert_eq!(revision_form.revision, 22_506);
     assert_eq!(
         revision_form.support_bounds,
@@ -300,8 +297,8 @@ fn generated_revision_deformable_mode3_decodes_and_writes_source_less() {
 
     assert_eq!(
         construction
-            .revision_form
-            .as_ref()
+            .cache
+            .form()
             .expect("round-trip revision form")
             .support_bounds,
         [Some(0.0), Some(1.0), Some(0.0), Some(1.0)]
@@ -644,24 +641,21 @@ fn generated_source_less_sweep_refuses_missing_native_graph() {
         .0;
     decoded.source = None;
     decoded.set_native_unknowns("f3d", &[]).unwrap();
-    decoded.model.procedural_surfaces[0]
-        .edit_definition(|definition| {
-            let ProceduralSurfaceDefinition::Sweep(definition_payload) = definition else {
-                panic!("expected generated sweep")
-            };
-            let mut edited_native = definition_payload.native().clone();
-            let native = &mut edited_native;
+    decoded.model.procedural_surfaces[0].edit_definition(|definition| {
+        let ProceduralSurfaceDefinition::Sweep(definition_payload) = definition else {
+            panic!("expected generated sweep")
+        };
+        let mut edited_native = definition_payload.native().clone();
+        let native = &mut edited_native;
 
-            *native = None;
-            *definition_payload =
-                cadmpeg_ir::geometry::surface_payloads::SweepSurfacePayload::try_new(
-                    definition_payload.profile().clone(),
-                    definition_payload.spine().clone(),
-                    edited_native,
-                )
-                .unwrap();
-        })
+        *native = None;
+        *definition_payload = cadmpeg_ir::geometry::surface_payloads::SweepSurfacePayload::try_new(
+            definition_payload.profile().clone(),
+            definition_payload.spine().clone(),
+            edited_native,
+        )
         .unwrap();
+    });
 
     let error = F3dCodec
         .plan(EncodeInput::new(&decoded, None), TargetRequest::Inherit)
@@ -1046,7 +1040,7 @@ fn generated_revision_text_law_sweep_decodes_and_round_trips() {
         panic!("expected native revision sweep")
     };
 
-    assert_eq!(native.revision_form.as_ref().unwrap().revision, 23100);
+    assert_eq!(native.cache.form().unwrap().revision, 23100);
     let SweepSurfaceLayout::LawDriven {
         first_law,
         second_law,
@@ -1090,7 +1084,7 @@ fn generated_revision_text_law_sweep_decodes_and_round_trips() {
         panic!("expected round-tripped revision sweep")
     };
 
-    assert_eq!(native.revision_form.as_ref().unwrap().revision, 23100);
+    assert_eq!(native.cache.form().unwrap().revision, 23100);
     assert!(matches!(
         native.layout,
         SweepSurfaceLayout::LawDriven {
@@ -1123,7 +1117,7 @@ fn generated_cacheless_revision_text_law_sweep_preserves_parameterization() {
         panic!("expected cacheless native revision sweep")
     };
 
-    let form = native.revision_form.as_ref().expect("revision form");
+    let form = native.cache.form().expect("revision form");
     assert_eq!(form.revision, 23100);
     assert_eq!(form.cache.selector(), 2);
     assert_eq!(
@@ -1167,14 +1161,9 @@ fn generated_cacheless_revision_text_law_sweep_preserves_parameterization() {
         panic!("expected round-tripped cacheless native revision sweep")
     };
 
-    assert_eq!(native.revision_form.as_ref().unwrap().cache.selector(), 2);
+    assert_eq!(native.cache.form().unwrap().cache.selector(), 2);
     assert_eq!(
-        native
-            .revision_form
-            .as_ref()
-            .unwrap()
-            .cache
-            .parameterization(),
+        native.cache.form().unwrap().cache.parameterization(),
         Some(&expected_revision_surface_tail_parameterization())
     );
 }

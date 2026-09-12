@@ -25,7 +25,7 @@ fn cached_subset_retains_local_parameters_for_points_derivatives_and_inversion()
         ir.model
             .add_procedural_curve(
                 subset.clone(),
-                ProceduralCurve::try_new(
+                ProceduralCurve::new(
                     ProceduralCurveId::mint("test:model:procedural-curve#subset").unwrap(),
                     ProceduralCurveDefinition::Subset(
                         crate::geometry::curve_payloads::SubsetCurveConstruction::try_new(
@@ -35,7 +35,6 @@ fn cached_subset_retains_local_parameters_for_points_derivatives_and_inversion()
                         )
                         .unwrap(),
                     ),
-                    None,
                 )
                 .unwrap(),
             )

@@ -93,7 +93,8 @@ fn decode_retains_generated_procedural_curve_fit_contract() {
         cadmpeg_ir::geometry::ProceduralCurveDefinition::Unknown {
             native_kind: Some(native_kind),
             record: None,
-        } if native_kind == "surf_surf_int_cur"
+        ..
+    } if native_kind == "surf_surf_int_cur"
     ));
     assert_eq!(procedural.cache_fit_tolerance(), Some(0.005));
     assert_eq!(result.ir().model.curves.len(), 1);
@@ -136,20 +137,18 @@ fn decode_retains_generated_helix_construction() {
     assert_eq!(procedural.cache_fit_tolerance(), Some(0.005));
 
     let mut edited = result.ir().clone();
-    edited.model.procedural_curves[0]
-        .replace_definition(ProceduralCurveDefinition::Helix(
-            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
-                [-1.0, 7.0],
-                Point3::new(12.0, 23.0, 34.0),
-                cadmpeg_ir::math::Vector3::new(30.0, 0.0, 0.0),
-                cadmpeg_ir::math::Vector3::new(0.0, -30.0, 0.0),
-                cadmpeg_ir::math::Vector3::new(0.0, 0.0, 55.0),
-                0.5,
-                cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-            )
-            .unwrap(),
-        ))
-        .unwrap();
+    edited.model.procedural_curves[0].replace_definition(ProceduralCurveDefinition::Helix(
+        cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+            [-1.0, 7.0],
+            Point3::new(12.0, 23.0, 34.0),
+            cadmpeg_ir::math::Vector3::new(30.0, 0.0, 0.0),
+            cadmpeg_ir::math::Vector3::new(0.0, -30.0, 0.0),
+            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 55.0),
+            0.5,
+            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+        )
+        .unwrap(),
+    ));
     edited.model.procedural_curves[0]
         .set_cache_fit_tolerance(Some(0.012))
         .unwrap();
@@ -397,29 +396,29 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
     let expected_roles = *roles;
 
     let mut edited = result.ir().clone();
-    edited.model.procedural_curves[0]
-        .edit_definition(|definition| {
-            let ProceduralCurveDefinition::VectorOffset(definition_payload) = definition else {
-                panic!("expected editable vector offset")
-            };
-            let mut parameter_range_value = *definition_payload.parameter_range();
-            let parameter_range = &mut parameter_range_value;
-            let mut offset_value = *definition_payload.offset();
-            let offset = &mut offset_value;
-            {
-                *parameter_range = [-3.0, 6.0];
-                *offset = cadmpeg_ir::math::Vector3::new(8.0, -12.0, 25.0);
-            };
-            *definition_payload =
-                cadmpeg_ir::geometry::curve_payloads::VectorOffsetCurveConstruction::try_new(
-                    definition_payload.source().clone(),
-                    parameter_range_value,
-                    offset_value,
-                    *definition_payload.roles(),
-                )
-                .unwrap();
-        })
-        .unwrap();
+    edited.model.procedural_curves[0].edit_definition(|definition| {
+        let ProceduralCurveDefinition::VectorOffset(definition_payload) = definition else {
+            panic!("expected editable vector offset")
+        };
+        let mut parameter_range_value = *definition_payload.parameter_range();
+        let parameter_range = &mut parameter_range_value;
+        let mut offset_value = *definition_payload.offset();
+        let offset = &mut offset_value;
+        {
+            *parameter_range = [-3.0, 6.0];
+            *offset = cadmpeg_ir::math::Vector3::new(8.0, -12.0, 25.0);
+        };
+        let restored_cache = definition_payload.legacy_cache();
+        *definition_payload =
+            cadmpeg_ir::geometry::curve_payloads::VectorOffsetCurveConstruction::try_new(
+                definition_payload.source().clone(),
+                parameter_range_value,
+                offset_value,
+                *definition_payload.roles(),
+            )
+            .unwrap();
+        definition_payload.set_legacy_cache(restored_cache);
+    });
     edited.model.procedural_curves[0]
         .set_cache_fit_tolerance(Some(0.015))
         .unwrap();
@@ -551,25 +550,25 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
     );
 
     let mut edited = result.ir().clone();
-    edited.model.procedural_curves[0]
-        .edit_definition(|definition| {
-            let ProceduralCurveDefinition::Subset(definition_payload) = definition else {
-                unreachable!()
-            };
-            let mut parameter_range_value = *definition_payload.parameter_range();
-            let parameter_range = &mut parameter_range_value;
-            {
-                *parameter_range = [-2.0, 4.0];
-            };
-            *definition_payload =
-                cadmpeg_ir::geometry::curve_payloads::SubsetCurveConstruction::try_new(
-                    definition_payload.source().clone(),
-                    parameter_range_value,
-                    *definition_payload.sense(),
-                )
-                .unwrap();
-        })
-        .unwrap();
+    edited.model.procedural_curves[0].edit_definition(|definition| {
+        let ProceduralCurveDefinition::Subset(definition_payload) = definition else {
+            unreachable!()
+        };
+        let mut parameter_range_value = *definition_payload.parameter_range();
+        let parameter_range = &mut parameter_range_value;
+        {
+            *parameter_range = [-2.0, 4.0];
+        };
+        let restored_cache = definition_payload.legacy_cache();
+        *definition_payload =
+            cadmpeg_ir::geometry::curve_payloads::SubsetCurveConstruction::try_new(
+                definition_payload.source().clone(),
+                parameter_range_value,
+                *definition_payload.sense(),
+            )
+            .unwrap();
+        definition_payload.set_legacy_cache(restored_cache);
+    });
     let expected_edit = edited.model.procedural_curves[0].definition().clone();
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut regenerated)
@@ -671,7 +670,9 @@ fn generated_exact_intcurve_preserves_native_construction_source_less() {
         .expect("generated exact intcurve decode");
     assert_eq!(
         result.ir().model.procedural_curves[0].definition(),
-        &ProceduralCurveDefinition::Exact
+        &ProceduralCurveDefinition::Exact {
+            cache: Some(cadmpeg_ir::geometry::LegacyCache::try_new(0.004).expect("fit tolerance"))
+        }
     );
     assert_eq!(
         result.ir().model.procedural_curves[0].cache_fit_tolerance(),
@@ -691,7 +692,9 @@ fn generated_exact_intcurve_preserves_native_construction_source_less() {
         .expect("source-less exact intcurve round trip");
     assert_eq!(
         round_trip.ir().model.procedural_curves[0].definition(),
-        &ProceduralCurveDefinition::Exact
+        &ProceduralCurveDefinition::Exact {
+            cache: Some(cadmpeg_ir::geometry::LegacyCache::try_new(0.004).expect("fit tolerance"))
+        }
     );
     assert_eq!(
         round_trip.ir().model.procedural_curves[0].cache_fit_tolerance(),
@@ -968,22 +971,22 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
     let component_ids = components.to_vec();
 
     let mut edited = result.ir().clone();
-    edited.model.procedural_curves[0]
-        .edit_definition(|definition| {
-            let ProceduralCurveDefinition::Compound(compound) = definition else {
-                unreachable!()
-            };
-            let mut components = compound.components().to_vec();
-            for (component, parameter) in components.iter_mut().zip([-3.0, 5.0]) {
-                component.parameter = parameter;
-            }
-            *compound = cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
-                vec![-0.25, 0.75, 1.25],
-                components,
-            )
-            .unwrap();
-        })
+    edited.model.procedural_curves[0].edit_definition(|definition| {
+        let ProceduralCurveDefinition::Compound(compound) = definition else {
+            unreachable!()
+        };
+        let mut components = compound.components().to_vec();
+        for (component, parameter) in components.iter_mut().zip([-3.0, 5.0]) {
+            component.parameter = parameter;
+        }
+        let restored_cache = compound.legacy_cache();
+        *compound = cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
+            vec![-0.25, 0.75, 1.25],
+            components,
+        )
         .unwrap();
+        compound.set_legacy_cache(restored_cache);
+    });
     let expected_edit = edited.model.procedural_curves[0].definition().clone();
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut regenerated)
@@ -1091,34 +1094,34 @@ fn generated_two_sided_offset_decodes_and_writes_source_less() {
     assert_eq!(*offsets, [-2.0, 4.0]);
 
     let mut edited = result.ir().clone();
-    edited.model.procedural_curves[0]
-        .edit_definition(|definition| {
-            let ProceduralCurveDefinition::TwoSidedOffset(definition_payload) = definition else {
-                unreachable!()
-            };
-            let mut context_value = definition_payload.context().clone();
-            let context = &mut context_value;
-            let mut discontinuity_flag_value = *definition_payload.discontinuity_flag();
-            let discontinuity_flag = &mut discontinuity_flag_value;
-            let mut offsets_value = *definition_payload.offsets();
-            let offsets = &mut offsets_value;
-            context
-                .edit(|_, context_parameter_range, context_discontinuities| {
-                    (*context_parameter_range) = [-2.0, 3.0];
-                    (*context_discontinuities) = [vec![0.2, 0.8], vec![], vec![0.6]];
-                    *discontinuity_flag = false;
-                    *offsets = [-3.0, 5.0];
-                })
-                .unwrap();
-            *definition_payload =
-                cadmpeg_ir::geometry::curve_payloads::TwoSidedOffsetCurveConstruction::try_new(
-                    context_value,
-                    discontinuity_flag_value,
-                    offsets_value,
-                )
-                .unwrap();
-        })
-        .unwrap();
+    edited.model.procedural_curves[0].edit_definition(|definition| {
+        let ProceduralCurveDefinition::TwoSidedOffset(definition_payload) = definition else {
+            unreachable!()
+        };
+        let mut context_value = definition_payload.context().clone();
+        let context = &mut context_value;
+        let mut discontinuity_flag_value = *definition_payload.discontinuity_flag();
+        let discontinuity_flag = &mut discontinuity_flag_value;
+        let mut offsets_value = *definition_payload.offsets();
+        let offsets = &mut offsets_value;
+        context
+            .edit(|_, context_parameter_range, context_discontinuities| {
+                (*context_parameter_range) = [-2.0, 3.0];
+                (*context_discontinuities) = [vec![0.2, 0.8], vec![], vec![0.6]];
+                *discontinuity_flag = false;
+                *offsets = [-3.0, 5.0];
+            })
+            .unwrap();
+        let restored_cache = definition_payload.legacy_cache();
+        *definition_payload =
+            cadmpeg_ir::geometry::curve_payloads::TwoSidedOffsetCurveConstruction::try_new(
+                context_value,
+                discontinuity_flag_value,
+                offsets_value,
+            )
+            .unwrap();
+        definition_payload.set_legacy_cache(restored_cache);
+    });
     let expected_edit = edited.model.procedural_curves[0].definition().clone();
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut regenerated)
@@ -1190,39 +1193,38 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
     ));
 
     let mut retained = result.ir().clone();
-    retained.model.procedural_curves[0]
-        .edit_definition(|definition| {
-            let ProceduralCurveDefinition::TwoSidedOffset(definition_payload) = definition else {
-                unreachable!()
-            };
-            let mut context_value = definition_payload.context().clone();
-            let context = &mut context_value;
-            let mut discontinuity_flag_value = *definition_payload.discontinuity_flag();
-            let discontinuity_flag = &mut discontinuity_flag_value;
-            let mut offsets_value = *definition_payload.offsets();
-            let offsets = &mut offsets_value;
-            context
-                .edit(|_, context_parameter_range, context_discontinuities| {
-                    (*context_parameter_range) = [-2.0, 5.0];
-                    for (side, discontinuities) in (*context_discontinuities).iter_mut().enumerate()
-                    {
-                        for (ordinal, value) in discontinuities.iter_mut().enumerate() {
-                            *value = 0.125 * (side + ordinal + 1) as f64;
-                        }
+    retained.model.procedural_curves[0].edit_definition(|definition| {
+        let ProceduralCurveDefinition::TwoSidedOffset(definition_payload) = definition else {
+            unreachable!()
+        };
+        let mut context_value = definition_payload.context().clone();
+        let context = &mut context_value;
+        let mut discontinuity_flag_value = *definition_payload.discontinuity_flag();
+        let discontinuity_flag = &mut discontinuity_flag_value;
+        let mut offsets_value = *definition_payload.offsets();
+        let offsets = &mut offsets_value;
+        context
+            .edit(|_, context_parameter_range, context_discontinuities| {
+                (*context_parameter_range) = [-2.0, 5.0];
+                for (side, discontinuities) in (*context_discontinuities).iter_mut().enumerate() {
+                    for (ordinal, value) in discontinuities.iter_mut().enumerate() {
+                        *value = 0.125 * (side + ordinal + 1) as f64;
                     }
-                    *discontinuity_flag = false;
-                    *offsets = [-2.5, 4.5];
-                })
-                .unwrap();
-            *definition_payload =
-                cadmpeg_ir::geometry::curve_payloads::TwoSidedOffsetCurveConstruction::try_new(
-                    context_value,
-                    discontinuity_flag_value,
-                    offsets_value,
-                )
-                .unwrap();
-        })
-        .unwrap();
+                }
+                *discontinuity_flag = false;
+                *offsets = [-2.5, 4.5];
+            })
+            .unwrap();
+        let restored_cache = definition_payload.legacy_cache();
+        *definition_payload =
+            cadmpeg_ir::geometry::curve_payloads::TwoSidedOffsetCurveConstruction::try_new(
+                context_value,
+                discontinuity_flag_value,
+                offsets_value,
+            )
+            .unwrap();
+        definition_payload.set_legacy_cache(restored_cache);
+    });
     let expected_retained = retained.model.procedural_curves[0].definition().clone();
     let mut retained_bytes = Vec::new();
     crate::test_support::plan_inherited_write(
@@ -1306,45 +1308,45 @@ fn generated_mixed_offset_supports_write_source_less() {
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
-    let first_support = source_less.model.procedural_curves[0]
-        .edit_definition(|definition| {
-            let ProceduralCurveDefinition::TwoSidedOffset(definition_payload) = definition else {
-                panic!("expected two-sided offset construction")
-            };
-            let mut context_value = definition_payload.context().clone();
-            let context = &mut context_value;
-            let edit_result = {
-                context
-                    .edit(|context_sides, _, _| {
-                        (*context_sides)[1].surface = None;
-                        (*context_sides)[1].pcurve = None;
-                        (*context_sides)[0].pcurve = Some(
-                            cadmpeg_ir::geometry::PcurveGeometry::Line(
-                                cadmpeg_ir::geometry::LinePcurve::try_new(
-                                    cadmpeg_ir::math::Point2::new(1.0, 2.0),
-                                    cadmpeg_ir::math::Point2::new(3.0, -1.0),
-                                )
-                                .unwrap(),
+    let first_support = source_less.model.procedural_curves[0].edit_definition(|definition| {
+        let ProceduralCurveDefinition::TwoSidedOffset(definition_payload) = definition else {
+            panic!("expected two-sided offset construction")
+        };
+        let mut context_value = definition_payload.context().clone();
+        let context = &mut context_value;
+        let edit_result = {
+            context
+                .edit(|context_sides, _, _| {
+                    (*context_sides)[1].surface = None;
+                    (*context_sides)[1].pcurve = None;
+                    (*context_sides)[0].pcurve = Some(
+                        cadmpeg_ir::geometry::PcurveGeometry::Line(
+                            cadmpeg_ir::geometry::LinePcurve::try_new(
+                                cadmpeg_ir::math::Point2::new(1.0, 2.0),
+                                cadmpeg_ir::math::Point2::new(3.0, -1.0),
                             )
-                            .into(),
-                        );
-                        (*context_sides)[0]
-                            .surface
-                            .clone()
-                            .expect("retained first support id")
-                    })
-                    .unwrap()
-            };
-            *definition_payload =
-                cadmpeg_ir::geometry::curve_payloads::TwoSidedOffsetCurveConstruction::try_new(
-                    context_value,
-                    *definition_payload.discontinuity_flag(),
-                    *definition_payload.offsets(),
-                )
-                .unwrap();
-            edit_result
-        })
-        .unwrap();
+                            .unwrap(),
+                        )
+                        .into(),
+                    );
+                    (*context_sides)[0]
+                        .surface
+                        .clone()
+                        .expect("retained first support id")
+                })
+                .unwrap()
+        };
+        let restored_cache = definition_payload.legacy_cache();
+        *definition_payload =
+            cadmpeg_ir::geometry::curve_payloads::TwoSidedOffsetCurveConstruction::try_new(
+                context_value,
+                *definition_payload.discontinuity_flag(),
+                *definition_payload.offsets(),
+            )
+            .unwrap();
+        definition_payload.set_legacy_cache(restored_cache);
+        edit_result
+    });
     let expected_surface = source_less
         .model
         .surfaces
@@ -1491,6 +1493,7 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
     let ProceduralCurveDefinition::Intersection {
         context,
         discontinuity_flag,
+        ..
     } = &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected surface intersection")
@@ -1520,23 +1523,22 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
     ));
 
     let mut edited = result.ir().clone();
-    edited.model.procedural_curves[0]
-        .edit_definition(|definition| {
-            let ProceduralCurveDefinition::Intersection {
-                context,
-                discontinuity_flag,
-            } = definition
-            else {
-                unreachable!()
-            };
-            context
-                .edit(|_, context_parameter_range, _| {
-                    (*context_parameter_range) = [-1.0, 2.0];
-                    *discontinuity_flag = false;
-                })
-                .unwrap()
-        })
-        .unwrap();
+    edited.model.procedural_curves[0].edit_definition(|definition| {
+        let ProceduralCurveDefinition::Intersection {
+            context,
+            discontinuity_flag,
+            ..
+        } = definition
+        else {
+            unreachable!()
+        };
+        context
+            .edit(|_, context_parameter_range, _| {
+                (*context_parameter_range) = [-1.0, 2.0];
+                *discontinuity_flag = false;
+            })
+            .unwrap()
+    });
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut regenerated)
         .expect("intersection context regeneration");
@@ -1548,7 +1550,8 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
         ProceduralCurveDefinition::Intersection {
             ref context,
             discontinuity_flag: false,
-        } if context.parameter_range() == [-1.0, 2.0]
+        ..
+    } if context.parameter_range() == [-1.0, 2.0]
     ));
 
     let (mut source_less, _, _) = result.into_parts();
@@ -1565,6 +1568,7 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
     let ProceduralCurveDefinition::Intersection {
         context,
         discontinuity_flag,
+        ..
     } = &round_trip.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected round-trip surface intersection")

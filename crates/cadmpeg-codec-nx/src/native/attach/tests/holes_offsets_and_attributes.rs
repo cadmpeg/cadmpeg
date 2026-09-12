@@ -700,6 +700,7 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
                     false,
                     cadmpeg_ir::geometry::OffsetExtension::Legacy {
                         flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                        cache: None,
                     },
                 )
                 .unwrap(),
@@ -833,6 +834,7 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
                     false,
                     cadmpeg_ir::geometry::OffsetExtension::Legacy {
                         flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                        cache: None,
                     },
                 )
                 .unwrap(),
@@ -952,6 +954,7 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
                     false,
                     cadmpeg_ir::geometry::OffsetExtension::Legacy {
                         flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                        cache: None,
                     },
                 )
                 .unwrap(),
@@ -991,8 +994,7 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
             };
             definition_payload
                 .set_support(SurfaceId::mint("nx:s4:nurbs-surf#other").expect("identity grammar"));
-        })
-        .unwrap();
+        });
     assert!(
         super::thicken_feature_definition(&mismatched_support, std::slice::from_ref(&output))
             .is_none()
@@ -1007,8 +1009,7 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
                 unreachable!()
             };
             definition_payload.try_set_distance(7.0).unwrap();
-        })
-        .unwrap();
+        });
     assert!(super::thicken_feature_definition(&ir, std::slice::from_ref(&output)).is_none());
 }
 
@@ -1117,35 +1118,35 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     let first_support = SurfaceId::mint("nx:s4:blend-support#a").expect("identity grammar");
     let second_support = SurfaceId::mint("nx:s4:blend-support#b").expect("identity grammar");
     for procedural in &mut face_blend_ir.model.procedural_surfaces {
-        procedural
-            .edit_definition(|definition| {
-                let ProceduralSurfaceDefinition::Blend(definition_payload) = definition else {
-                    unreachable!()
-                };
-                let mut edited_supports = definition_payload.supports().clone();
-                let supports = &mut edited_supports;
+        procedural.edit_definition(|definition| {
+            let ProceduralSurfaceDefinition::Blend(definition_payload) = definition else {
+                unreachable!()
+            };
+            let mut edited_supports = definition_payload.supports().clone();
+            let supports = &mut edited_supports;
 
-                *supports = [
-                    Some(BlendSupport {
-                        surface: first_support.clone(),
-                        reversed: false,
-                    }),
-                    Some(BlendSupport {
-                        surface: second_support.clone(),
-                        reversed: true,
-                    }),
-                ];
-                *definition_payload =
-                    cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
-                        edited_supports,
-                        definition_payload.spine().clone(),
-                        definition_payload.radius().clone(),
-                        definition_payload.cross_section().clone(),
-                        definition_payload.native().clone(),
-                    )
-                    .unwrap();
-            })
-            .unwrap();
+            *supports = [
+                Some(BlendSupport {
+                    surface: first_support.clone(),
+                    reversed: false,
+                }),
+                Some(BlendSupport {
+                    surface: second_support.clone(),
+                    reversed: true,
+                }),
+            ];
+            let restored_cache = definition_payload.legacy_cache();
+            *definition_payload =
+                cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
+                    edited_supports,
+                    definition_payload.spine().clone(),
+                    definition_payload.radius().clone(),
+                    definition_payload.cross_section().clone(),
+                    definition_payload.native().cloned().map(Box::new),
+                )
+                .unwrap();
+            definition_payload.set_legacy_cache(restored_cache);
+        });
     }
     attach_test_body_surface(&mut face_blend_ir, &output, first_support);
     attach_test_body_surface(&mut face_blend_ir, &output, second_support);

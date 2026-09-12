@@ -380,10 +380,15 @@
                 [],
                 []
               ],
-              "discontinuity_flag": true
+              "discontinuity_flag": true,
+              "cache": {
+                "layout": "legacy",
+                "cache": {
+                  "fit_tolerance": 0.04
+                }
+              }
             }
-          },
-          "cache_fit_tolerance": 0.04
+          }
         }
       ],
       "procedural_curves": [],

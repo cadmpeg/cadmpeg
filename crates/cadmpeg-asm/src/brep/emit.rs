@@ -303,6 +303,7 @@ fn emit_carrier_surface(
                 ProceduralSurfaceDefinition::Ruled {
                     first: first_id,
                     second: second_id,
+                    cache: None,
                 }
             }
             DecodedProceduralSurfaceDefinition::Sum {
@@ -387,7 +388,10 @@ fn emit_carrier_surface(
                     } => (
                         Some(u_sense),
                         Some(v_sense),
-                        cadmpeg_ir::geometry::OffsetExtension::Legacy { flags: extension },
+                        cadmpeg_ir::geometry::OffsetExtension::Legacy {
+                            flags: extension,
+                            cache: None,
+                        },
                     ),
                     EmbeddedOffsetLayout::Revision(form) => (
                         None,
@@ -471,11 +475,19 @@ fn emit_carrier_surface(
             ProceduralSurfaceCache::Legacy(tolerance) => tolerance,
             ProceduralSurfaceCache::Revision => None,
         };
-        let surface = ProceduralSurface::try_new(
+        let mut definition = definition;
+        if let Some(tolerance) = cache_fit_tolerance {
+            definition
+                .set_legacy_cache(Some(
+                    cadmpeg_ir::geometry::LegacyCache::try_new(tolerance)
+                        .map_err(cadmpeg_core::CodecError::malformed)?,
+                ))
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+        }
+        let surface = ProceduralSurface::new(
             ProceduralSurfaceId::mint(format!("{format}:brep:procedural_surface#{i}"))
                 .expect("valid owning format and numeric record index"),
             definition,
-            cache_fit_tolerance,
             nurbs::proc_curve::record_trailing_surface_bounds(&r.tokens),
         )
         .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -493,6 +505,7 @@ fn emit_carrier_surface(
                     record: Some(
                         UnknownId::mint(unknown_record_id(r, format)).expect("identity grammar"),
                     ),
+                    cache: None,
                 },
                 None,
             )
@@ -634,7 +647,7 @@ fn emit_deformable_surface(
             cadmpeg_ir::geometry::DeformableSurfaceConstruction {
                 support,
                 data,
-                revision_form,
+                cache: cadmpeg_ir::geometry::CacheContract::from_form(revision_form),
                 discontinuities,
                 discontinuity_flag,
             },
@@ -1793,7 +1806,7 @@ fn emit_sweep_surface(
             spine,
             Some(Box::new(cadmpeg_ir::geometry::SweepSurfaceConstruction {
                 primary_kind,
-                revision_form,
+                cache: cadmpeg_ir::geometry::CacheContract::from_form(revision_form),
                 layout,
                 discontinuities: embedded.discontinuities,
                 discontinuity_flag: embedded.discontinuity_flag,
@@ -2605,6 +2618,7 @@ fn emit_carrier_curve(
                                 embedded.discontinuities,
                             )?,
                             discontinuity_flag,
+                            cache: None,
                         }
                     }
                     ProceduralCurveConstruction::ThreeSurface(embedded) => {
@@ -2806,31 +2820,35 @@ fn emit_carrier_curve(
                         )
                     }
                     ProceduralCurveConstruction::Exact => {
-                        cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact
+                        cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact { cache: None }
                     }
                     ProceduralCurveConstruction::Helix(helix) => helix.into_definition()?,
                     ProceduralCurveConstruction::Unknown(native_kind) => {
                         cadmpeg_ir::geometry::ProceduralCurveDefinition::Unknown {
                             native_kind: Some(native_kind),
                             record: None,
+                            cache: None,
                         }
                     }
                 })
             })();
-            definition.and_then(|definition| {
+            definition.and_then(|mut definition| {
                 // A construction that owns a revision-gated cache form states
                 // the tolerance inside it; the native legacy value is that same
                 // tolerance and is not written a second time.
-                let legacy = if definition.owns_revision_cache() {
-                    None
-                } else {
-                    cache_fit_tolerance
-                };
-                ProceduralCurve::try_new(
+                if !definition.owns_revision_cache() {
+                    if let Some(tolerance) = cache_fit_tolerance {
+                        let cache = cadmpeg_ir::geometry::LegacyCache::try_new(tolerance)
+                            .map_err(|_| "invalid procedural curve cache tolerance")?;
+                        definition
+                            .set_legacy_cache(Some(cache))
+                            .map_err(|_| "invalid procedural curve cache tolerance")?;
+                    }
+                }
+                ProceduralCurve::new(
                     ProceduralCurveId::mint(format!("{format}:brep:procedural_curve#{i}"))
                         .expect("valid owning format and numeric record index"),
                     definition,
-                    legacy,
                 )
                 .map_err(admission_cause)
             })
@@ -3133,6 +3151,7 @@ fn emit_spring_curve(
             parameter_range,
             discontinuities,
             discontinuity_flag,
+            cache: None,
         },
         EmbeddedSpringLayout::CacheFirst { context } => {
             let (context, form) = context
@@ -3288,6 +3307,7 @@ fn emit_law_curve(
             .enumerate()
             .map(|(index, formula)| map_formula(&format!("additional:{index}"), formula))
             .collect(),
+        cache: None,
     })
 }
 

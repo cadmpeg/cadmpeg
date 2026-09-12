@@ -65,6 +65,7 @@ fn cacheless_ruled_surface_interpolates_profiles_and_partials() {
         ProceduralSurfaceDefinition::Ruled {
             first: CurveId::mint("test:model:entity#first").expect("valid identity"),
             second: CurveId::mint("test:model:entity#second").expect("valid identity"),
+            cache: None,
         },
         "ruled",
     );

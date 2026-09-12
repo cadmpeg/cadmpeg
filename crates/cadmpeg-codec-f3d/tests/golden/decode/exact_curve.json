@@ -262,9 +262,11 @@
           "id": "f3d:brep:procedural_curve#19",
           "curve": "f3d:brep:entity#19",
           "definition": {
-            "kind": "exact"
-          },
-          "cache_fit_tolerance": 0.004
+            "kind": "exact",
+            "cache": {
+              "fit_tolerance": 0.004
+            }
+          }
         }
       ],
       "features": [],

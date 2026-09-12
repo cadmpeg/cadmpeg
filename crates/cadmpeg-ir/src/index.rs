@@ -336,10 +336,17 @@ mod tests {
             definition: $definition:expr,
             cache_fit_tolerance: $cache_fit_tolerance:expr,
             record_bounds: $record_bounds:expr $(,)?
-        ) => {
-            ProceduralSurface::try_new($id, $definition, $cache_fit_tolerance, $record_bounds)
+        ) => {{
+            let mut definition = $definition;
+            definition
+                .set_legacy_cache($cache_fit_tolerance.map(|value: f64| {
+                    crate::geometry::LegacyCache::try_new(value)
+                        .expect("admissible fit tolerance fixture")
+                }))
+                .expect("valid procedural surface cache fixture");
+            ProceduralSurface::new($id, definition, $record_bounds)
                 .expect("valid procedural surface fixture")
-        };
+        }};
     }
 
     #[test]
@@ -431,7 +438,7 @@ mod tests {
         });
         ir.model.procedural_surfaces.push(procedural_surface! {
             id: exact_construction.clone(),
-            definition: ProceduralSurfaceDefinition::Unknown { record: None },
+            definition: ProceduralSurfaceDefinition::Unknown { record: None, cache: None },
             cache_fit_tolerance: None,
             record_bounds: None,
         });
@@ -455,7 +462,7 @@ mod tests {
                 cached_surface.clone(),
                 procedural_surface! {
                     id: crate::ids::ProceduralSurfaceId::mint("test:model:procedural#cached").expect("valid identity"),
-                    definition: ProceduralSurfaceDefinition::Unknown { record: None },
+                    definition: ProceduralSurfaceDefinition::Unknown { record: None, cache: None },
                     cache_fit_tolerance: Some(0.01),
                     record_bounds: None,
                 },
@@ -482,7 +489,7 @@ mod tests {
                 cached_surface,
                 procedural_surface! {
                     id: crate::ids::ProceduralSurfaceId::mint("test:model:procedural#cached-duplicate").expect("valid identity"),
-                    definition: ProceduralSurfaceDefinition::Unknown { record: None },
+                    definition: ProceduralSurfaceDefinition::Unknown { record: None, cache: None },
                     cache_fit_tolerance: Some(0.02),
                     record_bounds: None,
                 },

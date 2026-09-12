@@ -142,7 +142,21 @@ fn append_oriented_wire_curve(
             .map_err(cadmpeg_core::CodecError::malformed)?
             .derived(&construction_id, "definition")
             .map_err(cadmpeg_core::CodecError::malformed)?;
-        match ProceduralCurve::try_new(construction_id.clone(), definition, cache_fit_tolerance) {
+        let mut definition = definition;
+        let admitted = match cache_fit_tolerance
+            .map(cadmpeg_ir::geometry::LegacyCache::try_new)
+            .transpose()
+            .map_err(|error| error.to_string())
+            .and_then(|cache| {
+                definition
+                    .set_legacy_cache(cache)
+                    .map_err(|error| error.to_string())
+            }) {
+            Ok(()) => ProceduralCurve::new(construction_id.clone(), definition)
+                .map_err(|error| error.to_string()),
+            Err(error) => Err(error),
+        };
+        match admitted {
             Ok(procedural) => {
                 let cache = match geometry {
                     CurveGeometry::Procedural { cache, .. } => cache,
@@ -440,9 +454,8 @@ fn transfer_closed_wire_loops(
                                                 candidate.id == source_procedural.construction_id
                                             })
                                             .is_some_and(|candidate| {
-                                                candidate
-                                                    .replace_definition(definition.clone())
-                                                    .is_ok()
+                                                candidate.replace_definition(definition.clone());
+                                                true
                                             })
                                     } else {
                                         ir.model

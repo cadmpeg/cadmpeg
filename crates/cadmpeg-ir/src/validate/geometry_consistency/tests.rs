@@ -22,10 +22,17 @@ macro_rules! procedural_surface {
             definition: $definition:expr,
         cache_fit_tolerance: $cache_fit_tolerance:expr,
         record_bounds: $record_bounds:expr $(,)?
-    ) => {
-        ProceduralSurface::try_new($id, $definition, $cache_fit_tolerance, $record_bounds)
+    ) => {{
+        let mut definition = $definition;
+        definition
+            .set_legacy_cache($cache_fit_tolerance.map(|value: f64| {
+                crate::geometry::LegacyCache::try_new(value)
+                    .expect("admissible fit tolerance fixture")
+            }))
+            .expect("valid procedural surface cache fixture");
+        ProceduralSurface::new($id, definition, $record_bounds)
             .expect("valid procedural surface fixture")
-    };
+    }};
 }
 
 macro_rules! procedural_curve {
@@ -33,10 +40,16 @@ macro_rules! procedural_curve {
             id: $id:expr,
             definition: $definition:expr,
         cache_fit_tolerance: $cache_fit_tolerance:expr $(,)?
-    ) => {
-        ProceduralCurve::try_new($id, $definition, $cache_fit_tolerance)
-            .expect("valid procedural curve fixture")
-    };
+    ) => {{
+        let mut definition = $definition;
+        definition
+            .set_legacy_cache($cache_fit_tolerance.map(|value: f64| {
+                crate::geometry::LegacyCache::try_new(value)
+                    .expect("admissible fit tolerance fixture")
+            }))
+            .expect("valid procedural curve cache fixture");
+        ProceduralCurve::new($id, definition).expect("valid procedural curve fixture")
+    }};
 }
 
 fn mapped_surface_curve(mapping: [f64; 2]) -> CadIr {
@@ -123,20 +136,18 @@ fn mapped_surface_offset() -> CadIr {
         unreachable!();
     };
     let context = family.context().clone();
-    ir.model.procedural_curves[0]
-        .replace_definition(ProceduralCurveDefinition::SurfaceOffset(
-            crate::geometry::curve_payloads::SurfaceOffsetCurveConstruction::try_new(
-                context,
-                false,
-                [[0.0, 1.0], [0.0, 1.0]],
-                (base, [2.0, 3.0], [Some(2.0), Some(3.0)]),
-                None,
-                25.0,
-                [0.0, 1.0],
-            )
-            .unwrap(),
-        ))
-        .unwrap();
+    ir.model.procedural_curves[0].replace_definition(ProceduralCurveDefinition::SurfaceOffset(
+        crate::geometry::curve_payloads::SurfaceOffsetCurveConstruction::try_new(
+            context,
+            false,
+            [[0.0, 1.0], [0.0, 1.0]],
+            (base, [2.0, 3.0], [Some(2.0), Some(3.0)]),
+            None,
+            25.0,
+            [0.0, 1.0],
+        )
+        .unwrap(),
+    ));
     ir
 }
 
@@ -298,31 +309,31 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
     assert!(findings.is_empty());
 
     let mut context_first = mapped_surface_offset();
-    context_first.model.procedural_curves[0]
-        .edit_definition(|definition| {
-            let ProceduralCurveDefinition::SurfaceOffset(definition_payload) = definition else {
-                unreachable!();
-            };
-            *definition_payload =
-                crate::geometry::curve_payloads::SurfaceOffsetCurveConstruction::try_new(
-                    definition_payload.context().clone(),
-                    *definition_payload.discontinuity_flag(),
-                    [
-                        *definition_payload.base_u_range(),
-                        *definition_payload.base_v_range(),
-                    ],
-                    (
-                        definition_payload.base().clone(),
-                        *definition_payload.base_range(),
-                        [None, None],
-                    ),
-                    definition_payload.cache_first().clone(),
-                    *definition_payload.distance(),
-                    [*definition_payload.shift(), *definition_payload.scale()],
-                )
-                .unwrap();
-        })
-        .unwrap();
+    context_first.model.procedural_curves[0].edit_definition(|definition| {
+        let ProceduralCurveDefinition::SurfaceOffset(definition_payload) = definition else {
+            unreachable!();
+        };
+        let restored_cache = definition_payload.legacy_cache();
+        *definition_payload =
+            crate::geometry::curve_payloads::SurfaceOffsetCurveConstruction::try_new(
+                definition_payload.context().clone(),
+                *definition_payload.discontinuity_flag(),
+                [
+                    *definition_payload.base_u_range(),
+                    *definition_payload.base_v_range(),
+                ],
+                (
+                    definition_payload.base().clone(),
+                    *definition_payload.base_range(),
+                    [None, None],
+                ),
+                definition_payload.cache_first().cloned(),
+                *definition_payload.distance(),
+                [*definition_payload.shift(), *definition_payload.scale()],
+            )
+            .unwrap();
+        definition_payload.set_legacy_cache(restored_cache);
+    });
     check_procedural_support_consistency(&context_first, &mut findings);
     assert!(findings.is_empty());
 
@@ -605,7 +616,8 @@ fn procedural_surface_carrier_requires_its_exact_owner() {
         definition: ProceduralSurfaceDefinition::Exact(crate::geometry::surface_payloads::ExactSurfacePayload::try_new(crate::geometry::ExactSpline::Legacy {
                 ranges: [[0.0, 1.0], [0.0, 1.0]],
                 extension: 0,
-            }).unwrap()),
+    cache: None,
+}).unwrap()),
         cache_fit_tolerance: None,
         record_bounds: None,
     });
@@ -746,6 +758,7 @@ fn edge_endpoint_mismatch_is_flagged() {
                     pcurve: None,
                 }), ir.model.edges[0].param_range().expect("cube edge range"), std::array::from_fn(|_| Vec::new())).unwrap(),
             discontinuity_flag: false,
+            cache: None,
         },
         cache_fit_tolerance: Some(0.99),
     };
@@ -913,17 +926,16 @@ fn pcurve_surface_mismatch_is_flagged() {
         "procedural UVs must not be evaluated on the solved cache, got: {:?}",
         procedural_report.findings
     );
-    procedural.model.procedural_surfaces[0]
-        .replace_definition(ProceduralSurfaceDefinition::Exact(
-            crate::geometry::surface_payloads::ExactSurfacePayload::try_new(
-                crate::geometry::ExactSpline::Legacy {
-                    ranges: [[0.0, 1.0], [0.0, 1.0]],
-                    extension: 0,
-                },
-            )
-            .unwrap(),
-        ))
-        .unwrap();
+    procedural.model.procedural_surfaces[0].replace_definition(ProceduralSurfaceDefinition::Exact(
+        crate::geometry::surface_payloads::ExactSurfacePayload::try_new(
+            crate::geometry::ExactSpline::Legacy {
+                ranges: [[0.0, 1.0], [0.0, 1.0]],
+                extension: 0,
+                cache: None,
+            },
+        )
+        .unwrap(),
+    ));
     let exact_report = validate_neutral(&procedural, Vec::new());
     assert!(
         !exact_report

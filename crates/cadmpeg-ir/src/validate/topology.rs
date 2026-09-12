@@ -1104,7 +1104,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     }
                 }
             }
-            ProceduralSurfaceDefinition::Ruled { first, second } => {
+            ProceduralSurfaceDefinition::Ruled { first, second, .. } => {
                 for curve in [first, second] {
                     if ids.curves(curve.as_str()).is_none() {
                         ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
@@ -1172,6 +1172,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
             }
             ProceduralSurfaceDefinition::Unknown {
                 record: Some(record),
+                ..
             } => {
                 if !ids.contains(record.as_str()) {
                     ref_error(
@@ -1186,7 +1187,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
             | ProceduralSurfaceDefinition::Helix { .. }
             | ProceduralSurfaceDefinition::TSpline { .. }
             | ProceduralSurfaceDefinition::DegenerateTorus { .. }
-            | ProceduralSurfaceDefinition::Unknown { record: None } => {}
+            | ProceduralSurfaceDefinition::Unknown { record: None, .. } => {}
             ProceduralSurfaceDefinition::CurveBounded {
                 support,
                 boundaries,
@@ -1251,7 +1252,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
     }
     for procedural in &ir.model.procedural_curves {
         match procedural.definition() {
-            ProceduralCurveDefinition::Exact | ProceduralCurveDefinition::Helix(_) => {}
+            ProceduralCurveDefinition::Exact { .. } | ProceduralCurveDefinition::Helix(_) => {}
             ProceduralCurveDefinition::Law {
                 context,
                 primary,
@@ -1585,6 +1586,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
             ProceduralCurveDefinition::Unknown {
                 native_kind: _,
                 record: Some(record),
+                ..
             } => {
                 if !ids.contains(record.as_str()) {
                     ref_error(
@@ -1598,6 +1600,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
             ProceduralCurveDefinition::Unknown {
                 native_kind: _,
                 record: None,
+                ..
             } => {}
         }
     }

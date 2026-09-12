@@ -263,9 +263,11 @@
           "curve": "f3d:brep:entity#19",
           "definition": {
             "kind": "unknown",
-            "native_kind": "surf_surf_int_cur"
-          },
-          "cache_fit_tolerance": 0.005
+            "native_kind": "surf_surf_int_cur",
+            "cache": {
+              "fit_tolerance": 0.005
+            }
+          }
         }
       ],
       "features": [],

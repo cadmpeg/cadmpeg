@@ -548,6 +548,7 @@ fn ranged_spring_definition() -> crate::geometry::ProceduralCurveDefinition {
                 parameter_range: [-1.0, 2.0],
                 discontinuities: [Vec::new(), Vec::new(), Vec::new()],
                 discontinuity_flag: true,
+                cache: None,
             },
             4,
         )
@@ -1131,10 +1132,15 @@ fn the_nested_construction_enums_reject_an_unknown_key_by_name() {
 }
 
 #[test]
-fn a_law_surface_full_tail_is_an_empty_struct_variant() {
-    let tail = crate::geometry::LawSurfaceTail::Full {};
+fn a_law_surface_full_tail_states_its_solved_cache_contract() {
+    let tail = crate::geometry::LawSurfaceTail::Full {
+        cache: crate::geometry::LegacyCache::try_new(0.25).expect("fit tolerance"),
+    };
     let wire = serde_json::to_value(tail.clone()).unwrap();
-    assert_eq!(wire, serde_json::json!({"kind": "full"}));
+    assert_eq!(
+        wire,
+        serde_json::json!({"kind": "full", "cache": {"fit_tolerance": 0.25}})
+    );
     assert_eq!(
         serde_json::from_value::<crate::geometry::LawSurfaceTail>(wire).unwrap(),
         tail

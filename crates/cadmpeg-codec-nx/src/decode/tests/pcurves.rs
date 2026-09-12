@@ -307,6 +307,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
                 )
                 .unwrap(),
                 parameterization: None,
+                cache: None,
             },
         )
         .unwrap(),
@@ -1075,7 +1076,7 @@ fn saved_offset_cache_retains_its_procedural_lineage() {
             source_object: None,
         },
     ]);
-    let procedural = ProceduralSurface::try_new(
+    let procedural = ProceduralSurface::new(
         ProceduralSurfaceId::mint("test:model:entity#nx:test:offset").expect("identity grammar"),
         ProceduralSurfaceDefinition::Offset(
             cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
@@ -1086,11 +1087,13 @@ fn saved_offset_cache_retains_its_procedural_lineage() {
                 false,
                 cadmpeg_ir::geometry::OffsetExtension::Legacy {
                     flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                    cache: Some(
+                        cadmpeg_ir::geometry::LegacyCache::try_new(0.0).expect("fit tolerance"),
+                    ),
                 },
             )
             .unwrap(),
         ),
-        Some(0.0),
         None,
     )
     .unwrap();
@@ -1144,6 +1147,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
                 )
                 .unwrap(),
                 parameterization: None,
+                cache: None,
             },
         )
         .unwrap(),
@@ -1309,17 +1313,15 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         )
     );
 
-    ir.model.procedural_curves[0]
-        .edit_definition(|definition| {
-            let ProceduralCurveDefinition::TolerantIntersection {
-                parameterization, ..
-            } = definition
-            else {
-                unreachable!();
-            };
-            *parameterization = None;
-        })
-        .unwrap();
+    ir.model.procedural_curves[0].edit_definition(|definition| {
+        let ProceduralCurveDefinition::TolerantIntersection {
+            parameterization, ..
+        } = definition
+        else {
+            unreachable!();
+        };
+        *parameterization = None;
+    });
     let edge = &mut ir.model.edges[0];
     edge.set_param_range(None).unwrap();
     std::mem::swap(&mut edge.start, &mut edge.end);
@@ -1373,27 +1375,25 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
     for (point, position) in ir.model.points.iter_mut().zip(endpoints) {
         point.position = position;
     }
-    ir.model.procedural_curves[0]
-        .edit_definition(|definition| {
-            let ProceduralCurveDefinition::TolerantIntersection {
-                construction: intersection,
-                parameterization,
-                ..
-            } = definition
-            else {
-                unreachable!();
-            };
-            let supports = intersection.supports();
-            let tolerance = intersection.tolerance();
-            *intersection = cadmpeg_ir::geometry::TolerantIntersectionConstruction::try_new(
-                supports.clone(),
-                endpoints,
-                tolerance,
-            )
-            .unwrap();
-            *parameterization = None;
-        })
+    ir.model.procedural_curves[0].edit_definition(|definition| {
+        let ProceduralCurveDefinition::TolerantIntersection {
+            construction: intersection,
+            parameterization,
+            ..
+        } = definition
+        else {
+            unreachable!();
+        };
+        let supports = intersection.supports();
+        let tolerance = intersection.tolerance();
+        *intersection = cadmpeg_ir::geometry::TolerantIntersectionConstruction::try_new(
+            supports.clone(),
+            endpoints,
+            tolerance,
+        )
         .unwrap();
+        *parameterization = None;
+    });
     ir.model.edges[0].set_param_range(None).unwrap();
     for coedge in &mut ir.model.coedges {
         coedge.pcurves[0].parameter_range =
@@ -1437,27 +1437,25 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         })
     ));
 
-    ir.model.procedural_curves[0]
-        .edit_definition(|definition| {
-            let ProceduralCurveDefinition::TolerantIntersection {
-                construction: intersection,
-                parameterization,
-                ..
-            } = definition
-            else {
-                unreachable!();
-            };
-            let supports = intersection.supports();
-            let endpoints = intersection.endpoints();
-            *intersection = cadmpeg_ir::geometry::TolerantIntersectionConstruction::try_new(
-                supports.clone(),
-                *endpoints,
-                10.0,
-            )
-            .unwrap();
-            *parameterization = None;
-        })
+    ir.model.procedural_curves[0].edit_definition(|definition| {
+        let ProceduralCurveDefinition::TolerantIntersection {
+            construction: intersection,
+            parameterization,
+            ..
+        } = definition
+        else {
+            unreachable!();
+        };
+        let supports = intersection.supports();
+        let endpoints = intersection.endpoints();
+        *intersection = cadmpeg_ir::geometry::TolerantIntersectionConstruction::try_new(
+            supports.clone(),
+            *endpoints,
+            10.0,
+        )
         .unwrap();
+        *parameterization = None;
+    });
     ir.model.edges[0].set_param_range(None).unwrap();
     complete_tolerant_intersection_pcurves_from_serialized_branches(
         &mut ir,
@@ -1549,7 +1547,7 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
         )),
         source_object: None,
     });
-    let procedural = ProceduralCurve::try_new(
+    let procedural = ProceduralCurve::new(
         ProceduralCurveId::mint("nx:test:intersection#0").expect("identity grammar"),
         ProceduralCurveDefinition::Intersection {
             context: IntcurveSupportContext::try_new(
@@ -1568,8 +1566,8 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
             )
             .unwrap(),
             discontinuity_flag: false,
+            cache: Some(cadmpeg_ir::geometry::LegacyCache::try_new(2.0).expect("fit tolerance")),
         },
-        Some(2.0),
     )
     .unwrap();
     ir.model
@@ -1650,6 +1648,7 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
                     false,
                     cadmpeg_ir::geometry::OffsetExtension::Legacy {
                         flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                        cache: None,
                     },
                 )
                 .unwrap(),

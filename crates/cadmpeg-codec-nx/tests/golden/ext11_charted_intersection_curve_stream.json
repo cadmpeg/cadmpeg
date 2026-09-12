@@ -130,9 +130,11 @@
         "presentation_layers": [],
         "procedural_curves": [
           {
-            "cache_fit_tolerance": 0.01,
             "curve": "nx:s0:intersection-crv#0",
             "definition": {
+              "cache": {
+                "fit_tolerance": 0.01
+              },
               "context": {
                 "discontinuities": [
                   [],

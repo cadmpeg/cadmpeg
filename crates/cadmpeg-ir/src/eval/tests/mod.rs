@@ -31,10 +31,17 @@ macro_rules! procedural_surface {
         definition: $definition:expr,
         cache_fit_tolerance: $cache_fit_tolerance:expr,
         record_bounds: $record_bounds:expr $(,)?
-    ) => {
-        ProceduralSurface::try_new($id, $definition, $cache_fit_tolerance, $record_bounds)
+    ) => {{
+        let mut definition = $definition;
+        definition
+            .set_legacy_cache($cache_fit_tolerance.map(|value: f64| {
+                crate::geometry::LegacyCache::try_new(value)
+                    .expect("admissible fit tolerance fixture")
+            }))
+            .expect("valid procedural surface cache fixture");
+        ProceduralSurface::new($id, definition, $record_bounds)
             .expect("valid procedural surface fixture")
-    };
+    }};
 }
 
 macro_rules! procedural_curve {
@@ -42,10 +49,16 @@ macro_rules! procedural_curve {
         id: $id:expr,
         definition: $definition:expr,
         cache_fit_tolerance: $cache_fit_tolerance:expr $(,)?
-    ) => {
-        ProceduralCurve::try_new($id, $definition, $cache_fit_tolerance)
-            .expect("valid procedural curve fixture")
-    };
+    ) => {{
+        let mut definition = $definition;
+        definition
+            .set_legacy_cache($cache_fit_tolerance.map(|value: f64| {
+                crate::geometry::LegacyCache::try_new(value)
+                    .expect("admissible fit tolerance fixture")
+            }))
+            .expect("valid procedural curve cache fixture");
+        ProceduralCurve::new($id, definition).expect("valid procedural curve fixture")
+    }};
 }
 
 mod helix;
@@ -951,13 +964,13 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
     ir.model.procedural_surfaces = vec![
         procedural_surface! {
             id: first_construction,
-            definition: ProceduralSurfaceDefinition::Offset(crate::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(support_id, 2.0, None, None, false, OffsetExtension::Legacy { flags: LegacyExtensionFlags::Absent {} }).unwrap()),
+            definition: ProceduralSurfaceDefinition::Offset(crate::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(support_id, 2.0, None, None, false, OffsetExtension::Legacy { flags: LegacyExtensionFlags::Absent {}, cache: None }).unwrap()),
             cache_fit_tolerance: None,
             record_bounds: None,
         },
         procedural_surface! {
             id: second_construction,
-            definition: ProceduralSurfaceDefinition::Offset(crate::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(first_id, -5.0, None, None, false, OffsetExtension::Legacy { flags: LegacyExtensionFlags::Absent {} }).unwrap()),
+            definition: ProceduralSurfaceDefinition::Offset(crate::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(first_id, -5.0, None, None, false, OffsetExtension::Legacy { flags: LegacyExtensionFlags::Absent {}, cache: None }).unwrap()),
             cache_fit_tolerance: None,
             record_bounds: None,
         },
@@ -1032,7 +1045,7 @@ fn linear_offset_support_extension_uses_the_boundary_tangent_plane() {
     ];
     ir.model.procedural_surfaces.push(procedural_surface! {
         id: construction,
-        definition: ProceduralSurfaceDefinition::Offset(crate::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(support_id, 0.0, None, None, true, OffsetExtension::Legacy { flags: LegacyExtensionFlags::Absent {} }).unwrap()),
+        definition: ProceduralSurfaceDefinition::Offset(crate::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(support_id, 0.0, None, None, true, OffsetExtension::Legacy { flags: LegacyExtensionFlags::Absent {}, cache: None }).unwrap()),
         cache_fit_tolerance: None,
         record_bounds: None,
     });
@@ -1073,7 +1086,7 @@ fn offset_uses_the_nurbs_carrier_normal_orientation() {
     ];
     ir.model.procedural_surfaces.push(procedural_surface! {
         id: construction,
-        definition: ProceduralSurfaceDefinition::Offset(crate::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(support_id, 2.0, None, None, false, OffsetExtension::Legacy { flags: LegacyExtensionFlags::Absent {} }).unwrap()),
+        definition: ProceduralSurfaceDefinition::Offset(crate::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(support_id, 2.0, None, None, false, OffsetExtension::Legacy { flags: LegacyExtensionFlags::Absent {}, cache: None }).unwrap()),
         cache_fit_tolerance: None,
         record_bounds: None,
     });
@@ -1140,7 +1153,7 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
             offset_id.clone(),
             procedural_surface! {
                 id: offset_construction,
-                definition: ProceduralSurfaceDefinition::Offset(crate::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(subset_id, 2.0, None, None, false, OffsetExtension::Legacy { flags: LegacyExtensionFlags::Absent {} }).unwrap()),
+                definition: ProceduralSurfaceDefinition::Offset(crate::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(subset_id, 2.0, None, None, false, OffsetExtension::Legacy { flags: LegacyExtensionFlags::Absent {}, cache: None }).unwrap()),
                 cache_fit_tolerance: None,
                 record_bounds: None,
             },
@@ -1381,7 +1394,7 @@ fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
         id: ProceduralSurfaceId::mint("test:model:entity#cacheless-sweep-construction").expect("valid identity"),
         definition: ProceduralSurfaceDefinition::Sweep(crate::geometry::surface_payloads::SweepSurfacePayload::try_new(profile_id, spine_id, Some(Box::new(SweepSurfaceConstruction {
                 primary_kind: 0,
-                revision_form: Some(SweepRevisionForm {
+                cache: crate::geometry::CacheContract::Revision { form: SweepRevisionForm {
                     revision: 23100,
                     primary_flag: false,
                     profile_endpoints: [Some(0.0), Some(1.0)],
@@ -1389,7 +1402,7 @@ fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
                     cache: RevisionCacheForm::Parameterization(
                         RevisionSurfaceParameterization::default(),
                     ),
-                }),
+                } },
                 layout: SweepSurfaceLayout::LawDriven {
                     mode: 10,
                     profile_range: [0.0, 1.0],

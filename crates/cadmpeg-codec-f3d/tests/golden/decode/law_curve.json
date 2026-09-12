@@ -427,9 +427,11 @@
               {
                 "kind": "null"
               }
-            ]
-          },
-          "cache_fit_tolerance": 0.005
+            ],
+            "cache": {
+              "fit_tolerance": 0.005
+            }
+          }
         }
       ],
       "features": [],

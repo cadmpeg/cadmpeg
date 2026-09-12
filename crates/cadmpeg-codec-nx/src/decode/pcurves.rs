@@ -447,6 +447,7 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
             let ProceduralCurveDefinition::TolerantIntersection {
                 construction: intersection,
                 parameterization: None,
+                ..
             } = procedural.definition()
             else {
                 continue;
@@ -579,7 +580,7 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
         else {
             continue;
         };
-        let Ok(range) = procedural.edit_definition(|definition| {
+        let range = procedural.edit_definition(|definition| {
             let ProceduralCurveDefinition::TolerantIntersection {
                 parameterization: slot,
                 ..
@@ -593,9 +594,7 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
             let range = parameterization.parameter_range();
             *slot = Some(parameterization);
             Some(range)
-        }) else {
-            continue;
-        };
+        });
         let Some(range) = range else {
             continue;
         };
@@ -1249,7 +1248,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
         let Some(procedural) = ir.model.procedural_curves.get_mut(procedural_index) else {
             continue;
         };
-        let Ok(completed) = procedural.edit_definition(|definition| {
+        let completed = procedural.edit_definition(|definition| {
             let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
                 return false;
             };
@@ -1264,9 +1263,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
             } else {
                 false
             }
-        }) else {
-            continue;
-        };
+        });
         if completed && cache_backed {
             procedural.raise_cache_fit_tolerance(tolerance);
         }
@@ -1407,6 +1404,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                 ProceduralCurveDefinition::TolerantIntersection {
                     construction: intersection,
                     parameterization: None,
+                    ..
                 } => {
                     let supports = intersection.supports();
                     let endpoints = intersection.endpoints();
@@ -1539,7 +1537,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
         let Some(procedural) = ir.model.procedural_curves.get_mut(procedural_index) else {
             continue;
         };
-        let Ok(completed) = procedural.edit_definition(|definition| match definition {
+        let completed = procedural.edit_definition(|definition| match definition {
             ProceduralCurveDefinition::Intersection { context, .. }
                 if context.sides().iter().all(|side| {
                     pcurve_requires_completion(side.pcurve.as_ref().map(|pcurve| &pcurve.geometry))
@@ -1561,9 +1559,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                 true
             }
             _ => false,
-        }) else {
-            continue;
-        };
+        });
         if !completed {
             continue;
         }
@@ -3454,6 +3450,7 @@ pub(crate) fn attach_tolerant_edge_intersections_with_budget(
             ProceduralCurveDefinition::TolerantIntersection {
                 construction: admitted_intersection,
                 parameterization: None,
+                cache: None,
             },
         ) else {
             continue;
@@ -3764,6 +3761,7 @@ mod tests {
                         )
                         .unwrap(),
                         discontinuity_flag: false,
+                        cache: None,
                     },
                 )
                 .unwrap(),

@@ -1498,7 +1498,7 @@ fn procedural_curve_outside_the_writable_set_is_reported_not_panicked() {
     ir.model.procedural_curves.push(
         cadmpeg_ir::geometry::ProceduralCurve::new(
             construction_id,
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact,
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact { cache: None },
         )
         .unwrap(),
     );
@@ -1579,7 +1579,7 @@ fn elliptical_cone_reduction_is_reported() {
 fn procedural_construction_reduction_is_reported() {
     let mut ir = unit_cube();
     let owner = ir.model.curves[0].id.clone();
-    let procedural = cadmpeg_ir::geometry::ProceduralCurve::try_new(
+    let procedural = cadmpeg_ir::geometry::ProceduralCurve::new(
         ProceduralCurveId::mint("test:model:procedural-curve#generated_int_cur")
             .expect("identity grammar"),
         cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection {
@@ -1593,8 +1593,8 @@ fn procedural_construction_reduction_is_reported() {
             )
             .unwrap(),
             discontinuity_flag: false,
+            cache: Some(cadmpeg_ir::geometry::LegacyCache::try_new(0.01).expect("fit tolerance")),
         },
-        Some(0.01),
     )
     .unwrap();
     ir.model.add_procedural_curve(owner, procedural).unwrap();

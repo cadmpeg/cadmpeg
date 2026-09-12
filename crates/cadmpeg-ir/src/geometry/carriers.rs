@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{default_true, CacheFitToleranceError, FitTolerance};
+use super::{default_true, CacheContractError, FitTolerance};
 use crate::features::FinitePoint3;
 use crate::ids::PcurveId;
 use crate::math::{Point2, Point3, Vector3};
@@ -3531,7 +3531,7 @@ impl PcurveInlineForm {
     }
 
     /// Replace the fit tolerance while retaining its previous value on rejection.
-    pub fn set_fit_tolerance(&mut self, value: f64) -> Result<(), CacheFitToleranceError> {
+    pub fn set_fit_tolerance(&mut self, value: f64) -> Result<(), CacheContractError> {
         self.fit_tolerance = FitTolerance::try_new(value)?;
         Ok(())
     }
@@ -3612,7 +3612,7 @@ impl PcurveGeneralForm {
     }
 
     /// Replace the fit tolerance while retaining its previous value on rejection.
-    pub fn set_fit_tolerance(&mut self, value: Option<f64>) -> Result<(), CacheFitToleranceError> {
+    pub fn set_fit_tolerance(&mut self, value: Option<f64>) -> Result<(), CacheContractError> {
         self.fit_tolerance = value.map(FitTolerance::try_new).transpose()?;
         Ok(())
     }

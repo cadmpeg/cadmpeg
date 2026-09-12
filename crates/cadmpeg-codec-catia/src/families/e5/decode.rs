@@ -1584,6 +1584,7 @@ fn emit_e5_curves_and_edges(
                 ProceduralCurveDefinition::Intersection {
                     context: context.clone(),
                     discontinuity_flag: false,
+                    cache: None,
                 },
             )
             .map_err(cadmpeg_core::CodecError::malformed)?,

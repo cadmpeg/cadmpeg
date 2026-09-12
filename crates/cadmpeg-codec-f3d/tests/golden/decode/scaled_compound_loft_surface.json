@@ -623,9 +623,11 @@
               ],
               "tail_singularity": 12,
               "tail_curve": "f3d:brep:procedural_surface#9:scaled_cloft:tail:curve"
+            },
+            "cache": {
+              "fit_tolerance": 0.04
             }
-          },
-          "cache_fit_tolerance": 0.04
+          }
         }
       ],
       "procedural_curves": [],

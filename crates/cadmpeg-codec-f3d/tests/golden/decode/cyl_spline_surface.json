@@ -399,9 +399,14 @@
               "x": 40.0,
               "y": 50.0,
               "z": 60.0
+            },
+            "cache": {
+              "layout": "legacy",
+              "cache": {
+                "fit_tolerance": 0.02
+              }
             }
-          },
-          "cache_fit_tolerance": 0.02
+          }
         }
       ],
       "procedural_curves": [],

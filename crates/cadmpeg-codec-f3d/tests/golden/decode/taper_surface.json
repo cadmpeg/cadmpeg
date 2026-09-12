@@ -432,9 +432,14 @@
             "parameter": 0.35,
             "taper": {
               "kind": "standard"
+            },
+            "cache": {
+              "layout": "legacy",
+              "cache": {
+                "fit_tolerance": 0.075
+              }
             }
-          },
-          "cache_fit_tolerance": 0.075
+          }
         }
       ],
       "procedural_curves": [],

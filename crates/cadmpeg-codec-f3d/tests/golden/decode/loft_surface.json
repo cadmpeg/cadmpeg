@@ -778,9 +778,14 @@
                 "kind": "enum",
                 "value": -7
               }
-            ]
-          },
-          "cache_fit_tolerance": 0.085
+            ],
+            "cache": {
+              "layout": "legacy",
+              "cache": {
+                "fit_tolerance": 0.085
+              }
+            }
+          }
         }
       ],
       "procedural_curves": [],

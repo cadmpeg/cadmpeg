@@ -419,9 +419,11 @@
           "definition": {
             "kind": "ruled",
             "first": "f3d:brep:procedural_surface#9:profile0",
-            "second": "f3d:brep:procedural_surface#9:profile1"
-          },
-          "cache_fit_tolerance": 0.025
+            "second": "f3d:brep:procedural_surface#9:profile1",
+            "cache": {
+              "fit_tolerance": 0.025
+            }
+          }
         }
       ],
       "procedural_curves": [],

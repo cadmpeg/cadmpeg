@@ -57,7 +57,6 @@ pub(super) fn normalize_model_lengths(
     for procedural in &mut ir.model.procedural_surfaces {
         procedural
             .edit_definition(|definition| definition.scale_lengths(length_scale_mm))
-            .and_then(std::convert::identity)
             .map_err(cadmpeg_core::CodecError::malformed)?;
         procedural
             .scale_cache_fit_tolerance(length_scale_mm)
@@ -66,7 +65,6 @@ pub(super) fn normalize_model_lengths(
     for procedural in &mut ir.model.procedural_curves {
         procedural
             .edit_definition(|definition| definition.scale_lengths(length_scale_mm))
-            .and_then(std::convert::identity)
             .map_err(cadmpeg_core::CodecError::malformed)?;
         procedural
             .scale_cache_fit_tolerance(length_scale_mm)
@@ -1588,6 +1586,9 @@ impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralSurfaceDefinitio
     ) -> Result<(), cadmpeg_ir::geometry::ProceduralGeometryError> {
         use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 
+        // A rebuilt payload is minted fresh, so the solved-cache contract it
+        // states is carried across the rebuild.
+        let cache = self.legacy_cache();
         match self {
             ProceduralSurfaceDefinition::Extrusion(payload) => {
                 let mut direction = *payload.direction();
@@ -1602,7 +1603,7 @@ impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralSurfaceDefinitio
                         payload.parameter_interval(),
                         direction,
                         native_position,
-                        payload.revision_form().clone(),
+                        payload.revision_form().cloned(),
                     )?;
             }
             ProceduralSurfaceDefinition::LinearSweep(payload) => {
@@ -1625,7 +1626,7 @@ impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralSurfaceDefinitio
                         payload.angular_parameter_interval(),
                         payload.parameter_interval(),
                         *payload.transposed(),
-                        payload.revision_form().clone(),
+                        payload.revision_form().cloned(),
                     )?;
             }
             ProceduralSurfaceDefinition::AxisRevolution(payload) => {
@@ -1644,11 +1645,12 @@ impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralSurfaceDefinitio
                     payload.first().clone(),
                     payload.second().clone(),
                     basepoint,
-                    payload.revision_form().clone(),
+                    payload.revision_form().cloned(),
                 )?;
             }
             _ => {}
         }
+        self.set_legacy_cache(cache)?;
         Ok(())
     }
 }
@@ -2177,21 +2179,26 @@ mod tests {
             ),
             source_object: None,
         });
-        let surface = cadmpeg_ir::geometry::ProceduralSurface::try_new(
+        let mut surface_definition = cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(
+            cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+                cadmpeg_ir::ids::CurveId::mint("test:model:entity#directrix")
+                    .expect("identity grammar"),
+                Some([1.0, 2.0]),
+                Vector3::new(1.0, 2.0, 3.0),
+                Some(Point3::new(4.0, 5.0, 6.0)),
+                None,
+            )
+            .unwrap(),
+        );
+        surface_definition
+            .set_legacy_cache(Some(
+                cadmpeg_ir::geometry::LegacyCache::try_new(7.0).unwrap(),
+            ))
+            .unwrap();
+        let surface = cadmpeg_ir::geometry::ProceduralSurface::new(
             cadmpeg_ir::ids::ProceduralSurfaceId::mint("test:model:entity#surface-construction")
                 .expect("identity grammar"),
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(
-                cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
-                    cadmpeg_ir::ids::CurveId::mint("test:model:entity#directrix")
-                        .expect("identity grammar"),
-                    Some([1.0, 2.0]),
-                    Vector3::new(1.0, 2.0, 3.0),
-                    Some(Point3::new(4.0, 5.0, 6.0)),
-                    None,
-                )
-                .unwrap(),
-            ),
-            Some(7.0),
+            surface_definition,
             Some([Some(8.0), None, Some(9.0), None]),
         )
         .unwrap();
@@ -2207,22 +2214,27 @@ mod tests {
             }),
             source_object: None,
         });
-        let curve = cadmpeg_ir::geometry::ProceduralCurve::try_new(
+        let mut curve_definition = cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(
+            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+                [0.0, 1.0],
+                Point3::new(1.0, 2.0, 3.0),
+                Vector3::new(4.0, 5.0, 6.0),
+                Vector3::new(-5.0, 4.0, 6.0),
+                Vector3::new(10.0, 11.0, 12.0),
+                0.25,
+                Vector3::new(0.0, 0.0, 1.0),
+            )
+            .unwrap(),
+        );
+        curve_definition
+            .set_legacy_cache(Some(
+                cadmpeg_ir::geometry::LegacyCache::try_new(13.0).unwrap(),
+            ))
+            .unwrap();
+        let curve = cadmpeg_ir::geometry::ProceduralCurve::new(
             cadmpeg_ir::ids::ProceduralCurveId::mint("test:model:entity#curve-construction")
                 .expect("identity grammar"),
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(
-                cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
-                    [0.0, 1.0],
-                    Point3::new(1.0, 2.0, 3.0),
-                    Vector3::new(4.0, 5.0, 6.0),
-                    Vector3::new(-5.0, 4.0, 6.0),
-                    Vector3::new(10.0, 11.0, 12.0),
-                    0.25,
-                    Vector3::new(0.0, 0.0, 1.0),
-                )
-                .unwrap(),
-            ),
-            Some(13.0),
+            curve_definition,
         )
         .unwrap();
         ir.model.add_procedural_curve(curve_id, curve).unwrap();

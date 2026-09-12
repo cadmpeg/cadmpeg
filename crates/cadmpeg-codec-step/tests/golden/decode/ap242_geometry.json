@@ -375,9 +375,11 @@
           "id": "step:construction:offset_curve#26"
         },
         {
-          "cache_fit_tolerance": 0.0,
           "curve": "step:data:curve#22",
           "definition": {
+            "cache": {
+              "fit_tolerance": 0.0
+            },
             "kind": "subset",
             "parameter_range": [
               0.0,
@@ -389,9 +391,11 @@
           "id": "step:construction:trimmed_curve#22"
         },
         {
-          "cache_fit_tolerance": 0.0,
           "curve": "step:data:curve#29",
           "definition": {
+            "cache": {
+              "fit_tolerance": 0.0
+            },
             "kind": "subset",
             "parameter_range": [
               0.0,

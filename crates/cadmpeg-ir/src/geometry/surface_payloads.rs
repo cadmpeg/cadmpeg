@@ -9,6 +9,7 @@ use super::{
     SplineSurfaceParameters, SweepSurfaceConstruction, VariableBlendConstruction,
     VertexBlendConstruction,
 };
+use super::{CacheContract, LegacyCache};
 use super::{
     DirectedParameterRange, OffsetExtension, PcurveGeometry, ProceduralGeometryError,
     RevisionSurfaceForm, TaperSurfaceKind,
@@ -96,9 +97,10 @@ pub struct TaperSurfaceConstruction {
     parameter: FiniteReal,
     /// Subtype-specific taper tail.
     taper: TaperSurfaceKind,
-    /// Revision-gated form fields; absent from the pre-revision layout.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    revision_form: Option<RevisionSurfaceForm>,
+    /// Cache contract: the revision-gated form, or the legacy
+    /// solved-cache tolerance this construction states instead.
+    #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
+    cache: CacheContract<RevisionSurfaceForm>,
 }
 
 #[derive(Deserialize)]
@@ -115,14 +117,15 @@ struct TaperSurfaceConstructionWire {
     parameter: f64,
     /// Subtype-specific taper tail.
     taper: TaperSurfaceKind,
-    /// Revision-gated form fields; absent from the pre-revision layout.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    revision_form: Option<RevisionSurfaceForm>,
+    /// Cache contract: the revision-gated form, or the legacy
+    /// solved-cache tolerance this construction states instead.
+    #[serde(default)]
+    cache: CacheContract<RevisionSurfaceForm>,
 }
 
 impl TaperSurfaceConstruction {
     pub(super) fn revision_cache_mut(&mut self) -> Option<&mut super::RevisionCacheForm> {
-        self.revision_form.as_mut().map(|form| &mut form.cache)
+        self.cache.form_mut().map(|form| &mut form.cache)
     }
     /// Admit the construction parameters.
     pub fn try_new(
@@ -172,7 +175,7 @@ impl TaperSurfaceConstruction {
                 "Taper.parameter is not finite",
             ))?,
             taper,
-            revision_form,
+            cache: CacheContract::from_form(revision_form),
         })
     }
     /// Return the support.
@@ -196,22 +199,24 @@ impl TaperSurfaceConstruction {
         &self.taper
     }
     /// Return the revision form.
-    pub fn revision_form(&self) -> &Option<RevisionSurfaceForm> {
-        &self.revision_form
+    pub const fn revision_form(&self) -> Option<&RevisionSurfaceForm> {
+        self.cache.form()
     }
 }
 
 impl TryFrom<TaperSurfaceConstructionWire> for TaperSurfaceConstruction {
     type Error = ProceduralGeometryError;
     fn try_from(wire: TaperSurfaceConstructionWire) -> Result<Self, Self::Error> {
-        Self::try_new(
+        let mut payload = Self::try_new(
             wire.support,
             wire.reference,
             wire.pcurve,
             wire.parameter,
             wire.taper,
-            wire.revision_form,
-        )
+            wire.cache.form().cloned(),
+        )?;
+        payload.cache = wire.cache;
+        Ok(payload)
     }
 }
 
@@ -236,10 +241,11 @@ pub struct ExtrusionSurfaceConstruction {
     /// Native model-space position following the sweep direction, when carried.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     native_position: Option<FinitePoint3>,
-    /// Revision-gated form fields; absent from the pre-revision layout.
+    /// Cache contract: the revision-gated form, or the legacy
+    /// solved-cache tolerance this construction states instead.
     /// The directrix parameter interval is `parameter_interval`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    revision_form: Option<RevisionSurfaceForm>,
+    #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
+    cache: CacheContract<RevisionSurfaceForm>,
 }
 
 #[derive(Deserialize)]
@@ -257,15 +263,16 @@ struct ExtrusionSurfaceConstructionWire {
     /// Native model-space position following the sweep direction, when carried.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     native_position: Option<Point3>,
-    /// Revision-gated form fields; absent from the pre-revision layout.
+    /// Cache contract: the revision-gated form, or the legacy
+    /// solved-cache tolerance this construction states instead.
     /// The directrix parameter interval is `parameter_interval`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    revision_form: Option<RevisionSurfaceForm>,
+    #[serde(default)]
+    cache: CacheContract<RevisionSurfaceForm>,
 }
 
 impl ExtrusionSurfaceConstruction {
     pub(super) fn revision_cache_mut(&mut self) -> Option<&mut super::RevisionCacheForm> {
-        self.revision_form.as_mut().map(|form| &mut form.cache)
+        self.cache.form_mut().map(|form| &mut form.cache)
     }
     /// Admit the construction parameters.
     pub fn try_new(
@@ -294,7 +301,7 @@ impl ExtrusionSurfaceConstruction {
                     ))
                 })
                 .transpose()?,
-            revision_form,
+            cache: CacheContract::from_form(revision_form),
         })
     }
     /// Return the directrix.
@@ -314,21 +321,23 @@ impl ExtrusionSurfaceConstruction {
         self.native_position.map(FinitePoint3::get)
     }
     /// Return the revision form.
-    pub fn revision_form(&self) -> &Option<RevisionSurfaceForm> {
-        &self.revision_form
+    pub const fn revision_form(&self) -> Option<&RevisionSurfaceForm> {
+        self.cache.form()
     }
 }
 
 impl TryFrom<ExtrusionSurfaceConstructionWire> for ExtrusionSurfaceConstruction {
     type Error = ProceduralGeometryError;
     fn try_from(wire: ExtrusionSurfaceConstructionWire) -> Result<Self, Self::Error> {
-        Self::try_new(
+        let mut payload = Self::try_new(
             wire.directrix,
             wire.parameter_interval,
             wire.direction,
             wire.native_position,
-            wire.revision_form,
-        )
+            wire.cache.form().cloned(),
+        )?;
+        payload.cache = wire.cache;
+        Ok(payload)
     }
 }
 
@@ -361,10 +370,11 @@ pub struct RevolutionSurfaceConstruction {
     parameter_interval: Option<ParameterInterval>,
     /// Whether the source parameter directions are transposed.
     transposed: bool,
-    /// Revision-gated form fields; absent from the pre-revision layout.
+    /// Cache contract: the revision-gated form, or the legacy
+    /// solved-cache tolerance this construction states instead.
     /// The profile curve's optional endpoints are `reference_endpoints`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    revision_form: Option<RevisionSurfaceForm>,
+    #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
+    cache: CacheContract<RevisionSurfaceForm>,
 }
 
 #[derive(Deserialize)]
@@ -390,15 +400,16 @@ struct RevolutionSurfaceConstructionWire {
     parameter_interval: Option<[f64; 2]>,
     /// Whether the source parameter directions are transposed.
     transposed: bool,
-    /// Revision-gated form fields; absent from the pre-revision layout.
+    /// Cache contract: the revision-gated form, or the legacy
+    /// solved-cache tolerance this construction states instead.
     /// The profile curve's optional endpoints are `reference_endpoints`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    revision_form: Option<RevisionSurfaceForm>,
+    #[serde(default)]
+    cache: CacheContract<RevisionSurfaceForm>,
 }
 
 impl RevolutionSurfaceConstruction {
     pub(super) fn revision_cache_mut(&mut self) -> Option<&mut super::RevisionCacheForm> {
-        self.revision_form.as_mut().map(|form| &mut form.cache)
+        self.cache.form_mut().map(|form| &mut form.cache)
     }
     /// Admit the construction parameters.
     pub fn try_new(
@@ -447,7 +458,7 @@ impl RevolutionSurfaceConstruction {
             angular_parameter_interval,
             parameter_interval,
             transposed,
-            revision_form,
+            cache: CacheContract::from_form(revision_form),
         })
     }
     /// Return the directrix.
@@ -480,23 +491,25 @@ impl RevolutionSurfaceConstruction {
         &self.transposed
     }
     /// Return the revision form.
-    pub fn revision_form(&self) -> &Option<RevisionSurfaceForm> {
-        &self.revision_form
+    pub const fn revision_form(&self) -> Option<&RevisionSurfaceForm> {
+        self.cache.form()
     }
 }
 
 impl TryFrom<RevolutionSurfaceConstructionWire> for RevolutionSurfaceConstruction {
     type Error = ProceduralGeometryError;
     fn try_from(wire: RevolutionSurfaceConstructionWire) -> Result<Self, Self::Error> {
-        Self::try_new(
+        let mut payload = Self::try_new(
             wire.directrix,
             (wire.axis_origin, wire.axis_direction),
             wire.angular_interval,
             wire.angular_parameter_interval,
             wire.parameter_interval,
             wire.transposed,
-            wire.revision_form,
-        )
+            wire.cache.form().cloned(),
+        )?;
+        payload.cache = wire.cache;
+        Ok(payload)
     }
 }
 
@@ -567,7 +580,7 @@ impl OffsetSurfaceConstruction {
     pub(super) fn revision_cache_mut(&mut self) -> Option<&mut super::RevisionCacheForm> {
         match &mut self.extension {
             OffsetExtension::Revision { form } => Some(&mut form.cache),
-            OffsetExtension::Legacy { flags: _ } => None,
+            OffsetExtension::Legacy { .. } => None,
         }
     }
     /// Admit the construction parameters.
@@ -650,6 +663,9 @@ pub struct SubsetSurfaceConstruction {
     /// Whether the trimmed surface V direction agrees with the support.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     v_sense: Option<bool>,
+    /// Solved-cache fit contract this construction states itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cache: Option<LegacyCache>,
 }
 
 #[derive(Deserialize)]
@@ -669,6 +685,8 @@ struct SubsetSurfaceConstructionWire {
     /// Whether the trimmed surface V direction agrees with the support.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     v_sense: Option<bool>,
+    #[serde(default)]
+    cache: Option<LegacyCache>,
 }
 
 impl SubsetSurfaceConstruction {
@@ -680,6 +698,7 @@ impl SubsetSurfaceConstruction {
         v_sense: Option<bool>,
     ) -> Result<Self, ProceduralGeometryError> {
         Ok(Self {
+            cache: None,
             support,
             parameter_ranges: [
                 DirectedParameterRange::new(parameter_ranges[0]).map_err(|_| {
@@ -718,12 +737,14 @@ impl SubsetSurfaceConstruction {
 impl TryFrom<SubsetSurfaceConstructionWire> for SubsetSurfaceConstruction {
     type Error = ProceduralGeometryError;
     fn try_from(wire: SubsetSurfaceConstructionWire) -> Result<Self, Self::Error> {
-        Self::try_new(
+        let mut payload = Self::try_new(
             wire.support,
             wire.parameter_ranges,
             wire.u_sense,
             wire.v_sense,
-        )
+        )?;
+        payload.cache = wire.cache;
+        Ok(payload)
     }
 }
 
@@ -928,11 +949,12 @@ pub struct SumSurfaceConstruction {
     second: CurveId,
     /// Surface base point.
     basepoint: FiniteVector3,
-    /// Revision-gated form fields; absent from the pre-revision layout.
+    /// Cache contract: the revision-gated form, or the legacy
+    /// solved-cache tolerance this construction states instead.
     /// The first curve's optional endpoints are `reference_endpoints`
     /// and the second curve's are `second_endpoints`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    revision_form: Option<RevisionSurfaceForm>,
+    #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
+    cache: CacheContract<RevisionSurfaceForm>,
 }
 
 #[derive(Deserialize)]
@@ -944,14 +966,15 @@ struct SumSurfaceConstructionWire {
     second: CurveId,
     /// Surface base point.
     basepoint: Vector3,
-    /// Revision-gated form fields; absent from the pre-revision layout.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    revision_form: Option<RevisionSurfaceForm>,
+    /// Cache contract: the revision-gated form, or the legacy
+    /// solved-cache tolerance this construction states instead.
+    #[serde(default)]
+    cache: CacheContract<RevisionSurfaceForm>,
 }
 
 impl SumSurfaceConstruction {
     pub(super) fn revision_cache_mut(&mut self) -> Option<&mut super::RevisionCacheForm> {
-        self.revision_form.as_mut().map(|form| &mut form.cache)
+        self.cache.form_mut().map(|form| &mut form.cache)
     }
     /// Admit the construction parameters.
     pub fn try_new(
@@ -966,7 +989,7 @@ impl SumSurfaceConstruction {
             basepoint: FiniteVector3::new(basepoint).ok_or(ProceduralGeometryError::Payload(
                 "sum basepoint must be finite",
             ))?,
-            revision_form,
+            cache: CacheContract::from_form(revision_form),
         })
     }
     /// Return the first curve.
@@ -982,15 +1005,22 @@ impl SumSurfaceConstruction {
         self.basepoint.as_raw()
     }
     /// Return the revision form.
-    pub fn revision_form(&self) -> &Option<RevisionSurfaceForm> {
-        &self.revision_form
+    pub const fn revision_form(&self) -> Option<&RevisionSurfaceForm> {
+        self.cache.form()
     }
 }
 
 impl TryFrom<SumSurfaceConstructionWire> for SumSurfaceConstruction {
     type Error = ProceduralGeometryError;
     fn try_from(wire: SumSurfaceConstructionWire) -> Result<Self, Self::Error> {
-        Self::try_new(wire.first, wire.second, wire.basepoint, wire.revision_form)
+        let mut payload = Self::try_new(
+            wire.first,
+            wire.second,
+            wire.basepoint,
+            wire.cache.form().cloned(),
+        )?;
+        payload.cache = wire.cache;
+        Ok(payload)
     }
 }
 
@@ -1048,12 +1078,17 @@ impl TryFrom<ExactSurfacePayloadWire> for ExactSurfacePayload {
 #[serde(try_from = "CompoundSurfacePayloadWire")]
 pub struct CompoundSurfacePayload {
     components: Vec<CompoundComponent<SurfaceId>>,
+    /// Solved-cache fit contract this construction states itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cache: Option<LegacyCache>,
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct CompoundSurfacePayloadWire {
     components: Vec<CompoundComponent<SurfaceId>>,
+    #[serde(default)]
+    cache: Option<LegacyCache>,
 }
 impl CompoundSurfacePayload {
     /// Admit the construction parameters.
@@ -1065,7 +1100,10 @@ impl CompoundSurfacePayload {
                 "compound surface parameters and components are inconsistent",
             ));
         }
-        Ok(Self { components })
+        Ok(Self {
+            components,
+            cache: None,
+        })
     }
     /// Return the components.
     pub fn components(&self) -> &Vec<CompoundComponent<SurfaceId>> {
@@ -1075,7 +1113,9 @@ impl CompoundSurfacePayload {
 impl TryFrom<CompoundSurfacePayloadWire> for CompoundSurfacePayload {
     type Error = ProceduralGeometryError;
     fn try_from(wire: CompoundSurfacePayloadWire) -> Result<Self, Self::Error> {
-        Self::try_new(wire.components)
+        let mut payload = Self::try_new(wire.components)?;
+        payload.cache = wire.cache;
+        Ok(payload)
     }
 }
 
@@ -1097,8 +1137,8 @@ pub struct LoftSurfacePayload {
 
     bridge: Vec<LoftBridgeToken>,
 
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    revision_form: Option<LoftRevisionForm>,
+    #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
+    cache: CacheContract<LoftRevisionForm>,
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1115,8 +1155,8 @@ struct LoftSurfacePayloadWire {
 
     bridge: Vec<LoftBridgeToken>,
 
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    revision_form: Option<LoftRevisionForm>,
+    #[serde(default)]
+    cache: CacheContract<LoftRevisionForm>,
 }
 impl LoftSurfacePayload {
     /// Admit the construction parameters.
@@ -1168,7 +1208,7 @@ impl LoftSurfacePayload {
             singularities,
             mode,
             bridge,
-            revision_form,
+            cache: CacheContract::from_form(revision_form),
         })
     }
     /// Return the sections.
@@ -1196,22 +1236,24 @@ impl LoftSurfacePayload {
         &self.bridge
     }
     /// Return the revision form.
-    pub fn revision_form(&self) -> &Option<LoftRevisionForm> {
-        &self.revision_form
+    pub const fn revision_form(&self) -> Option<&LoftRevisionForm> {
+        self.cache.form()
     }
 }
 impl TryFrom<LoftSurfacePayloadWire> for LoftSurfacePayload {
     type Error = ProceduralGeometryError;
     fn try_from(wire: LoftSurfacePayloadWire) -> Result<Self, Self::Error> {
-        Self::try_new(
+        let mut payload = Self::try_new(
             wire.sections,
             wire.parameters,
             wire.closures,
             wire.singularities,
             wire.mode,
             wire.bridge,
-            wire.revision_form,
-        )
+            wire.cache.form().cloned(),
+        )?;
+        payload.cache = wire.cache;
+        Ok(payload)
     }
 }
 
@@ -1222,11 +1264,16 @@ impl TryFrom<LoftSurfacePayloadWire> for LoftSurfacePayload {
 #[serde(try_from = "CompoundLoftSurfacePayloadWire")]
 pub struct CompoundLoftSurfacePayload {
     construction: Box<CompoundLoftConstruction>,
+    /// Solved-cache fit contract this construction states itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cache: Option<LegacyCache>,
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct CompoundLoftSurfacePayloadWire {
     construction: Box<CompoundLoftConstruction>,
+    #[serde(default)]
+    cache: Option<LegacyCache>,
 }
 impl CompoundLoftSurfacePayload {
     /// Admit the construction parameters.
@@ -1275,7 +1322,10 @@ impl CompoundLoftSurfacePayload {
                 "compound loft construction payload is invalid",
             ));
         }
-        Ok(Self { construction })
+        Ok(Self {
+            construction,
+            cache: None,
+        })
     }
     /// Return the construction.
     pub fn construction(&self) -> &CompoundLoftConstruction {
@@ -1285,7 +1335,9 @@ impl CompoundLoftSurfacePayload {
 impl TryFrom<CompoundLoftSurfacePayloadWire> for CompoundLoftSurfacePayload {
     type Error = ProceduralGeometryError;
     fn try_from(wire: CompoundLoftSurfacePayloadWire) -> Result<Self, Self::Error> {
-        Self::try_new(wire.construction)
+        let mut payload = Self::try_new(wire.construction)?;
+        payload.cache = wire.cache;
+        Ok(payload)
     }
 }
 
@@ -1299,11 +1351,16 @@ impl TryFrom<CompoundLoftSurfacePayloadWire> for CompoundLoftSurfacePayload {
 #[serde(try_from = "ScaledCompoundLoftSurfacePayloadWire")]
 pub struct ScaledCompoundLoftSurfacePayload {
     construction: Box<ScaledCompoundLoftConstruction>,
+    /// Solved-cache fit contract this construction states itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cache: Option<LegacyCache>,
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct ScaledCompoundLoftSurfacePayloadWire {
     construction: Box<ScaledCompoundLoftConstruction>,
+    #[serde(default)]
+    cache: Option<LegacyCache>,
 }
 impl ScaledCompoundLoftSurfacePayload {
     /// Admit the construction parameters.
@@ -1369,7 +1426,10 @@ impl ScaledCompoundLoftSurfacePayload {
                 "scaled compound loft construction payload is invalid",
             ));
         }
-        Ok(Self { construction })
+        Ok(Self {
+            construction,
+            cache: None,
+        })
     }
     /// Return the construction.
     pub fn construction(&self) -> &ScaledCompoundLoftConstruction {
@@ -1379,7 +1439,9 @@ impl ScaledCompoundLoftSurfacePayload {
 impl TryFrom<ScaledCompoundLoftSurfacePayloadWire> for ScaledCompoundLoftSurfacePayload {
     type Error = ProceduralGeometryError;
     fn try_from(wire: ScaledCompoundLoftSurfacePayloadWire) -> Result<Self, Self::Error> {
-        Self::try_new(wire.construction)
+        let mut payload = Self::try_new(wire.construction)?;
+        payload.cache = wire.cache;
+        Ok(payload)
     }
 }
 
@@ -1414,7 +1476,7 @@ impl LawSurfacePayload {
                 .iter()
                 .flatten()
                 .all(|value| value.is_finite()),
-            crate::geometry::LawSurfaceTail::Full {}
+            crate::geometry::LawSurfaceTail::Full { .. }
             | crate::geometry::LawSurfaceTail::Historical {}
             | crate::geometry::LawSurfaceTail::Optimal {} => true,
         };
@@ -1454,11 +1516,16 @@ impl TryFrom<LawSurfacePayloadWire> for LawSurfacePayload {
 #[serde(try_from = "SkinSurfacePayloadWire")]
 pub struct SkinSurfacePayload {
     construction: Box<SkinSurfaceConstruction>,
+    /// Solved-cache fit contract this construction states itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cache: Option<LegacyCache>,
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct SkinSurfacePayloadWire {
     construction: Box<SkinSurfaceConstruction>,
+    #[serde(default)]
+    cache: Option<LegacyCache>,
 }
 impl SkinSurfacePayload {
     /// Admit the construction parameters.
@@ -1497,7 +1564,10 @@ impl SkinSurfacePayload {
                 "skin surface construction payload is invalid",
             ));
         }
-        Ok(Self { construction })
+        Ok(Self {
+            construction,
+            cache: None,
+        })
     }
     /// Return the construction.
     pub fn construction(&self) -> &SkinSurfaceConstruction {
@@ -1507,7 +1577,9 @@ impl SkinSurfacePayload {
 impl TryFrom<SkinSurfacePayloadWire> for SkinSurfacePayload {
     type Error = ProceduralGeometryError;
     fn try_from(wire: SkinSurfacePayloadWire) -> Result<Self, Self::Error> {
-        Self::try_new(wire.construction)
+        let mut payload = Self::try_new(wire.construction)?;
+        payload.cache = wire.cache;
+        Ok(payload)
     }
 }
 
@@ -1518,11 +1590,16 @@ impl TryFrom<SkinSurfacePayloadWire> for SkinSurfacePayload {
 #[serde(try_from = "NetSurfacePayloadWire")]
 pub struct NetSurfacePayload {
     construction: Box<NetSurfaceConstruction>,
+    /// Solved-cache fit contract this construction states itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cache: Option<LegacyCache>,
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct NetSurfacePayloadWire {
     construction: Box<NetSurfaceConstruction>,
+    #[serde(default)]
+    cache: Option<LegacyCache>,
 }
 impl NetSurfacePayload {
     /// Admit the construction parameters.
@@ -1557,7 +1634,10 @@ impl NetSurfacePayload {
                 "net surface construction payload is invalid",
             ));
         }
-        Ok(Self { construction })
+        Ok(Self {
+            construction,
+            cache: None,
+        })
     }
     /// Return the construction.
     pub fn construction(&self) -> &NetSurfaceConstruction {
@@ -1567,7 +1647,9 @@ impl NetSurfacePayload {
 impl TryFrom<NetSurfacePayloadWire> for NetSurfacePayload {
     type Error = ProceduralGeometryError;
     fn try_from(wire: NetSurfacePayloadWire) -> Result<Self, Self::Error> {
-        Self::try_new(wire.construction)
+        let mut payload = Self::try_new(wire.construction)?;
+        payload.cache = wire.cache;
+        Ok(payload)
     }
 }
 
@@ -1896,11 +1978,16 @@ impl TryFrom<DeformableSurfacePayloadWire> for DeformableSurfacePayload {
 #[serde(try_from = "G2BlendSurfacePayloadWire")]
 pub struct G2BlendSurfacePayload {
     construction: Box<G2BlendConstruction>,
+    /// Solved-cache fit contract this construction states itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cache: Option<LegacyCache>,
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct G2BlendSurfacePayloadWire {
     construction: Box<G2BlendConstruction>,
+    #[serde(default)]
+    cache: Option<LegacyCache>,
 }
 impl G2BlendSurfacePayload {
     /// Admit the construction parameters.
@@ -1947,7 +2034,10 @@ impl G2BlendSurfacePayload {
                 "G2 blend construction payload is invalid",
             ));
         }
-        Ok(Self { construction })
+        Ok(Self {
+            construction,
+            cache: None,
+        })
     }
     /// Return the construction.
     pub fn construction(&self) -> &G2BlendConstruction {
@@ -1957,7 +2047,9 @@ impl G2BlendSurfacePayload {
 impl TryFrom<G2BlendSurfacePayloadWire> for G2BlendSurfacePayload {
     type Error = ProceduralGeometryError;
     fn try_from(wire: G2BlendSurfacePayloadWire) -> Result<Self, Self::Error> {
-        Self::try_new(wire.construction)
+        let mut payload = Self::try_new(wire.construction)?;
+        payload.cache = wire.cache;
+        Ok(payload)
     }
 }
 
@@ -2135,8 +2227,10 @@ pub struct BlendSurfacePayload {
 
     cross_section: BlendCrossSection,
 
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    native: Option<Box<RollingBallConstruction>>,
+    /// Cache contract: the native rolling-ball construction, which states its
+    /// own cache form, or the legacy solved-cache tolerance stated instead.
+    #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
+    cache: CacheContract<Box<RollingBallConstruction>>,
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2150,8 +2244,10 @@ struct BlendSurfacePayloadWire {
 
     cross_section: BlendCrossSection,
 
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    native: Option<Box<RollingBallConstruction>>,
+    /// Cache contract: the native rolling-ball construction, which states its
+    /// own cache form, or the legacy solved-cache tolerance stated instead.
+    #[serde(default)]
+    cache: CacheContract<Box<RollingBallConstruction>>,
 }
 impl BlendSurfacePayload {
     /// Admit the construction parameters.
@@ -2207,7 +2303,7 @@ impl BlendSurfacePayload {
             spine,
             radius,
             cross_section,
-            native,
+            cache: CacheContract::from_form(native),
         })
     }
     /// Return the supports.
@@ -2227,8 +2323,8 @@ impl BlendSurfacePayload {
         &self.cross_section
     }
     /// Return the native.
-    pub fn native(&self) -> &Option<Box<RollingBallConstruction>> {
-        &self.native
+    pub fn native(&self) -> Option<&RollingBallConstruction> {
+        self.cache.form().map(Box::as_ref)
     }
 }
 impl TryFrom<BlendSurfacePayloadWire> for BlendSurfacePayload {
@@ -2239,8 +2335,12 @@ impl TryFrom<BlendSurfacePayloadWire> for BlendSurfacePayload {
             wire.spine,
             wire.radius,
             wire.cross_section,
-            wire.native,
+            wire.cache.form().cloned(),
         )
+        .map(|mut payload| {
+            payload.cache = wire.cache;
+            payload
+        })
     }
 }
 
@@ -2261,10 +2361,10 @@ impl ExactSurfacePayload {
 
 impl LoftSurfacePayload {
     pub(super) fn revision_cache(&self) -> Option<&super::RevisionCacheForm> {
-        self.revision_form.as_ref().map(|form| &form.cache)
+        self.cache.form().map(|form| &form.cache)
     }
     pub(super) fn revision_cache_mut(&mut self) -> Option<&mut super::RevisionCacheForm> {
-        self.revision_form.as_mut().map(|form| &mut form.cache)
+        self.cache.form_mut().map(|form| &mut form.cache)
     }
 }
 
@@ -2272,44 +2372,52 @@ impl SweepSurfacePayload {
     pub(super) fn revision_cache(&self) -> Option<&super::RevisionCacheForm> {
         self.native
             .as_ref()
-            .and_then(|construction| construction.revision_form.as_ref())
+            .and_then(|construction| construction.cache.form())
             .map(|form| &form.cache)
     }
     pub(super) fn revision_cache_mut(&mut self) -> Option<&mut super::RevisionCacheForm> {
         self.native
             .as_mut()
-            .and_then(|construction| construction.revision_form.as_mut())
+            .and_then(|construction| construction.cache.form_mut())
             .map(|form| &mut form.cache)
     }
 }
 
 impl DeformableSurfacePayload {
     pub(super) fn revision_cache(&self) -> Option<&super::RevisionCacheForm> {
-        self.construction
-            .revision_form
-            .as_ref()
-            .map(|form| &form.cache)
+        self.construction.cache.form().map(|form| &form.cache)
     }
     pub(super) fn revision_cache_mut(&mut self) -> Option<&mut super::RevisionCacheForm> {
         self.construction
-            .revision_form
-            .as_mut()
+            .cache
+            .form_mut()
             .map(|form| &mut form.cache)
     }
 }
 
 impl BlendSurfacePayload {
     pub(super) fn revision_cache(&self) -> Option<&super::RevisionCacheForm> {
-        self.native.as_ref().map(|construction| &construction.cache)
+        self.cache.form().map(|construction| &construction.cache)
     }
     pub(super) fn revision_cache_mut(&mut self) -> Option<&mut super::RevisionCacheForm> {
-        self.native
-            .as_mut()
+        self.cache
+            .form_mut()
             .map(|construction| &mut construction.cache)
     }
 }
 
 impl VariableBlendSurfacePayload {
+    /// A variable blend states its tolerance in its own cache form, never
+    /// outside it.
+    #[must_use]
+    pub const fn legacy_cache(&self) -> Option<LegacyCache> {
+        None
+    }
+
+    /// A variable blend states its tolerance in its own cache form; there is
+    /// no contract outside it to replace.
+    pub const fn set_legacy_cache(&mut self, _cache: Option<LegacyCache>) {}
+
     pub(super) fn cache_mut(&mut self) -> &mut super::VariableBlendCache {
         &mut self.construction.cache
     }
@@ -2425,5 +2533,331 @@ fn law_valid(expression: &crate::geometry::LawExpression, depth: usize) -> bool 
         }
     }
 }
+
+impl CompoundSurfacePayload {
+    /// Solved-cache fit contract this construction states.
+    #[must_use]
+    pub const fn legacy_cache(&self) -> Option<LegacyCache> {
+        self.cache
+    }
+
+    /// Replace the solved-cache fit contract this construction states.
+    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
+        self.cache = cache;
+    }
+}
+
+impl CompoundLoftSurfacePayload {
+    /// Solved-cache fit contract this construction states.
+    #[must_use]
+    pub const fn legacy_cache(&self) -> Option<LegacyCache> {
+        self.cache
+    }
+
+    /// Replace the solved-cache fit contract this construction states.
+    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
+        self.cache = cache;
+    }
+}
+
+impl ScaledCompoundLoftSurfacePayload {
+    /// Solved-cache fit contract this construction states.
+    #[must_use]
+    pub const fn legacy_cache(&self) -> Option<LegacyCache> {
+        self.cache
+    }
+
+    /// Replace the solved-cache fit contract this construction states.
+    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
+        self.cache = cache;
+    }
+}
+
+impl SkinSurfacePayload {
+    /// Solved-cache fit contract this construction states.
+    #[must_use]
+    pub const fn legacy_cache(&self) -> Option<LegacyCache> {
+        self.cache
+    }
+
+    /// Replace the solved-cache fit contract this construction states.
+    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
+        self.cache = cache;
+    }
+}
+
+impl LawSurfacePayload {
+    /// Solved-cache fit contract the full tail states.
+    #[must_use]
+    pub const fn legacy_cache(&self) -> Option<LegacyCache> {
+        match &self.construction.tail {
+            crate::geometry::LawSurfaceTail::Full { cache } => Some(*cache),
+            _ => None,
+        }
+    }
+
+    /// Replace the full tail's solved-cache fit contract. Other tails carry
+    /// no solved cache and have no contract to state.
+    pub fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) -> Result<(), &'static str> {
+        match (&mut self.construction.tail, cache) {
+            (crate::geometry::LawSurfaceTail::Full { cache: slot }, Some(cache)) => {
+                *slot = cache;
+                Ok(())
+            }
+            (crate::geometry::LawSurfaceTail::Full { .. }, None) => {
+                Err("a full law surface tail states a solved-cache fit tolerance")
+            }
+            (_, None) => Ok(()),
+            (_, Some(_)) => Err("only a full law surface tail states a solved-cache fit tolerance"),
+        }
+    }
+}
+
+impl NetSurfacePayload {
+    /// Solved-cache fit contract this construction states.
+    #[must_use]
+    pub const fn legacy_cache(&self) -> Option<LegacyCache> {
+        self.cache
+    }
+
+    /// Replace the solved-cache fit contract this construction states.
+    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
+        self.cache = cache;
+    }
+}
+
+impl G2BlendSurfacePayload {
+    /// Solved-cache fit contract this construction states.
+    #[must_use]
+    pub const fn legacy_cache(&self) -> Option<LegacyCache> {
+        self.cache
+    }
+
+    /// Replace the solved-cache fit contract this construction states.
+    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
+        self.cache = cache;
+    }
+}
+
+impl SubsetSurfaceConstruction {
+    /// Solved-cache fit contract this construction states.
+    #[must_use]
+    pub const fn legacy_cache(&self) -> Option<LegacyCache> {
+        self.cache
+    }
+
+    /// Replace the solved-cache fit contract this construction states.
+    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
+        self.cache = cache;
+    }
+}
+
+impl TaperSurfaceConstruction {
+    /// Solved-cache fit contract this construction states, absent when a
+    /// revision-gated form states it instead.
+    #[must_use]
+    pub const fn legacy_cache(&self) -> Option<LegacyCache> {
+        match self.cache.legacy_fit_tolerance() {
+            Some(fit_tolerance) => Some(LegacyCache { fit_tolerance }),
+            None => None,
+        }
+    }
+
+    /// Replace the legacy solved-cache fit contract. A revision-gated form
+    /// states its own tolerance and is unchanged.
+    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
+        self.cache.set_legacy_fit_tolerance(match cache {
+            Some(cache) => Some(cache.fit_tolerance),
+            None => None,
+        });
+    }
+}
+
+impl ExtrusionSurfaceConstruction {
+    /// Solved-cache fit contract this construction states, absent when a
+    /// revision-gated form states it instead.
+    #[must_use]
+    pub const fn legacy_cache(&self) -> Option<LegacyCache> {
+        match self.cache.legacy_fit_tolerance() {
+            Some(fit_tolerance) => Some(LegacyCache { fit_tolerance }),
+            None => None,
+        }
+    }
+
+    /// Replace the legacy solved-cache fit contract. A revision-gated form
+    /// states its own tolerance and is unchanged.
+    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
+        self.cache.set_legacy_fit_tolerance(match cache {
+            Some(cache) => Some(cache.fit_tolerance),
+            None => None,
+        });
+    }
+}
+
+impl RevolutionSurfaceConstruction {
+    /// Solved-cache fit contract this construction states, absent when a
+    /// revision-gated form states it instead.
+    #[must_use]
+    pub const fn legacy_cache(&self) -> Option<LegacyCache> {
+        match self.cache.legacy_fit_tolerance() {
+            Some(fit_tolerance) => Some(LegacyCache { fit_tolerance }),
+            None => None,
+        }
+    }
+
+    /// Replace the legacy solved-cache fit contract. A revision-gated form
+    /// states its own tolerance and is unchanged.
+    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
+        self.cache.set_legacy_fit_tolerance(match cache {
+            Some(cache) => Some(cache.fit_tolerance),
+            None => None,
+        });
+    }
+}
+
+impl SumSurfaceConstruction {
+    /// Solved-cache fit contract this construction states, absent when a
+    /// revision-gated form states it instead.
+    #[must_use]
+    pub const fn legacy_cache(&self) -> Option<LegacyCache> {
+        match self.cache.legacy_fit_tolerance() {
+            Some(fit_tolerance) => Some(LegacyCache { fit_tolerance }),
+            None => None,
+        }
+    }
+
+    /// Replace the legacy solved-cache fit contract. A revision-gated form
+    /// states its own tolerance and is unchanged.
+    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
+        self.cache.set_legacy_fit_tolerance(match cache {
+            Some(cache) => Some(cache.fit_tolerance),
+            None => None,
+        });
+    }
+}
+
+impl LoftSurfacePayload {
+    /// Solved-cache fit contract this construction states, absent when a
+    /// revision-gated form states it instead.
+    #[must_use]
+    pub const fn legacy_cache(&self) -> Option<LegacyCache> {
+        match self.cache.legacy_fit_tolerance() {
+            Some(fit_tolerance) => Some(LegacyCache { fit_tolerance }),
+            None => None,
+        }
+    }
+
+    /// Replace the legacy solved-cache fit contract. A revision-gated form
+    /// states its own tolerance and is unchanged.
+    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
+        self.cache.set_legacy_fit_tolerance(match cache {
+            Some(cache) => Some(cache.fit_tolerance),
+            None => None,
+        });
+    }
+}
+
+impl ExactSurfacePayload {
+    /// Solved-cache fit contract the legacy spline layout states.
+    #[must_use]
+    pub const fn legacy_cache(&self) -> Option<LegacyCache> {
+        match &self.spline {
+            ExactSpline::Legacy { cache, .. } => *cache,
+            ExactSpline::Revision { .. } => None,
+        }
+    }
+
+    /// Replace the legacy spline layout's solved-cache fit contract.
+    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
+        if let ExactSpline::Legacy { cache: slot, .. } = &mut self.spline {
+            *slot = cache;
+        }
+    }
+}
+
+impl OffsetSurfaceConstruction {
+    /// Solved-cache fit contract the legacy extension states.
+    #[must_use]
+    pub const fn legacy_cache(&self) -> Option<LegacyCache> {
+        match &self.extension {
+            OffsetExtension::Legacy { cache, .. } => *cache,
+            OffsetExtension::Revision { .. } => None,
+        }
+    }
+
+    /// Replace the legacy extension's solved-cache fit contract.
+    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
+        if let OffsetExtension::Legacy { cache: slot, .. } = &mut self.extension {
+            *slot = cache;
+        }
+    }
+}
+
+impl DeformableSurfacePayload {
+    /// Solved-cache fit contract this construction states.
+    #[must_use]
+    pub const fn legacy_cache(&self) -> Option<LegacyCache> {
+        match self.construction.cache.legacy_fit_tolerance() {
+            Some(fit_tolerance) => Some(LegacyCache { fit_tolerance }),
+            None => None,
+        }
+    }
+
+    /// Replace the legacy solved-cache fit contract.
+    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
+        self.construction
+            .cache
+            .set_legacy_fit_tolerance(match cache {
+                Some(cache) => Some(cache.fit_tolerance),
+                None => None,
+            });
+    }
+}
+
+impl SweepSurfacePayload {
+    /// Solved-cache fit contract the native construction states.
+    #[must_use]
+    pub fn legacy_cache(&self) -> Option<LegacyCache> {
+        self.native
+            .as_ref()
+            .and_then(|construction| construction.cache.legacy_fit_tolerance())
+            .map(|fit_tolerance| LegacyCache { fit_tolerance })
+    }
+
+    /// Replace the legacy solved-cache fit contract. A sweep with no native
+    /// construction has no slot to state one in.
+    pub fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) -> Result<(), &'static str> {
+        match &mut self.native {
+            Some(construction) => {
+                construction
+                    .cache
+                    .set_legacy_fit_tolerance(cache.map(|cache| cache.fit_tolerance));
+                Ok(())
+            }
+            None if cache.is_none() => Ok(()),
+            None => Err("a sweep surface with no native construction states no cache tolerance"),
+        }
+    }
+}
+
+impl BlendSurfacePayload {
+    /// Solved-cache fit contract this construction states.
+    #[must_use]
+    pub const fn legacy_cache(&self) -> Option<LegacyCache> {
+        match self.cache.legacy_fit_tolerance() {
+            Some(fit_tolerance) => Some(LegacyCache { fit_tolerance }),
+            None => None,
+        }
+    }
+
+    /// Replace the legacy solved-cache fit contract.
+    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
+        self.cache.set_legacy_fit_tolerance(match cache {
+            Some(cache) => Some(cache.fit_tolerance),
+            None => None,
+        });
+    }
+}
+
 #[cfg(test)]
 mod tests;

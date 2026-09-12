@@ -1704,6 +1704,7 @@ fn geometry_signal_excludes_opaque_carriers() {
                     cadmpeg_ir::geometry::ExactSpline::Legacy {
                         ranges: [[0.0, 1.0], [0.0, 1.0]],
                         extension: 0,
+                        cache: None,
                     },
                 )
                 .expect("finite ordered exact-spline fixture ranges"),

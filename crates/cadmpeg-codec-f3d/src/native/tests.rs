@@ -825,7 +825,7 @@ fn generated_cache_first_surface_offset_decodes_and_writes_source_less() {
                 *actual_payload.base_range(),
                 *actual_payload.base_endpoints(),
             ),
-            actual_payload.cache_first().clone(),
+            actual_payload.cache_first().cloned(),
             *actual_payload.distance(),
             [*actual_payload.shift(), *actual_payload.scale()],
         )

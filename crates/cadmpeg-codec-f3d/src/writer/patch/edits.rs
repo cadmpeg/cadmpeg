@@ -3552,27 +3552,32 @@ pub(crate) fn validate_procedural_curve_edits(
     let mut edits = BTreeMap::new();
     for (id, before) in baseline {
         let after = target[id];
-        let definition = match (before.definition(), after.definition()) {
+        // The solved-cache contract travels inside the definition, and the
+        // fit tolerance is written through its own edit, so the definition
+        // comparison normalises that contract out of both sides.
+        let before_definition = definition_without_legacy_cache(before.definition());
+        let after_definition = definition_without_legacy_cache(after.definition());
+        let definition = match (&before_definition, &after_definition) {
             (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(_),
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(_),
-            ) if before.definition() != after.definition() => Some(after.definition().clone()),
+            ) if before_definition != after_definition => Some(after_definition.clone()),
             (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset(definition_payload_0),
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset(definition_payload_1),
             ) if (definition_payload_0.source()) == (definition_payload_1.source())
                 && (definition_payload_0.roles()) == (definition_payload_1.roles())
-                && before.definition() != after.definition() =>
+                && before_definition != after_definition =>
             {
-                Some(after.definition().clone())
+                Some(after_definition.clone())
             }
             (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(definition_payload_0),
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(definition_payload_1),
             ) if (definition_payload_0.source()) == (definition_payload_1.source())
-                && before.definition() != after.definition() =>
+                && before_definition != after_definition =>
             {
-                Some(after.definition().clone())
+                Some(after_definition.clone())
             }
             (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset(
@@ -3591,9 +3596,9 @@ pub(crate) fn validate_procedural_curve_edits(
                         .discontinuities()
                         .iter()
                         .map(Vec::len))
-                && before.definition() != after.definition() =>
+                && before_definition != after_definition =>
             {
-                Some(after.definition().clone())
+                Some(after_definition.clone())
             }
             (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset(
@@ -3613,17 +3618,17 @@ pub(crate) fn validate_procedural_curve_edits(
                         .iter()
                         .map(Vec::len))
                 && (definition_payload_0.base()) == (definition_payload_1.base())
-                && before.definition() != after.definition() =>
+                && before_definition != after_definition =>
             {
-                Some(after.definition().clone())
+                Some(after_definition.clone())
             }
             (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring(before_payload),
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring(after_payload),
             ) if spring_patch_shape_agrees(before_payload.layout(), after_payload.layout())
-                && before.definition() != after.definition() =>
+                && before_definition != after_definition =>
             {
-                Some(after.definition().clone())
+                Some(after_definition.clone())
             }
             (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection(before_payload),
@@ -3650,9 +3655,9 @@ pub(crate) fn validate_procedural_curve_edits(
                         cadmpeg_ir::geometry::ProjectionTail::Ranged { .. },
                     )
                 )
-                && before.definition() != after.definition() =>
+                && before_definition != after_definition =>
             {
-                Some(after.definition().clone())
+                Some(after_definition.clone())
             }
             (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection {
@@ -3669,9 +3674,9 @@ pub(crate) fn validate_procedural_curve_edits(
                     .iter()
                     .map(Vec::len)
                     .eq(after_context.discontinuities().iter().map(Vec::len))
-                && before.definition() != after.definition() =>
+                && before_definition != after_definition =>
             {
-                Some(after.definition().clone())
+                Some(after_definition.clone())
             }
             (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection(
@@ -3692,9 +3697,9 @@ pub(crate) fn validate_procedural_curve_edits(
                         .iter()
                         .map(Vec::len))
                 && before_payload.third() == after_payload.third()
-                && before.definition() != after.definition() =>
+                && before_definition != after_definition =>
             {
-                Some(after.definition().clone())
+                Some(after_definition.clone())
             }
             (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
@@ -3715,9 +3720,9 @@ pub(crate) fn validate_procedural_curve_edits(
                         .discontinuities()
                         .iter()
                         .map(Vec::len))
-                && before.definition() != after.definition() =>
+                && before_definition != after_definition =>
             {
-                Some(after.definition().clone())
+                Some(after_definition.clone())
             }
             (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette(before_payload),
@@ -3726,9 +3731,9 @@ pub(crate) fn validate_procedural_curve_edits(
                 && std::mem::discriminant(before_payload.silhouette())
                     == std::mem::discriminant(after_payload.silhouette())
                 && before_payload.cast_surface() == after_payload.cast_surface()
-                && before.definition() != after.definition() =>
+                && before_definition != after_definition =>
             {
-                Some(after.definition().clone())
+                Some(after_definition.clone())
             }
             (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(before_compound),
@@ -3741,9 +3746,9 @@ pub(crate) fn validate_procedural_curve_edits(
                     .components()
                     .iter()
                     .map(|item| &item.component))
-                && before.definition() != after.definition() =>
+                && before_definition != after_definition =>
             {
-                Some(after.definition().clone())
+                Some(after_definition.clone())
             }
             (before, after) if before == after => None,
             _ => {
@@ -3772,6 +3777,20 @@ pub(crate) fn validate_procedural_curve_edits(
         }
     }
     Ok(edits)
+}
+
+/// The definition with the solved-cache contract it states cleared, so two
+/// definitions compare on their construction fields alone.
+fn definition_without_legacy_cache(
+    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
+) -> cadmpeg_ir::geometry::ProceduralCurveDefinition {
+    let mut cleared = definition.clone();
+    match cleared.set_legacy_cache(None) {
+        Ok(()) => cleared,
+        // A construction whose layout states no contract already compares on
+        // its construction fields alone.
+        Err(_) => definition.clone(),
+    }
 }
 
 fn spring_patch_shape_agrees(

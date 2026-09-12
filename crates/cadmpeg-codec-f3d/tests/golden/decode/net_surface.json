@@ -798,9 +798,11 @@
                 []
               ],
               "discontinuity_flag": true
+            },
+            "cache": {
+              "fit_tolerance": 0.05
             }
-          },
-          "cache_fit_tolerance": 0.05
+          }
         }
       ],
       "procedural_curves": [],

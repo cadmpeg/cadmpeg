@@ -281,23 +281,22 @@ fn generated_compound_loft_writes_every_tail_shape_source_less() {
             )),
             source_object: None,
         });
-        source_less.model.procedural_surfaces[0]
-            .edit_definition(|definition| {
-                let ProceduralSurfaceDefinition::CompoundLoft(definition_payload) = definition
-                else {
-                    unreachable!()
-                };
-                let mut edited_construction = Box::new(definition_payload.construction().clone());
-                let construction = &mut edited_construction;
+        source_less.model.procedural_surfaces[0].edit_definition(|definition| {
+            let ProceduralSurfaceDefinition::CompoundLoft(definition_payload) = definition else {
+                unreachable!()
+            };
+            let mut edited_construction = Box::new(definition_payload.construction().clone());
+            let construction = &mut edited_construction;
 
-                construction.tail = expected.clone();
-                *definition_payload =
-                    cadmpeg_ir::geometry::surface_payloads::CompoundLoftSurfacePayload::try_new(
-                        edited_construction,
-                    )
-                    .unwrap();
-            })
-            .unwrap();
+            construction.tail = expected.clone();
+            let restored_cache = definition_payload.legacy_cache();
+            *definition_payload =
+                cadmpeg_ir::geometry::surface_payloads::CompoundLoftSurfacePayload::try_new(
+                    edited_construction,
+                )
+                .unwrap();
+            definition_payload.set_legacy_cache(restored_cache);
+        });
         let mut encoded = Vec::new();
         F3dCodec
             .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -488,21 +487,24 @@ fn generated_scaled_compound_loft_writes_all_middle_branches_source_less() {
         let mut source_less = decoded.ir().clone();
         source_less.source = None;
         source_less.set_native_unknowns("f3d", &[]).unwrap();
-        source_less.model.procedural_surfaces[0]
-            .edit_definition(|definition| {
-                let ProceduralSurfaceDefinition::ScaledCompoundLoft(definition_payload) =
-                    definition
-                else {
-                    unreachable!()
-                };
-let mut edited_construction = Box::new(definition_payload.construction().clone());
-                let construction = &mut edited_construction;
+        source_less.model.procedural_surfaces[0].edit_definition(|definition| {
+            let ProceduralSurfaceDefinition::ScaledCompoundLoft(definition_payload) = definition
+            else {
+                unreachable!()
+            };
+            let mut edited_construction = Box::new(definition_payload.construction().clone());
+            let construction = &mut edited_construction;
 
-                construction.shape = shape;
-                construction.branch = branch;
-*definition_payload = cadmpeg_ir::geometry::surface_payloads::ScaledCompoundLoftSurfacePayload::try_new(edited_construction).unwrap();
-})
-            .unwrap();
+            construction.shape = shape;
+            construction.branch = branch;
+            let restored_cache = definition_payload.legacy_cache();
+            *definition_payload =
+                cadmpeg_ir::geometry::surface_payloads::ScaledCompoundLoftSurfacePayload::try_new(
+                    edited_construction,
+                )
+                .unwrap();
+            definition_payload.set_legacy_cache(restored_cache);
+        });
         let mut encoded = Vec::new();
         F3dCodec
             .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -1144,56 +1146,54 @@ fn source_less_writer_rejects_invalid_and_unframed_law_arities() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
-    source_less.model.procedural_surfaces[0]
-        .edit_definition(|definition| {
-            let ProceduralSurfaceDefinition::Skin(definition_payload) = definition else {
-                panic!()
-            };
-            let mut edited_construction = Box::new(definition_payload.construction().clone());
-            let construction = &mut edited_construction;
+    source_less.model.procedural_surfaces[0].edit_definition(|definition| {
+        let ProceduralSurfaceDefinition::Skin(definition_payload) = definition else {
+            panic!()
+        };
+        let mut edited_construction = Box::new(definition_payload.construction().clone());
+        let construction = &mut edited_construction;
 
-            let LawFormula::Named { variables, .. } = &mut construction.formula else {
-                panic!()
-            };
-            variables[0] = LawExpression::Algebraic {
-                operator: "SIN".into(),
-                operands: Vec::new(),
-            };
-            *definition_payload =
-                cadmpeg_ir::geometry::surface_payloads::SkinSurfacePayload::try_new(
-                    edited_construction,
-                )
-                .unwrap();
-        })
+        let LawFormula::Named { variables, .. } = &mut construction.formula else {
+            panic!()
+        };
+        variables[0] = LawExpression::Algebraic {
+            operator: "SIN".into(),
+            operands: Vec::new(),
+        };
+        let restored_cache = definition_payload.legacy_cache();
+        *definition_payload = cadmpeg_ir::geometry::surface_payloads::SkinSurfacePayload::try_new(
+            edited_construction,
+        )
         .unwrap();
+        definition_payload.set_legacy_cache(restored_cache);
+    });
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .unwrap_err();
     assert!(error.to_string().contains("requires 1 operands, got 0"));
 
-    source_less.model.procedural_surfaces[0]
-        .edit_definition(|definition| {
-            let ProceduralSurfaceDefinition::Skin(definition_payload) = definition else {
-                panic!()
-            };
-            let mut edited_construction = Box::new(definition_payload.construction().clone());
-            let construction = &mut edited_construction;
+    source_less.model.procedural_surfaces[0].edit_definition(|definition| {
+        let ProceduralSurfaceDefinition::Skin(definition_payload) = definition else {
+            panic!()
+        };
+        let mut edited_construction = Box::new(definition_payload.construction().clone());
+        let construction = &mut edited_construction;
 
-            let LawFormula::Named { variables, .. } = &mut construction.formula else {
-                panic!()
-            };
-            variables[0] = LawExpression::Algebraic {
-                operator: "MIN".into(),
-                operands: vec![LawExpression::Double { value: 1.0 }],
-            };
-            *definition_payload =
-                cadmpeg_ir::geometry::surface_payloads::SkinSurfacePayload::try_new(
-                    edited_construction,
-                )
-                .unwrap();
-        })
+        let LawFormula::Named { variables, .. } = &mut construction.formula else {
+            panic!()
+        };
+        variables[0] = LawExpression::Algebraic {
+            operator: "MIN".into(),
+            operands: vec![LawExpression::Double { value: 1.0 }],
+        };
+        let restored_cache = definition_payload.legacy_cache();
+        *definition_payload = cadmpeg_ir::geometry::surface_payloads::SkinSurfacePayload::try_new(
+            edited_construction,
+        )
         .unwrap();
+        definition_payload.set_legacy_cache(restored_cache);
+    });
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
@@ -1215,64 +1215,63 @@ fn generated_skin_surface_round_trips_set_compose_rotate_and_term_laws() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
-    source_less.model.procedural_surfaces[0]
-        .edit_definition(|definition| {
-            let ProceduralSurfaceDefinition::Skin(definition_payload) = definition else {
-                panic!()
-            };
-            let mut edited_construction = Box::new(definition_payload.construction().clone());
-            let construction = &mut edited_construction;
+    source_less.model.procedural_surfaces[0].edit_definition(|definition| {
+        let ProceduralSurfaceDefinition::Skin(definition_payload) = definition else {
+            panic!()
+        };
+        let mut edited_construction = Box::new(definition_payload.construction().clone());
+        let construction = &mut edited_construction;
 
-            let LawFormula::Named { variables, .. } = &mut construction.formula else {
-                panic!()
-            };
-            *variables = vec![
-                LawExpression::Algebraic {
-                    operator: "SET".into(),
-                    operands: vec![LawExpression::Double { value: -2.0 }],
-                },
-                LawExpression::Algebraic {
-                    operator: "O".into(),
-                    operands: vec![
-                        LawExpression::Algebraic {
-                            operator: "ABS".into(),
-                            operands: vec![LawExpression::Double { value: -2.5 }],
-                        },
-                        LawExpression::Algebraic {
-                            operator: "SIN".into(),
-                            operands: vec![LawExpression::Double { value: 0.25 }],
-                        },
-                    ],
-                },
-                LawExpression::Algebraic {
-                    operator: "ROTATE".into(),
-                    operands: vec![
-                        LawExpression::Vector {
-                            value: Vector3::new(1.0, 2.0, 3.0),
-                        },
-                        LawExpression::Transform {
-                            scalars: [0.0; 13],
-                            enums: [0, 0, 0],
-                        },
-                    ],
-                },
-                LawExpression::Algebraic {
-                    operator: "TERM".into(),
-                    operands: vec![
-                        LawExpression::Vector {
-                            value: Vector3::new(4.0, 5.0, 6.0),
-                        },
-                        LawExpression::Integer { value: 1 },
-                    ],
-                },
-            ];
-            *definition_payload =
-                cadmpeg_ir::geometry::surface_payloads::SkinSurfacePayload::try_new(
-                    edited_construction,
-                )
-                .unwrap();
-        })
+        let LawFormula::Named { variables, .. } = &mut construction.formula else {
+            panic!()
+        };
+        *variables = vec![
+            LawExpression::Algebraic {
+                operator: "SET".into(),
+                operands: vec![LawExpression::Double { value: -2.0 }],
+            },
+            LawExpression::Algebraic {
+                operator: "O".into(),
+                operands: vec![
+                    LawExpression::Algebraic {
+                        operator: "ABS".into(),
+                        operands: vec![LawExpression::Double { value: -2.5 }],
+                    },
+                    LawExpression::Algebraic {
+                        operator: "SIN".into(),
+                        operands: vec![LawExpression::Double { value: 0.25 }],
+                    },
+                ],
+            },
+            LawExpression::Algebraic {
+                operator: "ROTATE".into(),
+                operands: vec![
+                    LawExpression::Vector {
+                        value: Vector3::new(1.0, 2.0, 3.0),
+                    },
+                    LawExpression::Transform {
+                        scalars: [0.0; 13],
+                        enums: [0, 0, 0],
+                    },
+                ],
+            },
+            LawExpression::Algebraic {
+                operator: "TERM".into(),
+                operands: vec![
+                    LawExpression::Vector {
+                        value: Vector3::new(4.0, 5.0, 6.0),
+                    },
+                    LawExpression::Integer { value: 1 },
+                ],
+            },
+        ];
+        let restored_cache = definition_payload.legacy_cache();
+        *definition_payload = cadmpeg_ir::geometry::surface_payloads::SkinSurfacePayload::try_new(
+            edited_construction,
+        )
         .unwrap();
+        definition_payload.set_legacy_cache(restored_cache);
+    });
 
     let mut encoded = Vec::new();
     F3dCodec

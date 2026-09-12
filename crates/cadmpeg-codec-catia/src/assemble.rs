@@ -149,7 +149,9 @@ pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
         }
         for procedural in &ir.model.procedural_curves {
             let resolved = match procedural.definition() {
-                ProceduralCurveDefinition::Exact | ProceduralCurveDefinition::Helix(_) => true,
+                ProceduralCurveDefinition::Exact { .. } | ProceduralCurveDefinition::Helix(_) => {
+                    true
+                }
                 ProceduralCurveDefinition::Intersection { context, .. } => {
                     context.sides().iter().all(|side| {
                         side.surface
@@ -1067,6 +1069,7 @@ mod route_tests {
                     ProceduralCurveDefinition::Unknown {
                         native_kind: None,
                         record: Some(record_id.clone()),
+                        cache: None,
                     },
                 )
                 .unwrap(),
@@ -1122,6 +1125,7 @@ mod route_tests {
                             UnknownId::mint("catia:test:unknown#record-0".to_string())
                                 .expect("identity grammar"),
                         ),
+                        cache: None,
                     },
                 )
                 .expect("valid ProceduralCurve fixture"),
@@ -1140,6 +1144,7 @@ mod route_tests {
                             UnknownId::mint("catia:test:unknown#record-1".to_string())
                                 .expect("identity grammar"),
                         ),
+                        cache: None,
                     },
                     None,
                 )
@@ -1157,6 +1162,7 @@ mod route_tests {
                     false,
                     cadmpeg_ir::geometry::OffsetExtension::Legacy {
                         flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                        cache: None,
                     },
                 )
                 .and_then(|admitted_payload| {
@@ -1175,19 +1181,17 @@ mod route_tests {
         assert_eq!(unresolved_carrier_counts(&ir), (1, 2));
 
         ir.model.procedural_curves[0]
-            .replace_definition(ProceduralCurveDefinition::Exact)
-            .expect("valid replacement fixture definition");
-        ir.model.procedural_surfaces[0]
-            .replace_definition(ProceduralSurfaceDefinition::Exact(
-                cadmpeg_ir::geometry::surface_payloads::ExactSurfacePayload::try_new(
-                    cadmpeg_ir::geometry::ExactSpline::Legacy {
-                        ranges: [[0.0, 1.0], [0.0, 1.0]],
-                        extension: 0,
-                    },
-                )
-                .expect("finite ordered exact-spline fixture ranges"),
-            ))
-            .expect("valid replacement fixture definition");
+            .replace_definition(ProceduralCurveDefinition::Exact { cache: None });
+        ir.model.procedural_surfaces[0].replace_definition(ProceduralSurfaceDefinition::Exact(
+            cadmpeg_ir::geometry::surface_payloads::ExactSurfacePayload::try_new(
+                cadmpeg_ir::geometry::ExactSpline::Legacy {
+                    ranges: [[0.0, 1.0], [0.0, 1.0]],
+                    extension: 0,
+                    cache: None,
+                },
+            )
+            .expect("finite ordered exact-spline fixture ranges"),
+        ));
         assert_eq!(unresolved_carrier_counts(&ir), (0, 0));
     }
 }

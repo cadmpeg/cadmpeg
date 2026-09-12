@@ -726,7 +726,7 @@ impl AsmEditSet {
                     *definition_payload.light_direction(),
                 )
             }
-            ProceduralCurveDefinition::Exact => Err(CodecError::NotImplemented(
+            ProceduralCurveDefinition::Exact { .. } => Err(CodecError::NotImplemented(
                 "ASM procedural-curve definition is not writable".into(),
             )),
             ProceduralCurveDefinition::Law { .. } => Err(CodecError::NotImplemented(

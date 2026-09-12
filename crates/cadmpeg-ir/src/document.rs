@@ -23,8 +23,8 @@ use crate::features::{
     FeatureResultTopology, FeatureWriteWire,
 };
 use crate::geometry::{
-    Curve, CurveGeometry, Pcurve, ProceduralCurve, ProceduralCurveReadWire, ProceduralSurface,
-    ProceduralSurfaceReadWire, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, Pcurve, ProceduralCurve, ProceduralCurveRow, ProceduralSurface,
+    ProceduralSurfaceRow, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use crate::native::Native;
@@ -150,17 +150,7 @@ impl Serialize for ProceduralSurfaceWire<'_> {
                 self.procedural.id
             ))
         })?;
-        let mut state = serializer.serialize_struct("ProceduralSurface", 5)?;
-        state.serialize_field("id", &self.procedural.id)?;
-        state.serialize_field("surface", owner)?;
-        state.serialize_field("definition", self.procedural.definition())?;
-        if let Some(cache_fit_tolerance) = self.procedural.legacy_cache_fit_tolerance() {
-            state.serialize_field("cache_fit_tolerance", &cache_fit_tolerance)?;
-        }
-        if let Some(record_bounds) = self.procedural.record_bounds {
-            state.serialize_field("record_bounds", &record_bounds)?;
-        }
-        state.end()
+        ProceduralSurfaceRow::new(owner.clone(), self.procedural).serialize(serializer)
     }
 }
 
@@ -180,14 +170,7 @@ impl Serialize for ProceduralCurveWire<'_> {
                 self.procedural.id
             ))
         })?;
-        let mut state = serializer.serialize_struct("ProceduralCurve", 4)?;
-        state.serialize_field("id", &self.procedural.id)?;
-        state.serialize_field("curve", owner)?;
-        state.serialize_field("definition", self.procedural.definition())?;
-        if let Some(cache_fit_tolerance) = self.procedural.legacy_cache_fit_tolerance() {
-            state.serialize_field("cache_fit_tolerance", &cache_fit_tolerance)?;
-        }
-        state.end()
+        ProceduralCurveRow::new(owner.clone(), self.procedural).serialize(serializer)
     }
 }
 
@@ -242,8 +225,8 @@ macro_rules! model_write_value {
 }
 
 macro_rules! model_read_type {
-    (procedural_surfaces, $ty:ty) => { Vec<ProceduralSurfaceReadWire> };
-    (procedural_curves, $ty:ty) => { Vec<ProceduralCurveReadWire> };
+    (procedural_surfaces, $ty:ty) => { Vec<ProceduralSurfaceRow> };
+    (procedural_curves, $ty:ty) => { Vec<ProceduralCurveRow> };
     (features, $ty:ty) => { Vec<FeatureReadWire> };
     ($field:ident, $ty:ty) => { Vec<$ty> };
 }
@@ -386,19 +369,13 @@ macro_rules! declare_model {
                 admit_feature_regeneration_parents(&mut model, feature_parents)
                     .map_err(serde::de::Error::custom)?;
                 for wire in procedural_surfaces {
-                    let (owner, procedural) = wire.into_parts().map_err(serde::de::Error::custom)?;
-                    let owner = owner.ok_or_else(|| serde::de::Error::custom(
-                        "procedural surface wire is missing surface",
-                    ))?;
+                    let (owner, procedural) = wire.into_parts();
                     model
                         .add_procedural_surface(owner, procedural)
                         .map_err(serde::de::Error::custom)?;
                 }
                 for wire in procedural_curves {
-                    let (owner, procedural) = wire.into_parts().map_err(serde::de::Error::custom)?;
-                    let owner = owner.ok_or_else(|| serde::de::Error::custom(
-                        "procedural curve wire is missing curve",
-                    ))?;
+                    let (owner, procedural) = wire.into_parts();
                     model
                         .add_procedural_curve(owner, procedural)
                         .map_err(serde::de::Error::custom)?;

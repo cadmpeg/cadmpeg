@@ -422,6 +422,12 @@
             "spine": "f3d:brep:procedural_surface#9:sweep:spine",
             "native": {
               "primary_kind": 3,
+              "cache": {
+                "layout": "legacy",
+                "cache": {
+                  "fit_tolerance": 0.05
+                }
+              },
               "layout": {
                 "kind": "profile_first",
                 "secondary_kind": 4,
@@ -487,8 +493,7 @@
               ],
               "discontinuity_flag": true
             }
-          },
-          "cache_fit_tolerance": 0.05
+          }
         }
       ],
       "procedural_curves": [],

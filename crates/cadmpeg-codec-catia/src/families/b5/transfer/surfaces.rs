@@ -708,6 +708,7 @@ pub(super) fn emit_surfaces(
                 false,
                 cadmpeg_ir::geometry::OffsetExtension::Legacy {
                     flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                    cache: None,
                 },
             )
             .and_then(|admitted_payload| {
@@ -783,7 +784,7 @@ fn emit_extrusion_procedure(
                 "two_surface_pcurve_intersection",
                 Exactness::ByteExact,
             );
-            let procedure = ProceduralCurve::try_new(
+            let procedure = ProceduralCurve::new(
                 procedure_id,
                 ProceduralCurveDefinition::Intersection {
                     context: IntcurveSupportContext::try_new(
@@ -793,8 +794,11 @@ fn emit_extrusion_procedure(
                     )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                     discontinuity_flag: false,
+                    cache: Some(
+                        cadmpeg_ir::geometry::LegacyCache::try_new(cache_fit_tolerance)
+                            .map_err(cadmpeg_core::CodecError::malformed)?,
+                    ),
                 },
-                Some(cache_fit_tolerance),
             )
             .map_err(cadmpeg_core::CodecError::malformed)?;
 
