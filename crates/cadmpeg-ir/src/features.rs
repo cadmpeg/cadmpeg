@@ -5855,9 +5855,6 @@ pub enum BodySelectionError {
     /// A selection set contains no members.
     #[error("body selection set must not be empty")]
     Empty,
-    /// Parallel inputs have different member counts.
-    #[error("body selection rows have mismatched lengths")]
-    MismatchedLengths,
     /// A body occurs more than once in the set.
     #[error("body selection set repeats a body")]
     RepeatedBody,
@@ -5934,6 +5931,12 @@ impl<B> BodyMember<B> {
     pub fn native(&self) -> &str {
         &self.native
     }
+
+    /// Consume the row and return its body identity and native member.
+    #[must_use]
+    pub fn into_parts(self) -> (B, String) {
+        (self.body, self.native)
+    }
 }
 
 impl<'de, B> Deserialize<'de> for BodyMember<B>
@@ -5981,22 +5984,6 @@ impl<B> BodyMembers<B> {
             }
         }
         Ok(Self(rows))
-    }
-
-    /// Construct checked rows from parallel body and native-member vectors.
-    pub fn try_from_parts(bodies: Vec<B>, native: Vec<String>) -> Result<Self, BodySelectionError>
-    where
-        B: Eq + std::hash::Hash,
-    {
-        if bodies.len() != native.len() {
-            return Err(BodySelectionError::MismatchedLengths);
-        }
-        let rows = bodies
-            .into_iter()
-            .zip(native)
-            .map(|(body, native)| BodyMember::new(body, native))
-            .collect::<Result<Vec<_>, _>>()?;
-        Self::try_from_rows(rows)
     }
 
     /// Number of paired selection rows.

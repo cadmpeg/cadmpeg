@@ -26,21 +26,29 @@ fn historical_body_overlap_spans_direct_and_paired_member_selections() {
     .unwrap();
     let overlapping = BodySelection::HistoricalSet {
         state: state.clone(),
-        members: crate::features::BodyMembers::try_from_parts(
-            vec![
+        members: crate::features::BodyMembers::try_from_rows(vec![
+            crate::features::BodyMember::new(
                 HistoricalBodyId::mint("test:body:2").expect("valid identity"),
+                "tool-a".into(),
+            )
+            .expect("valid historical body selection row"),
+            crate::features::BodyMember::new(
                 HistoricalBodyId::mint("test:body:4").expect("valid identity"),
-            ],
-            vec!["tool-a".into(), "tool-b".into()],
-        )
+                "tool-b".into(),
+            )
+            .expect("valid historical body selection row"),
+        ])
         .expect("valid historical body selection rows"),
     };
     let disjoint = BodySelection::HistoricalSet {
         state,
-        members: crate::features::BodyMembers::try_from_parts(
-            vec![HistoricalBodyId::mint("test:body:5").expect("valid identity")],
-            vec!["tool".into()],
-        )
+        members: crate::features::BodyMembers::try_from_rows(vec![
+            crate::features::BodyMember::new(
+                HistoricalBodyId::mint("test:body:5").expect("valid identity"),
+                "tool".into(),
+            )
+            .expect("valid historical body selection row"),
+        ])
         .expect("valid historical body selection rows"),
     };
 
