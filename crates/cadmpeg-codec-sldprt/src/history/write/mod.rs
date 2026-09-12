@@ -155,8 +155,7 @@ pub(crate) fn prepare_features_for_write(
                 .as_ref()
                 .map(project_feature_model_with_native_inputs)
                 .transpose()?
-                .map(FeatureProjection::into_model)
-                .transpose()?
+                .map(|projection| projection.into_model().0)
                 .unwrap_or_default();
             if feature_hash(&projected_model) == neutral_hash {
                 Ok(())

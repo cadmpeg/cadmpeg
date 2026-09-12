@@ -2235,6 +2235,7 @@ fn build_geometry_ir(
         &pmi_dimensions,
         scan,
         form_padding,
+        &mut pmi_losses,
     )?;
     crate::resolved_features::operations::bind_feature_operations(
         &mut ir.model.features,
@@ -3293,6 +3294,7 @@ fn build_metadata_ir(
         &pmi_dimensions,
         scan,
         form_padding,
+        &mut pmi_losses,
     )?;
     crate::resolved_features::operations::bind_feature_operations(
         &mut ir.model.features,
@@ -3590,6 +3592,7 @@ fn project_design_history(
     pmi_dimensions: &[crate::records::PmiDimension],
     scan: &ContainerScan,
     form_padding: Option<usize>,
+    losses: &mut Vec<cadmpeg_ir::LossNote>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut semantic_projection = histories.to_vec();
     crate::history::enrich_scene_classes(
@@ -3603,7 +3606,7 @@ fn project_design_history(
         crate::history::HistoryEnrichment::Read,
     );
     ir.model.semantic_annotations = crate::history::project_semantic_notes(&semantic_projection);
-    crate::history::project_feature_model(&semantic_projection)?.install(&mut ir.model)?;
+    crate::history::project_feature_model(&semantic_projection)?.install(&mut ir.model, losses);
     crate::resolved_features::bindings::bind_pattern_inputs(
         &mut ir.model.features,
         &semantic_projection,
