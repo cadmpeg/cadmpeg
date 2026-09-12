@@ -544,7 +544,9 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
             Some(Box::new(native)),
         )
         .unwrap();
-        definition_payload.set_legacy_cache(restored_cache);
+        definition
+            .set_legacy_cache(restored_cache)
+            .expect("a blend payload states a legacy cache slot");
     });
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
@@ -577,7 +579,9 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
             Some(Box::new(native)),
         )
         .unwrap();
-        definition_payload.set_legacy_cache(restored_cache);
+        definition
+            .set_legacy_cache(restored_cache)
+            .expect("a blend payload states a legacy cache slot");
     });
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
@@ -611,7 +615,9 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
             Some(Box::new(native)),
         )
         .unwrap();
-        definition_payload.set_legacy_cache(restored_cache);
+        definition
+            .set_legacy_cache(restored_cache)
+            .expect("a blend payload states a legacy cache slot");
     });
     let index = crate::index::ModelIndex::new(&ir);
     assert!(model_surface_point_by_id(&index, &blend_surface, 0.25, 0.5).is_none());

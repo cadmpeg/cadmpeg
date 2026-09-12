@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::geometry::{
-    CacheContractError, FitTolerance, LawFormula, LawSurfaceConstruction, LawSurfaceTail,
-    LegacyCache, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition,
+    CacheContractError, ExactSpline, FitTolerance, LawFormula, LawSurfaceConstruction,
+    LawSurfaceTail, LegacyCache, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
+    ProceduralSurfaceDefinition, RevisionCacheForm, RevisionSurfaceForm,
 };
 use crate::ids::{ProceduralCurveId, ProceduralSurfaceId};
 
@@ -172,4 +172,46 @@ fn raising_the_fit_tolerance_of_a_legacy_slot_keeps_the_higher_of_the_two() {
             .expect("procedural");
     empty.raise_cache_fit_tolerance(FitTolerance::try_new(0.25).expect("admissible"));
     assert_eq!(empty.cache_fit_tolerance(), Some(0.25));
+}
+
+fn revision_exact_definition() -> ProceduralSurfaceDefinition {
+    ProceduralSurfaceDefinition::Exact(
+        crate::geometry::surface_payloads::ExactSurfacePayload::try_new(ExactSpline::Revision {
+            intervals: [[None, None], [None, None]],
+            extension: 0,
+            form: RevisionSurfaceForm {
+                revision: 1,
+                support_bounds: [None; 4],
+                reference_endpoints: [None; 2],
+                second_endpoints: [None; 2],
+                flags: Vec::new(),
+                cache: RevisionCacheForm::SolvedCache {
+                    fit_tolerance: FitTolerance::try_new(0.25).expect("admissible fit tolerance"),
+                },
+                discontinuities: std::array::from_fn(|_| Vec::new()),
+                tail_flag: false,
+                trailing_flags: Vec::new(),
+            },
+        })
+        .expect("exact spline surface payload"),
+    )
+}
+
+#[test]
+fn a_revision_exact_spline_refuses_a_legacy_cache_on_its_only_write_route() {
+    let mut definition = revision_exact_definition();
+    let before = definition.clone();
+    assert_eq!(
+        definition.set_legacy_cache(Some(
+            LegacyCache::try_new(9.0).expect("admissible fit tolerance")
+        )),
+        Err(CacheContractError::Layout(
+            "this construction states no solved-cache fit tolerance"
+        ))
+    );
+    assert_eq!(definition, before);
+    assert_eq!(
+        definition.cache_fit_tolerance(),
+        Some(FitTolerance::try_new(0.25).expect("admissible fit tolerance"))
+    );
 }

@@ -1145,7 +1145,9 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
                     definition_payload.native().cloned().map(Box::new),
                 )
                 .unwrap();
-            definition_payload.set_legacy_cache(restored_cache);
+            definition
+                .set_legacy_cache(restored_cache)
+                .expect("the rebuilt construction states the same legacy cache slot");
         });
     }
     attach_test_body_surface(&mut face_blend_ir, &output, first_support);

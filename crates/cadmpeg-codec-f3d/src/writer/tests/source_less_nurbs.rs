@@ -1290,8 +1290,11 @@ fn generated_cacheless_circle_extrusion_decodes_as_analytic_cylinder() {
                 definition_payload.revision_form().cloned(),
             )
             .unwrap();
-        definition_payload.set_legacy_cache(restored_cache);
-        definition_payload.directrix().clone()
+        let directrix = definition_payload.directrix().clone();
+        definition
+            .set_legacy_cache(restored_cache)
+            .expect("the rebuilt construction states the same legacy cache slot");
+        directrix
     });
     source_less
         .model

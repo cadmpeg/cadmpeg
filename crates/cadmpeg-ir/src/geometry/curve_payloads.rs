@@ -1103,11 +1103,6 @@ impl SubsetCurveConstruction {
         self.cache
     }
 
-    /// Replace the solved-cache fit contract this construction states.
-    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
-        self.cache = cache;
-    }
-
     /// Mutable legacy solved-cache slot this construction states.
     pub(super) const fn legacy_cache_slot_mut(&mut self) -> LegacyCacheSlot<'_> {
         LegacyCacheSlot::Optional(&mut self.cache)
@@ -1119,11 +1114,6 @@ impl VectorOffsetCurveConstruction {
     #[must_use]
     pub const fn legacy_cache(&self) -> Option<LegacyCache> {
         self.cache
-    }
-
-    /// Replace the solved-cache fit contract this construction states.
-    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
-        self.cache = cache;
     }
 
     /// Mutable legacy solved-cache slot this construction states.
@@ -1139,11 +1129,6 @@ impl TwoSidedOffsetCurveConstruction {
         self.cache
     }
 
-    /// Replace the solved-cache fit contract this construction states.
-    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
-        self.cache = cache;
-    }
-
     /// Mutable legacy solved-cache slot this construction states.
     pub(super) const fn legacy_cache_slot_mut(&mut self) -> LegacyCacheSlot<'_> {
         LegacyCacheSlot::Optional(&mut self.cache)
@@ -1157,13 +1142,6 @@ impl SpringCurvePayload {
         match &self.layout {
             SpringLayout::ContextFirst { cache, .. } => *cache,
             SpringLayout::CacheFirst { .. } => None,
-        }
-    }
-
-    /// Replace the context-first layout's solved-cache fit contract.
-    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
-        if let SpringLayout::ContextFirst { cache: slot, .. } = &mut self.layout {
-            *slot = cache;
         }
     }
 
@@ -1185,14 +1163,6 @@ impl SurfaceOffsetCurveConstruction {
             Some(fit_tolerance) => Some(LegacyCache { fit_tolerance }),
             None => None,
         }
-    }
-
-    /// Replace the context-first layout's solved-cache fit contract.
-    pub const fn set_legacy_cache(&mut self, cache: Option<LegacyCache>) {
-        self.cache.set_legacy_fit_tolerance(match cache {
-            Some(cache) => Some(cache.fit_tolerance),
-            None => None,
-        });
     }
 
     /// Mutable legacy solved-cache slot, absent when a revision-gated form

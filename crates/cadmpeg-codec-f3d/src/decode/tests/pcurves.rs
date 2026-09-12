@@ -106,7 +106,9 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
                 [shift_value, scale_value],
             )
             .unwrap();
-        definition_payload.set_legacy_cache(restored_cache);
+        definition
+            .set_legacy_cache(restored_cache)
+            .expect("the rebuilt construction states the same legacy cache slot");
     });
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut regenerated)
@@ -206,7 +208,9 @@ fn generated_spring_curve_decodes_and_writes_source_less() {
             edited_direction,
         )
         .unwrap();
-        definition_payload.set_legacy_cache(restored_cache);
+        definition
+            .set_legacy_cache(restored_cache)
+            .expect("the rebuilt construction states the same legacy cache slot");
         expected_flag
     });
     let mut regenerated = Vec::new();

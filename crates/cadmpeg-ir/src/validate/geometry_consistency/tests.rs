@@ -332,7 +332,9 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
                 [*definition_payload.shift(), *definition_payload.scale()],
             )
             .unwrap();
-        definition_payload.set_legacy_cache(restored_cache);
+        definition
+            .set_legacy_cache(restored_cache)
+            .expect("a context-first surface offset states a legacy cache slot");
     });
     check_procedural_support_consistency(&context_first, &mut findings);
     assert!(findings.is_empty());

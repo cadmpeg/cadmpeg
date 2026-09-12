@@ -417,7 +417,9 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
                 *definition_payload.roles(),
             )
             .unwrap();
-        definition_payload.set_legacy_cache(restored_cache);
+        definition
+            .set_legacy_cache(restored_cache)
+            .expect("the rebuilt construction states the same legacy cache slot");
     });
     edited.model.procedural_curves[0]
         .set_cache_fit_tolerance(Some(0.015))
@@ -567,7 +569,9 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
                 *definition_payload.sense(),
             )
             .unwrap();
-        definition_payload.set_legacy_cache(restored_cache);
+        definition
+            .set_legacy_cache(restored_cache)
+            .expect("the rebuilt construction states the same legacy cache slot");
     });
     let expected_edit = edited.model.procedural_curves[0].definition().clone();
     let mut regenerated = Vec::new();
@@ -985,7 +989,9 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
             components,
         )
         .unwrap();
-        compound.set_legacy_cache(restored_cache);
+        definition
+            .set_legacy_cache(restored_cache)
+            .expect("the rebuilt construction states the same legacy cache slot");
     });
     let expected_edit = edited.model.procedural_curves[0].definition().clone();
     let mut regenerated = Vec::new();
@@ -1120,7 +1126,9 @@ fn generated_two_sided_offset_decodes_and_writes_source_less() {
                 offsets_value,
             )
             .unwrap();
-        definition_payload.set_legacy_cache(restored_cache);
+        definition
+            .set_legacy_cache(restored_cache)
+            .expect("the rebuilt construction states the same legacy cache slot");
     });
     let expected_edit = edited.model.procedural_curves[0].definition().clone();
     let mut regenerated = Vec::new();
@@ -1223,7 +1231,9 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
                 offsets_value,
             )
             .unwrap();
-        definition_payload.set_legacy_cache(restored_cache);
+        definition
+            .set_legacy_cache(restored_cache)
+            .expect("the rebuilt construction states the same legacy cache slot");
     });
     let expected_retained = retained.model.procedural_curves[0].definition().clone();
     let mut retained_bytes = Vec::new();
@@ -1344,7 +1354,9 @@ fn generated_mixed_offset_supports_write_source_less() {
                 *definition_payload.offsets(),
             )
             .unwrap();
-        definition_payload.set_legacy_cache(restored_cache);
+        definition
+            .set_legacy_cache(restored_cache)
+            .expect("the rebuilt construction states the same legacy cache slot");
         edit_result
     });
     let expected_surface = source_less

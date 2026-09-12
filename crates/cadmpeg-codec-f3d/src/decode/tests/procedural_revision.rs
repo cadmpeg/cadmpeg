@@ -972,7 +972,9 @@ fn generated_f3d_rewrites_translational_extrusion_header() {
                 definition_payload.revision_form().cloned(),
             )
             .unwrap();
-        definition_payload.set_legacy_cache(restored_cache);
+        definition
+            .set_legacy_cache(restored_cache)
+            .expect("the rebuilt construction states the same legacy cache slot");
     });
 
     let mut regenerated = Vec::new();
@@ -1328,7 +1330,9 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
                     definition_payload.native().cloned().map(Box::new),
                 )
                 .unwrap();
-            definition_payload.set_legacy_cache(restored_cache);
+            definition
+                .set_legacy_cache(restored_cache)
+                .expect("the rebuilt construction states the same legacy cache slot");
             (support_ids, spine_id)
         });
     let support_geometry = [
@@ -1476,7 +1480,9 @@ fn generated_f3d_rewrites_rolling_ball_radius_law() {
             definition_payload.native().cloned().map(Box::new),
         )
         .unwrap();
-        definition_payload.set_legacy_cache(restored_cache);
+        definition
+            .set_legacy_cache(restored_cache)
+            .expect("the rebuilt construction states the same legacy cache slot");
     });
 
     let mut regenerated = Vec::new();
