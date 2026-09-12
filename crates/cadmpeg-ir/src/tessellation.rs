@@ -149,7 +149,7 @@ impl<V> Strips<V> {
         let span = strips.iter().try_fold(0u64, |total, strip| {
             total.checked_add(strip.vertices().len() as u64)
         })?;
-        (span <= u64::from(u32::MAX)).then_some(Self(strips))
+        u32::try_from(span).is_ok().then_some(Self(strips))
     }
 
     /// The strips in mesh order.
@@ -516,15 +516,15 @@ impl TessellationMesh {
         match self {
             Self::List { .. } | Self::Strips { .. } => false,
             Self::ShadedList { vertices, .. } => {
-                vertices
-                    .iter_mut()
-                    .for_each(|vertex| edit(&mut vertex.normal));
+                for vertex in vertices {
+                    edit(&mut vertex.normal);
+                }
                 true
             }
             Self::CornerShadedList { triangles, .. } => {
-                triangles
-                    .iter_mut()
-                    .for_each(|triangle| triangle.normals.iter_mut().for_each(&mut edit));
+                for triangle in triangles {
+                    triangle.normals.iter_mut().for_each(&mut edit);
+                }
                 true
             }
             Self::ShadedStrips { strips } => {

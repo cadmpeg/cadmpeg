@@ -949,8 +949,14 @@ fn planar_nurbs_wire_preserves_flat_fields_and_checks_cardinality() {
         "curve": {
             "degree": 1,
             "knots": [0.0, 0.0, 1.0, 1.0],
-            "control_points": [{"u": 2.0, "v": 3.0}, {"u": 4.0, "v": 5.0}],
-            "weights": [1.0, 0.5], "periodic": false
+            "poles": {
+                "form": "rational",
+                "points": [
+                    {"point": {"u": 2.0, "v": 3.0}, "weight": 1.0},
+                    {"point": {"u": 4.0, "v": 5.0}, "weight": 0.5}
+                ]
+            },
+            "periodic": false
         }
     });
     let geometry: SketchGeometry = serde_json::from_value(wire.clone()).unwrap();
@@ -959,8 +965,23 @@ fn planar_nurbs_wire_preserves_flat_fields_and_checks_cardinality() {
         ("degree", serde_json::json!(0)),
         ("degree", serde_json::json!(2)),
         ("knots", serde_json::json!([0.0, 1.0])),
-        ("control_points", serde_json::json!([{"u": 2.0, "v": 3.0}])),
-        ("weights", serde_json::json!([1.0])),
+        (
+            "poles",
+            serde_json::json!({
+                "form": "rational",
+                "points": [{"point": {"u": 2.0, "v": 3.0}, "weight": 1.0}]
+            }),
+        ),
+        (
+            "poles",
+            serde_json::json!({
+                "form": "rational",
+                "points": [
+                    {"point": {"u": 2.0, "v": 3.0}, "weight": 0.0},
+                    {"point": {"u": 4.0, "v": 5.0}, "weight": 0.5}
+                ]
+            }),
+        ),
     ] {
         let mut invalid = wire.clone();
         invalid["curve"][field] = value;
@@ -970,10 +991,10 @@ fn planar_nurbs_wire_preserves_flat_fields_and_checks_cardinality() {
         );
     }
     let mut nonrational = wire;
-    nonrational["curve"]
-        .as_object_mut()
-        .unwrap()
-        .remove("weights");
+    nonrational["curve"]["poles"] = serde_json::json!({
+        "form": "polynomial",
+        "points": [{"u": 2.0, "v": 3.0}, {"u": 4.0, "v": 5.0}]
+    });
     nonrational["curve"]
         .as_object_mut()
         .unwrap()
