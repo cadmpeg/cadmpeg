@@ -1635,67 +1635,79 @@ mod tests {
     }
 
     #[test]
-    fn every_face_loop_carries_its_role_on_the_wire() {
+    fn a_classified_face_states_its_outer_loop_once() {
         let mut model = crate::examples::unit_cube().model;
         let face = &mut model.faces[0];
         let outer = face.loops.as_slice()[0].clone();
         face.loops.classify_outer(Some(&outer));
         let wire = serde_json::to_value(&*face).unwrap();
-        let members = wire["loops"].as_array().expect("a loops array");
-        assert_eq!(members[0]["id"], serde_json::json!(outer.as_str()));
-        assert_eq!(members[0]["role"], serde_json::json!("outer"));
-        for member in &members[1..] {
-            assert_eq!(member["role"], serde_json::json!("inner"));
-        }
+        assert_eq!(
+            wire["loops"]["classification"],
+            serde_json::json!("classified")
+        );
+        assert_eq!(wire["loops"]["outer"], serde_json::json!(outer.as_str()));
+        assert!(wire["loops"].get("loops").is_none());
         let restored: Face = serde_json::from_value(wire).unwrap();
         assert_eq!(restored.loop_role(&outer), LoopBoundaryRole::Outer);
         assert_eq!(restored.outer(), Some(&outer));
+        for inner in restored.inner() {
+            assert_eq!(restored.loop_role(inner), LoopBoundaryRole::Inner);
+        }
     }
 
     #[test]
-    fn an_unclassified_face_states_unspecified_on_every_loop() {
+    fn an_unclassified_face_states_its_loops_in_source_order() {
         let model = crate::examples::unit_cube().model;
         let face = &model.faces[0];
         assert!(face.loops.is_unspecified());
         let wire = serde_json::to_value(face).unwrap();
-        for member in wire["loops"].as_array().expect("a loops array") {
-            assert_eq!(member["role"], serde_json::json!("unspecified"));
-        }
+        assert_eq!(
+            wire["loops"]["classification"],
+            serde_json::json!("unspecified")
+        );
+        assert!(wire["loops"].get("outer").is_none());
+        assert_eq!(
+            wire["loops"]["loops"]
+                .as_array()
+                .expect("a loops array")
+                .len(),
+            face.loops.len()
+        );
         let restored: Face = serde_json::from_value(wire).unwrap();
         assert!(restored.loops.is_unspecified());
     }
 
     #[test]
     fn a_face_with_two_outer_loops_has_no_encoding() {
+        // A face states one outer loop in one key, so a second has nowhere to
+        // go: the wire has no shape for it.
         let wire = serde_json::json!({
             "id": "test:model:face#0",
             "shell": "test:model:shell#0",
             "surface": "test:model:surface#0",
             "sense": "forward",
-            "loops": [
-                {"id": "test:model:loop#0", "role": "outer"},
-                {"id": "test:model:loop#1", "role": "outer"},
-            ]
+            "loops": {
+                "classification": "classified",
+                "outer": ["test:model:loop#0", "test:model:loop#1"],
+                "inner": []
+            }
         });
-        let error = serde_json::from_value::<Face>(wire)
-            .unwrap_err()
-            .to_string();
-        assert!(
-            error.contains("more than one explicit outer loop"),
-            "{error}"
-        );
+        assert!(serde_json::from_value::<Face>(wire).is_err());
     }
 
     #[test]
-    fn a_face_loop_member_rejects_an_unknown_key_by_name() {
+    fn a_face_loop_list_rejects_an_unknown_key_by_name() {
         let wire = serde_json::json!({
             "id": "test:model:face#0",
             "shell": "test:model:shell#0",
             "surface": "test:model:surface#0",
             "sense": "forward",
-            "loops": [
-                {"id": "test:model:loop#0", "role": "outer", "zz_bogus": 1},
-            ]
+            "loops": {
+                "classification": "classified",
+                "outer": "test:model:loop#0",
+                "inner": [],
+                "zz_bogus": 1
+            }
         });
         let error = serde_json::from_value::<Face>(wire)
             .unwrap_err()
