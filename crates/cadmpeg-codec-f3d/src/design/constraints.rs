@@ -1349,13 +1349,16 @@ mod tests {
         assert_eq!(pattern.center(), center.id());
         assert_eq!(pattern.angle().get(), std::f64::consts::PI);
         assert_eq!(pattern.count(), 3);
+        // The seed is not an instance, so the instance list carries only the
+        // rotations after it.
+        assert_eq!(pattern.seed(), std::slice::from_ref(seed.id()));
         assert_eq!(
             pattern
                 .instances()
                 .iter()
                 .map(|instance| instance.angle.get())
                 .collect::<Vec<_>>(),
-            [0.0, std::f64::consts::FRAC_PI_2, std::f64::consts::PI]
+            [std::f64::consts::FRAC_PI_2, std::f64::consts::PI]
         );
 
         let full_middle = circle(
@@ -1377,7 +1380,7 @@ mod tests {
                 &full_returned,
             ),
             Some(SketchConstraintDefinitionInput::CircularPattern { ref pattern })
-                if scalar_close(pattern.instances()[1].angle.get(), std::f64::consts::TAU / 3.0)
+                if scalar_close(pattern.instances()[0].angle.get(), std::f64::consts::TAU / 3.0)
         ));
     }
 
