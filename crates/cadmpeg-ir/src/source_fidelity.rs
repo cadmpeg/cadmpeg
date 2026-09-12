@@ -101,6 +101,35 @@ pub enum RetainedBytes {
     },
 }
 
+impl RetainedBytes {
+    /// Returns the number of source bytes.
+    #[must_use]
+    pub fn byte_len(&self) -> u64 {
+        match self {
+            Self::Inline { data } => data.len() as u64,
+            Self::Digest { byte_len, .. } => *byte_len,
+        }
+    }
+
+    /// Returns the lowercase hexadecimal SHA-256 of the source bytes.
+    #[must_use]
+    pub fn sha256(&self) -> String {
+        match self {
+            Self::Inline { data } => crate::hash::sha256_hex(data),
+            Self::Digest { sha256, .. } => sha256.clone(),
+        }
+    }
+
+    /// Returns the source bytes when they are retained.
+    #[must_use]
+    pub fn data(&self) -> Option<&[u8]> {
+        match self {
+            Self::Inline { data } => Some(data),
+            Self::Digest { .. } => None,
+        }
+    }
+}
+
 /// Source bytes retained for native recovery or replay.
 ///
 /// The record is addressed by its id in
@@ -121,10 +150,16 @@ impl RetainedSourceRecord {
     /// Retains source bytes.
     #[must_use]
     pub fn retained(stream: impl Into<String>, offset: u64, data: Vec<u8>) -> Self {
+        Self::from_bytes(stream, offset, RetainedBytes::Inline { data })
+    }
+
+    /// Records a source record from a retained image already in hand.
+    #[must_use]
+    pub fn from_bytes(stream: impl Into<String>, offset: u64, bytes: RetainedBytes) -> Self {
         Self {
             stream: stream.into(),
             offset,
-            bytes: RetainedBytes::Inline { data },
+            bytes,
         }
     }
 
@@ -136,14 +171,14 @@ impl RetainedSourceRecord {
         byte_len: u64,
         sha256: impl Into<String>,
     ) -> Self {
-        Self {
-            stream: stream.into(),
+        Self::from_bytes(
+            stream,
             offset,
-            bytes: RetainedBytes::Digest {
+            RetainedBytes::Digest {
                 byte_len,
                 sha256: sha256.into(),
             },
-        }
+        )
     }
 
     /// Returns the source stream containing the record.
@@ -161,28 +196,19 @@ impl RetainedSourceRecord {
     /// Returns the number of source bytes.
     #[must_use]
     pub fn byte_len(&self) -> u64 {
-        match &self.bytes {
-            RetainedBytes::Inline { data } => data.len() as u64,
-            RetainedBytes::Digest { byte_len, .. } => *byte_len,
-        }
+        self.bytes.byte_len()
     }
 
     /// Returns the lowercase hexadecimal SHA-256 of the source bytes.
     #[must_use]
     pub fn sha256(&self) -> String {
-        match &self.bytes {
-            RetainedBytes::Inline { data } => crate::hash::sha256_hex(data),
-            RetainedBytes::Digest { sha256, .. } => sha256.clone(),
-        }
+        self.bytes.sha256()
     }
 
     /// Returns the retained bytes when available.
     #[must_use]
     pub fn data(&self) -> Option<&[u8]> {
-        match &self.bytes {
-            RetainedBytes::Inline { data } => Some(data),
-            RetainedBytes::Digest { .. } => None,
-        }
+        self.bytes.data()
     }
 }
 
@@ -223,10 +249,10 @@ impl SourceFidelity {
         records: impl IntoIterator<Item = UnknownRecord>,
     ) {
         for record in records {
-            let (id, offset, byte_len, sha256, data, _) = record.into_parts();
+            let (id, offset, retention, _) = record.into_parts();
             self.retained_records.insert(
                 id.into_string(),
-                retained_source_record(stream, offset, byte_len, &sha256, data),
+                RetainedSourceRecord::from_bytes(stream, offset, retention),
             );
         }
     }
@@ -251,7 +277,7 @@ impl SourceFidelity {
         ir.set_native_unknowns_from(
             format,
             records.into_iter().map(|record| {
-                let (id, offset, byte_len, sha256, data, links) = record.into_parts();
+                let (id, offset, retention, links) = record.into_parts();
                 let stream = annotations.provenance.get(id.as_str()).map_or_else(
                     || "source".into(),
                     |provenance| provenance.stream().to_owned(),
@@ -262,25 +288,12 @@ impl SourceFidelity {
                 };
                 retained_records.insert(
                     id.into_string(),
-                    retained_source_record(&stream, offset, byte_len, &sha256, data),
+                    RetainedSourceRecord::from_bytes(&stream, offset, retention),
                 );
                 product
             }),
         )
     }
-}
-
-fn retained_source_record(
-    stream: &str,
-    offset: u64,
-    byte_len: u64,
-    sha256: &str,
-    data: Option<Vec<u8>>,
-) -> RetainedSourceRecord {
-    data.map_or_else(
-        || RetainedSourceRecord::unavailable(stream, offset, byte_len, sha256),
-        |data| RetainedSourceRecord::retained(stream, offset, data),
-    )
 }
 
 #[cfg(test)]
@@ -362,9 +375,7 @@ mod tests {
             let unknown: UnknownRecord = serde_json::from_value(serde_json::json!({
                 "id": "synthetic:model:unknown#0",
                 "offset": 7,
-                "byte_len": 3,
-                "sha256": crate::hash::sha256_hex(&[1, 2, 3]),
-                "data": "AQID"
+                "retention": {"retention": "inline", "data": "AQID"}
             }))
             .unwrap();
             let mut fidelity = SourceFidelity::default();

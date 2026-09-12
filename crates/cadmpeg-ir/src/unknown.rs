@@ -3,6 +3,7 @@
 #![deny(clippy::disallowed_methods)]
 
 use crate::ids::UnknownId;
+use crate::source_fidelity::RetainedBytes;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -27,41 +28,23 @@ impl From<&UnknownRecord> for NativeUnknownRecord {
     }
 }
 
-/// A recognized source record represented by location, digest, links, and
-/// optional retained bytes.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+/// A recognized source record represented by location, retained image, and
+/// links.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct UnknownRecord {
     /// Arena id.
     id: UnknownId,
     /// Byte offset of the record within its source stream.
     offset: u64,
-    /// Byte length of the record's span.
-    byte_len: u64,
-    /// Lowercase hex SHA-256 of the record bytes, for integrity and dedup.
-    sha256: String,
-    /// Preserved record bytes, when retained by the decoder.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "crate::bytes::option"
-    )]
-    #[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
-    data: Option<Vec<u8>>,
+    /// Retained image of the record bytes: the bytes themselves, or the
+    /// length and digest of bytes that are not retained. One or the other,
+    /// never both, so no record can state an extent or a digest that
+    /// contradicts the bytes beside it.
+    retention: RetainedBytes,
     /// Related entity IDs from any document arena.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    links: Vec<String>,
-}
-
-#[derive(Deserialize)]
-struct UnknownRecordWire {
-    id: UnknownId,
-    offset: u64,
-    byte_len: u64,
-    sha256: String,
-    #[serde(default, with = "crate::bytes::option")]
-    data: Option<Vec<u8>>,
-    #[serde(default)]
     links: Vec<String>,
 }
 
@@ -72,9 +55,7 @@ impl UnknownRecord {
         Self {
             id,
             offset,
-            byte_len: data.len() as u64,
-            sha256: crate::hash::sha256_hex(&data),
-            data: Some(data),
+            retention: RetainedBytes::Inline { data },
             links,
         }
     }
@@ -91,33 +72,16 @@ impl UnknownRecord {
         Self {
             id,
             offset,
-            byte_len,
-            sha256: sha256.into(),
-            data: None,
+            retention: RetainedBytes::Digest {
+                byte_len,
+                sha256: sha256.into(),
+            },
             links,
         }
     }
 
-    fn from_wire(wire: UnknownRecordWire) -> Self {
-        Self {
-            id: wire.id,
-            offset: wire.offset,
-            byte_len: wire.byte_len,
-            sha256: wire.sha256,
-            data: wire.data,
-            links: wire.links,
-        }
-    }
-
-    pub(crate) fn into_parts(self) -> (UnknownId, u64, u64, String, Option<Vec<u8>>, Vec<String>) {
-        (
-            self.id,
-            self.offset,
-            self.byte_len,
-            self.sha256,
-            self.data,
-            self.links,
-        )
+    pub(crate) fn into_parts(self) -> (UnknownId, u64, RetainedBytes, Vec<String>) {
+        (self.id, self.offset, self.retention, self.links)
     }
 
     /// Returns the arena id.
@@ -139,28 +103,25 @@ impl UnknownRecord {
 
     /// Returns the byte length of the record span.
     #[must_use]
-    pub const fn byte_len(&self) -> u64 {
-        self.byte_len
+    pub fn byte_len(&self) -> u64 {
+        self.retention.byte_len()
     }
 
     /// Returns the lowercase hexadecimal SHA-256 of the record bytes.
     #[must_use]
-    pub fn sha256(&self) -> &str {
-        &self.sha256
+    pub fn sha256(&self) -> String {
+        self.retention.sha256()
     }
 
     /// Returns the retained bytes when available.
     #[must_use]
     pub fn data(&self) -> Option<&[u8]> {
-        self.data.as_deref()
+        self.retention.data()
     }
 
-    /// Retains source bytes and replaces their measured length and digest with
-    /// values derived from those bytes.
+    /// Retains source bytes. Their length and digest become functions of them.
     pub fn retain_data(&mut self, data: Vec<u8>) {
-        self.byte_len = data.len() as u64;
-        self.sha256 = crate::hash::sha256_hex(&data);
-        self.data = Some(data);
+        self.retention = RetainedBytes::Inline { data };
     }
 
     /// Returns the related entity IDs.
@@ -173,12 +134,6 @@ impl UnknownRecord {
     #[must_use]
     pub fn links_mut(&mut self) -> &mut Vec<String> {
         &mut self.links
-    }
-}
-
-impl<'de> Deserialize<'de> for UnknownRecord {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        UnknownRecordWire::deserialize(deserializer).map(Self::from_wire)
     }
 }
 
@@ -201,13 +156,15 @@ mod tests {
     }
 
     #[test]
-    fn deserialization_preserves_stored_extent_and_digest() {
+    fn an_unretained_record_states_its_extent_and_digest() {
         let wire = serde_json::json!({
             "id": "synthetic:model:unknown#0",
             "offset": 7,
-            "byte_len": 99,
-            "sha256": "wire-value",
-            "data": "AQID",
+            "retention": {
+                "retention": "digest",
+                "byte_len": 99,
+                "sha256": "wire-value"
+            },
             "links": ["synthetic:model:point#0"]
         });
 
@@ -216,9 +173,48 @@ mod tests {
 
         assert_eq!(record.byte_len(), 99);
         assert_eq!(record.sha256(), "wire-value");
+        assert_eq!(record.data(), None);
         assert_eq!(
             serde_json::to_value(record).expect("serialize unknown-record wire"),
             wire
         );
+    }
+
+    /// An extent or a digest beside the retained bytes has no place on the
+    /// wire, and an unknown key is refused rather than dropped.
+    #[test]
+    fn a_retained_record_cannot_restate_its_extent_or_digest() {
+        let wire = serde_json::json!({
+            "id": "synthetic:model:unknown#0",
+            "offset": 7,
+            "retention": {"retention": "inline", "data": "AQID"}
+        });
+        let record: UnknownRecord =
+            serde_json::from_value(wire.clone()).expect("deserialize unknown-record wire");
+        assert_eq!(record.byte_len(), 3);
+        assert_eq!(record.sha256(), crate::hash::sha256_hex(&[1, 2, 3]));
+        assert_eq!(
+            serde_json::to_value(record).expect("serialize unknown-record wire"),
+            wire
+        );
+
+        for (key, value) in [
+            ("byte_len", serde_json::json!(99)),
+            ("sha256", serde_json::json!("not-the-digest-of-the-bytes")),
+        ] {
+            let mut restated = wire.clone();
+            restated["retention"][key] = value;
+            let error = serde_json::from_value::<UnknownRecord>(restated)
+                .expect_err("the retained bytes own their extent and digest")
+                .to_string();
+            assert!(error.contains(key), "{error}");
+        }
+
+        let mut bogus = wire;
+        bogus["zz_bogus"] = serde_json::json!(true);
+        let error = serde_json::from_value::<UnknownRecord>(bogus)
+            .expect_err("an unknown key is refused")
+            .to_string();
+        assert!(error.contains("zz_bogus"), "{error}");
     }
 }

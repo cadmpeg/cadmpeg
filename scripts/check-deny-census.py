@@ -40,8 +40,7 @@ ROOTS = ("crates/cadmpeg-ir/src", "crates/cadmpeg-core/src")
 # and fails it without the entry. An item with a hand-written or
 # ``Serialize``-only impl never reaches the check and states nothing here.
 EXCEPTIONS = {
-    "NativeUnknownRecord": "retained unknown record inside /native: its field map is the payload",
-    "UnknownRecordWire": "wire form of a retained unknown record inside /native",
+    "NativeUnknownRecord": "narrowing projection over the /native unknown record: it reads only id and links out of a wider stored record, so it has no field map of its own for a deny to bind; hash.rs reads the arena through it and pins_document_digests covers that read",
     "VersionProbe": "private one-field pre-pass; the document is re-read through CadIrReadWire, which denies",
 }
 
