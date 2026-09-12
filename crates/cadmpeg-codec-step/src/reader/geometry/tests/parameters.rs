@@ -296,8 +296,9 @@ fn directrix_parameter_units_follow_step_curve_equations() {
     ));
     let polyline = CurveGeometry::Solved(SolvedCurveGeometry::Polyline(
         cadmpeg_ir::geometry::PolylineCurve::new(
-            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-            None,
+            cadmpeg_ir::geometry::PolylineSamples::Unparameterized {
+                points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            },
             0.0,
         )
         .unwrap(),

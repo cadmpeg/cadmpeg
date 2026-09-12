@@ -3220,11 +3220,11 @@ fn oriented_curve_entity(
             )?
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)) => {
-            let values = polyline_parameters(polyline.points().len(), polyline.parameters())?;
+            let values = polyline_parameters(polyline.point_count(), polyline.parameters())?;
             let original = NurbsCurve::new(
                 1,
                 polyline_knots(&values),
-                polyline.points().to_vec(),
+                polyline.points().collect(),
                 None,
                 false,
             )
@@ -5698,7 +5698,7 @@ fn default_range(geometry: &SolvedCurveGeometry) -> Result<[f64; 2], CodecError>
         SolvedCurveGeometry::Ellipse(_) => Ok([0.0, TAU]),
         SolvedCurveGeometry::Nurbs(nurbs) => nurbs_domain(nurbs),
         SolvedCurveGeometry::Polyline(polyline) => {
-            let values = polyline_parameters(polyline.points().len(), polyline.parameters())?;
+            let values = polyline_parameters(polyline.point_count(), polyline.parameters())?;
             Ok([values.first, values.last])
         }
         SolvedCurveGeometry::Line(_) => Err(CodecError::NotImplemented(
@@ -5913,11 +5913,11 @@ fn curve_entity(
         }
         SolvedCurveGeometry::Nurbs(nurbs) => encode_nurbs(nurbs, range, "NURBS"),
         SolvedCurveGeometry::Polyline(polyline) => {
-            let values = polyline_parameters(polyline.points().len(), polyline.parameters())?;
+            let values = polyline_parameters(polyline.point_count(), polyline.parameters())?;
             let nurbs = NurbsCurve::new(
                 1,
                 polyline_knots(&values),
-                polyline.points().to_vec(),
+                polyline.points().collect(),
                 None,
                 false,
             )
@@ -6234,12 +6234,15 @@ fn apply_rigid_transform(
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)) => {
             CurveGeometry::Solved(SolvedCurveGeometry::Polyline(
-                cadmpeg_ir::geometry::PolylineCurve::new(
-                    polyline.points().iter().copied().map(point).collect(),
-                    polyline.parameters().map(<[f64]>::to_vec),
-                    polyline.chordal_deflection(),
-                )
-                .map_err(|error| CodecError::malformed(format_args!("polyline: {error}")))?,
+                {
+                    let mut samples = polyline.samples().clone();
+                    samples.edit_points(|sample| *sample = point(*sample));
+                    cadmpeg_ir::geometry::PolylineCurve::new(
+                        samples,
+                        polyline.chordal_deflection(),
+                    )
+                    .map_err(|error| CodecError::malformed(format_args!("polyline: {error}")))?
+                },
             ))
         }
         other => {
@@ -6359,16 +6362,16 @@ struct PolylineParameters {
 
 fn polyline_parameters(
     count: usize,
-    parameters: Option<&[f64]>,
+    parameters: Option<impl Iterator<Item = f64>>,
 ) -> Result<PolylineParameters, CodecError> {
     if count < 2 {
         return Err(CodecError::NotImplemented(
             "IGES semantic writer requires at least two polyline points".into(),
         ));
     }
-    let values = parameters.map_or_else(
+    let values: Vec<f64> = parameters.map_or_else(
         || (0..count).map(|value| value as f64).collect(),
-        <[f64]>::to_vec,
+        Iterator::collect,
     );
     match values.as_slice() {
         [first, interior @ .., last]

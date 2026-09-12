@@ -18,7 +18,7 @@ use std::collections::BinaryHeap;
 
 use crate::geometry::{
     knots_nondecreasing, CurveGeometry, LawExpression, LawFormula, NurbsCurve, NurbsSurface,
-    PcurveGeometry, PcurveNurbs, ProceduralCurveDefinition, ProceduralSurfaceDefinition,
+    PcurveGeometry, PcurveNurbs, PolylineCurve, ProceduralCurveDefinition, ProceduralSurfaceDefinition,
     SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry, SurfaceParameterAxis,
     SweepSurfaceLayout,
 };
@@ -2741,7 +2741,7 @@ pub fn curve_point_with_budget_solved(
             }
             SolvedCurveGeometry::Polyline(polyline) => {
                 budget
-                    .charge_by(polyline.points().len().max(1))
+                    .charge_by(polyline.point_count().max(1))
                     .then_some(())?;
                 curve_point_solved(geometry, t)
             }
@@ -2781,7 +2781,7 @@ pub fn curve_tangent_with_budget_solved(
             }
             SolvedCurveGeometry::Polyline(polyline) => {
                 budget
-                    .charge_by(polyline.points().len().max(1))
+                    .charge_by(polyline.point_count().max(1))
                     .then_some(())?;
                 curve_tangent_solved(geometry, t)
             }
@@ -2822,7 +2822,7 @@ pub fn curve_second_derivative_with_budget_solved(
             }
             SolvedCurveGeometry::Polyline(polyline) => {
                 budget
-                    .charge_by(polyline.points().len().max(1))
+                    .charge_by(polyline.point_count().max(1))
                     .then_some(())?;
                 curve_second_derivative_solved(geometry, t)
             }
@@ -2908,7 +2908,8 @@ fn curve_tangent_inner(geometry: &SolvedCurveGeometry, t: f64, depth: usize) -> 
             )
         }
         SolvedCurveGeometry::Polyline(polyline) => {
-            polyline_tangent(polyline.points(), polyline.parameters(), t)
+            let (points, parameters) = polyline_samples(polyline);
+            polyline_tangent(&points, &parameters, t)
         }
         SolvedCurveGeometry::Transformed { basis, transform } => {
             curve_tangent_inner(basis, t, depth + 1)
@@ -2976,7 +2977,8 @@ fn curve_second_derivative_inner(
             )
         }
         SolvedCurveGeometry::Polyline(polyline) => {
-            polyline_tangent(polyline.points(), polyline.parameters(), t).map(|_| zero)
+            let (points, parameters) = polyline_samples(polyline);
+            polyline_tangent(&points, &parameters, t).map(|_| zero)
         }
         SolvedCurveGeometry::Transformed { basis, transform } => {
             curve_second_derivative_inner(basis, t, depth + 1)
@@ -4248,13 +4250,10 @@ fn direct_curve_parameter_near_point(
         SolvedCurveGeometry::Nurbs(curve) => {
             nurbs_curve_parameter_near_point(curve, point, tolerance, seed)?
         }
-        SolvedCurveGeometry::Polyline(polyline) => polyline_parameter_near_point(
-            polyline.points(),
-            polyline.parameters(),
-            point,
-            tolerance,
-            seed,
-        )?,
+        SolvedCurveGeometry::Polyline(polyline) => {
+            let (points, parameters) = polyline_samples(polyline);
+            polyline_parameter_near_point(&points, &parameters, point, tolerance, seed)?
+        }
         SolvedCurveGeometry::Transformed { basis, transform } => {
             let (basis_point, tolerance_scale) = inverse_affine_point(*transform, point)?;
             let basis_tolerance = tolerance * tolerance_scale;
@@ -4343,7 +4342,7 @@ fn inverse_affine_point(transform: Transform, point: Point3) -> Option<(Point3, 
 
 fn polyline_parameter_near_point(
     points: &[Point3],
-    parameters: Option<&[f64]>,
+    parameters: &[f64],
     point: Point3,
     tolerance: f64,
     seed: f64,
@@ -4351,15 +4350,6 @@ fn polyline_parameter_near_point(
     if points.len() < 2 {
         return None;
     }
-    let implicit;
-    let parameters = if let Some(parameters) = parameters {
-        (parameters.len() == points.len()).then_some(parameters)?
-    } else {
-        implicit = (0..points.len())
-            .map(|index| index as f64)
-            .collect::<Vec<_>>();
-        &implicit
-    };
     let mut candidates = Vec::new();
     for (segment, parameter_range) in parameters.windows(2).enumerate() {
         let [parameter_start, parameter_end] = [parameter_range[0], parameter_range[1]];
@@ -4485,7 +4475,8 @@ fn curve_point_inner(geometry: &SolvedCurveGeometry, t: f64, depth: usize) -> Op
             )
         }
         SolvedCurveGeometry::Polyline(polyline) => {
-            polyline_point(polyline.points(), polyline.parameters(), t)
+            let (points, parameters) = polyline_samples(polyline);
+            polyline_point(&points, &parameters, t)
         }
         SolvedCurveGeometry::Transformed { basis, transform } => {
             curve_point_inner(basis, t, depth + 1).map(|point| affine_point(*transform, point))
@@ -7441,22 +7432,23 @@ fn offset_surface_second_partials(
     })
 }
 
-fn polyline_point(points: &[Point3], parameters: Option<&[f64]>, t: f64) -> Option<Point3> {
+/// The polyline's samples with the parameterization it evaluates on.
+///
+/// A sample row carries its own parameter, so the two lists this returns agree
+/// by construction. An unparameterized polyline evaluates on its sample index.
+fn polyline_samples(polyline: &PolylineCurve) -> (Vec<Point3>, Vec<f64>) {
+    let points: Vec<Point3> = polyline.points().collect();
+    let parameters = polyline.parameters().map_or_else(
+        || (0..points.len()).map(|index| index as f64).collect(),
+        Iterator::collect,
+    );
+    (points, parameters)
+}
+
+fn polyline_point(points: &[Point3], parameters: &[f64], t: f64) -> Option<Point3> {
     if points.len() < 2 || !t.is_finite() {
         return None;
     }
-    let implicit;
-    let parameters = if let Some(parameters) = parameters {
-        if parameters.len() != points.len() {
-            return None;
-        }
-        parameters
-    } else {
-        implicit = (0..points.len())
-            .map(|index| index as f64)
-            .collect::<Vec<_>>();
-        &implicit
-    };
     let segment = parameters.windows(2).position(|window| {
         (t >= window[0] && t <= window[1]) || (t <= window[0] && t >= window[1])
     })?;
@@ -7474,22 +7466,10 @@ fn polyline_point(points: &[Point3], parameters: Option<&[f64]>, t: f64) -> Opti
     ))
 }
 
-fn polyline_tangent(points: &[Point3], parameters: Option<&[f64]>, t: f64) -> Option<Vector3> {
+fn polyline_tangent(points: &[Point3], parameters: &[f64], t: f64) -> Option<Vector3> {
     if points.len() < 2 || !t.is_finite() {
         return None;
     }
-    let implicit;
-    let parameters = if let Some(parameters) = parameters {
-        if parameters.len() != points.len() {
-            return None;
-        }
-        parameters
-    } else {
-        implicit = (0..points.len())
-            .map(|index| index as f64)
-            .collect::<Vec<_>>();
-        &implicit
-    };
     let mut tangent = None;
     for (segment, window) in parameters.windows(2).enumerate() {
         if !((t >= window[0] && t <= window[1]) || (t <= window[0] && t >= window[1])) {

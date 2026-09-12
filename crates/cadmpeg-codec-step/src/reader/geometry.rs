@@ -9,7 +9,8 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{nurbs_curve_parameter_domain, nurbs_curve_parameter_near_point};
 use cadmpeg_ir::geometry::{
     CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, NurbsCurve,
-    NurbsSurface, Pcurve, PcurveGeometry, PcurveNurbs, PolylineCurve, ProceduralCurve,
+    NurbsSurface, Pcurve, PcurveGeometry, PcurveNurbs, PolylineCurve, PolylineSamples,
+    ProceduralCurve,
     ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
     SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
@@ -2154,7 +2155,9 @@ fn decode_tessellated_curve_sets(
                 format!("{id}-strip-{strip_index}")
             };
             let points = indices.into_iter().map(|index| vertices[index]).collect();
-            let Some(polyline) = PolylineCurve::new(points, None, 0.0).ok() else {
+            let Some(polyline) =
+                PolylineCurve::new(PolylineSamples::Unparameterized { points }, 0.0).ok()
+            else {
                 continue;
             };
             ir.model.curves.push(Curve {

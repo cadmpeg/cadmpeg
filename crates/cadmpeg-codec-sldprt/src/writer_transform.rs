@@ -357,10 +357,8 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
                 CodecError::malformed(format_args!("invalid transformed NURBS: {error}"))
             })?,
         CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)) => polyline
-            .edit_points(|points| {
-                for point in points {
-                    *point = transform.apply_point(*point);
-                }
+            .edit_samples(|samples| {
+                samples.edit_points(|point| *point = transform.apply_point(*point));
             })
             .map_err(|error| CodecError::malformed(error.to_string()))?,
         CurveGeometry::Solved(SolvedCurveGeometry::Parabola(parabola_curve)) => {

@@ -1565,15 +1565,14 @@ fn bounded_plane_curve_is_simple(
         }
         SolvedCurveGeometry::Polyline(polyline) => {
             let active_range_matches = parameter_range.is_none_or(|range| {
-                polyline.parameters().is_some_and(|parameters| {
-                    parameters.first().copied() == Some(range[0])
-                        && parameters.last().copied() == Some(range[1])
+                polyline.parameters().is_some_and(|mut parameters| {
+                    let first = parameters.next();
+                    let last = parameters.last().or(first);
+                    first == Some(range[0]) && last == Some(range[1])
                 })
             });
             let points = polyline
                 .points()
-                .iter()
-                .copied()
                 .map(|point| context.transform.apply_point(point))
                 .collect::<Vec<_>>();
             active_range_matches

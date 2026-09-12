@@ -4082,7 +4082,7 @@ fn curve_selection_parameter_domain_from_geometry(
         }
         SolvedCurveGeometry::Nurbs(curve) => nurbs_curve_parameter_domain(curve),
         SolvedCurveGeometry::Polyline(polyline) => {
-            let parameters = polyline.parameters()?;
+            let parameters: Vec<f64> = polyline.parameters()?.collect();
             let lower = *parameters.first()?;
             let upper = *parameters.last()?;
             (lower.is_finite() && upper.is_finite() && lower < upper).then_some([lower, upper])
