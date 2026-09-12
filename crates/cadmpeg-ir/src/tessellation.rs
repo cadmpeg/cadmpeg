@@ -91,7 +91,56 @@ impl TessellationNormals {
     }
 }
 
-/// One or more triangle-strip run lengths.
+/// One triangle-strip run: the vertices it spans, at least three of them.
+///
+/// A strip run of one or two vertices spans no triangle, so it is not a run at
+/// all; the mint refuses it and [`Self::triangle_count`] subtracts without a
+/// clamp on a value the type proved is at least three.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "u32"))]
+#[serde(try_from = "u32", into = "u32")]
+pub struct StripRun(u32);
+
+impl StripRun {
+    /// A run over `vertices` vertices, absent below three.
+    #[must_use]
+    pub const fn new(vertices: u32) -> Option<Self> {
+        if vertices < 3 {
+            return None;
+        }
+        Some(Self(vertices))
+    }
+
+    /// The vertices this run spans.
+    #[must_use]
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+
+    /// The triangles this run expands to: two fewer than its vertices.
+    #[must_use]
+    pub const fn triangle_count(self) -> u32 {
+        self.0 - 2
+    }
+}
+
+impl TryFrom<u32> for StripRun {
+    type Error = TessellationError;
+
+    fn try_from(vertices: u32) -> Result<Self, Self::Error> {
+        Self::new(vertices)
+            .ok_or_else(|| tessellation_error("tessellation strip run spans no triangle"))
+    }
+}
+
+impl From<StripRun> for u32 {
+    fn from(run: StripRun) -> Self {
+        run.get()
+    }
+}
+
+/// One or more triangle-strip runs.
 ///
 /// The vector is private and never empty, so an empty strip run has no
 /// [`TessellationTopology`] variant to live in: "the mesh is a flat triangle
@@ -99,28 +148,33 @@ impl TessellationNormals {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "Vec<u32>"))]
-#[serde(try_from = "Vec<u32>", into = "Vec<u32>")]
-pub struct StripLengths(Vec<u32>);
+#[serde(try_from = "Vec<StripRun>", into = "Vec<StripRun>")]
+pub struct StripLengths(Vec<StripRun>);
 
 impl StripLengths {
-    /// The run lengths, absent when `lengths` is empty.
+    /// The runs in storage order.
     #[must_use]
-    pub fn new(lengths: Vec<u32>) -> Option<Self> {
-        (!lengths.is_empty()).then_some(Self(lengths))
-    }
-
-    /// The run lengths in storage order.
-    #[must_use]
-    pub fn as_slice(&self) -> &[u32] {
+    pub fn as_slice(&self) -> &[StripRun] {
         &self.0
     }
 }
 
 impl std::ops::Deref for StripLengths {
-    type Target = [u32];
+    type Target = [StripRun];
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl TryFrom<Vec<StripRun>> for StripLengths {
+    type Error = TessellationError;
+
+    fn try_from(runs: Vec<StripRun>) -> Result<Self, Self::Error> {
+        if runs.is_empty() {
+            return Err(tessellation_error("tessellation strip run is empty"));
+        }
+        Ok(Self(runs))
     }
 }
 
@@ -128,11 +182,15 @@ impl TryFrom<Vec<u32>> for StripLengths {
     type Error = TessellationError;
 
     fn try_from(lengths: Vec<u32>) -> Result<Self, Self::Error> {
-        Self::new(lengths).ok_or_else(|| tessellation_error("tessellation strip run is empty"))
+        let runs = lengths
+            .into_iter()
+            .map(StripRun::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
+        Self::try_from(runs)
     }
 }
 
-impl From<StripLengths> for Vec<u32> {
+impl From<StripLengths> for Vec<StripRun> {
     fn from(lengths: StripLengths) -> Self {
         lengths.0
     }
@@ -328,11 +386,11 @@ pub struct TessellationChannel {
     data: Vec<u8>,
 }
 
-fn triangles_from_strips(strips: &[u32]) -> Result<Vec<[u32; 3]>, TessellationError> {
+fn triangles_from_strips(strips: &[StripRun]) -> Result<Vec<[u32; 3]>, TessellationError> {
     let mut triangles = Vec::new();
     let mut base = 0u32;
-    for &length in strips {
-        for index in 0..length.saturating_sub(2) {
+    for &run in strips {
+        for index in 0..run.triangle_count() {
             let Some(a) = base.checked_add(index) else {
                 return Err(tessellation_error("tessellation strip index overflows u32"));
             };
@@ -345,7 +403,7 @@ fn triangles_from_strips(strips: &[u32]) -> Result<Vec<[u32; 3]>, TessellationEr
             triangles.push(if index % 2 == 0 { [a, b, c] } else { [a, c, b] });
         }
         base = base
-            .checked_add(length)
+            .checked_add(run.get())
             .ok_or_else(|| tessellation_error("tessellation strip index overflows u32"))?;
     }
     Ok(triangles)
@@ -422,11 +480,12 @@ fn topology_from_parts(
     triangles: &[[u32; 3]],
     strip_lengths: Vec<u32>,
 ) -> Result<TessellationTopology, TessellationError> {
-    let Some(strip_lengths) = StripLengths::new(strip_lengths) else {
+    if strip_lengths.is_empty() {
         return Ok(TessellationTopology::List {});
-    };
-    let vertex_total = strip_lengths.iter().try_fold(0usize, |total, length| {
-        usize::try_from(*length)
+    }
+    let strip_lengths = StripLengths::try_from(strip_lengths)?;
+    let vertex_total = strip_lengths.iter().try_fold(0usize, |total, run| {
+        usize::try_from(run.get())
             .ok()
             .and_then(|length| total.checked_add(length))
     });
@@ -600,8 +659,8 @@ impl Tessellation {
         match &topology {
             TessellationTopology::List {} => {}
             TessellationTopology::Strips { strip_lengths } => {
-                let vertex_total = strip_lengths.iter().try_fold(0usize, |total, length| {
-                    usize::try_from(*length)
+                let vertex_total = strip_lengths.iter().try_fold(0usize, |total, run| {
+                    usize::try_from(run.get())
                         .ok()
                         .and_then(|length| total.checked_add(length))
                 });
@@ -678,9 +737,9 @@ impl Tessellation {
         &self.topology
     }
 
-    /// Triangle-strip run lengths; empty when the mesh is a flat triangle list.
+    /// Triangle-strip runs; empty when the mesh is a flat triangle list.
     #[must_use]
-    pub fn strip_lengths(&self) -> &[u32] {
+    pub fn strip_lengths(&self) -> &[StripRun] {
         match &self.topology {
             TessellationTopology::List {} => &[],
             TessellationTopology::Strips { strip_lengths } => strip_lengths.as_slice(),

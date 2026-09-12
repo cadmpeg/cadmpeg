@@ -1652,7 +1652,14 @@ fn decode_reports_display_list_geometry() {
         result.ir().model.tessellations[0].triangles(),
         vec![[0, 1, 2]]
     );
-    assert_eq!(result.ir().model.tessellations[0].strip_lengths(), vec![3]);
+    assert_eq!(
+        result.ir().model.tessellations[0]
+            .strip_lengths()
+            .iter()
+            .map(|run| run.get())
+            .collect::<Vec<_>>(),
+        vec![3]
+    );
     assert_eq!(result.ir().model.tessellations[0].vertex_normals().len(), 3);
     assert_eq!(result.ir().model.tessellations[0].channels().len(), 6);
     assert_eq!(
