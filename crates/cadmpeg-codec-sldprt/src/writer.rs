@@ -8,7 +8,6 @@ use std::num::NonZeroU16;
 pub(crate) mod target;
 
 use crate::native::SldprtNative;
-use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::document::CadIr;
@@ -1968,7 +1967,7 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
     out.extend_from_slice(b"uoTempFaceTessData_c");
     let (triangle_count, strip_count) = match meshes.first() {
         Some(mesh) => (
-            u32::try_from(mesh.triangles().len()).map_err(|_| {
+            u32::try_from(mesh.triangle_count()).map_err(|_| {
                 CodecError::Malformed("tessellation triangle count overflow".into())
             })?,
             u32::try_from(mesh.strip_lengths().len())
@@ -1982,10 +1981,10 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
         let strips = mesh
             .strip_lengths()
             .iter()
-            .flat_map(|run| run.get().to_le_bytes())
+            .flat_map(|run| run.to_le_bytes())
             .collect::<Vec<_>>();
         descriptor(&mut out, 4, 8, 2, mesh.strip_lengths().len(), &strips);
-        let mut positions = Vec::with_capacity(mesh.vertices().len() * 12);
+        let mut positions = Vec::with_capacity(mesh.vertex_count() * 12);
         for point in mesh.vertices() {
             for value in [point.x, point.y, point.z] {
                 positions.extend_from_slice(
@@ -1993,7 +1992,7 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
                 );
             }
         }
-        descriptor(&mut out, 12, 100, 2, mesh.vertices().len(), &positions);
+        descriptor(&mut out, 12, 100, 2, mesh.vertex_count(), &positions);
         let mut normals = Vec::with_capacity(mesh.vertex_normals().len() * 12);
         for normal in mesh.vertex_normals() {
             for value in [normal.x, normal.y, normal.z] {
@@ -2007,7 +2006,7 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
         let strip_lengths = mesh
             .strip_lengths()
             .iter()
-            .map(|run| usize::try_from(run.get()))
+            .map(|run| usize::try_from(*run))
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| CodecError::Malformed("tessellation strip length overflow".into()))?;
         if !auxiliary.is_empty()
@@ -2031,8 +2030,7 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
             .strip_lengths()
             .iter()
             .map(|run| {
-                run.get()
-                    .checked_mul(2)
+                run.checked_mul(2)
                     .and_then(|value| value.checked_sub(2))
                     .ok_or_else(|| {
                         CodecError::Malformed("tessellation strip is too short or too large".into())
@@ -2080,63 +2078,62 @@ pub(super) fn sequential_tessellation(
             "SLDPRT display tessellation feature edges are not writable".into(),
         ));
     }
-    let expected = triangles_from_strips(mesh.strip_lengths())?;
-    if expected == mesh.triangles()
-        && mesh
-            .strip_lengths()
-            .iter()
-            .map(|run| run.get())
-            .sum::<u32>() as usize
-            == mesh.vertices().len()
-        && mesh.per_corner_normals().is_empty()
-    {
+    if matches!(
+        mesh.mesh(),
+        cadmpeg_ir::tessellation::TessellationMesh::Strips { .. }
+            | cadmpeg_ir::tessellation::TessellationMesh::ShadedStrips { .. }
+    ) {
         return Ok(mesh.clone());
     }
-    let indices = mesh
-        .triangles()
+    let source_vertices = mesh.vertices();
+    let source_normals = mesh.vertex_normals();
+    let corner_normals = mesh.per_corner_normals();
+    let triangles = mesh.triangles();
+    let indices = triangles
         .iter()
         .flat_map(|triangle| triangle.iter().copied())
         .map(|index| {
             usize::try_from(index)
                 .ok()
-                .filter(|index| *index < mesh.vertices().len())
+                .filter(|index| *index < source_vertices.len())
                 .ok_or_else(|| CodecError::Malformed("tessellation index is out of bounds".into()))
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let vertices = indices
+    let positions = indices
         .iter()
-        .map(|index| mesh.vertices()[*index])
-        .collect();
-    let normals = if !mesh.per_corner_normals().is_empty() {
-        if mesh.per_corner_normals().len() != indices.len() {
+        .map(|index| source_vertices[*index])
+        .collect::<Vec<_>>();
+    let normals = if corner_normals.is_empty() {
+        if source_normals.is_empty() {
+            Vec::new()
+        } else {
+            if source_normals.len() != source_vertices.len() {
+                return Err(CodecError::Malformed(
+                    "tessellation normals are not parallel to vertices".into(),
+                ));
+            }
+            indices
+                .iter()
+                .map(|index| source_normals[*index])
+                .collect::<Vec<_>>()
+        }
+    } else {
+        if corner_normals.len() != indices.len() {
             return Err(CodecError::Malformed(
                 "tessellation corner normals are not parallel to triangle corners".into(),
             ));
         }
-        mesh.per_corner_normals().to_vec()
-    } else if mesh.vertex_normals().is_empty() {
-        Vec::new()
-    } else {
-        if mesh.vertex_normals().len() != mesh.vertices().len() {
-            return Err(CodecError::Malformed(
-                "tessellation normals are not parallel to vertices".into(),
-            ));
-        }
-        indices
-            .iter()
-            .map(|index| mesh.vertex_normals()[*index])
-            .collect()
+        corner_normals
     };
     let mut channels = Vec::new();
     for channel in mesh.channels() {
-        if channel.count() as usize != mesh.vertices().len() {
+        if channel.count() as usize != source_vertices.len() {
             channels.push(channel.clone());
             continue;
         }
         let item_size = usize::try_from(channel.item_size())
             .map_err(|_| CodecError::Malformed("tessellation channel item size overflow".into()))?;
-        let expected_len = mesh
-            .vertices()
+        let expected_len = source_vertices
             .len()
             .checked_mul(item_size)
             .ok_or_else(|| CodecError::Malformed("tessellation channel size overflow".into()))?;
@@ -2163,38 +2160,58 @@ pub(super) fn sequential_tessellation(
             .map_err(|err| CodecError::Malformed(err.to_string()))?,
         );
     }
-    let triangle_count = u32::try_from(mesh.triangles().len())
-        .map_err(|_| CodecError::Malformed("tessellation triangle count overflow".into()))?;
-    let strip_lengths = alloc_filled(
-        triangle_count as usize,
-        3_u32,
-        "SLDPRT tessellation triangle strips",
-    )?;
-    let runs = strip_lengths
-        .iter()
-        .map(|length| cadmpeg_ir::tessellation::StripRun::try_from(*length))
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(CodecError::malformed)?;
-    let triangles = triangles_from_strips(&runs)?;
-    Ok(cadmpeg_ir::tessellation::Tessellation::from_decoded(
-        mesh.id.to_string(),
-        vertices,
-        triangles,
-        strip_lengths,
-        cadmpeg_ir::tessellation::NormalSamples::new(normals).map_or(
-            cadmpeg_ir::tessellation::TessellationNormals::None,
-            cadmpeg_ir::tessellation::TessellationNormals::per_vertex,
-        ),
-        channels,
+    // One triangle per strip: the SLDPRT display list states strips, so a
+    // triangle list is written as three-vertex runs.
+    let rows = if normals.is_empty() {
+        strip_rows(positions)?.map_or(
+            cadmpeg_ir::tessellation::TessellationMesh::List {
+                vertices: Vec::new(),
+                triangles: Vec::new(),
+            },
+            |strips| cadmpeg_ir::tessellation::TessellationMesh::Strips { strips },
+        )
+    } else {
+        let shaded = positions
+            .into_iter()
+            .zip(normals)
+            .map(
+                |(position, normal)| cadmpeg_ir::tessellation::ShadedVertex { position, normal },
+            )
+            .collect();
+        strip_rows(shaded)?.map_or(
+            cadmpeg_ir::tessellation::TessellationMesh::List {
+                vertices: Vec::new(),
+                triangles: Vec::new(),
+            },
+            |strips| cadmpeg_ir::tessellation::TessellationMesh::ShadedStrips { strips },
+        )
+    };
+    Ok(
+        cadmpeg_ir::tessellation::Tessellation::new(mesh.id.to_string(), rows, channels)
+            .map_err(|err| CodecError::Malformed(err.to_string()))?
+            .with_body(mesh.body.clone())
+            .with_faces(mesh.faces.clone())
+            .with_chordal_deflection(mesh.chordal_deflection())
+            .map_err(|error| {
+                CodecError::malformed(format_args!("invalid tessellation deflection: {error}"))
+            })?
+            .with_source_object(mesh.source_object.clone()),
     )
-    .map_err(|err| CodecError::Malformed(err.to_string()))?
-    .with_body(mesh.body.clone())
-    .with_faces(mesh.faces.clone())
-    .with_chordal_deflection(mesh.chordal_deflection())
-    .map_err(|error| {
-        CodecError::malformed(format_args!("invalid tessellation deflection: {error}"))
-    })?
-    .with_source_object(mesh.source_object.clone()))
+}
+
+/// Cut a corner-expanded vertex run into one three-vertex strip per triangle.
+fn strip_rows<V: Clone>(
+    vertices: Vec<V>,
+) -> Result<Option<cadmpeg_ir::tessellation::Strips<V>>, CodecError> {
+    let mut strips = Vec::with_capacity(vertices.len() / 3);
+    for corners in vertices.chunks(3) {
+        strips.push(
+            cadmpeg_ir::tessellation::Strip::new(corners.to_vec()).ok_or_else(|| {
+                CodecError::Malformed("tessellation triangle spans fewer than three corners".into())
+            })?,
+        );
+    }
+    Ok(cadmpeg_ir::tessellation::Strips::new(strips))
 }
 
 fn tessellation_f32(value: f64, role: &str) -> Result<f32, CodecError> {
@@ -2208,25 +2225,6 @@ fn tessellation_f32(value: f64, role: &str) -> Result<f32, CodecError> {
     }
 }
 
-fn triangles_from_strips(
-    strips: &[cadmpeg_ir::tessellation::StripRun],
-) -> Result<Vec<[u32; 3]>, CodecError> {
-    let mut triangles = Vec::new();
-    let mut base = 0u32;
-    for &run in strips {
-        for index in 0..run.triangle_count() {
-            triangles.push(if index % 2 == 0 {
-                [base + index, base + index + 1, base + index + 2]
-            } else {
-                [base + index, base + index + 2, base + index + 1]
-            });
-        }
-        base = base
-            .checked_add(run.get())
-            .ok_or_else(|| CodecError::Malformed("tessellation index overflow".into()))?;
-    }
-    Ok(triangles)
-}
 
 fn descriptor(out: &mut Vec<u8>, item_size: u32, kind: u32, flags: u32, count: usize, data: &[u8]) {
     out.extend_from_slice(&item_size.to_le_bytes());

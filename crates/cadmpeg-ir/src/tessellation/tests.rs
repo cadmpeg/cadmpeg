@@ -3,18 +3,22 @@
 
 use super::*;
 
+fn square() -> Vec<Point3> {
+    vec![
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(1.0, 0.0, 0.0),
+        Point3::new(1.0, 1.0, 0.0),
+        Point3::new(0.0, 1.0, 0.0),
+    ]
+}
+
 fn mesh() -> Tessellation {
     Tessellation::new(
         "test:mesh:tessellation#0",
-        vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(1.0, 1.0, 0.0),
-            Point3::new(0.0, 1.0, 0.0),
-        ],
-        vec![[0, 1, 2], [0, 2, 3]],
-        TessellationTopology::List {},
-        TessellationNormals::None,
+        TessellationMesh::List {
+            vertices: square(),
+            triangles: vec![[0, 1, 2], [0, 2, 3]],
+        },
         Vec::new(),
     )
     .unwrap()
@@ -32,41 +36,30 @@ fn per_corner_mesh_exposes_its_normals() {
     let normals = vec![Vector3::new(0.0, 0.0, 1.0); 6];
     let value = Tessellation::new(
         "test:mesh:tessellation#corners",
-        base.vertices().to_vec(),
-        base.triangles().to_vec(),
-        TessellationTopology::List {},
-        NormalSamples::new(normals.clone())
-            .map_or(TessellationNormals::None, TessellationNormals::per_corner),
+        TessellationMesh::from_corner_lanes(base.vertices(), base.triangles(), normals.clone())
+            .unwrap(),
         Vec::new(),
     )
     .unwrap();
-    assert_eq!(
-        value.per_corner_normals().len(),
-        3 * value.triangles().len()
-    );
+    assert_eq!(value.per_corner_normals().len(), 3 * value.triangle_count());
     assert_eq!(value.per_corner_normals(), normals);
-    assert!(!matches!(value.shading(), TessellationNormals::None));
     assert!(value.vertex_normals().is_empty());
 }
 
 #[test]
 fn per_vertex_mesh_exposes_its_normals() {
     let base = mesh();
-    let normals = vec![Vector3::new(0.0, 0.0, 1.0); base.vertices().len()];
+    let normals = vec![Vector3::new(0.0, 0.0, 1.0); base.vertex_count()];
     let value = Tessellation::new(
         "test:mesh:tessellation#vertices",
-        base.vertices().to_vec(),
-        base.triangles().to_vec(),
-        TessellationTopology::List {},
-        NormalSamples::new(normals.clone())
-            .map_or(TessellationNormals::None, TessellationNormals::per_vertex),
+        TessellationMesh::from_list_lanes(base.vertices(), base.triangles(), normals.clone())
+            .unwrap(),
         Vec::new(),
     )
     .unwrap();
-    assert_eq!(value.vertex_normals().len(), value.vertices().len());
+    assert_eq!(value.vertex_normals().len(), value.vertex_count());
     assert_eq!(value.vertex_normals(), normals);
     assert!(value.per_corner_normals().is_empty());
-    assert!(!matches!(value.shading(), TessellationNormals::None));
 }
 
 fn group(source_id: Option<&str>, triangles: Vec<u32>) -> TessellationTriangleGroup {
@@ -168,15 +161,15 @@ fn vertex_channels_may_retain_auxiliary_descriptors_with_a_different_count() {
     let channel = TessellationChannel::new(ChannelAddressing::Vertex {}, 1, 0, 0, vec![7]).unwrap();
     let value = Tessellation::new(
         "test:mesh:tessellation#auxiliary",
-        base.vertices().to_vec(),
-        base.triangles().to_vec(),
-        TessellationTopology::List {},
-        TessellationNormals::None,
+        TessellationMesh::List {
+            vertices: base.vertices(),
+            triangles: base.triangles(),
+        },
         vec![channel],
     )
     .unwrap();
     assert_eq!(value.channels()[0].count(), 1);
-    assert_eq!(value.vertices().len(), 4);
+    assert_eq!(value.vertex_count(), 4);
     assert_eq!(
         serde_json::from_value::<Tessellation>(serde_json::to_value(&value).unwrap()).unwrap(),
         value
@@ -190,10 +183,10 @@ fn tessellation_identity_admission() {
         rejects_wire_field("id", id);
         assert!(Tessellation::new(
             id,
-            Vec::new(),
-            Vec::new(),
-            TessellationTopology::List {},
-            TessellationNormals::None,
+            TessellationMesh::List {
+                vertices: Vec::new(),
+                triangles: Vec::new(),
+            },
             Vec::new(),
         )
         .is_err());
@@ -213,49 +206,52 @@ fn tessellation_identity_admission() {
 fn numeric_admission_rejects_non_finite_vertices_and_normals() {
     let base = mesh();
     for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-        let mut vertices = base.vertices().to_vec();
+        let mut vertices = base.vertices();
         vertices[0].x = invalid;
         assert!(Tessellation::new(
             "test:mesh:tessellation#numeric",
-            vertices.clone(),
-            base.triangles().to_vec(),
-            TessellationTopology::List {},
-            TessellationNormals::None,
+            TessellationMesh::List {
+                vertices: vertices.clone(),
+                triangles: base.triangles(),
+            },
             Vec::new(),
         )
         .is_err());
-        rejects_wire_field("vertices", vertices);
+        rejects_wire_field(
+            "mesh",
+            serde_json::json!({
+                "kind": "list",
+                "vertices": vertices,
+                "triangles": base.triangles(),
+            }),
+        );
         for corner in [false, true] {
             let count = if corner {
-                base.triangles().len() * 3
+                base.triangle_count() * 3
             } else {
-                base.vertices().len()
+                base.vertex_count()
             };
             let mut normals = vec![Vector3::new(0.0, 0.0, 1.0); count];
             normals[0].y = invalid;
-            let shading = if corner {
-                NormalSamples::new(normals.clone())
-                    .map_or(TessellationNormals::None, TessellationNormals::per_corner)
+            let rows = if corner {
+                TessellationMesh::from_corner_lanes(
+                    base.vertices(),
+                    base.triangles(),
+                    normals.clone(),
+                )
             } else {
-                NormalSamples::new(normals.clone())
-                    .map_or(TessellationNormals::None, TessellationNormals::per_vertex)
-            };
-            assert!(Tessellation::new(
-                "test:mesh:tessellation#numeric",
-                base.vertices().to_vec(),
-                base.triangles().to_vec(),
-                TessellationTopology::List {},
-                shading,
-                Vec::new(),
-            )
-            .is_err());
-            rejects_wire_field(
-                "shading",
-                serde_json::json!({
-                    "kind": if corner { "per_corner" } else { "per_vertex" },
-                    "values": normals,
-                }),
+                TessellationMesh::from_list_lanes(
+                    base.vertices(),
+                    base.triangles(),
+                    normals.clone(),
+                )
+            }
+            .unwrap();
+            assert!(
+                Tessellation::new("test:mesh:tessellation#numeric", rows.clone(), Vec::new())
+                    .is_err()
             );
+            rejects_wire_field("mesh", rows);
         }
     }
 }
@@ -265,42 +261,57 @@ fn numeric_edits_reject_invalid_values_without_partial_changes() {
     for corner in [false, true] {
         let base = mesh();
         let normals = vec![Vector3::new(0.0, 0.0, 1.0); if corner { 6 } else { 4 }];
-        let mut value = Tessellation::new(
-            "test:mesh:tessellation#numeric",
-            base.vertices().to_vec(),
-            base.triangles().to_vec(),
-            TessellationTopology::List {},
-            if corner {
-                NormalSamples::new(normals)
-                    .map_or(TessellationNormals::None, TessellationNormals::per_corner)
-            } else {
-                NormalSamples::new(normals)
-                    .map_or(TessellationNormals::None, TessellationNormals::per_vertex)
-            },
-            Vec::new(),
-        )
+        let rows = if corner {
+            TessellationMesh::from_corner_lanes(base.vertices(), base.triangles(), normals)
+        } else {
+            TessellationMesh::from_list_lanes(base.vertices(), base.triangles(), normals)
+        }
         .unwrap();
+        let mut value =
+            Tessellation::new("test:mesh:tessellation#numeric", rows, Vec::new()).unwrap();
         let original = value.clone();
         for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut seen = 0;
             assert!(value
-                .edit_vertices(|vertices| {
-                    vertices[0].x = 2.0;
-                    vertices[1].z = invalid;
+                .edit_vertices(|vertex| {
+                    if seen == 0 {
+                        vertex.x = 2.0;
+                    } else if seen == 1 {
+                        vertex.z = invalid;
+                    }
+                    seen += 1;
                 })
                 .is_err());
             assert_eq!(value, original);
+            let mut seen = 0;
             assert!(value
-                .edit_normals(|normals| {
-                    normals[0].z = -1.0;
-                    normals[1].x = invalid;
+                .edit_normals(|normal| {
+                    if seen == 0 {
+                        normal.z = -1.0;
+                    } else if seen == 1 {
+                        normal.x = invalid;
+                    }
+                    seen += 1;
                 })
                 .is_err());
             assert_eq!(value, original);
         }
+        let mut first = true;
         value
-            .edit_vertices(|vertices| vertices[0].x = f64::MAX)
+            .edit_vertices(|vertex| {
+                if std::mem::take(&mut first) {
+                    vertex.x = f64::MAX;
+                }
+            })
             .unwrap();
-        value.edit_normals(|normals| normals[0].z = -2.0).unwrap();
+        let mut first = true;
+        value
+            .edit_normals(|normal| {
+                if std::mem::take(&mut first) {
+                    normal.z = -2.0;
+                }
+            })
+            .unwrap();
         assert_eq!(value.vertices()[0].x, f64::MAX);
         let normals = if corner {
             value.per_corner_normals()
@@ -344,73 +355,78 @@ fn absent_normals_reject_edit_without_calling_the_editor() {
     assert_eq!(value, original);
 }
 
-// The literal route to an empty sample run does not compile: `TessellationNormals`
-// carries a `NormalSamples`, whose vector is private and whose only mint,
-// `NormalSamples::new`, returns `None` for an empty vector. `PerVertex(vec![])`
-// and `PerCorner(vec![])` are therefore type errors, not values this test could
-// construct and reject at run time.
+// A shading normal travels in the vertex row or the triangle row that carries
+// it, so "no normals" has exactly one spelling: the unshaded variant of the
+// mesh. A normal run that does not cover the mesh has no spelling at all.
 #[test]
-fn empty_wire_shading_is_the_absent_shading() {
-    assert!(NormalSamples::new(Vec::new()).is_none());
-    let empty = Tessellation::new(
-        "test:mesh:tessellation#empty",
-        Vec::new(),
-        Vec::new(),
-        TessellationTopology::List {},
-        TessellationNormals::None,
+fn the_wire_spells_the_shading_by_name() {
+    let unshaded = serde_json::to_value(mesh()).unwrap();
+    assert_eq!(unshaded["mesh"]["kind"], "list");
+    assert!(unshaded["mesh"].get("shading").is_none());
+
+    let base = mesh();
+    let shaded = Tessellation::new(
+        "test:mesh:tessellation#shaded",
+        TessellationMesh::from_list_lanes(
+            base.vertices(),
+            base.triangles(),
+            vec![Vector3::new(0.0, 0.0, 1.0); 4],
+        )
+        .unwrap(),
         Vec::new(),
     )
     .unwrap();
-    for kind in ["per_vertex", "per_corner"] {
-        let mut wire = serde_json::to_value(&empty).unwrap();
-        wire["shading"] = serde_json::json!({"kind": kind, "values": []});
-        let admitted: Tessellation = serde_json::from_value(wire).unwrap();
-        assert_eq!(*admitted.shading(), TessellationNormals::None);
-        assert_eq!(admitted, empty);
-        assert_eq!(
-            serde_json::to_value(&admitted).unwrap()["shading"],
-            serde_json::Value::Null
-        );
-    }
+    let wire = serde_json::to_value(&shaded).unwrap();
+    assert_eq!(wire["mesh"]["kind"], "shaded_list");
+    assert_eq!(wire["mesh"]["vertices"][0]["normal"]["z"], 1.0);
+    assert_eq!(serde_json::from_value::<Tessellation>(wire).unwrap(), shaded);
+
+    // A lane of normals that does not cover the mesh has no rows to become, so
+    // the pairing refuses it before a mesh exists.
+    assert!(TessellationMesh::from_list_lanes(
+        base.vertices(),
+        base.triangles(),
+        vec![Vector3::new(0.0, 0.0, 1.0); 3],
+    )
+    .is_none());
+    assert!(TessellationMesh::from_corner_lanes(
+        base.vertices(),
+        base.triangles(),
+        vec![Vector3::new(0.0, 0.0, 1.0); 5],
+    )
+    .is_none());
 }
 
-// The literal route to an empty strip run does not compile: `TessellationTopology::Strips`
-// carries a `StripLengths`, whose vector is private and whose only mint,
-// `TryFrom<Vec<StripRun>>`, refuses an empty vector.
+// A strip owns the vertices it spans, so the wire states no strip length, no
+// vertex total and no triangle list beside the strips.
 #[test]
 fn the_wire_spells_the_topology_by_name() {
-    assert!(StripLengths::try_from(Vec::<u32>::new()).is_err());
-    // A run of one or two vertices spans no triangle and is refused at the mint.
-    assert!(StripRun::new(2).is_none());
-    assert!(StripLengths::try_from(vec![3, 2]).is_err());
-    let list = serde_json::to_value(mesh()).unwrap();
-    assert_eq!(list["topology"], serde_json::json!({"kind": "list"}));
+    // A strip of one or two vertices spans no triangle and is refused at the
+    // mint; a mesh with no strip is not a strip mesh.
+    assert!(Strip::new(vec![Point3::new(0.0, 0.0, 0.0); 2]).is_none());
+    assert!(Strips::<Point3>::new(Vec::new()).is_none());
+    assert!(Strips::from_spans(square(), &[4, 4]).is_none());
+    assert!(Strips::from_spans(square(), &[2, 2]).is_none());
 
-    let strips = Tessellation::from_decoded(
+    let strips = Tessellation::new(
         "test:mesh:tessellation#strips",
-        vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(1.0, 1.0, 0.0),
-            Point3::new(0.0, 1.0, 0.0),
-        ],
-        vec![[0, 1, 2], [1, 3, 2]],
-        vec![4],
-        TessellationNormals::None,
+        TessellationMesh::Strips {
+            strips: Strips::from_spans(square(), &[4]).unwrap(),
+        },
         Vec::new(),
     )
     .unwrap();
+    assert_eq!(strips.strip_lengths(), vec![4]);
+    assert_eq!(strips.triangles(), vec![[0, 1, 2], [1, 3, 2]]);
     let wire = serde_json::to_value(&strips).unwrap();
-    assert_eq!(
-        wire["topology"],
-        serde_json::json!({"kind": "strips", "strip_lengths": [4]})
-    );
+    assert_eq!(wire["mesh"]["kind"], "strips");
+    assert_eq!(wire["mesh"]["strips"][0].as_array().unwrap().len(), 4);
     let read: Tessellation = serde_json::from_value(wire).unwrap();
     assert_eq!(read, strips);
 }
 
 #[test]
-fn a_strip_run_outside_the_topology_is_an_unknown_key() {
+fn a_strip_run_outside_the_mesh_is_an_unknown_key() {
     let mut wire = serde_json::to_value(mesh()).unwrap();
     wire["strip_lengths"] = serde_json::json!([4]);
     let error = serde_json::from_value::<Tessellation>(wire).unwrap_err();
@@ -419,20 +435,23 @@ fn a_strip_run_outside_the_topology_is_an_unknown_key() {
     assert!(message.contains("strip_lengths"), "{error}");
 
     let mut wire = serde_json::to_value(mesh()).unwrap();
-    wire["topology"] = serde_json::json!({"kind": "list", "strip_lengths": [4]});
+    wire["mesh"]["strip_lengths"] = serde_json::json!([4]);
     let error = serde_json::from_value::<Tessellation>(wire).unwrap_err();
     assert!(error.to_string().contains("strip_lengths"), "{error}");
 
     let mut wire = serde_json::to_value(mesh()).unwrap();
-    wire["topology"] = serde_json::json!({"kind": "strips", "strip_lengths": []});
+    wire["mesh"] = serde_json::json!({"kind": "strips", "strips": []});
     let error = serde_json::from_value::<Tessellation>(wire).unwrap_err();
     assert!(error.to_string().contains("empty"), "{error}");
 
-    // A run of one or two vertices spans no triangle, and the document route
-    // refuses it at the run mint rather than silently emitting nothing.
-    for short in [0, 1, 2] {
+    // A strip of one or two vertices spans no triangle, and the document route
+    // refuses it at the strip mint rather than silently emitting nothing.
+    for short in [0usize, 1, 2] {
         let mut wire = serde_json::to_value(mesh()).unwrap();
-        wire["topology"] = serde_json::json!({"kind": "strips", "strip_lengths": [short]});
+        wire["mesh"] = serde_json::json!({
+            "kind": "strips",
+            "strips": [square()[..short]],
+        });
         let error = serde_json::from_value::<Tessellation>(wire).unwrap_err();
         assert!(
             error.to_string().contains("spans no triangle"),

@@ -59,7 +59,7 @@ mod tests {
     use crate::math::Point3;
     use crate::report::{Check, Severity};
     use crate::tessellation::{
-        Tessellation, TessellationNormals, TessellationTextureAssignment, TessellationTopology,
+        Tessellation, TessellationMesh, TessellationTextureAssignment,
     };
 
     #[test]
@@ -67,14 +67,14 @@ mod tests {
         let missing = AssetId::mint("synthetic:test:asset#missing").expect("valid identity");
         let tessellation = Tessellation::new(
             "synthetic:test:tessellation#textured",
-            vec![
+            TessellationMesh::List {
+                vertices: vec![
                 Point3::new(0.0, 0.0, 0.0),
                 Point3::new(1.0, 0.0, 0.0),
                 Point3::new(0.0, 1.0, 0.0),
             ],
-            vec![[0, 1, 2]],
-            TessellationTopology::List {},
-            TessellationNormals::None,
+                triangles: vec![[0, 1, 2]],
+            },
             Vec::new(),
         )
         .expect("valid tessellation")

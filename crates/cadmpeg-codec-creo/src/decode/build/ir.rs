@@ -381,20 +381,6 @@ fn transfer_display_tessellations(
 ) -> Result<(), CodecError> {
     for strip in &scan.primitives.triangle_strips {
         let id = format!("creo:solid_primdata:tessellation#{}", strip.offset);
-        let mut triangles = Vec::new();
-        let mut base = 0u32;
-        for length in &strip.strip_lengths {
-            for index in 0..length.saturating_sub(2) {
-                let a = base + index;
-                let triangle = if index % 2 == 0 {
-                    [a, a + 1, a + 2]
-                } else {
-                    [a, a + 2, a + 1]
-                };
-                triangles.push(triangle);
-            }
-            base += length;
-        }
         annotate(
             annotations,
             &id,
@@ -404,26 +390,26 @@ fn transfer_display_tessellations(
             Exactness::Derived,
         );
         ir.model.tessellations.push(
-            Tessellation::from_decoded(
+            Tessellation::new(
                 id,
-                strip
-                    .positions
-                    .iter()
-                    .map(|point| Point3::new(point[0], point[1], point[2]))
-                    .collect(),
-                triangles,
-                strip.strip_lengths.clone(),
-                cadmpeg_ir::tessellation::NormalSamples::new(
+                cadmpeg_ir::tessellation::TessellationMesh::from_strip_lanes(
+                    strip
+                        .positions
+                        .iter()
+                        .map(|point| Point3::new(point[0], point[1], point[2]))
+                        .collect(),
                     strip
                         .normals
                         .iter()
                         .map(|normal| Vector3::new(normal[0], normal[1], normal[2]))
                         .collect(),
+                    &strip.strip_lengths,
                 )
-                .map_or(
-                    cadmpeg_ir::tessellation::TessellationNormals::None,
-                    cadmpeg_ir::tessellation::TessellationNormals::per_vertex,
-                ),
+                .ok_or_else(|| {
+                    CodecError::Malformed(
+                        "display triangle strip lanes do not line up".into(),
+                    )
+                })?,
                 Vec::new(),
             )
             .map_err(|error| {

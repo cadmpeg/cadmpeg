@@ -4,7 +4,7 @@
 use crate::examples::unit_cube;
 use crate::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use crate::math::{Point3, Vector3};
-use crate::tessellation::{Tessellation, TessellationNormals, TessellationTopology};
+use crate::tessellation::{Tessellation, TessellationMesh};
 use crate::validate::validate_neutral;
 
 #[test]
@@ -16,14 +16,14 @@ fn tessellation_counts_must_be_consistent() {
     ir.model.tessellations.push(
         Tessellation::new(
             "synthetic:test:tessellation#invalid-counts",
-            vec![
+            TessellationMesh::List {
+                vertices: vec![
                 Point3::new(0.0, 0.0, 0.0),
                 Point3::new(1.0, 0.0, 0.0),
                 Point3::new(0.0, 1.0, 0.0),
             ],
-            vec![[0, 1, 2]],
-            TessellationTopology::List {},
-            TessellationNormals::None,
+                triangles: vec![[0, 1, 2]],
+            },
             Vec::new(),
         )
         .expect("valid tessellation")
@@ -51,15 +51,15 @@ fn tessellation_triangle_groups_and_texture_assignments_validate() {
     let texture = AssetId::mint("synthetic:test:asset#mesh-texture").expect("identity grammar");
     let valid = Tessellation::new(
         "synthetic:test:tessellation#valid-groups",
-        vec![
+        TessellationMesh::List {
+            vertices: vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
             Point3::new(0.0, 1.0, 0.0),
             Point3::new(1.0, 1.0, 0.0),
         ],
-        vec![[0, 1, 2], [1, 3, 2]],
-        TessellationTopology::List {},
-        TessellationNormals::None,
+            triangles: vec![[0, 1, 2], [1, 3, 2]],
+        },
         Vec::new(),
     )
     .expect("valid tessellation")

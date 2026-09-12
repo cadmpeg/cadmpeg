@@ -605,7 +605,7 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.points[0].position.z += 2.0;
     decoded.ir_mut().model.tessellations[0]
-        .edit_vertices(|vertices| vertices[0].z = 125.0)
+        .edit_vertices(|vertex| vertex.z = 125.0)
         .unwrap();
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_histories[0].features[0]
@@ -689,7 +689,7 @@ fn semantic_writer_preserves_display_list_geometry() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.points[0].position.z += 1.0;
     decoded.ir_mut().model.tessellations[0]
-        .edit_vertices(|vertices| vertices[0].z = 250.0)
+        .edit_vertices(|vertex| vertex.z = 250.0)
         .unwrap();
 
     let mut encoded = Vec::new();
@@ -708,10 +708,7 @@ fn semantic_writer_preserves_display_list_geometry() {
     assert_eq!(mesh.vertices()[0].z, 250.0);
     assert_eq!(mesh.triangles(), vec![[0, 1, 2]]);
     assert_eq!(
-        mesh.strip_lengths()
-            .iter()
-            .map(|run| run.get())
-            .collect::<Vec<_>>(),
+        mesh.strip_lengths(),
         vec![3]
     );
     assert_eq!(mesh.channels().len(), 6);
@@ -727,7 +724,7 @@ fn semantic_writer_rejects_tessellation_f32_overflow() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.tessellations[0]
-        .edit_vertices(|vertices| vertices[0].x = f64::MAX)
+        .edit_vertices(|vertex| vertex.x = f64::MAX)
         .unwrap();
     let error = crate::test_support::plan_inherited_write(
         decoded.ir(),
@@ -753,41 +750,28 @@ fn semantic_writer_expands_indexed_tessellation() {
         Vector3::new(0.0, -1.0, 0.0),
         Vector3::new(0.0, 0.0, -1.0),
     ];
-    let mesh = Tessellation::from_decoded(
-        "synthetic:test:tessellation#indexed",
-        vec![
+    let mesh = Tessellation::new("synthetic:test:tessellation#indexed", cadmpeg_ir::tessellation::TessellationMesh::from_corner_lanes(vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
             Point3::new(1.0, 1.0, 0.0),
             Point3::new(0.0, 1.0, 0.0),
-        ],
-        vec![[0, 1, 2], [0, 2, 3]],
-        Vec::new(),
-        cadmpeg_ir::tessellation::NormalSamples::new(corner_normals.clone()).map_or(
-            cadmpeg_ir::tessellation::TessellationNormals::None,
-            cadmpeg_ir::tessellation::TessellationNormals::per_corner,
-        ),
-        vec![TessellationChannel::new(
+        ], vec![[0, 1, 2], [0, 2, 3]], corner_normals.clone()).expect("normals cover the mesh"), vec![TessellationChannel::new(
             cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
             1,
             7,
             2,
             vec![10, 11, 12, 13],
         )
-        .expect("valid channel")],
-    )
+        .expect("valid channel")])
     .expect("valid tessellation");
     let expanded = crate::writer::sequential_tessellation(&mesh).unwrap();
     assert_eq!(
         expanded
-            .strip_lengths()
-            .iter()
-            .map(|run| run.get())
-            .collect::<Vec<_>>(),
+            .strip_lengths(),
         vec![3, 3]
     );
     assert_eq!(expanded.triangles(), vec![[0, 1, 2], [3, 4, 5]]);
-    assert_eq!(expanded.vertices().len(), 6);
+    assert_eq!(expanded.vertex_count(), 6);
     assert_eq!(expanded.vertex_normals(), corner_normals);
     assert!(expanded.per_corner_normals().is_empty());
     assert_eq!(expanded.channels()[0].count(), 6);

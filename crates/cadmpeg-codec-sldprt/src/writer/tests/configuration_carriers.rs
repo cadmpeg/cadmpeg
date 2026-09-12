@@ -310,22 +310,11 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
         .iter()
         .enumerate()
         .map(|(index, body)| {
-            Tessellation::from_decoded(
-                format!("synthetic:test:tessellation#{index}"),
-                vec![
+            Tessellation::new(format!("synthetic:test:tessellation#{index}"), cadmpeg_ir::tessellation::TessellationMesh::from_strip_lanes(vec![
                     Point3::new(0.0, 0.0, 0.0),
                     Point3::new(1.0, 0.0, 0.0),
                     Point3::new(0.0, 1.0, 0.0),
-                ],
-                vec![[0, 1, 2]],
-                vec![3],
-                cadmpeg_ir::tessellation::NormalSamples::new(vec![Vector3::new(0.0, 0.0, 1.0); 3])
-                    .map_or(
-                        cadmpeg_ir::tessellation::TessellationNormals::None,
-                        cadmpeg_ir::tessellation::TessellationNormals::per_vertex,
-                    ),
-                Vec::new(),
-            )
+                ], vec![Vector3::new(0.0, 0.0, 1.0); 3], &vec![3]).expect("strip lanes line up"), Vec::new())
             .expect("valid tessellation")
             .with_body(Some(body.clone()))
         })
@@ -390,7 +379,7 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
         .model
         .tessellations
         .iter()
-        .flat_map(|mesh| mesh.vertices().iter().map(|point| point.x))
+        .flat_map(|mesh| mesh.vertices().into_iter().map(|point| point.x))
         .collect::<Vec<_>>();
     assert!(mesh_x.iter().any(|value| (*value - 10.0).abs() < 1.0e-6));
     assert!(mesh_x.iter().any(|value| (*value - 20.0).abs() < 1.0e-6));

@@ -638,20 +638,18 @@ fn writer_round_trips_standalone_points_and_curves() {
 pub(crate) fn ap242_writer_round_trips_indexed_tessellation_and_exact_body_link() {
     let mut ir = unit_cube();
     ir.model.tessellations.push(
-        Tessellation::from_decoded(
+        Tessellation::new(
             "synthetic:test:tessellation#mesh-0",
-            vec![
-                Point3::new(0.0, 0.0, 0.0),
-                Point3::new(1.0, 0.0, 0.0),
-                Point3::new(0.0, 1.0, 0.0),
-            ],
-            vec![[0, 1, 2], [2, 1, 0]],
-            Vec::new(),
-            cadmpeg_ir::tessellation::NormalSamples::new(vec![Vector3::new(0.0, 0.0, 1.0); 3])
-                .map_or(
-                    cadmpeg_ir::tessellation::TessellationNormals::None,
-                    cadmpeg_ir::tessellation::TessellationNormals::per_vertex,
-                ),
+            cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
+                vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(1.0, 0.0, 0.0),
+                    Point3::new(0.0, 1.0, 0.0),
+                ],
+                vec![[0, 1, 2], [2, 1, 0]],
+                vec![Vector3::new(0.0, 0.0, 1.0); 3],
+            )
+            .expect("normals cover the vertices"),
             Vec::new(),
         )
         .expect("valid tessellation")

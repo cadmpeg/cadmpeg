@@ -146,26 +146,17 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
                     ))
                 }
             };
-            mesh.edit_vertices(|vertices| {
-                for point in vertices {
-                    *point = transform.apply_point(*point);
-                }
-            })
-            .map_err(|error| {
-                CodecError::malformed(format_args!("invalid transformed tessellation: {error}"))
-            })?;
-            if !matches!(
-                mesh.shading(),
-                cadmpeg_ir::tessellation::TessellationNormals::None
-            ) {
-                mesh.edit_normals(|normals| {
-                    for normal in normals {
-                        *normal = transform.apply_vector(*normal);
-                    }
-                })
+            mesh.edit_vertices(|point| *point = transform.apply_point(*point))
                 .map_err(|error| {
                     CodecError::malformed(format_args!("invalid transformed tessellation: {error}"))
                 })?;
+            if !mesh.vertex_normals().is_empty() || !mesh.per_corner_normals().is_empty() {
+                mesh.edit_normals(|normal| *normal = transform.apply_vector(*normal))
+                    .map_err(|error| {
+                        CodecError::malformed(format_args!(
+                            "invalid transformed tessellation: {error}"
+                        ))
+                    })?;
             }
         }
     }

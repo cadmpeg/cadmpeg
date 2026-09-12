@@ -1086,16 +1086,16 @@ fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
 
     source_less.model.curves.pop();
     source_less.model.tessellations.push(
-        Tessellation::from_decoded(
+        Tessellation::new(
             "generated:test:tessellation#0",
-            vec![
+            cadmpeg_ir::tessellation::TessellationMesh::List {
+                vertices: vec![
                 Point3::new(0.0, 0.0, 0.0),
                 Point3::new(1.0, 0.0, 0.0),
                 Point3::new(0.0, 1.0, 0.0),
             ],
-            vec![[0, 1, 2]],
-            Vec::new(),
-            cadmpeg_ir::tessellation::TessellationNormals::None,
+                triangles: vec![[0, 1, 2]],
+            },
             Vec::new(),
         )
         .expect("valid tessellation"),

@@ -368,16 +368,16 @@ fn ap242_writer_reports_unrepresented_tessellation_triangle_metadata() {
         .expect("valid asset"),
     );
     ir.model.tessellations.push(
-        cadmpeg_ir::tessellation::Tessellation::from_decoded(
+        cadmpeg_ir::tessellation::Tessellation::new(
             "synthetic:test:tessellation#triangle-metadata",
-            vec![
+            cadmpeg_ir::tessellation::TessellationMesh::List {
+                vertices: vec![
                 Point3::new(0.0, 0.0, 0.0),
                 Point3::new(1.0, 0.0, 0.0),
                 Point3::new(0.0, 1.0, 0.0),
             ],
-            vec![[0, 1, 2]],
-            Vec::new(),
-            cadmpeg_ir::tessellation::TessellationNormals::None,
+                triangles: vec![[0, 1, 2]],
+            },
             Vec::new(),
         )
         .expect("valid tessellation")
@@ -799,16 +799,16 @@ fn writer_rejects_order_dependent_duplicate_target_styles() {
 fn writer_reports_reduced_tessellation_metadata_and_body_links() {
     let mut ir = unit_cube();
     ir.model.tessellations.push(
-        Tessellation::from_decoded(
+        Tessellation::new(
             "test:step:tessellation#metadata",
-            vec![
+            cadmpeg_ir::tessellation::TessellationMesh::List {
+                vertices: vec![
                 Point3::new(0.0, 0.0, 0.0),
                 Point3::new(1.0, 0.0, 0.0),
                 Point3::new(0.0, 1.0, 0.0),
             ],
-            vec![[0, 1, 2]],
-            Vec::new(),
-            cadmpeg_ir::tessellation::TessellationNormals::None,
+                triangles: vec![[0, 1, 2]],
+            },
             vec![cadmpeg_ir::tessellation::TessellationChannel::new(
                 cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
                 2,
@@ -1294,12 +1294,12 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
         cage: cadmpeg_ir::subd::SubdCage::default(),
     });
     ir.model.tessellations.push(
-        Tessellation::from_decoded(
+        Tessellation::new(
             "test:step:tessellation#0",
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            cadmpeg_ir::tessellation::TessellationNormals::None,
+            cadmpeg_ir::tessellation::TessellationMesh::List {
+                vertices: Vec::new(),
+                triangles: Vec::new(),
+            },
             Vec::new(),
         )
         .expect("valid tessellation")

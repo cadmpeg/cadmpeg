@@ -3340,15 +3340,16 @@ fn project_mesh_bodies(
             &body.triangles,
             &mut unresolved,
         );
-        let tessellation = cadmpeg_ir::tessellation::Tessellation::from_decoded(
+        let tessellation = cadmpeg_ir::tessellation::Tessellation::new(
             id,
-            body.vertices,
-            body.triangles,
-            Vec::new(),
-            cadmpeg_ir::tessellation::NormalSamples::new(body.corner_normals).map_or(
-                cadmpeg_ir::tessellation::TessellationNormals::None,
-                cadmpeg_ir::tessellation::TessellationNormals::per_corner,
-            ),
+            cadmpeg_ir::tessellation::TessellationMesh::from_corner_lanes(
+                body.vertices,
+                body.triangles,
+                body.corner_normals,
+            )
+            .ok_or_else(|| {
+                CodecError::Malformed("mesh corner normals do not cover its triangles".into())
+            })?,
             channels,
         )
         .map_err(|err| CodecError::Malformed(err.to_string()))?
