@@ -261,20 +261,17 @@ fn generated_sweep_sections_round_trip_and_validate() {
     };
 
     let definition = FeatureDefinition::Operation(FeatureOperation::Sweep {
-        shape: crate::features::SweepShape::new(
-            SweepSection::Generated(GeneratedSweepSection::CircularRegion {
+        shape: crate::features::SweepShape::Solid {
+            op: crate::features::SolidSweepOperation::NewBody,
+            section: SweepSection::Generated(GeneratedSweepSection::CircularRegion {
                 region: crate::features::SweepCircularRegion::new(
                     crate::scalar::PositiveLength::new(3.0).unwrap(),
                     Some(crate::scalar::PositiveLength::new(1.0).unwrap()),
                 )
                 .unwrap(),
             }),
-            Vec::new(),
-            SweepMode::Solid {
-                op: crate::features::SolidSweepOperation::NewBody,
-            },
-        )
-        .unwrap(),
+            sections: Vec::new(),
+        },
 
         path: None,
 
@@ -330,9 +327,7 @@ fn generated_sweep_sections_round_trip_and_validate() {
         panic!("sweep fixture");
     };
     let before = shape.clone();
-    assert!(shape
-        .try_edit(|_, _, mode| *mode = SweepMode::Surface {})
-        .is_err());
+    assert!(shape.set_mode(SweepMode::Surface {}).is_err());
     assert_eq!(shape, before);
 }
 
@@ -663,22 +658,27 @@ fn filled_surface_continuity_preserves_aggregate_and_component_wire_fields() {
         merge_result: Some(false),
     });
     let wire = serde_json::to_value(&definition).unwrap();
-    assert_eq!(
-        wire["continuity"]["continuity"],
-        serde_json::json!("contact")
-    );
-    assert_eq!(
-        wire["continuity"]["boundary_continuities"],
-        serde_json::json!(["contact", "contact"])
-    );
+    assert_eq!(wire["continuity"], serde_json::json!(["contact", "contact"]));
     assert_eq!(
         serde_json::from_value::<FeatureDefinition>(wire.clone()).unwrap(),
         definition
     );
 
-    let mut conflicting = wire;
-    conflicting["continuity"]["continuity"] = serde_json::json!("curvature");
-    assert!(serde_json::from_value::<FeatureDefinition>(conflicting).is_err());
+    let FeatureDefinition::Operation(FeatureOperation::FilledSurface { continuity, .. }) =
+        &definition
+    else {
+        panic!("filled-surface fixture");
+    };
+    assert_eq!(continuity.uniform_value(), Some(SurfaceContinuity::Contact));
+
+    let mut mixed = wire;
+    mixed["continuity"] = serde_json::json!(["contact", "curvature"]);
+    let FeatureDefinition::Operation(FeatureOperation::FilledSurface { continuity, .. }) =
+        serde_json::from_value::<FeatureDefinition>(mixed).unwrap()
+    else {
+        panic!("filled-surface fixture");
+    };
+    assert_eq!(continuity.uniform_value(), None);
 }
 
 #[test]
