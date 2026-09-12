@@ -936,11 +936,21 @@ fn sampled_carriers_admit_finite_numeric_payloads_and_preserve_failed_edits() {
     assert!(polyline.set_chordal_deflection(f64::INFINITY).is_err());
     assert_eq!(polyline, original);
     let mut wire = serde_json::to_value(&polyline).unwrap();
+    assert_eq!(wire["samples"]["kind"], "parameterized");
+    assert_eq!(
+        wire["samples"]["vertices"][0]["parameter"],
+        serde_json::json!(2.0)
+    );
     assert_eq!(
         serde_json::from_value::<PolylineCurve>(wire.clone()).unwrap(),
         polyline
     );
-    wire["parameters"] = serde_json::json!([1.0, 1.0]);
+    // A parameter travels in its own sample row, so a parameter list that does
+    // not match the sample count has no spelling; a repeated parameter is still
+    // refused by the monotonic mint.
+    wire["samples"]["vertices"][1]["parameter"] = serde_json::json!(2.0);
+    assert!(serde_json::from_value::<PolylineCurve>(wire.clone()).is_err());
+    wire["samples"]["parameters"] = serde_json::json!([1.0, 1.0]);
     assert!(serde_json::from_value::<PolylineCurve>(wire).is_err());
     let mut surface = PolygonalSurface::new(
         vec![

@@ -877,14 +877,98 @@ impl<'de> Deserialize<'de> for PolygonalSurface {
     }
 }
 
-/// Source-native polyline with an explicit chordal error bound.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+/// One polyline sample with the source parameter recorded at it.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct PolylineVertex {
+    /// Source parameter at this sample.
+    pub parameter: f64,
+    /// Model-space sample.
+    pub point: Point3,
+}
+
+/// The samples of a polyline, with or without source parameters.
+///
+/// A parameterized polyline carries one parameter per sample in the sample
+/// row, so a parameter list that does not match the sample count has no
+/// spelling.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+pub enum PolylineSamples {
+    /// Samples the source did not parameterize.
+    Unparameterized {
+        /// Ordered model-space samples.
+        points: Vec<Point3>,
+    },
+    /// Samples the source parameterized.
+    Parameterized {
+        /// Ordered samples, each with its source parameter.
+        vertices: Vec<PolylineVertex>,
+    },
+}
+
+/// Source-native polyline with an explicit chordal error bound.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "PolylineCurveWire"))]
+#[serde(try_from = "PolylineCurveWire", into = "PolylineCurveWire")]
 pub struct PolylineCurve {
     points: Vec<Point3>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     parameters: Option<Vec<f64>>,
     chordal_deflection: f64,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct PolylineCurveWire {
+    samples: PolylineSamples,
+    chordal_deflection: f64,
+}
+
+impl From<PolylineCurve> for PolylineCurveWire {
+    fn from(curve: PolylineCurve) -> Self {
+        let samples = match curve.parameters {
+            None => PolylineSamples::Unparameterized {
+                points: curve.points,
+            },
+            Some(parameters) => PolylineSamples::Parameterized {
+                vertices: curve
+                    .points
+                    .into_iter()
+                    .zip(parameters)
+                    .map(|(point, parameter)| PolylineVertex { parameter, point })
+                    .collect(),
+            },
+        };
+        Self {
+            samples,
+            chordal_deflection: curve.chordal_deflection,
+        }
+    }
+}
+
+impl TryFrom<PolylineCurveWire> for PolylineCurve {
+    type Error = GeometryLayoutError;
+
+    fn try_from(wire: PolylineCurveWire) -> Result<Self, Self::Error> {
+        let (points, parameters) = match wire.samples {
+            PolylineSamples::Unparameterized { points } => (points, None),
+            PolylineSamples::Parameterized { vertices } => {
+                let mut points = Vec::with_capacity(vertices.len());
+                let mut parameters = Vec::with_capacity(vertices.len());
+                for vertex in vertices {
+                    points.push(vertex.point);
+                    parameters.push(vertex.parameter);
+                }
+                (points, Some(parameters))
+            }
+        };
+        Self::new(points, parameters, wire.chordal_deflection)
+    }
 }
 
 impl PolylineCurve {
@@ -899,12 +983,16 @@ impl PolylineCurve {
                 "polyline must contain at least two points",
             ));
         }
-        if let Some(parameters) = &parameters {
-            if parameters.len() != points.len() {
-                return Err(geometry_layout_error(
-                    "polyline parameters do not match the point count",
-                ));
-            }
+        // A producer door: the wire carries one sample row per point, so the
+        // two lists it builds always agree and only a caller that built them
+        // separately can reach this count agreement.
+        if parameters
+            .as_ref()
+            .is_some_and(|parameters| parameters.len() != points.len())
+        {
+            return Err(geometry_layout_error(
+                "polyline parameters do not match the point count",
+            ));
         }
         if points
             .iter()
@@ -985,26 +1073,6 @@ impl PolylineCurve {
         }
         self.chordal_deflection = chordal_deflection;
         Ok(())
-    }
-}
-
-impl<'de> Deserialize<'de> for PolylineCurve {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        #[serde(deny_unknown_fields)]
-        struct Wire {
-            points: Vec<Point3>,
-            #[serde(default)]
-            parameters: Option<Vec<f64>>,
-            chordal_deflection: f64,
-        }
-
-        let wire = Wire::deserialize(deserializer)?;
-        Self::new(wire.points, wire.parameters, wire.chordal_deflection)
-            .map_err(serde::de::Error::custom)
     }
 }
 
