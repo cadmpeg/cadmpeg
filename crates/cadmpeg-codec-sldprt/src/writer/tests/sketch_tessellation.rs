@@ -707,7 +707,13 @@ fn semantic_writer_preserves_display_list_geometry() {
     let mesh = &regenerated.ir().model.tessellations[0];
     assert_eq!(mesh.vertices()[0].z, 250.0);
     assert_eq!(mesh.triangles(), vec![[0, 1, 2]]);
-    assert_eq!(mesh.strip_lengths(), vec![3]);
+    assert_eq!(
+        mesh.strip_lengths()
+            .iter()
+            .map(|run| run.get())
+            .collect::<Vec<_>>(),
+        vec![3]
+    );
     assert_eq!(mesh.channels().len(), 6);
 }
 
@@ -769,7 +775,14 @@ fn semantic_writer_expands_indexed_tessellation() {
     )
     .expect("valid tessellation");
     let expanded = crate::writer::sequential_tessellation(&mesh).unwrap();
-    assert_eq!(expanded.strip_lengths(), vec![3, 3]);
+    assert_eq!(
+        expanded
+            .strip_lengths()
+            .iter()
+            .map(|run| run.get())
+            .collect::<Vec<_>>(),
+        vec![3, 3]
+    );
     assert_eq!(expanded.triangles(), vec![[0, 1, 2], [3, 4, 5]]);
     assert_eq!(expanded.vertices().len(), 6);
     assert_eq!(expanded.vertex_normals(), corner_normals);

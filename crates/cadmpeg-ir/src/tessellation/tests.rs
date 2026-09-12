@@ -370,10 +370,13 @@ fn empty_wire_shading_is_the_absent_shading() {
 
 // The literal route to an empty strip run does not compile: `TessellationTopology::Strips`
 // carries a `StripLengths`, whose vector is private and whose only mint,
-// `StripLengths::new`, returns `None` for an empty vector.
+// `TryFrom<Vec<StripRun>>`, refuses an empty vector.
 #[test]
 fn the_wire_spells_the_topology_by_name() {
-    assert!(StripLengths::new(Vec::new()).is_none());
+    assert!(StripLengths::try_from(Vec::<u32>::new()).is_err());
+    // A run of one or two vertices spans no triangle and is refused at the mint.
+    assert!(StripRun::new(2).is_none());
+    assert!(StripLengths::try_from(vec![3, 2]).is_err());
     let list = serde_json::to_value(mesh()).unwrap();
     assert_eq!(list["topology"], serde_json::json!({"kind": "list"}));
 
@@ -418,6 +421,18 @@ fn a_strip_run_outside_the_topology_is_an_unknown_key() {
     wire["topology"] = serde_json::json!({"kind": "strips", "strip_lengths": []});
     let error = serde_json::from_value::<Tessellation>(wire).unwrap_err();
     assert!(error.to_string().contains("empty"), "{error}");
+
+    // A run of one or two vertices spans no triangle, and the document route
+    // refuses it at the run mint rather than silently emitting nothing.
+    for short in [0, 1, 2] {
+        let mut wire = serde_json::to_value(mesh()).unwrap();
+        wire["topology"] = serde_json::json!({"kind": "strips", "strip_lengths": [short]});
+        let error = serde_json::from_value::<Tessellation>(wire).unwrap_err();
+        assert!(
+            error.to_string().contains("spans no triangle"),
+            "{short}: {error}"
+        );
+    }
 }
 
 // The domain is the wire's tag, so the selector table exists only on the two
