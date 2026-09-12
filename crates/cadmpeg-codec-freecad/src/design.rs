@@ -5643,7 +5643,7 @@ fn pattern_definition(
                 let target = link.as_ref()?.object()?;
                 let object = objects.iter().find(|object| object.id == target)?;
                 let owned = properties_by_owner.get(target).map(Vec::as_slice)?;
-                let pattern = pattern_kind(
+                let pattern = pattern_kind::<cadmpeg_ir::features::NoNestedComposite>(
                     &object.type_name,
                     owned,
                     objects,
@@ -5715,13 +5715,13 @@ fn implicit_body_predecessor(
     })
 }
 
-fn pattern_kind(
+fn pattern_kind<C: cadmpeg_ir::features::CompositeStages>(
     kind: &str,
     properties: &[&PropertyRecord],
     objects: &[ObjectRecord],
     properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
     entries: &[EntryRecord],
-) -> Option<PatternKind> {
+) -> Option<PatternKind<C>> {
     if kind.ends_with("Mirrored") {
         return Some(
             if let Some((plane_origin, plane_normal)) =
@@ -5793,7 +5793,7 @@ fn pattern_kind(
                 entries,
             )?;
             PatternKind::new(PatternTransform::Composite {
-                stages: cadmpeg_ir::features::CompositePattern::new(vec![
+                stages: C::rebuild(vec![
                     PatternStage {
                         pattern: Box::new(first),
                     },
@@ -5805,7 +5805,7 @@ fn pattern_kind(
             })
             .ok()?
         } else {
-            first
+            first.widen()
         }
     } else if kind.ends_with("PolarPattern") {
         let (axis_origin, mut axis_dir) =
@@ -5847,7 +5847,7 @@ fn linear_pattern_axis(
     objects: &[ObjectRecord],
     properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
     entries: &[EntryRecord],
-) -> Option<PatternKind> {
+) -> Option<cadmpeg_ir::features::StagePatternKind> {
     let name = |base: &str| format!("{base}{suffix}");
     let mut direction =
         axis_reference(properties, &name("Direction"), objects, properties_by_owner)
