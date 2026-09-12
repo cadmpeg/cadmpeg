@@ -13,7 +13,12 @@ of:
 * ``try_from = "T"`` or ``from = "T"`` - the read goes through ``T``, which is
   checked in turn;
 * ``transparent`` - the read is the inner type's read, with no key of its own;
-* ``untagged`` - each arm's type is checked in turn;
+* ``untagged`` - every arm is a unit arm, or a newtype arm whose single type
+  is checked in turn. serde has no variant-level ``deny_unknown_fields``, so an
+  inline struct arm, or a tuple arm carrying more than one type, can never
+  refuse a key and fails. The same rule holds for a single arm that carries
+  ``#[serde(untagged)]`` inside an otherwise tagged enum, where the container's
+  deny does not reach the arm's own keys;
 * every variant is a unit variant - the read is a bare name with no key to deny.
 
 Anything else fails, unless it is one of the named exceptions below.
@@ -192,10 +197,8 @@ def strip_macro_repetition(body):
     return body
 
 
-def all_unit_variants(item):
-    if item.kind != "enum":
-        return False
-    body = strip_macro_repetition(enum_body(item))
+def split_variants(body):
+    """Split an enum body into its top-level variant texts, attributes kept."""
     depth = 0
     variants = []
     current = ""
@@ -210,23 +213,81 @@ def all_unit_variants(item):
         else:
             current += char
     variants.append(current)
-    found = False
+    out = []
     for raw in variants:
-        text = re.sub(r"#\[[^\]]*\]", " ", raw)
-        text = re.sub(r"//[^\n]*", " ", text).strip()
-        if not text:
+        if strip_variant_attributes(raw):
+            out.append(raw)
+    return out
+
+
+def strip_variant_attributes(raw):
+    """The variant text with its attributes and comments removed."""
+    text = re.sub(r"#\[[^\]]*\]", " ", raw)
+    return re.sub(r"//[^\n]*", " ", text).strip()
+
+
+def all_unit_variants(item):
+    if item.kind != "enum":
+        return False
+    variants = [
+        strip_variant_attributes(raw)
+        for raw in split_variants(strip_macro_repetition(enum_body(item)))
+    ]
+    if not variants:
+        return False
+    return all("(" not in text and "{" not in text for text in variants)
+
+
+def split_tuple_types(text):
+    """Split the inside of a tuple variant into its top-level type texts."""
+    depth = 0
+    types = []
+    current = ""
+    for char in text:
+        if char in "({[<":
+            depth += 1
+        elif char in ")}]>":
+            depth -= 1
+        if char == "," and depth == 0:
+            types.append(current)
+            current = ""
+        else:
+            current += char
+    types.append(current)
+    return [part for part in (item.strip() for item in types) if part]
+
+
+class Arm:
+    def __init__(self, name, kind, types, untagged):
+        self.name = name
+        self.kind = kind
+        self.types = types
+        self.untagged = untagged
+
+
+def untagged_arms(item):
+    """The arms of an enum body, classified as unit, tuple or struct.
+
+    ``untagged`` records whether the arm itself carries ``#[serde(untagged)]``,
+    which makes it an untagged read inside an otherwise tagged enum.
+    """
+    arms = []
+    for raw in split_variants(strip_macro_repetition(enum_body(item))):
+        untagged = bool(re.search(r"\buntagged\b", serde_attrs(raw)))
+        text = strip_variant_attributes(raw)
+        match = re.match(r"(\$?\w+)\s*(.*)", text, re.S)
+        if match is None:
             continue
-        found = True
-        if "(" in text or "{" in text:
-            return False
-    return found
-
-
-def untagged_arm_types(item):
-    body = strip_macro_repetition(enum_body(item))
-    body = re.sub(r"#\[[^\]]*\]", " ", body)
-    body = re.sub(r"//[^\n]*", " ", body)
-    return re.findall(r"[A-Z]\w*", body)
+        name = match.group(1)
+        rest = match.group(2).lstrip()
+        if rest.startswith("{"):
+            arms.append(Arm(name, "struct", [], untagged))
+        elif rest.startswith("("):
+            inner = rest[1 : rest.rfind(")")]
+            arms.append(Arm(name, "tuple", split_tuple_types(inner), untagged))
+        else:
+            arms.append(Arm(name, "unit", [], untagged))
+    return arms
 
 
 def named_types(text):
@@ -242,7 +303,39 @@ def main():
             index.setdefault(item.name, item)
 
     failures = []
+    arm_failures = []
     checking = set()
+
+    def check_untagged_arms(item, arms):
+        """Every untagged arm is a unit arm or a newtype over a checked type."""
+        admitted = True
+        for arm in arms:
+            if arm.kind == "struct":
+                arm_failures.append(
+                    (
+                        item.path,
+                        item.line,
+                        f"{item.name}::{arm.name}: an inline struct arm read "
+                        "untagged has no way to refuse a key",
+                    )
+                )
+                admitted = False
+            elif arm.kind == "tuple" and len(arm.types) != 1:
+                arm_failures.append(
+                    (
+                        item.path,
+                        item.line,
+                        f"{item.name}::{arm.name}: a tuple arm read untagged "
+                        f"carries {len(arm.types)} types, so no single type "
+                        "states its keys",
+                    )
+                )
+                admitted = False
+            elif arm.kind == "tuple":
+                for name in named_types(arm.types[0]):
+                    if name in index and not passes(index[name]):
+                        admitted = False
+        return admitted
 
     def passes(item):
         if item.name in EXCEPTIONS:
@@ -264,11 +357,7 @@ def main():
                     if name in index
                 )
             if re.search(r"\buntagged\b", attrs):
-                return all(
-                    passes(index[name])
-                    for name in untagged_arm_types(item)
-                    if name in index
-                )
+                return check_untagged_arms(item, untagged_arms(item))
             if all_unit_variants(item):
                 return True
             return False
@@ -279,13 +368,29 @@ def main():
         if not derives_deserialize(item.attrs):
             continue
         if not passes(item):
-            failures.append(item)
+            failures.append((item.path, item.line, item.name))
+        if item.kind == "enum" and not re.search(
+            r"\buntagged\b", serde_attrs(item.attrs)
+        ):
+            arms = [arm for arm in untagged_arms(item) if arm.untagged]
+            if arms and not check_untagged_arms(item, arms):
+                failures.append((item.path, item.line, item.name))
 
-    if failures:
-        for item in failures:
-            print(f"{item.path}:{item.line} {item.name}", file=sys.stderr)
+    detailed = {(path, line) for path, line, _ in arm_failures}
+    lines = [
+        f"{path}:{line} {label}"
+        for path, line, label in arm_failures
+    ] + [
+        f"{path}:{line} {label}"
+        for path, line, label in failures
+        if (path, line) not in detailed
+    ]
+    reported = sorted(dict.fromkeys(lines))
+    if reported:
+        for line in reported:
+            print(line, file=sys.stderr)
         print(
-            f"deny census: {len(failures)} item(s) accept an unknown wire key",
+            f"deny census: {len(reported)} item(s) accept an unknown wire key",
             file=sys.stderr,
         )
         return 1
