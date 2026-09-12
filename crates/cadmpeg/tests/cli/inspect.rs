@@ -39,9 +39,11 @@ fn fcstd_inspect_and_container_decode_work_automatically_and_forced() {
         );
         let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(value["source"]["identity"]["classification"], "classified");
-        assert_eq!(
-            value["source"]["identity"]["dialects"]["primary"]["format"],
-            "fcstd"
+        assert!(
+            value["source"]["identity"]["dialects"]["primary"]["dialect"]
+                .as_str()
+                .is_some_and(|dialect| dialect.starts_with("fcstd:")),
+            "{value}"
         );
         assert_eq!(
             value["source"]["identity"]["dialects"]["primary"]["declared"]["schema_version"],
@@ -144,9 +146,11 @@ fn rhino_inspect_detects_archive_and_reports_tables_in_text_and_json() {
     assert_eq!(value["command"], "inspect");
     assert_eq!(value["selection"]["kind"], "detected");
     assert_eq!(value["selection"]["confidence"], "high");
-    assert_eq!(
-        value["summary"]["identity"]["dialects"]["primary"]["format"],
-        "rhino"
+    assert!(
+        value["summary"]["identity"]["dialects"]["primary"]["dialect"]
+            .as_str()
+            .is_some_and(|dialect| dialect.starts_with("rhino:")),
+        "{value}"
     );
     assert_eq!(value["summary"]["container_kind"], "3dm-chunks");
     assert_eq!(value["summary"]["entries"].as_array().unwrap().len(), 3);
@@ -187,9 +191,11 @@ fn rhino_forced_input_format_and_3dm_alias_bypass_detection() {
         assert!(output.status.success());
         let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(value["ir_version"], cadmpeg_ir::IR_VERSION);
-        assert_eq!(
-            value["source"]["identity"]["dialects"]["primary"]["format"],
-            "rhino"
+        assert!(
+            value["source"]["identity"]["dialects"]["primary"]["dialect"]
+                .as_str()
+                .is_some_and(|dialect| dialect.starts_with("rhino:")),
+            "{value}"
         );
     }
 }
@@ -213,9 +219,11 @@ fn rhino_full_band_empty_archive_decodes_to_current_ir() {
             );
             let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
             assert_eq!(value["ir_version"], cadmpeg_ir::IR_VERSION);
-            assert_eq!(
-                value["source"]["identity"]["dialects"]["primary"]["format"],
-                "rhino"
+            assert!(
+                value["source"]["identity"]["dialects"]["primary"]["dialect"]
+                    .as_str()
+                    .is_some_and(|dialect| dialect.starts_with("rhino:")),
+                "{value}"
             );
             assert_eq!(value["source"]["attributes"]["archive_version"], version);
             assert_eq!(

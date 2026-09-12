@@ -338,16 +338,14 @@ mod tests {
         let decode: DecodeReportProbe = serde_json::from_value(serde_json::json!({
             "dialects": {
                 "primary": {
-                    "format": "f3d",
                     "dialect": "f3d:archive-2",
                     "declared": {"manifest_version": "2"},
                     "admission": "admitted"
                 },
                 "extra": [{
-                    "format": "acis",
                     "dialect": "acis:sab-22300",
                     "declared": {"save_format": "22300"},
-                    "admission": {"unverified": {"using": "acis:sab-22200"}},
+                    "admission": {"unverified": {"using": "sab-22200"}},
                     "instance": "member:model.sab"
                 }]
             }

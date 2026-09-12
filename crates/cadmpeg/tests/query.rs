@@ -96,7 +96,6 @@ fn summary_exposes_document_and_decode_dialect_identity() {
               "classification": "classified",
               "dialects": {
                 "primary": {
-                  "format": "rhino",
                   "dialect": "rhino:archive-80",
                   "declared": {"archive_version": "80"},
                   "admission": "admitted"
@@ -138,15 +137,13 @@ fn summary_exposes_document_and_decode_dialect_identity() {
             "losses": [],
             "dialects": {
               "primary": {
-                "format": "f3d",
                 "dialect": "f3d:archive-2",
                 "declared": {"manifest_version": "2"},
                 "admission": "admitted"
               },
               "extra": [{
-                "format": "acis",
                 "dialect": "acis:sab-22300",
-                "admission": {"unverified": {"using": "acis:sab-22200"}},
+                "admission": {"unverified": {"using": "sab-22200"}},
                 "instance": "member:model.sab"
               }]
             }
@@ -185,7 +182,6 @@ fn summary_exposes_inspect_export_and_refusal_identity_without_positional_layers
             "message": "unsupported source",
             "dialects": {
               "primary": {
-                "format": "rhino",
                 "dialect": "rhino:unknown",
                 "declared": {"archive_version": "100"},
                 "admission": "refused"
@@ -202,7 +198,6 @@ fn summary_exposes_inspect_export_and_refusal_identity_without_positional_layers
             }],
             "dialects": {
               "primary": {
-                "format": "rhino",
                 "dialect": "rhino:archive-80",
                 "declared": {"archive_version": "80"},
                 "admission": "admitted"
