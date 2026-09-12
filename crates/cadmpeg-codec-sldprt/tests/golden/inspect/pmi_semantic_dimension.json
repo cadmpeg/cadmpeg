@@ -10,11 +10,11 @@
         "sha256": "3660d0ac9ce4b3ae64f1237e1010509cb1f03acd6c0a30c6e0f67332bd763b71",
         "type_id": "0x00000020"
       },
-      "compressed_size": 186,
       "compression": "deflate",
+      "expanded": 544,
       "name": "Contents/Config-0-Partition",
       "role": "block",
-      "uncompressed_size": 544
+      "stored": 186
     },
     {
       "attributes": {
@@ -23,11 +23,11 @@
         "sha256": "babf7e38baa147f4489ffef19d624ed0dfce42db5bf1a4582b4d9863bd5e6fee",
         "type_id": "0x00000042"
       },
-      "compressed_size": 57,
       "compression": "deflate",
+      "expanded": 67,
       "name": "Contents/Keywords",
       "role": "block",
-      "uncompressed_size": 67
+      "stored": 57
     },
     {
       "attributes": {
@@ -36,11 +36,11 @@
         "sha256": "23fe8ad82b26a6239a6c55db9a8a19151226214bc13d2c9cc11cba30363d5066",
         "type_id": "0x00000049"
       },
-      "compressed_size": 216,
       "compression": "deflate",
+      "expanded": 301,
       "name": "Contents/PMISemanticDataDB",
       "role": "block",
-      "uncompressed_size": 301
+      "stored": 216
     }
   ],
   "identity": {

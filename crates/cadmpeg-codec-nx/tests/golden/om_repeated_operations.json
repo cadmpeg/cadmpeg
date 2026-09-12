@@ -16,98 +16,134 @@
         "faces": [],
         "feature_result_topologies": [
           {
-            "bodies": [
-              "nx:feature-history:body-reference#0000000000-0000000000"
-            ],
             "id": "nx:feature-history:result-topology#0000000000-0000000000",
+            "members": [
+              {
+                "id": "nx:feature-history:body-reference#0000000000-0000000000",
+                "kind": "body"
+              }
+            ],
             "native_ref": "nx:feature-history:body-reference#0000000000-0000000000",
             "output_of": "nx:feature-history:feature#0000000000-0000000000"
           },
           {
-            "bodies": [
-              "nx:feature-history:body-reference#0000000000-0000000001"
-            ],
             "id": "nx:feature-history:result-topology#0000000000-0000000001",
+            "members": [
+              {
+                "id": "nx:feature-history:body-reference#0000000000-0000000001",
+                "kind": "body"
+              }
+            ],
             "native_ref": "nx:feature-history:body-reference#0000000000-0000000001",
             "output_of": "nx:feature-history:feature#0000000000-0000000001"
           },
           {
-            "bodies": [
-              "nx:feature-history:body-reference#0000000000-0000000002"
-            ],
             "id": "nx:feature-history:result-topology#0000000000-0000000002",
+            "members": [
+              {
+                "id": "nx:feature-history:body-reference#0000000000-0000000002",
+                "kind": "body"
+              }
+            ],
             "native_ref": "nx:feature-history:body-reference#0000000000-0000000002",
             "output_of": "nx:feature-history:feature#0000000000-0000000002"
           },
           {
-            "bodies": [
-              "nx:feature-history:body-reference#0000000000-0000000003"
-            ],
             "id": "nx:feature-history:result-topology#0000000000-0000000003",
+            "members": [
+              {
+                "id": "nx:feature-history:body-reference#0000000000-0000000003",
+                "kind": "body"
+              }
+            ],
             "native_ref": "nx:feature-history:body-reference#0000000000-0000000003",
             "output_of": "nx:feature-history:feature#0000000000-0000000003"
           },
           {
-            "bodies": [
-              "nx:feature-history:body-reference#0000000000-0000000004"
-            ],
             "id": "nx:feature-history:result-topology#0000000000-0000000004",
+            "members": [
+              {
+                "id": "nx:feature-history:body-reference#0000000000-0000000004",
+                "kind": "body"
+              }
+            ],
             "native_ref": "nx:feature-history:body-reference#0000000000-0000000004",
             "output_of": "nx:feature-history:feature#0000000000-0000000004"
           },
           {
-            "bodies": [
-              "nx:feature-history:body-reference#0000000000-0000000005"
-            ],
             "id": "nx:feature-history:result-topology#0000000000-0000000005",
+            "members": [
+              {
+                "id": "nx:feature-history:body-reference#0000000000-0000000005",
+                "kind": "body"
+              }
+            ],
             "native_ref": "nx:feature-history:body-reference#0000000000-0000000005",
             "output_of": "nx:feature-history:feature#0000000000-0000000005"
           },
           {
-            "bodies": [
-              "nx:feature-history:body-reference#0000000000-0000000006"
-            ],
             "id": "nx:feature-history:result-topology#0000000000-0000000006",
+            "members": [
+              {
+                "id": "nx:feature-history:body-reference#0000000000-0000000006",
+                "kind": "body"
+              }
+            ],
             "native_ref": "nx:feature-history:body-reference#0000000000-0000000006",
             "output_of": "nx:feature-history:feature#0000000000-0000000006"
           },
           {
-            "bodies": [
-              "nx:feature-history:body-reference#0000000000-0000000007"
-            ],
             "id": "nx:feature-history:result-topology#0000000000-0000000007",
+            "members": [
+              {
+                "id": "nx:feature-history:body-reference#0000000000-0000000007",
+                "kind": "body"
+              }
+            ],
             "native_ref": "nx:feature-history:body-reference#0000000000-0000000007",
             "output_of": "nx:feature-history:feature#0000000000-0000000007"
           },
           {
-            "bodies": [
-              "nx:feature-history:body-reference#0000000000-0000000008"
-            ],
             "id": "nx:feature-history:result-topology#0000000000-0000000008",
+            "members": [
+              {
+                "id": "nx:feature-history:body-reference#0000000000-0000000008",
+                "kind": "body"
+              }
+            ],
             "native_ref": "nx:feature-history:body-reference#0000000000-0000000008",
             "output_of": "nx:feature-history:feature#0000000000-0000000008"
           },
           {
-            "bodies": [
-              "nx:feature-history:body-reference#0000000000-0000000009"
-            ],
             "id": "nx:feature-history:result-topology#0000000000-0000000009",
+            "members": [
+              {
+                "id": "nx:feature-history:body-reference#0000000000-0000000009",
+                "kind": "body"
+              }
+            ],
             "native_ref": "nx:feature-history:body-reference#0000000000-0000000009",
             "output_of": "nx:feature-history:feature#0000000000-0000000009"
           },
           {
-            "bodies": [
-              "nx:feature-history:body-reference#0000000000-0000000010"
-            ],
             "id": "nx:feature-history:result-topology#0000000000-0000000010",
+            "members": [
+              {
+                "id": "nx:feature-history:body-reference#0000000000-0000000010",
+                "kind": "body"
+              }
+            ],
             "native_ref": "nx:feature-history:body-reference#0000000000-0000000010",
             "output_of": "nx:feature-history:feature#0000000000-0000000010"
           },
           {
-            "bodies": [
-              "nx:feature-history:body-reference#0000000000-0000000011"
-            ],
             "id": "nx:feature-history:result-topology#0000000000-0000000011",
+            "members": [
+              {
+                "id": "nx:feature-history:body-reference#0000000000-0000000011",
+                "kind": "body"
+              }
+            ],
             "native_ref": "nx:feature-history:body-reference#0000000000-0000000011",
             "output_of": "nx:feature-history:feature#0000000000-0000000011"
           }
@@ -2393,11 +2429,13 @@
           "file_offset": "76",
           "region": "HEADER"
         },
-        "compressed_size": 1108,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "part-payload",
-        "uncompressed_size": 1108
+        "size": {
+          "form": "exact",
+          "size": 1108
+        }
       }
     ],
     "identity": {

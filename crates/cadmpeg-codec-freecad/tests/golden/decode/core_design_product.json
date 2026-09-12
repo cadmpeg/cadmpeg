@@ -4018,13 +4018,21 @@
         {
           "id": "fcstd:model:occurrence#Occurrence:instance",
           "link": {
-            "claim_child": false,
-            "copy_on_change": {
-              "policy": {
-                "policy": "disabled"
+            "members": [
+              {
+                "claim": false,
+                "kind": "claim_child"
               },
-              "touched": false
-            }
+              {
+                "kind": "copy_on_change",
+                "state": {
+                  "policy": {
+                    "policy": "disabled"
+                  },
+                  "touched": false
+                }
+              }
+            ]
           },
           "linked_prototype": [
             [
@@ -6875,61 +6883,138 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [
-            "fcstd:model:face#Box:Shape:Box.Shape.brp:10",
-            "fcstd:model:face#Box:Shape:Box.Shape.brp:20",
-            "fcstd:model:face#Box:Shape:Box.Shape.brp:24",
-            "fcstd:model:face#Box:Shape:Box.Shape.brp:28",
-            "fcstd:model:face#Box:Shape:Box.Shape.brp:30",
-            "fcstd:model:face#Box:Shape:Box.Shape.brp:32"
-          ],
           "id": "fcstd:model:shell#Box:Shape:Box.Shape.brp:33",
+          "members": [
+            {
+              "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:10",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:20",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:24",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:28",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:30",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:32",
+              "kind": "face"
+            }
+          ],
           "region": "fcstd:model:region#Box:Shape:Box.Shape.brp:34"
         },
         {
-          "faces": [
-            "fcstd:model:face#Cut:Shape:Cut.Shape.brp:10",
-            "fcstd:model:face#Cut:Shape:Cut.Shape.brp:17",
-            "fcstd:model:face#Cut:Shape:Cut.Shape.brp:25",
-            "fcstd:model:face#Cut:Shape:Cut.Shape.brp:30",
-            "fcstd:model:face#Cut:Shape:Cut.Shape.brp:36",
-            "fcstd:model:face#Cut:Shape:Cut.Shape.brp:38",
-            "fcstd:model:face#Cut:Shape:Cut.Shape.brp:41"
-          ],
           "id": "fcstd:model:shell#Cut:Shape:Cut.Shape.brp:42",
+          "members": [
+            {
+              "id": "fcstd:model:face#Cut:Shape:Cut.Shape.brp:10",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Cut:Shape:Cut.Shape.brp:17",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Cut:Shape:Cut.Shape.brp:25",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Cut:Shape:Cut.Shape.brp:30",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Cut:Shape:Cut.Shape.brp:36",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Cut:Shape:Cut.Shape.brp:38",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Cut:Shape:Cut.Shape.brp:41",
+              "kind": "face"
+            }
+          ],
           "region": "fcstd:model:region#Cut:Shape:Cut.Shape.brp:43"
         },
         {
-          "faces": [
-            "fcstd:model:face#Cylinder:Shape:Cylinder.Shape.brp:5%40c15ae4a939ac7ba4",
-            "fcstd:model:face#Cylinder:Shape:Cylinder.Shape.brp:7%40c15ae4a939ac7ba4",
-            "fcstd:model:face#Cylinder:Shape:Cylinder.Shape.brp:7%4024a9ad130d2c8c7b"
-          ],
           "id": "fcstd:model:shell#Cylinder:Shape:Cylinder.Shape.brp:8%40c15ae4a939ac7ba4",
+          "members": [
+            {
+              "id": "fcstd:model:face#Cylinder:Shape:Cylinder.Shape.brp:5%40c15ae4a939ac7ba4",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Cylinder:Shape:Cylinder.Shape.brp:7%40c15ae4a939ac7ba4",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Cylinder:Shape:Cylinder.Shape.brp:7%4024a9ad130d2c8c7b",
+              "kind": "face"
+            }
+          ],
           "region": "fcstd:model:region#Cylinder:Shape:Cylinder.Shape.brp:9%40c15ae4a939ac7ba4"
         },
         {
-          "faces": [
-            "fcstd:model:face#DesignedFeature:Shape:DesignedFeature.Shape.brp:10",
-            "fcstd:model:face#DesignedFeature:Shape:DesignedFeature.Shape.brp:20",
-            "fcstd:model:face#DesignedFeature:Shape:DesignedFeature.Shape.brp:24",
-            "fcstd:model:face#DesignedFeature:Shape:DesignedFeature.Shape.brp:28",
-            "fcstd:model:face#DesignedFeature:Shape:DesignedFeature.Shape.brp:30",
-            "fcstd:model:face#DesignedFeature:Shape:DesignedFeature.Shape.brp:32"
-          ],
           "id": "fcstd:model:shell#DesignedFeature:Shape:DesignedFeature.Shape.brp:33",
+          "members": [
+            {
+              "id": "fcstd:model:face#DesignedFeature:Shape:DesignedFeature.Shape.brp:10",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#DesignedFeature:Shape:DesignedFeature.Shape.brp:20",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#DesignedFeature:Shape:DesignedFeature.Shape.brp:24",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#DesignedFeature:Shape:DesignedFeature.Shape.brp:28",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#DesignedFeature:Shape:DesignedFeature.Shape.brp:30",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#DesignedFeature:Shape:DesignedFeature.Shape.brp:32",
+              "kind": "face"
+            }
+          ],
           "region": "fcstd:model:region#DesignedFeature:Shape:DesignedFeature.Shape.brp:34"
         },
         {
-          "faces": [],
           "id": "fcstd:model:shell#Profile:Shape:Profile.Shape.brp:9",
-          "region": "fcstd:model:region#Profile:Shape:Profile.Shape.brp:9",
-          "wire_edges": [
-            "fcstd:model:edge#Profile:Shape:Profile.Shape.brp:3",
-            "fcstd:model:edge#Profile:Shape:Profile.Shape.brp:5",
-            "fcstd:model:edge#Profile:Shape:Profile.Shape.brp:7",
-            "fcstd:model:edge#Profile:Shape:Profile.Shape.brp:8"
-          ]
+          "members": [
+            {
+              "id": "fcstd:model:edge#Profile:Shape:Profile.Shape.brp:3",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "fcstd:model:edge#Profile:Shape:Profile.Shape.brp:5",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "fcstd:model:edge#Profile:Shape:Profile.Shape.brp:7",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "fcstd:model:edge#Profile:Shape:Profile.Shape.brp:8",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#Profile:Shape:Profile.Shape.brp:9"
         }
       ],
       "sketch_constraints": [

@@ -296,11 +296,13 @@
           "file_offset": "76",
           "region": "HEADER"
         },
-        "compressed_size": 171,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "part-payload",
-        "uncompressed_size": 171
+        "size": {
+          "form": "exact",
+          "size": 171
+        }
       },
       {
         "attributes": {
@@ -325,9 +327,9 @@
           "schema": "SCH_test"
         },
         "compression": "zlib",
+        "expanded": 103,
         "name": "parasolid#0",
-        "role": "parasolid-stream",
-        "uncompressed_size": 103
+        "role": "parasolid-stream"
       }
     ],
     "identity": {

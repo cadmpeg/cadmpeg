@@ -350,10 +350,13 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [
-            "sldprt:brep:face#10"
-          ],
           "id": "sldprt:brep:shell#0",
+          "members": [
+            {
+              "id": "sldprt:brep:face#10",
+              "kind": "face"
+            }
+          ],
           "region": "sldprt:brep:region#0"
         }
       ],

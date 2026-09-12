@@ -424,11 +424,13 @@
           "file_offset": "76",
           "region": "HEADER"
         },
-        "compressed_size": 126,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "part-payload",
-        "uncompressed_size": 126
+        "size": {
+          "form": "exact",
+          "size": 126
+        }
       }
     ],
     "identity": {

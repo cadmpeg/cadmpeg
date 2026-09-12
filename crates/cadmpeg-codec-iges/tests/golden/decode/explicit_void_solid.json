@@ -1248,43 +1248,102 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [
-            "iges:model:face#D109:D107:D99",
-            "iges:model:face#D109:D107:D101",
-            "iges:model:face#D109:D107:D103",
-            "iges:model:face#D109:D107:D105"
-          ],
           "id": "iges:model:shell#D109:D107",
-          "region": "iges:model:region#D109"
-        },
-        {
-          "faces": [
-            "iges:model:face#D109:D53:D45",
-            "iges:model:face#D109:D53:D47",
-            "iges:model:face#D109:D53:D49",
-            "iges:model:face#D109:D53:D51"
+          "members": [
+            {
+              "id": "iges:model:face#D109:D107:D99",
+              "kind": "face"
+            },
+            {
+              "id": "iges:model:face#D109:D107:D101",
+              "kind": "face"
+            },
+            {
+              "id": "iges:model:face#D109:D107:D103",
+              "kind": "face"
+            },
+            {
+              "id": "iges:model:face#D109:D107:D105",
+              "kind": "face"
+            }
           ],
-          "id": "iges:model:shell#D109:D53",
           "region": "iges:model:region#D109"
         },
         {
-          "faces": [],
+          "id": "iges:model:shell#D109:D53",
+          "members": [
+            {
+              "id": "iges:model:face#D109:D53:D45",
+              "kind": "face"
+            },
+            {
+              "id": "iges:model:face#D109:D53:D47",
+              "kind": "face"
+            },
+            {
+              "id": "iges:model:face#D109:D53:D49",
+              "kind": "face"
+            },
+            {
+              "id": "iges:model:face#D109:D53:D51",
+              "kind": "face"
+            }
+          ],
+          "region": "iges:model:region#D109"
+        },
+        {
           "id": "iges:model:shell#free-geometry",
-          "region": "iges:model:region#free-geometry",
-          "wire_edges": [
-            "iges:model:edge#D21",
-            "iges:model:edge#D23",
-            "iges:model:edge#D25",
-            "iges:model:edge#D27",
-            "iges:model:edge#D29",
-            "iges:model:edge#D31",
-            "iges:model:edge#D75",
-            "iges:model:edge#D77",
-            "iges:model:edge#D79",
-            "iges:model:edge#D81",
-            "iges:model:edge#D83",
-            "iges:model:edge#D85"
-          ]
+          "members": [
+            {
+              "id": "iges:model:edge#D21",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "iges:model:edge#D23",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "iges:model:edge#D25",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "iges:model:edge#D27",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "iges:model:edge#D29",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "iges:model:edge#D31",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "iges:model:edge#D75",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "iges:model:edge#D77",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "iges:model:edge#D79",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "iges:model:edge#D81",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "iges:model:edge#D83",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "iges:model:edge#D85",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "iges:model:region#free-geometry"
         }
       ],
       "sketch_constraints": [],

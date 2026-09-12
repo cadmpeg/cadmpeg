@@ -683,27 +683,56 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [
-            "iges:model:face#D37:D31",
-            "iges:model:face#D37:D33",
-            "iges:model:face#D37:D35"
-          ],
           "id": "iges:model:shell#D37",
+          "members": [
+            {
+              "id": "iges:model:face#D37:D31",
+              "kind": "face"
+            },
+            {
+              "id": "iges:model:face#D37:D33",
+              "kind": "face"
+            },
+            {
+              "id": "iges:model:face#D37:D35",
+              "kind": "face"
+            }
+          ],
           "region": "iges:model:region#D37"
         },
         {
-          "faces": [],
           "id": "iges:model:shell#free-geometry",
-          "region": "iges:model:region#free-geometry",
-          "wire_edges": [
-            "iges:model:edge#D7",
-            "iges:model:edge#D9",
-            "iges:model:edge#D11",
-            "iges:model:edge#D13",
-            "iges:model:edge#D15",
-            "iges:model:edge#D17",
-            "iges:model:edge#D19"
-          ]
+          "members": [
+            {
+              "id": "iges:model:edge#D7",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "iges:model:edge#D9",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "iges:model:edge#D11",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "iges:model:edge#D13",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "iges:model:edge#D15",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "iges:model:edge#D17",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "iges:model:edge#D19",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "iges:model:region#free-geometry"
         }
       ],
       "sketch_constraints": [],

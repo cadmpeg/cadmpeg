@@ -5,21 +5,25 @@
       "attributes": {
         "offset": "76"
       },
-      "compressed_size": 57,
       "compression": "none",
       "name": "ActDatums",
       "role": "psb-geometry",
-      "uncompressed_size": 57
+      "size": {
+        "form": "exact",
+        "size": 57
+      }
     },
     {
       "attributes": {
         "offset": "133"
       },
-      "compressed_size": 39,
       "compression": "none",
       "name": "MdlStatus",
       "role": "metadata",
-      "uncompressed_size": 39
+      "size": {
+        "form": "exact",
+        "size": 39
+      }
     }
   ],
   "identity": {

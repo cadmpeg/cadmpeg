@@ -8,11 +8,11 @@
         "data_offset": "42",
         "header_offset": "0"
       },
-      "compressed_size": 2351,
       "compression": "deflate",
+      "expanded": 17887,
       "name": "Document.xml",
       "role": "document",
-      "uncompressed_size": 17887
+      "stored": 2351
     },
     {
       "attributes": {
@@ -21,11 +21,11 @@
         "data_offset": "2437",
         "header_offset": "2393"
       },
-      "compressed_size": 50,
       "compression": "deflate",
+      "expanded": 392,
       "name": "MeshKernel.bms",
       "role": "auxiliary",
-      "uncompressed_size": 392
+      "stored": 50
     },
     {
       "attributes": {
@@ -34,11 +34,11 @@
         "data_offset": "2527",
         "header_offset": "2487"
       },
-      "compressed_size": 25,
       "compression": "deflate",
+      "expanded": 40,
       "name": "PointCloud",
       "role": "auxiliary",
-      "uncompressed_size": 40
+      "stored": 25
     },
     {
       "attributes": {
@@ -47,11 +47,11 @@
         "data_offset": "2589",
         "header_offset": "2552"
       },
-      "compressed_size": 6,
       "compression": "deflate",
+      "expanded": 4,
       "name": "Normals",
       "role": "auxiliary",
-      "uncompressed_size": 4
+      "stored": 6
     },
     {
       "attributes": {
@@ -60,11 +60,11 @@
         "data_offset": "2631",
         "header_offset": "2595"
       },
-      "compressed_size": 6,
       "compression": "deflate",
+      "expanded": 4,
       "name": "Points",
       "role": "auxiliary",
-      "uncompressed_size": 4
+      "stored": 6
     },
     {
       "attributes": {
@@ -73,11 +73,11 @@
         "data_offset": "2678",
         "header_offset": "2637"
       },
-      "compressed_size": 39,
       "compression": "deflate",
+      "expanded": 114,
       "name": "Toolpath.nc",
       "role": "auxiliary",
-      "uncompressed_size": 114
+      "stored": 39
     },
     {
       "attributes": {
@@ -86,11 +86,11 @@
         "data_offset": "2762",
         "header_offset": "2717"
       },
-      "compressed_size": 13,
       "compression": "deflate",
+      "expanded": 16,
       "name": "cc0_payload.bin",
       "role": "auxiliary",
-      "uncompressed_size": 16
+      "stored": 13
     }
   ],
   "identity": {

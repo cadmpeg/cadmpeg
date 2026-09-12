@@ -375,17 +375,34 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [],
           "id": "iges:model:shell#free-geometry",
-          "region": "iges:model:region#free-geometry",
-          "wire_edges": [
-            "iges:model:edge#D7",
-            "iges:model:edge#D9",
-            "iges:model:edge#D11",
-            "iges:model:edge#D13",
-            "iges:model:edge#D19",
-            "iges:model:edge#D21"
-          ]
+          "members": [
+            {
+              "id": "iges:model:edge#D7",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "iges:model:edge#D9",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "iges:model:edge#D11",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "iges:model:edge#D13",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "iges:model:edge#D19",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "iges:model:edge#D21",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "iges:model:region#free-geometry"
         }
       ],
       "sketch_constraints": [],

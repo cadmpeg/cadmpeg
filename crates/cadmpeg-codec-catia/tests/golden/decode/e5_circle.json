@@ -85,12 +85,17 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [],
-          "free_vertices": [
-            "catia:e5:v#0",
-            "catia:e5:v#1"
-          ],
           "id": "catia:e5:shell#unbound-points",
+          "members": [
+            {
+              "id": "catia:e5:v#0",
+              "kind": "free_vertex"
+            },
+            {
+              "id": "catia:e5:v#1",
+              "kind": "free_vertex"
+            }
+          ],
           "region": "catia:e5:region#unbound-points"
         }
       ],

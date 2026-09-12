@@ -8,11 +8,14 @@
         "record_count": "0",
         "size": "16"
       },
-      "compressed_size": 16,
       "compression": "none",
       "name": "table-0x10000014",
       "role": "table",
-      "uncompressed_size": 8
+      "size": {
+        "form": "framed",
+        "framing": 8,
+        "payload": 8
+      }
     },
     {
       "attributes": {
@@ -21,11 +24,14 @@
         "record_count": "0",
         "size": "16"
       },
-      "compressed_size": 16,
       "compression": "none",
       "name": "table-0x10000015",
       "role": "table",
-      "uncompressed_size": 8
+      "size": {
+        "form": "framed",
+        "framing": 8,
+        "payload": 8
+      }
     },
     {
       "attributes": {
@@ -35,11 +41,14 @@
         "record_count": "1",
         "size": "125"
       },
-      "compressed_size": 125,
       "compression": "none",
       "name": "table-0x10000013",
       "role": "table",
-      "uncompressed_size": 117
+      "size": {
+        "form": "framed",
+        "framing": 8,
+        "payload": 117
+      }
     },
     {
       "attributes": {
@@ -48,11 +57,13 @@
         "nil_uuid": "false",
         "total_record_bytes": "109"
       },
-      "compressed_size": 109,
       "compression": "none",
       "name": "class-c3101a1d-f157-11d3-bfe7-0010830122f0",
       "role": "object-class",
-      "uncompressed_size": 109
+      "size": {
+        "form": "exact",
+        "size": 109
+      }
     }
   ],
   "identity": {

@@ -82,10 +82,13 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [
-            "iges:model:face#D3"
-          ],
           "id": "iges:model:shell#D3",
+          "members": [
+            {
+              "id": "iges:model:face#D3",
+              "kind": "face"
+            }
+          ],
           "region": "iges:model:region#D3"
         }
       ],

@@ -225,13 +225,21 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [],
-          "free_vertices": [
-            "catia:standard:v#0",
-            "catia:standard:v#1",
-            "catia:standard:v#2"
-          ],
           "id": "catia:standard:shell#unbound-points",
+          "members": [
+            {
+              "id": "catia:standard:v#0",
+              "kind": "free_vertex"
+            },
+            {
+              "id": "catia:standard:v#1",
+              "kind": "free_vertex"
+            },
+            {
+              "id": "catia:standard:v#2",
+              "kind": "free_vertex"
+            }
+          ],
           "region": "catia:standard:region#unbound-points"
         }
       ],

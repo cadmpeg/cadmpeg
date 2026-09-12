@@ -84,9 +84,6 @@
         "view_presentations": 0
       }
     },
-    "fidelity": {
-      "status": "not_consumed"
-    },
     "identity": {
       "payload": "native",
       "target": "fcstd:schema-4"
@@ -96,6 +93,11 @@
       "semantic FCStd archive written for fcstd:schema-4 (SchemaVersion=4 FileVersion=1)",
       "unsupported retained entries and unedited XML records were preserved"
     ],
-    "write_path": "patched"
+    "write_path": {
+      "fidelity": {
+        "status": "not_consumed"
+      },
+      "path": "patched"
+    }
   }
 }

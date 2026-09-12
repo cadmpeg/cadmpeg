@@ -690,12 +690,21 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [
-            "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7",
-            "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12",
-            "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:14"
-          ],
           "id": "fcstd:model:shell#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:15",
+          "members": [
+            {
+              "id": "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:14",
+              "kind": "face"
+            }
+          ],
           "region": "fcstd:model:region#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:16"
         }
       ],

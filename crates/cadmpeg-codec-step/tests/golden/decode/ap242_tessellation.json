@@ -226,10 +226,13 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [
-            "step:data:face#36"
-          ],
           "id": "step:data:shell#37",
+          "members": [
+            {
+              "id": "step:data:face#36",
+              "kind": "face"
+            }
+          ],
           "region": "step:data:region#38"
         }
       ],

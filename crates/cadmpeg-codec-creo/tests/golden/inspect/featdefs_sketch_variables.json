@@ -5,11 +5,13 @@
       "attributes": {
         "offset": "76"
       },
-      "compressed_size": 70,
       "compression": "none",
       "name": "FeatDefs",
       "role": "model-data",
-      "uncompressed_size": 70
+      "size": {
+        "form": "exact",
+        "size": 70
+      }
     }
   ],
   "identity": {

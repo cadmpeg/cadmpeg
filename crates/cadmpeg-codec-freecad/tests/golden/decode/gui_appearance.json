@@ -2455,17 +2455,41 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [
-            "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:10",
-            "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:17",
-            "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:25",
-            "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:30",
-            "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:33",
-            "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:35",
-            "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:40",
-            "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:42"
-          ],
           "id": "fcstd:model:shell#ColoredModel:Shape:ColoredModel.Shape.brp:43",
+          "members": [
+            {
+              "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:10",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:17",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:25",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:30",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:33",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:35",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:40",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:42",
+              "kind": "face"
+            }
+          ],
           "region": "fcstd:model:region#ColoredModel:Shape:ColoredModel.Shape.brp:44"
         }
       ],

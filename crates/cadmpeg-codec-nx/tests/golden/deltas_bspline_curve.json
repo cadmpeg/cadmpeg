@@ -396,11 +396,13 @@
           "file_offset": "76",
           "region": "HEADER"
         },
-        "compressed_size": 344,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "part-payload",
-        "uncompressed_size": 344
+        "size": {
+          "form": "exact",
+          "size": 344
+        }
       },
       {
         "attributes": {
@@ -425,9 +427,9 @@
           "schema": "SCH_TEST_1_9999"
         },
         "compression": "zlib",
+        "expanded": 625,
         "name": "parasolid#0",
-        "role": "parasolid-stream",
-        "uncompressed_size": 625
+        "role": "parasolid-stream"
       },
       {
         "attributes": {
@@ -445,9 +447,9 @@
           "schema": "SCH_TEST_1_9999"
         },
         "compression": "zlib",
+        "expanded": 97,
         "name": "parasolid#1",
-        "role": "parasolid-stream",
-        "uncompressed_size": 97
+        "role": "parasolid-stream"
       }
     ],
     "identity": {

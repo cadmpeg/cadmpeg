@@ -139,6 +139,7 @@
             "kind": {
               "angle": 0.20943951023931956,
               "angular_limits": {
+                "bounds": "range",
                 "maximum": 0.9599310885968813,
                 "minimum": -0.6108652381980153
               },
@@ -1575,13 +1576,21 @@
         {
           "id": "fcstd:model:occurrence#BracketOccurrence:instance",
           "link": {
-            "claim_child": false,
-            "copy_on_change": {
-              "policy": {
-                "policy": "disabled"
+            "members": [
+              {
+                "claim": false,
+                "kind": "claim_child"
               },
-              "touched": false
-            }
+              {
+                "kind": "copy_on_change",
+                "state": {
+                  "policy": {
+                    "policy": "disabled"
+                  },
+                  "touched": false
+                }
+              }
+            ]
           },
           "linked_prototype": [
             [
@@ -1744,13 +1753,21 @@
         {
           "id": "fcstd:model:occurrence#ExternalOccurrence:instance",
           "link": {
-            "claim_child": false,
-            "copy_on_change": {
-              "policy": {
-                "policy": "disabled"
+            "members": [
+              {
+                "claim": false,
+                "kind": "claim_child"
               },
-              "touched": false
-            }
+              {
+                "kind": "copy_on_change",
+                "state": {
+                  "policy": {
+                    "policy": "disabled"
+                  },
+                  "touched": false
+                }
+              }
+            ]
           },
           "linked_prototype": [
             [
@@ -1916,13 +1933,21 @@
         {
           "id": "fcstd:model:occurrence#NestedBracketOccurrence:instance",
           "link": {
-            "claim_child": false,
-            "copy_on_change": {
-              "policy": {
-                "policy": "disabled"
+            "members": [
+              {
+                "claim": false,
+                "kind": "claim_child"
               },
-              "touched": false
-            }
+              {
+                "kind": "copy_on_change",
+                "state": {
+                  "policy": {
+                    "policy": "disabled"
+                  },
+                  "touched": false
+                }
+              }
+            ]
           },
           "linked_prototype": [
             [
@@ -2040,14 +2065,25 @@
         {
           "id": "fcstd:model:occurrence#PinArray:0",
           "link": {
-            "claim_child": false,
-            "copy_on_change": {
-              "policy": {
-                "policy": "disabled"
+            "members": [
+              {
+                "component": "fcstd:model:product_definition#PinArray_i0:definition",
+                "kind": "element_component"
               },
-              "touched": false
-            },
-            "element_component": "fcstd:model:product_definition#PinArray_i0:definition"
+              {
+                "claim": false,
+                "kind": "claim_child"
+              },
+              {
+                "kind": "copy_on_change",
+                "state": {
+                  "policy": {
+                    "policy": "disabled"
+                  },
+                  "touched": false
+                }
+              }
+            ]
           },
           "linked_prototype": [
             [
@@ -2120,14 +2156,25 @@
         {
           "id": "fcstd:model:occurrence#PinArray:1",
           "link": {
-            "claim_child": false,
-            "copy_on_change": {
-              "policy": {
-                "policy": "disabled"
+            "members": [
+              {
+                "component": "fcstd:model:product_definition#PinArray_i1:definition",
+                "kind": "element_component"
               },
-              "touched": false
-            },
-            "element_component": "fcstd:model:product_definition#PinArray_i1:definition"
+              {
+                "claim": false,
+                "kind": "claim_child"
+              },
+              {
+                "kind": "copy_on_change",
+                "state": {
+                  "policy": {
+                    "policy": "disabled"
+                  },
+                  "touched": false
+                }
+              }
+            ]
           },
           "linked_prototype": [
             [
@@ -2200,14 +2247,25 @@
         {
           "id": "fcstd:model:occurrence#PinArray:2",
           "link": {
-            "claim_child": false,
-            "copy_on_change": {
-              "policy": {
-                "policy": "disabled"
+            "members": [
+              {
+                "component": "fcstd:model:product_definition#PinArray_i2:definition",
+                "kind": "element_component"
               },
-              "touched": false
-            },
-            "element_component": "fcstd:model:product_definition#PinArray_i2:definition"
+              {
+                "claim": false,
+                "kind": "claim_child"
+              },
+              {
+                "kind": "copy_on_change",
+                "state": {
+                  "policy": {
+                    "policy": "disabled"
+                  },
+                  "touched": false
+                }
+              }
+            ]
           },
           "linked_prototype": [
             [
@@ -2368,12 +2426,17 @@
         {
           "id": "fcstd:model:occurrence#PinArray_i0:instance",
           "link": {
-            "copy_on_change": {
-              "policy": {
-                "policy": "disabled"
-              },
-              "touched": false
-            }
+            "members": [
+              {
+                "kind": "copy_on_change",
+                "state": {
+                  "policy": {
+                    "policy": "disabled"
+                  },
+                  "touched": false
+                }
+              }
+            ]
           },
           "linked_prototype": [
             [
@@ -2490,12 +2553,17 @@
         {
           "id": "fcstd:model:occurrence#PinArray_i1:instance",
           "link": {
-            "copy_on_change": {
-              "policy": {
-                "policy": "disabled"
-              },
-              "touched": false
-            }
+            "members": [
+              {
+                "kind": "copy_on_change",
+                "state": {
+                  "policy": {
+                    "policy": "disabled"
+                  },
+                  "touched": false
+                }
+              }
+            ]
           },
           "linked_prototype": [
             [
@@ -2612,12 +2680,17 @@
         {
           "id": "fcstd:model:occurrence#PinArray_i2:instance",
           "link": {
-            "copy_on_change": {
-              "policy": {
-                "policy": "disabled"
-              },
-              "touched": false
-            }
+            "members": [
+              {
+                "kind": "copy_on_change",
+                "state": {
+                  "policy": {
+                    "policy": "disabled"
+                  },
+                  "touched": false
+                }
+              }
+            ]
           },
           "linked_prototype": [
             [
@@ -2690,13 +2763,21 @@
         {
           "id": "fcstd:model:occurrence#PinOccurrence:instance",
           "link": {
-            "claim_child": false,
-            "copy_on_change": {
-              "policy": {
-                "policy": "disabled"
+            "members": [
+              {
+                "claim": false,
+                "kind": "claim_child"
               },
-              "touched": false
-            }
+              {
+                "kind": "copy_on_change",
+                "state": {
+                  "policy": {
+                    "policy": "disabled"
+                  },
+                  "touched": false
+                }
+              }
+            ]
           },
           "linked_prototype": [
             [
@@ -3901,24 +3982,51 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [
-            "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:10",
-            "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:20",
-            "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:24",
-            "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:28",
-            "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:30",
-            "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:32"
-          ],
           "id": "fcstd:model:shell#BracketPrototype:Shape:BracketPrototype.Shape.brp:33",
+          "members": [
+            {
+              "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:10",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:20",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:24",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:28",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:30",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:32",
+              "kind": "face"
+            }
+          ],
           "region": "fcstd:model:region#BracketPrototype:Shape:BracketPrototype.Shape.brp:34"
         },
         {
-          "faces": [
-            "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:7",
-            "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:9",
-            "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:11"
-          ],
           "id": "fcstd:model:shell#PinPrototype:Shape:PinPrototype.Shape.brp:12",
+          "members": [
+            {
+              "id": "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:7",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:9",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:11",
+              "kind": "face"
+            }
+          ],
           "region": "fcstd:model:region#PinPrototype:Shape:PinPrototype.Shape.brp:13"
         }
       ],

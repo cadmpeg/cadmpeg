@@ -8,11 +8,11 @@
         "data_offset": "42",
         "header_offset": "0"
       },
-      "compressed_size": 1512,
       "compression": "deflate",
+      "expanded": 7429,
       "name": "Document.xml",
       "role": "document",
-      "uncompressed_size": 7429
+      "stored": 1512
     },
     {
       "attributes": {
@@ -21,11 +21,11 @@
         "data_offset": "1606",
         "header_offset": "1554"
       },
-      "compressed_size": 989,
       "compression": "deflate",
+      "expanded": 11858,
       "name": "ColoredModel.Shape.brp",
       "role": "brep",
-      "uncompressed_size": 11858
+      "stored": 989
     },
     {
       "attributes": {
@@ -34,11 +34,11 @@
         "data_offset": "2640",
         "header_offset": "2595"
       },
-      "compressed_size": 1184,
       "compression": "deflate",
+      "expanded": 6483,
       "name": "GuiDocument.xml",
       "role": "gui-document",
-      "uncompressed_size": 6483
+      "stored": 1184
     },
     {
       "attributes": {
@@ -47,11 +47,11 @@
         "data_offset": "3878",
         "header_offset": "3824"
       },
-      "compressed_size": 456,
       "compression": "deflate",
+      "expanded": 955,
       "name": "thumbnails/Thumbnail.png",
       "role": "thumbnail",
-      "uncompressed_size": 955
+      "stored": 456
     },
     {
       "attributes": {
@@ -60,11 +60,11 @@
         "data_offset": "4378",
         "header_offset": "4334"
       },
-      "compressed_size": 10,
       "compression": "deflate",
+      "expanded": 8,
       "name": "LineColorArray",
       "role": "auxiliary",
-      "uncompressed_size": 8
+      "stored": 10
     },
     {
       "attributes": {
@@ -73,11 +73,11 @@
         "data_offset": "4433",
         "header_offset": "4388"
       },
-      "compressed_size": 10,
       "compression": "deflate",
+      "expanded": 8,
       "name": "PointColorArray",
       "role": "auxiliary",
-      "uncompressed_size": 8
+      "stored": 10
     },
     {
       "attributes": {
@@ -86,11 +86,11 @@
         "data_offset": "4488",
         "header_offset": "4443"
       },
-      "compressed_size": 68,
       "compression": "deflate",
+      "expanded": 292,
       "name": "ShapeAppearance",
       "role": "auxiliary",
-      "uncompressed_size": 292
+      "stored": 68
     }
   ],
   "identity": {

@@ -23,11 +23,13 @@
         "directory_id": "4",
         "start_sector": "4"
       },
-      "compressed_size": 108,
       "compression": "stored",
       "name": "RSeStorage/V1/RSeDb",
       "role": "rse-database",
-      "uncompressed_size": 108
+      "size": {
+        "form": "exact",
+        "size": 108
+      }
     },
     {
       "attributes": {
@@ -38,11 +40,13 @@
         "inner_framing": "zlib",
         "start_sector": "7"
       },
-      "compressed_size": 159,
       "compression": "stored",
       "name": "RSeStorage/Bseg",
       "role": "rse-segment-bulk",
-      "uncompressed_size": 159
+      "size": {
+        "form": "exact",
+        "size": 159
+      }
     },
     {
       "attributes": {
@@ -56,11 +60,13 @@
         "segment_kind": "pm_brep",
         "start_sector": "10"
       },
-      "compressed_size": 219,
       "compression": "stored",
       "name": "RSeStorage/Mseg",
       "role": "rse-segment-metadata",
-      "uncompressed_size": 219
+      "size": {
+        "form": "exact",
+        "size": 219
+      }
     },
     {
       "attributes": {
@@ -68,11 +74,13 @@
         "directory_id": "3",
         "start_sector": "0"
       },
-      "compressed_size": 255,
       "compression": "stored",
       "name": "RSeStorage/RSeSegInfo",
       "role": "rse-segment-registry",
-      "uncompressed_size": 255
+      "size": {
+        "form": "exact",
+        "size": 255
+      }
     },
     {
       "attributes": {
@@ -80,11 +88,13 @@
         "directory_id": "5",
         "start_sector": "6"
       },
-      "compressed_size": 8,
       "compression": "stored",
       "name": "RSeStorage/RSeDbRevisionInfo",
       "role": "rse-revision-table",
-      "uncompressed_size": 8
+      "size": {
+        "form": "exact",
+        "size": 8
+      }
     }
   ],
   "identity": {

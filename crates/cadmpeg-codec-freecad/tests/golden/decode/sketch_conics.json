@@ -487,46 +487,62 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [],
           "id": "fcstd:model:shell#ConicWitness:Shape:ConicWitness.Shape.brp:11",
-          "region": "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:11",
-          "wire_edges": [
-            "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:10"
-          ]
+          "members": [
+            {
+              "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:10",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:11"
         },
         {
-          "faces": [],
           "id": "fcstd:model:shell#ConicWitness:Shape:ConicWitness.Shape.brp:14",
-          "region": "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:14",
-          "wire_edges": [
-            "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:13"
-          ]
+          "members": [
+            {
+              "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:13",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:14"
         },
         {
-          "faces": [],
           "id": "fcstd:model:shell#ConicWitness:Shape:ConicWitness.Shape.brp:18",
-          "region": "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:18",
-          "wire_edges": [
-            "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:17"
-          ]
+          "members": [
+            {
+              "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:17",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:18"
         },
         {
-          "faces": [],
           "id": "fcstd:model:shell#ConicWitness:Shape:ConicWitness.Shape.brp:22",
-          "region": "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:22",
-          "wire_edges": [
-            "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:21"
-          ]
+          "members": [
+            {
+              "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:21",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:22"
         },
         {
-          "faces": [],
           "id": "fcstd:model:shell#ConicWitness:Shape:ConicWitness.Shape.brp:7",
-          "region": "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:7",
-          "wire_edges": [
-            "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:3",
-            "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:5",
-            "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:6"
-          ]
+          "members": [
+            {
+              "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:3",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:5",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:6",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:7"
         }
       ],
       "sketch_constraints": [],

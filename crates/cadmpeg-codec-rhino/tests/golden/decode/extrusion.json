@@ -223,10 +223,13 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [
-            "rhino:object:face#record-000000-offset-177.cap-0"
-          ],
           "id": "rhino:object:shell#record-000000-offset-177.cap-0",
+          "members": [
+            {
+              "id": "rhino:object:face#record-000000-offset-177.cap-0",
+              "kind": "face"
+            }
+          ],
           "region": "rhino:object:region#record-000000-offset-177.cap-0"
         }
       ],

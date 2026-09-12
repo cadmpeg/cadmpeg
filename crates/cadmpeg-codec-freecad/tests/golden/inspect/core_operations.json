@@ -8,11 +8,11 @@
         "data_offset": "42",
         "header_offset": "0"
       },
-      "compressed_size": 8790,
       "compression": "deflate",
+      "expanded": 164090,
       "name": "Document.xml",
       "role": "document",
-      "uncompressed_size": 164090
+      "stored": 8790
     },
     {
       "attributes": {
@@ -21,11 +21,11 @@
         "data_offset": "8884",
         "header_offset": "8832"
       },
-      "compressed_size": 336,
       "compression": "deflate",
+      "expanded": 1117,
       "name": "StringHasher.Table.txt",
       "role": "auxiliary",
-      "uncompressed_size": 1117
+      "stored": 336
     },
     {
       "attributes": {
@@ -34,11 +34,11 @@
         "data_offset": "9285",
         "header_offset": "9220"
       },
-      "compressed_size": 2,
       "compression": "deflate",
+      "expanded": 0,
       "name": "RevolutionProfile.InternalShape.brp",
       "role": "brep",
-      "uncompressed_size": 0
+      "stored": 2
     },
     {
       "attributes": {
@@ -47,11 +47,11 @@
         "data_offset": "9344",
         "header_offset": "9287"
       },
-      "compressed_size": 383,
       "compression": "deflate",
+      "expanded": 2015,
       "name": "RevolutionProfile.Shape.brp",
       "role": "brep",
-      "uncompressed_size": 2015
+      "stored": 383
     },
     {
       "attributes": {
@@ -60,11 +60,11 @@
         "data_offset": "9788",
         "header_offset": "9727"
       },
-      "compressed_size": 120,
       "compression": "deflate",
+      "expanded": 191,
       "name": "RevolutionProfile.Shape.Map.txt",
       "role": "auxiliary",
-      "uncompressed_size": 191
+      "stored": 120
     },
     {
       "attributes": {
@@ -73,11 +73,11 @@
         "data_offset": "9958",
         "header_offset": "9908"
       },
-      "compressed_size": 517,
       "compression": "deflate",
+      "expanded": 3444,
       "name": "Revolution.Shape.brp",
       "role": "brep",
-      "uncompressed_size": 3444
+      "stored": 517
     },
     {
       "attributes": {
@@ -86,11 +86,11 @@
         "data_offset": "10529",
         "header_offset": "10475"
       },
-      "compressed_size": 184,
       "compression": "deflate",
+      "expanded": 362,
       "name": "Revolution.Shape.Map.txt",
       "role": "auxiliary",
-      "uncompressed_size": 362
+      "stored": 184
     },
     {
       "attributes": {
@@ -99,11 +99,11 @@
         "data_offset": "10769",
         "header_offset": "10713"
       },
-      "compressed_size": 298,
       "compression": "deflate",
+      "expanded": 1643,
       "name": "ExtrusionProfile.Shape.brp",
       "role": "brep",
-      "uncompressed_size": 1643
+      "stored": 298
     },
     {
       "attributes": {
@@ -112,11 +112,11 @@
         "data_offset": "11125",
         "header_offset": "11067"
       },
-      "compressed_size": 1393,
       "compression": "deflate",
+      "expanded": 12800,
       "name": "SymmetricExtrusion.Shape.brp",
       "role": "brep",
-      "uncompressed_size": 12800
+      "stored": 1393
     },
     {
       "attributes": {
@@ -125,11 +125,11 @@
         "data_offset": "12580",
         "header_offset": "12518"
       },
-      "compressed_size": 312,
       "compression": "deflate",
+      "expanded": 820,
       "name": "SymmetricExtrusion.Shape.Map.txt",
       "role": "auxiliary",
-      "uncompressed_size": 820
+      "stored": 312
     },
     {
       "attributes": {
@@ -138,11 +138,11 @@
         "data_offset": "12944",
         "header_offset": "12892"
       },
-      "compressed_size": 298,
       "compression": "deflate",
+      "expanded": 1812,
       "name": "LoftSectionA.Shape.brp",
       "role": "brep",
-      "uncompressed_size": 1812
+      "stored": 298
     },
     {
       "attributes": {
@@ -151,11 +151,11 @@
         "data_offset": "13294",
         "header_offset": "13242"
       },
-      "compressed_size": 306,
       "compression": "deflate",
+      "expanded": 1816,
       "name": "LoftSectionB.Shape.brp",
       "role": "brep",
-      "uncompressed_size": 1816
+      "stored": 306
     },
     {
       "attributes": {
@@ -164,11 +164,11 @@
         "data_offset": "13644",
         "header_offset": "13600"
       },
-      "compressed_size": 507,
       "compression": "deflate",
+      "expanded": 4049,
       "name": "Loft.Shape.brp",
       "role": "brep",
-      "uncompressed_size": 4049
+      "stored": 507
     },
     {
       "attributes": {
@@ -177,11 +177,11 @@
         "data_offset": "14199",
         "header_offset": "14151"
       },
-      "compressed_size": 203,
       "compression": "deflate",
+      "expanded": 394,
       "name": "Loft.Shape.Map.txt",
       "role": "auxiliary",
-      "uncompressed_size": 394
+      "stored": 203
     },
     {
       "attributes": {
@@ -190,11 +190,11 @@
         "data_offset": "14454",
         "header_offset": "14402"
       },
-      "compressed_size": 235,
       "compression": "deflate",
+      "expanded": 846,
       "name": "SweepSection.Shape.brp",
       "role": "brep",
-      "uncompressed_size": 846
+      "stored": 235
     },
     {
       "attributes": {
@@ -203,11 +203,11 @@
         "data_offset": "14739",
         "header_offset": "14689"
       },
-      "compressed_size": 277,
       "compression": "deflate",
+      "expanded": 1112,
       "name": "SweepSpine.Shape.brp",
       "role": "brep",
-      "uncompressed_size": 1112
+      "stored": 277
     },
     {
       "attributes": {
@@ -216,11 +216,11 @@
         "data_offset": "15061",
         "header_offset": "15016"
       },
-      "compressed_size": 601,
       "compression": "deflate",
+      "expanded": 4858,
       "name": "Sweep.Shape.brp",
       "role": "brep",
-      "uncompressed_size": 4858
+      "stored": 601
     },
     {
       "attributes": {
@@ -229,11 +229,11 @@
         "data_offset": "15711",
         "header_offset": "15662"
       },
-      "compressed_size": 236,
       "compression": "deflate",
+      "expanded": 529,
       "name": "Sweep.Shape.Map.txt",
       "role": "auxiliary",
-      "uncompressed_size": 529
+      "stored": 236
     },
     {
       "attributes": {
@@ -242,11 +242,11 @@
         "data_offset": "15998",
         "header_offset": "15947"
       },
-      "compressed_size": 763,
       "compression": "deflate",
+      "expanded": 8938,
       "name": "DressupBase.Shape.brp",
       "role": "brep",
-      "uncompressed_size": 8938
+      "stored": 763
     },
     {
       "attributes": {
@@ -255,11 +255,11 @@
         "data_offset": "16796",
         "header_offset": "16761"
       },
-      "compressed_size": 12,
       "compression": "deflate",
+      "expanded": 24,
       "name": "Edges",
       "role": "auxiliary",
-      "uncompressed_size": 24
+      "stored": 12
     },
     {
       "attributes": {
@@ -268,11 +268,11 @@
         "data_offset": "16858",
         "header_offset": "16808"
       },
-      "compressed_size": 1105,
       "compression": "deflate",
+      "expanded": 11935,
       "name": "PartFillet.Shape.brp",
       "role": "brep",
-      "uncompressed_size": 11935
+      "stored": 1105
     },
     {
       "attributes": {
@@ -281,11 +281,11 @@
         "data_offset": "18017",
         "header_offset": "17963"
       },
-      "compressed_size": 284,
       "compression": "deflate",
+      "expanded": 883,
       "name": "PartFillet.Shape.Map.txt",
       "role": "auxiliary",
-      "uncompressed_size": 883
+      "stored": 284
     },
     {
       "attributes": {
@@ -294,11 +294,11 @@
         "data_offset": "18352",
         "header_offset": "18301"
       },
-      "compressed_size": 772,
       "compression": "deflate",
+      "expanded": 8913,
       "name": "ChamferBase.Shape.brp",
       "role": "brep",
-      "uncompressed_size": 8913
+      "stored": 772
     },
     {
       "attributes": {
@@ -307,11 +307,11 @@
         "data_offset": "19160",
         "header_offset": "19124"
       },
-      "compressed_size": 15,
       "compression": "deflate",
+      "expanded": 24,
       "name": "Edges1",
       "role": "auxiliary",
-      "uncompressed_size": 24
+      "stored": 15
     },
     {
       "attributes": {
@@ -320,11 +320,11 @@
         "data_offset": "19226",
         "header_offset": "19175"
       },
-      "compressed_size": 1173,
       "compression": "deflate",
+      "expanded": 11469,
       "name": "PartChamfer.Shape.brp",
       "role": "brep",
-      "uncompressed_size": 11469
+      "stored": 1173
     },
     {
       "attributes": {
@@ -333,11 +333,11 @@
         "data_offset": "20454",
         "header_offset": "20399"
       },
-      "compressed_size": 283,
       "compression": "deflate",
+      "expanded": 883,
       "name": "PartChamfer.Shape.Map.txt",
       "role": "auxiliary",
-      "uncompressed_size": 883
+      "stored": 283
     },
     {
       "attributes": {
@@ -346,11 +346,11 @@
         "data_offset": "20790",
         "header_offset": "20737"
       },
-      "compressed_size": 772,
       "compression": "deflate",
+      "expanded": 8913,
       "name": "ThicknessBase.Shape.brp",
       "role": "brep",
-      "uncompressed_size": 8913
+      "stored": 772
     },
     {
       "attributes": {
@@ -359,11 +359,11 @@
         "data_offset": "21611",
         "header_offset": "21562"
       },
-      "compressed_size": 1411,
       "compression": "deflate",
+      "expanded": 17330,
       "name": "Thickness.Shape.brp",
       "role": "brep",
-      "uncompressed_size": 17330
+      "stored": 1411
     },
     {
       "attributes": {
@@ -372,11 +372,11 @@
         "data_offset": "23072",
         "header_offset": "23022"
       },
-      "compressed_size": 431,
       "compression": "deflate",
+      "expanded": 3375,
       "name": "MirrorBase.Shape.brp",
       "role": "brep",
-      "uncompressed_size": 3375
+      "stored": 431
     },
     {
       "attributes": {
@@ -385,11 +385,11 @@
         "data_offset": "23549",
         "header_offset": "23503"
       },
-      "compressed_size": 432,
       "compression": "deflate",
+      "expanded": 3263,
       "name": "Mirror.Shape.brp",
       "role": "brep",
-      "uncompressed_size": 3263
+      "stored": 432
     },
     {
       "attributes": {
@@ -398,11 +398,11 @@
         "data_offset": "24031",
         "header_offset": "23981"
       },
-      "compressed_size": 163,
       "compression": "deflate",
+      "expanded": 318,
       "name": "Mirror.Shape.Map.txt",
       "role": "auxiliary",
-      "uncompressed_size": 318
+      "stored": 163
     },
     {
       "attributes": {
@@ -411,11 +411,11 @@
         "data_offset": "24244",
         "header_offset": "24194"
       },
-      "compressed_size": 179,
       "compression": "deflate",
+      "expanded": 663,
       "name": "DatumPlane.Shape.brp",
       "role": "brep",
-      "uncompressed_size": 663
+      "stored": 179
     },
     {
       "attributes": {
@@ -424,11 +424,11 @@
         "data_offset": "24472",
         "header_offset": "24423"
       },
-      "compressed_size": 250,
       "compression": "deflate",
+      "expanded": 787,
       "name": "DatumAxis.Shape.brp",
       "role": "brep",
-      "uncompressed_size": 787
+      "stored": 250
     },
     {
       "attributes": {
@@ -437,11 +437,11 @@
         "data_offset": "24772",
         "header_offset": "24722"
       },
-      "compressed_size": 166,
       "compression": "deflate",
+      "expanded": 469,
       "name": "DatumPoint.Shape.brp",
       "role": "brep",
-      "uncompressed_size": 469
+      "stored": 166
     },
     {
       "attributes": {
@@ -450,11 +450,11 @@
         "data_offset": "24999",
         "header_offset": "24938"
       },
-      "compressed_size": 183,
       "compression": "deflate",
+      "expanded": 663,
       "name": "DatumCoordinateSystem.Shape.brp",
       "role": "brep",
-      "uncompressed_size": 663
+      "stored": 183
     },
     {
       "attributes": {
@@ -463,11 +463,11 @@
         "data_offset": "25231",
         "header_offset": "25182"
       },
-      "compressed_size": 856,
       "compression": "deflate",
+      "expanded": 6267,
       "name": "DraftBody.Shape.brp",
       "role": "brep",
-      "uncompressed_size": 6267
+      "stored": 856
     },
     {
       "attributes": {
@@ -476,11 +476,11 @@
         "data_offset": "26140",
         "header_offset": "26087"
       },
-      "compressed_size": 289,
       "compression": "deflate",
+      "expanded": 804,
       "name": "DraftBody.Shape.Map.txt",
       "role": "auxiliary",
-      "uncompressed_size": 804
+      "stored": 289
     },
     {
       "attributes": {
@@ -489,11 +489,11 @@
         "data_offset": "26478",
         "header_offset": "26429"
       },
-      "compressed_size": 763,
       "compression": "deflate",
+      "expanded": 8938,
       "name": "DraftBase.Shape.brp",
       "role": "brep",
-      "uncompressed_size": 8938
+      "stored": 763
     },
     {
       "attributes": {
@@ -502,11 +502,11 @@
         "data_offset": "27300",
         "header_offset": "27241"
       },
-      "compressed_size": 2,
       "compression": "deflate",
+      "expanded": 0,
       "name": "DraftBase.SuppressedShape.brp",
       "role": "brep",
-      "uncompressed_size": 0
+      "stored": 2
     },
     {
       "attributes": {
@@ -515,11 +515,11 @@
         "data_offset": "27353",
         "header_offset": "27302"
       },
-      "compressed_size": 2,
       "compression": "deflate",
+      "expanded": 0,
       "name": "Draft.AddSubShape.brp",
       "role": "brep",
-      "uncompressed_size": 0
+      "stored": 2
     },
     {
       "attributes": {
@@ -528,11 +528,11 @@
         "data_offset": "27400",
         "header_offset": "27355"
       },
-      "compressed_size": 1182,
       "compression": "deflate",
+      "expanded": 10075,
       "name": "Draft.Shape.brp",
       "role": "brep",
-      "uncompressed_size": 10075
+      "stored": 1182
     },
     {
       "attributes": {
@@ -541,11 +541,11 @@
         "data_offset": "28631",
         "header_offset": "28582"
       },
-      "compressed_size": 248,
       "compression": "deflate",
+      "expanded": 620,
       "name": "Draft.Shape.Map.txt",
       "role": "auxiliary",
-      "uncompressed_size": 620
+      "stored": 248
     },
     {
       "attributes": {
@@ -554,11 +554,11 @@
         "data_offset": "28934",
         "header_offset": "28879"
       },
-      "compressed_size": 2,
       "compression": "deflate",
+      "expanded": 0,
       "name": "Draft.SuppressedShape.brp",
       "role": "brep",
-      "uncompressed_size": 0
+      "stored": 2
     },
     {
       "attributes": {
@@ -567,11 +567,11 @@
         "data_offset": "28984",
         "header_offset": "28936"
       },
-      "compressed_size": 1206,
       "compression": "deflate",
+      "expanded": 11794,
       "name": "HoleBody.Shape.brp",
       "role": "brep",
-      "uncompressed_size": 11794
+      "stored": 1206
     },
     {
       "attributes": {
@@ -580,11 +580,11 @@
         "data_offset": "30242",
         "header_offset": "30190"
       },
-      "compressed_size": 389,
       "compression": "deflate",
+      "expanded": 1422,
       "name": "HoleBody.Shape.Map.txt",
       "role": "auxiliary",
-      "uncompressed_size": 1422
+      "stored": 389
     },
     {
       "attributes": {
@@ -593,11 +593,11 @@
         "data_offset": "30679",
         "header_offset": "30631"
       },
-      "compressed_size": 763,
       "compression": "deflate",
+      "expanded": 8938,
       "name": "HoleBase.Shape.brp",
       "role": "brep",
-      "uncompressed_size": 8938
+      "stored": 763
     },
     {
       "attributes": {
@@ -606,11 +606,11 @@
         "data_offset": "31500",
         "header_offset": "31442"
       },
-      "compressed_size": 2,
       "compression": "deflate",
+      "expanded": 0,
       "name": "HoleBase.SuppressedShape.brp",
       "role": "brep",
-      "uncompressed_size": 0
+      "stored": 2
     },
     {
       "attributes": {
@@ -619,11 +619,11 @@
         "data_offset": "31561",
         "header_offset": "31502"
       },
-      "compressed_size": 2,
       "compression": "deflate",
+      "expanded": 0,
       "name": "HoleProfile.InternalShape.brp",
       "role": "brep",
-      "uncompressed_size": 0
+      "stored": 2
     },
     {
       "attributes": {
@@ -632,11 +632,11 @@
         "data_offset": "31614",
         "header_offset": "31563"
       },
-      "compressed_size": 246,
       "compression": "deflate",
+      "expanded": 849,
       "name": "HoleProfile.Shape.brp",
       "role": "brep",
-      "uncompressed_size": 849
+      "stored": 246
     },
     {
       "attributes": {
@@ -645,11 +645,11 @@
         "data_offset": "31915",
         "header_offset": "31860"
       },
-      "compressed_size": 114,
       "compression": "deflate",
+      "expanded": 183,
       "name": "HoleProfile.Shape.Map.txt",
       "role": "auxiliary",
-      "uncompressed_size": 183
+      "stored": 114
     },
     {
       "attributes": {
@@ -658,11 +658,11 @@
         "data_offset": "32079",
         "header_offset": "32029"
       },
-      "compressed_size": 773,
       "compression": "deflate",
+      "expanded": 5628,
       "name": "Hole.AddSubShape.brp",
       "role": "brep",
-      "uncompressed_size": 5628
+      "stored": 773
     },
     {
       "attributes": {
@@ -671,11 +671,11 @@
         "data_offset": "32906",
         "header_offset": "32852"
       },
-      "compressed_size": 317,
       "compression": "deflate",
+      "expanded": 1366,
       "name": "Hole.AddSubShape.Map.txt",
       "role": "auxiliary",
-      "uncompressed_size": 1366
+      "stored": 317
     },
     {
       "attributes": {
@@ -684,11 +684,11 @@
         "data_offset": "33267",
         "header_offset": "33223"
       },
-      "compressed_size": 1355,
       "compression": "deflate",
+      "expanded": 14823,
       "name": "Hole.Shape.brp",
       "role": "brep",
-      "uncompressed_size": 14823
+      "stored": 1355
     },
     {
       "attributes": {
@@ -697,11 +697,11 @@
         "data_offset": "34670",
         "header_offset": "34622"
       },
-      "compressed_size": 349,
       "compression": "deflate",
+      "expanded": 1235,
       "name": "Hole.Shape.Map.txt",
       "role": "auxiliary",
-      "uncompressed_size": 1235
+      "stored": 349
     },
     {
       "attributes": {
@@ -710,11 +710,11 @@
         "data_offset": "35073",
         "header_offset": "35019"
       },
-      "compressed_size": 2,
       "compression": "deflate",
+      "expanded": 0,
       "name": "Hole.SuppressedShape.brp",
       "role": "brep",
-      "uncompressed_size": 0
+      "stored": 2
     },
     {
       "attributes": {
@@ -723,11 +723,11 @@
         "data_offset": "35126",
         "header_offset": "35075"
       },
-      "compressed_size": 605,
       "compression": "deflate",
+      "expanded": 5982,
       "name": "PatternBody.Shape.brp",
       "role": "brep",
-      "uncompressed_size": 5982
+      "stored": 605
     },
     {
       "attributes": {
@@ -736,11 +736,11 @@
         "data_offset": "35786",
         "header_offset": "35731"
       },
-      "compressed_size": 134,
       "compression": "deflate",
+      "expanded": 255,
       "name": "PatternBody.Shape.Map.txt",
       "role": "auxiliary",
-      "uncompressed_size": 255
+      "stored": 134
     },
     {
       "attributes": {
@@ -749,11 +749,11 @@
         "data_offset": "35977",
         "header_offset": "35920"
       },
-      "compressed_size": 734,
       "compression": "deflate",
+      "expanded": 8642,
       "name": "PatternBase.AddSubShape.brp",
       "role": "brep",
-      "uncompressed_size": 8642
+      "stored": 734
     },
     {
       "attributes": {
@@ -762,11 +762,11 @@
         "data_offset": "36762",
         "header_offset": "36711"
       },
-      "compressed_size": 750,
       "compression": "deflate",
+      "expanded": 8863,
       "name": "PatternBase.Shape.brp",
       "role": "brep",
-      "uncompressed_size": 8863
+      "stored": 750
     },
     {
       "attributes": {
@@ -775,11 +775,11 @@
         "data_offset": "37573",
         "header_offset": "37512"
       },
-      "compressed_size": 2,
       "compression": "deflate",
+      "expanded": 0,
       "name": "PatternBase.SuppressedShape.brp",
       "role": "brep",
-      "uncompressed_size": 0
+      "stored": 2
     },
     {
       "attributes": {
@@ -788,11 +788,11 @@
         "data_offset": "37628",
         "header_offset": "37575"
       },
-      "compressed_size": 826,
       "compression": "deflate",
+      "expanded": 9529,
       "name": "LinearPattern.Shape.brp",
       "role": "brep",
-      "uncompressed_size": 9529
+      "stored": 826
     },
     {
       "attributes": {
@@ -801,11 +801,11 @@
         "data_offset": "38511",
         "header_offset": "38454"
       },
-      "compressed_size": 393,
       "compression": "deflate",
+      "expanded": 1658,
       "name": "LinearPattern.Shape.Map.txt",
       "role": "auxiliary",
-      "uncompressed_size": 1658
+      "stored": 393
     },
     {
       "attributes": {
@@ -814,11 +814,11 @@
         "data_offset": "38948",
         "header_offset": "38904"
       },
-      "compressed_size": 5,
       "compression": "deflate",
+      "expanded": 12,
       "name": "SpacingPattern",
       "role": "auxiliary",
-      "uncompressed_size": 12
+      "stored": 5
     },
     {
       "attributes": {
@@ -827,11 +827,11 @@
         "data_offset": "38998",
         "header_offset": "38953"
       },
-      "compressed_size": 5,
       "compression": "deflate",
+      "expanded": 12,
       "name": "SpacingPattern2",
       "role": "auxiliary",
-      "uncompressed_size": 12
+      "stored": 5
     },
     {
       "attributes": {
@@ -840,11 +840,11 @@
         "data_offset": "39041",
         "header_offset": "39003"
       },
-      "compressed_size": 9,
       "compression": "deflate",
+      "expanded": 28,
       "name": "Spacings",
       "role": "auxiliary",
-      "uncompressed_size": 28
+      "stored": 9
     },
     {
       "attributes": {
@@ -853,11 +853,11 @@
         "data_offset": "39113",
         "header_offset": "39050"
       },
-      "compressed_size": 2,
       "compression": "deflate",
+      "expanded": 0,
       "name": "LinearPattern.SuppressedShape.brp",
       "role": "brep",
-      "uncompressed_size": 0
+      "stored": 2
     }
   ],
   "identity": {

@@ -511,13 +511,25 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [
-            "catia:standard:face#0",
-            "catia:standard:face#1",
-            "catia:standard:face#2",
-            "catia:standard:face#3"
-          ],
           "id": "catia:standard:shell#0-0",
+          "members": [
+            {
+              "id": "catia:standard:face#0",
+              "kind": "face"
+            },
+            {
+              "id": "catia:standard:face#1",
+              "kind": "face"
+            },
+            {
+              "id": "catia:standard:face#2",
+              "kind": "face"
+            },
+            {
+              "id": "catia:standard:face#3",
+              "kind": "face"
+            }
+          ],
           "region": "catia:standard:region#0-0"
         }
       ],

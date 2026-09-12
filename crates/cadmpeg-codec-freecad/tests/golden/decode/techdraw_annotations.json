@@ -2032,15 +2032,33 @@
       ],
       "shells": [
         {
-          "faces": [
-            "fcstd:model:face#Model:Shape:Model.Shape.brp:10",
-            "fcstd:model:face#Model:Shape:Model.Shape.brp:20",
-            "fcstd:model:face#Model:Shape:Model.Shape.brp:24",
-            "fcstd:model:face#Model:Shape:Model.Shape.brp:28",
-            "fcstd:model:face#Model:Shape:Model.Shape.brp:30",
-            "fcstd:model:face#Model:Shape:Model.Shape.brp:32"
-          ],
           "id": "fcstd:model:shell#Model:Shape:Model.Shape.brp:33",
+          "members": [
+            {
+              "id": "fcstd:model:face#Model:Shape:Model.Shape.brp:10",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Model:Shape:Model.Shape.brp:20",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Model:Shape:Model.Shape.brp:24",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Model:Shape:Model.Shape.brp:28",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Model:Shape:Model.Shape.brp:30",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Model:Shape:Model.Shape.brp:32",
+              "kind": "face"
+            }
+          ],
           "region": "fcstd:model:region#Model:Shape:Model.Shape.brp:34"
         }
       ],

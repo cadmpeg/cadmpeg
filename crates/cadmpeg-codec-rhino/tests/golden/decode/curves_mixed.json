@@ -338,20 +338,27 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [],
-          "free_vertices": [
-            "rhino:object:vertex#record-000000-offset-177"
-          ],
           "id": "rhino:object:shell#record-000000-offset-177",
+          "members": [
+            {
+              "id": "rhino:object:vertex#record-000000-offset-177",
+              "kind": "free_vertex"
+            }
+          ],
           "region": "rhino:object:region#record-000000-offset-177"
         },
         {
-          "faces": [],
-          "free_vertices": [
-            "rhino:object:vertex#record-000001-offset-314.0",
-            "rhino:object:vertex#record-000001-offset-314.1"
-          ],
           "id": "rhino:object:shell#record-000001-offset-314",
+          "members": [
+            {
+              "id": "rhino:object:vertex#record-000001-offset-314.0",
+              "kind": "free_vertex"
+            },
+            {
+              "id": "rhino:object:vertex#record-000001-offset-314.1",
+              "kind": "free_vertex"
+            }
+          ],
           "region": "rhino:object:region#record-000001-offset-314"
         }
       ],

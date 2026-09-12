@@ -14,11 +14,13 @@
         "scale": "1",
         "terminator": "End-of-ASM-data"
       },
-      "compressed_size": 389,
       "compression": "stored",
       "name": "stream",
       "role": "brep-text",
-      "uncompressed_size": 389
+      "size": {
+        "form": "exact",
+        "size": 389
+      }
     }
   ],
   "identity": {

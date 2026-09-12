@@ -69,13 +69,31 @@
         {
           "id": "f3d:brep:entity#3",
           "region": "f3d:brep:entity#2",
-          "faces": [
-            "f3d:brep:entity#5",
-            "f3d:brep:entity#9",
-            "f3d:brep:entity#6",
-            "f3d:brep:entity#8",
-            "f3d:brep:entity#4",
-            "f3d:brep:entity#7"
+          "members": [
+            {
+              "kind": "face",
+              "id": "f3d:brep:entity#5"
+            },
+            {
+              "kind": "face",
+              "id": "f3d:brep:entity#9"
+            },
+            {
+              "kind": "face",
+              "id": "f3d:brep:entity#6"
+            },
+            {
+              "kind": "face",
+              "id": "f3d:brep:entity#8"
+            },
+            {
+              "kind": "face",
+              "id": "f3d:brep:entity#4"
+            },
+            {
+              "kind": "face",
+              "id": "f3d:brep:entity#7"
+            }
           ]
         }
       ],

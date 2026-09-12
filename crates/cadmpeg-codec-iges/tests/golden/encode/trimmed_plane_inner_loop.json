@@ -12,9 +12,6 @@
         "190_pointer_plane": 1
       }
     },
-    "fidelity": {
-      "status": "not_provided"
-    },
     "identity": {
       "payload": "native",
       "target": "iges:5.3-fixed-ascii"
@@ -64,6 +61,11 @@
     "notes": [
       "IGES Fixed ASCII container regenerated from supported neutral geometry"
     ],
-    "write_path": "synthesized"
+    "write_path": {
+      "fidelity": {
+        "status": "not_provided"
+      },
+      "path": "synthesized"
+    }
   }
 }

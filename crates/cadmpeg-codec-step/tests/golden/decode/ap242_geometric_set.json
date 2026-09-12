@@ -103,10 +103,13 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [
-            "step:data:face#11-geometric-set-13"
-          ],
           "id": "step:data:shell#geometric-set-13",
+          "members": [
+            {
+              "id": "step:data:face#11-geometric-set-13",
+              "kind": "face"
+            }
+          ],
           "region": "step:data:region#13"
         }
       ],

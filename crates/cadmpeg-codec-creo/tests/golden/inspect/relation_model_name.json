@@ -5,11 +5,13 @@
       "attributes": {
         "offset": "99"
       },
-      "compressed_size": 89,
       "compression": "none",
       "name": "DEPDB_DATA",
       "role": "metadata",
-      "uncompressed_size": 89
+      "size": {
+        "form": "exact",
+        "size": 89
+      }
     }
   ],
   "identity": {

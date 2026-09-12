@@ -8,11 +8,11 @@
         "data_offset": "42",
         "header_offset": "0"
       },
-      "compressed_size": 4439,
       "compression": "deflate",
+      "expanded": 76819,
       "name": "Document.xml",
       "role": "document",
-      "uncompressed_size": 76819
+      "stored": 4439
     },
     {
       "attributes": {
@@ -21,11 +21,11 @@
         "data_offset": "4537",
         "header_offset": "4481"
       },
-      "compressed_size": 768,
       "compression": "deflate",
+      "expanded": 8913,
       "name": "BracketPrototype.Shape.brp",
       "role": "brep",
-      "uncompressed_size": 8913
+      "stored": 768
     },
     {
       "attributes": {
@@ -34,11 +34,11 @@
         "data_offset": "5357",
         "header_offset": "5305"
       },
-      "compressed_size": 431,
       "compression": "deflate",
+      "expanded": 3367,
       "name": "PinPrototype.Shape.brp",
       "role": "brep",
-      "uncompressed_size": 3367
+      "stored": 431
     },
     {
       "attributes": {
@@ -47,11 +47,11 @@
         "data_offset": "5831",
         "header_offset": "5788"
       },
-      "compressed_size": 6,
       "compression": "deflate",
+      "expanded": 4,
       "name": "PlacementList",
       "role": "auxiliary",
-      "uncompressed_size": 4
+      "stored": 6
     },
     {
       "attributes": {
@@ -60,11 +60,11 @@
         "data_offset": "5876",
         "header_offset": "5837"
       },
-      "compressed_size": 6,
       "compression": "deflate",
+      "expanded": 4,
       "name": "ScaleList",
       "role": "auxiliary",
-      "uncompressed_size": 4
+      "stored": 6
     },
     {
       "attributes": {
@@ -73,11 +73,11 @@
         "data_offset": "5926",
         "header_offset": "5882"
       },
-      "compressed_size": 6,
       "compression": "deflate",
+      "expanded": 4,
       "name": "PlacementList1",
       "role": "auxiliary",
-      "uncompressed_size": 4
+      "stored": 6
     },
     {
       "attributes": {
@@ -86,11 +86,11 @@
         "data_offset": "5972",
         "header_offset": "5932"
       },
-      "compressed_size": 6,
       "compression": "deflate",
+      "expanded": 4,
       "name": "ScaleList1",
       "role": "auxiliary",
-      "uncompressed_size": 4
+      "stored": 6
     },
     {
       "attributes": {
@@ -99,11 +99,11 @@
         "data_offset": "6022",
         "header_offset": "5978"
       },
-      "compressed_size": 6,
       "compression": "deflate",
+      "expanded": 4,
       "name": "PlacementList2",
       "role": "auxiliary",
-      "uncompressed_size": 4
+      "stored": 6
     },
     {
       "attributes": {
@@ -112,11 +112,11 @@
         "data_offset": "6068",
         "header_offset": "6028"
       },
-      "compressed_size": 6,
       "compression": "deflate",
+      "expanded": 4,
       "name": "ScaleList2",
       "role": "auxiliary",
-      "uncompressed_size": 4
+      "stored": 6
     },
     {
       "attributes": {
@@ -125,11 +125,11 @@
         "data_offset": "6118",
         "header_offset": "6074"
       },
-      "compressed_size": 17,
       "compression": "deflate",
+      "expanded": 172,
       "name": "PlacementList3",
       "role": "auxiliary",
-      "uncompressed_size": 172
+      "stored": 17
     },
     {
       "attributes": {
@@ -138,11 +138,11 @@
         "data_offset": "6175",
         "header_offset": "6135"
       },
-      "compressed_size": 15,
       "compression": "deflate",
+      "expanded": 76,
       "name": "ScaleList3",
       "role": "auxiliary",
-      "uncompressed_size": 76
+      "stored": 15
     },
     {
       "attributes": {
@@ -151,11 +151,11 @@
         "data_offset": "6234",
         "header_offset": "6190"
       },
-      "compressed_size": 6,
       "compression": "deflate",
+      "expanded": 4,
       "name": "PlacementList4",
       "role": "auxiliary",
-      "uncompressed_size": 4
+      "stored": 6
     },
     {
       "attributes": {
@@ -164,11 +164,11 @@
         "data_offset": "6280",
         "header_offset": "6240"
       },
-      "compressed_size": 6,
       "compression": "deflate",
+      "expanded": 4,
       "name": "ScaleList4",
       "role": "auxiliary",
-      "uncompressed_size": 4
+      "stored": 6
     }
   ],
   "identity": {

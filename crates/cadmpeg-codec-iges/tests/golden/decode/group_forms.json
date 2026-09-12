@@ -63,12 +63,17 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [],
-          "free_vertices": [
-            "iges:model:vertex#D1",
-            "iges:model:vertex#D5"
-          ],
           "id": "iges:model:shell#free-geometry",
+          "members": [
+            {
+              "id": "iges:model:vertex#D1",
+              "kind": "free_vertex"
+            },
+            {
+              "id": "iges:model:vertex#D5",
+              "kind": "free_vertex"
+            }
+          ],
           "region": "iges:model:region#free-geometry"
         }
       ],

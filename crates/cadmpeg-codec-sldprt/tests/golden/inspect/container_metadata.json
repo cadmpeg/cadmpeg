@@ -8,11 +8,11 @@
         "sha256": "cc1cdcbcf0bdb70801a2f0777e9f9c85571461df7f96d1d3f1476f420df37e38",
         "type_id": "0x00000010"
       },
-      "compressed_size": 10,
       "compression": "deflate",
+      "expanded": 8,
       "name": "PreviewPNG",
       "role": "block",
-      "uncompressed_size": 8
+      "stored": 10
     },
     {
       "attributes": {
@@ -23,11 +23,11 @@
         "sha256": "cec7bd4b62b96e490c6ba53b11475dfd3dd4ee3c42eefe748ddf9f734cbdfd27",
         "type_id": "0x00000020"
       },
-      "compressed_size": 45,
       "compression": "deflate",
+      "expanded": 49,
       "name": "Contents/Config-0-Partition",
       "role": "block",
-      "uncompressed_size": 49
+      "stored": 45
     },
     {
       "attributes": {
@@ -37,7 +37,10 @@
       "compression": "none",
       "name": "[Content_Types].xml",
       "role": "directory-entry",
-      "uncompressed_size": 2
+      "size": {
+        "form": "payload_only",
+        "payload": 2
+      }
     },
     {
       "attributes": {
@@ -47,7 +50,10 @@
       "compression": "none",
       "name": "Contents/DisplayLists",
       "role": "cache-cell",
-      "uncompressed_size": 90
+      "size": {
+        "form": "payload_only",
+        "payload": 90
+      }
     }
   ],
   "identity": {

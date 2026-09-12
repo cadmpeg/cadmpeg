@@ -68,8 +68,11 @@
         {
           "id": "f3d:brep:entity#3",
           "region": "f3d:brep:entity#2",
-          "faces": [
-            "f3d:brep:entity#4"
+          "members": [
+            {
+              "kind": "face",
+              "id": "f3d:brep:entity#4"
+            }
           ]
         }
       ],

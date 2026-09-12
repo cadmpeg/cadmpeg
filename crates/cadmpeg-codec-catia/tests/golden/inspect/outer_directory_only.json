@@ -8,11 +8,13 @@
         "extent_count": "1",
         "extent_flags": "0x00000000"
       },
-      "compressed_size": 20,
       "compression": "none",
       "name": "RootStorage",
       "role": "stream",
-      "uncompressed_size": 20
+      "size": {
+        "form": "exact",
+        "size": 20
+      }
     }
   ],
   "identity": {

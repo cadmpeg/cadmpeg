@@ -6,11 +6,11 @@
         "expanded_payload_size": "3",
         "offset": "196"
       },
-      "compressed_size": 22,
       "compression": "unix-compress",
+      "expanded": 18,
       "name": "SolidPrimdata",
       "role": "metadata",
-      "uncompressed_size": 18
+      "stored": 22
     }
   ],
   "identity": {

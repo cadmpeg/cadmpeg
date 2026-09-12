@@ -116,12 +116,14 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [],
           "id": "iges:model:shell#free-geometry",
-          "region": "iges:model:region#free-geometry",
-          "wire_edges": [
-            "iges:model:edge#D1"
-          ]
+          "members": [
+            {
+              "id": "iges:model:edge#D1",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "iges:model:region#free-geometry"
         }
       ],
       "sketch_constraints": [],

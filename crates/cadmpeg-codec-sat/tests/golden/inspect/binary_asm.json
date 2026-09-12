@@ -11,11 +11,13 @@
         "product_version": "ASM 232.4.0.65535 OSX",
         "save_date": "Synthetic"
       },
-      "compressed_size": 588,
       "compression": "stored",
       "name": "stream",
       "role": "brep",
-      "uncompressed_size": 588
+      "size": {
+        "form": "exact",
+        "size": 588
+      }
     }
   ],
   "identity": {

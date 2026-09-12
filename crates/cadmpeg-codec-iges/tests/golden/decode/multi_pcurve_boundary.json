@@ -387,21 +387,32 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [
-            "iges:model:face#D11"
-          ],
           "id": "iges:model:shell#D11",
+          "members": [
+            {
+              "id": "iges:model:face#D11",
+              "kind": "face"
+            }
+          ],
           "region": "iges:model:region#D11"
         },
         {
-          "faces": [],
           "id": "iges:model:shell#free-geometry",
-          "region": "iges:model:region#free-geometry",
-          "wire_edges": [
-            "iges:model:edge#D5",
-            "iges:model:edge#D7",
-            "iges:model:edge#D3"
-          ]
+          "members": [
+            {
+              "id": "iges:model:edge#D5",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "iges:model:edge#D7",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "iges:model:edge#D3",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "iges:model:region#free-geometry"
         }
       ],
       "sketch_constraints": [],

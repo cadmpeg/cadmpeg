@@ -3,19 +3,23 @@
   "entries": [
     {
       "attributes": {},
-      "compressed_size": 571,
       "compression": "stored",
       "name": "Manifest.dat",
       "role": "manifest",
-      "uncompressed_size": 571
+      "size": {
+        "form": "exact",
+        "size": 571
+      }
     },
     {
       "attributes": {},
-      "compressed_size": 589,
       "compression": "stored",
       "name": "FusionAssetName[Active]/Manifest.dat",
       "role": "manifest",
-      "uncompressed_size": 589
+      "size": {
+        "form": "exact",
+        "size": 589
+      }
     },
     {
       "attributes": {
@@ -34,43 +38,53 @@
         "sha256": "38630ab6494f356459e0ee34e122e2a86685f44db32f30456c5b4fbb02a7cf6c",
         "solved_record_len": "1597"
       },
-      "compressed_size": 1610,
       "compression": "stored",
       "name": "FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
       "role": "brep-smbh",
-      "uncompressed_size": 1610
+      "size": {
+        "form": "exact",
+        "size": 1610
+      }
     },
     {
       "attributes": {},
-      "compressed_size": 3397,
       "compression": "stored",
       "name": "FusionAssetName[Active]/Design1/BulkStream.dat",
       "role": "bulkstream",
-      "uncompressed_size": 3397
+      "size": {
+        "form": "exact",
+        "size": 3397
+      }
     },
     {
       "attributes": {},
-      "compressed_size": 1986,
       "compression": "stored",
       "name": "FusionAssetName[Active]/Design1/MetaStream.dat",
       "role": "metastream",
-      "uncompressed_size": 1986
+      "size": {
+        "form": "exact",
+        "size": 1986
+      }
     },
     {
       "attributes": {},
-      "compressed_size": 686,
       "compression": "stored",
       "name": "FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat",
       "role": "bulkstream",
-      "uncompressed_size": 686
+      "size": {
+        "form": "exact",
+        "size": 686
+      }
     },
     {
       "attributes": {},
-      "compressed_size": 1057,
       "compression": "stored",
       "name": "FusionAssetName[Active]/FusionACTSegmentType1/MetaStream.dat",
       "role": "metastream",
-      "uncompressed_size": 1057
+      "size": {
+        "form": "exact",
+        "size": 1057
+      }
     }
   ],
   "identity": {
