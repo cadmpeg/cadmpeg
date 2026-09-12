@@ -16,13 +16,11 @@ use crate::document::CensusKey;
 /// Entity census and fidelity details from a successful export.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "ExportReportWire"))]
-#[serde(try_from = "ExportReportWire")]
+#[serde(deny_unknown_fields)]
 pub struct ExportReport {
     identity: ExportIdentity,
     /// Entity counts and the semantic basis on which they were measured.
     pub census: EntityCensus,
-    fidelity: FidelityResolution,
     write_path: WritePath,
     /// Omitted, normalized, or reduced content.
     pub losses: Vec<LossNote>,
@@ -43,42 +41,6 @@ enum ExportIdentity {
         /// Resolved native dialect written.
         target: DialectId,
     },
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-struct ExportReportWire {
-    identity: ExportIdentity,
-    census: EntityCensus,
-    fidelity: FidelityResolution,
-    write_path: WritePath,
-    losses: Vec<LossNote>,
-    notes: Vec<String>,
-}
-
-impl TryFrom<ExportReportWire> for ExportReport {
-    type Error = &'static str;
-
-    fn try_from(wire: ExportReportWire) -> Result<Self, Self::Error> {
-        match (wire.write_path, &wire.fidelity) {
-            (
-                WritePath::VerbatimReplay,
-                FidelityResolution::NotConsumed {} | FidelityResolution::Degraded { .. },
-            ) => Err("verbatim_replay cannot pair with not_consumed or degraded fidelity"),
-            (WritePath::Synthesized, FidelityResolution::Replayed {}) => {
-                Err("synthesized cannot pair with replayed fidelity")
-            }
-            _ => Ok(Self {
-                identity: wire.identity,
-                census: wire.census,
-                fidelity: wire.fidelity,
-                write_path: wire.write_path,
-                losses: wire.losses,
-                notes: wire.notes,
-            }),
-        }
-    }
 }
 
 #[cfg(all(test, feature = "schema"))]
@@ -111,29 +73,95 @@ mod schema_tests {
 /// encoder actually took, never derived from the output afterwards, so the
 /// distinction is a fact the caller can assert on.
 ///
+/// Each arm carries the fidelity resolutions that path admits, so a path and a
+/// resolution it can never produce have no spelling.
+///
 /// The variants are ordered by how much of the output the encoder authored.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
+#[serde(tag = "path", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum WritePath {
     /// Retained source bytes were copied to the output unchanged. No writer code
     /// ran, so the output says nothing about the writer.
-    VerbatimReplay,
+    VerbatimReplay {
+        /// How the replay resolved decode-time source fidelity.
+        fidelity: ReplayFidelity,
+    },
     /// The writer ran and consumed retained source content, rewriting part of a
     /// container it did not author in full.
-    Patched,
+    Patched {
+        /// How the patch resolved decode-time source fidelity.
+        fidelity: FidelityResolution,
+    },
     /// The writer ran over neutral IR content alone, authoring every output byte.
-    Synthesized,
+    Synthesized {
+        /// How the synthesized write resolved decode-time source fidelity.
+        fidelity: SynthesisFidelity,
+    },
 }
 
 impl fmt::Display for WritePath {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            Self::VerbatimReplay => "verbatim_replay",
-            Self::Patched => "patched",
-            Self::Synthesized => "synthesized",
+            Self::VerbatimReplay { .. } => "verbatim_replay",
+            Self::Patched { .. } => "patched",
+            Self::Synthesized { .. } => "synthesized",
         })
+    }
+}
+
+/// The fidelity resolutions a verbatim replay admits.
+///
+/// A replay copies retained source bytes, so it either consumed the fidelity it
+/// was given or was given none.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case", tag = "status")]
+#[serde(deny_unknown_fields)]
+pub enum ReplayFidelity {
+    /// The input had no decode-time fidelity state.
+    NotProvided {},
+    /// Preserved source content was consumed successfully.
+    Replayed {},
+}
+
+impl From<ReplayFidelity> for FidelityResolution {
+    fn from(fidelity: ReplayFidelity) -> Self {
+        match fidelity {
+            ReplayFidelity::NotProvided {} => Self::NotProvided {},
+            ReplayFidelity::Replayed {} => Self::Replayed {},
+        }
+    }
+}
+
+/// The fidelity resolutions a synthesized write admits.
+///
+/// Synthesis authors every output byte from neutral IR, so it never replays
+/// source content.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case", tag = "status")]
+#[serde(deny_unknown_fields)]
+pub enum SynthesisFidelity {
+    /// The input had no decode-time fidelity state.
+    NotProvided {},
+    /// The encoder does not consume source fidelity.
+    NotConsumed {},
+    /// Fidelity was available but could not be consumed.
+    Degraded {
+        /// Explanation of the degradation.
+        reason: String,
+    },
+}
+
+impl From<SynthesisFidelity> for FidelityResolution {
+    fn from(fidelity: SynthesisFidelity) -> Self {
+        match fidelity {
+            SynthesisFidelity::NotProvided {} => Self::NotProvided {},
+            SynthesisFidelity::NotConsumed {} => Self::NotConsumed {},
+            SynthesisFidelity::Degraded { reason } => Self::Degraded { reason },
+        }
     }
 }
 
@@ -190,13 +218,18 @@ impl ExportReport {
     /// How decode-time source fidelity was handled.
     #[must_use]
     pub fn fidelity(&self) -> FidelityResolution {
-        self.fidelity.clone()
+        match &self.write_path {
+            WritePath::VerbatimReplay { fidelity } => fidelity.clone().into(),
+            WritePath::Patched { fidelity } => fidelity.clone(),
+            WritePath::Synthesized { fidelity } => fidelity.clone().into(),
+        }
     }
 
-    /// Which write path produced the exported bytes.
+    /// Which write path produced the exported bytes, and how that path resolved
+    /// source fidelity.
     #[must_use]
-    pub fn write_path(&self) -> WritePath {
-        self.write_path
+    pub fn write_path(&self) -> &WritePath {
+        &self.write_path
     }
 
     /// Returns the native format namespace, or `"cadir"` for neutral CADIR.
@@ -229,12 +262,10 @@ impl ExportReport {
         losses: Vec<LossNote>,
         notes: Vec<String>,
     ) -> Self {
-        let (write_path, fidelity) = write_path.into_report(fidelity_provided);
         Self {
             identity: ExportIdentity::Cadir {},
             census,
-            fidelity,
-            write_path,
+            write_path: write_path.into_report(fidelity_provided),
             losses,
             notes,
         }
@@ -251,12 +282,10 @@ impl ExportReport {
         losses: Vec<LossNote>,
         notes: Vec<String>,
     ) -> Self {
-        let (write_path, fidelity) = write_path.into_report(fidelity_provided);
         Self {
             identity: ExportIdentity::Native { target },
             census,
-            fidelity,
-            write_path,
+            write_path: write_path.into_report(fidelity_provided),
             losses,
             notes,
         }

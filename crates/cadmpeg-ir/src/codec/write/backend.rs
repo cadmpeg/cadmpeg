@@ -12,8 +12,8 @@ use std::io::Write;
 use crate::codec::FormatId;
 use crate::document::CadIr;
 use crate::report::{
-    CensusBasis, EntityCensus, ExportReport, FidelityResolution, LossNote,
-    WritePath as ReportWritePath,
+    CensusBasis, EntityCensus, ExportReport, FidelityResolution, LossNote, ReplayFidelity,
+    SynthesisFidelity, WritePath as ReportWritePath,
 };
 use crate::source_fidelity::SourceFidelity;
 use cadmpeg_core::dialect::DialectId;
@@ -273,6 +273,15 @@ impl From<Consumption> for FidelityResolution {
     }
 }
 
+impl From<Consumption> for SynthesisFidelity {
+    fn from(consumption: Consumption) -> Self {
+        match consumption {
+            Consumption::NotConsumed => Self::NotConsumed {},
+            Consumption::Degraded { reason } => Self::Degraded { reason },
+        }
+    }
+}
+
 /// How a patched write handled the source fidelity supplied to it.
 ///
 /// Some patchers edit retained sidecar bytes. Others patch native records
@@ -304,27 +313,40 @@ pub enum WritePath {
 }
 
 impl WritePath {
-    pub(crate) fn into_report(
-        self,
-        fidelity_provided: bool,
-    ) -> (ReportWritePath, FidelityResolution) {
-        let (write_path, fidelity) = match self {
-            Self::Synthesized { consumption } => (ReportWritePath::Synthesized, consumption.into()),
+    pub(crate) fn into_report(self, fidelity_provided: bool) -> ReportWritePath {
+        match self {
+            Self::Synthesized { consumption } => ReportWritePath::Synthesized {
+                fidelity: if fidelity_provided {
+                    consumption.into()
+                } else {
+                    SynthesisFidelity::NotProvided {}
+                },
+            },
             Self::Patched {
                 consumption: PatchConsumption::Replayed,
-            } => (ReportWritePath::Patched, FidelityResolution::Replayed {}),
+            } => ReportWritePath::Patched {
+                fidelity: if fidelity_provided {
+                    FidelityResolution::Replayed {}
+                } else {
+                    FidelityResolution::NotProvided {}
+                },
+            },
             Self::Patched {
                 consumption: PatchConsumption::Independent(consumption),
-            } => (ReportWritePath::Patched, consumption.into()),
-            Self::VerbatimReplay => (
-                ReportWritePath::VerbatimReplay,
-                FidelityResolution::Replayed {},
-            ),
-        };
-        if fidelity_provided {
-            (write_path, fidelity)
-        } else {
-            (write_path, FidelityResolution::NotProvided {})
+            } => ReportWritePath::Patched {
+                fidelity: if fidelity_provided {
+                    consumption.into()
+                } else {
+                    FidelityResolution::NotProvided {}
+                },
+            },
+            Self::VerbatimReplay => ReportWritePath::VerbatimReplay {
+                fidelity: if fidelity_provided {
+                    ReplayFidelity::Replayed {}
+                } else {
+                    ReplayFidelity::NotProvided {}
+                },
+            },
         }
     }
 }

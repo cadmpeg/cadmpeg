@@ -96,10 +96,10 @@ fn explicit_transcode_declines_present_image_without_claiming_it_is_unavailable(
         &plan.report().fidelity(),
         &FidelityResolution::NotConsumed {}
     );
-    assert_eq!(
+    assert!(matches!(
         plan.report().write_path(),
-        cadmpeg_ir::WritePath::Synthesized
-    );
+        cadmpeg_ir::WritePath::Synthesized { .. }
+    ));
     let displacement = plan
         .report()
         .losses
