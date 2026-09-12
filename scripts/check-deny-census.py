@@ -56,8 +56,6 @@ SKIP_DIRS = {"tests", "golden_tests", "integration_tests", "test_support"}
 ITEM_RE = re.compile(
     r"^\s*(?:pub(?:\s*\([^)]*\))?\s+)?(struct|enum)\s+(\$?\w+)"
 )
-VARIANT_RE = re.compile(r"^\s*(?:#\[[^\]]*\]\s*)?(\$?\w+)\s*(.?)")
-
 
 class Item:
     def __init__(self, path, line, kind, name, attrs, body):
