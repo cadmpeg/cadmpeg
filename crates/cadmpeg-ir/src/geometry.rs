@@ -1347,8 +1347,10 @@ impl ProceduralCurveDefinition {
 
     /// Raise the fit tolerance of an existing solved cache.
     ///
-    /// Parameterized forms have no solved cache and remain unchanged, and so
-    /// do forms with no solved cache and no legacy slot.
+    /// A read-modify route, never a write route: a form with no solved cache
+    /// stays without one. Parameterized forms have no solved cache and remain
+    /// unchanged, and so do a form whose layout states no legacy slot and a
+    /// form whose legacy slot is empty.
     pub fn raise_cache_fit_tolerance(&mut self, value: FitTolerance) {
         match self.revision_cache_mut() {
             Some(RevisionCacheForm::SolvedCache { fit_tolerance }) => {
@@ -1358,16 +1360,31 @@ impl ProceduralCurveDefinition {
             }
             Some(RevisionCacheForm::Parameterization(_)) => {}
             None => {
-                if let Some(slot) = self.legacy_cache_slot_mut() {
-                    let raised = match *slot {
-                        Some(cache) if cache.fit_tolerance.get() >= value.get() => {
-                            cache.fit_tolerance
-                        }
-                        _ => value,
-                    };
-                    *slot = Some(LegacyCache::new(raised));
+                if let Some(Some(cache)) = self.legacy_cache_slot_mut() {
+                    if value.get() > cache.fit_tolerance.get() {
+                        cache.fit_tolerance = value;
+                    }
                 }
             }
+        }
+    }
+
+    /// State that a solved carrier of this construction was fitted to `value`,
+    /// raising an existing contract rather than lowering it.
+    ///
+    /// Total over the layouts. A construction whose legacy slot is empty takes
+    /// the contract; one that already carries a cache raises it; a
+    /// parameterized form and a layout that states no slot keep their absence
+    /// of a solved cache. The write goes through `legacy_cache_slot_mut`, the
+    /// one write route to the slot, so a construction cannot answer it
+    /// differently from the setter and the clear.
+    pub fn require_cache_fit_tolerance(&mut self, value: FitTolerance) {
+        self.raise_cache_fit_tolerance(value);
+        if self.owns_revision_cache() {
+            return;
+        }
+        if let Some(slot @ None) = self.legacy_cache_slot_mut() {
+            *slot = Some(LegacyCache::new(value));
         }
     }
 }
@@ -6828,6 +6845,12 @@ impl ProceduralCurve {
     /// Raise the fit tolerance of an existing solved cache.
     pub fn raise_cache_fit_tolerance(&mut self, value: FitTolerance) {
         self.definition.raise_cache_fit_tolerance(value);
+    }
+
+    /// State that a solved carrier of this construction was fitted to `value`,
+    /// raising an existing contract rather than lowering it.
+    pub fn require_cache_fit_tolerance(&mut self, value: FitTolerance) {
+        self.definition.require_cache_fit_tolerance(value);
     }
 
     /// Scale the effective cache-fit tolerance in place.

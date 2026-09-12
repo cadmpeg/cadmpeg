@@ -1265,7 +1265,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
             }
         });
         if completed && cache_backed {
-            procedural.raise_cache_fit_tolerance(tolerance);
+            procedural.require_cache_fit_tolerance(tolerance);
         }
     }
 }
@@ -1564,7 +1564,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
             continue;
         }
         if cache_backed {
-            procedural.raise_cache_fit_tolerance(tolerance);
+            procedural.require_cache_fit_tolerance(tolerance);
         }
         if tolerant {
             bounded_tolerant_curves.push((curve, range));
