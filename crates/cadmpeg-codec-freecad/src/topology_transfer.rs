@@ -47,7 +47,7 @@ struct IndexedPolygon {
 impl IndexedPolygon {
     /// Pair the polygon's two native lanes into sample rows.
     ///
-    /// FreeCAD states nodes and parameters as two properties, so the codec
+    /// `FreeCAD` states nodes and parameters as two properties, so the codec
     /// pairs them here and refuses a polygon whose lanes disagree. The IR
     /// carries the rows only.
     fn try_new(

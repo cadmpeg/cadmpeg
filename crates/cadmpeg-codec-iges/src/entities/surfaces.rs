@@ -432,7 +432,7 @@ fn homogeneous_bezier_spans(curve: &NurbsCurve) -> Option<Vec<HomogeneousBezierS
     }
     let weights = curve.weights().map_or_else(
         || cadmpeg_core::decode::alloc_filled(count, 1.0, "iges_surface_closure_weights").ok(),
-        |weights| Some(weights.to_owned()),
+        Some,
     )?;
     if curve.control_points().iter().any(|point| {
         [point.x, point.y, point.z]

@@ -409,7 +409,7 @@ pub(super) fn revolve_nurbs(
         append_quadratic_span_knots(&mut v_knots, native_interval, span, span_count);
     }
     let profile_weights = match profile.weights() {
-        Some(weights) => weights.to_vec(),
+        Some(weights) => weights,
         None => alloc_filled(
             profile.control_points().len(),
             1.0,

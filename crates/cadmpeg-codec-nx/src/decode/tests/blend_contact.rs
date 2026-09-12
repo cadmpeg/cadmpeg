@@ -642,7 +642,7 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
     *nurbs = cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
         nurbs.degree(),
         nurbs.knots().to_vec(),
-        nurbs.control_points().to_vec(),
+        nurbs.control_points(),
         Some(vec![1.0; 3]),
         nurbs.periodic(),
     )

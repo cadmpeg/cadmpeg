@@ -78,22 +78,14 @@ fn construction_rejects_invalid_knots_and_non_finite_poles() {
     for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         let mut knots = curve().knots().to_vec();
         knots[1] = invalid;
-        assert!(NurbsCurve::from_lanes(
-            1,
-            knots.clone(),
-            curve().control_points(),
-            None,
-            false
-        )
-        .is_err());
-        assert!(PcurveNurbs::from_lanes(
-            1,
-            knots.clone(),
-            pcurve().control_points(),
-            None,
-            false
-        )
-        .is_err());
+        assert!(
+            NurbsCurve::from_lanes(1, knots.clone(), curve().control_points(), None, false)
+                .is_err()
+        );
+        assert!(
+            PcurveNurbs::from_lanes(1, knots.clone(), pcurve().control_points(), None, false)
+                .is_err()
+        );
         assert!(PolarPcurveNurbs::from_lanes(
             1,
             knots,
