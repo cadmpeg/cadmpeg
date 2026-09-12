@@ -11,7 +11,8 @@ use crate::ids::{CurveId, PcurveId, ProceduralCurveId, ProceduralSurfaceId, Surf
 use crate::math::{Point3, Vector3};
 use crate::provenance::SourceObjectAssociation;
 use crate::transform::Transform;
-use crate::units::{FiniteScalar, FiniteVector, NonNegativeScalar};
+use crate::units::FiniteVector;
+use crate::scalar::{FiniteReal, NonNegativeReal};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -1704,7 +1705,7 @@ pub struct HelixPathConstruction {
     major: FiniteVector3,
     minor: FiniteVector3,
     pitch: FiniteVector3,
-    apex_factor: FiniteScalar,
+    apex_factor: FiniteReal,
     axis: FiniteVector3,
 }
 
@@ -1751,7 +1752,7 @@ impl HelixPathConstruction {
             FiniteVector3::new(minor).ok_or("HelixPathConstruction.minor must be finite")?;
         let pitch =
             FiniteVector3::new(pitch).ok_or("HelixPathConstruction.pitch must be finite")?;
-        let apex_factor = FiniteScalar::new(apex_factor)
+        let apex_factor = FiniteReal::new(apex_factor)
             .ok_or("HelixPathConstruction.apex_factor must be finite")?;
         let axis = FiniteVector3::new(axis).ok_or("HelixPathConstruction.axis must be finite")?;
         Ok(Self {
@@ -1832,7 +1833,7 @@ pub struct HelixCurveConstruction {
     major: FiniteVector3,
     minor: FiniteVector3,
     pitch: FiniteVector3,
-    apex_factor: FiniteScalar,
+    apex_factor: FiniteReal,
     axis: FiniteVector3,
     /// Solved-cache fit contract this construction states itself.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1888,7 +1889,7 @@ impl HelixCurveConstruction {
             FiniteVector3::new(minor).ok_or("HelixCurveConstruction.minor must be finite")?;
         let pitch =
             FiniteVector3::new(pitch).ok_or("HelixCurveConstruction.pitch must be finite")?;
-        let apex_factor = FiniteScalar::new(apex_factor)
+        let apex_factor = FiniteReal::new(apex_factor)
             .ok_or("HelixCurveConstruction.apex_factor must be finite")?;
         let axis = FiniteVector3::new(axis).ok_or("HelixCurveConstruction.axis must be finite")?;
         Ok(Self {
@@ -2002,8 +2003,8 @@ impl HelixCurveConstruction {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "HelixCircleProfileWire")]
 pub struct HelixCircleProfile {
-    length: FiniteScalar,
-    radius: FiniteScalar,
+    length: FiniteReal,
+    radius: FiniteReal,
 }
 
 #[derive(Deserialize)]
@@ -2021,9 +2022,9 @@ impl HelixCircleProfile {
             return Err("helix circle profile radius must be finite and nonzero");
         }
         let length =
-            FiniteScalar::new(length).ok_or("helix circle profile length must be finite")?;
+            FiniteReal::new(length).ok_or("helix circle profile length must be finite")?;
         let radius =
-            FiniteScalar::new(radius).ok_or("helix circle profile radius must be finite")?;
+            FiniteReal::new(radius).ok_or("helix circle profile radius must be finite")?;
         Ok(Self { length, radius })
     }
     /// Native profile length.
@@ -5641,7 +5642,7 @@ impl IntcurveSupportContext {
 pub struct TolerantIntersectionConstruction {
     supports: [SurfaceId; 2],
     endpoints: [Point3; 2],
-    tolerance: NonNegativeScalar,
+    tolerance: NonNegativeReal,
 }
 
 #[derive(Deserialize)]
@@ -5676,7 +5677,7 @@ impl TolerantIntersectionConstruction {
         {
             return Err("tolerant intersection endpoints must be finite");
         }
-        let tolerance = NonNegativeScalar::new(tolerance)
+        let tolerance = NonNegativeReal::new(tolerance)
             .ok_or("tolerant intersection tolerance must be finite and non-negative")?;
         Ok(Self {
             supports,

@@ -616,14 +616,14 @@ fn transfer_neutral_presentation(
             .and_then(|value| value.parse::<f64>().ok());
         let line_width = line_width
             .map(|value| {
-                cadmpeg_ir::units::NonNegativeScalar::new(value).ok_or_else(|| {
+                cadmpeg_ir::scalar::NonNegativeReal::new(value).ok_or_else(|| {
                     CodecError::malformed("line_width must be finite and nonnegative")
                 })
             })
             .transpose()?;
         let point_size = point_size
             .map(|value| {
-                cadmpeg_ir::units::NonNegativeScalar::new(value).ok_or_else(|| {
+                cadmpeg_ir::scalar::NonNegativeReal::new(value).ok_or_else(|| {
                     CodecError::malformed("point_size must be finite and nonnegative")
                 })
             })

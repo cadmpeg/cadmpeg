@@ -916,12 +916,12 @@ Co 1001000 +2 0 *
     assert_eq!(view.visible, Some(false));
     assert_eq!(
         view.line_width
-            .map(cadmpeg_ir::units::NonNegativeScalar::get),
+            .map(cadmpeg_ir::scalar::NonNegativeReal::get),
         Some(2.5)
     );
     assert_eq!(
         view.point_size
-            .map(cadmpeg_ir::units::NonNegativeScalar::get),
+            .map(cadmpeg_ir::scalar::NonNegativeReal::get),
         Some(4.0)
     );
     let color = result.ir().model.bodies[0].color.expect("shape color");

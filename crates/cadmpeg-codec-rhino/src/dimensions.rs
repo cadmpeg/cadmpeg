@@ -1678,7 +1678,7 @@ pub(crate) fn project(
         RhinoLossCode::DimensionDetailReferenceUnresolved,
     );
 
-    let value = cadmpeg_ir::units::FiniteScalar::new(value)
+    let value = cadmpeg_ir::scalar::FiniteReal::new(value)
         .ok_or_else(|| cadmpeg_core::CodecError::malformed("dimension value must be finite"))?;
     let position = position
         .map(|value| {

@@ -465,7 +465,7 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
                 continue;
             };
             let Some(endpoint_tolerance) =
-                edge.tolerance.map(cadmpeg_ir::units::PositiveScalar::get)
+                edge.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get)
             else {
                 continue;
             };
@@ -1103,7 +1103,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
         .filter_map(|edge| {
             Some((
                 edge.curve().clone()?,
-                edge.tolerance.map(cadmpeg_ir::units::PositiveScalar::get)?,
+                edge.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get)?,
             ))
         })
         .fold(
@@ -1388,7 +1388,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                             *vertex_points.get(&edge.end)?,
                         ],
                         context.parameter_range(),
-                        edge.tolerance.map(cadmpeg_ir::units::PositiveScalar::get)?,
+                        edge.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get)?,
                         false,
                     )
                 }
@@ -3333,7 +3333,7 @@ pub(crate) fn attach_tolerant_edge_intersections_with_budget(
             let Some(edge) = model_index.edges(edge_id.as_str()) else {
                 continue;
             };
-            let Some(tolerance) = edge.tolerance.map(cadmpeg_ir::units::PositiveScalar::get) else {
+            let Some(tolerance) = edge.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get) else {
                 continue;
             };
             if edge.curve().is_some() {
@@ -3634,7 +3634,7 @@ pub(crate) fn pcurve_edge_endpoint_contract_with_index(
     let allowance = [edge.tolerance, start_tolerance, end_tolerance]
         .into_iter()
         .flatten()
-        .map(cadmpeg_ir::units::PositiveScalar::get)
+        .map(cadmpeg_ir::scalar::PositiveReal::get)
         .fold(0.0_f64, f64::max);
     Some(([start, end], allowance))
 }

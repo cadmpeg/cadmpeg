@@ -215,7 +215,7 @@ fn tolerant_vertex_uses_the_third_double_for_evaluation_and_unset_state() {
             assert_eq!(
                 out.vertices[0]
                     .tolerance
-                    .map(cadmpeg_ir::units::PositiveScalar::get),
+                    .map(cadmpeg_ir::scalar::PositiveReal::get),
                 tolerance
             );
             assert_eq!(out.tolerant_vertex_tails.len(), 1);
@@ -379,7 +379,7 @@ fn evaluated_and_absent_vertex_slots_have_distinct_native_tail_wires() {
     let (evaluated_wire, tolerance) = decode(Some(0.125));
     let (absent_wire, absent_tolerance) = decode(None);
     assert_eq!(
-        tolerance.map(cadmpeg_ir::units::PositiveScalar::get),
+        tolerance.map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(1.25)
     );
     assert_eq!(absent_tolerance, None);

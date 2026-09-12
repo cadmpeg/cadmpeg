@@ -871,19 +871,19 @@ fn decode_emits_connected_primitive_brep() {
     assert_eq!(
         result.ir().model.vertices[0]
             .tolerance
-            .map(cadmpeg_ir::units::PositiveScalar::get),
+            .map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(0.1)
     );
     assert_eq!(
         result.ir().model.edges[0]
             .tolerance
-            .map(cadmpeg_ir::units::PositiveScalar::get),
+            .map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(0.3)
     );
     assert_eq!(
         result.ir().model.faces[0]
             .tolerance
-            .map(cadmpeg_ir::units::PositiveScalar::get),
+            .map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(0.2)
     );
     assert_eq!(

@@ -567,7 +567,7 @@ fn decode_tracks_extended_face_reference_shift() {
     assert_eq!(
         result.ir().model.faces[0]
             .tolerance
-            .map(cadmpeg_ir::units::PositiveScalar::get),
+            .map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(0.2)
     );
     assert_eq!(
@@ -588,7 +588,7 @@ fn decode_tracks_extended_edge_reference_shift() {
     assert_eq!(
         result.ir().model.edges[0]
             .tolerance
-            .map(cadmpeg_ir::units::PositiveScalar::get),
+            .map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(0.3)
     );
     assert_eq!(
@@ -614,7 +614,7 @@ fn decode_tracks_all_extended_topology_reference_shifts() {
     assert_eq!(
         result.ir().model.vertices[0]
             .tolerance
-            .map(cadmpeg_ir::units::PositiveScalar::get),
+            .map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(0.1)
     );
     assert_eq!(result.ir().model.points[0].position.x, 10.0);

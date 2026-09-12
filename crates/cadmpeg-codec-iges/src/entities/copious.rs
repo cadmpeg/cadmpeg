@@ -383,7 +383,7 @@ pub(super) fn project(
             continue;
         }
         let topology_tolerance = if entry.form == 63 && resolution > 0.0 {
-            let Some(value) = cadmpeg_ir::units::PositiveScalar::new(resolution) else {
+            let Some(value) = cadmpeg_ir::scalar::PositiveReal::new(resolution) else {
                 losses.push(entity_loss(entry, "topology tolerance must be finite"));
                 continue;
             };

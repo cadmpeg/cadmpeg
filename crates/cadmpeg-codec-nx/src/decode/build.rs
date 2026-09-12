@@ -938,7 +938,7 @@ pub(crate) fn try_decode_geometry(
                         .and_then(|index| ir.model.pcurves.get_mut(*index))
                     {
                         let fit_tolerance = decoded_tolerance(surface_curve.state.tolerance())
-                            .map(cadmpeg_ir::units::PositiveScalar::get);
+                            .map(cadmpeg_ir::scalar::PositiveReal::get);
                         match &mut carrier.metadata {
                             cadmpeg_ir::geometry::PcurveMetadata::General { form: metadata } => {
                                 metadata

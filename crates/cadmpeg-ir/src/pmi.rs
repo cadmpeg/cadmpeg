@@ -75,18 +75,18 @@ pub struct PmiValue {
     /// Numeric value in millimeters, radians, or unitless ratio as selected by
     /// `quantity`.
     #[serde(deserialize_with = "deserialize_pmi_value")]
-    pub value: crate::units::FiniteScalar,
+    pub value: crate::scalar::FiniteReal,
     /// Physical quantity and canonical unit of `value`.
     pub quantity: PmiQuantity,
 }
 
-crate::units::named_field!(deserialize_pmi_value, crate::units::FiniteScalar, "value");
+crate::units::named_field!(deserialize_pmi_value, crate::scalar::FiniteReal, "value");
 
 impl PmiValue {
     /// Construct a finite semantic quantity.
     pub fn new(value: f64, quantity: PmiQuantity) -> Option<Self> {
         Some(Self {
-            value: crate::units::FiniteScalar::new(value)?,
+            value: crate::scalar::FiniteReal::new(value)?,
             quantity,
         })
     }
@@ -101,7 +101,7 @@ pub struct PmiMagnitude(PmiValue);
 impl PmiMagnitude {
     /// Construct a nonnegative tolerance magnitude.
     pub fn new(value: PmiValue) -> Option<Self> {
-        crate::units::NonNegativeScalar::new(value.value.get()).map(|_| Self(value))
+        crate::scalar::NonNegativeReal::new(value.value.get()).map(|_| Self(value))
     }
 
     /// Return the finite semantic quantity.

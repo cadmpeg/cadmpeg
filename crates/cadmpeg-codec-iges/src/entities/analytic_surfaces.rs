@@ -364,7 +364,7 @@ pub(super) fn project(
                 let Some(radius) = record
                     .number(2)
                     .map(|radius| radius * factor)
-                    .and_then(cadmpeg_ir::units::PositiveScalar::new)
+                    .and_then(cadmpeg_ir::scalar::PositiveReal::new)
                 else {
                     losses.push(entity_loss(
                         entry,

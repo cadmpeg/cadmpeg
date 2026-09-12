@@ -5,10 +5,7 @@
 //! radians.
 
 use crate::math::{Point2, Vector3};
-pub use crate::scalar::{
-    FiniteReal as FiniteScalar, NonNegativeReal as NonNegativeScalar,
-    PositiveReal as PositiveScalar,
-};
+use crate::scalar::PositiveReal;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -39,10 +36,10 @@ pub const COINCIDENCE_TOLERANCE: f64 = 0.01;
 
 const DEFAULT_LINEAR_TOLERANCE_VALUE: f64 = 1.0e-6;
 const DEFAULT_ANGULAR_TOLERANCE_VALUE: f64 = 1.0e-10;
-const DEFAULT_LINEAR_TOLERANCE: PositiveScalar =
-    PositiveScalar::new(DEFAULT_LINEAR_TOLERANCE_VALUE).unwrap();
-const DEFAULT_ANGULAR_TOLERANCE: PositiveScalar =
-    PositiveScalar::new(DEFAULT_ANGULAR_TOLERANCE_VALUE).unwrap();
+const DEFAULT_LINEAR_TOLERANCE: PositiveReal =
+    PositiveReal::new(DEFAULT_LINEAR_TOLERANCE_VALUE).unwrap();
+const DEFAULT_ANGULAR_TOLERANCE: PositiveReal =
+    PositiveReal::new(DEFAULT_ANGULAR_TOLERANCE_VALUE).unwrap();
 
 /// An array of finite coordinates.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -149,9 +146,9 @@ where
         .map_err(|error| serde::de::Error::custom(format_args!("{field}: {error}")))
 }
 
-crate::units::named_field!(deserialize_linear, PositiveScalar, "linear");
+crate::units::named_field!(deserialize_linear, PositiveReal, "linear");
 
-crate::units::named_field!(deserialize_angular, PositiveScalar, "angular");
+crate::units::named_field!(deserialize_angular, PositiveReal, "angular");
 
 /// Document-wide linear and angular tolerances.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -160,10 +157,10 @@ crate::units::named_field!(deserialize_angular, PositiveScalar, "angular");
 pub struct Tolerances {
     /// Linear tolerance in millimeters.
     #[serde(deserialize_with = "deserialize_linear")]
-    pub linear: PositiveScalar,
+    pub linear: PositiveReal,
     /// Angular tolerance in radians.
     #[serde(deserialize_with = "deserialize_angular")]
-    pub angular: PositiveScalar,
+    pub angular: PositiveReal,
 }
 
 impl Default for Tolerances {
@@ -179,9 +176,9 @@ impl Tolerances {
     /// Construct positive finite document tolerances.
     pub fn new(linear: f64, angular: f64) -> Result<Self, String> {
         Ok(Self {
-            linear: PositiveScalar::new(linear)
+            linear: PositiveReal::new(linear)
                 .ok_or_else(|| "linear tolerance must be positive and finite".to_owned())?,
-            angular: PositiveScalar::new(angular)
+            angular: PositiveReal::new(angular)
                 .ok_or_else(|| "angular tolerance must be positive and finite".to_owned())?,
         })
     }
@@ -322,30 +319,31 @@ impl FiniteVector<2> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scalar::{FiniteReal, NonNegativeReal};
 
     #[test]
     fn scalar_admission_matches_each_numeric_contract() {
         for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-            assert!(FiniteScalar::new(value).is_none());
-            assert!(PositiveScalar::new(value).is_none());
-            assert!(NonNegativeScalar::new(value).is_none());
+            assert!(FiniteReal::new(value).is_none());
+            assert!(PositiveReal::new(value).is_none());
+            assert!(NonNegativeReal::new(value).is_none());
         }
         for value in [-1.0, -0.0, 0.0] {
-            assert!(PositiveScalar::new(value).is_none());
+            assert!(PositiveReal::new(value).is_none());
             assert_eq!(
-                FiniteScalar::new(value).expect("finite").get().to_bits(),
+                FiniteReal::new(value).expect("finite").get().to_bits(),
                 value.to_bits()
             );
         }
-        assert!(NonNegativeScalar::new(-1.0).is_none());
+        assert!(NonNegativeReal::new(-1.0).is_none());
         for value in [-0.0, 0.0, f64::MIN_POSITIVE, f64::MAX] {
-            let admitted = NonNegativeScalar::new(value).expect("nonnegative");
+            let admitted = NonNegativeReal::new(value).expect("nonnegative");
             let wire = serde_json::to_string(&admitted).expect("serialize");
-            let decoded: NonNegativeScalar = serde_json::from_str(&wire).expect("deserialize");
+            let decoded: NonNegativeReal = serde_json::from_str(&wire).expect("deserialize");
             assert_eq!(decoded.get().to_bits(), value.to_bits());
         }
-        assert!(serde_json::from_str::<PositiveScalar>("0").is_err());
-        assert!(serde_json::from_str::<NonNegativeScalar>("-1").is_err());
+        assert!(serde_json::from_str::<PositiveReal>("0").is_err());
+        assert!(serde_json::from_str::<NonNegativeReal>("-1").is_err());
     }
 
     #[test]

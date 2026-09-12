@@ -115,7 +115,7 @@ pub(super) fn project_edge(
         .tolerance
         .map_or(
             EPS_SKETCH_EDGES_PROJECT_EDGE_E9,
-            cadmpeg_ir::units::PositiveScalar::get,
+            cadmpeg_ir::scalar::PositiveReal::get,
         )
         .max(EPS_SKETCH_EDGES_PROJECT_EDGE_E9);
     match edge.curve().as_ref().and_then(|id| curves.get(id).copied()) {

@@ -57,7 +57,7 @@ pub struct SemanticAnnotation {
     /// Persisted numeric measurement, when explicitly carried.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(deserialize_with = "deserialize_value")]
-    pub value: Option<crate::units::FiniteScalar>,
+    pub value: Option<crate::scalar::FiniteReal>,
     /// Persisted formatting expression or visible dimension format.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub format: Option<String>,
@@ -77,7 +77,7 @@ pub struct SemanticAnnotation {
 
 crate::units::named_field!(
     deserialize_value,
-    Option<crate::units::FiniteScalar>,
+    Option<crate::scalar::FiniteReal>,
     "value"
 );
 

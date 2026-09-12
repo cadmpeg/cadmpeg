@@ -418,7 +418,7 @@ pub struct Face {
     /// Optional geometric tolerance in the document's length unit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(deserialize_with = "deserialize_tolerance")]
-    pub tolerance: Option<crate::units::PositiveScalar>,
+    pub tolerance: Option<crate::scalar::PositiveReal>,
 }
 
 impl Face {
@@ -1142,7 +1142,7 @@ pub struct Edge {
     /// Optional geometric tolerance in the document's length unit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(deserialize_with = "deserialize_tolerance")]
-    pub tolerance: Option<crate::units::PositiveScalar>,
+    pub tolerance: Option<crate::scalar::PositiveReal>,
 }
 
 impl Edge {
@@ -1185,7 +1185,7 @@ pub struct Vertex {
     /// Optional geometric tolerance in the document's length unit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(deserialize_with = "deserialize_tolerance")]
-    pub tolerance: Option<crate::units::PositiveScalar>,
+    pub tolerance: Option<crate::scalar::PositiveReal>,
 }
 
 /// A position carrier for a vertex.
@@ -1204,7 +1204,7 @@ pub struct Point {
 
 crate::units::named_field!(
     deserialize_tolerance,
-    Option<crate::units::PositiveScalar>,
+    Option<crate::scalar::PositiveReal>,
     "tolerance"
 );
 

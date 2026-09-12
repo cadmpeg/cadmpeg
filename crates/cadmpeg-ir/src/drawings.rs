@@ -76,7 +76,7 @@ pub struct Drawing {
     /// Positive view scale.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(deserialize_with = "deserialize_scale")]
-    pub scale: Option<crate::units::PositiveScalar>,
+    pub scale: Option<crate::scalar::PositiveReal>,
     /// Nonzero model projection direction.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(deserialize_with = "deserialize_direction")]
@@ -84,7 +84,7 @@ pub struct Drawing {
     /// View rotation in degrees.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(deserialize_with = "deserialize_rotation_degrees")]
-    pub rotation_degrees: Option<crate::units::FiniteScalar>,
+    pub rotation_degrees: Option<crate::scalar::FiniteReal>,
     /// Remaining typed or exactly framed parameters by source name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub parameters: BTreeMap<String, String>,
@@ -103,7 +103,7 @@ crate::units::named_field!(
 
 crate::units::named_field!(
     deserialize_scale,
-    Option<crate::units::PositiveScalar>,
+    Option<crate::scalar::PositiveReal>,
     "scale"
 );
 
@@ -115,7 +115,7 @@ crate::units::named_field!(
 
 crate::units::named_field!(
     deserialize_rotation_degrees,
-    Option<crate::units::FiniteScalar>,
+    Option<crate::scalar::FiniteReal>,
     "rotation_degrees"
 );
 

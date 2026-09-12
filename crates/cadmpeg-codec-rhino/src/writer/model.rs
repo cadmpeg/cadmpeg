@@ -493,7 +493,7 @@ impl<'a> WritableModel<'a> {
                 .tolerance
                 .map_or(
                     ir.tolerances.linear.get(),
-                    cadmpeg_ir::units::PositiveScalar::get,
+                    cadmpeg_ir::scalar::PositiveReal::get,
                 )
                 .max(EPS_WRITE_DEGENERATE);
             if !close_point(vertices[start].point, expected_start, tolerance)
@@ -682,7 +682,7 @@ impl<'a> WritableModel<'a> {
                             ))
                         })?;
                         validate_nurbs_trim(
-                            surface, face.source.tolerance.map_or(ir.tolerances.linear.get(), cadmpeg_ir::units::PositiveScalar::get),
+                            surface, face.source.tolerance.map_or(ir.tolerances.linear.get(), cadmpeg_ir::scalar::PositiveReal::get),
                             &edges[edge], coedge.sense, &pcurve,
                         )?;
                         pcurve.payload
@@ -810,7 +810,7 @@ impl<'a> WritableModel<'a> {
                         .tolerance
                         .map_or(
                             ir.tolerances.linear.get(),
-                            cadmpeg_ir::units::PositiveScalar::get,
+                            cadmpeg_ir::scalar::PositiveReal::get,
                         )
                         .max(EPS_WRITE_DEGENERATE);
                     let mut boundary = Vec::new();

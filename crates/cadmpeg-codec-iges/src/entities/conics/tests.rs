@@ -119,12 +119,12 @@ fn decode_classifies_and_bounds_all_standard_conic_arc_families() {
         assert_eq!(
             result.ir().model.edges[0]
                 .tolerance
-                .map(cadmpeg_ir::units::PositiveScalar::get),
+                .map(cadmpeg_ir::scalar::PositiveReal::get),
             Some(0.001)
         );
         assert!(result.ir().model.vertices.iter().all(|vertex| vertex
             .tolerance
-            .map(cadmpeg_ir::units::PositiveScalar::get)
+            .map(cadmpeg_ir::scalar::PositiveReal::get)
             == Some(0.001)));
         match (&result.ir().model.curves[0].geometry, form) {
             (

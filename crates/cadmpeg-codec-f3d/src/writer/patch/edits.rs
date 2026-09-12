@@ -534,7 +534,7 @@ pub(crate) fn validate_tolerant_vertex_edits(
                 } else {
                     tolerance
                 },
-                cadmpeg_ir::units::PositiveScalar::get,
+                cadmpeg_ir::scalar::PositiveReal::get,
             )
             || after.leading_tolerances != before.leading_tolerances
         {

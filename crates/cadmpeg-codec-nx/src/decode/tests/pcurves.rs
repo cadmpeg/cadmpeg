@@ -324,7 +324,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
         id: vertex.clone(),
         point,
         tolerance: Some(
-            cadmpeg_ir::units::PositiveScalar::new(EPS_TOPOLOGY_TOLERANCE)
+            cadmpeg_ir::scalar::PositiveReal::new(EPS_TOPOLOGY_TOLERANCE)
                 .expect("positive finite tolerance"),
         ),
     });
@@ -334,7 +334,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
         start: vertex.clone(),
         end: vertex,
         tolerance: Some(
-            cadmpeg_ir::units::PositiveScalar::new(EPS_TOPOLOGY_TOLERANCE)
+            cadmpeg_ir::scalar::PositiveReal::new(EPS_TOPOLOGY_TOLERANCE)
                 .expect("positive finite tolerance"),
         ),
     });
@@ -1191,7 +1191,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         start: vertices[0].clone(),
         end: vertices[1].clone(),
         tolerance: Some(
-            cadmpeg_ir::units::PositiveScalar::new(0.03).expect("positive finite tolerance"),
+            cadmpeg_ir::scalar::PositiveReal::new(0.03).expect("positive finite tolerance"),
         ),
     });
     let pcurves = [
@@ -1236,7 +1236,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             name: None,
             color: None,
             tolerance: Some(
-                cadmpeg_ir::units::PositiveScalar::new(0.03).expect("positive finite tolerance"),
+                cadmpeg_ir::scalar::PositiveReal::new(0.03).expect("positive finite tolerance"),
             ),
         });
         ir.model.loops.push(Loop {

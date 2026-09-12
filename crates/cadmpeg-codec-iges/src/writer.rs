@@ -3918,7 +3918,7 @@ fn same_point_with_tolerance(left: Point3, right: Point3, explicit_tolerance: f6
 fn topology_edge_explicit_tolerance(ir: &CadIr, edge: &Edge) -> f64 {
     let mut tolerance = edge
         .tolerance
-        .map_or(0.0, cadmpeg_ir::units::PositiveScalar::get);
+        .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get);
     for vertex_id in [&edge.start, &edge.end] {
         if let Some(vertex) = ir
             .model
@@ -3929,7 +3929,7 @@ fn topology_edge_explicit_tolerance(ir: &CadIr, edge: &Edge) -> f64 {
             tolerance = tolerance.max(
                 vertex
                     .tolerance
-                    .map_or(0.0, cadmpeg_ir::units::PositiveScalar::get),
+                    .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get),
             );
         }
     }
@@ -3948,7 +3948,7 @@ fn generated_minimum_resolution(ir: &CadIr) -> f64 {
                 .iter()
                 .filter_map(|vertex| vertex.tolerance),
         )
-        .map(cadmpeg_ir::units::PositiveScalar::get)
+        .map(cadmpeg_ir::scalar::PositiveReal::get)
         .map(effective_topology_tolerance)
         .fold(cadmpeg_ir::units::COINCIDENCE_TOLERANCE, f64::max);
     let endpoint_scale = generated_endpoint_coordinate_scale(ir);
@@ -5667,7 +5667,7 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
 fn edge_topology_tolerance(ir: &CadIr, edge: &Edge) -> Result<f64, CodecError> {
     let mut tolerance = edge
         .tolerance
-        .map_or(0.0, cadmpeg_ir::units::PositiveScalar::get);
+        .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get);
     for vertex_id in [&edge.start, &edge.end] {
         let vertex = ir
             .model
@@ -5683,7 +5683,7 @@ fn edge_topology_tolerance(ir: &CadIr, edge: &Edge) -> Result<f64, CodecError> {
         tolerance = tolerance.max(
             vertex
                 .tolerance
-                .map_or(0.0, cadmpeg_ir::units::PositiveScalar::get),
+                .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get),
         );
     }
     Ok(tolerance)

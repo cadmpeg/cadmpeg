@@ -1704,7 +1704,7 @@ fn plane_face_draft(
 ) -> Result<ModelDraft, &'static str> {
     let tolerance = if resolution > 0.0 {
         Some(
-            cadmpeg_ir::units::PositiveScalar::new(resolution)
+            cadmpeg_ir::scalar::PositiveReal::new(resolution)
                 .ok_or("face tolerance must be finite")?,
         )
     } else {

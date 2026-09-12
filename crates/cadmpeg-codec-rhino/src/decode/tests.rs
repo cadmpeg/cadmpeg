@@ -538,13 +538,13 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
     assert_eq!(
         model.vertices[0]
             .tolerance
-            .map(cadmpeg_ir::units::PositiveScalar::get),
+            .map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(0.254)
     );
     assert_eq!(
         model.edges[0]
             .tolerance
-            .map(cadmpeg_ir::units::PositiveScalar::get),
+            .map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(0.254)
     );
     assert_eq!(model.pcurves[0].fit_tolerance(), Some(0.02));
@@ -713,7 +713,7 @@ fn tolerance_scaling_maps_unset_and_zero_to_none() {
     assert_eq!(
         scaled_tolerance(0.5, 25.4)
             .expect("required invariant")
-            .map(cadmpeg_ir::units::PositiveScalar::get),
+            .map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(12.7)
     );
     assert_eq!(finite_tolerance(0.5), Some(0.5));

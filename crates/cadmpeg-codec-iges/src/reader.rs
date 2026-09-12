@@ -309,7 +309,7 @@ fn decode_with_occurrence_limits(
     let mut ir = CadIr::decoded(source_meta(&parse.global, representation, primary));
     let mut invalid_resolution = false;
     if let Some(context) = &length_context {
-        match cadmpeg_ir::units::PositiveScalar::new(context.minimum_resolution_mm()) {
+        match cadmpeg_ir::scalar::PositiveReal::new(context.minimum_resolution_mm()) {
             Some(value) => ir.tolerances.linear = value,
             None => invalid_resolution = true,
         }

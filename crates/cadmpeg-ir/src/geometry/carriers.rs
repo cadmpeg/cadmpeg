@@ -4,11 +4,8 @@ use crate::features::FinitePoint3;
 use crate::ids::PcurveId;
 use crate::math::{Point2, Point3, Vector3};
 use crate::transform::Transform2;
-use crate::scalar::{NonZeroReal, PositiveReal};
-use crate::units::{
-    FinitePoint2, FiniteScalar, NonNegativeScalar, NonzeroPoint2, OrthonormalFrame3,
-    PositiveScalar, UnitVector3,
-};
+use crate::scalar::{FiniteReal, NonNegativeReal, NonZeroReal, PositiveReal};
+use crate::units::{FinitePoint2, NonzeroPoint2, OrthonormalFrame3, UnitVector3};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -1488,7 +1485,7 @@ impl TryFrom<PlaneSurfaceWire> for PlaneSurface {
 #[serde(try_from = "CylinderSurfaceWire", into = "CylinderSurfaceWire")]
 pub struct CylinderSurface {
     origin: FinitePoint3,
-    radius: PositiveScalar,
+    radius: PositiveReal,
     frame: OrthonormalFrame3,
 }
 
@@ -1513,7 +1510,7 @@ impl CylinderSurface {
         let frame = OrthonormalFrame3::new(axis, ref_direction)
             .ok_or("CylinderSurface.axis/ref_direction must form an orthonormal frame")?;
         let origin = FinitePoint3::new(origin).ok_or("CylinderSurface.origin must be finite")?;
-        let radius = PositiveScalar::new(radius)
+        let radius = PositiveReal::new(radius)
             .ok_or("CylinderSurface.radius must be positive and finite")?;
         Ok(Self {
             origin,
@@ -1571,9 +1568,9 @@ impl TryFrom<CylinderSurfaceWire> for CylinderSurface {
 #[serde(try_from = "ConeSurfaceWire", into = "ConeSurfaceWire")]
 pub struct ConeSurface {
     origin: FinitePoint3,
-    radius: NonNegativeScalar,
-    ratio: PositiveScalar,
-    half_angle: FiniteScalar,
+    radius: NonNegativeReal,
+    ratio: PositiveReal,
+    half_angle: FiniteReal,
     frame: OrthonormalFrame3,
 }
 
@@ -1602,12 +1599,12 @@ impl ConeSurface {
         let frame = OrthonormalFrame3::new(axis, ref_direction)
             .ok_or("ConeSurface.axis/ref_direction must form an orthonormal frame")?;
         let origin = FinitePoint3::new(origin).ok_or("ConeSurface.origin must be finite")?;
-        let radius = NonNegativeScalar::new(radius)
+        let radius = NonNegativeReal::new(radius)
             .ok_or("ConeSurface.radius must be nonnegative and finite")?;
         let ratio =
-            PositiveScalar::new(ratio).ok_or("ConeSurface.ratio must be positive and finite")?;
+            PositiveReal::new(ratio).ok_or("ConeSurface.ratio must be positive and finite")?;
         let half_angle =
-            FiniteScalar::new(half_angle).ok_or("ConeSurface.half_angle must be finite")?;
+            FiniteReal::new(half_angle).ok_or("ConeSurface.half_angle must be finite")?;
         Ok(Self {
             origin,
             radius,
@@ -1687,7 +1684,7 @@ impl TryFrom<ConeSurfaceWire> for ConeSurface {
 #[serde(try_from = "SphereSurfaceWire", into = "SphereSurfaceWire")]
 pub struct SphereSurface {
     center: FinitePoint3,
-    radius: FiniteScalar,
+    radius: FiniteReal,
     frame: OrthonormalFrame3,
 }
 
@@ -1715,7 +1712,7 @@ impl SphereSurface {
             return Err("SphereSurface.radius must be nonzero");
         }
         let center = FinitePoint3::new(center).ok_or("SphereSurface.center must be finite")?;
-        let radius = FiniteScalar::new(radius).ok_or("SphereSurface.radius must be finite")?;
+        let radius = FiniteReal::new(radius).ok_or("SphereSurface.radius must be finite")?;
         Ok(Self {
             center,
             radius,
@@ -1772,8 +1769,8 @@ impl TryFrom<SphereSurfaceWire> for SphereSurface {
 #[serde(try_from = "TorusSurfaceWire", into = "TorusSurfaceWire")]
 pub struct TorusSurface {
     center: FinitePoint3,
-    major_radius: PositiveScalar,
-    minor_radius: FiniteScalar,
+    major_radius: PositiveReal,
+    minor_radius: FiniteReal,
     frame: OrthonormalFrame3,
 }
 
@@ -1803,10 +1800,10 @@ impl TorusSurface {
             return Err("TorusSurface.minor_radius must be nonzero");
         }
         let center = FinitePoint3::new(center).ok_or("TorusSurface.center must be finite")?;
-        let major_radius = PositiveScalar::new(major_radius)
+        let major_radius = PositiveReal::new(major_radius)
             .ok_or("TorusSurface.major_radius must be positive and finite")?;
         let minor_radius =
-            FiniteScalar::new(minor_radius).ok_or("TorusSurface.minor_radius must be finite")?;
+            FiniteReal::new(minor_radius).ok_or("TorusSurface.minor_radius must be finite")?;
         Ok(Self {
             center,
             major_radius,
@@ -1928,7 +1925,7 @@ impl TryFrom<LineCurveWire> for LineCurve {
 #[serde(try_from = "CircleCurveWire", into = "CircleCurveWire")]
 pub struct CircleCurve {
     center: FinitePoint3,
-    radius: PositiveScalar,
+    radius: PositiveReal,
     frame: OrthonormalFrame3,
 }
 
@@ -1959,7 +1956,7 @@ impl CircleCurve {
             .ok_or("CircleCurve.axis/ref_direction must form an orthonormal frame")?;
         let center = FinitePoint3::new(center).ok_or("CircleCurve.center must be finite")?;
         let radius =
-            PositiveScalar::new(radius).ok_or("CircleCurve.radius must be positive and finite")?;
+            PositiveReal::new(radius).ok_or("CircleCurve.radius must be positive and finite")?;
         Ok(Self {
             center,
             radius,
@@ -2016,8 +2013,8 @@ impl TryFrom<CircleCurveWire> for CircleCurve {
 #[serde(try_from = "EllipseCurveWire", into = "EllipseCurveWire")]
 pub struct EllipseCurve {
     center: FinitePoint3,
-    major_radius: PositiveScalar,
-    minor_radius: PositiveScalar,
+    major_radius: PositiveReal,
+    minor_radius: PositiveReal,
     frame: OrthonormalFrame3,
 }
 
@@ -2052,9 +2049,9 @@ impl EllipseCurve {
             return Err("EllipseCurve.major_radius must be at least minor_radius");
         }
         let center = FinitePoint3::new(center).ok_or("EllipseCurve.center must be finite")?;
-        let major_radius = PositiveScalar::new(major_radius)
+        let major_radius = PositiveReal::new(major_radius)
             .ok_or("EllipseCurve.major_radius must be positive and finite")?;
-        let minor_radius = PositiveScalar::new(minor_radius)
+        let minor_radius = PositiveReal::new(minor_radius)
             .ok_or("EllipseCurve.minor_radius must be positive and finite")?;
         Ok(Self {
             center,
@@ -2126,7 +2123,7 @@ impl TryFrom<EllipseCurveWire> for EllipseCurve {
 #[serde(try_from = "ParabolaCurveWire", into = "ParabolaCurveWire")]
 pub struct ParabolaCurve {
     vertex: FinitePoint3,
-    focal_distance: PositiveScalar,
+    focal_distance: PositiveReal,
     frame: OrthonormalFrame3,
 }
 
@@ -2151,7 +2148,7 @@ impl ParabolaCurve {
         let frame = OrthonormalFrame3::new(axis, major_direction)
             .ok_or("ParabolaCurve.axis/major_direction must form an orthonormal frame")?;
         let vertex = FinitePoint3::new(vertex).ok_or("ParabolaCurve.vertex must be finite")?;
-        let focal_distance = PositiveScalar::new(focal_distance)
+        let focal_distance = PositiveReal::new(focal_distance)
             .ok_or("ParabolaCurve.focal_distance must be positive and finite")?;
         Ok(Self {
             vertex,
@@ -2214,8 +2211,8 @@ impl TryFrom<ParabolaCurveWire> for ParabolaCurve {
 #[serde(try_from = "HyperbolaCurveWire", into = "HyperbolaCurveWire")]
 pub struct HyperbolaCurve {
     center: FinitePoint3,
-    major_radius: PositiveScalar,
-    minor_radius: PositiveScalar,
+    major_radius: PositiveReal,
+    minor_radius: PositiveReal,
     frame: OrthonormalFrame3,
 }
 
@@ -2249,9 +2246,9 @@ impl HyperbolaCurve {
         let frame = OrthonormalFrame3::new(axis, major_direction)
             .ok_or("HyperbolaCurve.axis/major_direction must form an orthonormal frame")?;
         let center = FinitePoint3::new(center).ok_or("HyperbolaCurve.center must be finite")?;
-        let major_radius = PositiveScalar::new(major_radius)
+        let major_radius = PositiveReal::new(major_radius)
             .ok_or("HyperbolaCurve.major_radius must be positive and finite")?;
-        let minor_radius = PositiveScalar::new(minor_radius)
+        let minor_radius = PositiveReal::new(minor_radius)
             .ok_or("HyperbolaCurve.minor_radius must be positive and finite")?;
         Ok(Self {
             center,
@@ -2413,9 +2410,9 @@ pub struct PolarHarmonicPcurve {
     radial_center: FinitePoint2,
     radial_cos: FinitePoint2,
     radial_sin: FinitePoint2,
-    axial_origin: FiniteScalar,
-    axial_cos: FiniteScalar,
-    axial_sin: FiniteScalar,
+    axial_origin: FiniteReal,
+    axial_cos: FiniteReal,
+    axial_sin: FiniteReal,
 }
 
 #[derive(Deserialize)]
@@ -2449,12 +2446,12 @@ impl PolarHarmonicPcurve {
             FinitePoint2::new(radial_cos).ok_or("PolarHarmonicPcurve.radial_cos must be finite")?;
         let radial_sin =
             FinitePoint2::new(radial_sin).ok_or("PolarHarmonicPcurve.radial_sin must be finite")?;
-        let axial_origin = FiniteScalar::new(axial_origin)
+        let axial_origin = FiniteReal::new(axial_origin)
             .ok_or("PolarHarmonicPcurve.axial_origin must be finite")?;
         let axial_cos =
-            FiniteScalar::new(axial_cos).ok_or("PolarHarmonicPcurve.axial_cos must be finite")?;
+            FiniteReal::new(axial_cos).ok_or("PolarHarmonicPcurve.axial_cos must be finite")?;
         let axial_sin =
-            FiniteScalar::new(axial_sin).ok_or("PolarHarmonicPcurve.axial_sin must be finite")?;
+            FiniteReal::new(axial_sin).ok_or("PolarHarmonicPcurve.axial_sin must be finite")?;
         Ok(Self {
             radial_center,
             radial_cos,
@@ -2521,10 +2518,10 @@ impl TryFrom<PolarHarmonicPcurveWire> for PolarHarmonicPcurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "SphericalGreatCirclePcurveWire")]
 pub struct SphericalGreatCirclePcurve {
-    azimuth_origin: FiniteScalar,
-    azimuth_rate: FiniteScalar,
-    plane_phase: FiniteScalar,
-    plane_slope: FiniteScalar,
+    azimuth_origin: FiniteReal,
+    azimuth_rate: FiniteReal,
+    plane_phase: FiniteReal,
+    plane_slope: FiniteReal,
 }
 
 #[derive(Deserialize)]
@@ -2548,13 +2545,13 @@ impl SphericalGreatCirclePcurve {
         if azimuth_rate == 0.0 {
             return Err("SphericalGreatCirclePcurve.azimuth_rate must be nonzero");
         }
-        let azimuth_origin = FiniteScalar::new(azimuth_origin)
+        let azimuth_origin = FiniteReal::new(azimuth_origin)
             .ok_or("SphericalGreatCirclePcurve.azimuth_origin must be finite")?;
-        let azimuth_rate = FiniteScalar::new(azimuth_rate)
+        let azimuth_rate = FiniteReal::new(azimuth_rate)
             .ok_or("SphericalGreatCirclePcurve.azimuth_rate must be finite")?;
-        let plane_phase = FiniteScalar::new(plane_phase)
+        let plane_phase = FiniteReal::new(plane_phase)
             .ok_or("SphericalGreatCirclePcurve.plane_phase must be finite")?;
-        let plane_slope = FiniteScalar::new(plane_slope)
+        let plane_slope = FiniteReal::new(plane_slope)
             .ok_or("SphericalGreatCirclePcurve.plane_slope must be finite")?;
         Ok(Self {
             azimuth_origin,
@@ -2609,7 +2606,7 @@ pub struct CirclePcurve {
     center: FinitePoint2,
     x_axis: FinitePoint2,
     y_axis: FinitePoint2,
-    radius: PositiveScalar,
+    radius: PositiveReal,
 }
 
 #[derive(Deserialize)]
@@ -2640,7 +2637,7 @@ impl CirclePcurve {
         let x_axis = FinitePoint2::new(x_axis).ok_or("CirclePcurve.x_axis must be finite")?;
         let y_axis = FinitePoint2::new(y_axis).ok_or("CirclePcurve.y_axis must be finite")?;
         let radius =
-            PositiveScalar::new(radius).ok_or("CirclePcurve.radius must be positive and finite")?;
+            PositiveReal::new(radius).ok_or("CirclePcurve.radius must be positive and finite")?;
         Ok(Self {
             center,
             x_axis,
@@ -2689,8 +2686,8 @@ pub struct EllipsePcurve {
     center: FinitePoint2,
     x_axis: FinitePoint2,
     y_axis: FinitePoint2,
-    major_radius: PositiveScalar,
-    minor_radius: PositiveScalar,
+    major_radius: PositiveReal,
+    minor_radius: PositiveReal,
 }
 
 #[derive(Deserialize)]
@@ -2722,9 +2719,9 @@ impl EllipsePcurve {
         let center = FinitePoint2::new(center).ok_or("EllipsePcurve.center must be finite")?;
         let x_axis = FinitePoint2::new(x_axis).ok_or("EllipsePcurve.x_axis must be finite")?;
         let y_axis = FinitePoint2::new(y_axis).ok_or("EllipsePcurve.y_axis must be finite")?;
-        let major_radius = PositiveScalar::new(major_radius)
+        let major_radius = PositiveReal::new(major_radius)
             .ok_or("EllipsePcurve.major_radius must be positive and finite")?;
-        let minor_radius = PositiveScalar::new(minor_radius)
+        let minor_radius = PositiveReal::new(minor_radius)
             .ok_or("EllipsePcurve.minor_radius must be positive and finite")?;
         Ok(Self {
             center,
@@ -2848,7 +2845,7 @@ pub struct ParabolaPcurve {
     vertex: FinitePoint2,
     x_axis: FinitePoint2,
     y_axis: FinitePoint2,
-    focal_distance: PositiveScalar,
+    focal_distance: PositiveReal,
 }
 
 #[derive(Deserialize)]
@@ -2878,7 +2875,7 @@ impl ParabolaPcurve {
         let vertex = FinitePoint2::new(vertex).ok_or("ParabolaPcurve.vertex must be finite")?;
         let x_axis = FinitePoint2::new(x_axis).ok_or("ParabolaPcurve.x_axis must be finite")?;
         let y_axis = FinitePoint2::new(y_axis).ok_or("ParabolaPcurve.y_axis must be finite")?;
-        let focal_distance = PositiveScalar::new(focal_distance)
+        let focal_distance = PositiveReal::new(focal_distance)
             .ok_or("ParabolaPcurve.focal_distance must be positive and finite")?;
         Ok(Self {
             vertex,
@@ -2928,8 +2925,8 @@ pub struct HyperbolaPcurve {
     center: FinitePoint2,
     x_axis: FinitePoint2,
     y_axis: FinitePoint2,
-    major_radius: PositiveScalar,
-    minor_radius: PositiveScalar,
+    major_radius: PositiveReal,
+    minor_radius: PositiveReal,
 }
 
 #[derive(Deserialize)]
@@ -2961,9 +2958,9 @@ impl HyperbolaPcurve {
         let center = FinitePoint2::new(center).ok_or("HyperbolaPcurve.center must be finite")?;
         let x_axis = FinitePoint2::new(x_axis).ok_or("HyperbolaPcurve.x_axis must be finite")?;
         let y_axis = FinitePoint2::new(y_axis).ok_or("HyperbolaPcurve.y_axis must be finite")?;
-        let major_radius = PositiveScalar::new(major_radius)
+        let major_radius = PositiveReal::new(major_radius)
             .ok_or("HyperbolaPcurve.major_radius must be positive and finite")?;
-        let minor_radius = PositiveScalar::new(minor_radius)
+        let minor_radius = PositiveReal::new(minor_radius)
             .ok_or("HyperbolaPcurve.minor_radius must be positive and finite")?;
         Ok(Self {
             center,
@@ -3150,7 +3147,7 @@ impl TryFrom<TrimmedPcurveWire> for TrimmedPcurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "OffsetPcurveWire")]
 pub struct OffsetPcurve {
-    distance: FiniteScalar,
+    distance: FiniteReal,
     basis: Box<PcurveGeometry>,
 }
 
@@ -3165,7 +3162,7 @@ struct OffsetPcurveWire {
 impl OffsetPcurve {
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(distance: f64, basis: Box<PcurveGeometry>) -> Result<Self, &'static str> {
-        let distance = FiniteScalar::new(distance).ok_or("OffsetPcurve.distance must be finite")?;
+        let distance = FiniteReal::new(distance).ok_or("OffsetPcurve.distance must be finite")?;
         Ok(Self { distance, basis })
     }
 

@@ -869,7 +869,7 @@ fn brep_payload(
                 vertex
                     .source
                     .tolerance
-                    .map_or(0.0, cadmpeg_ir::units::PositiveScalar::get)
+                    .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get)
                     .to_le_bytes(),
             );
             Ok(record)
@@ -892,7 +892,7 @@ fn brep_payload(
             record.extend(
                 edge.source
                     .tolerance
-                    .map_or(0.0, cadmpeg_ir::units::PositiveScalar::get)
+                    .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get)
                     .to_le_bytes(),
             );
             record.extend(edge.domain.into_iter().flat_map(f64::to_le_bytes));
@@ -1327,7 +1327,7 @@ fn validate_nurbs_trim(
         .max(
             edge.source
                 .tolerance
-                .map_or(0.0, cadmpeg_ir::units::PositiveScalar::get),
+                .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get),
         )
         .max(pcurve.fit_tolerance().unwrap_or(0.0))
         .max(EPS_WRITE_DEGENERATE);

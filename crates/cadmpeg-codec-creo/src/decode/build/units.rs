@@ -197,12 +197,12 @@ pub(super) fn normalize_model_lengths(
 }
 
 fn scale_tolerance(
-    value: &mut Option<cadmpeg_ir::units::PositiveScalar>,
+    value: &mut Option<cadmpeg_ir::scalar::PositiveReal>,
     scale: f64,
 ) -> Result<(), CodecError> {
     if let Some(current) = value {
         *current =
-            cadmpeg_ir::units::PositiveScalar::new(current.get() * scale).ok_or_else(|| {
+            cadmpeg_ir::scalar::PositiveReal::new(current.get() * scale).ok_or_else(|| {
                 CodecError::malformed("scaled topology tolerance must be positive and finite")
             })?;
     }

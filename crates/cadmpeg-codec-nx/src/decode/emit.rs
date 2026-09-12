@@ -269,7 +269,7 @@ pub(super) fn emit_topology(
             vertex,
             (
                 point_position,
-                tolerance.map(cadmpeg_ir::units::PositiveScalar::get),
+                tolerance.map(cadmpeg_ir::scalar::PositiveReal::get),
             ),
         );
     }
@@ -463,7 +463,7 @@ pub(super) fn emit_topology(
                     start_tolerance,
                     end_position,
                     end_tolerance,
-                    decoded_tolerance(fields.tolerance).map(cadmpeg_ir::units::PositiveScalar::get),
+                    decoded_tolerance(fields.tolerance).map(cadmpeg_ir::scalar::PositiveReal::get),
                     procedural_curve_ids.contains(carrier),
                     &mut curve_point_cache,
                     adaptive_geometry_budget,
@@ -1025,11 +1025,11 @@ pub(crate) fn curve_tag(geometry: &SolvedCurveGeometry) -> &'static str {
     }
 }
 
-pub(crate) fn decoded_tolerance(value: f64) -> Option<cadmpeg_ir::units::PositiveScalar> {
+pub(crate) fn decoded_tolerance(value: f64) -> Option<cadmpeg_ir::scalar::PositiveReal> {
     match value {
         MISSING_TOLERANCE => None,
         value if value.is_finite() && value > 0.0 && (value * 1000.0).is_finite() => {
-            cadmpeg_ir::units::PositiveScalar::new(value * 1000.0)
+            cadmpeg_ir::scalar::PositiveReal::new(value * 1000.0)
         }
         _ => None,
     }
@@ -1045,7 +1045,7 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
     curve_index: usize,
     range: Option<[f64; 2]>,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
-    tolerance: Option<cadmpeg_ir::units::PositiveScalar>,
+    tolerance: Option<cadmpeg_ir::scalar::PositiveReal>,
     curve_point_cache: &mut CurvePointCache,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<VertexId> {
@@ -1164,7 +1164,7 @@ pub(crate) fn orient_edge_range_with_budget(
             .find(|candidate| candidate.id == vertex.point)?;
         Some((
             point.position,
-            vertex.tolerance.map(cadmpeg_ir::units::PositiveScalar::get),
+            vertex.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get),
         ))
     };
     let (start_position, start_tolerance) = vertex_position(start)?;

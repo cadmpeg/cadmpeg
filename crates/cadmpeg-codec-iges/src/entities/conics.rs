@@ -27,7 +27,7 @@ struct BoundedSpan {
     start: Point3,
     end: Point3,
     parameter_range: [f64; 2],
-    tolerance: Option<cadmpeg_ir::units::PositiveScalar>,
+    tolerance: Option<cadmpeg_ir::scalar::PositiveReal>,
 }
 
 fn add_bounded_curve(
@@ -453,7 +453,7 @@ pub(super) fn project(
             continue;
         }
         let tolerance = if resolution > 0.0 {
-            let Some(value) = cadmpeg_ir::units::PositiveScalar::new(resolution) else {
+            let Some(value) = cadmpeg_ir::scalar::PositiveReal::new(resolution) else {
                 losses.push(entity_loss(entry, "conic tolerance must be finite"));
                 continue;
             };

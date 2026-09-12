@@ -169,7 +169,7 @@ fn graph_owned_point_has_no_scanner_magnitude_limit() {
 #[test]
 fn decoded_tolerance_has_no_model_magnitude_limit() {
     assert_eq!(
-        decoded_tolerance(1_001.0).map(cadmpeg_ir::units::PositiveScalar::get),
+        decoded_tolerance(1_001.0).map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(1_001_000.0)
     );
     assert_eq!(decoded_tolerance(0.0), None);
