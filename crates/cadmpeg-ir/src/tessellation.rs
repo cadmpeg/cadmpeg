@@ -31,187 +31,518 @@ fn tessellation_error(message: impl Into<String>) -> TessellationError {
     TessellationError(message.into())
 }
 
-/// One or more shading normals.
-///
-/// The vector is private and never empty, so an empty sample run has no
-/// [`TessellationNormals`] variant to live in: "the source carried no normals"
-/// is spelled [`TessellationNormals::None`] and nothing else.
-#[derive(Debug, Clone, PartialEq)]
-pub struct NormalSamples(Vec<Vector3>);
+/// One mesh vertex carrying its shading normal.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct ShadedVertex {
+    /// Vertex position in document units.
+    pub position: Point3,
+    /// Shading normal at this vertex.
+    pub normal: Vector3,
+}
 
-impl NormalSamples {
-    /// The samples, absent when `normals` is empty.
-    #[must_use]
-    pub fn new(normals: Vec<Vector3>) -> Option<Self> {
-        (!normals.is_empty()).then_some(Self(normals))
+/// One triangle carrying a shading normal at each of its corners.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct ShadedTriangle {
+    /// Zero-based vertex indices, with source winding preserved.
+    pub corners: [u32; 3],
+    /// Shading normal at each corner, in corner order.
+    pub normals: [Vector3; 3],
+}
+
+/// The position every mesh vertex carries, whatever else it carries.
+pub trait MeshVertex {
+    /// Position of this vertex in document units.
+    fn position(&self) -> Point3;
+
+    /// Position of this vertex, for editing in place.
+    fn position_mut(&mut self) -> &mut Point3;
+}
+
+impl MeshVertex for Point3 {
+    fn position(&self) -> Point3 {
+        *self
     }
 
-    /// The samples in storage order.
+    fn position_mut(&mut self) -> &mut Point3 {
+        self
+    }
+}
+
+impl MeshVertex for ShadedVertex {
+    fn position(&self) -> Point3 {
+        self.position
+    }
+
+    fn position_mut(&mut self) -> &mut Point3 {
+        &mut self.position
+    }
+}
+
+/// One triangle strip: the vertices it spans, at least three of them.
+///
+/// A strip of one or two vertices spans no triangle, so it is not a strip at
+/// all; the mint refuses it and [`Self::triangle_count`] subtracts without a
+/// clamp on a length the type proved is at least three.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct Strip<V>(Vec<V>);
+
+impl<V> Strip<V> {
+    /// A strip over `vertices`, absent below three.
     #[must_use]
-    pub fn as_slice(&self) -> &[Vector3] {
+    pub fn new(vertices: Vec<V>) -> Option<Self> {
+        (vertices.len() >= 3).then_some(Self(vertices))
+    }
+
+    /// The strip's vertices in strip order.
+    #[must_use]
+    pub fn vertices(&self) -> &[V] {
         &self.0
     }
 
-    /// The samples in storage order, for editing coordinates in place.
-    pub fn as_mut_slice(&mut self) -> &mut [Vector3] {
+    /// The strip's vertices in strip order, for editing in place.
+    pub fn vertices_mut(&mut self) -> &mut [V] {
+        &mut self.0
+    }
+
+    /// The triangles this strip expands to: two fewer than its vertices.
+    #[must_use]
+    pub fn triangle_count(&self) -> usize {
+        self.0.len() - 2
+    }
+}
+
+impl<'de, V: Deserialize<'de>> Deserialize<'de> for Strip<V> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Self::new(Vec::<V>::deserialize(deserializer)?)
+            .ok_or_else(|| serde::de::Error::custom("tessellation strip spans no triangle"))
+    }
+}
+
+/// One or more triangle strips.
+///
+/// The vector is private and never empty, so "the mesh is a flat triangle
+/// list" has no second spelling inside a strip mesh. The mint also proves the
+/// strips span no more vertices than a `u32` index can name, so expanding them
+/// into triangles is total.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct Strips<V>(Vec<Strip<V>>);
+
+impl<V> Strips<V> {
+    /// The strips in mesh order, absent when there are none and absent when
+    /// they span more vertices than a `u32` index can name.
+    #[must_use]
+    pub fn new(strips: Vec<Strip<V>>) -> Option<Self> {
+        if strips.is_empty() {
+            return None;
+        }
+        let span = strips.iter().try_fold(0u64, |total, strip| {
+            total.checked_add(strip.vertices().len() as u64)
+        })?;
+        (span <= u64::from(u32::MAX)).then_some(Self(strips))
+    }
+
+    /// The strips in mesh order.
+    #[must_use]
+    pub fn as_slice(&self) -> &[Strip<V>] {
+        &self.0
+    }
+
+    /// The strips in mesh order, for editing in place.
+    pub fn as_mut_slice(&mut self) -> &mut [Strip<V>] {
         &mut self.0
     }
 }
 
-impl std::ops::Deref for NormalSamples {
-    type Target = [Vector3];
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-/// Shading samples stored with a tessellation mesh.
-#[derive(Debug, Clone, PartialEq)]
-pub enum TessellationNormals {
-    /// The source carried no normals.
-    None,
-    /// One normal per vertex, parallel to [`Tessellation::vertices`].
-    PerVertex(NormalSamples),
-    /// One normal per triangle corner, in flattened triangle order.
-    PerCorner(NormalSamples),
-}
-
-impl TessellationNormals {
-    /// Per-vertex normals.
+impl<V> Strips<V> {
+    /// Cut a flat vertex lane into the strips `spans` names.
     ///
-    /// The samples are the non-empty type, so "no normals" has no second
-    /// spelling here: a caller that carried none states [`Self::None`].
+    /// A source that states its strip spans beside one vertex array pairs the
+    /// two here, once, at the decode boundary: the result is absent when a
+    /// span the lane cannot fill, a span below three, or a vertex the spans do
+    /// not consume.
     #[must_use]
-    pub const fn per_vertex(normals: NormalSamples) -> Self {
-        Self::PerVertex(normals)
-    }
-
-    /// Per-corner normals.
-    #[must_use]
-    pub const fn per_corner(normals: NormalSamples) -> Self {
-        Self::PerCorner(normals)
-    }
-}
-
-/// One triangle-strip run: the vertices it spans, at least three of them.
-///
-/// A strip run of one or two vertices spans no triangle, so it is not a run at
-/// all; the mint refuses it and [`Self::triangle_count`] subtracts without a
-/// clamp on a value the type proved is at least three.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "u32"))]
-#[serde(try_from = "u32", into = "u32")]
-pub struct StripRun(u32);
-
-impl StripRun {
-    /// A run over `vertices` vertices, absent below three.
-    #[must_use]
-    pub const fn new(vertices: u32) -> Option<Self> {
-        if vertices < 3 {
+    pub fn from_spans(vertices: Vec<V>, spans: &[u32]) -> Option<Self> {
+        let mut remaining = vertices.into_iter();
+        let mut strips = Vec::with_capacity(spans.len());
+        for span in spans {
+            let span = usize::try_from(*span).ok()?;
+            let run: Vec<V> = remaining.by_ref().take(span).collect();
+            if run.len() != span {
+                return None;
+            }
+            strips.push(Strip::new(run)?);
+        }
+        if remaining.next().is_some() {
             return None;
         }
-        Some(Self(vertices))
-    }
-
-    /// The vertices this run spans.
-    #[must_use]
-    pub const fn get(self) -> u32 {
-        self.0
-    }
-
-    /// The triangles this run expands to: two fewer than its vertices.
-    #[must_use]
-    pub const fn triangle_count(self) -> u32 {
-        self.0 - 2
+        Self::new(strips)
     }
 }
 
-impl TryFrom<u32> for StripRun {
-    type Error = TessellationError;
-
-    fn try_from(vertices: u32) -> Result<Self, Self::Error> {
-        Self::new(vertices)
-            .ok_or_else(|| tessellation_error("tessellation strip run spans no triangle"))
+impl<'de, V: Deserialize<'de>> Deserialize<'de> for Strips<V> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Self::new(Vec::<Strip<V>>::deserialize(deserializer)?)
+            .ok_or_else(|| serde::de::Error::custom("tessellation strip set is empty"))
     }
 }
 
-impl From<StripRun> for u32 {
-    fn from(run: StripRun) -> Self {
-        run.get()
-    }
-}
-
-/// One or more triangle-strip runs.
+/// The mesh's vertices, triangles and shading normals.
 ///
-/// The vector is private and never empty, so an empty strip run has no
-/// [`TessellationTopology`] variant to live in: "the mesh is a flat triangle
-/// list" is spelled [`TessellationTopology::List`] and nothing else.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "Vec<u32>"))]
-#[serde(try_from = "Vec<StripRun>", into = "Vec<StripRun>")]
-pub struct StripLengths(Vec<StripRun>);
-
-impl StripLengths {
-    /// The runs in storage order.
-    #[must_use]
-    pub fn as_slice(&self) -> &[StripRun] {
-        &self.0
-    }
-}
-
-impl std::ops::Deref for StripLengths {
-    type Target = [StripRun];
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl TryFrom<Vec<StripRun>> for StripLengths {
-    type Error = TessellationError;
-
-    fn try_from(runs: Vec<StripRun>) -> Result<Self, Self::Error> {
-        if runs.is_empty() {
-            return Err(tessellation_error("tessellation strip run is empty"));
-        }
-        Ok(Self(runs))
-    }
-}
-
-impl TryFrom<Vec<u32>> for StripLengths {
-    type Error = TessellationError;
-
-    fn try_from(lengths: Vec<u32>) -> Result<Self, Self::Error> {
-        let runs = lengths
-            .into_iter()
-            .map(StripRun::try_from)
-            .collect::<Result<Vec<_>, _>>()?;
-        Self::try_from(runs)
-    }
-}
-
-impl From<StripLengths> for Vec<StripRun> {
-    fn from(lengths: StripLengths) -> Self {
-        lengths.0
-    }
-}
-
-/// Triangle storage selected by the source mesh.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// The shading form is the wire's tag, so a mesh states per-vertex or
+/// per-corner normals and never both, and never a normal run that does not
+/// cover the mesh. A strip owns the vertices it spans, so a strip mesh states
+/// neither a triangle list nor a vertex total: both are derived.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
-pub enum TessellationTopology {
-    /// Independent triangle list.
-    List {},
-    /// Triangle-strip run lengths that expand to the stored triangles.
-    Strips {
-        /// Run lengths, in strip order.
-        strip_lengths: StripLengths,
+pub enum TessellationMesh {
+    /// Independent triangle list carrying no shading normals.
+    List {
+        /// Vertex positions in document units.
+        vertices: Vec<Point3>,
+        /// Zero-based vertex indices, with source winding preserved.
+        triangles: Vec<[u32; 3]>,
     },
+    /// Independent triangle list with one shading normal per vertex.
+    ShadedList {
+        /// Vertex rows, each carrying its shading normal.
+        vertices: Vec<ShadedVertex>,
+        /// Zero-based vertex indices, with source winding preserved.
+        triangles: Vec<[u32; 3]>,
+    },
+    /// Independent triangle list with one shading normal per triangle corner.
+    CornerShadedList {
+        /// Vertex positions in document units.
+        vertices: Vec<Point3>,
+        /// Triangle rows, each carrying its three corner normals.
+        triangles: Vec<ShadedTriangle>,
+    },
+    /// Triangle strips carrying no shading normals.
+    Strips {
+        /// Strips in mesh order; each spans the vertices it owns.
+        strips: Strips<Point3>,
+    },
+    /// Triangle strips with one shading normal per vertex.
+    ShadedStrips {
+        /// Strips in mesh order; each spans the vertex rows it owns.
+        strips: Strips<ShadedVertex>,
+    },
+}
+
+/// Expand strip runs into triangles in strip order.
+///
+/// [`Strips::new`] proves the strips span no more vertices than a `u32` index
+/// can name, so every index below is in range and the expansion is total.
+fn strip_triangles<V>(strips: &Strips<V>) -> Vec<[u32; 3]> {
+    let mut triangles = Vec::new();
+    let mut base: u32 = 0;
+    for strip in strips.as_slice() {
+        for index in 0..strip.triangle_count() as u32 {
+            let a = base + index;
+            triangles.push(if index % 2 == 0 {
+                [a, a + 1, a + 2]
+            } else {
+                [a, a + 2, a + 1]
+            });
+        }
+        base += strip.vertices().len() as u32;
+    }
+    triangles
+}
+
+impl TessellationMesh {
+    /// Pair a source's flat strip lanes into mesh rows.
+    ///
+    /// A display stream that states strip spans, vertex positions and vertex
+    /// normals as separate lanes pairs them here. An empty normal lane states
+    /// an unshaded mesh; any other normal lane covers the vertices exactly.
+    #[must_use]
+    pub fn from_strip_lanes(
+        positions: Vec<Point3>,
+        normals: Vec<Vector3>,
+        spans: &[u32],
+    ) -> Option<Self> {
+        if normals.is_empty() {
+            return Strips::from_spans(positions, spans).map(|strips| Self::Strips { strips });
+        }
+        if normals.len() != positions.len() {
+            return None;
+        }
+        let rows = positions
+            .into_iter()
+            .zip(normals)
+            .map(|(position, normal)| ShadedVertex { position, normal })
+            .collect();
+        Strips::from_spans(rows, spans).map(|strips| Self::ShadedStrips { strips })
+    }
+
+    /// Pair a source's flat triangle-list lanes into mesh rows.
+    ///
+    /// An empty normal lane states an unshaded mesh; any other normal lane
+    /// covers the vertices exactly.
+    #[must_use]
+    pub fn from_list_lanes(
+        positions: Vec<Point3>,
+        triangles: Vec<[u32; 3]>,
+        normals: Vec<Vector3>,
+    ) -> Option<Self> {
+        if normals.is_empty() {
+            return Some(Self::List {
+                vertices: positions,
+                triangles,
+            });
+        }
+        if normals.len() != positions.len() {
+            return None;
+        }
+        Some(Self::ShadedList {
+            vertices: positions
+                .into_iter()
+                .zip(normals)
+                .map(|(position, normal)| ShadedVertex { position, normal })
+                .collect(),
+            triangles,
+        })
+    }
+
+    /// Pair a source's flat triangle-list lanes and corner normals into rows.
+    ///
+    /// An empty normal lane states an unshaded mesh; any other normal lane
+    /// covers the triangle corners exactly.
+    #[must_use]
+    pub fn from_corner_lanes(
+        positions: Vec<Point3>,
+        triangles: Vec<[u32; 3]>,
+        corner_normals: Vec<Vector3>,
+    ) -> Option<Self> {
+        if corner_normals.is_empty() {
+            return Some(Self::List {
+                vertices: positions,
+                triangles,
+            });
+        }
+        if corner_normals.len() != triangles.len().checked_mul(3)? {
+            return None;
+        }
+        let mut normals = corner_normals.into_iter();
+        let rows = triangles
+            .into_iter()
+            .map(|corners| {
+                Some(ShadedTriangle {
+                    corners,
+                    normals: [normals.next()?, normals.next()?, normals.next()?],
+                })
+            })
+            .collect::<Option<Vec<_>>>()?;
+        Some(Self::CornerShadedList {
+            vertices: positions,
+            triangles: rows,
+        })
+    }
+
+    /// Vertex positions in mesh order.
+    #[must_use]
+    pub fn vertices(&self) -> Vec<Point3> {
+        match self {
+            Self::List { vertices, .. } | Self::CornerShadedList { vertices, .. } => {
+                vertices.clone()
+            }
+            Self::ShadedList { vertices, .. } => {
+                vertices.iter().map(|vertex| vertex.position).collect()
+            }
+            Self::Strips { strips } => strips
+                .as_slice()
+                .iter()
+                .flat_map(|strip| strip.vertices().iter().copied())
+                .collect(),
+            Self::ShadedStrips { strips } => strips
+                .as_slice()
+                .iter()
+                .flat_map(|strip| strip.vertices().iter().map(|vertex| vertex.position))
+                .collect(),
+        }
+    }
+
+    /// Number of vertices in the mesh.
+    #[must_use]
+    pub fn vertex_count(&self) -> usize {
+        match self {
+            Self::List { vertices, .. } | Self::CornerShadedList { vertices, .. } => vertices.len(),
+            Self::ShadedList { vertices, .. } => vertices.len(),
+            Self::Strips { strips } => strips
+                .as_slice()
+                .iter()
+                .map(|strip| strip.vertices().len())
+                .sum(),
+            Self::ShadedStrips { strips } => strips
+                .as_slice()
+                .iter()
+                .map(|strip| strip.vertices().len())
+                .sum(),
+        }
+    }
+
+    /// Zero-based triangle corner indices, with source winding preserved.
+    ///
+    /// A strip mesh derives its triangles from the strips it owns.
+    #[must_use]
+    pub fn triangles(&self) -> Vec<[u32; 3]> {
+        match self {
+            Self::List { triangles, .. } | Self::ShadedList { triangles, .. } => triangles.clone(),
+            Self::CornerShadedList { triangles, .. } => {
+                triangles.iter().map(|triangle| triangle.corners).collect()
+            }
+            Self::Strips { strips } => strip_triangles(strips),
+            Self::ShadedStrips { strips } => strip_triangles(strips),
+        }
+    }
+
+    /// Number of triangles in the mesh.
+    #[must_use]
+    pub fn triangle_count(&self) -> usize {
+        match self {
+            Self::List { triangles, .. } | Self::ShadedList { triangles, .. } => triangles.len(),
+            Self::CornerShadedList { triangles, .. } => triangles.len(),
+            Self::Strips { strips } => strips
+                .as_slice()
+                .iter()
+                .map(Strip::triangle_count)
+                .sum(),
+            Self::ShadedStrips { strips } => strips
+                .as_slice()
+                .iter()
+                .map(Strip::triangle_count)
+                .sum(),
+        }
+    }
+
+    /// Per-vertex shading normals; empty when the mesh carries none.
+    #[must_use]
+    pub fn vertex_normals(&self) -> Vec<Vector3> {
+        match self {
+            Self::List { .. } | Self::CornerShadedList { .. } | Self::Strips { .. } => Vec::new(),
+            Self::ShadedList { vertices, .. } => {
+                vertices.iter().map(|vertex| vertex.normal).collect()
+            }
+            Self::ShadedStrips { strips } => strips
+                .as_slice()
+                .iter()
+                .flat_map(|strip| strip.vertices().iter().map(|vertex| vertex.normal))
+                .collect(),
+        }
+    }
+
+    /// Per-corner shading normals in flattened triangle order; empty when the
+    /// mesh carries none.
+    #[must_use]
+    pub fn corner_normals(&self) -> Vec<Vector3> {
+        match self {
+            Self::List { .. }
+            | Self::ShadedList { .. }
+            | Self::Strips { .. }
+            | Self::ShadedStrips { .. } => Vec::new(),
+            Self::CornerShadedList { triangles, .. } => {
+                triangles.iter().flat_map(|triangle| triangle.normals).collect()
+            }
+        }
+    }
+
+    /// Strip spans in mesh order; empty when the mesh is a triangle list.
+    #[must_use]
+    pub fn strip_lengths(&self) -> Vec<u32> {
+        let spans = |lengths: Vec<usize>| {
+            lengths
+                .into_iter()
+                .filter_map(|length| u32::try_from(length).ok())
+                .collect()
+        };
+        match self {
+            Self::List { .. } | Self::ShadedList { .. } | Self::CornerShadedList { .. } => {
+                Vec::new()
+            }
+            Self::Strips { strips } => spans(
+                strips
+                    .as_slice()
+                    .iter()
+                    .map(|strip| strip.vertices().len())
+                    .collect(),
+            ),
+            Self::ShadedStrips { strips } => spans(
+                strips
+                    .as_slice()
+                    .iter()
+                    .map(|strip| strip.vertices().len())
+                    .collect(),
+            ),
+        }
+    }
+
+    /// Edit every vertex position in place.
+    pub fn edit_positions(&mut self, mut edit: impl FnMut(&mut Point3)) {
+        match self {
+            Self::List { vertices, .. } | Self::CornerShadedList { vertices, .. } => {
+                vertices.iter_mut().for_each(&mut edit);
+            }
+            Self::ShadedList { vertices, .. } => vertices
+                .iter_mut()
+                .for_each(|vertex| edit(&mut vertex.position)),
+            Self::Strips { strips } => strips
+                .as_mut_slice()
+                .iter_mut()
+                .for_each(|strip| strip.vertices_mut().iter_mut().for_each(&mut edit)),
+            Self::ShadedStrips { strips } => {
+                strips.as_mut_slice().iter_mut().for_each(|strip| {
+                    strip
+                        .vertices_mut()
+                        .iter_mut()
+                        .for_each(|vertex| edit(&mut vertex.position));
+                });
+            }
+        }
+    }
+
+    /// Edit every shading normal in place; absent when the mesh carries none.
+    pub fn edit_normals(&mut self, mut edit: impl FnMut(&mut Vector3)) -> bool {
+        match self {
+            Self::List { .. } | Self::Strips { .. } => false,
+            Self::ShadedList { vertices, .. } => {
+                vertices
+                    .iter_mut()
+                    .for_each(|vertex| edit(&mut vertex.normal));
+                true
+            }
+            Self::CornerShadedList { triangles, .. } => {
+                triangles
+                    .iter_mut()
+                    .for_each(|triangle| triangle.normals.iter_mut().for_each(&mut edit));
+                true
+            }
+            Self::ShadedStrips { strips } => {
+                strips.as_mut_slice().iter_mut().for_each(|strip| {
+                    strip
+                        .vertices_mut()
+                        .iter_mut()
+                        .for_each(|vertex| edit(&mut vertex.normal));
+                });
+                true
+            }
+        }
+    }
 }
 
 /// The mesh element addressed by one tessellation channel.
@@ -277,15 +608,6 @@ impl ChannelAddressing {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
-#[serde(deny_unknown_fields)]
-enum TessellationShadingWire {
-    PerVertex { values: Vec<Vector3> },
-    PerCorner { values: Vec<Vector3> },
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct TessellationWire {
     id: TessellationId,
@@ -297,13 +619,9 @@ struct TessellationWire {
     chordal_deflection: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     source_object: Option<SourceObjectAssociation>,
-    vertices: Vec<Point3>,
-    triangles: Vec<[u32; 3]>,
+    mesh: TessellationMesh,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     feature_edges: Vec<[u32; 2]>,
-    topology: TessellationTopology,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    shading: Option<TessellationShadingWire>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     triangle_groups: Vec<TessellationTriangleGroup>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -339,12 +657,9 @@ pub struct Tessellation {
     chordal_deflection: Option<f64>,
     /// Native source-object identity and effective display metadata.
     pub source_object: Option<SourceObjectAssociation>,
-    vertices: Vec<Point3>,
-    triangles: Vec<[u32; 3]>,
+    mesh: TessellationMesh,
     /// Undirected geometric feature edges.
     feature_edges: Vec<[u32; 2]>,
-    topology: TessellationTopology,
-    shading: TessellationNormals,
     /// Source face or region groups as an ordered partition of the triangle ordinals.
     triangle_groups: Vec<TessellationTriangleGroup>,
     /// Source texture resources assigned to disjoint sets of triangle ordinals.
@@ -389,29 +704,6 @@ pub struct TessellationChannel {
     data: Vec<u8>,
 }
 
-fn triangles_from_strips(strips: &[StripRun]) -> Result<Vec<[u32; 3]>, TessellationError> {
-    let mut triangles = Vec::new();
-    let mut base = 0u32;
-    for &run in strips {
-        for index in 0..run.triangle_count() {
-            let Some(a) = base.checked_add(index) else {
-                return Err(tessellation_error("tessellation strip index overflows u32"));
-            };
-            let Some(b) = a.checked_add(1) else {
-                return Err(tessellation_error("tessellation strip index overflows u32"));
-            };
-            let Some(c) = a.checked_add(2) else {
-                return Err(tessellation_error("tessellation strip index overflows u32"));
-            };
-            triangles.push(if index % 2 == 0 { [a, b, c] } else { [a, c, b] });
-        }
-        base = base
-            .checked_add(run.get())
-            .ok_or_else(|| tessellation_error("tessellation strip index overflows u32"))?;
-    }
-    Ok(triangles)
-}
-
 fn require_finite_vertices(vertices: &[Point3]) -> Result<(), TessellationError> {
     if vertices
         .iter()
@@ -437,13 +729,13 @@ fn require_finite_normals(normals: &[Vector3]) -> Result<(), TessellationError> 
 }
 
 fn require_triangle_indices(
-    vertices: &[Point3],
+    vertex_count: usize,
     triangles: &[[u32; 3]],
 ) -> Result<(), TessellationError> {
     if triangles
         .iter()
         .flatten()
-        .any(|index| *index as usize >= vertices.len())
+        .any(|index| *index as usize >= vertex_count)
     {
         return Err(tessellation_error(
             "contains an out-of-range tessellation index",
@@ -452,74 +744,18 @@ fn require_triangle_indices(
     Ok(())
 }
 
-fn shading_from_wire(
-    vertices: &[Point3],
-    triangles: &[[u32; 3]],
-    wire: Option<TessellationShadingWire>,
-) -> Result<TessellationNormals, TessellationError> {
-    match wire {
-        None => Ok(TessellationNormals::None),
-        Some(TessellationShadingWire::PerVertex { values }) => {
-            if values.len() != vertices.len() {
-                return Err(tessellation_error(
-                    "tessellation normals do not match vertex count",
-                ));
-            }
-            Ok(NormalSamples::new(values)
-                .map_or(TessellationNormals::None, TessellationNormals::per_vertex))
-        }
-        Some(TessellationShadingWire::PerCorner { values }) => {
-            if triangles.len().checked_mul(3) != Some(values.len()) {
-                return Err(tessellation_error(
-                    "tessellation corner normals do not match triangle corners",
-                ));
-            }
-            Ok(NormalSamples::new(values)
-                .map_or(TessellationNormals::None, TessellationNormals::per_corner))
-        }
-    }
-}
-
-fn topology_from_parts(
-    vertices: &[Point3],
-    triangles: &[[u32; 3]],
-    strip_lengths: Vec<u32>,
-) -> Result<TessellationTopology, TessellationError> {
-    if strip_lengths.is_empty() {
-        return Ok(TessellationTopology::List {});
-    }
-    let strip_lengths = StripLengths::try_from(strip_lengths)?;
-    let vertex_total = strip_lengths.iter().try_fold(0usize, |total, run| {
-        usize::try_from(run.get())
-            .ok()
-            .and_then(|length| total.checked_add(length))
-    });
-    if vertex_total != Some(vertices.len()) {
-        return Err(tessellation_error(
-            "tessellation strips do not match vertex count",
-        ));
-    }
-    if triangles_from_strips(&strip_lengths)? != *triangles {
-        return Err(tessellation_error(
-            "tessellation triangles do not match strips",
-        ));
-    }
-    Ok(TessellationTopology::Strips { strip_lengths })
-}
-
 fn require_channel_indices(
-    triangles: &[[u32; 3]],
+    triangle_count: usize,
     channels: &[TessellationChannel],
 ) -> Result<(), TessellationError> {
-    let corner_count = triangles
-        .len()
+    let corner_count = triangle_count
         .checked_mul(3)
         .ok_or_else(|| tessellation_error("tessellation corner count overflows usize"))?;
     for channel in channels {
         let expected = match channel.addressing() {
             ChannelAddressing::Vertex {} => 0,
             ChannelAddressing::Corner { .. } => corner_count,
-            ChannelAddressing::Triangle { .. } => triangles.len(),
+            ChannelAddressing::Triangle { .. } => triangle_count,
         };
         if channel.indices().len() != expected
             || channel
@@ -536,11 +772,11 @@ fn require_channel_indices(
 }
 
 fn require_feature_edges(
-    vertices: &[Point3],
+    vertex_count: usize,
     feature_edges: &[[u32; 2]],
 ) -> Result<(), TessellationError> {
     if feature_edges.iter().any(|edge| {
-        edge[0] >= edge[1] || usize::try_from(edge[1]).map_or(true, |index| index >= vertices.len())
+        edge[0] >= edge[1] || usize::try_from(edge[1]).map_or(true, |index| index >= vertex_count)
     }) || feature_edges.windows(2).any(|edges| edges[0] >= edges[1])
     {
         return Err(tessellation_error(
@@ -551,13 +787,13 @@ fn require_feature_edges(
 }
 
 fn require_triangle_groups(
-    triangles: &[[u32; 3]],
+    triangle_count: usize,
     triangle_groups: &[TessellationTriangleGroup],
 ) -> Result<(), TessellationError> {
     if triangle_groups.is_empty() {
         return Ok(());
     }
-    let mut memberships = std::iter::repeat_n(false, triangles.len()).collect::<Vec<_>>();
+    let mut memberships = std::iter::repeat_n(false, triangle_count).collect::<Vec<_>>();
     let mut source_ids = std::collections::BTreeSet::new();
     let valid = triangle_groups.iter().all(|group| {
         !group.triangles.is_empty()
@@ -590,13 +826,13 @@ fn require_triangle_groups(
 }
 
 fn require_texture_assignments(
-    triangles: &[[u32; 3]],
+    triangle_count: usize,
     texture_assignments: &[TessellationTextureAssignment],
 ) -> Result<(), TessellationError> {
     if texture_assignments.is_empty() {
         return Ok(());
     }
-    let mut memberships = std::iter::repeat_n(false, triangles.len()).collect::<Vec<_>>();
+    let mut memberships = std::iter::repeat_n(false, triangle_count).collect::<Vec<_>>();
     let mut source_ids = std::collections::BTreeSet::new();
     let mut anonymous_textures = std::collections::BTreeSet::new();
     let valid = texture_assignments.iter().all(|assignment| {
@@ -631,172 +867,115 @@ fn require_texture_assignments(
 }
 
 impl Tessellation {
-    /// Build a tessellation whose shading, strip topology, and channels agree.
+    /// Build a tessellation from its mesh rows and channels.
     pub fn new(
         id: impl Into<String>,
-        vertices: Vec<Point3>,
-        triangles: Vec<[u32; 3]>,
-        topology: TessellationTopology,
-        shading: TessellationNormals,
+        mesh: TessellationMesh,
         channels: Vec<TessellationChannel>,
     ) -> Result<Self, TessellationError> {
-        require_finite_vertices(&vertices)?;
-        require_triangle_indices(&vertices, &triangles)?;
-        match &shading {
-            TessellationNormals::None => {}
-            TessellationNormals::PerVertex(normals) => {
-                require_finite_normals(normals)?;
-                if normals.len() != vertices.len() {
-                    return Err(tessellation_error(
-                        "tessellation normals do not match vertex count",
-                    ));
-                }
-            }
-            TessellationNormals::PerCorner(normals) => {
-                require_finite_normals(normals)?;
-                if triangles.len().checked_mul(3) != Some(normals.len()) {
-                    return Err(tessellation_error(
-                        "tessellation corner normals do not match triangle corners",
-                    ));
-                }
-            }
+        let vertices = mesh.vertices();
+        if vertices
+            .iter()
+            .any(|point| !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite())
+        {
+            return Err(tessellation_error(
+                "vertices contain a non-finite coordinate",
+            ));
         }
-        match &topology {
-            TessellationTopology::List {} => {}
-            TessellationTopology::Strips { strip_lengths } => {
-                let vertex_total = strip_lengths.iter().try_fold(0usize, |total, run| {
-                    usize::try_from(run.get())
-                        .ok()
-                        .and_then(|length| total.checked_add(length))
-                });
-                if vertex_total != Some(vertices.len()) {
-                    return Err(tessellation_error(
-                        "tessellation strips do not match vertex count",
-                    ));
-                }
-                if triangles_from_strips(strip_lengths)? != triangles {
-                    return Err(tessellation_error(
-                        "tessellation triangles do not match strips",
-                    ));
-                }
-            }
-        }
-        require_channel_indices(&triangles, &channels)?;
+        require_finite_normals(&mesh.vertex_normals())?;
+        require_finite_normals(&mesh.corner_normals())?;
+        let triangles = mesh.triangles();
+        require_triangle_indices(vertices.len(), &triangles)?;
+        require_channel_indices(triangles.len(), &channels)?;
         Ok(Self {
             id: TessellationId::mint(id).map_err(|error| tessellation_error(error.to_string()))?,
             body: None,
             faces: Vec::new(),
             chordal_deflection: None,
             source_object: None,
-            vertices,
-            triangles,
+            mesh,
             feature_edges: Vec::new(),
-            topology,
-            shading,
             triangle_groups: Vec::new(),
             texture_assignments: Vec::new(),
             channels,
         })
     }
 
-    /// Build from the CADIR strip array and decoded shading.
-    pub fn from_decoded(
-        id: impl Into<String>,
-        vertices: Vec<Point3>,
-        triangles: Vec<[u32; 3]>,
-        strip_lengths: Vec<u32>,
-        shading: TessellationNormals,
-        channels: Vec<TessellationChannel>,
-    ) -> Result<Self, TessellationError> {
-        let topology = topology_from_parts(&vertices, &triangles, strip_lengths)?;
-        Self::new(id, vertices, triangles, topology, shading, channels)
+    /// The mesh's vertices, triangles and shading normals.
+    #[must_use]
+    pub const fn mesh(&self) -> &TessellationMesh {
+        &self.mesh
     }
 
     /// Vertex positions in document units.
     #[must_use]
-    pub fn vertices(&self) -> &[Point3] {
-        &self.vertices
+    pub fn vertices(&self) -> Vec<Point3> {
+        self.mesh.vertices()
+    }
+
+    /// Number of vertices in the mesh.
+    #[must_use]
+    pub fn vertex_count(&self) -> usize {
+        self.mesh.vertex_count()
     }
 
     /// Atomically edit vertex positions while preserving finite coordinates.
     pub fn edit_vertices(
         &mut self,
-        edit: impl FnOnce(&mut [Point3]),
+        edit: impl FnMut(&mut Point3),
     ) -> Result<(), TessellationError> {
-        let mut vertices = self.vertices.clone();
-        edit(&mut vertices);
-        require_finite_vertices(&vertices)?;
-        self.vertices = vertices;
+        let mut mesh = self.mesh.clone();
+        mesh.edit_positions(edit);
+        require_finite_vertices(&mesh.vertices())?;
+        self.mesh = mesh;
         Ok(())
     }
 
     /// Zero-based vertex indices, with source winding preserved.
+    ///
+    /// A strip mesh derives its triangles from the strips it owns.
     #[must_use]
-    pub fn triangles(&self) -> &[[u32; 3]] {
-        &self.triangles
+    pub fn triangles(&self) -> Vec<[u32; 3]> {
+        self.mesh.triangles()
     }
 
-    /// Triangle storage selected by the source mesh.
+    /// Number of triangles in the mesh.
     #[must_use]
-    pub fn topology(&self) -> &TessellationTopology {
-        &self.topology
+    pub fn triangle_count(&self) -> usize {
+        self.mesh.triangle_count()
     }
 
-    /// Triangle-strip runs; empty when the mesh is a flat triangle list.
+    /// Strip spans in mesh order; empty when the mesh is a flat triangle list.
     #[must_use]
-    pub fn strip_lengths(&self) -> &[StripRun] {
-        match &self.topology {
-            TessellationTopology::List {} => &[],
-            TessellationTopology::Strips { strip_lengths } => strip_lengths.as_slice(),
-        }
+    pub fn strip_lengths(&self) -> Vec<u32> {
+        self.mesh.strip_lengths()
     }
 
-    /// Shading samples stored with this mesh.
-    #[must_use]
-    pub fn shading(&self) -> &TessellationNormals {
-        &self.shading
-    }
-
-    /// Reads the `PerVertex` shading storage.
     /// Per-vertex normals; empty when the source carried none or corner normals.
     #[must_use]
-    pub fn vertex_normals(&self) -> &[Vector3] {
-        match &self.shading {
-            TessellationNormals::PerVertex(normals) => normals,
-            TessellationNormals::None | TessellationNormals::PerCorner(_) => &[],
-        }
+    pub fn vertex_normals(&self) -> Vec<Vector3> {
+        self.mesh.vertex_normals()
     }
 
     /// Atomically edit the stored shading normals while preserving finite coordinates.
     pub fn edit_normals(
         &mut self,
-        edit: impl FnOnce(&mut [Vector3]),
+        edit: impl FnMut(&mut Vector3),
     ) -> Result<(), TessellationError> {
-        let mut shading = self.shading.clone();
-        let normals = match &mut shading {
-            TessellationNormals::PerVertex(normals) | TessellationNormals::PerCorner(normals) => {
-                normals.as_mut_slice()
-            }
-            TessellationNormals::None => {
-                return Err(TessellationError(
-                    "mesh has no shading normals to edit".into(),
-                ))
-            }
-        };
-        edit(normals);
-        require_finite_normals(normals)?;
-        self.shading = shading;
+        let mut mesh = self.mesh.clone();
+        if !mesh.edit_normals(edit) {
+            return Err(tessellation_error("mesh has no shading normals to edit"));
+        }
+        require_finite_normals(&mesh.vertex_normals())?;
+        require_finite_normals(&mesh.corner_normals())?;
+        self.mesh = mesh;
         Ok(())
     }
 
-    /// Reads the `PerCorner` shading storage.
     /// Per-triangle-corner normals; empty when the source carried none or vertex normals.
     #[must_use]
-    pub fn per_corner_normals(&self) -> &[Vector3] {
-        match &self.shading {
-            TessellationNormals::PerCorner(normals) => normals,
-            TessellationNormals::None | TessellationNormals::PerVertex(_) => &[],
-        }
+    pub fn per_corner_normals(&self) -> Vec<Vector3> {
+        self.mesh.corner_normals()
     }
 
     /// Additional per-vertex or per-facet data channels.
@@ -878,7 +1057,7 @@ impl Tessellation {
         mut self,
         feature_edges: Vec<[u32; 2]>,
     ) -> Result<Self, TessellationError> {
-        require_feature_edges(&self.vertices, &feature_edges)?;
+        require_feature_edges(self.mesh.vertex_count(), &feature_edges)?;
         self.feature_edges = feature_edges;
         Ok(self)
     }
@@ -888,7 +1067,7 @@ impl Tessellation {
         mut self,
         triangle_groups: Vec<TessellationTriangleGroup>,
     ) -> Result<Self, TessellationError> {
-        require_triangle_groups(&self.triangles, &triangle_groups)?;
+        require_triangle_groups(self.mesh.triangle_count(), &triangle_groups)?;
         self.triangle_groups = triangle_groups;
         Ok(self)
     }
@@ -898,7 +1077,7 @@ impl Tessellation {
         mut self,
         texture_assignments: Vec<TessellationTextureAssignment>,
     ) -> Result<Self, TessellationError> {
-        require_texture_assignments(&self.triangles, &texture_assignments)?;
+        require_texture_assignments(self.mesh.triangle_count(), &texture_assignments)?;
         self.texture_assignments = texture_assignments;
         Ok(self)
     }
@@ -993,31 +1172,18 @@ impl TessellationChannel {
 }
 
 impl From<Tessellation> for TessellationWire {
-    fn from(mesh: Tessellation) -> Self {
-        let topology = mesh.topology.clone();
-        let shading = match &mesh.shading {
-            TessellationNormals::None => None,
-            TessellationNormals::PerVertex(values) => Some(TessellationShadingWire::PerVertex {
-                values: values.to_vec(),
-            }),
-            TessellationNormals::PerCorner(values) => Some(TessellationShadingWire::PerCorner {
-                values: values.to_vec(),
-            }),
-        };
+    fn from(tessellation: Tessellation) -> Self {
         Self {
-            id: mesh.id,
-            body: mesh.body,
-            faces: mesh.faces,
-            chordal_deflection: mesh.chordal_deflection,
-            source_object: mesh.source_object,
-            vertices: mesh.vertices,
-            triangles: mesh.triangles,
-            feature_edges: mesh.feature_edges,
-            topology,
-            shading,
-            triangle_groups: mesh.triangle_groups,
-            texture_assignments: mesh.texture_assignments,
-            channels: mesh.channels,
+            id: tessellation.id,
+            body: tessellation.body,
+            faces: tessellation.faces,
+            chordal_deflection: tessellation.chordal_deflection,
+            source_object: tessellation.source_object,
+            mesh: tessellation.mesh,
+            feature_edges: tessellation.feature_edges,
+            triangle_groups: tessellation.triangle_groups,
+            texture_assignments: tessellation.texture_assignments,
+            channels: tessellation.channels,
         }
     }
 }
@@ -1026,15 +1192,7 @@ impl TryFrom<TessellationWire> for Tessellation {
     type Error = TessellationError;
 
     fn try_from(wire: TessellationWire) -> Result<Self, Self::Error> {
-        let shading = shading_from_wire(&wire.vertices, &wire.triangles, wire.shading)?;
-        let mut mesh = Self::new(
-            wire.id.into_string(),
-            wire.vertices,
-            wire.triangles,
-            wire.topology,
-            shading,
-            wire.channels,
-        )?;
+        let mut mesh = Self::new(wire.id.into_string(), wire.mesh, wire.channels)?;
         mesh.body = wire.body;
         mesh.faces = wire.faces;
         mesh.set_chordal_deflection(wire.chordal_deflection)?;

@@ -2105,15 +2105,12 @@ fn legacy_mesh(
             .map_err(malformed)?;
     }
     let triangles = crate::mesh::triangulate_faces(&faces, &vertices);
-    Tessellation::from_decoded(
+    Tessellation::new(
         id,
-        vertices,
-        triangles,
-        Vec::new(),
-        cadmpeg_ir::tessellation::NormalSamples::new(normals).map_or(
-            cadmpeg_ir::tessellation::TessellationNormals::None,
-            cadmpeg_ir::tessellation::TessellationNormals::per_vertex,
-        ),
+        cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(vertices, triangles, normals)
+            .ok_or_else(|| {
+                CodecError::Malformed("V1 mesh normals do not cover its vertices".to_string())
+            })?,
         Vec::new(),
     )
     .map_err(|err| CodecError::Malformed(err.to_string()))

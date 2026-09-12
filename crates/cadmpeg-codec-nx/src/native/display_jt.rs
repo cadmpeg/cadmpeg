@@ -4633,7 +4633,7 @@ pub(crate) fn display_jt_tessellations(
             };
             tessellations.try_reserve(1).ok()?;
             tessellations.push((
-                Tessellation::from_decoded(
+                Tessellation::new(
                     if path.node_path.len() == 1 {
                         format!(
                             "nx:display-jt:tessellation#{}-{}",
@@ -4645,13 +4645,11 @@ pub(crate) fn display_jt_tessellations(
                             shape_element.source_offset, shape_element.object_id
                         )
                     },
-                    vertices,
-                    triangles,
-                    Vec::new(),
-                    cadmpeg_ir::tessellation::NormalSamples::new(normal_vectors).map_or(
-                        cadmpeg_ir::tessellation::TessellationNormals::None,
-                        cadmpeg_ir::tessellation::TessellationNormals::per_vertex,
-                    ),
+                    cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
+                        vertices,
+                        triangles,
+                        normal_vectors,
+                    )?,
                     channels,
                 )
                 .ok()?

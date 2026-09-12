@@ -360,18 +360,18 @@ impl<'a> Builder<'a> {
                 continue;
             }
             ir.model.tessellations.push(
-                Tessellation::from_decoded(
+                Tessellation::new(
                     crate::native::model_id("tessellation", &self.payload.id, index.to_string()),
-                    triangulation.nodes().to_vec(),
-                    triangulation.triangles().to_vec(),
-                    Vec::new(),
-                    cadmpeg_ir::tessellation::NormalSamples::new(
+                    cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
+                        triangulation.nodes().to_vec(),
+                        triangulation.triangles().to_vec(),
                         triangulation.normals().unwrap_or_default().to_vec(),
                     )
-                    .map_or(
-                        cadmpeg_ir::tessellation::TessellationNormals::None,
-                        cadmpeg_ir::tessellation::TessellationNormals::per_vertex,
-                    ),
+                    .ok_or_else(|| {
+                        CodecError::Malformed(
+                            "triangulation normals do not cover its nodes".into(),
+                        )
+                    })?,
                     Vec::new(),
                 )
                 .map_err(|error| {
@@ -888,19 +888,20 @@ impl<'a> Builder<'a> {
                 })
                 .unwrap_or_default();
             ir.model.tessellations.push(
-                Tessellation::from_decoded(
+                Tessellation::new(
                     crate::native::model_id(
                         "tessellation",
                         &self.payload.id,
                         format!("{index}@{face_key}"),
                     ),
-                    vertices,
-                    triangles,
-                    Vec::new(),
-                    cadmpeg_ir::tessellation::NormalSamples::new(normals).map_or(
-                        cadmpeg_ir::tessellation::TessellationNormals::None,
-                        cadmpeg_ir::tessellation::TessellationNormals::per_vertex,
-                    ),
+                    cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
+                        vertices, triangles, normals,
+                    )
+                    .ok_or_else(|| {
+                        CodecError::Malformed(
+                            "triangulation normals do not cover its nodes".into(),
+                        )
+                    })?,
                     Vec::new(),
                 )
                 .map_err(|error| {

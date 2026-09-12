@@ -2085,24 +2085,18 @@ impl<'a> DecodeContext<'a> {
             .added_mut::<Tessellation>(&mut self.ir.model)
             .ok_or_else(|| "instance decode removed existing tessellations".to_string())?
         {
-            mesh.edit_vertices(|vertices| {
-                for vertex in vertices {
-                    *vertex = transform.apply_point(*vertex);
-                }
-            })
-            .map_err(|error| error.to_string())?;
+            mesh.edit_vertices(|vertex| *vertex = transform.apply_point(*vertex))
+                .map_err(|error| error.to_string())?;
             if !mesh.vertex_normals().is_empty() {
-                let normals = mesh
-                    .vertex_normals()
-                    .iter()
-                    .map(|value| {
-                        transform
-                            .apply_normal(*value)
-                            .ok_or_else(|| "mesh normal transform is singular".to_string())
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                mesh.edit_normals(|values| values.copy_from_slice(&normals))
-                    .map_err(|error| error.to_string())?;
+                let mut singular = false;
+                mesh.edit_normals(|value| match transform.apply_normal(*value) {
+                    Some(transformed) => *value = transformed,
+                    None => singular = true,
+                })
+                .map_err(|error| error.to_string())?;
+                if singular {
+                    return Err("mesh normal transform is singular".to_string());
+                }
             }
             links.push(mesh.id.to_string());
             derived_ids.push(mesh.id.to_string());

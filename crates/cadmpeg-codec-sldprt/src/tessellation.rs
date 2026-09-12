@@ -10,7 +10,9 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::FaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::tessellation::TessellationChannel;
+use cadmpeg_ir::tessellation::{
+    ShadedVertex, Strip, Strips, TessellationChannel, TessellationMesh,
+};
 use cadmpeg_ir::topology::Sense;
 use std::collections::HashMap;
 
@@ -34,58 +36,86 @@ pub(crate) struct Summary {
     pub(crate) triangles: usize,
 }
 
-#[derive(Debug, Clone, Default)]
+/// Split a flat display-list vertex lane into the strips its run lengths name.
+fn split_strips<V>(vertices: Vec<V>, lengths: &[u32]) -> Option<Vec<Strip<V>>> {
+    let mut remaining = vertices.into_iter();
+    let mut strips = Vec::with_capacity(lengths.len());
+    for length in lengths {
+        let span = usize::try_from(*length).ok()?;
+        let run: Vec<V> = remaining.by_ref().take(span).collect();
+        if run.len() != span {
+            return None;
+        }
+        strips.push(Strip::new(run)?);
+    }
+    remaining.next().is_none().then_some(strips)
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct Mesh {
-    vertices: Vec<Point3>,
-    triangles: Vec<[u32; 3]>,
-    strip_lengths: Vec<u32>,
-    normals: Vec<Vector3>,
+    mesh: TessellationMesh,
     channels: Vec<TessellationChannel>,
 }
 
+impl Default for Mesh {
+    fn default() -> Self {
+        Self {
+            mesh: TessellationMesh::List {
+                vertices: Vec::new(),
+                triangles: Vec::new(),
+            },
+            channels: Vec::new(),
+        }
+    }
+}
+
 impl Mesh {
+    /// Pair the display list's three lanes into strip rows.
+    ///
+    /// A SolidWorks display list states strip run lengths, vertex positions
+    /// and vertex normals as three descriptor channels, so the codec pairs
+    /// them here: the run lengths cut the vertex lane into strips, and a
+    /// normal lane that does not cover the vertices refuses the mesh. The IR
+    /// carries the rows only.
     fn new(
         vertices: Vec<Point3>,
         strip_lengths: Vec<u32>,
         normals: Vec<Vector3>,
         channels: Vec<TessellationChannel>,
     ) -> Option<Self> {
-        let vertex_count = strip_lengths.iter().try_fold(0usize, |total, length| {
-            total.checked_add(usize::try_from(*length).ok()?)
-        })?;
-        if vertex_count != vertices.len()
-            || (!normals.is_empty() && normals.len() != vertices.len())
-        {
-            return None;
-        }
-        let mut triangles = Vec::new();
-        let mut base = 0u32;
-        for length in &strip_lengths {
-            for i in 0..length.saturating_sub(2) {
-                let [a, b, c] = if i % 2 == 0 {
-                    [
-                        base.checked_add(i)?,
-                        base.checked_add(i)?.checked_add(1)?,
-                        base.checked_add(i)?.checked_add(2)?,
-                    ]
-                } else {
-                    [
-                        base.checked_add(i)?,
-                        base.checked_add(i)?.checked_add(2)?,
-                        base.checked_add(i)?.checked_add(1)?,
-                    ]
-                };
-                triangles.push([a, b, c]);
+        let mesh = if normals.is_empty() {
+            TessellationMesh::Strips {
+                strips: Strips::new(split_strips(vertices, &strip_lengths)?)?,
             }
-            base = base.checked_add(*length)?;
-        }
-        Some(Self {
-            vertices,
-            triangles,
-            strip_lengths,
-            normals,
-            channels,
-        })
+        } else {
+            if normals.len() != vertices.len() {
+                return None;
+            }
+            let rows = vertices
+                .into_iter()
+                .zip(normals)
+                .map(|(position, normal)| ShadedVertex { position, normal })
+                .collect();
+            TessellationMesh::ShadedStrips {
+                strips: Strips::new(split_strips(rows, &strip_lengths)?)?,
+            }
+        };
+        Some(Self { mesh, channels })
+    }
+
+    /// Number of vertices the strips span.
+    pub(crate) fn vertex_count(&self) -> usize {
+        self.mesh.vertex_count()
+    }
+
+    /// Number of triangles the strips expand to.
+    pub(crate) fn triangle_count(&self) -> usize {
+        self.mesh.triangle_count()
+    }
+
+    /// Number of strips in the mesh.
+    pub(crate) fn strip_count(&self) -> usize {
+        self.mesh.strip_lengths().len()
     }
 
     pub(crate) fn into_tessellation(
@@ -93,17 +123,7 @@ impl Mesh {
         id: String,
     ) -> Result<cadmpeg_ir::tessellation::Tessellation, cadmpeg_ir::tessellation::TessellationError>
     {
-        cadmpeg_ir::tessellation::Tessellation::from_decoded(
-            id,
-            self.vertices,
-            self.triangles,
-            self.strip_lengths,
-            cadmpeg_ir::tessellation::NormalSamples::new(self.normals).map_or(
-                cadmpeg_ir::tessellation::TessellationNormals::None,
-                cadmpeg_ir::tessellation::TessellationNormals::per_vertex,
-            ),
-            self.channels,
-        )
+        cadmpeg_ir::tessellation::Tessellation::new(id, self.mesh, self.channels)
     }
 }
 
@@ -466,8 +486,8 @@ pub(crate) fn section_display_faces(section: Section<'_>) -> Vec<DisplayFace> {
             continue;
         };
         if !tables.first().is_some_and(|(_, _, mesh)| {
-            usize::try_from(triangle_count).ok() == Some(mesh.triangles.len())
-                && usize::try_from(strip_count).ok() == Some(mesh.strip_lengths.len())
+            usize::try_from(triangle_count).ok() == Some(mesh.triangle_count())
+                && usize::try_from(strip_count).ok() == Some(mesh.strip_count())
         }) {
             continue;
         }
@@ -534,7 +554,7 @@ fn parse_table_sequence(
     if at > limit {
         return None;
     }
-    if mesh.vertices.is_empty() {
+    if mesh.vertex_count() == 0 {
         return None;
     }
     let mut meshes = vec![(first_start, at, mesh)];
@@ -548,7 +568,7 @@ fn parse_table_sequence(
         at += relative;
         let start = at;
         if let Some((next, end)) = parse_table(payload, at) {
-            if end <= limit && !next.vertices.is_empty() {
+            if end <= limit && next.vertex_count() > 0 {
                 meshes.push((start, end, next));
                 at = end;
             } else {
@@ -656,8 +676,8 @@ fn persistent_surface_references(
 pub(crate) fn section_summary(section: Section<'_>) -> Option<Summary> {
     let meshes = section_meshes(section);
     (!meshes.is_empty()).then(|| Summary {
-        vertices: meshes.iter().map(|mesh| mesh.vertices.len()).sum(),
-        triangles: meshes.iter().map(|mesh| mesh.triangles.len()).sum(),
+        vertices: meshes.iter().map(Mesh::vertex_count).sum(),
+        triangles: meshes.iter().map(Mesh::triangle_count).sum(),
     })
 }
 
@@ -777,7 +797,7 @@ pub(crate) fn assign_unique_surface_owners(
 
     let mut assigned = Vec::new();
     for mesh in &mut model.tessellations {
-        if mesh.body.is_some() || !mesh.faces.is_empty() || mesh.vertices().is_empty() {
+        if mesh.body.is_some() || !mesh.faces.is_empty() || mesh.vertex_count() == 0 {
             continue;
         }
         let coordinate_scale = mesh
@@ -856,7 +876,7 @@ fn approximate_surface_owner(
     candidates: &[SurfaceCandidate<'_>],
     quantization_tolerance: f64,
 ) -> Option<(usize, f64)> {
-    if mesh.vertex_normals().len() != mesh.vertices().len() || mesh.vertex_normals().is_empty() {
+    if mesh.vertex_normals().len() != mesh.vertex_count() || mesh.vertex_normals().is_empty() {
         return None;
     }
     let mut fits = candidates
@@ -864,12 +884,12 @@ fn approximate_surface_owner(
         .enumerate()
         .filter_map(|(index, candidate)| {
             let mut max_residual = 0.0_f64;
-            for (point, normal) in mesh.vertices().iter().zip(mesh.vertex_normals()) {
-                let local_point = candidate.inverse.apply_point(*point);
+            for (point, normal) in mesh.vertices().into_iter().zip(mesh.vertex_normals()) {
+                let local_point = candidate.inverse.apply_point(point);
                 let measure = surface_measure(candidate.surface.solved()?, local_point, None)?;
                 let residual = measure.residual;
                 let surface_normal = measure.normal?;
-                let mesh_normal = candidate.inverse.apply_vector(*normal).unit()?;
+                let mesh_normal = candidate.inverse.apply_vector(normal).unit()?;
                 if surface_normal.dot(mesh_normal).abs() < MIN_TESSELLATION_NORMAL_ALIGNMENT {
                     return None;
                 }
@@ -924,7 +944,7 @@ fn approximate_trimmed_surface_owner(
             for point in mesh.vertices() {
                 let measure = surface_measure(
                     candidate.surface.solved()?,
-                    candidate.inverse.apply_point(*point),
+                    candidate.inverse.apply_point(point),
                     None,
                 )?;
                 max_residual = max_residual.max(measure.residual);

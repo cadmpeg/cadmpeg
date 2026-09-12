@@ -618,14 +618,7 @@ fn mesh_from(
     vertices: Vec<Point3>,
     triangles: Vec<[u32; 3]>,
 ) -> Tessellation {
-    Tessellation::from_decoded(
-        id,
-        vertices,
-        triangles,
-        Vec::new(),
-        cadmpeg_ir::tessellation::TessellationNormals::None,
-        Vec::new(),
-    )
+    Tessellation::new(id, cadmpeg_ir::tessellation::TessellationMesh::List { vertices: vertices, triangles: triangles }, Vec::new())
     .expect("valid tessellation")
 }
 
@@ -843,18 +836,11 @@ fn bounded_planar_trim_selects_between_coincident_supports() {
     let second = add_square_face(&mut model, "second", 2.0);
     set_shell_faces(&mut model, vec![first.clone(), second.clone()]);
     model.tessellations.push(
-        Tessellation::from_decoded(
-            "synthetic:test:tessellation#mesh",
-            vec![
+        Tessellation::new("synthetic:test:tessellation#mesh", cadmpeg_ir::tessellation::TessellationMesh::List { vertices: vec![
                 Point3::new(2.25, -0.75, 0.0),
                 Point3::new(3.75, -0.75, 0.0),
                 Point3::new(3.0, 0.75, 0.0),
-            ],
-            vec![[0, 1, 2]],
-            Vec::new(),
-            cadmpeg_ir::tessellation::TessellationNormals::None,
-            Vec::new(),
-        )
+            ], triangles: vec![[0, 1, 2]] }, Vec::new())
         .expect("valid tessellation"),
     );
 
@@ -888,18 +874,11 @@ fn bounded_cylindrical_trim_selects_between_coincident_supports() {
     let upper = add_cylindrical_patch_face(&mut model, "upper", 2.0, 3.0);
     set_shell_faces(&mut model, vec![lower.clone(), upper.clone()]);
     model.tessellations.push(
-        Tessellation::from_decoded(
-            "synthetic:test:tessellation#lower-mesh",
-            vec![
+        Tessellation::new("synthetic:test:tessellation#lower-mesh", cadmpeg_ir::tessellation::TessellationMesh::List { vertices: vec![
                 Point3::new(5.0, 0.0, 0.25),
                 Point3::new(0.0, 5.0, 0.25),
                 Point3::new(5.0, 0.0, 0.75),
-            ],
-            vec![[0, 1, 2]],
-            Vec::new(),
-            cadmpeg_ir::tessellation::TessellationNormals::None,
-            Vec::new(),
-        )
+            ], triangles: vec![[0, 1, 2]] }, Vec::new())
         .expect("valid tessellation"),
     );
 
@@ -921,26 +900,15 @@ fn chordal_cylindrical_mesh_records_measured_support_deflection() {
     set_shell_faces(&mut model, vec![face.clone()]);
     let deflection = 0.1;
     model.tessellations.push(
-        Tessellation::from_decoded(
-            "synthetic:test:tessellation#chordal-mesh",
-            vec![
+        Tessellation::new("synthetic:test:tessellation#chordal-mesh", cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(vec![
                 Point3::new(5.0 - deflection, 0.0, 0.25),
                 Point3::new(0.0, 5.0 - deflection, 0.25),
                 Point3::new(5.0 - deflection, 0.0, 0.75),
-            ],
-            vec![[0, 1, 2]],
-            Vec::new(),
-            cadmpeg_ir::tessellation::NormalSamples::new(vec![
+            ], vec![[0, 1, 2]], vec![
                 Vector3::new(1.0, 0.0, 0.0),
                 Vector3::new(0.0, 1.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
-            ])
-            .map_or(
-                cadmpeg_ir::tessellation::TessellationNormals::None,
-                cadmpeg_ir::tessellation::TessellationNormals::per_vertex,
-            ),
-            Vec::new(),
-        )
+            ]).expect("normals cover the mesh"), Vec::new())
         .expect("valid tessellation"),
     );
 
@@ -961,26 +929,15 @@ fn chordal_cylindrical_mesh_uses_unique_trim_when_normals_disagree() {
     set_shell_faces(&mut model, vec![face.clone()]);
     let deflection = 0.1;
     model.tessellations.push(
-        Tessellation::from_decoded(
-            "synthetic:test:tessellation#inconsistent-normals-mesh",
-            vec![
+        Tessellation::new("synthetic:test:tessellation#inconsistent-normals-mesh", cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(vec![
                 Point3::new(5.0 - deflection, 0.0, 0.25),
                 Point3::new(0.0, 5.0 - deflection, 0.25),
                 Point3::new(5.0 - deflection, 0.0, 0.75),
-            ],
-            vec![[0, 1, 2]],
-            Vec::new(),
-            cadmpeg_ir::tessellation::NormalSamples::new(vec![
+            ], vec![[0, 1, 2]], vec![
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(0.0, 0.0, 1.0),
-            ])
-            .map_or(
-                cadmpeg_ir::tessellation::TessellationNormals::None,
-                cadmpeg_ir::tessellation::TessellationNormals::per_vertex,
-            ),
-            Vec::new(),
-        )
+            ]).expect("normals cover the mesh"), Vec::new())
         .expect("valid tessellation"),
     );
 
@@ -1000,26 +957,15 @@ fn off_surface_planar_mesh_does_not_become_a_chordal_cache() {
     let face = add_square_face(&mut model, "off-surface", 0.0);
     set_shell_faces(&mut model, vec![face]);
     model.tessellations.push(
-        Tessellation::from_decoded(
-            "synthetic:test:tessellation#off-surface-mesh",
-            vec![
+        Tessellation::new("synthetic:test:tessellation#off-surface-mesh", cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(vec![
                 Point3::new(0.25, -0.75, 0.1),
                 Point3::new(1.75, -0.75, 0.1),
                 Point3::new(1.0, 0.75, 0.1),
-            ],
-            vec![[0, 1, 2]],
-            Vec::new(),
-            cadmpeg_ir::tessellation::NormalSamples::new(vec![
+            ], vec![[0, 1, 2]], vec![
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(0.0, 0.0, 1.0),
-            ])
-            .map_or(
-                cadmpeg_ir::tessellation::TessellationNormals::None,
-                cadmpeg_ir::tessellation::TessellationNormals::per_vertex,
-            ),
-            Vec::new(),
-        )
+            ]).expect("normals cover the mesh"), Vec::new())
         .expect("valid tessellation"),
     );
 
@@ -1102,18 +1048,11 @@ fn cone_support_binds_display_list_face() {
     );
     set_shell_faces(&mut model, vec![face.clone()]);
     model.tessellations.push(
-        Tessellation::from_decoded(
-            "synthetic:test:tessellation#cone-mesh",
-            vec![
+        Tessellation::new("synthetic:test:tessellation#cone-mesh", cadmpeg_ir::tessellation::TessellationMesh::List { vertices: vec![
                 Point3::new(local_radius, 0.0, v),
                 Point3::new(0.0, local_radius * 0.5, v),
                 Point3::new(-local_radius, 0.0, v),
-            ],
-            vec![[0, 1, 2]],
-            Vec::new(),
-            cadmpeg_ir::tessellation::TessellationNormals::None,
-            Vec::new(),
-        )
+            ], triangles: vec![[0, 1, 2]] }, Vec::new())
         .expect("valid tessellation"),
     );
 
@@ -1167,17 +1106,7 @@ fn cone_chordal_display_list_uses_analytic_normal_for_ownership() {
         .map(|point| analytic_surface_normal(cone.solved().expect("solved cone"), *point).unwrap())
         .collect();
     model.tessellations.push(
-        Tessellation::from_decoded(
-            "synthetic:test:tessellation#cone-cache-mesh",
-            vertices,
-            vec![[0, 1, 2]],
-            Vec::new(),
-            cadmpeg_ir::tessellation::NormalSamples::new(normals).map_or(
-                cadmpeg_ir::tessellation::TessellationNormals::None,
-                cadmpeg_ir::tessellation::TessellationNormals::per_vertex,
-            ),
-            Vec::new(),
-        )
+        Tessellation::new("synthetic:test:tessellation#cone-cache-mesh", cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(vertices, vec![[0, 1, 2]], normals).expect("normals cover the mesh"), Vec::new())
         .expect("valid tessellation"),
     );
 
@@ -1210,14 +1139,7 @@ fn conical_trim_uses_scaled_angular_coordinate() {
         angular_span: std::f64::consts::FRAC_PI_2,
     };
     let mesh = |point: Point3, id: &str| {
-        Tessellation::from_decoded(
-            id,
-            vec![point],
-            Vec::new(),
-            Vec::new(),
-            cadmpeg_ir::tessellation::TessellationNormals::None,
-            Vec::new(),
-        )
+        Tessellation::new(id, cadmpeg_ir::tessellation::TessellationMesh::List { vertices: vec![point], triangles: Vec::new() }, Vec::new())
         .expect("valid tessellation")
     };
     let point_at = |angle: f64| {
@@ -1294,23 +1216,10 @@ fn non_exact_nurbs_support_does_not_use_an_unbounded_cache_fit() {
         [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)].map(|(u, v)| test_nurbs_point_normal(&surface, u, v));
     let deflection = 0.02;
     model.tessellations.push(
-        Tessellation::from_decoded(
-            "synthetic:test:tessellation#nurbs-cache-mesh",
-            samples
+        Tessellation::new("synthetic:test:tessellation#nurbs-cache-mesh", cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(samples
                 .iter()
                 .map(|(point, normal)| point.translated(*normal, deflection))
-                .collect(),
-            vec![[0, 1, 2]],
-            Vec::new(),
-            cadmpeg_ir::tessellation::NormalSamples::new(
-                samples.iter().map(|(_, normal)| *normal).collect(),
-            )
-            .map_or(
-                cadmpeg_ir::tessellation::TessellationNormals::None,
-                cadmpeg_ir::tessellation::TessellationNormals::per_vertex,
-            ),
-            Vec::new(),
-        )
+                .collect(), vec![[0, 1, 2]], samples.iter().map(|(_, normal)| *normal).collect()).expect("normals cover the mesh"), Vec::new())
         .expect("valid tessellation"),
     );
 
@@ -1343,16 +1252,9 @@ fn coincident_nurbs_supports_do_not_choose_a_display_list_face() {
         }
     };
     model.tessellations.push(
-        Tessellation::from_decoded(
-            "synthetic:test:tessellation#nurbs-ambiguous-mesh",
-            [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)]
+        Tessellation::new("synthetic:test:tessellation#nurbs-ambiguous-mesh", cadmpeg_ir::tessellation::TessellationMesh::List { vertices: [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)]
                 .map(|(u, v)| cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v).unwrap())
-                .to_vec(),
-            vec![[0, 1, 2]],
-            Vec::new(),
-            cadmpeg_ir::tessellation::TessellationNormals::None,
-            Vec::new(),
-        )
+                .to_vec(), triangles: vec![[0, 1, 2]] }, Vec::new())
         .expect("valid tessellation"),
     );
 
@@ -1391,20 +1293,9 @@ fn coincident_nurbs_and_analytic_supports_do_not_fall_through_to_analytic_fit() 
         }
     };
     model.tessellations.push(
-        Tessellation::from_decoded(
-            "synthetic:test:tessellation#nurbs-plane-ambiguous-mesh",
-            [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)]
+        Tessellation::new("synthetic:test:tessellation#nurbs-plane-ambiguous-mesh", cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes([(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)]
                 .map(|(u, v)| cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v).unwrap())
-                .to_vec(),
-            vec![[0, 1, 2]],
-            Vec::new(),
-            cadmpeg_ir::tessellation::NormalSamples::new(vec![Vector3::new(0.0, 0.0, 1.0); 3])
-                .map_or(
-                    cadmpeg_ir::tessellation::TessellationNormals::None,
-                    cadmpeg_ir::tessellation::TessellationNormals::per_vertex,
-                ),
-            Vec::new(),
-        )
+                .to_vec(), vec![[0, 1, 2]], vec![Vector3::new(0.0, 0.0, 1.0); 3]).expect("normals cover the mesh"), Vec::new())
         .expect("valid tessellation"),
     );
 
@@ -1672,10 +1563,7 @@ fn decode_reports_display_list_geometry() {
     );
     assert_eq!(
         result.ir().model.tessellations[0]
-            .strip_lengths()
-            .iter()
-            .map(|run| run.get())
-            .collect::<Vec<_>>(),
+            .strip_lengths(),
         vec![3]
     );
     assert_eq!(result.ir().model.tessellations[0].vertex_normals().len(), 3);
@@ -1916,18 +1804,11 @@ fn circular_arc_trim_disambiguates_coincident_planar_supports() {
     }
     set_shell_faces(&mut model, vec![target.clone(), competitor]);
     model.tessellations.push(
-        Tessellation::from_decoded(
-            "synthetic:test:tessellation#arc-trim-mesh",
-            vec![
+        Tessellation::new("synthetic:test:tessellation#arc-trim-mesh", cadmpeg_ir::tessellation::TessellationMesh::List { vertices: vec![
                 Point3::new(0.25, -0.75, 0.0),
                 Point3::new(1.75, -0.75, 0.0),
                 Point3::new(1.0, -0.25, 0.0),
-            ],
-            vec![[0, 1, 2]],
-            Vec::new(),
-            cadmpeg_ir::tessellation::TessellationNormals::None,
-            Vec::new(),
-        )
+            ], triangles: vec![[0, 1, 2]] }, Vec::new())
         .expect("valid tessellation"),
     );
 

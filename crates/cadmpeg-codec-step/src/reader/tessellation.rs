@@ -231,11 +231,10 @@ pub(super) fn decode(
             continue;
         };
         let offset = entity.own_parameter_offset();
-        let (triangles, strip_lengths) = match entity {
-            TriangulatedEntity::Face | TriangulatedEntity::SurfaceSet => (
-                entity_parameter(record, kind, 1, offset).and_then(triangle_rows),
-                Vec::new(),
-            ),
+        let triangles = match entity {
+            TriangulatedEntity::Face | TriangulatedEntity::SurfaceSet => {
+                entity_parameter(record, kind, 1, offset).and_then(triangle_rows)
+            }
             TriangulatedEntity::ComplexFace | TriangulatedEntity::ComplexSurfaceSet => {
                 complex_triangles(
                     entity_parameter(record, kind, 1, offset),
@@ -371,15 +370,19 @@ pub(super) fn decode(
                 }
             }
         }
-        let mesh = match Tessellation::from_decoded(
-            ids::tessellation(kind!("mesh"), id).into_string(),
+        let Some(rows) = cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
             local_vertices,
             local_triangles,
-            strip_lengths,
-            cadmpeg_ir::tessellation::NormalSamples::new(normals).map_or(
-                cadmpeg_ir::tessellation::TessellationNormals::None,
-                cadmpeg_ir::tessellation::TessellationNormals::per_vertex,
-            ),
+            normals,
+        ) else {
+            losses.push(StepLossCode::TessellationInvalidPayload.note(format!(
+                "{kind} #{id}: normals do not cover the mesh vertices"
+            )));
+            continue;
+        };
+        let mesh = match Tessellation::new(
+            ids::tessellation(kind!("mesh"), id).into_string(),
+            rows,
             Vec::new(),
         ) {
             Ok(mesh) => mesh,
@@ -811,10 +814,7 @@ fn triangle_rows(value: &Value) -> Option<Vec<[u32; 3]>> {
         .collect::<Option<Vec<_>>>()
 }
 
-fn complex_triangles(
-    strips: Option<&Value>,
-    fans: Option<&Value>,
-) -> (Option<Vec<[u32; 3]>>, Vec<u32>) {
+fn complex_triangles(strips: Option<&Value>, fans: Option<&Value>) -> Option<Vec<[u32; 3]>> {
     let strips = index_rows(strips).unwrap_or_default();
     let fans = index_rows(fans).unwrap_or_default();
     let mut triangles = Vec::new();
@@ -832,7 +832,7 @@ fn complex_triangles(
             triangles.push([fan[0], fan[index], fan[index + 1]]);
         }
     }
-    ((!triangles.is_empty()).then_some(triangles), Vec::new())
+    (!triangles.is_empty()).then_some(triangles)
 }
 
 fn index_rows(value: Option<&Value>) -> Option<Vec<Vec<u32>>> {

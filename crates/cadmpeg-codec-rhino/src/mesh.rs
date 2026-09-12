@@ -528,15 +528,14 @@ pub(crate) fn decode(
     let quad_count = quad_face_count(&faces);
     let triangles = triangulate_faces(&faces, &vertices);
     Ok(DecodedMesh {
-        tessellation: Tessellation::from_decoded(
+        tessellation: Tessellation::new(
             id,
-            vertices,
-            triangles,
-            Vec::new(),
-            cadmpeg_ir::tessellation::NormalSamples::new(decoded.normals).map_or(
-                cadmpeg_ir::tessellation::TessellationNormals::None,
-                cadmpeg_ir::tessellation::TessellationNormals::per_vertex,
-            ),
+            cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
+                vertices,
+                triangles,
+                decoded.normals,
+            )
+            .ok_or_else(|| error(reader.position(), "mesh normals do not cover its vertices"))?,
             decoded.channels,
         )
         .map_err(|err| error(reader.position(), &err.to_string()))?
