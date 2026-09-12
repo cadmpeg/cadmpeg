@@ -11,6 +11,10 @@ use crate::document::{CadIr, SortedModel, SourceMeta};
 use crate::native::{arena_from, Native, NativeConvertError, NativeRecord};
 use crate::units::{CanonicalUnitsWire, Tolerances};
 
+mod finite_json;
+
+use finite_json::{FiniteGuard, FiniteSerializer};
+
 /// Returns the lowercase hexadecimal SHA-256 digest of `bytes`.
 pub fn sha256_hex(bytes: &[u8]) -> String {
     encode_hex(&Sha256::digest(bytes))
@@ -26,16 +30,37 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 pub fn canonical_json_sha256<T: Serialize>(value: &T) -> Result<String, DigestError> {
     let mut hasher = Sha256::new();
     let mut writer = std::io::BufWriter::new(DigestWriter(&mut hasher));
-    serde_json::to_writer_pretty(&mut writer, value).map_err(DigestError::Serialize)?;
+    write_canonical_json(&mut writer, value)?;
     writer.flush().map_err(DigestError::Write)?;
     drop(writer);
     Ok(encode_hex(&hasher.finalize()))
 }
 
+/// Writes `value` as canonical pretty JSON, refusing a non-finite float.
+///
+/// The bytes are the ones `serde_json::to_writer_pretty` produces. The float
+/// refusal is the adapter's, not `serde_json`'s: `serde_json` writes a
+/// non-finite float as `null`.
+fn write_canonical_json<W: std::io::Write, T: Serialize + ?Sized>(
+    writer: W,
+    value: &T,
+) -> Result<(), DigestError> {
+    let guard = FiniteGuard::new();
+    let mut json = serde_json::Serializer::pretty(writer);
+    match value.serialize(FiniteSerializer::new(&mut json, &guard)) {
+        Ok(()) => Ok(()),
+        Err(error) => match guard.refused() {
+            Some(value) => Err(DigestError::NonFinite { value }),
+            None => Err(DigestError::Serialize(error)),
+        },
+    }
+}
+
 /// A digest could not be computed.
 ///
-/// The IR carries raw `f64` in places, and `serde_json` refuses a non-finite
-/// one, so canonical JSON is not total over every constructible document.
+/// The IR carries raw `f64` in places. `serde_json` writes a non-finite one as
+/// `null`, so the digest serializes through an adapter that refuses it instead:
+/// see [`NonFinite`](DigestError::NonFinite).
 #[derive(Debug, thiserror::Error)]
 pub enum DigestError {
     /// A record the unknown arena cannot state.
@@ -44,6 +69,12 @@ pub enum DigestError {
     /// The document does not serialize as canonical JSON.
     #[error("canonical JSON serialization: {0}")]
     Serialize(serde_json::Error),
+    /// A float on the document is not finite, so canonical JSON cannot state it.
+    #[error("canonical JSON holds no non-finite float: {value}")]
+    NonFinite {
+        /// The refused float.
+        value: f64,
+    },
     /// The digest sink refused a byte.
     #[error("digest sink: {0}")]
     Write(std::io::Error),
@@ -161,11 +192,11 @@ fn document_local_sha256_with_source_and_charge<E: From<DigestError>>(
             error: None,
         },
     );
-    let serialized = serde_json::to_writer_pretty(&mut writer, &document);
+    let serialized = write_canonical_json(&mut writer, &document);
     if let Some(error) = writer.get_mut().error.take() {
         return Err(error);
     }
-    serialized.map_err(|error| E::from(DigestError::Serialize(error)))?;
+    serialized.map_err(E::from)?;
     if let Err(error) = writer.flush() {
         if let Some(charged) = writer.get_mut().error.take() {
             return Err(charged);
@@ -318,6 +349,35 @@ mod tests {
     use crate::native::{Native, NativeRecord};
     use crate::unknown::UnknownRecord;
     use cadmpeg_core::CodecError;
+
+    #[test]
+    fn a_finite_float_digests() {
+        assert!(canonical_json_sha256(&1.0f64).is_ok());
+        assert!(canonical_json_sha256(&vec![1.0f64, -2.5]).is_ok());
+    }
+
+    #[test]
+    fn a_non_finite_float_has_no_digest() {
+        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let Err(DigestError::NonFinite { value: refused }) = canonical_json_sha256(&value)
+            else {
+                panic!("a non-finite float must have no canonical JSON");
+            };
+            assert_eq!(refused.is_nan(), value.is_nan());
+            assert_eq!(refused.is_infinite(), value.is_infinite());
+        }
+    }
+
+    #[test]
+    fn a_nested_non_finite_float_has_no_digest() {
+        let nested = serde_json::json!({ "outer": [{ "inner": 1.0 }] });
+        assert!(canonical_json_sha256(&nested).is_ok());
+        let nested = vec![Some(vec![(1.0f64, f64::NAN)])];
+        assert!(matches!(
+            canonical_json_sha256(&nested),
+            Err(DigestError::NonFinite { .. })
+        ));
+    }
 
     #[test]
     fn encodes_sha256_as_lowercase_hexadecimal() {
