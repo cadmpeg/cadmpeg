@@ -617,11 +617,12 @@ fn profile_and_boolean_features_require_resolved_operation_inputs() {
     let sweep = definition(serde_json::json!({
         "definition": "sweep",
         "shape": {
+            "mode": "solid",
+            "op": "join",
             "section": {
                 "kind": "profile",
                 "value": {"kind": "sketch", "value": "test:model:sketch#section"}
-            },
-            "mode": {"mode": "solid", "op": "join"}
+            }
         },
         "path": {"kind": "edges", "value": ["test:model:edge#path"]}
     }));
@@ -630,11 +631,12 @@ fn profile_and_boolean_features_require_resolved_operation_inputs() {
         serde_json::json!({
             "definition": "sweep",
             "shape": {
+                "mode": "solid",
+                "op": "join",
                 "section": {
                     "kind": "profile",
                     "value": {"kind": "native", "value": "native:section"}
-                },
-                "mode": {"mode": "solid", "op": "join"}
+                }
             },
             "path": {"kind": "edges", "value": ["test:model:edge#path"]}
         }),

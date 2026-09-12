@@ -149,11 +149,12 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             "definition": {
                 "definition": "sweep",
                 "shape": {
+                    "mode": "solid",
+                    "op": "cut",
                     "section": {
                         "kind": "profile",
                         "value": {"kind": "native", "value": "native:sweep-profile"}
-                    },
-                    "mode": {"mode": "solid", "op": "cut"}
+                    }
                 },
                 "path": {"kind": "native", "value": "native:sweep-path"}
             }
