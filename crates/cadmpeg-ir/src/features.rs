@@ -1337,10 +1337,17 @@ impl<'a> FeatureWriteWire<'a> {
     }
 }
 
+/// One row of the model route's feature list.
+///
+/// `regeneration_parent` is a model-route datum: the read hands it to
+/// [`crate::document::Model`] with the feature, which is the only owner that
+/// can place the edge. The standalone route reads [`FeatureReadWire`], which
+/// declares no such field, so the difference between the two routes is a
+/// field, not a check.
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
-pub(crate) struct FeatureReadWire {
+pub(crate) struct FeatureRowWire {
     id: FeatureId,
     ordinal: u64,
     #[serde(default)]
@@ -1366,24 +1373,84 @@ pub(crate) struct FeatureReadWire {
     native_ref: Option<String>,
 }
 
-impl FeatureReadWire {
+impl FeatureRowWire {
     pub(crate) fn into_parts(self) -> (Feature, Option<FeatureId>) {
-        (
-            Feature {
-                id: self.id,
-                ordinal: self.ordinal,
-                name: self.name,
-                suppressed: self.suppressed,
-                dependencies: self.dependencies,
-                source_properties: self.source_properties,
-                source_tag: self.source_tag,
-                source_text: self.source_text,
-                source_content: self.source_content,
-                evaluation: FeatureEvaluation::new(self.definition, self.outputs),
-                native_ref: self.native_ref,
-            },
-            self.regeneration_parent,
-        )
+        let regeneration_parent = self.regeneration_parent;
+        let feature = FeatureReadWire {
+            id: self.id,
+            ordinal: self.ordinal,
+            name: self.name,
+            suppressed: self.suppressed,
+            dependencies: self.dependencies,
+            source_properties: self.source_properties,
+            source_tag: self.source_tag,
+            source_text: self.source_text,
+            source_content: self.source_content,
+            outputs: self.outputs,
+            definition: self.definition,
+            native_ref: self.native_ref,
+        }
+        .into_feature();
+        (feature, regeneration_parent)
+    }
+}
+
+/// The standalone feature wire: one feature outside any model.
+///
+/// It declares no `regeneration_parent`, so a row of the model route does not
+/// read back as a standalone feature and the parent edge cannot arrive without
+/// the model that owns it. `deny_unknown_fields` states the refusal.
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct FeatureReadWire {
+    id: FeatureId,
+    ordinal: u64,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    suppressed: Option<bool>,
+    #[serde(default, deserialize_with = "deserialize_dependencies")]
+    dependencies: DistinctMembers<FeatureId>,
+    #[serde(default)]
+    source_properties: BTreeMap<String, String>,
+    #[serde(default)]
+    source_tag: Option<String>,
+    #[serde(default)]
+    source_text: Option<String>,
+    #[serde(default)]
+    source_content: FeatureContent,
+    #[serde(default)]
+    outputs: Vec<BodyId>,
+    definition: FeatureDefinition,
+    #[serde(default)]
+    native_ref: Option<String>,
+}
+
+impl FeatureReadWire {
+    fn into_feature(self) -> Feature {
+        Feature {
+            id: self.id,
+            ordinal: self.ordinal,
+            name: self.name,
+            suppressed: self.suppressed,
+            dependencies: self.dependencies,
+            source_properties: self.source_properties,
+            source_tag: self.source_tag,
+            source_text: self.source_text,
+            source_content: self.source_content,
+            evaluation: FeatureEvaluation::new(self.definition, self.outputs),
+            native_ref: self.native_ref,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Feature {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Ok(FeatureReadWire::deserialize(deserializer)?.into_feature())
     }
 }
 
@@ -1393,22 +1460,6 @@ impl Serialize for Feature {
         S: serde::Serializer,
     {
         FeatureWriteWire::standalone(self).serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for Feature {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let (feature, regeneration_parent) =
-            FeatureReadWire::deserialize(deserializer)?.into_parts();
-        if regeneration_parent.is_some() {
-            return Err(serde::de::Error::custom(
-                "a feature parent requires its owning model",
-            ));
-        }
-        Ok(feature)
     }
 }
 
