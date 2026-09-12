@@ -110,7 +110,8 @@ pub use presentation::{PresentationItem, PresentationLayer};
 pub use products::{
     AssemblyGraph, AssemblyGraphError, AssemblyJoint, CopyOnChange, CopyOnChangePolicy,
     ExternalDocument, ExternalDocumentReference, JointConnector, JointId, JointLimits,
-    JointOperand, JointOperands, LinkState, NonEmptyString, Occurrence, OperandContainer,
+    JointOperand, JointOperands, LinkMember, LinkState, NonEmptyString, Occurrence,
+    OperandContainer,
     PairedJointKind, ProductDefinition, ProductDefinitionKind, PrototypeReference,
 };
 /// Source location attached to a [`LossNote`].
