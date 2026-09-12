@@ -446,7 +446,7 @@ fn mesh_auxiliary_channels_round_trip_by_kind() {
     .into_iter()
     .map(|(kind, item_size, data)| {
         cadmpeg_ir::tessellation::TessellationChannel::new(
-            cadmpeg_ir::tessellation::ChannelAddressing::Vertex,
+            cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
             item_size,
             kind,
             0,
@@ -506,7 +506,7 @@ fn mesh_channel_bytes_cannot_impersonate_nested_chunk_framing() {
             Vec::new(),
             cadmpeg_ir::tessellation::TessellationNormals::None,
             vec![cadmpeg_ir::tessellation::TessellationChannel::new(
-                cadmpeg_ir::tessellation::ChannelAddressing::Vertex,
+                cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
                 8,
                 CHANNEL_UV,
                 0,

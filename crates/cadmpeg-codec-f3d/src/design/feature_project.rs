@@ -1044,7 +1044,7 @@ pub fn project_parameter_design_with_edge_identities(
                                 || cadmpeg_ir::features::ScaleCenter::Native(format!("{native_scope}:design-record#{}", operation.center_record_index)),
                                 cadmpeg_ir::features::ScaleCenter::Point,
                             )),
-                            factors: cadmpeg_ir::features::ScaleFactors::Uniform(factor),
+                            factors: cadmpeg_ir::features::ScaleFactors::Uniform { factor },
                         })
                     },
                 ),

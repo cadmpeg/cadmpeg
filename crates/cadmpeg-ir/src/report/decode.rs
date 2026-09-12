@@ -114,7 +114,7 @@ mod tests {
     }
 
     #[test]
-    fn transfer_record_keeps_the_flat_wire_shape() {
+    fn transfer_record_keeps_the_nested_outcome_wire_shape() {
         let record = TransferRecord {
             source: "D1".into(),
             outcome: TransferOutcome::Retained {
@@ -127,9 +127,11 @@ mod tests {
             wire,
             serde_json::json!({
                 "source": "D1",
-                "target": "iges:entity:directory#1",
-                "disposition": "retained",
-                "note": "retained"
+                "outcome": {
+                    "disposition": "retained",
+                    "target": "iges:entity:directory#1",
+                    "note": "retained"
+                }
             })
         );
         assert_eq!(
@@ -140,15 +142,25 @@ mod tests {
 
     #[test]
     fn transfer_record_wire_rejects_disposition_target_disagreement() {
+        // The disposition is the tag, so a target and a note exist only on the
+        // dispositions that carry them: each disagreement is a missing or an
+        // unknown field, not a value a reader has to refuse.
         for wire in [
             serde_json::json!({
                 "source": "D1",
-                "disposition": "retained"
+                "outcome": {"disposition": "retained"}
             }),
             serde_json::json!({
                 "source": "D1",
-                "target": "point:1",
-                "disposition": "omitted"
+                "outcome": {"disposition": "omitted", "target": "point:1"}
+            }),
+            serde_json::json!({
+                "source": "D1",
+                "outcome": {"disposition": "emitted", "target": "point:1", "note": "n"}
+            }),
+            serde_json::json!({
+                "source": "D1",
+                "outcome": {"disposition": "emitted"}
             }),
         ] {
             assert!(serde_json::from_value::<TransferRecord>(wire).is_err());
@@ -156,8 +168,7 @@ mod tests {
 
         let omitted: TransferRecord = serde_json::from_value(serde_json::json!({
             "source": "D2",
-            "disposition": "omitted",
-            "note": "unsupported"
+            "outcome": {"disposition": "omitted", "note": "unsupported"}
         }))
         .expect("omitted record has no target");
         assert_eq!(omitted.target(), None);
@@ -232,15 +243,26 @@ pub enum TransferDisposition {
 }
 
 /// One source object's structurally valid transfer outcome.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// The disposition is the wire's tag, so each outcome carries exactly the
+/// fields valid for it: an emitted record has no note to state, and an omitted
+/// record has no target.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "disposition", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum TransferOutcome {
     /// Transferred as an exact neutral or native entity.
-    Emitted(String),
+    Emitted {
+        /// Resulting neutral or native identity.
+        target: String,
+    },
     /// Preserved in a native retained-record arena.
     Retained {
         /// Resulting native retained-record identity.
         target: String,
         /// Informational note about retention or semantic projection.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         note: Option<String>,
     },
     /// Transferred with an explicit approximation.
@@ -248,18 +270,21 @@ pub enum TransferOutcome {
         /// Resulting neutral or native identity.
         target: String,
         /// Concise reason for the approximation.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         note: Option<String>,
     },
     /// Deliberately not transferred.
     Omitted {
         /// Concise reason for the omission.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         note: Option<String>,
     },
 }
 
 /// One source object's transfer disposition.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(into = "TransferRecordWire", try_from = "TransferRecordWire")]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct TransferRecord {
     /// Stable source identity or source-local record key.
     pub source: String,
@@ -267,92 +292,12 @@ pub struct TransferRecord {
     pub outcome: TransferOutcome,
 }
 
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-struct TransferRecordWire {
-    source: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    target: Option<String>,
-    disposition: TransferDisposition,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    note: Option<String>,
-}
-
-impl From<TransferRecord> for TransferRecordWire {
-    fn from(record: TransferRecord) -> Self {
-        let (target, disposition, note) = match record.outcome {
-            TransferOutcome::Emitted(target) => (Some(target), TransferDisposition::Emitted, None),
-            TransferOutcome::Retained { target, note } => {
-                (Some(target), TransferDisposition::Retained, note)
-            }
-            TransferOutcome::Approximated { target, note } => {
-                (Some(target), TransferDisposition::Approximated, note)
-            }
-            TransferOutcome::Omitted { note } => (None, TransferDisposition::Omitted, note),
-        };
-        Self {
-            source: record.source,
-            target,
-            disposition,
-            note,
-        }
-    }
-}
-
-impl TryFrom<TransferRecordWire> for TransferRecord {
-    type Error = String;
-
-    fn try_from(wire: TransferRecordWire) -> Result<Self, Self::Error> {
-        let outcome = match (wire.disposition, wire.target, wire.note) {
-            (TransferDisposition::Emitted, Some(target), None) => TransferOutcome::Emitted(target),
-            (TransferDisposition::Emitted, Some(_), Some(_)) => {
-                return Err("emitted transfer record cannot carry a note".into());
-            }
-            (TransferDisposition::Retained, Some(target), note) => {
-                TransferOutcome::Retained { target, note }
-            }
-            (TransferDisposition::Approximated, Some(target), note) => {
-                TransferOutcome::Approximated { target, note }
-            }
-            (TransferDisposition::Omitted, None, note) => TransferOutcome::Omitted { note },
-            (TransferDisposition::Omitted, Some(_), _) => {
-                return Err("omitted transfer record cannot carry a target".into());
-            }
-            (disposition, None, _) => {
-                return Err(format!(
-                    "transfer record with {disposition:?} disposition requires a target"
-                ));
-            }
-        };
-        Ok(Self {
-            source: wire.source,
-            outcome,
-        })
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for TransferRecord {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "TransferRecord".into()
-    }
-
-    fn schema_id() -> std::borrow::Cow<'static, str> {
-        concat!(module_path!(), "::TransferRecord").into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        TransferRecordWire::json_schema(generator)
-    }
-}
-
 impl TransferRecord {
     /// Returns the produced target, or `None` for an omitted source object.
     #[must_use]
     pub fn target(&self) -> Option<&str> {
         match &self.outcome {
-            TransferOutcome::Emitted(target)
+            TransferOutcome::Emitted { target }
             | TransferOutcome::Retained { target, .. }
             | TransferOutcome::Approximated { target, .. } => Some(target),
             TransferOutcome::Omitted { .. } => None,
@@ -363,7 +308,7 @@ impl TransferRecord {
     #[must_use]
     pub const fn disposition(&self) -> TransferDisposition {
         match &self.outcome {
-            TransferOutcome::Emitted(_) => TransferDisposition::Emitted,
+            TransferOutcome::Emitted { .. } => TransferDisposition::Emitted,
             TransferOutcome::Retained { .. } => TransferDisposition::Retained,
             TransferOutcome::Approximated { .. } => TransferDisposition::Approximated,
             TransferOutcome::Omitted { .. } => TransferDisposition::Omitted,
@@ -374,7 +319,7 @@ impl TransferRecord {
     #[must_use]
     pub fn note(&self) -> Option<&str> {
         match &self.outcome {
-            TransferOutcome::Emitted(_) => None,
+            TransferOutcome::Emitted { .. } => None,
             TransferOutcome::Retained { note, .. }
             | TransferOutcome::Approximated { note, .. }
             | TransferOutcome::Omitted { note } => note.as_deref(),

@@ -340,7 +340,9 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
                 BodyId::mint("test:model:body#scale").expect("identity grammar")
             ]),
             center: Some(ScaleCenter::ModelOrigin),
-            factors: ScaleFactors::Uniform(cadmpeg_ir::scalar::NonZeroReal::new(1.5).unwrap()),
+            factors: ScaleFactors::Uniform {
+                factor: cadmpeg_ir::scalar::NonZeroReal::new(1.5).unwrap()
+            },
         })
     ));
     assert!(feature_definition_is_incomplete(
@@ -349,7 +351,9 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
                 BodyId::mint("test:model:body#scale").expect("identity grammar")
             ]),
             center: Some(ScaleCenter::Native("native:center".into())),
-            factors: ScaleFactors::Uniform(cadmpeg_ir::scalar::NonZeroReal::new(1.5).unwrap()),
+            factors: ScaleFactors::Uniform {
+                factor: cadmpeg_ir::scalar::NonZeroReal::new(1.5).unwrap()
+            },
         })
     ));
 }

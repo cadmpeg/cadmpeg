@@ -4576,7 +4576,7 @@ pub(crate) fn display_jt_tessellations(
                 if color_array.is_some() {
                     channels.push(
                         TessellationChannel::new(
-                            cadmpeg_ir::tessellation::ChannelAddressing::Vertex,
+                            cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
                             16,
                             DISPLAY_JT_COLOR_CHANNEL,
                             ((vertex_header.vertex_bindings >> 4) & 0x3) as u32,
@@ -4593,7 +4593,7 @@ pub(crate) fn display_jt_tessellations(
                 {
                     channels.push(
                         TessellationChannel::new(
-                            cadmpeg_ir::tessellation::ChannelAddressing::Vertex,
+                            cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
                             u32::try_from(component_count.checked_mul(4)?).ok()?,
                             DISPLAY_JT_TEXTURE_CHANNEL_BASE.checked_add(ordinal)?,
                             u32::from(array.channel)
@@ -4608,7 +4608,7 @@ pub(crate) fn display_jt_tessellations(
                 if vertex_flag_array.is_some() {
                     channels.push(
                         TessellationChannel::new(
-                            cadmpeg_ir::tessellation::ChannelAddressing::Vertex,
+                            cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
                             4,
                             DISPLAY_JT_VERTEX_FLAG_CHANNEL,
                             0,

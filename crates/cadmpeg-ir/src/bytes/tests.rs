@@ -33,7 +33,7 @@ fn byte_payloads_use_nonempty_base64_and_reject_invalid_text() {
         "data",
     );
     assert_base64_round_trip_and_rejection(
-        &TessellationChannel::new(ChannelAddressing::Vertex, 3, 0, 0, vec![1, 2, 3])
+        &TessellationChannel::new(ChannelAddressing::Vertex {}, 3, 0, 0, vec![1, 2, 3])
             .expect("valid channel"),
         "data",
     );

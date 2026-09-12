@@ -1810,22 +1810,28 @@
     "transfer_ledger": {
       "entries": [
         {
-          "disposition": "retained",
-          "note": "native record retained; semantic projection emitted",
-          "source": "D1",
-          "target": "iges:entity:directory#1"
+          "outcome": {
+            "disposition": "retained",
+            "note": "native record retained; semantic projection emitted",
+            "target": "iges:entity:directory#1"
+          },
+          "source": "D1"
         },
         {
-          "disposition": "retained",
-          "note": "native record retained; semantic projection omitted with an attributed loss",
-          "source": "D3",
-          "target": "iges:entity:directory#3"
+          "outcome": {
+            "disposition": "retained",
+            "note": "native record retained; semantic projection omitted with an attributed loss",
+            "target": "iges:entity:directory#3"
+          },
+          "source": "D3"
         },
         {
-          "disposition": "retained",
-          "note": "quarantined parameter data retained; tokens were not recovered",
-          "source": "D3:parameter",
-          "target": "iges:quarantine:parameter#3"
+          "outcome": {
+            "disposition": "retained",
+            "note": "quarantined parameter data retained; tokens were not recovered",
+            "target": "iges:quarantine:parameter#3"
+          },
+          "source": "D3:parameter"
         }
       ]
     }

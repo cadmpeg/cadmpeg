@@ -437,118 +437,186 @@ impl ContainerEntry {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-enum EntryCompressionWire {
-    #[serde(rename = "none")]
-    None,
-    #[serde(rename = "stored")]
-    Stored,
-    #[serde(rename = "deflate")]
-    Deflate,
-    #[serde(rename = "zstd")]
-    Zstd,
-    #[serde(rename = "storage")]
-    Storage,
-    #[serde(rename = "jpeg")]
-    Jpeg,
-    #[serde(rename = "unix-compress")]
-    UnixCompress,
-    #[serde(rename = "zlib")]
-    Zlib,
-}
-
-impl EntryCompressionWire {
-    fn label(self) -> Option<Result<VerbatimLabel, CompressionMethod>> {
-        Some(match self {
-            Self::None => Ok(VerbatimLabel::None),
-            Self::Stored => Ok(VerbatimLabel::Stored),
-            Self::Deflate => Err(CompressionMethod::Deflate),
-            Self::Zstd => Err(CompressionMethod::Zstd),
-            Self::Jpeg => Err(CompressionMethod::Jpeg),
-            Self::UnixCompress => Err(CompressionMethod::UnixCompress),
-            Self::Zlib => Err(CompressionMethod::Zlib),
-            Self::Storage => return None,
-        })
-    }
-
-    fn from_verbatim(label: VerbatimLabel) -> Self {
-        match label {
-            VerbatimLabel::None => Self::None,
-            VerbatimLabel::Stored => Self::Stored,
-        }
-    }
-
-    fn from_method(method: CompressionMethod) -> Self {
-        match method {
-            CompressionMethod::Deflate => Self::Deflate,
-            CompressionMethod::Zstd => Self::Zstd,
-            CompressionMethod::Jpeg => Self::Jpeg,
-            CompressionMethod::UnixCompress => Self::UnixCompress,
-            CompressionMethod::Zlib => Self::Zlib,
-        }
-    }
-}
-
+/// The entry fields every storage kind carries.
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
-struct ContainerEntryWire {
+struct EntryIdentityWire {
     name: String,
     role: ContainerRole,
-    compression: EntryCompressionWire,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    compressed_size: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    uncompressed_size: Option<u64>,
     #[serde(default)]
     attributes: BTreeMap<String, String>,
 }
 
+/// What a container declares about an entry's two sizes.
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct DeclaredSizesWire {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    compressed_size: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    uncompressed_size: Option<u64>,
+}
+
+/// One container summary entry, tagged by how it stores its bytes.
+///
+/// The `storage` spelling is a directory node, which holds no bytes of its
+/// own, so it carries no size keys: a directory that declares a byte size is
+/// unrepresentable rather than refused.
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "compression")]
+#[serde(deny_unknown_fields)]
+enum ContainerEntryWire {
+    #[serde(rename = "storage")]
+    Directory {
+        #[serde(flatten)]
+        identity: EntryIdentityWire,
+    },
+    #[serde(rename = "none")]
+    VerbatimNone {
+        #[serde(flatten)]
+        identity: EntryIdentityWire,
+        #[serde(flatten)]
+        sizes: DeclaredSizesWire,
+    },
+    #[serde(rename = "stored")]
+    VerbatimStored {
+        #[serde(flatten)]
+        identity: EntryIdentityWire,
+        #[serde(flatten)]
+        sizes: DeclaredSizesWire,
+    },
+    #[serde(rename = "deflate")]
+    Deflate {
+        #[serde(flatten)]
+        identity: EntryIdentityWire,
+        #[serde(flatten)]
+        sizes: DeclaredSizesWire,
+    },
+    #[serde(rename = "zstd")]
+    Zstd {
+        #[serde(flatten)]
+        identity: EntryIdentityWire,
+        #[serde(flatten)]
+        sizes: DeclaredSizesWire,
+    },
+    #[serde(rename = "jpeg")]
+    Jpeg {
+        #[serde(flatten)]
+        identity: EntryIdentityWire,
+        #[serde(flatten)]
+        sizes: DeclaredSizesWire,
+    },
+    #[serde(rename = "unix-compress")]
+    UnixCompress {
+        #[serde(flatten)]
+        identity: EntryIdentityWire,
+        #[serde(flatten)]
+        sizes: DeclaredSizesWire,
+    },
+    #[serde(rename = "zlib")]
+    Zlib {
+        #[serde(flatten)]
+        identity: EntryIdentityWire,
+        #[serde(flatten)]
+        sizes: DeclaredSizesWire,
+    },
+}
+
 impl From<ContainerEntry> for ContainerEntryWire {
     fn from(entry: ContainerEntry) -> Self {
-        let stored = entry.stored_size();
-        let expanded = entry.expanded_size();
-        let compression = match entry.storage {
-            EntryStorage::Directory => EntryCompressionWire::Storage,
-            EntryStorage::Verbatim { label, .. } => EntryCompressionWire::from_verbatim(label),
-            EntryStorage::Compressed { method, .. } => EntryCompressionWire::from_method(method),
+        let sizes = DeclaredSizesWire {
+            compressed_size: entry.stored_size(),
+            uncompressed_size: entry.expanded_size(),
         };
-        Self {
+        let identity = EntryIdentityWire {
             name: entry.name,
             role: entry.role,
-            compression,
-            compressed_size: stored,
-            uncompressed_size: expanded,
             attributes: entry.attributes,
+        };
+        match entry.storage {
+            EntryStorage::Directory => Self::Directory { identity },
+            EntryStorage::Verbatim {
+                label: VerbatimLabel::None,
+                ..
+            } => Self::VerbatimNone { identity, sizes },
+            EntryStorage::Verbatim {
+                label: VerbatimLabel::Stored,
+                ..
+            } => Self::VerbatimStored { identity, sizes },
+            EntryStorage::Compressed {
+                method: CompressionMethod::Deflate,
+                ..
+            } => Self::Deflate { identity, sizes },
+            EntryStorage::Compressed {
+                method: CompressionMethod::Zstd,
+                ..
+            } => Self::Zstd { identity, sizes },
+            EntryStorage::Compressed {
+                method: CompressionMethod::Jpeg,
+                ..
+            } => Self::Jpeg { identity, sizes },
+            EntryStorage::Compressed {
+                method: CompressionMethod::UnixCompress,
+                ..
+            } => Self::UnixCompress { identity, sizes },
+            EntryStorage::Compressed {
+                method: CompressionMethod::Zlib,
+                ..
+            } => Self::Zlib { identity, sizes },
         }
     }
+}
+
+fn declared_storage(
+    label: Result<VerbatimLabel, CompressionMethod>,
+    sizes: DeclaredSizesWire,
+) -> Result<EntryStorage, String> {
+    EntryStorage::from_declared(label, sizes.compressed_size, sizes.uncompressed_size)
+        .map_err(str::to_string)
 }
 
 impl TryFrom<ContainerEntryWire> for ContainerEntry {
     type Error = String;
 
     fn try_from(wire: ContainerEntryWire) -> Result<Self, Self::Error> {
-        let storage = match wire.compression.label() {
-            None => {
-                if wire.compressed_size.is_some() || wire.uncompressed_size.is_some() {
-                    return Err(
-                        "container entry compression \"storage\" declares a byte size".to_string(),
-                    );
-                }
-                EntryStorage::Directory
+        let (identity, storage) = match wire {
+            ContainerEntryWire::Directory { identity } => (identity, EntryStorage::Directory),
+            ContainerEntryWire::VerbatimNone { identity, sizes } => {
+                (identity, declared_storage(Ok(VerbatimLabel::None), sizes)?)
             }
-            Some(label) => {
-                EntryStorage::from_declared(label, wire.compressed_size, wire.uncompressed_size)
-                    .map_err(str::to_string)?
-            }
+            ContainerEntryWire::VerbatimStored { identity, sizes } => (
+                identity,
+                declared_storage(Ok(VerbatimLabel::Stored), sizes)?,
+            ),
+            ContainerEntryWire::Deflate { identity, sizes } => (
+                identity,
+                declared_storage(Err(CompressionMethod::Deflate), sizes)?,
+            ),
+            ContainerEntryWire::Zstd { identity, sizes } => (
+                identity,
+                declared_storage(Err(CompressionMethod::Zstd), sizes)?,
+            ),
+            ContainerEntryWire::Jpeg { identity, sizes } => (
+                identity,
+                declared_storage(Err(CompressionMethod::Jpeg), sizes)?,
+            ),
+            ContainerEntryWire::UnixCompress { identity, sizes } => (
+                identity,
+                declared_storage(Err(CompressionMethod::UnixCompress), sizes)?,
+            ),
+            ContainerEntryWire::Zlib { identity, sizes } => (
+                identity,
+                declared_storage(Err(CompressionMethod::Zlib), sizes)?,
+            ),
         };
         Ok(Self {
-            name: wire.name,
-            role: wire.role,
+            name: identity.name,
+            role: identity.role,
             storage,
-            attributes: wire.attributes,
+            attributes: identity.attributes,
         })
     }
 }
@@ -822,8 +890,12 @@ mod tests {
             (Some(4), Some(7)),
             (Some(0), Some(0)),
         ] {
-            assert!(reject("storage", compressed, uncompressed)
-                .contains("container entry compression \"storage\" declares a byte size"));
+            let error = reject("storage", compressed, uncompressed);
+            assert!(error.contains("unknown field"), "{error}");
+            assert!(
+                error.contains("compressed_size") || error.contains("uncompressed_size"),
+                "{error}"
+            );
         }
         assert_eq!(
             admit("storage", None, None).storage,

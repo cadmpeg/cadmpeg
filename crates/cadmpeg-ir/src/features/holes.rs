@@ -550,15 +550,19 @@ impl From<HoleBottomWire> for HoleBottom {
 /// Standard sizing and optional physical-thread construction for a hole.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "HoleSpecificationWire", into = "HoleSpecificationWire")]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum HoleSpecification {
     /// Clearance-hole sizing, which may carry a fit but cannot carry thread data.
     Clearance {
         /// Named fastener standard family.
+        #[serde(deserialize_with = "deserialize_local_standard")]
         standard: NonEmptyString,
         /// Nominal size designation within the standard.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         designation: Option<String>,
         /// Clearance-hole fit class.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         fit: Option<String>,
         /// Whether exact standard geometry is modeled.
         modeled: bool,
@@ -569,166 +573,38 @@ pub enum HoleSpecification {
         /// Standard depth rule retained from the source record.
         depth: HoleThreadDepth,
         /// Additional radial clearance used for modeled geometry.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         clearance: Option<Length>,
     },
     /// Internally threaded-hole sizing and thread geometry.
     Threaded {
         /// Named thread standard family.
+        #[serde(deserialize_with = "deserialize_local_standard")]
         standard: NonEmptyString,
         /// Nominal size designation within the standard.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         designation: Option<String>,
         /// Tolerance or thread class.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         class: Option<String>,
         /// Whether exact helical thread geometry is modeled.
         modeled: bool,
         /// Whether cosmetic thread presentation is requested.
         cosmetic: bool,
         /// Thread pitch in canonical millimeters.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         pitch: Option<PositiveLength>,
         /// Nominal major thread diameter.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         major_diameter: Option<PositiveLength>,
         /// Thread handedness.
         hand: ThreadHand,
         /// Axial thread-depth construction.
         depth: HoleThreadDepth,
         /// Additional radial thread clearance used for modeled geometry.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         clearance: Option<Length>,
     },
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-struct HoleSpecificationWire {
-    #[serde(deserialize_with = "deserialize_local_standard")]
-    standard: NonEmptyString,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    designation: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    class: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    fit: Option<String>,
-    threaded: bool,
-    modeled: bool,
-    cosmetic: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pitch: Option<PositiveLength>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    major_diameter: Option<PositiveLength>,
-    hand: ThreadHand,
-    depth: HoleThreadDepth,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    clearance: Option<Length>,
-}
-
-impl From<HoleSpecification> for HoleSpecificationWire {
-    fn from(value: HoleSpecification) -> Self {
-        match value {
-            HoleSpecification::Clearance {
-                standard,
-                designation,
-                fit,
-                modeled,
-                cosmetic,
-                hand,
-                depth,
-                clearance,
-            } => Self {
-                standard,
-                designation,
-                class: None,
-                fit,
-                threaded: false,
-                modeled,
-                cosmetic,
-                pitch: None,
-                major_diameter: None,
-                hand,
-                depth,
-                clearance,
-            },
-            HoleSpecification::Threaded {
-                standard,
-                designation,
-                class,
-                modeled,
-                cosmetic,
-                pitch,
-                major_diameter,
-                hand,
-                depth,
-                clearance,
-            } => Self {
-                standard,
-                designation,
-                class,
-                fit: None,
-                threaded: true,
-                modeled,
-                cosmetic,
-                pitch,
-                major_diameter,
-                hand,
-                depth,
-                clearance,
-            },
-        }
-    }
-}
-
-impl TryFrom<HoleSpecificationWire> for HoleSpecification {
-    type Error = String;
-
-    fn try_from(value: HoleSpecificationWire) -> Result<Self, Self::Error> {
-        let HoleSpecificationWire {
-            standard,
-            designation,
-            class,
-            fit,
-            threaded,
-            modeled,
-            cosmetic,
-            pitch,
-            major_diameter,
-            hand,
-            depth,
-            clearance,
-        } = value;
-        if threaded {
-            if fit.is_some() {
-                return Err("fit must be absent for a threaded hole specification".to_string());
-            }
-            Ok(Self::Threaded {
-                standard,
-                designation,
-                class,
-                modeled,
-                cosmetic,
-                pitch,
-                major_diameter,
-                hand,
-                depth,
-                clearance,
-            })
-        } else {
-            if class.is_some() || pitch.is_some() || major_diameter.is_some() {
-                return Err(
-                    "class, pitch, and major_diameter must be absent for a clearance hole specification"
-                        .to_string(),
-                );
-            }
-            Ok(Self::Clearance {
-                standard,
-                designation,
-                fit,
-                modeled,
-                cosmetic,
-                hand,
-                depth,
-                clearance,
-            })
-        }
-    }
 }
 
 /// Thread handedness.

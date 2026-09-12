@@ -14,7 +14,7 @@ use crate::transform::Transform;
 use crate::units::{FiniteScalar, FiniteVector, NonNegativeScalar};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
-use serde::{ser::SerializeStruct, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::num::NonZeroI64;
 
 /// Checked procedural curve payloads.
@@ -3393,48 +3393,21 @@ impl LoftSubdata {
     }
 }
 
-/// Surface-side constraint attached to one loft profile curve.
+/// The complete constraint payload of a classic loft or skin profile.
+///
+/// Every field the classic form carries is required and every field it cannot
+/// carry is absent from the type, so the revision-gated `support_bounds` and
+/// the type-zero `secondary_pcurve` are unknown keys here rather than values a
+/// reader has to refuse.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(rename = "LoftProfileData"))]
 #[serde(deny_unknown_fields)]
-struct LoftProfileDataWire {
-    /// Constraint support surface, absent for the native `null_surface`
-    /// sentinel.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    surface: Option<SurfaceId>,
-    /// Optional U/V bound fields following the support surface in the
-    /// revision-gated encoding.
-    #[serde(default)]
-    support_bounds: [Option<f64>; 4],
-    /// UV curve on the support, absent for `nullbs`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pcurve: Option<PcurveGeometry>,
-    /// Second UV curve slot, carried only by the type-zero member form and
-    /// absent for `nullbs`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    secondary_pcurve: Option<PcurveGeometry>,
-    /// First native constraint flag, absent from the type-zero member form.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    first_flag: Option<bool>,
-    /// ASM extension integer following the first flag, absent from member
-    /// forms that omit it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    asm_extension: Option<i64>,
-    /// Native constraint table.
-    subdata: LoftSubdata,
-    /// Optional direction selected by the second native flag.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    direction: Option<Vector3>,
-}
-
-/// The complete constraint payload of a classic loft or skin profile.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(try_from = "LoftProfileDataWire")]
 pub struct ClassicLoftProfileData {
     /// Required support surface.
     pub surface: SurfaceId,
     /// Nullable parameter curve on the support.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pcurve: Option<PcurveGeometry>,
     /// First native constraint flag.
     pub first_flag: bool,
@@ -3443,69 +3416,8 @@ pub struct ClassicLoftProfileData {
     /// Native constraint table.
     pub subdata: LoftSubdata,
     /// Optional direction selected by the second native flag.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub direction: Option<Vector3>,
-}
-
-impl TryFrom<LoftProfileDataWire> for ClassicLoftProfileData {
-    type Error = String;
-
-    fn try_from(wire: LoftProfileDataWire) -> Result<Self, Self::Error> {
-        if wire.support_bounds.iter().any(Option::is_some) {
-            return Err("classic loft data.support_bounds must be unbounded".into());
-        }
-        if wire.secondary_pcurve.is_some() {
-            return Err("classic loft data.secondary_pcurve must be absent".into());
-        }
-        Ok(Self {
-            surface: wire
-                .surface
-                .ok_or("classic loft data.surface is required")?,
-            pcurve: wire.pcurve,
-            first_flag: wire
-                .first_flag
-                .ok_or("classic loft data.first_flag is required")?,
-            asm_extension: wire
-                .asm_extension
-                .ok_or("classic loft data.asm_extension is required")?,
-            subdata: wire.subdata,
-            direction: wire.direction,
-        })
-    }
-}
-
-impl Serialize for ClassicLoftProfileData {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let field_count =
-            5 + usize::from(self.pcurve.is_some()) + usize::from(self.direction.is_some());
-        let mut wire = serializer.serialize_struct("LoftProfileData", field_count)?;
-        wire.serialize_field("surface", &self.surface)?;
-        wire.serialize_field("support_bounds", &[None::<f64>; 4])?;
-        if let Some(pcurve) = &self.pcurve {
-            wire.serialize_field("pcurve", pcurve)?;
-        }
-        wire.serialize_field("first_flag", &self.first_flag)?;
-        wire.serialize_field("asm_extension", &self.asm_extension)?;
-        wire.serialize_field("subdata", &self.subdata)?;
-        if let Some(direction) = &self.direction {
-            wire.serialize_field("direction", direction)?;
-        }
-        wire.end()
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for ClassicLoftProfileData {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "LoftProfileData".into()
-    }
-
-    fn schema_id() -> std::borrow::Cow<'static, str> {
-        LoftProfileDataWire::schema_id()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        LoftProfileDataWire::json_schema(generator)
-    }
 }
 
 /// Type-selected fields of one loft profile member.
@@ -4598,14 +4510,21 @@ pub struct VertexBlendBoundary {
 /// Twist payload selected by a vertex-blend circle form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "VertexBlendTwistsWire", into = "VertexBlendTwistsWire")]
+#[serde(tag = "form", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum VertexBlendTwists {
-    /// Form zero has no twist entries.
-    None,
-    /// Form one has one twist entry.
-    One(Point3),
-    /// Form three has two ordered twist entries.
-    Two([Point3; 2]),
+    /// Native form zero: no twist entries.
+    None {},
+    /// Native form one: one twist entry.
+    One {
+        /// The one twist entry.
+        twist: Point3,
+    },
+    /// Native form three: two ordered twist entries.
+    Two {
+        /// The two ordered twist entries.
+        twists: [Point3; 2],
+    },
 }
 
 impl VertexBlendTwists {
@@ -4613,9 +4532,9 @@ impl VertexBlendTwists {
     #[must_use]
     pub const fn form(&self) -> i64 {
         match self {
-            Self::None => 0,
-            Self::One(_) => 1,
-            Self::Two(_) => 3,
+            Self::None {} => 0,
+            Self::One { .. } => 1,
+            Self::Two { .. } => 3,
         }
     }
 
@@ -4623,38 +4542,9 @@ impl VertexBlendTwists {
     #[must_use]
     pub fn entries(&self) -> &[Point3] {
         match self {
-            Self::None => &[],
-            Self::One(point) => std::slice::from_ref(point),
-            Self::Two(points) => points,
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-struct VertexBlendTwistsWire {
-    form: i64,
-    twists: Vec<Point3>,
-}
-
-impl TryFrom<VertexBlendTwistsWire> for VertexBlendTwists {
-    type Error = &'static str;
-    fn try_from(wire: VertexBlendTwistsWire) -> Result<Self, Self::Error> {
-        match (wire.form, wire.twists.as_slice()) {
-            (0, []) => Ok(Self::None),
-            (1, [point]) => Ok(Self::One(*point)),
-            (3, [first, second]) => Ok(Self::Two([*first, *second])),
-            _ => Err("vertex-blend circle forms 0, 1, and 3 require zero, one, and two twists"),
-        }
-    }
-}
-
-impl From<VertexBlendTwists> for VertexBlendTwistsWire {
-    fn from(value: VertexBlendTwists) -> Self {
-        Self {
-            form: value.form(),
-            twists: value.entries().to_vec(),
+            Self::None {} => &[],
+            Self::One { twist } => std::slice::from_ref(twist),
+            Self::Two { twists } => twists,
         }
     }
 }

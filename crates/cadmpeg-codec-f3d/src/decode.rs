@@ -3527,7 +3527,7 @@ fn mesh_attribute_channels(
             (MeshAttributeDomain::Vertex, Some(item_size), Some(_)) => {
                 channels.push(
                     cadmpeg_ir::tessellation::TessellationChannel::new(
-                        cadmpeg_ir::tessellation::ChannelAddressing::Vertex,
+                        cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
                         item_size,
                         attribute.role,
                         attribute.element_code(),
@@ -3543,7 +3543,7 @@ fn mesh_attribute_channels(
                 };
                 channels.push(
                     cadmpeg_ir::tessellation::TessellationChannel::new(
-                        cadmpeg_ir::tessellation::ChannelAddressing::Corner(selectors),
+                        cadmpeg_ir::tessellation::ChannelAddressing::Corner { indices: selectors },
                         item_size,
                         attribute.role,
                         attribute.element_code(),
@@ -3564,7 +3564,7 @@ fn mesh_attribute_channels(
                 };
                 channels.push(
                     cadmpeg_ir::tessellation::TessellationChannel::new(
-                        cadmpeg_ir::tessellation::ChannelAddressing::Triangle(indices),
+                        cadmpeg_ir::tessellation::ChannelAddressing::Triangle { indices: indices },
                         item_size,
                         attribute.role,
                         attribute.element_code(),
