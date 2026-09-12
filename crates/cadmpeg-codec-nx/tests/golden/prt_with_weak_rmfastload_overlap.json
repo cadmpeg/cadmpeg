@@ -31,7 +31,10 @@
         "faces": [
           {
             "id": "nx:s0:face#300",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#0",
@@ -39,7 +42,10 @@
           },
           {
             "id": "nx:s0:face#301",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#1",
@@ -47,7 +53,10 @@
           },
           {
             "id": "nx:s0:face#302",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#2",
@@ -55,7 +64,10 @@
           },
           {
             "id": "nx:s0:face#303",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#3",
@@ -63,7 +75,10 @@
           },
           {
             "id": "nx:s0:face#304",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#4",
@@ -71,7 +86,10 @@
           },
           {
             "id": "nx:s0:face#305",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#5",
@@ -79,7 +97,10 @@
           },
           {
             "id": "nx:s0:face#306",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#6",
@@ -87,7 +108,10 @@
           },
           {
             "id": "nx:s0:face#307",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#7",
@@ -95,7 +119,10 @@
           },
           {
             "id": "nx:s0:face#308",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#8",
@@ -103,7 +130,10 @@
           },
           {
             "id": "nx:s0:face#309",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#9",
@@ -111,7 +141,10 @@
           },
           {
             "id": "nx:s0:face#310",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#10",
@@ -119,7 +152,10 @@
           },
           {
             "id": "nx:s0:face#311",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#11",
@@ -127,7 +163,10 @@
           },
           {
             "id": "nx:s0:face#312",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#12",
@@ -135,7 +174,10 @@
           },
           {
             "id": "nx:s0:face#313",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#13",
@@ -143,7 +185,10 @@
           },
           {
             "id": "nx:s0:face#314",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#14",
@@ -151,7 +196,10 @@
           },
           {
             "id": "nx:s0:face#315",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#15",
@@ -159,7 +207,10 @@
           },
           {
             "id": "nx:s0:face#316",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#16",
@@ -167,7 +218,10 @@
           },
           {
             "id": "nx:s0:face#317",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#17",
@@ -175,7 +229,10 @@
           },
           {
             "id": "nx:s0:face#318",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#18",
@@ -183,7 +240,10 @@
           },
           {
             "id": "nx:s0:face#319",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#19",
@@ -191,7 +251,10 @@
           },
           {
             "id": "nx:s0:face#320",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#20",
@@ -199,7 +262,10 @@
           },
           {
             "id": "nx:s0:face#321",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#21",
@@ -207,7 +273,10 @@
           },
           {
             "id": "nx:s0:face#322",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#22",
@@ -215,7 +284,10 @@
           },
           {
             "id": "nx:s0:face#323",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#23",
@@ -223,7 +295,10 @@
           },
           {
             "id": "nx:s0:face#324",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#24",
@@ -231,7 +306,10 @@
           },
           {
             "id": "nx:s0:face#325",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#25",
@@ -239,7 +317,10 @@
           },
           {
             "id": "nx:s0:face#326",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#26",
@@ -247,7 +328,10 @@
           },
           {
             "id": "nx:s0:face#327",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#27",
@@ -255,7 +339,10 @@
           },
           {
             "id": "nx:s0:face#328",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#28",
@@ -263,7 +350,10 @@
           },
           {
             "id": "nx:s0:face#329",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#29",
@@ -271,7 +361,10 @@
           },
           {
             "id": "nx:s0:face#330",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#30",
@@ -279,7 +372,10 @@
           },
           {
             "id": "nx:s0:face#331",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#31",
@@ -287,7 +383,10 @@
           },
           {
             "id": "nx:s0:face#332",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#32",
@@ -295,7 +394,10 @@
           },
           {
             "id": "nx:s0:face#333",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#33",
@@ -303,7 +405,10 @@
           },
           {
             "id": "nx:s0:face#334",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#34",
@@ -311,7 +416,10 @@
           },
           {
             "id": "nx:s0:face#335",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#35",
@@ -319,7 +427,10 @@
           },
           {
             "id": "nx:s0:face#336",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#36",
@@ -327,7 +438,10 @@
           },
           {
             "id": "nx:s0:face#337",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#37",
@@ -335,7 +449,10 @@
           },
           {
             "id": "nx:s0:face#338",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#38",
@@ -343,7 +460,10 @@
           },
           {
             "id": "nx:s0:face#339",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#39",
@@ -351,7 +471,10 @@
           },
           {
             "id": "nx:s0:face#340",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#40",
@@ -359,7 +482,10 @@
           },
           {
             "id": "nx:s0:face#341",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#41",
@@ -367,7 +493,10 @@
           },
           {
             "id": "nx:s0:face#342",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#42",
@@ -375,7 +504,10 @@
           },
           {
             "id": "nx:s0:face#343",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#43",
@@ -383,7 +515,10 @@
           },
           {
             "id": "nx:s0:face#344",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#44",
@@ -391,7 +526,10 @@
           },
           {
             "id": "nx:s0:face#345",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#45",
@@ -399,7 +537,10 @@
           },
           {
             "id": "nx:s0:face#346",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#46",
@@ -407,7 +548,10 @@
           },
           {
             "id": "nx:s0:face#347",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#47",
@@ -415,7 +559,10 @@
           },
           {
             "id": "nx:s0:face#348",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#48",
@@ -423,7 +570,10 @@
           },
           {
             "id": "nx:s0:face#349",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#49",
@@ -431,7 +581,10 @@
           },
           {
             "id": "nx:s1:face#300",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#0",
@@ -439,7 +592,10 @@
           },
           {
             "id": "nx:s1:face#301",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#1",
@@ -447,7 +603,10 @@
           },
           {
             "id": "nx:s1:face#302",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#2",
@@ -455,7 +614,10 @@
           },
           {
             "id": "nx:s1:face#303",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#3",
@@ -463,7 +625,10 @@
           },
           {
             "id": "nx:s1:face#304",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#4",
@@ -471,7 +636,10 @@
           },
           {
             "id": "nx:s1:face#305",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#5",
@@ -479,7 +647,10 @@
           },
           {
             "id": "nx:s1:face#306",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#6",
@@ -487,7 +658,10 @@
           },
           {
             "id": "nx:s1:face#307",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#7",
@@ -495,7 +669,10 @@
           },
           {
             "id": "nx:s1:face#308",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#8",
@@ -503,7 +680,10 @@
           },
           {
             "id": "nx:s1:face#309",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#9",
@@ -511,7 +691,10 @@
           },
           {
             "id": "nx:s1:face#310",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#10",
@@ -519,7 +702,10 @@
           },
           {
             "id": "nx:s1:face#311",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#11",
@@ -527,7 +713,10 @@
           },
           {
             "id": "nx:s1:face#312",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#12",
@@ -535,7 +724,10 @@
           },
           {
             "id": "nx:s1:face#313",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#13",
@@ -543,7 +735,10 @@
           },
           {
             "id": "nx:s1:face#314",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#14",
@@ -551,7 +746,10 @@
           },
           {
             "id": "nx:s1:face#315",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#15",
@@ -559,7 +757,10 @@
           },
           {
             "id": "nx:s1:face#316",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#16",
@@ -567,7 +768,10 @@
           },
           {
             "id": "nx:s1:face#317",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#17",
@@ -575,7 +779,10 @@
           },
           {
             "id": "nx:s1:face#318",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#18",
@@ -583,7 +790,10 @@
           },
           {
             "id": "nx:s1:face#319",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#19",
@@ -591,7 +801,10 @@
           },
           {
             "id": "nx:s1:face#320",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#20",
@@ -599,7 +812,10 @@
           },
           {
             "id": "nx:s1:face#321",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#21",
@@ -607,7 +823,10 @@
           },
           {
             "id": "nx:s1:face#322",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#22",
@@ -615,7 +834,10 @@
           },
           {
             "id": "nx:s1:face#323",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#23",
@@ -623,7 +845,10 @@
           },
           {
             "id": "nx:s1:face#324",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#24",
@@ -631,7 +856,10 @@
           },
           {
             "id": "nx:s1:face#325",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#25",
@@ -639,7 +867,10 @@
           },
           {
             "id": "nx:s1:face#326",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#26",
@@ -647,7 +878,10 @@
           },
           {
             "id": "nx:s1:face#327",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#27",
@@ -655,7 +889,10 @@
           },
           {
             "id": "nx:s1:face#328",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#28",
@@ -663,7 +900,10 @@
           },
           {
             "id": "nx:s1:face#329",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#29",
@@ -671,7 +911,10 @@
           },
           {
             "id": "nx:s1:face#330",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#30",
@@ -679,7 +922,10 @@
           },
           {
             "id": "nx:s1:face#331",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#31",
@@ -687,7 +933,10 @@
           },
           {
             "id": "nx:s1:face#332",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#32",
@@ -695,7 +944,10 @@
           },
           {
             "id": "nx:s1:face#333",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#33",
@@ -703,7 +955,10 @@
           },
           {
             "id": "nx:s1:face#334",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#34",
@@ -711,7 +966,10 @@
           },
           {
             "id": "nx:s1:face#335",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#35",
@@ -719,7 +977,10 @@
           },
           {
             "id": "nx:s1:face#336",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#36",
@@ -727,7 +988,10 @@
           },
           {
             "id": "nx:s1:face#337",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#37",
@@ -735,7 +999,10 @@
           },
           {
             "id": "nx:s1:face#338",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#38",
@@ -743,7 +1010,10 @@
           },
           {
             "id": "nx:s1:face#339",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#39",
@@ -751,7 +1021,10 @@
           },
           {
             "id": "nx:s1:face#340",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#40",
@@ -759,7 +1032,10 @@
           },
           {
             "id": "nx:s1:face#341",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#41",
@@ -767,7 +1043,10 @@
           },
           {
             "id": "nx:s1:face#342",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#42",
@@ -775,7 +1054,10 @@
           },
           {
             "id": "nx:s1:face#343",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#43",
@@ -783,7 +1065,10 @@
           },
           {
             "id": "nx:s1:face#344",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#44",
@@ -791,7 +1076,10 @@
           },
           {
             "id": "nx:s1:face#345",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#45",
@@ -799,7 +1087,10 @@
           },
           {
             "id": "nx:s1:face#346",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#46",
@@ -807,7 +1098,10 @@
           },
           {
             "id": "nx:s1:face#347",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#47",
@@ -815,7 +1109,10 @@
           },
           {
             "id": "nx:s1:face#348",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#48",
@@ -823,7 +1120,10 @@
           },
           {
             "id": "nx:s1:face#349",
-            "loops": [],
+            "loops": {
+              "classification": "unspecified",
+              "loops": []
+            },
             "sense": "forward",
             "shell": "nx:s1:shell#3",
             "surface": "nx:s1:surf#49",

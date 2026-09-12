@@ -82,12 +82,12 @@
         "faces": [
           {
             "id": "nx:s0:face#4",
-            "loops": [
-              {
-                "id": "nx:s0:loop#5",
-                "role": "unspecified"
-              }
-            ],
+            "loops": {
+              "classification": "unspecified",
+              "loops": [
+                "nx:s0:loop#5"
+              ]
+            },
             "sense": "forward",
             "shell": "nx:s0:shell#3",
             "surface": "nx:s0:surf#0",

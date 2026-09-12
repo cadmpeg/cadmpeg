@@ -5906,7 +5906,7 @@ fn block_placement(
         Transform::affine([
             [x_axis.x, y_axis.x, z_axis.x, origin.x],
             [x_axis.y, y_axis.y, z_axis.y, origin.y],
-            [x_axis.z, y_axis.z, z_axis.z, origin.z]
+            [x_axis.z, y_axis.z, z_axis.z, origin.z],
         ])
         .expect("affine transform"),
     ))

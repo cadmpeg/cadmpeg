@@ -24,7 +24,10 @@
       "faces": [
         {
           "id": "iges:model:face#D3",
-          "loops": [],
+          "loops": {
+            "classification": "classified",
+            "inner": []
+          },
           "sense": "forward",
           "shell": "iges:model:shell#D3",
           "surface": "iges:model:surface#D1"

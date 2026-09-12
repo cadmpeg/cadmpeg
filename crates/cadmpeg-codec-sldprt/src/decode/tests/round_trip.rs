@@ -23,7 +23,7 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
                 [0.0, -1.0, 0.0, 10.0],
                 [1.0, 0.0, 0.0, 20.0],
                 [0.0, 0.0, 1.0, 30.0],
-                ],
+            ],
             (|p: Point3| Point3::new(-p.y + 10.0, p.x + 20.0, p.z + 30.0)) as fn(Point3) -> Point3,
         ),
         (
@@ -31,7 +31,7 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
                 [1.0, 0.0, 0.0, -5.0],
                 [0.0, 0.0, -1.0, 7.0],
                 [0.0, 1.0, 0.0, 3.0],
-                ],
+            ],
             |p: Point3| Point3::new(p.x - 5.0, -p.z + 7.0, p.y + 3.0),
         ),
     ];
@@ -69,8 +69,7 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
     for (rows, apply) in motions {
         let mut moved = cadmpeg_ir::examples::unit_cube();
         prepare(&mut moved);
-        moved.model.bodies[0].transform =
-            Some(Transform::affine(rows).expect("affine transform"));
+        moved.model.bodies[0].transform = Some(Transform::affine(rows).expect("affine transform"));
         let mut bytes = Vec::new();
         SldprtCodec
             .plan(EncodeInput::new(&moved, None), TargetRequest::Inherit)

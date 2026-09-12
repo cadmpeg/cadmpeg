@@ -323,12 +323,12 @@
       "faces": [
         {
           "id": "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:15",
           "surface": "fcstd:model:surface#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:2",
@@ -336,12 +336,12 @@
         },
         {
           "id": "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:14",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:14%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:14%3A1"
+            ]
+          },
           "sense": "reversed",
           "shell": "fcstd:model:shell#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:15",
           "surface": "fcstd:model:surface#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:3",
@@ -349,12 +349,12 @@
         },
         {
           "id": "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:15",
           "surface": "fcstd:model:surface#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:1",

@@ -763,7 +763,10 @@ fn semantic_writer_expands_indexed_tessellation() {
         ],
         vec![[0, 1, 2], [0, 2, 3]],
         Vec::new(),
-        cadmpeg_ir::tessellation::NormalSamples::new(corner_normals.clone()).map_or(cadmpeg_ir::tessellation::TessellationNormals::None, cadmpeg_ir::tessellation::TessellationNormals::per_corner),
+        cadmpeg_ir::tessellation::NormalSamples::new(corner_normals.clone()).map_or(
+            cadmpeg_ir::tessellation::TessellationNormals::None,
+            cadmpeg_ir::tessellation::TessellationNormals::per_corner,
+        ),
         vec![TessellationChannel::new(
             cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
             1,

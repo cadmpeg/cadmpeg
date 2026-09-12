@@ -30,12 +30,6 @@
                   0.0,
                   1.0,
                   0.0
-                ],
-                [
-                  0.0,
-                  0.0,
-                  0.0,
-                  1.0
                 ]
               ],
               "operand": {
@@ -75,12 +69,6 @@
                     0.0,
                     1.0,
                     3.0
-                  ],
-                  [
-                    0.0,
-                    0.0,
-                    0.0,
-                    1.0
                   ]
                 ],
                 "operand": {
@@ -115,12 +103,6 @@
                     0.0,
                     1.0,
                     3.0
-                  ],
-                  [
-                    0.0,
-                    0.0,
-                    0.0,
-                    1.0
                   ]
                 ],
                 "operand": {
@@ -164,12 +146,6 @@
                   0.0,
                   1.0,
                   0.5
-                ],
-                [
-                  0.0,
-                  0.0,
-                  0.0,
-                  1.0
                 ]
               ],
               [
@@ -190,12 +166,6 @@
                   0.0,
                   1.0,
                   -0.5
-                ],
-                [
-                  0.0,
-                  0.0,
-                  0.0,
-                  1.0
                 ]
               ]
             ]
@@ -1218,12 +1188,12 @@
       "faces": [
         {
           "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:10",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%3A1"
+            ]
+          },
           "sense": "reversed",
           "shell": "fcstd:model:shell#BracketPrototype:Shape:BracketPrototype.Shape.brp:33",
           "surface": "fcstd:model:surface#BracketPrototype:Shape:BracketPrototype.Shape.brp:1",
@@ -1231,12 +1201,12 @@
         },
         {
           "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:20",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#BracketPrototype:Shape:BracketPrototype.Shape.brp:33",
           "surface": "fcstd:model:surface#BracketPrototype:Shape:BracketPrototype.Shape.brp:6",
@@ -1244,12 +1214,12 @@
         },
         {
           "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:24",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%3A1"
+            ]
+          },
           "sense": "reversed",
           "shell": "fcstd:model:shell#BracketPrototype:Shape:BracketPrototype.Shape.brp:33",
           "surface": "fcstd:model:surface#BracketPrototype:Shape:BracketPrototype.Shape.brp:2",
@@ -1257,12 +1227,12 @@
         },
         {
           "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:28",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#BracketPrototype:Shape:BracketPrototype.Shape.brp:33",
           "surface": "fcstd:model:surface#BracketPrototype:Shape:BracketPrototype.Shape.brp:4",
@@ -1270,12 +1240,12 @@
         },
         {
           "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:30",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%3A1"
+            ]
+          },
           "sense": "reversed",
           "shell": "fcstd:model:shell#BracketPrototype:Shape:BracketPrototype.Shape.brp:33",
           "surface": "fcstd:model:surface#BracketPrototype:Shape:BracketPrototype.Shape.brp:5",
@@ -1283,12 +1253,12 @@
         },
         {
           "id": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:32",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#BracketPrototype:Shape:BracketPrototype.Shape.brp:33",
           "surface": "fcstd:model:surface#BracketPrototype:Shape:BracketPrototype.Shape.brp:3",
@@ -1296,12 +1266,12 @@
         },
         {
           "id": "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:11",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:11%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:11%3A1"
+            ]
+          },
           "sense": "reversed",
           "shell": "fcstd:model:shell#PinPrototype:Shape:PinPrototype.Shape.brp:12",
           "surface": "fcstd:model:surface#PinPrototype:Shape:PinPrototype.Shape.brp:3",
@@ -1309,12 +1279,12 @@
         },
         {
           "id": "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:7",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:7%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#PinPrototype:Shape:PinPrototype.Shape.brp:12",
           "surface": "fcstd:model:surface#PinPrototype:Shape:PinPrototype.Shape.brp:1",
@@ -1322,12 +1292,12 @@
         },
         {
           "id": "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:9",
-          "loops": [
-            {
-              "id": "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:9%3A1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:9%3A1"
+            ]
+          },
           "sense": "forward",
           "shell": "fcstd:model:shell#PinPrototype:Shape:PinPrototype.Shape.brp:12",
           "surface": "fcstd:model:surface#PinPrototype:Shape:PinPrototype.Shape.brp:2",
@@ -1519,12 +1489,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
@@ -1564,12 +1528,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
@@ -1610,12 +1568,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ],
           "name": "fcstd:native:object#BracketOccurrence",
@@ -1652,12 +1604,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
@@ -1697,12 +1643,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
@@ -1741,12 +1681,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
@@ -1787,12 +1721,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ],
           "name": "fcstd:native:object#ExternalOccurrence",
@@ -1832,12 +1760,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
@@ -1877,12 +1799,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
@@ -1921,12 +1837,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
@@ -1967,12 +1877,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ],
           "name": "fcstd:native:object#NestedBracketOccurrence",
@@ -2008,12 +1912,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
@@ -2053,12 +1951,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
@@ -2103,12 +1995,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ],
           "name": "fcstd:native:object#PinArray",
@@ -2144,12 +2030,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
@@ -2194,12 +2074,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ],
           "name": "fcstd:native:object#PinArray",
@@ -2235,12 +2109,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
@@ -2285,12 +2153,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ],
           "name": "fcstd:native:object#PinArray",
@@ -2326,12 +2188,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
@@ -2370,12 +2226,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
@@ -2414,12 +2264,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
@@ -2456,12 +2300,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ],
           "name": "fcstd:native:object#PinArray_i0",
@@ -2497,12 +2335,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
@@ -2541,12 +2373,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
@@ -2583,12 +2409,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ],
           "name": "fcstd:native:object#PinArray_i1",
@@ -2624,12 +2444,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
@@ -2668,12 +2482,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
@@ -2710,12 +2518,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ],
           "name": "fcstd:native:object#PinArray_i2",
@@ -2751,12 +2553,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
@@ -2797,12 +2593,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ],
           "name": "fcstd:native:object#PinOccurrence",
@@ -2839,12 +2629,6 @@
               0.0,
               2.220446049250313e-16,
               3.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
@@ -2884,12 +2668,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
@@ -2928,12 +2706,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         },
@@ -2973,12 +2745,6 @@
               0.0,
               1.0,
               0.0
-            ],
-            [
-              0.0,
-              0.0,
-              0.0,
-              1.0
             ]
           ]
         }

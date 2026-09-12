@@ -767,96 +767,88 @@
       "faces": [
         {
           "id": "iges:model:face#D109:D107:D101",
-          "loops": [
-            {
-              "id": "iges:model:loop#D109:D107:D93",
-              "role": "outer"
-            }
-          ],
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "iges:model:loop#D109:D107:D93"
+          },
           "sense": "reversed",
           "shell": "iges:model:shell#D109:D107",
           "surface": "iges:model:surface#D69"
         },
         {
           "id": "iges:model:face#D109:D107:D103",
-          "loops": [
-            {
-              "id": "iges:model:loop#D109:D107:D95",
-              "role": "outer"
-            }
-          ],
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "iges:model:loop#D109:D107:D95"
+          },
           "sense": "reversed",
           "shell": "iges:model:shell#D109:D107",
           "surface": "iges:model:surface#D71"
         },
         {
           "id": "iges:model:face#D109:D107:D105",
-          "loops": [
-            {
-              "id": "iges:model:loop#D109:D107:D97",
-              "role": "outer"
-            }
-          ],
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "iges:model:loop#D109:D107:D97"
+          },
           "sense": "reversed",
           "shell": "iges:model:shell#D109:D107",
           "surface": "iges:model:surface#D73"
         },
         {
           "id": "iges:model:face#D109:D107:D99",
-          "loops": [
-            {
-              "id": "iges:model:loop#D109:D107:D91",
-              "role": "outer"
-            }
-          ],
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "iges:model:loop#D109:D107:D91"
+          },
           "sense": "reversed",
           "shell": "iges:model:shell#D109:D107",
           "surface": "iges:model:surface#D67"
         },
         {
           "id": "iges:model:face#D109:D53:D45",
-          "loops": [
-            {
-              "id": "iges:model:loop#D109:D53:D37",
-              "role": "outer"
-            }
-          ],
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "iges:model:loop#D109:D53:D37"
+          },
           "sense": "forward",
           "shell": "iges:model:shell#D109:D53",
           "surface": "iges:model:surface#D13"
         },
         {
           "id": "iges:model:face#D109:D53:D47",
-          "loops": [
-            {
-              "id": "iges:model:loop#D109:D53:D39",
-              "role": "outer"
-            }
-          ],
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "iges:model:loop#D109:D53:D39"
+          },
           "sense": "forward",
           "shell": "iges:model:shell#D109:D53",
           "surface": "iges:model:surface#D15"
         },
         {
           "id": "iges:model:face#D109:D53:D49",
-          "loops": [
-            {
-              "id": "iges:model:loop#D109:D53:D41",
-              "role": "outer"
-            }
-          ],
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "iges:model:loop#D109:D53:D41"
+          },
           "sense": "forward",
           "shell": "iges:model:shell#D109:D53",
           "surface": "iges:model:surface#D17"
         },
         {
           "id": "iges:model:face#D109:D53:D51",
-          "loops": [
-            {
-              "id": "iges:model:loop#D109:D53:D43",
-              "role": "outer"
-            }
-          ],
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "iges:model:loop#D109:D53:D43"
+          },
           "sense": "forward",
           "shell": "iges:model:shell#D109:D53",
           "surface": "iges:model:surface#D19"

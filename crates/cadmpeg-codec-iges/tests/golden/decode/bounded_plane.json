@@ -255,12 +255,12 @@
       "faces": [
         {
           "id": "iges:model:face#D13",
-          "loops": [
-            {
-              "id": "iges:model:loop#D13:0",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "iges:model:loop#D13:0"
+            ]
+          },
           "sense": "forward",
           "shell": "iges:model:shell#D13",
           "surface": "iges:model:surface#D1",

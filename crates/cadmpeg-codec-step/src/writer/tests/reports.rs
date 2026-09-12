@@ -970,11 +970,8 @@ fn non_similarity_pcurve_replica_is_reported_and_strict_export_rejects() {
             )
             .unwrap(),
         )),
-        transform: cadmpeg_ir::transform::Transform2::affine([
-            [2.0, 0.0, 0.0],
-            [0.0, 3.0, 0.0]
-        ])
-        .expect("affine transform"),
+        transform: cadmpeg_ir::transform::Transform2::affine([[2.0, 0.0, 0.0], [0.0, 3.0, 0.0]])
+            .expect("affine transform"),
     };
 
     let mut output = Vec::new();

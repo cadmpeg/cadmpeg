@@ -362,48 +362,44 @@
       "faces": [
         {
           "id": "creo:visibgeom:face#1",
-          "loops": [
-            {
-              "id": "creo:visibgeom:loop#1",
-              "role": "outer"
-            }
-          ],
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "creo:visibgeom:loop#1"
+          },
           "sense": "reversed",
           "shell": "creo:visibgeom:shell#1",
           "surface": "creo:visibgeom:surface#1"
         },
         {
           "id": "creo:visibgeom:face#2",
-          "loops": [
-            {
-              "id": "creo:visibgeom:loop#2",
-              "role": "outer"
-            }
-          ],
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "creo:visibgeom:loop#2"
+          },
           "sense": "forward",
           "shell": "creo:visibgeom:shell#1",
           "surface": "creo:visibgeom:surface#2"
         },
         {
           "id": "creo:visibgeom:face#3",
-          "loops": [
-            {
-              "id": "creo:visibgeom:loop#3",
-              "role": "outer"
-            }
-          ],
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "creo:visibgeom:loop#3"
+          },
           "sense": "forward",
           "shell": "creo:visibgeom:shell#1",
           "surface": "creo:visibgeom:surface#3"
         },
         {
           "id": "creo:visibgeom:face#4",
-          "loops": [
-            {
-              "id": "creo:visibgeom:loop#4",
-              "role": "outer"
-            }
-          ],
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "creo:visibgeom:loop#4"
+          },
           "sense": "forward",
           "shell": "creo:visibgeom:shell#1",
           "surface": "creo:visibgeom:surface#4"

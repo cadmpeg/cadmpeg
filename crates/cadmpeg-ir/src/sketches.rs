@@ -1760,7 +1760,11 @@ impl SketchCircularPattern {
         let mut entities = std::collections::HashSet::new();
         if seed
             .iter()
-            .chain(instances.iter().flat_map(|instance| instance.entities.iter()))
+            .chain(
+                instances
+                    .iter()
+                    .flat_map(|instance| instance.entities.iter()),
+            )
             .any(|entity| entity == &center || !entities.insert(entity))
         {
             return None;

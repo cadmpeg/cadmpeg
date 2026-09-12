@@ -3459,7 +3459,7 @@ mod detached_legacy_sketch_tests {
         let quarter_turn = Transform::affine([
             [0.0, -1.0, 0.0, 5.0],
             [1.0, 0.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0]
+            [0.0, 0.0, 1.0, 0.0],
         ])
         .expect("affine transform");
         let assembled_id = SketchId::mint("sldprt:model:sketch#block-profile:test").unwrap();

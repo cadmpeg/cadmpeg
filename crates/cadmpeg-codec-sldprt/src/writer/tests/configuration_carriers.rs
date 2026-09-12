@@ -301,7 +301,7 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
             Transform::affine([
                 [1.0, 0.0, 0.0, (index as f64 + 1.0) * 10.0],
                 [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0]
+                [0.0, 0.0, 1.0, 0.0],
             ])
             .expect("affine transform"),
         );
@@ -319,12 +319,11 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
                 ],
                 vec![[0, 1, 2]],
                 vec![3],
-                cadmpeg_ir::tessellation::NormalSamples::new(vec![
-                    Vector3::new(
-                        0.0, 0.0, 1.0
-                    );
-                    3
-                ]).map_or(cadmpeg_ir::tessellation::TessellationNormals::None, cadmpeg_ir::tessellation::TessellationNormals::per_vertex),
+                cadmpeg_ir::tessellation::NormalSamples::new(vec![Vector3::new(0.0, 0.0, 1.0); 3])
+                    .map_or(
+                        cadmpeg_ir::tessellation::TessellationNormals::None,
+                        cadmpeg_ir::tessellation::TessellationNormals::per_vertex,
+                    ),
                 Vec::new(),
             )
             .expect("valid tessellation")
@@ -727,7 +726,7 @@ fn encoder_bakes_rigid_body_transform() {
         Transform::affine([
             [0.0, -1.0, 0.0, 10.0],
             [1.0, 0.0, 0.0, 20.0],
-            [0.0, 0.0, 1.0, 30.0]
+            [0.0, 0.0, 1.0, 30.0],
         ])
         .expect("affine transform"),
     );

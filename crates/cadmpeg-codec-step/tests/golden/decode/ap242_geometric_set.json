@@ -60,7 +60,10 @@
       "faces": [
         {
           "id": "step:data:face#11-geometric-set-13",
-          "loops": [],
+          "loops": {
+            "classification": "unspecified",
+            "loops": []
+          },
           "sense": "forward",
           "shell": "step:data:shell#geometric-set-13",
           "surface": "step:data:surface#11"

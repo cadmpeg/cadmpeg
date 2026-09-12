@@ -320,32 +320,26 @@
       "faces": [
         {
           "id": "rhino:object:face#record-000000-offset-177.cap-0",
-          "loops": [
-            {
-              "id": "rhino:object:loop#record-000000-offset-177.cap-0.profile-0",
-              "role": "unspecified"
-            },
-            {
-              "id": "rhino:object:loop#record-000000-offset-177.cap-0.profile-1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "rhino:object:loop#record-000000-offset-177.cap-0.profile-0",
+              "rhino:object:loop#record-000000-offset-177.cap-0.profile-1"
+            ]
+          },
           "sense": "reversed",
           "shell": "rhino:object:shell#record-000000-offset-177.cap-0",
           "surface": "rhino:object:surface#record-000000-offset-177.cap-0"
         },
         {
           "id": "rhino:object:face#record-000000-offset-177.cap-1",
-          "loops": [
-            {
-              "id": "rhino:object:loop#record-000000-offset-177.cap-1.profile-0",
-              "role": "unspecified"
-            },
-            {
-              "id": "rhino:object:loop#record-000000-offset-177.cap-1.profile-1",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "rhino:object:loop#record-000000-offset-177.cap-1.profile-0",
+              "rhino:object:loop#record-000000-offset-177.cap-1.profile-1"
+            ]
+          },
           "sense": "forward",
           "shell": "rhino:object:shell#record-000000-offset-177.cap-1",
           "surface": "rhino:object:surface#record-000000-offset-177.cap-1"

@@ -251,16 +251,20 @@ pub(crate) fn bind_sweep_operations(
                     let op = match first {
                         BooleanOp::Join => cadmpeg_ir::features::SolidSweepOperation::Join,
                         BooleanOp::Cut => cadmpeg_ir::features::SolidSweepOperation::Cut,
-                        BooleanOp::Intersect => cadmpeg_ir::features::SolidSweepOperation::Intersect,
+                        BooleanOp::Intersect => {
+                            cadmpeg_ir::features::SolidSweepOperation::Intersect
+                        }
                         BooleanOp::NewBody => cadmpeg_ir::features::SolidSweepOperation::NewBody,
                         BooleanOp::Unresolved => break 'sweep_mode,
                     };
                     // The lane always names a solid result, which admits every
                     // cross-section, so the shape is built once from the
                     // sections it already holds.
-                    let (section, sections) =
-                        std::mem::replace(shape, cadmpeg_ir::features::SweepShape::unresolved(None))
-                            .into_sections();
+                    let (section, sections) = std::mem::replace(
+                        shape,
+                        cadmpeg_ir::features::SweepShape::unresolved(None),
+                    )
+                    .into_sections();
                     *shape =
                         cadmpeg_ir::features::SweepShape::solid_sections(op, section, sections);
                 }

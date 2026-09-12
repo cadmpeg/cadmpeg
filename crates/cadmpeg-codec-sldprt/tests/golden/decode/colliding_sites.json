@@ -129,24 +129,24 @@
       "faces": [
         {
           "id": "sldprt:brep:face#10@block@250",
-          "loops": [
-            {
-              "id": "sldprt:brep:loop#20@block@250",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "sldprt:brep:loop#20@block@250"
+            ]
+          },
           "sense": "forward",
           "shell": "sldprt:brep:shell#0@block@250",
           "surface": "sldprt:brep:surf#10@block@250"
         },
         {
           "id": "sldprt:brep:face#10@block@8",
-          "loops": [
-            {
-              "id": "sldprt:brep:loop#20@block@8",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "sldprt:brep:loop#20@block@8"
+            ]
+          },
           "sense": "forward",
           "shell": "sldprt:brep:shell#0@block@8",
           "surface": "sldprt:brep:surf#10@block@8"

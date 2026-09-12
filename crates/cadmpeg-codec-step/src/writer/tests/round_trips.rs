@@ -135,7 +135,7 @@ fn curve_geometry_for_sheet_pcurve(geometry: &PcurveGeometry) -> Option<CurveGeo
                     0.0,
                     transform.rows()[1][2],
                 ],
-                [0.0, 0.0, 1.0, 0.0]
+                [0.0, 0.0, 1.0, 0.0],
             ])
             .expect("affine transform");
             let direction = transform.apply_vector(*direction);
@@ -417,11 +417,8 @@ fn writer_round_trips_every_exact_step_pcurve_family() {
                 )
                 .unwrap(),
             )),
-            transform: Transform2::affine([
-                [0.0, -2.0, 10.0],
-                [2.0, 0.0, 20.0]
-            ])
-            .expect("affine transform"),
+            transform: Transform2::affine([[0.0, -2.0, 10.0], [2.0, 0.0, 20.0]])
+                .expect("affine transform"),
         },
     ];
 
@@ -465,7 +462,7 @@ pub(crate) fn writer_round_trips_rigid_body_placements() {
         cadmpeg_ir::transform::Transform::affine([
             [0.0, -1.0, 0.0, 15.0],
             [1.0, 0.0, 0.0, 4.0],
-            [0.0, 0.0, 1.0, 2.0]
+            [0.0, 0.0, 1.0, 2.0],
         ])
         .expect("affine transform"),
     );
@@ -650,12 +647,11 @@ pub(crate) fn ap242_writer_round_trips_indexed_tessellation_and_exact_body_link(
             ],
             vec![[0, 1, 2], [2, 1, 0]],
             Vec::new(),
-            cadmpeg_ir::tessellation::NormalSamples::new(vec![
-                Vector3::new(
-                    0.0, 0.0, 1.0
-                );
-                3
-            ]).map_or(cadmpeg_ir::tessellation::TessellationNormals::None, cadmpeg_ir::tessellation::TessellationNormals::per_vertex),
+            cadmpeg_ir::tessellation::NormalSamples::new(vec![Vector3::new(0.0, 0.0, 1.0); 3])
+                .map_or(
+                    cadmpeg_ir::tessellation::TessellationNormals::None,
+                    cadmpeg_ir::tessellation::TessellationNormals::per_vertex,
+                ),
             Vec::new(),
         )
         .expect("valid tessellation")

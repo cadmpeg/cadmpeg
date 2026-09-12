@@ -427,36 +427,33 @@
       "faces": [
         {
           "id": "iges:model:face#D37:D31",
-          "loops": [
-            {
-              "id": "iges:model:loop#D37:D25",
-              "role": "outer"
-            }
-          ],
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "iges:model:loop#D37:D25"
+          },
           "sense": "forward",
           "shell": "iges:model:shell#D37",
           "surface": "iges:model:surface#D5"
         },
         {
           "id": "iges:model:face#D37:D33",
-          "loops": [
-            {
-              "id": "iges:model:loop#D37:D27",
-              "role": "outer"
-            }
-          ],
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "iges:model:loop#D37:D27"
+          },
           "sense": "forward",
           "shell": "iges:model:shell#D37",
           "surface": "iges:model:surface#D5"
         },
         {
           "id": "iges:model:face#D37:D35",
-          "loops": [
-            {
-              "id": "iges:model:loop#D37:D29",
-              "role": "outer"
-            }
-          ],
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "iges:model:loop#D37:D29"
+          },
           "sense": "forward",
           "shell": "iges:model:shell#D37",
           "surface": "iges:model:surface#D5"

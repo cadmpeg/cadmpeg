@@ -103,12 +103,12 @@
           "shell": "f3d:brep:entity#3",
           "surface": "f3d:brep:entity#16",
           "sense": "forward",
-          "loops": [
-            {
-              "id": "f3d:brep:entity#10",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "f3d:brep:entity#10"
+            ]
+          },
           "name": "back face"
         },
         {
@@ -116,12 +116,12 @@
           "shell": "f3d:brep:entity#3",
           "surface": "f3d:brep:entity#17",
           "sense": "forward",
-          "loops": [
-            {
-              "id": "f3d:brep:entity#11",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "f3d:brep:entity#11"
+            ]
+          },
           "name": "bottom face"
         },
         {
@@ -129,12 +129,12 @@
           "shell": "f3d:brep:entity#3",
           "surface": "f3d:brep:entity#18",
           "sense": "forward",
-          "loops": [
-            {
-              "id": "f3d:brep:entity#12",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "f3d:brep:entity#12"
+            ]
+          },
           "name": "front face"
         },
         {
@@ -142,12 +142,12 @@
           "shell": "f3d:brep:entity#3",
           "surface": "f3d:brep:entity#19",
           "sense": "forward",
-          "loops": [
-            {
-              "id": "f3d:brep:entity#13",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "f3d:brep:entity#13"
+            ]
+          },
           "name": "left face"
         },
         {
@@ -155,12 +155,12 @@
           "shell": "f3d:brep:entity#3",
           "surface": "f3d:brep:entity#20",
           "sense": "forward",
-          "loops": [
-            {
-              "id": "f3d:brep:entity#14",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "f3d:brep:entity#14"
+            ]
+          },
           "name": "right face"
         },
         {
@@ -168,12 +168,12 @@
           "shell": "f3d:brep:entity#3",
           "surface": "f3d:brep:entity#21",
           "sense": "forward",
-          "loops": [
-            {
-              "id": "f3d:brep:entity#15",
-              "role": "unspecified"
-            }
-          ],
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "f3d:brep:entity#15"
+            ]
+          },
           "name": "top face"
         }
       ],

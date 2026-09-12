@@ -357,7 +357,13 @@ impl<'a> Builder<'a> {
                     triangulation.nodes().to_vec(),
                     triangulation.triangles().to_vec(),
                     Vec::new(),
-                    cadmpeg_ir::tessellation::NormalSamples::new(triangulation.normals().unwrap_or_default().to_vec()).map_or(cadmpeg_ir::tessellation::TessellationNormals::None, cadmpeg_ir::tessellation::TessellationNormals::per_vertex),
+                    cadmpeg_ir::tessellation::NormalSamples::new(
+                        triangulation.normals().unwrap_or_default().to_vec(),
+                    )
+                    .map_or(
+                        cadmpeg_ir::tessellation::TessellationNormals::None,
+                        cadmpeg_ir::tessellation::TessellationNormals::per_vertex,
+                    ),
                     Vec::new(),
                 )
                 .map_err(|error| {
@@ -883,7 +889,10 @@ impl<'a> Builder<'a> {
                     vertices,
                     triangles,
                     Vec::new(),
-                    cadmpeg_ir::tessellation::NormalSamples::new(normals).map_or(cadmpeg_ir::tessellation::TessellationNormals::None, cadmpeg_ir::tessellation::TessellationNormals::per_vertex),
+                    cadmpeg_ir::tessellation::NormalSamples::new(normals).map_or(
+                        cadmpeg_ir::tessellation::TessellationNormals::None,
+                        cadmpeg_ir::tessellation::TessellationNormals::per_vertex,
+                    ),
                     Vec::new(),
                 )
                 .map_err(|error| {
@@ -1590,7 +1599,7 @@ fn transformed_pcurve_geometry(
         basis: Box::new(geometry),
         transform: Transform2::affine([
             [affine.u_scale, 0.0, affine.u_offset],
-            [0.0, affine.v_scale, affine.v_offset]
+            [0.0, affine.v_scale, affine.v_offset],
         ])
         .expect("affine transform"),
     }

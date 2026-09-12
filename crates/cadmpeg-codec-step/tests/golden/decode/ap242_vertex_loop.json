@@ -23,16 +23,13 @@
       "faces": [
         {
           "id": "step:data:face#16",
-          "loops": [
-            {
-              "id": "step:data:loop#12-face-16",
-              "role": "outer"
-            },
-            {
-              "id": "step:data:loop#13-face-16",
-              "role": "inner"
-            }
-          ],
+          "loops": {
+            "classification": "classified",
+            "inner": [
+              "step:data:loop#13-face-16"
+            ],
+            "outer": "step:data:loop#12-face-16"
+          },
           "sense": "forward",
           "shell": "step:data:shell#17",
           "surface": "step:data:surface#7"

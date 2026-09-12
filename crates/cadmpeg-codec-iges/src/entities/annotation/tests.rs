@@ -692,7 +692,7 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
     let translated_pattern_plane = Transform::affine([
         [1.0, 0.0, 0.0, 0.0],
         [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.01]
+        [0.0, 0.0, 1.0, 0.01],
     ])
     .expect("affine transform");
     assert!(sectioned_area_valid(

@@ -188,12 +188,11 @@
       "faces": [
         {
           "id": "iges:model:face#D9",
-          "loops": [
-            {
-              "id": "iges:model:loop#D9:0",
-              "role": "outer"
-            }
-          ],
+          "loops": {
+            "classification": "classified",
+            "inner": [],
+            "outer": "iges:model:loop#D9:0"
+          },
           "sense": "forward",
           "shell": "iges:model:shell#D9",
           "surface": "iges:model:surface#D1",

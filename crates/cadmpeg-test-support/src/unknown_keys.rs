@@ -95,9 +95,7 @@ fn collect_shapes(
                 let tags: Vec<(String, String)> = fields
                     .iter()
                     .filter_map(|(key, field)| {
-                        field
-                            .as_str()
-                            .map(|text| (key.clone(), text.to_owned()))
+                        field.as_str().map(|text| (key.clone(), text.to_owned()))
                     })
                     .collect();
                 if seen.insert((normalised.clone(), keys, tags)) {

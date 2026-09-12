@@ -321,7 +321,7 @@ fn budgeted_nurbs_surface_evaluation_charges_degree_work() {
         transform: Transform::affine([
             [1.0, 0.0, 0.0, 0.0],
             [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 1.0]
+            [0.0, 0.0, 1.0, 1.0],
         ])
         .expect("affine transform"),
     };
@@ -753,7 +753,7 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
     let transform = Transform::affine([
         [-2.0, 0.0, 0.0, 1.0e6],
         [0.0, 0.5, 0.0, -2.0e6],
-        [0.0, 0.0, 3.0, 3.0e6]
+        [0.0, 0.0, 3.0, 3.0e6],
     ])
     .expect("affine transform");
     let geometry = SolvedCurveGeometry::Transformed {
@@ -779,7 +779,7 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
         transform: Transform::affine([
             [0.0, 0.0, 0.0, 0.0],
             [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0]
+            [0.0, 0.0, 1.0, 0.0],
         ])
         .expect("affine transform"),
     });
@@ -1245,7 +1245,7 @@ fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
             transform: crate::transform::Transform::affine([
                 [2.0, 0.0, 0.0, 1.0],
                 [0.0, 1.0, 0.0, 2.0],
-                [0.0, 0.0, 1.0, 3.0]
+                [0.0, 0.0, 1.0, 3.0],
             ])
             .unwrap(),
         }),
@@ -1703,7 +1703,7 @@ fn analytic_and_transformed_surface_partials_follow_parameterization() {
         transform: Transform::affine([
             [2.0, 0.0, 0.0, 7.0],
             [0.0, 3.0, 0.0, 11.0],
-            [0.0, 0.0, 4.0, 13.0]
+            [0.0, 0.0, 4.0, 13.0],
         ])
         .expect("affine transform"),
     };
