@@ -474,9 +474,12 @@ fn a_classified_source_carries_its_format_once() {
     let rendered = serde_json::to_value(&source).unwrap();
     assert_eq!(rendered["identity"]["classification"], "classified");
     assert!(rendered["identity"].get("format").is_none());
+    assert!(rendered["identity"]["dialects"]["primary"]
+        .get("format")
+        .is_none());
     assert_eq!(
-        rendered["identity"]["dialects"]["primary"]["format"],
-        "rhino"
+        rendered["identity"]["dialects"]["primary"]["dialect"],
+        "rhino:archive-80"
     );
     assert_eq!(
         serde_json::from_value::<SourceMeta>(rendered.clone()).unwrap(),

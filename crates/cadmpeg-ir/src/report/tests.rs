@@ -386,7 +386,7 @@ fn classified_report_wire_requires_its_primary_format() {
     let golden = serde_json::to_string(&report).unwrap();
     assert_eq!(
         golden,
-        r#"{"identity":{"classification":"classified","dialects":{"primary":{"format":"rhino","dialect":"rhino:archive-80","admission":"admitted"},"extra":[]}},"transfer":{"transfer":"full","geometry_transferred":true},"losses":[],"notes":[]}"#
+        r#"{"identity":{"classification":"classified","dialects":{"primary":{"dialect":"rhino:archive-80","admission":"admitted"},"extra":[]}},"transfer":{"transfer":"full","geometry_transferred":true},"losses":[],"notes":[]}"#
     );
     assert_eq!(
         serde_json::from_str::<DecodeReport>(&golden).unwrap(),
