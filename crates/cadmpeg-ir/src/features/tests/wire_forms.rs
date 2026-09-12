@@ -436,7 +436,7 @@ fn unresolved_hole_and_flex_wire_forms_preserve_their_layout() {
     let mode: FlexMode = serde_json::from_value(flex.clone()).unwrap();
     assert_eq!(
         mode,
-        FlexMode::Unresolved(Some(crate::features::FlexForm::Twisting))
+        FlexMode::Unresolved { form: Some(crate::features::FlexForm::Twisting) }
     );
     assert_eq!(serde_json::to_value(mode).unwrap(), flex);
 }
