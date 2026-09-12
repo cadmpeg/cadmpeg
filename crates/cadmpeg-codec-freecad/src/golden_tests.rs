@@ -171,7 +171,7 @@ fn native_shape(native: &cadmpeg_ir::Native) -> serde_json::Value {
     let shape = serde_json::Value::Object(shape);
     serde_json::json!({
         "counts": counts,
-        "sha256": cadmpeg_ir::hash::canonical_json_sha256(&shape),
+        "sha256": cadmpeg_ir::hash::canonical_json_sha256(&shape).expect("native shape digests"),
     })
 }
 

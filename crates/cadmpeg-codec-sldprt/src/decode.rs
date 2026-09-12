@@ -4287,7 +4287,7 @@ fn stamp_sketch_baseline(ir: &mut CadIr, native: &crate::native::SldprtNative) {
 /// that says so; see [`document_local_sha256`] and [`brep_local_sha256`].
 fn stamp_local_digests(ir: &mut CadIr) -> Result<(), CodecError> {
     ir.finalize();
-    let brep_hash = brep_local_sha256_in_place(ir);
+    let brep_hash = brep_local_sha256_in_place(ir)?;
     if let Some(source) = &mut ir.source {
         source
             .attributes
@@ -4308,7 +4308,7 @@ fn stamp_local_digests(ir: &mut CadIr) -> Result<(), CodecError> {
             crate::writer::swobjects_local_sha256(ir),
             crate::writer::swobjects_material_local_sha256(ir),
         ) {
-            let identity_hash = crate::writer::swobjects_metadata_identity_local_sha256(ir);
+            let identity_hash = crate::writer::swobjects_metadata_identity_local_sha256(ir)?;
             if let Some(source) = &mut ir.source {
                 source.attributes.insert(
                     crate::writer::SWOBJECTS_LOCAL_DIGEST_ATTRIBUTE.into(),
@@ -4353,7 +4353,7 @@ fn stamp_local_digests(ir: &mut CadIr) -> Result<(), CodecError> {
 /// whether the retained Parasolid partition may be replayed verbatim while the
 /// rest of the document is written. It carries every limitation
 /// [`document_local_sha256`] states, and the `_local_sha256` suffix says so.
-pub(crate) fn brep_local_sha256(ir: &CadIr) -> String {
+pub(crate) fn brep_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
     // Admit only B-rep arenas so a new design, presentation, or product arena
     // cannot silently change retained-partition eligibility.
     let mut partition = cadmpeg_ir::document::Model::default();
@@ -4379,7 +4379,7 @@ pub(crate) fn brep_local_sha256(ir: &CadIr) -> String {
     partition
         .appearance_bindings
         .clone_from(&ir.model.appearance_bindings);
-    brep_partition_sha256(ir.tolerances, partition).0
+    Ok(brep_partition_sha256(ir.tolerances, partition)?.0)
 }
 
 /// [`brep_local_sha256`] without the deep clone, for the decode stamp path.
@@ -4390,7 +4390,7 @@ pub(crate) fn brep_local_sha256(ir: &CadIr) -> String {
 /// `appearances` and `appearance_bindings` — and the body display fields it
 /// strips are copied, so `ir` is bit-identical afterwards and both entry
 /// points produce the same digest for the same document.
-fn brep_local_sha256_in_place(ir: &mut CadIr) -> String {
+fn brep_local_sha256_in_place(ir: &mut CadIr) -> Result<String, CodecError> {
     use std::mem::take;
 
     let saved_body_display = ir
@@ -4418,7 +4418,7 @@ fn brep_local_sha256_in_place(ir: &mut CadIr) -> String {
     partition
         .appearance_bindings
         .clone_from(&ir.model.appearance_bindings);
-    let (hash, mut partition) = brep_partition_sha256(ir.tolerances, partition);
+    let (hash, mut partition) = brep_partition_sha256(ir.tolerances, partition)?;
     ir.model.bodies = take(&mut partition.bodies);
     for (body, (name, color)) in ir.model.bodies.iter_mut().zip(saved_body_display) {
         body.name = name;
@@ -4437,7 +4437,7 @@ fn brep_local_sha256_in_place(ir: &mut CadIr) -> String {
     ir.model.pcurves = take(&mut partition.pcurves);
     ir.model.procedural_surfaces = take(&mut partition.procedural_surfaces);
     ir.model.procedural_curves = take(&mut partition.procedural_curves);
-    hash
+    Ok(hash)
 }
 
 /// Normalize and hash one B-rep partition; both digest entry points share it.
@@ -4448,7 +4448,7 @@ fn brep_local_sha256_in_place(ir: &mut CadIr) -> String {
 fn brep_partition_sha256(
     tolerances: cadmpeg_ir::units::Tolerances,
     model: cadmpeg_ir::document::Model,
-) -> (String, cadmpeg_ir::document::Model) {
+) -> Result<(String, cadmpeg_ir::document::Model), CodecError> {
     use cadmpeg_ir::appearance::AppearanceTarget;
 
     let mut normalized = CadIr::empty();
@@ -4475,10 +4475,10 @@ fn brep_partition_sha256(
         .model
         .appearances
         .retain(|appearance| face_appearances.contains(&appearance.id));
-    (
-        cadmpeg_ir::hash::canonical_json_sha256(&normalized),
+    Ok((
+        cadmpeg_ir::hash::canonical_json_sha256(&normalized)?,
         normalized.model,
-    )
+    ))
 }
 
 /// Machine-local `document_local_sha256` for the SLDPRT write-path edit oracle.
