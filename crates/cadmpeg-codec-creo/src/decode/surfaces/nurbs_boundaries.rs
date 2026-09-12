@@ -196,18 +196,14 @@ pub(in super::super) fn nurbs_curves_match(
     } else {
         right_control_points.iter().collect()
     };
-    if !left_points
-        .iter()
-        .zip(right_points)
-        .all(|(left, right)| {
-            dot(
-                [left.x - right.x, left.y - right.y, left.z - right.z],
-                [left.x - right.x, left.y - right.y, left.z - right.z],
-            )
-            .sqrt()
-                <= point_tolerance
-        })
-    {
+    if !left_points.iter().zip(right_points).all(|(left, right)| {
+        dot(
+            [left.x - right.x, left.y - right.y, left.z - right.z],
+            [left.x - right.x, left.y - right.y, left.z - right.z],
+        )
+        .sqrt()
+            <= point_tolerance
+    }) {
         return false;
     }
     let Some(left_knots) = normalized_knot_vector(left.knots()) else {

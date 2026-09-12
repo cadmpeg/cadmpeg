@@ -2109,8 +2109,8 @@ fn legacy_mesh(
         id,
         cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(vertices, triangles, normals)
             .ok_or_else(|| {
-                CodecError::Malformed("V1 mesh normals do not cover its vertices".to_string())
-            })?,
+            CodecError::Malformed("V1 mesh normals do not cover its vertices".to_string())
+        })?,
         Vec::new(),
     )
     .map_err(|err| CodecError::Malformed(err.to_string()))

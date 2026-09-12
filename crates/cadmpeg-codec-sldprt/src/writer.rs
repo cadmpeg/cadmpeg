@@ -2174,9 +2174,7 @@ pub(super) fn sequential_tessellation(
         let shaded = positions
             .into_iter()
             .zip(normals)
-            .map(
-                |(position, normal)| cadmpeg_ir::tessellation::ShadedVertex { position, normal },
-            )
+            .map(|(position, normal)| cadmpeg_ir::tessellation::ShadedVertex { position, normal })
             .collect();
         strip_rows(shaded)?.map_or(
             cadmpeg_ir::tessellation::TessellationMesh::List {
@@ -2224,7 +2222,6 @@ fn tessellation_f32(value: f64, role: &str) -> Result<f32, CodecError> {
         )))
     }
 }
-
 
 fn descriptor(out: &mut Vec<u8>, item_size: u32, kind: u32, flags: u32, count: usize, data: &[u8]) {
     out.extend_from_slice(&item_size.to_le_bytes());
@@ -3293,7 +3290,11 @@ fn write_nurbs_surface(
             "NURBS surface knot vectors must be finite and nondecreasing".into(),
         ));
     }
-    let poles = homogeneous_poles(&nurbs.poles(), nurbs.pole_weights().as_deref(), length_scale)?;
+    let poles = homogeneous_poles(
+        &nurbs.poles(),
+        nurbs.pole_weights().as_deref(),
+        length_scale,
+    )?;
     let dimension = if nurbs.weights().is_some() { 4 } else { 3 };
     let u_knot_count = u32::try_from(u_unique.len()).map_err(|_| {
         CodecError::NotImplemented(format!(

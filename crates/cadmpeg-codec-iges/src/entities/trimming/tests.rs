@@ -237,10 +237,7 @@ fn boundary_vertex_clustering_rejects_non_transitive_tolerance_neighborhoods() {
     ];
 
     assert_eq!(
-        cluster_boundary_positions(
-            &points,
-            cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap()
-        ),
+        cluster_boundary_positions(&points, cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap()),
         Err(BoundaryVertexClusterError::NonTransitive)
     );
 }
@@ -253,11 +250,9 @@ fn boundary_vertex_clustering_uses_canonical_representatives() {
         Point3::new(10.0, 0.0, 0.0),
         Point3::new(0.0, 0.0, 0.0),
     ];
-    let clusters = cluster_boundary_positions(
-        &points,
-        cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap(),
-    )
-    .unwrap();
+    let clusters =
+        cluster_boundary_positions(&points, cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap())
+            .unwrap();
 
     assert_eq!(
         clusters

@@ -18,10 +18,10 @@ fn tessellation_counts_must_be_consistent() {
             "synthetic:test:tessellation#invalid-counts",
             TessellationMesh::List {
                 vertices: vec![
-                Point3::new(0.0, 0.0, 0.0),
-                Point3::new(1.0, 0.0, 0.0),
-                Point3::new(0.0, 1.0, 0.0),
-            ],
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(1.0, 0.0, 0.0),
+                    Point3::new(0.0, 1.0, 0.0),
+                ],
                 triangles: vec![[0, 1, 2]],
             },
             Vec::new(),
@@ -53,11 +53,11 @@ fn tessellation_triangle_groups_and_texture_assignments_validate() {
         "synthetic:test:tessellation#valid-groups",
         TessellationMesh::List {
             vertices: vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(0.0, 1.0, 0.0),
-            Point3::new(1.0, 1.0, 0.0),
-        ],
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+                Point3::new(1.0, 1.0, 0.0),
+            ],
             triangles: vec![[0, 1, 2], [1, 3, 2]],
         },
         Vec::new(),

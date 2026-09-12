@@ -1133,9 +1133,7 @@ fn full_revolution_uses_exact_quadratic_circle_poles() {
         surface.poles().into_iter().next().expect("pole")
     );
     assert_eq!(
-        surface
-            .pole_weights()
-            .expect("rational weights")[1],
+        surface.pole_weights().expect("rational weights")[1],
         std::f64::consts::FRAC_1_SQRT_2
     );
 }
@@ -1198,9 +1196,7 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         Point3::new(3.0, 0.75, 0.0)
     );
     assert_eq!(
-        surface
-            .pole_weights()
-            .expect("rational surface weights")[10],
+        surface.pole_weights().expect("rational surface weights")[10],
         0.75 * std::f64::consts::FRAC_1_SQRT_2
     );
 

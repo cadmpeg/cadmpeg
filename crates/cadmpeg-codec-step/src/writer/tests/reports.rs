@@ -372,10 +372,10 @@ fn ap242_writer_reports_unrepresented_tessellation_triangle_metadata() {
             "synthetic:test:tessellation#triangle-metadata",
             cadmpeg_ir::tessellation::TessellationMesh::List {
                 vertices: vec![
-                Point3::new(0.0, 0.0, 0.0),
-                Point3::new(1.0, 0.0, 0.0),
-                Point3::new(0.0, 1.0, 0.0),
-            ],
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(1.0, 0.0, 0.0),
+                    Point3::new(0.0, 1.0, 0.0),
+                ],
                 triangles: vec![[0, 1, 2]],
             },
             Vec::new(),
@@ -803,10 +803,10 @@ fn writer_reports_reduced_tessellation_metadata_and_body_links() {
             "test:step:tessellation#metadata",
             cadmpeg_ir::tessellation::TessellationMesh::List {
                 vertices: vec![
-                Point3::new(0.0, 0.0, 0.0),
-                Point3::new(1.0, 0.0, 0.0),
-                Point3::new(0.0, 1.0, 0.0),
-            ],
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(1.0, 0.0, 0.0),
+                    Point3::new(0.0, 1.0, 0.0),
+                ],
                 triangles: vec![[0, 1, 2]],
             },
             vec![cadmpeg_ir::tessellation::TessellationChannel::new(

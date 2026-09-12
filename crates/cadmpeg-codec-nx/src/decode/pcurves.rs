@@ -3214,14 +3214,11 @@ fn surface_parameters_for_fit_with_index_and_budget_and_grid_cache(
 }
 
 fn nurbs_surface_control_bounds(surface: &NurbsSurface) -> Option<([f64; 3], [f64; 3])> {
-    if surface
-        .pole_weights()
-        .is_some_and(|weights| {
-            weights
-                .iter()
-                .any(|weight| !weight.is_finite() || *weight <= 0.0)
-        })
-    {
+    if surface.pole_weights().is_some_and(|weights| {
+        weights
+            .iter()
+            .any(|weight| !weight.is_finite() || *weight <= 0.0)
+    }) {
         return None;
     }
     let mut minimum = [f64::INFINITY; 3];

@@ -477,12 +477,7 @@ fn surface_bytes_preserve_asymmetric_u_major_rational_poles() {
     let surface = read_nurbs_surface(&mut reader, 1.0).expect("required invariant");
     assert_eq!(surface.poles().into_iter().nth(1).unwrap().y, 1.0 / 2.0);
     assert_eq!(surface.poles().into_iter().nth(3).unwrap().x, 1.0 / 2.0);
-    assert_eq!(
-        surface
-            .pole_weights()
-            .expect("rational surface")[5],
-        4.0
-    );
+    assert_eq!(surface.pole_weights().expect("rational surface")[5], 4.0);
 }
 
 #[test]
@@ -525,8 +520,7 @@ fn surface_reads_a_rational_two_dimensional_lattice() {
         Point3::new(200.0, 402.0, 0.0)
     );
     assert_eq!(
-        surface
-            .pole_weights(),
+        surface.pole_weights(),
         Some([1.0, 2.0, 2.0, 3.0, 3.0, 4.0].to_vec())
     );
 }
@@ -622,12 +616,7 @@ fn sum_surface_multiplies_each_rational_weight_pair() {
         );
         let surface =
             sum_nurbs(&first, &second, Vector3::new(9.0, 8.0, 7.0), 0).expect("required invariant");
-        assert_eq!(
-            surface
-                .pole_weights()
-                .expect("rational surface"),
-            expected
-        );
+        assert_eq!(surface.pole_weights().expect("rational surface"), expected);
         assert_eq!(
             surface.poles().into_iter().nth(3).unwrap(),
             Point3::new(11.0, 12.0, 7.0)
@@ -660,8 +649,7 @@ fn extrusion_tensor_preserves_rational_profile_knots_weights_and_transpose() {
     assert_eq!(plain.u_knots(), start.knots());
     assert_eq!(plain.v_knots(), vec![10.0, 10.0, 20.0, 20.0]);
     assert_eq!(
-        plain
-            .pole_weights(),
+        plain.pole_weights(),
         Some([1.0, 1.0, 0.5, 0.5, 1.0, 1.0].to_vec())
     );
     assert_eq!(
@@ -703,18 +691,9 @@ fn revolution_preserves_partial_angle_parameter_domain_and_product_weights() {
     assert_eq!((surface.u_count(), surface.v_count()), (3, 2));
     assert_eq!(surface.u_knots(), vec![20.0, 20.0, 20.0, 30.0, 30.0, 30.0]);
     assert_eq!(surface.v_knots(), profile.knots());
-    assert_eq!(
-        surface
-            .pole_weights()
-            .expect("rational surface")[0],
-        2.0
-    );
+    assert_eq!(surface.pole_weights().expect("rational surface")[0], 2.0);
     assert!(
-        (surface
-            .pole_weights()
-            .expect("rational surface")[2]
-            - 2.0 / 2.0_f64.sqrt())
-        .abs()
+        (surface.pole_weights().expect("rational surface")[2] - 2.0 / 2.0_f64.sqrt()).abs()
             < EPS_EXACT_GEOMETRY
     );
     assert_eq!(

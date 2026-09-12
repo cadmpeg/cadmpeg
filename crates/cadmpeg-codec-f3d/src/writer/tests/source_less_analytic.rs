@@ -1090,10 +1090,10 @@ fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
             "generated:test:tessellation#0",
             cadmpeg_ir::tessellation::TessellationMesh::List {
                 vertices: vec![
-                Point3::new(0.0, 0.0, 0.0),
-                Point3::new(1.0, 0.0, 0.0),
-                Point3::new(0.0, 1.0, 0.0),
-            ],
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(1.0, 0.0, 0.0),
+                    Point3::new(0.0, 1.0, 0.0),
+                ],
                 triangles: vec![[0, 1, 2]],
             },
             Vec::new(),

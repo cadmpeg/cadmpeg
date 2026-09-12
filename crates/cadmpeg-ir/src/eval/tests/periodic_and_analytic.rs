@@ -185,7 +185,16 @@ fn transformed_carriers_preserve_basis_parameters() {
 #[test]
 fn polyline_carriers_evaluate_in_both_parameter_directions() {
     let increasing = CurveGeometry::Solved(SolvedCurveGeometry::Polyline(
-        crate::geometry::PolylineCurve::new(PolylineSamples::Parameterized { vertices: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)].into_iter().zip(vec![1.0, 3.0]).map(|(point, parameter)| PolylineVertex { parameter, point }).collect() }, 0.01)
+        crate::geometry::PolylineCurve::new(
+            PolylineSamples::Parameterized {
+                vertices: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)]
+                    .into_iter()
+                    .zip(vec![1.0, 3.0])
+                    .map(|(point, parameter)| PolylineVertex { parameter, point })
+                    .collect(),
+            },
+            0.01,
+        )
         .unwrap(),
     ));
     assert_eq!(
@@ -194,7 +203,16 @@ fn polyline_carriers_evaluate_in_both_parameter_directions() {
     );
 
     let decreasing = CurveGeometry::Solved(SolvedCurveGeometry::Polyline(
-        crate::geometry::PolylineCurve::new(PolylineSamples::Parameterized { vertices: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)].into_iter().zip(vec![3.0, 1.0]).map(|(point, parameter)| PolylineVertex { parameter, point }).collect() }, 0.01)
+        crate::geometry::PolylineCurve::new(
+            PolylineSamples::Parameterized {
+                vertices: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)]
+                    .into_iter()
+                    .zip(vec![3.0, 1.0])
+                    .map(|(point, parameter)| PolylineVertex { parameter, point })
+                    .collect(),
+            },
+            0.01,
+        )
         .unwrap(),
     ));
     assert_eq!(

@@ -1445,8 +1445,7 @@ fn spline_extrusion_preserves_directrix_basis_and_weights() {
         ]
     );
     assert_eq!(
-        surface
-            .pole_weights(),
+        surface.pole_weights(),
         Some([1.0, 1.0, 0.5, 0.5, 1.0, 1.0].to_vec())
     );
 }

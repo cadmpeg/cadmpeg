@@ -1205,11 +1205,9 @@ pub(crate) fn bind_feature_body_selections(
                                     native,
                                 }
                             } else {
-                                let Ok(members) =
-                                    cadmpeg_ir::features::BodyMembers::try_from_rows(
-                                        direct_tool_rows,
-                                    )
-                                else {
+                                let Ok(members) = cadmpeg_ir::features::BodyMembers::try_from_rows(
+                                    direct_tool_rows,
+                                ) else {
                                     return;
                                 };
                                 BodySelection::ResolvedSet { members }

@@ -2066,7 +2066,8 @@ fn parse_b2_nurbs_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Nurbs
     Some(B2NurbsCurve {
         pos: frame.pos,
         header_token: frame.header_token,
-        geometry: NurbsCurve::from_lanes(degree, knots, control_points, Some(weights), false).ok()?,
+        geometry: NurbsCurve::from_lanes(degree, knots, control_points, Some(weights), false)
+            .ok()?,
     })
 }
 

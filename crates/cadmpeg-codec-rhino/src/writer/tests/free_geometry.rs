@@ -315,16 +315,20 @@ fn free_plane_and_rational_nurbs_surface_round_trip() {
 fn standalone_mesh_round_trips_across_archive_versions() {
     let mut ir = CadIr::empty();
     ir.model.tessellations.push(
-        Tessellation::new("cadir:model:tessellation#mesh", cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(vec![
-                Point3::new(0.0, 0.0, 0.0),
-                Point3::new(2.0, 0.0, 0.0),
-                Point3::new(0.0, 3.0, 0.0),
-            ], vec![[0, 1, 2]], vec![
-                cadmpeg_ir::math::Vector3::new(
-                    0.0, 0.0, 1.0
-                );
-                3
-            ]).expect("normals cover the mesh"), Vec::new())
+        Tessellation::new(
+            "cadir:model:tessellation#mesh",
+            cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
+                vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(2.0, 0.0, 0.0),
+                    Point3::new(0.0, 3.0, 0.0),
+                ],
+                vec![[0, 1, 2]],
+                vec![cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0); 3],
+            )
+            .expect("normals cover the mesh"),
+            Vec::new(),
+        )
         .expect("valid tessellation"),
     );
     for version in [
@@ -383,11 +387,18 @@ fn standalone_mesh_round_trips_across_archive_versions() {
 fn mesh_precision_is_target_specific_and_reported() {
     let mut ir = CadIr::empty();
     ir.model.tessellations.push(
-        Tessellation::new("cadir:model:tessellation#precision", cadmpeg_ir::tessellation::TessellationMesh::List { vertices: vec![
-                Point3::new(0.1, 0.0, 0.0),
-                Point3::new(1.0, 0.0, 0.0),
-                Point3::new(0.0, 1.0, 0.0),
-            ], triangles: vec![[0, 1, 2]] }, Vec::new())
+        Tessellation::new(
+            "cadir:model:tessellation#precision",
+            cadmpeg_ir::tessellation::TessellationMesh::List {
+                vertices: vec![
+                    Point3::new(0.1, 0.0, 0.0),
+                    Point3::new(1.0, 0.0, 0.0),
+                    Point3::new(0.0, 1.0, 0.0),
+                ],
+                triangles: vec![[0, 1, 2]],
+            },
+            Vec::new(),
+        )
         .expect("valid tessellation"),
     );
     let mut v5 = Vec::new();
@@ -445,7 +456,14 @@ fn mesh_auxiliary_channels_round_trip_by_kind() {
     })
     .collect::<Vec<_>>();
     ir.model.tessellations.push(
-        cadmpeg_ir::tessellation::Tessellation::new("cadir:model:tessellation#channels", cadmpeg_ir::tessellation::TessellationMesh::List { vertices: vertices, triangles: vec![[0, 1, 2]] }, channels.clone())
+        cadmpeg_ir::tessellation::Tessellation::new(
+            "cadir:model:tessellation#channels",
+            cadmpeg_ir::tessellation::TessellationMesh::List {
+                vertices: vertices,
+                triangles: vec![[0, 1, 2]],
+            },
+            channels.clone(),
+        )
         .expect("valid tessellation"),
     );
     let mut bytes = Vec::new();
@@ -477,18 +495,25 @@ fn mesh_channel_bytes_cannot_impersonate_nested_chunk_framing() {
     uv_data[..4].copy_from_slice(&0x4000_8000_u32.to_le_bytes());
     uv_data[4..12].copy_from_slice(&160_i64.to_le_bytes());
     ir.model.tessellations.push(
-        Tessellation::new("cadir:model:tessellation#chunk-like-channel", cadmpeg_ir::tessellation::TessellationMesh::List { vertices: vec![
-                Point3::new(0.0, 0.0, 0.0),
-                Point3::new(1.0, 0.0, 0.0),
-                Point3::new(0.0, 1.0, 0.0),
-            ], triangles: vec![[0, 1, 2]] }, vec![cadmpeg_ir::tessellation::TessellationChannel::new(
+        Tessellation::new(
+            "cadir:model:tessellation#chunk-like-channel",
+            cadmpeg_ir::tessellation::TessellationMesh::List {
+                vertices: vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(1.0, 0.0, 0.0),
+                    Point3::new(0.0, 1.0, 0.0),
+                ],
+                triangles: vec![[0, 1, 2]],
+            },
+            vec![cadmpeg_ir::tessellation::TessellationChannel::new(
                 cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
                 8,
                 CHANNEL_UV,
                 0,
                 uv_data.clone(),
             )
-            .expect("valid channel")])
+            .expect("valid channel")],
+        )
         .expect("valid tessellation"),
     );
 

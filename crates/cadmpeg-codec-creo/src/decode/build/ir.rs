@@ -406,9 +406,7 @@ fn transfer_display_tessellations(
                     &strip.strip_lengths,
                 )
                 .ok_or_else(|| {
-                    CodecError::Malformed(
-                        "display triangle strip lanes do not line up".into(),
-                    )
+                    CodecError::Malformed("display triangle strip lanes do not line up".into())
                 })?,
                 Vec::new(),
             )

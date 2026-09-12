@@ -4010,7 +4010,8 @@ fn intersection_support_pcurve(
     {
         return None;
     }
-    let nurbs = PcurveNurbs::from_lanes(1, chart.knots().to_vec(), control_points, None, false).ok()?;
+    let nurbs =
+        PcurveNurbs::from_lanes(1, chart.knots().to_vec(), control_points, None, false).ok()?;
     Some((PcurveGeometry::Nurbs { nurbs }, parameter_range, source))
 }
 
@@ -4189,8 +4190,7 @@ fn nurbs_strict_isocurve_pcurve(
             SurfaceParameterAxis::U => (varying, vc + varying),
             SurfaceParameterAxis::V => (varying * vc, varying * vc + 1),
         };
-        let surface_weights = surface
-            .pole_weights();
+        let surface_weights = surface.pole_weights();
         let expected_weights = surface_weights.as_ref().map(|weights| {
             (0..varying_count)
                 .map(|varying| weights[pole_indices(varying).0])
@@ -4832,7 +4832,8 @@ fn nurbs_degree_one_cache_pcurve(
     if !fit_tolerance.is_finite() {
         return None;
     }
-    let nurbs = PcurveNurbs::from_lanes(1, curve.knots().to_vec(), control_points, None, false).ok()?;
+    let nurbs =
+        PcurveNurbs::from_lanes(1, curve.knots().to_vec(), control_points, None, false).ok()?;
     Some((PcurveGeometry::Nurbs { nurbs }, fit_tolerance))
 }
 
@@ -4926,17 +4927,15 @@ fn ruled_surface_line_pcurve(
         || !varying_min.is_finite()
         || !varying_max.is_finite()
         || varying_min >= varying_max
-        || surface
-            .pole_weights()
-            .is_some_and(|weights| {
-                (0..fixed_count).any(|fixed| {
-                    let (a, b) = match fixed_axis {
-                        SurfaceParameterAxis::U => (fixed * vc, fixed * vc + 1),
-                        SurfaceParameterAxis::V => (fixed, vc + fixed),
-                    };
-                    (weights[a] - weights[b]).abs() > EPS_NURBS_WEIGHT
-                })
+        || surface.pole_weights().is_some_and(|weights| {
+            (0..fixed_count).any(|fixed| {
+                let (a, b) = match fixed_axis {
+                    SurfaceParameterAxis::U => (fixed * vc, fixed * vc + 1),
+                    SurfaceParameterAxis::V => (fixed, vc + fixed),
+                };
+                (weights[a] - weights[b]).abs() > EPS_NURBS_WEIGHT
             })
+        })
     {
         return InverseResolution::NoMatch;
     }
@@ -4993,7 +4992,12 @@ fn ruled_surface_line_pcurve(
     };
     let resolution = unique_inverse_parameter(
         candidates,
-        inverse_coordinate_tolerance(surface.poles().into_iter().chain(std::iter::once(line_origin))),
+        inverse_coordinate_tolerance(
+            surface
+                .poles()
+                .into_iter()
+                .chain(std::iter::once(line_origin)),
+        ),
         [fixed_min, fixed_max],
     );
     let fixed = match resolution {

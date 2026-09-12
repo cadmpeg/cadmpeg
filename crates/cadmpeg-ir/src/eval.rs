@@ -17,10 +17,10 @@ use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
 use crate::geometry::{
-    knots_nondecreasing, CurveGeometry, LawExpression, LawFormula, NurbsCurve, NurbsSurface,
-    NurbsPoles3, PcurveGeometry, PcurveNurbs, PolylineCurve, ProceduralCurveDefinition, ProceduralSurfaceDefinition,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry, SurfaceParameterAxis,
-    SweepSurfaceLayout,
+    knots_nondecreasing, CurveGeometry, LawExpression, LawFormula, NurbsCurve, NurbsPoles3,
+    NurbsSurface, PcurveGeometry, PcurveNurbs, PolylineCurve, ProceduralCurveDefinition,
+    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    SurfaceParameterAxis, SweepSurfaceLayout,
 };
 use crate::math::{Point2, Point3, Vector3};
 use crate::transform::Transform;

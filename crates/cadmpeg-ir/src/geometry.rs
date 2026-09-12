@@ -10,9 +10,9 @@ use crate::features::{FinitePoint3, FiniteVector3};
 use crate::ids::{CurveId, PcurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
 use crate::math::{Point3, Vector3};
 use crate::provenance::SourceObjectAssociation;
+use crate::scalar::{FiniteReal, NonNegativeReal};
 use crate::transform::Transform;
 use crate::units::FiniteVector;
-use crate::scalar::{FiniteReal, NonNegativeReal};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -2021,10 +2021,8 @@ impl HelixCircleProfile {
         if radius == 0.0 {
             return Err("helix circle profile radius must be finite and nonzero");
         }
-        let length =
-            FiniteReal::new(length).ok_or("helix circle profile length must be finite")?;
-        let radius =
-            FiniteReal::new(radius).ok_or("helix circle profile radius must be finite")?;
+        let length = FiniteReal::new(length).ok_or("helix circle profile length must be finite")?;
+        let radius = FiniteReal::new(radius).ok_or("helix circle profile radius must be finite")?;
         Ok(Self { length, radius })
     }
     /// Native profile length.
