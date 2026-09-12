@@ -78,16 +78,19 @@ pub enum TessellationNormals {
 }
 
 impl TessellationNormals {
-    /// Per-vertex normals, or [`Self::None`] when the source carried none.
+    /// Per-vertex normals.
+    ///
+    /// The samples are the non-empty type, so "no normals" has no second
+    /// spelling here: a caller that carried none states [`Self::None`].
     #[must_use]
-    pub fn per_vertex(normals: Vec<Vector3>) -> Self {
-        NormalSamples::new(normals).map_or(Self::None, Self::PerVertex)
+    pub const fn per_vertex(normals: NormalSamples) -> Self {
+        Self::PerVertex(normals)
     }
 
-    /// Per-corner normals, or [`Self::None`] when the source carried none.
+    /// Per-corner normals.
     #[must_use]
-    pub fn per_corner(normals: Vec<Vector3>) -> Self {
-        NormalSamples::new(normals).map_or(Self::None, Self::PerCorner)
+    pub const fn per_corner(normals: NormalSamples) -> Self {
+        Self::PerCorner(normals)
     }
 }
 
@@ -462,7 +465,7 @@ fn shading_from_wire(
                     "tessellation normals do not match vertex count",
                 ));
             }
-            Ok(TessellationNormals::per_vertex(values))
+            Ok(NormalSamples::new(values).map_or(TessellationNormals::None, TessellationNormals::per_vertex))
         }
         Some(TessellationShadingWire::PerCorner { values }) => {
             if triangles.len().checked_mul(3) != Some(values.len()) {
@@ -470,7 +473,7 @@ fn shading_from_wire(
                     "tessellation corner normals do not match triangle corners",
                 ));
             }
-            Ok(TessellationNormals::per_corner(values))
+            Ok(NormalSamples::new(values).map_or(TessellationNormals::None, TessellationNormals::per_corner))
         }
     }
 }

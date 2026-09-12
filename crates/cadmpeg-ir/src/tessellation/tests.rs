@@ -35,7 +35,7 @@ fn per_corner_mesh_exposes_its_normals() {
         base.vertices().to_vec(),
         base.triangles().to_vec(),
         TessellationTopology::List {},
-        TessellationNormals::per_corner(normals.clone()),
+        NormalSamples::new(normals.clone()).map_or(TessellationNormals::None, TessellationNormals::per_corner),
         Vec::new(),
     )
     .unwrap();
@@ -57,7 +57,7 @@ fn per_vertex_mesh_exposes_its_normals() {
         base.vertices().to_vec(),
         base.triangles().to_vec(),
         TessellationTopology::List {},
-        TessellationNormals::per_vertex(normals.clone()),
+        NormalSamples::new(normals.clone()).map_or(TessellationNormals::None, TessellationNormals::per_vertex),
         Vec::new(),
     )
     .unwrap();
@@ -232,9 +232,9 @@ fn numeric_admission_rejects_non_finite_vertices_and_normals() {
             let mut normals = vec![Vector3::new(0.0, 0.0, 1.0); count];
             normals[0].y = invalid;
             let shading = if corner {
-                TessellationNormals::per_corner(normals.clone())
+                NormalSamples::new(normals.clone()).map_or(TessellationNormals::None, TessellationNormals::per_corner)
             } else {
-                TessellationNormals::per_vertex(normals.clone())
+                NormalSamples::new(normals.clone()).map_or(TessellationNormals::None, TessellationNormals::per_vertex)
             };
             assert!(Tessellation::new(
                 "test:mesh:tessellation#numeric",
@@ -267,9 +267,9 @@ fn numeric_edits_reject_invalid_values_without_partial_changes() {
             base.triangles().to_vec(),
             TessellationTopology::List {},
             if corner {
-                TessellationNormals::per_corner(normals)
+                NormalSamples::new(normals).map_or(TessellationNormals::None, TessellationNormals::per_corner)
             } else {
-                TessellationNormals::per_vertex(normals)
+                NormalSamples::new(normals).map_or(TessellationNormals::None, TessellationNormals::per_vertex)
             },
             Vec::new(),
         )

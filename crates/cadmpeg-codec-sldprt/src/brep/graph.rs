@@ -2922,21 +2922,24 @@ fn derive_cylindrical_pcurves(
                         _ => continue,
                     }
                 };
-                let axial_control_points = nurbs
+                // One pole row carries its radial and axial halves together,
+                // so the two projections are built into one list.
+                let poles = nurbs
                     .control_points()
                     .iter()
-                    .map(|point| {
-                        dot(
+                    .zip(&radial_control_points)
+                    .map(|(point, radial)| cadmpeg_ir::geometry::PolarNurbsPole {
+                        radial: *radial,
+                        axial: dot(
                             [point.x - origin.x, point.y - origin.y, point.z - origin.z],
                             *axis,
-                        )
+                        ),
                     })
                     .collect();
                 let Ok(polar) = PolarPcurveNurbs::new(
                     nurbs.degree(),
                     nurbs.knots().to_vec(),
-                    radial_control_points,
-                    axial_control_points,
+                    poles,
                     nurbs.weights().map(<[f64]>::to_vec),
                     nurbs.periodic(),
                 ) else {

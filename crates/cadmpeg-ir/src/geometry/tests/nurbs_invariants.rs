@@ -50,8 +50,16 @@ fn polar() -> PolarPcurveNurbs {
     PolarPcurveNurbs::new(
         1,
         vec![2.0, 2.0, 5.0, 5.0],
-        vec![Point2::new(1.0, 2.0), Point2::new(3.0, 4.0)],
-        vec![5.0, 6.0],
+        vec![
+            crate::geometry::PolarNurbsPole {
+                radial: Point2::new(1.0, 2.0),
+                axial: 5.0,
+            },
+            crate::geometry::PolarNurbsPole {
+                radial: Point2::new(3.0, 4.0),
+                axial: 6.0,
+            },
+        ],
         Some(vec![1.0, 2.0]),
         true,
     )
@@ -88,8 +96,13 @@ fn construction_rejects_invalid_knots_and_non_finite_poles() {
         assert!(PolarPcurveNurbs::new(
             1,
             knots,
-            vec![Point2::new(0.0, 0.0); 2],
-            vec![0.0; 2],
+            vec![
+                crate::geometry::PolarNurbsPole {
+                    radial: Point2::new(0.0, 0.0),
+                    axial: 0.0,
+                };
+                2
+            ],
             None,
             false
         )
@@ -109,8 +122,13 @@ fn construction_rejects_invalid_knots_and_non_finite_poles() {
         assert!(PolarPcurveNurbs::new(
             1,
             polar().knots().to_vec(),
-            vec![Point2::new(0.0, 0.0); 2],
-            vec![invalid; 2],
+            vec![
+                crate::geometry::PolarNurbsPole {
+                    radial: Point2::new(0.0, 0.0),
+                    axial: invalid,
+                };
+                2
+            ],
             None,
             false
         )
