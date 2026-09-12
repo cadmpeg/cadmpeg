@@ -177,9 +177,8 @@ pub(crate) fn bind_sweep_sketch_selections(
             else {
                 break 'feature_edit;
             };
-            let mut edited_section = shape.section().clone();
             {
-                let section = &mut edited_section;
+                let section = &mut *shape;
                 if let (Some(PlanarProfileRef::Native(group_id)), Some(profile_operand)) =
                     (section.referenced_profile(), scope.sweep_profile())
                 {
@@ -210,8 +209,7 @@ pub(crate) fn bind_sweep_sketch_selections(
                         if let (Some(placement), None) = (candidates.next(), candidates.next()) {
                             let sketch = neutral_sketch_id(placement);
                             if sketches.iter().any(|candidate| candidate.id == sketch) {
-                                *section =
-                                    cadmpeg_ir::features::SweepSection::Profile((sketch).into());
+                                section.set_referenced_profile((sketch).into());
                             }
                         }
                     }
@@ -276,7 +274,7 @@ pub(crate) fn bind_sweep_sketch_selections(
                     if let Some((sketch, selected)) = resolved {
                         let profile = PlanarProfileRef::sketch_entities(sketch, vec![selected])
                             .unwrap_or_else(|_| PlanarProfileRef::Native(scope.id.clone()));
-                        *section = cadmpeg_ir::features::SweepSection::Profile(profile);
+                        section.set_referenced_profile(profile);
                     }
                 }
                 let resolve_path = |path: &mut PathRef| -> Option<()> {
@@ -303,12 +301,7 @@ pub(crate) fn bind_sweep_sketch_selections(
                     let _ = resolve_path(&mut guide_rail.path);
                 }
             }
-            *shape = cadmpeg_ir::features::SweepShape::new(
-                edited_section,
-                shape.sections().to_vec(),
-                shape.mode(),
-            )
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+
         }
         feature.evaluation.set_definition(definition);
     }

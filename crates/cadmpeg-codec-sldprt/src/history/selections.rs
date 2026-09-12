@@ -293,16 +293,9 @@ pub(crate) fn bind_topology_selections(
                     }
                 }
                 FeatureDefinition::Operation(FeatureOperation::Sweep { shape, path, .. }) => {
-                    let mut section = shape.section().clone();
-                    if let Some(profile) = section.referenced_profile_mut() {
+                    if let Some(profile) = shape.referenced_profile_mut() {
                         resolve_planar_profile_ref(profile, &face_ids);
                     }
-                    *shape = cadmpeg_ir::features::SweepShape::new(
-                        section,
-                        shape.sections().to_vec(),
-                        shape.mode(),
-                    )
-                    .map_err(cadmpeg_core::CodecError::malformed)?;
                     if let Some(path) = path {
                         resolve_path_ref(path, &edge_ids, &curve_ids);
                     }

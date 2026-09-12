@@ -895,9 +895,9 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
             path_tangent: true,
             allow_multi_profile_faces: Some(true),
             ..
-        }) if matches!((shape.section(), shape.sections(), shape.mode(),), (cadmpeg_ir::features::SweepSection::Profile(profile), sections, cadmpeg_ir::features::SweepMode::Solid {
+        }) if matches!((shape.referenced_profile(), shape.mode(),), (Some(profile), cadmpeg_ir::features::SweepMode::Solid {
                 op: cadmpeg_ir::features::SolidSweepOperation::Cut,
-            },) if matches!(profile, cadmpeg_ir::features::PlanarProfileRef::Sketch(_)) && path.ends_with(":Spine") && sections.len() == 1)));
+            },) if matches!(profile, cadmpeg_ir::features::PlanarProfileRef::Sketch(_)) && path.ends_with(":Spine") && shape.additional_section_count() == 1)));
     assert!(matches!(
         feature("SurfaceSweep").evaluation.definition(), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
             shape,
@@ -907,7 +907,7 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
             transformation: Some(cadmpeg_ir::features::SweepTransformation::Constant),
             linearize: true,
             ..
-        }) if matches!((shape.sections(), shape.mode(),), (sections, cadmpeg_ir::features::SweepMode::Surface {},) if sections.len() == 1)));
+        }) if matches!((shape.mode(),), (cadmpeg_ir::features::SweepMode::Surface {},) if shape.additional_section_count() == 1)));
     assert_eq!(feature("Loft").dependencies.len(), 2);
     assert_eq!(feature("Pipe").dependencies.len(), 3);
     assert!(result.report().losses.is_empty());

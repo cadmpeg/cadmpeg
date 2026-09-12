@@ -397,12 +397,11 @@ fn profile_driven_families_report_incomplete_construction_before_lineage() {
             op: BooleanOp::Join,
         }),
         FeatureDefinition::Operation(FeatureOperation::Sweep {
-            shape: cadmpeg_ir::features::SweepShape::new(
+            shape: cadmpeg_ir::features::SweepShape::sheet_sections(
+                SweepMode::Unresolved {},
                 SweepSection::Unresolved(None),
                 Vec::new(),
-                SweepMode::Unresolved {},
-            )
-            .unwrap(),
+            ),
 
             path: None,
 

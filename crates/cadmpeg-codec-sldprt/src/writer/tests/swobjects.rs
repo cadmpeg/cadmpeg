@@ -387,14 +387,13 @@ fn encoder_writes_source_less_line_sketches() {
             op: BooleanOp::NewBody,
         }),
         FeatureDefinition::Operation(FeatureOperation::Sweep {
-            shape: cadmpeg_ir::features::SweepShape::new(
-                cadmpeg_ir::features::SweepSection::Profile(profile.clone()),
-                Vec::new(),
+            shape: cadmpeg_ir::features::SweepShape::sheet_sections(
                 cadmpeg_ir::features::SweepMode::Solid {
                     op: cadmpeg_ir::features::SolidSweepOperation::Join,
                 },
-            )
-            .unwrap(),
+                cadmpeg_ir::features::SweepSection::Profile(profile.clone()),
+                Vec::new(),
+            ),
 
             path: Some(path.clone()),
 

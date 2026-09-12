@@ -632,12 +632,8 @@ fn maps_each_admitted_operation_class_to_its_neutral_family() {
                 else {
                     panic!("expected a typed unresolved sweep");
                 };
-                let section = shape.section();
                 let mode = shape.mode();
-                assert!(matches!(
-                    section,
-                    cadmpeg_ir::features::SweepSection::Unresolved(Some(_))
-                ));
+                assert!(shape.unresolved_native_section().is_some());
                 assert!(matches!(
                     path,
                     Some(cadmpeg_ir::features::PathRef::Unresolved(_))

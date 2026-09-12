@@ -137,7 +137,7 @@ fn decode_binds_uniquely_enclosed_profile_stream_to_sweep() {
         feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep {
             shape,
             ..
-        }) if matches!((shape.section(),), (cadmpeg_ir::features::SweepSection::Profile(profile),) if matches!((profile,), (PlanarProfileRef::Sketch(id),) if id == &sketch.id))));
+        }) if matches!((shape.referenced_profile(),), (Some(PlanarProfileRef::Sketch(id)),) if id == &sketch.id)));
 }
 
 #[test]
@@ -165,7 +165,7 @@ fn decode_does_not_bind_ambiguous_enclosed_profile_streams_to_sweep() {
         feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep {
             shape,
             ..
-        }) if matches!((shape.section(),), (cadmpeg_ir::features::SweepSection::Unresolved(_),))));
+        }) if shape.section_is_unresolved()));
 }
 
 #[test]
@@ -510,11 +510,8 @@ fn decode_binds_multiple_sketch_history_nodes_by_exact_name() {
                 shape,
                 path: Some(PathRef::Sketch(path)),
                 ..
-            }) => match (shape.section(),) {
-                (cadmpeg_ir::features::SweepSection::Profile(profile),) => match (profile,) {
-                    (PlanarProfileRef::Sketch(profile),) => Some((profile, path)),
-                    _ => None,
-                },
+            }) => match (shape.referenced_profile(),) {
+                (Some(PlanarProfileRef::Sketch(profile)),) => Some((profile, path)),
                 _ => None,
             },
             _ => None,

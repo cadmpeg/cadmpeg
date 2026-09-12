@@ -683,26 +683,15 @@ pub(crate) fn sweep_definition_is_incomplete(feature: &Feature) -> bool {
     else {
         return true;
     };
-    let section = shape.section();
-    let sections = shape.sections();
     let mode = shape.mode();
-    matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_))
-        || section
-            .referenced_profile()
-            .is_some_and(planar_profile_ref_is_incomplete)
-        || section.referenced_profile().is_some_and(|profile| {
+    let profiles = shape.referenced_profiles();
+    shape.any_section_is_unresolved()
+        || profiles
+            .iter()
+            .copied()
+            .any(planar_profile_ref_is_incomplete)
+        || profiles.iter().any(|profile| {
             planar_profile_dependency_is_incomplete(profile, &feature.dependencies)
-        })
-        || sections.iter().any(|section| {
-            matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_))
-                || section
-                    .referenced_profile()
-                    .is_some_and(planar_profile_ref_is_incomplete)
-        })
-        || sections.iter().any(|section| {
-            section.referenced_profile().is_some_and(|profile| {
-                planar_profile_dependency_is_incomplete(profile, &feature.dependencies)
-            })
         })
         || path.as_ref().is_none_or(path_ref_is_incomplete)
         || sweep_mode_is_incomplete(mode)

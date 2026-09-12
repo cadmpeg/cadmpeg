@@ -987,7 +987,8 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
             path: None,
 
             ..
-        }) if matches!((shape.section(), shape.mode(),), (cadmpeg_ir::features::SweepSection::Unresolved(_), cadmpeg_ir::features::SweepMode::Unresolved {},))));
+        }) if shape.section_is_unresolved()
+            && matches!((shape.mode(),), (cadmpeg_ir::features::SweepMode::Unresolved {},))));
     let duplicate_expressions = vec![
         expression("expression-a", "p1_length", "1"),
         expression("expression-b", "p1_length", "2"),

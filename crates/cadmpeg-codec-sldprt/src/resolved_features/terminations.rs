@@ -889,19 +889,14 @@ pub(crate) fn project_surface_sweep_profiles(
             else {
                 break 'feature_edit;
             };
-            shape
-                .try_edit(|section, _, _| {
-                    if !matches!(section, cadmpeg_ir::features::SweepSection::Unresolved(_)) {
-                        return;
+            if shape.section_is_unresolved() {
+                shape.set_referenced_profile(profile);
+                for dependency in dependencies {
+                    if dependency != feature.id && !feature.dependencies.contains(&dependency) {
+                        feature.dependencies.insert(dependency);
                     }
-                    *section = cadmpeg_ir::features::SweepSection::Profile(profile);
-                    for dependency in dependencies {
-                        if dependency != feature.id && !feature.dependencies.contains(&dependency) {
-                            feature.dependencies.insert(dependency);
-                        }
-                    }
-                })
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+                }
+            }
         }
         feature.evaluation.set_definition(definition);
     }

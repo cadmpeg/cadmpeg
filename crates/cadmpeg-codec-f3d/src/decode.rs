@@ -617,17 +617,15 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             guide_rail,
             ..
         }) => {
-            use cadmpeg_ir::features::{SweepMode, SweepOrientation, SweepSection};
+            use cadmpeg_ir::features::{SweepMode, SweepOrientation};
 
-            let section = shape.section();
-            let sections = shape.sections();
             let mode = shape.mode();
 
-            let section_is_resolved = |section: &SweepSection| match section {
-                SweepSection::Unresolved(_) => false,
-                SweepSection::Profile(profile) => planar_profile_ref_is_resolved(profile),
-                SweepSection::Generated(_) => true,
-            };
+            let sections_are_resolved = !shape.any_section_is_unresolved()
+                && shape
+                    .referenced_profiles()
+                    .into_iter()
+                    .all(|profile| planar_profile_ref_is_resolved(profile));
             let mode_is_resolved = match mode {
                 SweepMode::Unresolved {} => false,
                 SweepMode::Solid {
@@ -651,8 +649,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 .as_ref()
                 .is_none_or(|guide| loft_path_is_resolved(&guide.path));
 
-            !section_is_resolved(section)
-                || sections.iter().any(|section| !section_is_resolved(section))
+            !sections_are_resolved
                 || !path.as_ref().is_some_and(loft_path_is_resolved)
                 || !mode_is_resolved
                 || !orientation_is_resolved
@@ -1566,20 +1563,16 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                 guide_rail,
                 ..
             }) => {
-                let section = shape.section();
-                let sections = shape.sections();
-                for section in std::iter::once(section).chain(sections) {
+                if shape.any_section_names_an_unresolved_carrier() {
+                    gaps.profile_selections += 1;
+                }
+                for profile in shape.referenced_profiles() {
                     if matches!(
-                        section,
-                        cadmpeg_ir::features::SweepSection::Unresolved(Some(_))
-                    ) || section.referenced_profile().is_some_and(|profile| {
-                        matches!(
-                            profile,
-                            PlanarProfileRef::Native(_)
-                                | PlanarProfileRef::Unresolved(_)
-                                | PlanarProfileRef::SketchSelection { .. }
-                        )
-                    }) {
+                        profile,
+                        PlanarProfileRef::Native(_)
+                            | PlanarProfileRef::Unresolved(_)
+                            | PlanarProfileRef::SketchSelection { .. }
+                    ) {
                         gaps.profile_selections += 1;
                     }
                 }

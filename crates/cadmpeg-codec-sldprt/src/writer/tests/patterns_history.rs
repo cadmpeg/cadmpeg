@@ -613,9 +613,9 @@ fn semantic_writer_round_trips_typed_sweep() {
             twist: Some(twist),
             scale: Some(scale),
             ..
-        }) if matches!((shape.section(), shape.mode(),), (cadmpeg_ir::features::SweepSection::Profile(profile), cadmpeg_ir::features::SweepMode::Solid { op: cadmpeg_ir::features::SolidSweepOperation::NewBody },) if matches!((profile,), (PlanarProfileRef::Feature(profile),) if scale.get() == 1.5 && profile == &profile_a
+        }) if matches!((shape.referenced_profile(), shape.mode(),), (Some(PlanarProfileRef::Feature(profile)), cadmpeg_ir::features::SweepMode::Solid { op: cadmpeg_ir::features::SolidSweepOperation::NewBody },) if scale.get() == 1.5 && profile == &profile_a
             && path_ref == &path
-            && (twist.get() - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12))));
+            && (twist.get() - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12)));
 
     {
         let mut ir_edit = decoded.ir_mut();
@@ -630,14 +630,12 @@ fn semantic_writer_round_trips_typed_sweep() {
             else {
                 panic!("typed sweep");
             };
+            shape.set_referenced_profile(cadmpeg_ir::features::PlanarProfileRef::Feature(
+                profile_b.clone(),
+            ));
             shape
-                .try_edit(|section, _, mode| {
-                    *section = cadmpeg_ir::features::SweepSection::Profile(
-                        cadmpeg_ir::features::PlanarProfileRef::Feature(profile_b.clone()),
-                    );
-                    *mode = cadmpeg_ir::features::SweepMode::Solid {
-                        op: cadmpeg_ir::features::SolidSweepOperation::Join,
-                    };
+                .set_mode(cadmpeg_ir::features::SweepMode::Solid {
+                    op: cadmpeg_ir::features::SolidSweepOperation::Join,
                 })
                 .unwrap();
             *twist = Some(Angle::new(std::f64::consts::PI).unwrap());
@@ -719,7 +717,8 @@ fn semantic_writer_round_trips_sparse_surface_sweep() {
             twist: None,
             scale: None,
             ..
-        }) if matches!((shape.section(), shape.mode(),), (cadmpeg_ir::features::SweepSection::Unresolved(_), cadmpeg_ir::features::SweepMode::Surface {},))));
+        }) if shape.section_is_unresolved()
+            && matches!((shape.mode(),), (cadmpeg_ir::features::SweepMode::Surface {},))));
 
     {
         let mut ir_edit = decoded.ir_mut();
@@ -756,7 +755,8 @@ fn semantic_writer_round_trips_sparse_surface_sweep() {
             twist: Some(actual_twist),
             scale: None,
             ..
-        }) if matches!((shape.section(), shape.mode(),), (cadmpeg_ir::features::SweepSection::Unresolved(_), cadmpeg_ir::features::SweepMode::Surface {},) if actual_twist.get() == 0.5)));
+        }) if shape.section_is_unresolved()
+            && matches!((shape.mode(),), (cadmpeg_ir::features::SweepMode::Surface {},) if actual_twist.get() == 0.5)));
 }
 
 #[test]
@@ -787,7 +787,8 @@ fn semantic_writer_retains_native_solid_sweep_with_unresolved_operation() {
             twist: None,
             scale: None,
             ..
-        }) if matches!((shape.section(), shape.mode(),), (cadmpeg_ir::features::SweepSection::Unresolved(_), SweepMode::Unresolved {},))));
+        }) if shape.section_is_unresolved()
+            && matches!((shape.mode(),), (SweepMode::Unresolved {},))));
     decoded.ir_mut().model.features[0].name = Some("Renamed sweep".into());
 
     let mut encoded = Vec::new();

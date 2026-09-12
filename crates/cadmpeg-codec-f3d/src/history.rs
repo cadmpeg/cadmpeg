@@ -921,9 +921,7 @@ pub(crate) fn bind_sweep_result_modes(
                 }
                 _ => SweepMode::Unresolved {},
             };
-            shape
-                .try_edit(|_, _, result| *result = mode)
-                .map_err(CodecError::malformed)?;
+            shape.set_mode(mode).map_err(CodecError::malformed)?;
         }
         feature.evaluation.set_definition(definition);
     }
