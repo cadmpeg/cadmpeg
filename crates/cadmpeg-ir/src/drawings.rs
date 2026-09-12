@@ -15,6 +15,7 @@ crate::ids::id_type!(
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum DrawingKind {
     /// Sheet containing ordered views.
     Page,
@@ -47,6 +48,7 @@ pub enum DrawingKind {
 /// A page, template, view, projection, section, or drawing annotation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct Drawing {
     /// Stable drawing identity.
     pub id: DrawingId,

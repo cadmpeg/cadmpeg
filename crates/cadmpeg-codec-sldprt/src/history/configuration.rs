@@ -37,7 +37,7 @@ fn apply_configuration_state(
 
 fn configuration_evaluation(feature: &cadmpeg_ir::features::Feature) -> ConfigurationEvaluation {
     if feature.suppressed.unwrap_or(false) {
-        ConfigurationEvaluation::Suppressed
+        ConfigurationEvaluation::Suppressed {}
     } else {
         ConfigurationEvaluation::Active {
             outputs: feature.evaluation.outputs().iter().cloned().collect(),
@@ -297,7 +297,7 @@ pub(crate) fn project_configuration_design_states(
                     feature.id,
                     cadmpeg_ir::features::ConfigurationFeatureState {
                         evaluation: if feature.suppressed.unwrap_or(false) {
-                            cadmpeg_ir::features::ConfigurationEvaluation::Suppressed
+                            cadmpeg_ir::features::ConfigurationEvaluation::Suppressed {}
                         } else {
                             cadmpeg_ir::features::ConfigurationEvaluation::Active {
                                 outputs: feature.evaluation.outputs().iter().cloned().collect(),

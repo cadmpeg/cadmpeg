@@ -247,6 +247,7 @@ macro_rules! model_read_value {
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct FeatureRegenerationEdge {
     child: crate::features::FeatureId,
     parent: crate::features::FeatureId,
@@ -329,6 +330,7 @@ macro_rules! declare_model {
         }
 
         #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
         struct ModelReadWire {
             $(
                 $(#[$attribute])*
@@ -1097,6 +1099,7 @@ struct CadIrReadWire {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct CadIrPayload {
     #[serde(default)]
     source: Option<SourceMeta>,
@@ -1274,7 +1277,7 @@ impl CadIr {
 
         let probe = serde_json::from_str::<VersionProbe>(s)?;
         check_ir_version(probe.ir_version.as_ref())?;
-        serde_json::from_str::<CadIrPayload>(s).map(Into::into)
+        serde_json::from_str::<CadIrReadWire>(s).map(|wire| wire.payload.into())
     }
 
     /// Sort model, native, and unknown-record arenas by identity.

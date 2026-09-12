@@ -17,6 +17,7 @@ crate::ids::id_type!(
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SemanticAnnotationKind {
     /// Measured linear, angular, radial, or other dimension.
     Dimension,
@@ -35,6 +36,7 @@ pub enum SemanticAnnotationKind {
 /// Semantic content of a persisted annotation, separate from drawing appearance.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct SemanticAnnotation {
     /// Stable semantic identity.
     pub id: SemanticAnnotationId,

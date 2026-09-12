@@ -405,8 +405,8 @@ fn generated_silhouette_curves_decode_and_write_source_less() {
             cadmpeg_ir::math::Vector3::new(0.0, -1.0, 0.0)
         );
         match (silhouette, draft_factor) {
-            (SilhouetteKind::Standard, None) if name == "silh_int_cur" => {}
-            (SilhouetteKind::Parametric, None) if name == "para_silh_int_cur" => {}
+            (SilhouetteKind::Standard {}, None) if name == "silh_int_cur" => {}
+            (SilhouetteKind::Parametric {}, None) if name == "para_silh_int_cur" => {}
             (
                 SilhouetteKind::Taper {
                     draft_factor: actual,

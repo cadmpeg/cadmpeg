@@ -195,8 +195,8 @@ pub(crate) fn project_unresolved_component_insert_occurrences(
             ));
         occurrences.push(Occurrence {
             id: occurrence_id,
-            prototype: PrototypeReference::Unresolved,
-            parent: OccurrenceParent::Root,
+            prototype: PrototypeReference::Unresolved {},
+            parent: OccurrenceParent::Root {},
             ordinal: u32::try_from(ordinal_start.saturating_add(occurrences.len())).map_err(
                 |_| {
                     cadmpeg_core::CodecError::malformed(
@@ -235,7 +235,7 @@ fn project_occurrence(
             prototype: PrototypeReference::Local {
                 definition: component_id,
             },
-            parent: OccurrenceParent::Root,
+            parent: OccurrenceParent::Root {},
             ordinal: 0,
             transform,
             linked_prototype: None,

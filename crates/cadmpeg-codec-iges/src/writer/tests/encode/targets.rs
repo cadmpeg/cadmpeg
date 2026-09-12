@@ -45,7 +45,7 @@ fn inherit_replays_a_non_default_version_verbatim() {
     );
     assert!(matches!(
         &plan.report().fidelity(),
-        FidelityResolution::Replayed
+        FidelityResolution::Replayed {}
     ));
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
@@ -133,7 +133,10 @@ fn an_explicit_target_writes_a_source_the_catalog_cannot_inherit() {
         plan.report().target().map(ToString::to_string),
         Some("iges:5.3-fixed-ascii".to_owned())
     );
-    assert_eq!(&plan.report().fidelity(), &FidelityResolution::NotProvided);
+    assert_eq!(
+        &plan.report().fidelity(),
+        &FidelityResolution::NotProvided {}
+    );
     assert!(plan
         .report()
         .losses

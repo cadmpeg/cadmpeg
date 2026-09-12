@@ -3301,7 +3301,7 @@ fn taper_spl_sur(
         Some(Vector3::new(draft[0], draft[1], draft[2]))
     };
     let taper = match kind {
-        0 => TaperSurfaceKind::Standard,
+        0 => TaperSurfaceKind::Standard {},
         1 => TaperSurfaceKind::Orthogonal {
             sense: cur.take_bool()?,
         },

@@ -17,8 +17,11 @@ fn occurrence_scale_rejects_nonfinite_components_with_field_context() {
 
 #[test]
 fn occurrence_scale_preserves_zero_and_negative_factors_on_the_wire() {
-    let mut occurrence =
-        super::occurrence("test:model:occurrence#scale", OccurrenceParent::Root, 0.0);
+    let mut occurrence = super::occurrence(
+        "test:model:occurrence#scale",
+        OccurrenceParent::Root {},
+        0.0,
+    );
     let mut wire = serde_json::to_value(&occurrence).unwrap();
     assert_eq!(wire["scale"], serde_json::json!([1.0, 1.0, 1.0]));
     wire["scale"] = serde_json::json!([-2.0, 0.0, 3.0]);

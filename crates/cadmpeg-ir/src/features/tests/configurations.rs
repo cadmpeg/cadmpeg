@@ -181,7 +181,7 @@ fn configuration_body_membership_round_trips_and_validates() {
     ir.model.configurations[0].feature_states = BTreeMap::from([(
         first_feature.clone(),
         ConfigurationFeatureState {
-            evaluation: ConfigurationEvaluation::Suppressed,
+            evaluation: ConfigurationEvaluation::Suppressed {},
             dependencies: DistinctMembers::default(),
             definition: FeatureDefinition::Operation(FeatureOperation::DatumPoint {
                 position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
@@ -222,7 +222,7 @@ fn configuration_body_membership_round_trips_and_validates() {
     ir.model.configurations[0].feature_states.insert(
         first_feature.clone(),
         ConfigurationFeatureState {
-            evaluation: ConfigurationEvaluation::Suppressed,
+            evaluation: ConfigurationEvaluation::Suppressed {},
             dependencies: DistinctMembers::default(),
             definition: FeatureDefinition::Operation(FeatureOperation::DatumPoint {
                 position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
@@ -344,7 +344,7 @@ fn configuration_suppression_is_read_from_feature_states_and_refuses_the_deleted
         feature_states: BTreeMap::from([(
             feature.id.clone(),
             ConfigurationFeatureState {
-                evaluation: ConfigurationEvaluation::Suppressed,
+                evaluation: ConfigurationEvaluation::Suppressed {},
                 dependencies: feature.dependencies.clone(),
                 definition: feature.evaluation.definition().clone(),
             },

@@ -706,7 +706,7 @@ fn generated_taper_surface_family_decodes_and_writes_source_less() {
             .iter()
             .any(|curve| curve.id == *reference));
         let actual_kind = match taper {
-            TaperSurfaceKind::Standard => 0,
+            TaperSurfaceKind::Standard {} => 0,
             TaperSurfaceKind::Orthogonal { sense: true } => 1,
             TaperSurfaceKind::Edge { .. } => 2,
             TaperSurfaceKind::Shadow { sine, cosine, .. } if (*sine, *cosine) == (0.6, 0.8) => 3,

@@ -178,7 +178,10 @@ fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
         )
         .unwrap();
     assert_eq!(plan.report().write_path(), WritePath::Synthesized);
-    assert_eq!(&plan.report().fidelity(), &FidelityResolution::NotConsumed);
+    assert_eq!(
+        &plan.report().fidelity(),
+        &FidelityResolution::NotConsumed {}
+    );
     let displacement = plan
         .report()
         .losses
@@ -216,7 +219,7 @@ fn compressed_ascii_replays_its_own_bytes_under_an_inherit_request() {
     );
     assert!(matches!(
         &plan.report().fidelity(),
-        FidelityResolution::Replayed
+        FidelityResolution::Replayed {}
     ));
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();

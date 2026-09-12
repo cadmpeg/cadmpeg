@@ -45,6 +45,7 @@ impl<'de> Deserialize<'de> for AssetData {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum AssetContent {
     /// Content embedded in the decoded document.
     Embedded {
@@ -88,6 +89,7 @@ fn deserialize_uri<'de, D: serde::Deserializer<'de>>(
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct AssetWire {
     id: AssetId,
     name: Option<String>,

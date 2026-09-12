@@ -73,7 +73,7 @@ fn external_reference_placements_project_as_root_occurrences_in_millimetres() {
     );
     assert_eq!(
         occurrences[0].parent,
-        cadmpeg_ir::products::OccurrenceParent::Root
+        cadmpeg_ir::products::OccurrenceParent::Root {}
     );
     assert_eq!(
         occurrences[0].prototype,

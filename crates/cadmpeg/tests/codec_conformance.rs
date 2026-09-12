@@ -264,7 +264,7 @@ mod product_roundtrip {
             };
             let segment = format!("{}:{definition}", occurrence.ordinal);
             let resolved = match &occurrence.parent {
-                OccurrenceParent::Root => segment,
+                OccurrenceParent::Root {} => segment,
                 OccurrenceParent::Occurrence { occurrence: parent } => format!(
                     "{}/{}",
                     path(
@@ -322,7 +322,7 @@ mod product_roundtrip {
             .occurrences
             .iter()
             .find(|occurrence| {
-                matches!(occurrence.parent, OccurrenceParent::Root)
+                matches!(occurrence.parent, OccurrenceParent::Root {})
                     && matches!(
                         &occurrence.prototype,
                         PrototypeReference::Local { definition }

@@ -1087,7 +1087,7 @@ pub(crate) fn var_blend_spl_sur(
     let cross_section = if matches!(cur.peek(), Some(Token::Enum(_))) {
         let selector = cur.take_enum()?;
         match selector {
-            0 => Some(VariableBlendCrossSection::Circular),
+            0 => Some(VariableBlendCrossSection::Circular {}),
             1 => Some(VariableBlendCrossSection::Thumbweights {
                 parameters: [cur.take_f64()?, cur.take_f64()?],
             }),

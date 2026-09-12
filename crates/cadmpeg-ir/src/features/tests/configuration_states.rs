@@ -10,7 +10,7 @@ fn configuration_output_members_are_distinct_and_empty_active_states_remain_vali
     let body = BodyId::mint("test:model:body#one").unwrap();
     assert!(DistinctMembers::try_from(vec![body.clone(), body.clone()]).is_err());
     for evaluation in [
-        ConfigurationEvaluation::Suppressed,
+        ConfigurationEvaluation::Suppressed {},
         ConfigurationEvaluation::Active {
             outputs: DistinctMembers::default(),
         },

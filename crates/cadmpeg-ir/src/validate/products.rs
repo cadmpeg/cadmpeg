@@ -55,16 +55,16 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
                 definitions.contains_key(definition.as_str())
             }
             PrototypeReference::External { .. } => true,
-            PrototypeReference::Unresolved => true,
+            PrototypeReference::Unresolved {} => true,
         };
         let valid_parent = match &occurrence.parent {
-            OccurrenceParent::Root => true,
+            OccurrenceParent::Root {} => true,
             OccurrenceParent::Occurrence { occurrence } => {
                 occurrences.contains_key(occurrence.as_str())
             }
         };
         let parent_key = match &occurrence.parent {
-            OccurrenceParent::Root => None,
+            OccurrenceParent::Root {} => None,
             OccurrenceParent::Occurrence { occurrence } => Some(occurrence.as_str()),
         };
         let ordinal_unique = sibling_ordinals.insert((parent_key, occurrence.ordinal));
@@ -165,8 +165,8 @@ mod tests {
             OccurrenceId::mint("test:model:occurrence#placed").expect("valid identity");
         ir.model.occurrences.push(Occurrence {
             id: occurrence.clone(),
-            prototype: PrototypeReference::Unresolved,
-            parent: OccurrenceParent::Root,
+            prototype: PrototypeReference::Unresolved {},
+            parent: OccurrenceParent::Root {},
             ordinal: 0,
             transform: Transform::identity(),
             linked_prototype: None,

@@ -854,7 +854,7 @@ fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
 
     assert!(!feature_definition_is_incomplete(&definition(
         construction.clone(),
-        CoilResult::NewBody,
+        CoilResult::NewBody {},
     )));
 
     let mut native_placement = construction.clone();
@@ -866,7 +866,7 @@ fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
     };
     assert!(feature_definition_is_incomplete(&definition(
         native_placement,
-        CoilResult::NewBody,
+        CoilResult::NewBody {},
     )));
 
     let native_target = definition(

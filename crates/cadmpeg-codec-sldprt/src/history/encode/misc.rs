@@ -102,7 +102,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         ),
                     );
                 }
-                Some(CosmeticThreadExtent::Through) => {
+                Some(CosmeticThreadExtent::Through {}) => {
                     parameters.remove("D1");
                 }
                 None => {}

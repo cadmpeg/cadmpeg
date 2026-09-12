@@ -79,6 +79,7 @@ impl Display for FieldName {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum Inexactness {
     /// Computed deterministically from byte-exact inputs.
     Derived,

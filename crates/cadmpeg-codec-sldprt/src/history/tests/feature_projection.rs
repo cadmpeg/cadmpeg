@@ -1574,7 +1574,7 @@ fn cosmetic_thread_without_blind_length_is_through() {
         FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
             face: FaceSelection::Unresolved,
             diameter: Some(cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap()),
-            extent: Some(CosmeticThreadExtent::Through),
+            extent: Some(CosmeticThreadExtent::Through {}),
         })
     );
 }
@@ -1603,7 +1603,7 @@ fn cosmetic_thread_non_length_d1_and_named_diameter_are_through() {
             FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
                 face: FaceSelection::Unresolved,
                 diameter: Some(cadmpeg_ir::scalar::PositiveLength::new(4.9).unwrap()),
-                extent: Some(CosmeticThreadExtent::Through),
+                extent: Some(CosmeticThreadExtent::Through {}),
             })
         );
     }

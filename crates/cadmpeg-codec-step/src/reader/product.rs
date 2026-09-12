@@ -320,7 +320,7 @@ pub(super) fn decode(
             prototype: PrototypeReference::Local {
                 definition: prototype,
             },
-            parent: OccurrenceParent::Root,
+            parent: OccurrenceParent::Root {},
             ordinal: root_ordinal,
             transform: Transform::identity(),
             linked_prototype: None,

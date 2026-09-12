@@ -314,7 +314,7 @@ pub fn project_occurrences(table: &XrefTable) -> Result<Vec<Occurrence>, cadmpeg
                     document: ExternalDocumentReference::path(reference.relative_path.clone()),
                     object: None,
                 },
-                parent: OccurrenceParent::Root,
+                parent: OccurrenceParent::Root {},
                 ordinal: ordinal_at(ordinal)?,
                 transform: crate::design::components::neutral_transform(transform)?,
                 linked_prototype: None,

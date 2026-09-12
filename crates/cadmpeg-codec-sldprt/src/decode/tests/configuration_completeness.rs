@@ -591,7 +591,7 @@ fn active_configuration_snapshots_final_neutral_design_state() {
     assert_eq!(
         ir.model.configurations[0].feature_states[&feature_id],
         ConfigurationFeatureState {
-            evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed,
+            evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed {},
             dependencies: (vec![
                 FeatureId::mint("synthetic:test:id#dependency").expect("identity grammar")
             ])

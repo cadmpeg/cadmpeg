@@ -651,7 +651,7 @@ fn generated_interp_radius_law_leaves_the_cross_section_enum_unconsumed() {
     // costs the cross-section while leaving the byte count intact, so the
     // decoded cross-section is what pins the boundary.
     for (selector, expected) in [
-        (Some(0), Some(VariableBlendCrossSection::Circular)),
+        (Some(0), Some(VariableBlendCrossSection::Circular {})),
         (
             Some(7),
             Some(VariableBlendCrossSection::G2Round {
@@ -1068,7 +1068,7 @@ fn generated_two_radii_variable_blend_decodes_explicit_circular_cross_section() 
     assert!(matches!(construction.radii, VariableBlendRadii::Two { .. }));
     assert!(matches!(
         &construction.cross_section,
-        Some(cadmpeg_ir::geometry::VariableBlendCrossSection::Circular)
+        Some(cadmpeg_ir::geometry::VariableBlendCrossSection::Circular {})
     ));
     let expected = construction.clone();
     let (mut source_less, _, _) = decoded.into_parts();

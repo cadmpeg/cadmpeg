@@ -512,7 +512,7 @@ pub(crate) fn writer_round_trips_product_body_ownership() {
         prototype: cadmpeg_ir::products::PrototypeReference::Local {
             definition: product,
         },
-        parent: cadmpeg_ir::products::OccurrenceParent::Root,
+        parent: cadmpeg_ir::products::OccurrenceParent::Root {},
         ordinal: 0,
         transform: cadmpeg_ir::transform::Transform::identity(),
         linked_prototype: None,

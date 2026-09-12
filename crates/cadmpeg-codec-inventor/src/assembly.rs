@@ -183,7 +183,7 @@ pub(crate) fn project_occurrences(
                 document: reference.document(),
                 object: None,
             },
-            parent: OccurrenceParent::Root,
+            parent: OccurrenceParent::Root {},
             ordinal: source.ordinal,
             transform,
             linked_prototype: None,

@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum Severity {
     /// Informational; no action needed.
     Info,
@@ -38,6 +39,7 @@ impl fmt::Display for Severity {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum LossCategory {
     /// Geometry (surfaces/curves/points) not transferred or approximated.
     Geometry,
@@ -76,6 +78,7 @@ impl fmt::Display for LossCategory {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum StrictConsequence {
     /// Strict mode must refuse the operation.
     Reject,
@@ -93,6 +96,7 @@ pub enum StrictConsequence {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
+#[serde(deny_unknown_fields)]
 pub enum LossTaxonomy {
     /// No geometry stream was located in the container, so no B-rep could be
     /// transferred.
@@ -522,6 +526,7 @@ impl fmt::Display for LossKind {
 /// One attributable instance of incomplete or approximate transfer.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct LossNote {
     /// Stable machine-readable loss kind.
     pub code: LossKind,

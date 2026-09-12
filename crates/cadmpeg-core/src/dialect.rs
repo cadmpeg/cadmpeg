@@ -258,6 +258,7 @@ pub struct DialectMatch {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct DialectMatchWire {
     format: String,
     dialect: DialectId,
@@ -372,6 +373,7 @@ pub struct DialectLayers {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct DialectLayersWire {
     primary: DialectMatch,
     extra: Vec<DialectMatch>,
@@ -661,6 +663,7 @@ mod tests {
     use super::*;
 
     #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
     struct DialectIdConformance {
         valid: Vec<String>,
         invalid: Vec<String>,

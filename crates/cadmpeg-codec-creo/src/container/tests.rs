@@ -72,7 +72,7 @@ fn scan_decodes_length_prefixed_native_model_name() {
     ));
     assert!(matches!(
         occurrence.parent,
-        cadmpeg_ir::products::OccurrenceParent::Root
+        cadmpeg_ir::products::OccurrenceParent::Root {}
     ));
     assert_eq!(
         occurrence.transform,

@@ -435,6 +435,7 @@ impl ContainerEntry {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 enum EntryCompressionWire {
     #[serde(rename = "none")]
     None,

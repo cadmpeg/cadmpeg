@@ -17,6 +17,7 @@ use crate::transform::Transform;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum PmiTarget {
     /// Entire shape body.
     Body {
@@ -69,6 +70,7 @@ pub enum PmiTarget {
 /// Numeric semantic-PMI quantity in canonical units.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct PmiValue {
     /// Numeric value in millimeters, radians, or unitless ratio as selected by
     /// `quantity`.
@@ -119,6 +121,7 @@ impl<'de> Deserialize<'de> for PmiMagnitude {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum PmiQuantity {
     /// Length in millimeters.
     Length,
@@ -132,6 +135,7 @@ pub enum PmiQuantity {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum DimensionKind {
     /// Size of one shape aspect.
     Size,
@@ -151,6 +155,7 @@ pub enum DimensionKind {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum DatumTargetForm {
     /// Point target.
     Point,
@@ -170,6 +175,7 @@ pub enum DatumTargetForm {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum GeometricToleranceKind {
     /// Straightness.
     Straightness,
@@ -208,6 +214,7 @@ pub enum GeometricToleranceKind {
 /// One datum in an ordered datum system.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct DatumReference {
     /// Referenced datum annotation.
     pub datum: PmiId,
@@ -297,6 +304,7 @@ where
 /// ISO limits-and-fits tolerance class attached to a dimension.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct LimitsAndFits {
     /// Form-variance designation.
     pub form_variance: String,
@@ -411,6 +419,7 @@ pub enum PmiDefinition {
 /// One document-level PMI annotation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct PmiAnnotation {
     /// Stable annotation identity.
     pub id: PmiId,

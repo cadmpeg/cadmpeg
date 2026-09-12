@@ -56,9 +56,9 @@ pub(crate) fn project_cosmetic_thread(feature: &Feature) -> FeatureDefinition {
             .or_else(|| {
                 (parse_angle_rad(value).is_some()
                     || parse_dimension_display_length(value) == Some(0.0))
-                .then_some(CosmeticThreadExtent::Through)
+                .then_some(CosmeticThreadExtent::Through {})
             }),
-        None => Some(CosmeticThreadExtent::Through),
+        None => Some(CosmeticThreadExtent::Through {}),
     };
     FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
         face: feature

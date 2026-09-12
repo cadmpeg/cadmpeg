@@ -271,7 +271,7 @@ fn design_completeness_audits_typed_construction_families() {
                 clockwise: false,
                 taper: Angle::new(0.0).unwrap(),
             },
-            result: cadmpeg_ir::features::CoilResult::NewBody,
+            result: cadmpeg_ir::features::CoilResult::NewBody {},
         }),
         FeatureDefinition::Operation(FeatureOperation::Sphere {
             center: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),

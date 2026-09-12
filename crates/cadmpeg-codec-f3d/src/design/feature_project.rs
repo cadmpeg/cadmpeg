@@ -1123,7 +1123,7 @@ pub fn project_parameter_design_with_edge_identities(
                                 })
                                 .or_else(|| {
                                     full_face_extent.then_some(
-                                        cadmpeg_ir::features::CosmeticThreadExtent::Through,
+                                        cadmpeg_ir::features::CosmeticThreadExtent::Through {},
                                     )
                                 });
                             FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
@@ -8968,7 +8968,7 @@ fn project_coil(
         first_body_group
     };
     let result = match (operation, first_body_group) {
-        (DesignExtrudeOperation::NewBody, None) => CoilResult::NewBody,
+        (DesignExtrudeOperation::NewBody, None) => CoilResult::NewBody {},
         (operation, Some(group)) => CoilResult::Boolean {
             operation: match operation {
                 DesignExtrudeOperation::Join => cadmpeg_ir::features::BooleanKind::Join,

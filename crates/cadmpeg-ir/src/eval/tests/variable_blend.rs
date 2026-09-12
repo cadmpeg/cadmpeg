@@ -309,7 +309,7 @@ fn cacheless_circular_variable_blend_uses_the_common_contact_center() {
             (Point2::new(0.0, 2.0), Point2::new(1.0, 2.0)),
         ],
         [2.0, 4.0],
-        Some(VariableBlendCrossSection::Circular),
+        Some(VariableBlendCrossSection::Circular {}),
     );
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
@@ -353,7 +353,7 @@ fn cacheless_circular_variable_blend_rejects_an_undetermined_center_tangent() {
             (Point2::new(0.0, 2.0), Point2::new(1.0, 2.0)),
         ],
         [2.0, 4.0],
-        Some(VariableBlendCrossSection::Circular),
+        Some(VariableBlendCrossSection::Circular {}),
     );
     ir.model.procedural_surfaces[0].edit_definition(|definition| {
         let ProceduralSurfaceDefinition::VariableBlend(definition_payload) = definition else {
@@ -398,7 +398,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
             (Point2::new(0.0, 3.0), Point2::new(1.0, 0.0)),
         ],
         [3.0, 3.0],
-        Some(VariableBlendCrossSection::Circular),
+        Some(VariableBlendCrossSection::Circular {}),
     );
     ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
         crate::geometry::LineCurve::try_new(

@@ -16,6 +16,7 @@ mod replay;
 /// One non-empty native arena reported as an exporter loss.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct LossCount {
     /// Source-format namespace this arena belongs to.
     pub format: String,

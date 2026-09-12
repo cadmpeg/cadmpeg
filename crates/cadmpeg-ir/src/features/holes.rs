@@ -538,6 +538,7 @@ impl From<HoleProfileFilter> for HoleProfileFilterWire {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(from = "HoleBottomWire", into = "HoleBottomWire")]
+#[serde(deny_unknown_fields)]
 pub enum HoleBottom {
     /// Flat-bottomed cylindrical end.
     Flat,
@@ -779,6 +780,7 @@ impl TryFrom<HoleSpecificationWire> for HoleSpecification {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum ThreadHand {
     /// Right-hand thread.
     Right,
@@ -790,6 +792,7 @@ pub enum ThreadHand {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(from = "HoleThreadDepthWire", into = "HoleThreadDepthWire")]
+#[serde(deny_unknown_fields)]
 pub enum HoleThreadDepth {
     /// Thread follows the complete hole depth.
     HoleDepth,
@@ -835,6 +838,7 @@ impl From<HoleThreadDepthWire> for HoleThreadDepth {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum HoleForm {
     /// Chamfered entry.
     Chamfer,

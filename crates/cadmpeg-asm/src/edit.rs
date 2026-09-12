@@ -1506,8 +1506,8 @@ fn patch_silhouette_definition(
         ));
     }
     let draft_factor = match silhouette {
-        cadmpeg_ir::geometry::SilhouetteKind::Standard
-        | cadmpeg_ir::geometry::SilhouetteKind::Parametric => None,
+        cadmpeg_ir::geometry::SilhouetteKind::Standard {}
+        | cadmpeg_ir::geometry::SilhouetteKind::Parametric {} => None,
         cadmpeg_ir::geometry::SilhouetteKind::Taper { draft_factor } => Some(draft_factor.get()),
     };
     let record_bytes = record_slice(bytes, record, "silhouette")?;

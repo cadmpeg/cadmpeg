@@ -1171,7 +1171,7 @@ fn emit_scaled_compound_loft_surface(
     });
     let shape = match embedded.shape {
         EmbeddedScaledCompoundLoftShape::Full => {
-            cadmpeg_ir::geometry::ScaledCompoundLoftShape::Full
+            cadmpeg_ir::geometry::ScaledCompoundLoftShape::Full {}
         }
         EmbeddedScaledCompoundLoftShape::None {
             parameter_ranges,

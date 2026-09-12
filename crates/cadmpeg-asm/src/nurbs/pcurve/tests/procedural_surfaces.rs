@@ -275,7 +275,7 @@ fn taper_surface_uses_direct_construction_cache_then_variant_tail() {
             assert!((fit_tolerance - 0.01).abs() < f64::EPSILON * 10.0);
             assert!(matches!(
                 (kind, taper),
-                (0, cadmpeg_ir::geometry::TaperSurfaceKind::Standard)
+                (0, cadmpeg_ir::geometry::TaperSurfaceKind::Standard {})
                     | (
                         1,
                         cadmpeg_ir::geometry::TaperSurfaceKind::Orthogonal { sense: true }
@@ -1425,8 +1425,8 @@ fn silhouette_layout_walks_each_family_at_both_widths() {
     use cadmpeg_ir::geometry::SilhouetteKind;
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         for (name, kind) in [
-            ("silh_int_cur", SilhouetteKind::Standard),
-            ("para_silh_int_cur", SilhouetteKind::Parametric),
+            ("silh_int_cur", SilhouetteKind::Standard {}),
+            ("para_silh_int_cur", SilhouetteKind::Parametric {}),
             (
                 "taper_silh_int_cur",
                 SilhouetteKind::Taper {

@@ -105,6 +105,7 @@ pub enum TessellationTopology {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
+#[serde(deny_unknown_fields)]
 pub enum TessellationChannelDomain {
     /// One channel value is associated with each tessellation vertex.
     #[default]
@@ -160,6 +161,7 @@ impl ChannelAddressing {
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 enum TessellationShadingWire {
     PerVertex { values: Vec<Vector3> },
     PerCorner { values: Vec<Vector3> },
@@ -167,6 +169,7 @@ enum TessellationShadingWire {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct TessellationWire {
     id: TessellationId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -195,6 +198,7 @@ struct TessellationWire {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct TessellationChannelWire {
     #[serde(default, skip_serializing_if = "TessellationChannelDomain::is_vertex")]
     domain: TessellationChannelDomain,
@@ -239,6 +243,7 @@ pub struct Tessellation {
 /// One source-defined group in a tessellation triangle partition.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct TessellationTriangleGroup {
     /// Source group identity, when the source stores one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -250,6 +255,7 @@ pub struct TessellationTriangleGroup {
 /// One source texture resource assigned directly to tessellation triangles.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct TessellationTextureAssignment {
     /// Source texture-resource identity, when the source stores one.
     #[serde(default, skip_serializing_if = "Option::is_none")]

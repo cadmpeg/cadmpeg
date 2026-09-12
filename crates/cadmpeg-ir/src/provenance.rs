@@ -127,6 +127,7 @@ impl<'de> Deserialize<'de> for CodecFormat {
 /// nested in an instance.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct SourceObjectAssociation {
     /// Source format identifier.
     #[cfg_attr(feature = "schema", schemars(with = "String"))]
@@ -431,6 +432,7 @@ impl JsonSchema for Provenance<SourceLocation> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum Exactness {
     /// Read verbatim from the source stream with no transformation beyond
     /// documented unit conversion.

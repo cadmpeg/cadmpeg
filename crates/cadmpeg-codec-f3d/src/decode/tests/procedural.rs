@@ -380,7 +380,10 @@ fn generated_scaled_compound_loft_decodes_full_direct_branch() {
     };
     let construction = definition_payload.construction();
 
-    assert!(matches!(construction.shape, ScaledCompoundLoftShape::Full));
+    assert!(matches!(
+        construction.shape,
+        ScaledCompoundLoftShape::Full {}
+    ));
     assert_eq!(construction.singularity, 11);
     assert_eq!(construction.discontinuities[0], [0.25]);
     assert!(construction.discontinuities[1..].iter().all(Vec::is_empty));
@@ -454,7 +457,7 @@ fn generated_scaled_compound_loft_writes_all_middle_branches_source_less() {
     let curve = scale.path.clone();
     let cases = [
         (
-            ScaledCompoundLoftShape::Full,
+            ScaledCompoundLoftShape::Full {},
             ScaledCompoundLoftBranch::ExtendedVector {
                 first_scale: None,
                 second_scale: Box::new(scale.clone()),
@@ -463,7 +466,7 @@ fn generated_scaled_compound_loft_writes_all_middle_branches_source_less() {
             },
         ),
         (
-            ScaledCompoundLoftShape::Full,
+            ScaledCompoundLoftShape::Full {},
             ScaledCompoundLoftBranch::ExtendedCurve {
                 scale: None,
                 flag: true,
@@ -472,7 +475,7 @@ fn generated_scaled_compound_loft_writes_all_middle_branches_source_less() {
             },
         ),
         (
-            ScaledCompoundLoftShape::Full,
+            ScaledCompoundLoftShape::Full {},
             ScaledCompoundLoftBranch::Direct {
                 flag: false,
                 direction: CompoundLoftDirection::Curve {
@@ -528,7 +531,7 @@ fn generated_scaled_compound_loft_writes_all_middle_branches_source_less() {
         assert!(matches!(
             (&construction.shape, &construction.branch),
             (
-                ScaledCompoundLoftShape::Full,
+                ScaledCompoundLoftShape::Full {},
                 ScaledCompoundLoftBranch::ExtendedVector { .. }
                     | ScaledCompoundLoftBranch::ExtendedCurve { .. }
                     | ScaledCompoundLoftBranch::Direct {

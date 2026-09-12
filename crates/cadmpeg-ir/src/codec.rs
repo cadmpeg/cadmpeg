@@ -58,6 +58,7 @@ impl fmt::Display for FormatId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum Confidence {
     /// Definitely not this format.
     No,
@@ -83,6 +84,7 @@ impl fmt::Display for Confidence {
 /// Options controlling source decoding.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct DecodeOptions {
     /// Stop after the container layer; do not attempt entity decode.
     pub container_only: bool,

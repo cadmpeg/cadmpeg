@@ -63,6 +63,7 @@ pub struct SubdCage {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct SubdCageWire {
     vertices: Vec<SubdVertex>,
     edges: Vec<SubdEdge>,
@@ -254,6 +255,7 @@ pub struct SubdPlaneFrame {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct SubdPlaneFrameWire {
     origin: Point3,
     first_axis: Vector3,
@@ -411,6 +413,7 @@ impl SubdSymmetryKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SubdRadialMapSelector {
     /// Native `ef` map.
     Ef,
@@ -429,6 +432,7 @@ pub enum SubdRadialMapSelector {
 /// One selector-preserving native radial-symmetry map.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct SubdRadialSymmetryMap {
     /// Native map selector. Its element namespace is format-native.
     pub selector: SubdRadialMapSelector,
@@ -551,6 +555,7 @@ impl TryFrom<SubdSymmetryWire> for SubdSymmetry {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SubdScheme {
     /// Catmull-Clark subdivision.
     CatmullClark,
@@ -572,6 +577,7 @@ pub struct SubdVertex {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct SubdVertexWire {
     point: Point3,
     tag: SubdVertexTag,
@@ -624,6 +630,7 @@ impl SubdVertex {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SubdGripDirection {
     /// Positive grid-y direction.
     North,
@@ -648,6 +655,7 @@ pub struct SubdVertexGripLayout {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct SubdVertexGripLayoutWire {
     direction: SubdGripDirection,
     wedges: Vec<SubdGripWedge>,
@@ -735,6 +743,7 @@ pub struct SubdSecondaryGrip {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct SubdSecondaryGripWire {
     source_index: u32,
     point: Point3,
@@ -783,6 +792,7 @@ impl SubdSecondaryGrip {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SubdVertexTag {
     /// Smooth vertex.
     Smooth,
@@ -814,6 +824,7 @@ pub struct SubdEdge {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct SubdEdgeWire {
     vertices: [u32; 2],
     sharpness: [f64; 2],
@@ -899,6 +910,7 @@ impl SubdEdge {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SubdEdgeTag {
     /// Smooth edge.
     Smooth,
@@ -918,6 +930,7 @@ pub struct SubdFace {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct SubdFaceWire {
     edges: Vec<SubdEdgeUse>,
 }
@@ -948,6 +961,7 @@ impl SubdFace {
 /// One directed use of a subdivision edge in a face ring.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct SubdEdgeUse {
     /// Index into the parent surface's edge array.
     pub edge: u32,

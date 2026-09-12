@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub(crate) struct CanonicalUnitsWire {
     length: CanonicalLengthUnitWire,
 }
@@ -22,6 +23,7 @@ pub(crate) struct CanonicalUnitsWire {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 enum CanonicalLengthUnitWire {
     #[default]
     Millimeter,
@@ -154,6 +156,7 @@ crate::units::named_field!(deserialize_angular, PositiveScalar, "angular");
 /// Document-wide linear and angular tolerances.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct Tolerances {
     /// Linear tolerance in millimeters.
     #[serde(deserialize_with = "deserialize_linear")]

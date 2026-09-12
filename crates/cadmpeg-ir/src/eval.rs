@@ -5978,7 +5978,7 @@ fn cacheless_circular_variable_blend_point(
         || !construction.radii.is_single()
         || !matches!(
             construction.cross_section,
-            None | Some(crate::geometry::VariableBlendCrossSection::Circular)
+            None | Some(crate::geometry::VariableBlendCrossSection::Circular {})
         )
     {
         return None;
@@ -6021,7 +6021,7 @@ fn cacheless_circular_variable_blend_section(
         || !construction.radii.is_single()
         || !matches!(
             construction.cross_section,
-            None | Some(crate::geometry::VariableBlendCrossSection::Circular)
+            None | Some(crate::geometry::VariableBlendCrossSection::Circular {})
         )
     {
         return None;
