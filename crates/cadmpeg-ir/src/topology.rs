@@ -407,7 +407,7 @@ pub struct Face {
     pub sense: Sense,
     /// Boundary loops. Classification lives here so a loop cannot disagree
     /// with face membership.
-    #[cfg_attr(feature = "schema", schemars(with = "Vec<FaceLoopMember>"))]
+    #[cfg_attr(feature = "schema", schemars(with = "FaceLoopsWire"))]
     pub loops: FaceLoops,
     /// Optional display name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -443,69 +443,56 @@ impl Face {
 /// Face loop ids with at most one outer loop.
 ///
 /// `Unspecified` keeps source order when the source did not classify outer
-/// versus inner. Each loop travels on the wire with the role it holds on this
-/// face, so a face states its own classification.
+/// versus inner. The wire is one tagged object, so a loop has no role of its
+/// own to disagree with the face's classification and the round trip is stable
+/// by construction.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "Vec<FaceLoopMember>", into = "Vec<FaceLoopMember>")]
+#[serde(from = "FaceLoopsWire", into = "FaceLoopsWire")]
 pub struct FaceLoops {
     ids: Vec<LoopId>,
     classification: FaceLoopClassification,
 }
 
-/// One face-loop membership: the loop and its role on that face.
+/// The wire form of a face's boundary loops.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "classification", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
-pub struct FaceLoopMember {
-    /// Loop bounded by the owning face.
-    pub id: LoopId,
-    /// Role of the loop on the owning face.
-    pub role: LoopBoundaryRole,
+pub enum FaceLoopsWire {
+    /// The source did not classify outer versus inner; loops keep source order.
+    Unspecified {
+        /// Boundary loops in source order.
+        loops: Vec<LoopId>,
+    },
+    /// The source classified the boundary.
+    Classified {
+        /// Outer loop, absent when the surface domain is the exterior.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        outer: Option<LoopId>,
+        /// Inner loops in source order.
+        inner: Vec<LoopId>,
+    },
 }
 
-impl TryFrom<Vec<FaceLoopMember>> for FaceLoops {
-    type Error = String;
-
-    fn try_from(members: Vec<FaceLoopMember>) -> Result<Self, Self::Error> {
-        let mut outer = None;
-        let mut classified = false;
-        for (index, member) in members.iter().enumerate() {
-            match member.role {
-                LoopBoundaryRole::Unspecified => {}
-                LoopBoundaryRole::Outer => {
-                    classified = true;
-                    if outer.is_some() {
-                        return Err("face has more than one explicit outer loop".into());
-                    }
-                    outer = Some(index);
-                }
-                LoopBoundaryRole::Inner => classified = true,
-            }
+impl From<FaceLoopsWire> for FaceLoops {
+    fn from(wire: FaceLoopsWire) -> Self {
+        match wire {
+            FaceLoopsWire::Unspecified { loops } => Self::unspecified(loops),
+            FaceLoopsWire::Classified { outer, inner } => Self::classified(outer, inner),
         }
-        let ids = members.into_iter().map(|member| member.id).collect();
-        let classification = if classified {
-            FaceLoopClassification::Classified { outer }
-        } else {
-            FaceLoopClassification::Unspecified
-        };
-        Ok(Self {
-            ids,
-            classification,
-        })
     }
 }
 
-impl From<FaceLoops> for Vec<FaceLoopMember> {
+impl From<FaceLoops> for FaceLoopsWire {
     fn from(loops: FaceLoops) -> Self {
-        loops
-            .ids
-            .iter()
-            .enumerate()
-            .map(|(index, id)| FaceLoopMember {
-                id: id.clone(),
-                role: loops.role_of(index),
-            })
-            .collect()
+        match loops.classification {
+            FaceLoopClassification::Unspecified => Self::Unspecified { loops: loops.ids },
+            FaceLoopClassification::Classified { outer } => {
+                let mut ids = loops.ids;
+                let outer = outer.map(|index| ids.remove(index));
+                Self::Classified { outer, inner: ids }
+            }
+        }
     }
 }
 
@@ -642,12 +629,9 @@ impl FaceLoops {
     /// Role of `id` when it is a member of this face.
     #[must_use]
     pub fn role(&self, id: &LoopId) -> LoopBoundaryRole {
-        self.iter()
-            .position(|member| member == id)
-            .map_or(LoopBoundaryRole::Unspecified, |index| self.role_of(index))
-    }
-
-    fn role_of(&self, index: usize) -> LoopBoundaryRole {
+        let Some(index) = self.iter().position(|member| member == id) else {
+            return LoopBoundaryRole::Unspecified;
+        };
         match self.classification {
             FaceLoopClassification::Unspecified => LoopBoundaryRole::Unspecified,
             FaceLoopClassification::Classified { outer: Some(outer) } if outer == index => {
@@ -656,6 +640,7 @@ impl FaceLoops {
             FaceLoopClassification::Classified { .. } => LoopBoundaryRole::Inner,
         }
     }
+
 }
 
 impl From<Vec<LoopId>> for FaceLoops {
@@ -1226,6 +1211,44 @@ crate::units::named_field!(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn face_loops_are_one_tagged_object_that_round_trips() {
+        use super::{FaceLoops, LoopBoundaryRole};
+        use crate::ids::LoopId;
+
+        // The old per-member `role` key has no spelling, so a document that
+        // pairs a loop with a role is refused as an unknown shape.
+        assert!(serde_json::from_value::<FaceLoops>(serde_json::json!([
+            {"id": "t:b:loop#1", "role": "outer"},
+            {"id": "t:b:loop#2", "role": "unspecified"}
+        ]))
+        .is_err());
+
+        for wire in [
+            serde_json::json!({
+                "classification": "unspecified",
+                "loops": ["t:b:loop#1", "t:b:loop#2"]
+            }),
+            serde_json::json!({
+                "classification": "classified",
+                "outer": "t:b:loop#1",
+                "inner": ["t:b:loop#2"]
+            }),
+            serde_json::json!({"classification": "classified", "inner": ["t:b:loop#2"]}),
+        ] {
+            let loops: FaceLoops = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(&loops).unwrap(), wire);
+        }
+
+        let outer = LoopId::mint("t:b:loop#1").unwrap();
+        let inner = LoopId::mint("t:b:loop#2").unwrap();
+        let classified = FaceLoops::classified(Some(outer.clone()), vec![inner.clone()]);
+        assert_eq!(classified.role(&outer), LoopBoundaryRole::Outer);
+        assert_eq!(classified.role(&inner), LoopBoundaryRole::Inner);
+        let unspecified = FaceLoops::unspecified(vec![outer.clone(), inner.clone()]);
+        assert_eq!(unspecified.role(&outer), LoopBoundaryRole::Unspecified);
+    }
+
     #[test]
     fn parameter_interval_admission_preserves_direction_contracts() {
         use super::{EdgeCarrier, ParameterInterval};
