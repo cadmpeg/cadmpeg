@@ -6,6 +6,31 @@ use crate::math::{Point3, Vector3};
 use crate::validate::validate_neutral;
 
 #[test]
+fn a_standalone_feature_wire_declares_no_regeneration_parent() {
+    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
+
+    let feature = Feature::new(
+        FeatureId::mint("test:model:feature#child").expect("identity grammar"),
+        0,
+        FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+    );
+    let mut wire = serde_json::to_value(&feature).unwrap();
+    assert_eq!(
+        serde_json::from_value::<Feature>(wire.clone()).unwrap(),
+        feature
+    );
+
+    wire["regeneration_parent"] = serde_json::json!("test:model:feature#parent");
+    let error = serde_json::from_value::<Feature>(wire)
+        .expect_err("a parent edge belongs to the model that owns it")
+        .to_string();
+    assert!(
+        error.contains("unknown field `regeneration_parent`"),
+        "{error}"
+    );
+}
+
+#[test]
 fn a_datum_plane_reference_states_which_support_it_names() {
     use crate::features::{DatumPlaneReference, FaceSelection, FeatureSupportPlaneFrame};
 

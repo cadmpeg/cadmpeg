@@ -19,8 +19,8 @@ use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
 use crate::drawings::Drawing;
 use crate::features::{
-    DesignConfiguration, DesignParameter, Feature, FeatureInputTopology, FeatureReadWire,
-    FeatureResultTopology, FeatureWriteWire,
+    DesignConfiguration, DesignParameter, Feature, FeatureInputTopology, FeatureResultTopology,
+    FeatureRowWire, FeatureWriteWire,
 };
 use crate::geometry::{
     Curve, CurveGeometry, Pcurve, ProceduralCurve, ProceduralCurveRow, ProceduralSurface,
@@ -227,7 +227,7 @@ macro_rules! model_write_value {
 macro_rules! model_read_type {
     (procedural_surfaces, $ty:ty) => { Vec<ProceduralSurfaceRow> };
     (procedural_curves, $ty:ty) => { Vec<ProceduralCurveRow> };
-    (features, $ty:ty) => { Vec<FeatureReadWire> };
+    (features, $ty:ty) => { Vec<FeatureRowWire> };
     ($field:ident, $ty:ty) => { Vec<$ty> };
 }
 
@@ -361,7 +361,7 @@ macro_rules! declare_model {
                 let feature_wires = std::mem::take(&mut wire.features);
                 let (features, feature_parents): (Vec<_>, Vec<_>) = feature_wires
                     .into_iter()
-                    .map(FeatureReadWire::into_parts)
+                    .map(FeatureRowWire::into_parts)
                     .unzip();
                 let mut model = Self {
                     $($field: model_read_value!(wire, $field),)*
