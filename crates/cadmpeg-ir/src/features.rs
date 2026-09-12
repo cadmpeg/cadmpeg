@@ -1500,51 +1500,122 @@ pub struct FeatureInputTopology {
     pub native_ref: Option<String>,
 }
 
+/// One member of a feature result state: a body, face, edge, or vertex.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+pub enum SelectionMember {
+    /// A feature-local body identity.
+    Body {
+        /// Feature-local identity.
+        id: String,
+    },
+    /// A feature-local face identity.
+    Face {
+        /// Feature-local identity.
+        id: String,
+    },
+    /// A feature-local edge identity.
+    Edge {
+        /// Feature-local identity.
+        id: String,
+    },
+    /// A feature-local vertex identity.
+    Vertex {
+        /// Feature-local identity.
+        id: String,
+    },
+}
+
+/// The members of a feature result state, at least one, sorted into kinds.
+///
+/// The wire carries one member list, so "all four lists are empty" has no
+/// spelling: the only emptiness admission is over that one list.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "Vec<SelectionMember>", into = "Vec<SelectionMember>")]
+struct FeatureResultMembers {
+    bodies: Vec<String>,
+    faces: Vec<String>,
+    edges: Vec<String>,
+    vertices: Vec<String>,
+}
+
+impl TryFrom<Vec<SelectionMember>> for FeatureResultMembers {
+    type Error = &'static str;
+
+    fn try_from(members: Vec<SelectionMember>) -> Result<Self, Self::Error> {
+        if members.is_empty() {
+            return Err("feature result topology members must not be empty");
+        }
+        let mut sorted = Self {
+            bodies: Vec::new(),
+            faces: Vec::new(),
+            edges: Vec::new(),
+            vertices: Vec::new(),
+        };
+        for member in members {
+            match member {
+                SelectionMember::Body { id } => sorted.bodies.push(id),
+                SelectionMember::Face { id } => sorted.faces.push(id),
+                SelectionMember::Edge { id } => sorted.edges.push(id),
+                SelectionMember::Vertex { id } => sorted.vertices.push(id),
+            }
+        }
+        for (error, members) in [
+            ("bodies must be nonblank and distinct", &sorted.bodies),
+            ("faces must be nonblank and distinct", &sorted.faces),
+            ("edges must be nonblank and distinct", &sorted.edges),
+            ("vertices must be nonblank and distinct", &sorted.vertices),
+        ] {
+            if members.iter().any(|name| name.trim().is_empty())
+                || members.iter().collect::<HashSet<_>>().len() != members.len()
+            {
+                return Err(error);
+            }
+        }
+        Ok(sorted)
+    }
+}
+
+impl From<FeatureResultMembers> for Vec<SelectionMember> {
+    fn from(members: FeatureResultMembers) -> Self {
+        members
+            .bodies
+            .into_iter()
+            .map(|id| SelectionMember::Body { id })
+            .chain(members.faces.into_iter().map(|id| SelectionMember::Face { id }))
+            .chain(members.edges.into_iter().map(|id| SelectionMember::Edge { id }))
+            .chain(
+                members
+                    .vertices
+                    .into_iter()
+                    .map(|id| SelectionMember::Vertex { id }),
+            )
+            .collect()
+    }
+}
+
 /// Persistent feature-local topology identities in one regenerated result.
 ///
 /// These identities describe intermediate history results that need not be
 /// members of the saved current model topology. Generated feature selections
 /// address members through the producing feature and the corresponding local
 /// identity.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct FeatureResultTopology {
     /// Globally unique result-state id.
     pub id: FeatureResultTopologyId,
     /// Feature that produces this state.
     pub output_of: FeatureId,
-    /// Feature-local body identities in stable source order.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    bodies: Vec<String>,
-    /// Feature-local face identities in stable source order.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    faces: Vec<String>,
-    /// Feature-local edge identities in stable source order.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    edges: Vec<String>,
-    /// Feature-local vertex identities in stable source order.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    vertices: Vec<String>,
+    /// Feature-local identities in stable source order, tagged by arena.
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<SelectionMember>"))]
+    members: FeatureResultMembers,
     /// Full-fidelity source state reference.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_ref: Option<String>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct FeatureResultTopologyWire {
-    id: FeatureResultTopologyId,
-    output_of: FeatureId,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    bodies: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    faces: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    edges: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    vertices: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    native_ref: Option<String>,
 }
 
 impl FeatureResultTopology {
@@ -1558,63 +1629,35 @@ impl FeatureResultTopology {
         vertices: Vec<String>,
         native_ref: Option<String>,
     ) -> Result<Self, &'static str> {
-        if bodies.is_empty() && faces.is_empty() && edges.is_empty() && vertices.is_empty() {
-            return Err("feature result topology members must not be empty");
-        }
-        for (error, members) in [
-            ("bodies must be nonblank and distinct", &bodies),
-            ("faces must be nonblank and distinct", &faces),
-            ("edges must be nonblank and distinct", &edges),
-            ("vertices must be nonblank and distinct", &vertices),
-        ] {
-            if members.iter().any(|name| name.trim().is_empty())
-                || members.iter().collect::<HashSet<_>>().len() != members.len()
-            {
-                return Err(error);
-            }
-        }
-        Ok(Self {
-            id,
-            output_of,
+        let members = FeatureResultMembers {
             bodies,
             faces,
             edges,
             vertices,
+        };
+        Ok(Self {
+            id,
+            output_of,
+            members: FeatureResultMembers::try_from(Vec::<SelectionMember>::from(members))?,
             native_ref,
         })
     }
 
     /// Feature-local body identities.
     pub fn bodies(&self) -> &[String] {
-        &self.bodies
+        &self.members.bodies
     }
     /// Feature-local face identities.
     pub fn faces(&self) -> &[String] {
-        &self.faces
+        &self.members.faces
     }
     /// Feature-local edge identities.
     pub fn edges(&self) -> &[String] {
-        &self.edges
+        &self.members.edges
     }
     /// Feature-local vertex identities.
     pub fn vertices(&self) -> &[String] {
-        &self.vertices
-    }
-}
-
-impl<'de> Deserialize<'de> for FeatureResultTopology {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = FeatureResultTopologyWire::deserialize(deserializer)?;
-        Self::new(
-            wire.id,
-            wire.output_of,
-            wire.bodies,
-            wire.faces,
-            wire.edges,
-            wire.vertices,
-            wire.native_ref,
-        )
-        .map_err(serde::de::Error::custom)
+        &self.members.vertices
     }
 }
 
