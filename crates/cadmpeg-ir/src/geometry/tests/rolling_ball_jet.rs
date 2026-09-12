@@ -112,10 +112,7 @@ fn rolling_ball_jet_admits_only_clamped_finite_station_payloads() {
         RollingBallJetStations::try_new(5, valid()).unwrap(),
     );
     let wire = serde_json::to_value(definition).unwrap();
-    for (field, value) in [
-        ("degree", json!(0)),
-        ("degree", json!(u32::MAX)),
-    ] {
+    for (field, value) in [("degree", json!(0)), ("degree", json!(u32::MAX))] {
         let mut malformed = wire.clone();
         malformed[field] = value;
         assert!(serde_json::from_value::<ProceduralSurfaceDefinition>(malformed).is_err());
