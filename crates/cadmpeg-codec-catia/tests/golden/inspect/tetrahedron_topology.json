@@ -34,8 +34,7 @@
       "extra": [],
       "primary": {
         "admission": "admitted",
-        "dialect": "catia:standard-nested",
-        "format": "catia"
+        "dialect": "catia:standard-nested"
       }
     }
   },

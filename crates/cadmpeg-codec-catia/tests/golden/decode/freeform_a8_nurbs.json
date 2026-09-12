@@ -200,8 +200,7 @@
           "extra": [],
           "primary": {
             "admission": "admitted",
-            "dialect": "catia:float-packed-inner-no-fbb",
-            "format": "catia"
+            "dialect": "catia:float-packed-inner-no-fbb"
           }
         }
       }
@@ -563,8 +562,7 @@
         "extra": [],
         "primary": {
           "admission": "admitted",
-          "dialect": "catia:float-packed-inner-no-fbb",
-          "format": "catia"
+          "dialect": "catia:float-packed-inner-no-fbb"
         }
       }
     },

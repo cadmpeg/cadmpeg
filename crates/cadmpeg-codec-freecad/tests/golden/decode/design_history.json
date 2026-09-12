@@ -10538,8 +10538,7 @@
               "program_version": "1.1R20260414 (Git shallow)",
               "schema_version": "4"
             },
-            "dialect": "fcstd:schema-4",
-            "format": "fcstd"
+            "dialect": "fcstd:schema-4"
           }
         }
       }
@@ -10564,8 +10563,7 @@
             "program_version": "1.1R20260414 (Git shallow)",
             "schema_version": "4"
           },
-          "dialect": "fcstd:schema-4",
-          "format": "fcstd"
+          "dialect": "fcstd:schema-4"
         }
       }
     },

@@ -28,14 +28,13 @@
       "primary": {
         "admission": {
           "unverified": {
-            "using": "inventor:cfb3-rse31-meta8"
+            "using": "cfb3-rse31-meta8"
           }
         },
         "declared": {
           "cfb_major_version": "3"
         },
-        "dialect": "inventor:unknown",
-        "format": "inventor"
+        "dialect": "inventor:unknown"
       }
     }
   },

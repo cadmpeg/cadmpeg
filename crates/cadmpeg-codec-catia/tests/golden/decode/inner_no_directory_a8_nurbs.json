@@ -195,8 +195,7 @@
           "extra": [],
           "primary": {
             "admission": "admitted",
-            "dialect": "catia:inner-no-directory",
-            "format": "catia"
+            "dialect": "catia:inner-no-directory"
           }
         }
       }
@@ -558,8 +557,7 @@
         "extra": [],
         "primary": {
           "admission": "admitted",
-          "dialect": "catia:inner-no-directory",
-          "format": "catia"
+          "dialect": "catia:inner-no-directory"
         }
       }
     },

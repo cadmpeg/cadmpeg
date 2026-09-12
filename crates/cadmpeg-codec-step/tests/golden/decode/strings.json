@@ -66,15 +66,14 @@
           "primary": {
             "admission": {
               "unverified": {
-                "using": "step:ap242-e3"
+                "using": "ap242-e3"
               }
             },
             "declared": {
               "file_schema_identifier": "AP214",
               "implementation_level": "2;1"
             },
-            "dialect": "step:unknown",
-            "format": "step"
+            "dialect": "step:unknown"
           }
         }
       }
@@ -95,15 +94,14 @@
         "primary": {
           "admission": {
             "unverified": {
-              "using": "step:ap242-e3"
+              "using": "ap242-e3"
             }
           },
           "declared": {
             "file_schema_identifier": "AP214",
             "implementation_level": "2;1"
           },
-          "dialect": "step:unknown",
-          "format": "step"
+          "dialect": "step:unknown"
         }
       }
     },

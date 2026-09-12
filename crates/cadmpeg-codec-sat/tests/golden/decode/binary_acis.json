@@ -155,8 +155,7 @@
                 "save_format_major": "218",
                 "save_format_minor": "0"
               },
-              "dialect": "acis:save-format-218",
-              "format": "acis"
+              "dialect": "acis:save-format-218"
             }
           ],
           "primary": {
@@ -164,8 +163,7 @@
             "declared": {
               "encoding": "binary"
             },
-            "dialect": "sat:acis-binary",
-            "format": "sat"
+            "dialect": "sat:acis-binary"
           }
         }
       }
@@ -194,8 +192,7 @@
               "save_format_major": "218",
               "save_format_minor": "0"
             },
-            "dialect": "acis:save-format-218",
-            "format": "acis"
+            "dialect": "acis:save-format-218"
           }
         ],
         "primary": {
@@ -203,8 +200,7 @@
           "declared": {
             "encoding": "binary"
           },
-          "dialect": "sat:acis-binary",
-          "format": "sat"
+          "dialect": "sat:acis-binary"
         }
       }
     },

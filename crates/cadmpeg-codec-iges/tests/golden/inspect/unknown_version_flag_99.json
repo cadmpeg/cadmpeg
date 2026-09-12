@@ -64,7 +64,7 @@
       "primary": {
         "admission": {
           "unverified": {
-            "using": "iges:5.3-fixed-ascii"
+            "using": "5.3-fixed-ascii"
           }
         },
         "declared": {
@@ -73,8 +73,7 @@
           "representation": "fixed-ascii",
           "version_flag": "99"
         },
-        "dialect": "iges:unknown",
-        "format": "iges"
+        "dialect": "iges:unknown"
       }
     }
   },

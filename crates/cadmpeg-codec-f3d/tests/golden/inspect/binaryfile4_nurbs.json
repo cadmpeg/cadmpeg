@@ -54,8 +54,7 @@
             "save_format_major": "227",
             "save_format_minor": "0"
           },
-          "dialect": "acis:asm-binaryfile-4",
-          "format": "acis"
+          "dialect": "acis:asm-binaryfile-4"
         }
       ],
       "primary": {
@@ -63,8 +62,7 @@
         "declared": {
           "top_level_manifest_version": "3-2-0-0"
         },
-        "dialect": "f3d:manifest-3-2-0-0",
-        "format": "f3d"
+        "dialect": "f3d:manifest-3-2-0-0"
       }
     }
   },

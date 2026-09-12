@@ -21,8 +21,7 @@
       "extra": [],
       "primary": {
         "admission": "residual",
-        "dialect": "catia:unknown",
-        "format": "catia"
+        "dialect": "catia:unknown"
       }
     }
   },

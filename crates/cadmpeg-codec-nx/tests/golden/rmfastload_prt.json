@@ -837,8 +837,7 @@
               "declared": {
                 "splmsstr_version": "6"
               },
-              "dialect": "nx:splmsstr",
-              "format": "nx"
+              "dialect": "nx:splmsstr"
             }
           }
         }
@@ -861,8 +860,7 @@
             "declared": {
               "splmsstr_version": "6"
             },
-            "dialect": "nx:splmsstr",
-            "format": "nx"
+            "dialect": "nx:splmsstr"
           }
         }
       },
@@ -916,8 +914,7 @@
           "declared": {
             "splmsstr_version": "6"
           },
-          "dialect": "nx:splmsstr",
-          "format": "nx"
+          "dialect": "nx:splmsstr"
         }
       }
     },

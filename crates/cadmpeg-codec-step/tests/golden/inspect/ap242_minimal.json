@@ -28,8 +28,7 @@
           "implementation_level": "2;1",
           "long_form_arcs": " 1 0 10303 442 3 1 4 "
         },
-        "dialect": "step:ap242-e2",
-        "format": "step"
+        "dialect": "step:ap242-e2"
       }
     }
   },

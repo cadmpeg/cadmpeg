@@ -1017,7 +1017,7 @@
           "primary": {
             "admission": {
               "unverified": {
-                "using": "iges:5.3-fixed-ascii"
+                "using": "5.3-fixed-ascii"
               }
             },
             "declared": {
@@ -1025,8 +1025,7 @@
               "representation": "fixed-ascii",
               "version_flag": "3"
             },
-            "dialect": "iges:2.0-fixed-ascii",
-            "format": "iges"
+            "dialect": "iges:2.0-fixed-ascii"
           }
         }
       }
@@ -1047,7 +1046,7 @@
         "primary": {
           "admission": {
             "unverified": {
-              "using": "iges:5.3-fixed-ascii"
+              "using": "5.3-fixed-ascii"
             }
           },
           "declared": {
@@ -1055,8 +1054,7 @@
             "representation": "fixed-ascii",
             "version_flag": "3"
           },
-          "dialect": "iges:2.0-fixed-ascii",
-          "format": "iges"
+          "dialect": "iges:2.0-fixed-ascii"
         }
       }
     },
