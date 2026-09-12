@@ -37,7 +37,7 @@ fn native_summary_labels_distinguish_ranges_storages_and_streams() {
     assert_eq!(label, VerbatimLabel::None);
     assert_eq!(span.framing().get(), body_offset - offset);
     assert_eq!(Some(span.payload()), table.expanded_size());
-    assert_eq!(Some(span.stored().get()), table.stored_size());
+    assert_eq!(Some(span.stored()), table.stored_size());
     assert!(body_offset > offset);
 
     let inventor: Summary = serde_json::from_str(include_str!(
