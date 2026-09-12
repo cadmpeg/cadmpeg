@@ -167,7 +167,7 @@ fn decode_result(
     if let Some(source_image) = source_image {
         source_fidelity.retain_unknown_records("sldprt", [source_image]);
     }
-    stamp_local_digests(&mut ir);
+    stamp_local_digests(&mut ir)?;
     Ok(Decoded {
         ir,
         body,
@@ -4288,7 +4288,7 @@ fn stamp_sketch_baseline(ir: &mut CadIr, native: &crate::native::SldprtNative) {
 ///
 /// Both are machine-local content digests and carry the `_local_sha256` suffix
 /// that says so; see [`document_local_sha256`] and [`brep_local_sha256`].
-fn stamp_local_digests(ir: &mut CadIr) {
+fn stamp_local_digests(ir: &mut CadIr) -> Result<(), CodecError> {
     ir.finalize();
     let brep_hash = brep_local_sha256_in_place(ir);
     if let Some(source) = &mut ir.source {
@@ -4337,13 +4337,14 @@ fn stamp_local_digests(ir: &mut CadIr) {
             }
         }
     }
-    let hash = document_local_sha256(ir);
+    let hash = document_local_sha256(ir)?;
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(),
             hash,
         );
     }
+    Ok(())
 }
 
 /// The machine-local content digest recorded as the SLDPRT `brep_local_sha256`
@@ -4486,8 +4487,12 @@ fn brep_partition_sha256(
 /// Machine-local `document_local_sha256` for the SLDPRT write-path edit oracle.
 ///
 /// See [`cadmpeg_ir::hash::document_local_sha256`].
-pub(crate) fn document_local_sha256(ir: &CadIr) -> String {
-    cadmpeg_ir::hash::document_local_sha256(ir, "sldprt", "sldprt:file:source-image#0")
+pub(crate) fn document_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
+    Ok(cadmpeg_ir::hash::document_local_sha256(
+        ir,
+        "sldprt",
+        "sldprt:file:source-image#0",
+    )?)
 }
 
 fn preserve_source_image(

@@ -3834,7 +3834,7 @@ fn decode_result(
     // Stamped on the finalized, classified document, so the write path
     // compares against the exact document the sealed wrapper returns.
     ir.finalize();
-    let hash = document_local_sha256_with_source(&ir, &source);
+    let hash = document_local_sha256_with_source(&ir, &source)?;
     source.attributes.insert(
         cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(),
         hash,
@@ -3860,8 +3860,12 @@ pub(crate) fn preserve_source_image(scan: &ContainerScan) -> UnknownRecord {
 /// Machine-local `document_local_sha256` for the F3D write-path edit oracle.
 ///
 /// See [`cadmpeg_ir::hash::document_local_sha256`].
-pub(crate) fn document_local_sha256(ir: &CadIr) -> String {
-    cadmpeg_ir::hash::document_local_sha256(ir, "f3d", crate::ids::FILE_SOURCE_IMAGE_ID)
+pub(crate) fn document_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
+    Ok(cadmpeg_ir::hash::document_local_sha256(
+        ir,
+        "f3d",
+        crate::ids::FILE_SOURCE_IMAGE_ID,
+    )?)
 }
 
 /// Computes the digest for a document whose source metadata is still local to
@@ -3870,13 +3874,13 @@ pub(crate) fn document_local_sha256(ir: &CadIr) -> String {
 pub(crate) fn document_local_sha256_with_source(
     ir: &CadIr,
     source: &cadmpeg_ir::SourceMeta,
-) -> String {
-    cadmpeg_ir::hash::document_local_sha256_with_source(
+) -> Result<String, CodecError> {
+    Ok(cadmpeg_ir::hash::document_local_sha256_with_source(
         ir,
         source,
         "f3d",
         crate::ids::FILE_SOURCE_IMAGE_ID,
-    )
+    )?)
 }
 
 fn populate_annotations(

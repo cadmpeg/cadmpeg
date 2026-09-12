@@ -407,7 +407,7 @@ pub fn write_semantic(
             .clone_from(&target_native.wire_topologies);
         supported.store(supported_target.native.namespace_mut("f3d"))?;
     }
-    if decode::document_local_sha256(&supported_target) != decode::document_local_sha256(target) {
+    if decode::document_local_sha256(&supported_target)? != decode::document_local_sha256(target)? {
         return Err(CodecError::NotImplemented(
             "modified F3D IR contains edits beyond supported point, line, and plane carriers"
                 .into(),

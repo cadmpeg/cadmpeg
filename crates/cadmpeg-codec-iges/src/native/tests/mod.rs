@@ -197,7 +197,7 @@ fn decode_preserves_native_entities_and_graph() {
     assert_eq!(result.ir().source.as_ref().unwrap().format(), "iges");
     assert_eq!(
         result.ir().source.as_ref().unwrap().attributes["document_local_sha256"],
-        crate::document_digest(result.ir())
+        crate::document_digest(result.ir()).unwrap()
     );
     assert_eq!(
         result

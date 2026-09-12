@@ -80,7 +80,7 @@ pub fn decode<'a>(
     ));
     if ctx.container_only() {
         report.losses.extend(outer.losses);
-        return Ok(finalize_result(ir, report, fidelity));
+        return finalize_result(ir, report, fidelity);
     }
 
     let merged = merge::merge_archive(
@@ -105,30 +105,30 @@ pub fn decode<'a>(
     ));
     merge::make_sibling_ordinals_unique(&mut ir.model.occurrences);
     report.losses.extend(outer.losses);
-    Ok(finalize_result(ir, report, fidelity))
+    finalize_result(ir, report, fidelity)
 }
 
 fn finalize_result(
     mut ir: cadmpeg_ir::CadIr,
     body: DecodeBody,
     source_fidelity: cadmpeg_ir::SourceFidelity,
-) -> Decoded {
+) -> Result<Decoded, CodecError> {
     let mut source = ir
         .source
         .take()
         .expect("the decoded F3Z model root authored source metadata");
     ir.finalize();
-    let hash = crate::decode::document_local_sha256_with_source(&ir, &source);
+    let hash = crate::decode::document_local_sha256_with_source(&ir, &source)?;
     source.attributes.insert(
         cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(),
         hash,
     );
     ir.source = Some(source);
-    Decoded {
+    Ok(Decoded {
         ir,
         body,
         source_fidelity,
-    }
+    })
 }
 
 #[cfg(test)]

@@ -221,8 +221,8 @@ fn source_less_writer_pipeline_round_trips_a_cube_and_rejects_unrepresentable_ir
         .unwrap();
     let second = decode(bytes);
     assert_eq!(
-        crate::decode::document_local_sha256(first.ir()),
-        crate::decode::document_local_sha256(second.ir())
+        crate::decode::document_local_sha256(first.ir()).unwrap(),
+        crate::decode::document_local_sha256(second.ir()).unwrap()
     );
     semantic_writer_rejects_subds();
 }

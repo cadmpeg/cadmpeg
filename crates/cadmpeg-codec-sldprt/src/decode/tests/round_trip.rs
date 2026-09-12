@@ -209,8 +209,8 @@ fn source_less_cube_reaches_encode_decode_fixpoint() {
         .into_parts()
         .0;
 
-    let first_hash = crate::decode::document_local_sha256(first.ir());
-    let second_hash = crate::decode::document_local_sha256(&second);
+    let first_hash = crate::decode::document_local_sha256(first.ir()).unwrap();
+    let second_hash = crate::decode::document_local_sha256(&second).unwrap();
     assert_eq!(first_hash, second_hash, "round trip is not a fixed point");
 
     // Value golden: the cube's record families and counts, asserted directly.

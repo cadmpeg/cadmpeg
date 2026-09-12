@@ -248,6 +248,26 @@ impl JsonSchema for NativeRecord {
     }
 }
 
+/// Serialize codec-owned typed records into one arena in canonical record order.
+///
+/// The arena is returned rather than stored, so a caller that only needs the
+/// canonical records never has to read them back out of a namespace. Each
+/// record is converted before the next is read, and a record the source could
+/// not state stops the walk with that record's own error.
+pub fn arena_from<T, E, I>(records: I) -> Result<Vec<NativeRecord>, E>
+where
+    T: Serialize,
+    E: From<NativeConvertError>,
+    I: IntoIterator<Item = Result<T, E>>,
+{
+    let mut converted = records
+        .into_iter()
+        .map(|record| Ok(NativeRecord::from_typed(&record?)?))
+        .collect::<Result<Vec<_>, E>>()?;
+    converted.sort_by(|left, right| left.id().cmp(right.id()));
+    Ok(converted)
+}
+
 /// Source-format arena collection.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -296,12 +316,10 @@ impl NativeNamespace {
         name: impl Into<String>,
         records: I,
     ) -> Result<(), NativeConvertError> {
-        let mut converted = records
-            .into_iter()
-            .map(|record| NativeRecord::from_typed(&record))
-            .collect::<Result<Vec<_>, NativeConvertError>>()?;
-        converted.sort_by(|left, right| left.id().cmp(right.id()));
-        self.arenas.insert(name.into(), converted);
+        self.arenas.insert(
+            name.into(),
+            arena_from(records.into_iter().map(Ok::<T, NativeConvertError>))?,
+        );
         Ok(())
     }
 

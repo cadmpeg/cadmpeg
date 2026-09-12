@@ -9,7 +9,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use crate::document::{CadIr, SortedModel, SourceMeta};
-use crate::native::{Native, NativeNamespace, NativeRecord};
+use crate::native::{arena_from, Native, NativeConvertError, NativeRecord};
 use crate::units::{CanonicalUnitsWire, Tolerances};
 
 /// Returns the lowercase hexadecimal SHA-256 digest of `bytes`.
@@ -57,15 +57,18 @@ pub const DOCUMENT_LOCAL_DIGEST_ATTRIBUTE: &str = "document_local_sha256";
 /// is not transitive). Attributes with these properties use
 /// [`cadmpeg_ir::compare::LOCAL_DIGEST_SUFFIX`]; see
 /// [`crate::document::SourceMeta`].
-pub fn document_local_sha256(ir: &CadIr, format: &str, source_image_id: &str) -> String {
+pub fn document_local_sha256(
+    ir: &CadIr,
+    format: &str,
+    source_image_id: &str,
+) -> Result<String, NativeConvertError> {
     document_local_sha256_with_source_and_charge(
         ir,
         ir.source.as_ref(),
         format,
         source_image_id,
-        |_| Ok::<(), std::convert::Infallible>(()),
+        |_| Ok::<(), NativeConvertError>(()),
     )
-    .expect("canonical JSON serialization")
 }
 
 /// Returns the machine-local content digest of `ir` with source metadata that
@@ -79,11 +82,10 @@ pub fn document_local_sha256_with_source(
     source: &SourceMeta,
     format: &str,
     source_image_id: &str,
-) -> String {
+) -> Result<String, NativeConvertError> {
     document_local_sha256_with_source_and_charge(ir, Some(source), format, source_image_id, |_| {
-        Ok::<(), std::convert::Infallible>(())
+        Ok::<(), NativeConvertError>(())
     })
-    .expect("canonical JSON serialization")
 }
 
 /// Returns the machine-local document digest while charging each canonical
@@ -93,7 +95,7 @@ pub fn document_local_sha256_with_source(
 /// [`document_local_sha256`]. A decoder can therefore apply its work budget
 /// to the real digest cost and refuse before an oversized document spends the
 /// remaining budget on an unbounded whole-document walk.
-pub fn document_local_sha256_with_charge<E>(
+pub fn document_local_sha256_with_charge<E: From<NativeConvertError>>(
     ir: &CadIr,
     format: &str,
     source_image_id: &str,
@@ -108,14 +110,14 @@ pub fn document_local_sha256_with_charge<E>(
     )
 }
 
-fn document_local_sha256_with_source_and_charge<E>(
+fn document_local_sha256_with_source_and_charge<E: From<NativeConvertError>>(
     ir: &CadIr,
     source: Option<&SourceMeta>,
     format: &str,
     source_image_id: &str,
     charge: impl FnMut(u64) -> Result<(), E>,
 ) -> Result<String, E> {
-    let unknowns = reduced_unknowns(ir, format, source_image_id);
+    let unknowns = reduced_unknowns(ir, format, source_image_id)?;
     let document = NormalizedDocument {
         ir_version: ir.ir_version(),
         source: source.map(|source| {
@@ -158,25 +160,22 @@ fn document_local_sha256_with_source_and_charge<E>(
 /// Each record is deserialized, filtered, and converted back before the next is
 /// read, so the retained population is never resident in typed and reduced form
 /// at once.
-fn reduced_unknowns(ir: &CadIr, format: &str, source_image_id: &str) -> Vec<NativeRecord> {
-    let mut unreadable = false;
-    let mut projected = NativeNamespace::default();
-    projected
-        .set_arena_from(
-            "unknowns",
-            ir.native_unknowns_iter(format)
-                .map_while(|record| record.inspect_err(|_| unreadable = true).ok())
-                .filter(|record| record.id.as_str() != source_image_id),
-        )
-        .expect("unknown records serialize");
-    if unreadable {
-        // Unreadable arenas reduce to empty.
-        return Vec::new();
-    }
-    projected
-        .arenas_mut()
-        .remove("unknowns")
-        .expect("the unknown arena was just set")
+///
+/// A record the arena cannot state is the record's own read error, not an
+/// empty arena: a document whose unknowns are unreadable has no digest, and
+/// must not collide with a document that carries no unknowns at all.
+fn reduced_unknowns(
+    ir: &CadIr,
+    format: &str,
+    source_image_id: &str,
+) -> Result<Vec<NativeRecord>, NativeConvertError> {
+    arena_from(
+        ir.native_unknowns_iter(format)
+            .filter(|record| match record {
+                Ok(record) => record.id.as_str() != source_image_id,
+                Err(_) => true,
+            }),
+    )
 }
 
 /// A document as the semantic digest sees it.
@@ -285,8 +284,9 @@ mod tests {
     use crate::document::CadIr;
     use crate::examples::unit_cube;
     use crate::ids::UnknownId;
-    use crate::native::{Native, NativeRecord};
+    use crate::native::{Native, NativeConvertError, NativeRecord};
     use crate::unknown::UnknownRecord;
+    use cadmpeg_core::CodecError;
 
     #[test]
     fn encodes_sha256_as_lowercase_hexadecimal() {
@@ -441,6 +441,48 @@ mod tests {
         ir
     }
 
+    /// A document carrying one `pin` unknown record with the given fields.
+    fn pinned_document_with_unknown(fields: serde_json::Map<String, serde_json::Value>) -> CadIr {
+        let mut ir = pinned_document();
+        ir.native.namespace_mut("pin").arenas_mut().insert(
+            "unknowns".into(),
+            vec![NativeRecord::new("pin:model:record#0", fields).expect("valid native identity")],
+        );
+        ir.finalize();
+        ir
+    }
+
+    /// An arena whose records cannot be read has no digest. Reducing it to
+    /// empty would make it collide with a document that carries no unknown
+    /// records at all, and that digest is the write path's edit oracle.
+    #[test]
+    fn an_unreadable_unknown_arena_has_no_digest() {
+        let source_image = "pin:test:source-image#0";
+        let absent = document_local_sha256(&pinned_document(), "pin", source_image).unwrap();
+
+        let mut readable_fields = serde_json::Map::new();
+        readable_fields.insert("links".into(), serde_json::json!([]));
+        let readable = document_local_sha256(
+            &pinned_document_with_unknown(readable_fields),
+            "pin",
+            source_image,
+        )
+        .unwrap();
+        assert_ne!(readable, absent);
+
+        let mut unreadable_fields = serde_json::Map::new();
+        unreadable_fields.insert("links".into(), serde_json::json!(7));
+        let unreadable = pinned_document_with_unknown(unreadable_fields);
+        assert!(document_local_sha256(&unreadable, "pin", source_image).is_err());
+        assert!(document_local_sha256_with_charge::<CodecError>(
+            &unreadable,
+            "pin",
+            source_image,
+            |_| { Ok(()) }
+        )
+        .is_err());
+    }
+
     /// Pins both digest entry points over one fixed, platform-independent
     /// document.
     #[test]
@@ -451,7 +493,7 @@ mod tests {
             "d1ba8ac967bf02f410e362b0ba5cdefaa410bbbab7c21d4180443b16906ff487"
         );
         assert_eq!(
-            document_local_sha256(&ir, "pin", "pin:test:source-image#0"),
+            document_local_sha256(&ir, "pin", "pin:test:source-image#0").unwrap(),
             "ab55b3269d93d9cf9a76ba6b0ffe0166598d143349b52f545569bfe77768366b"
         );
     }
@@ -459,14 +501,18 @@ mod tests {
     #[test]
     fn charged_document_digest_preserves_the_uncharged_digest() {
         let ir = pinned_document();
-        let expected = document_local_sha256(&ir, "pin", "pin:test:source-image#0");
+        let expected = document_local_sha256(&ir, "pin", "pin:test:source-image#0").unwrap();
         let mut charged = 0;
-        let actual =
-            document_local_sha256_with_charge(&ir, "pin", "pin:test:source-image#0", |bytes| {
+        let actual = document_local_sha256_with_charge::<NativeConvertError>(
+            &ir,
+            "pin",
+            "pin:test:source-image#0",
+            |bytes| {
                 charged += bytes;
-                Ok::<(), ()>(())
-            })
-            .unwrap();
+                Ok(())
+            },
+        )
+        .unwrap();
 
         assert_eq!(actual, expected);
         assert!(charged > 0);
@@ -477,10 +523,13 @@ mod tests {
         let ir = pinned_document();
         let result =
             document_local_sha256_with_charge(&ir, "pin", "pin:test:source-image#0", |_| {
-                Err::<(), _>("work limit")
+                Err::<(), _>(CodecError::NotImplemented("work limit".into()))
             });
 
-        assert!(matches!(result, Err("work limit")));
+        assert!(matches!(
+            result,
+            Err(CodecError::NotImplemented(message)) if message == "work limit"
+        ));
     }
 
     /// The pinned document with the source metadata a decoded document carries:
@@ -544,7 +593,7 @@ mod tests {
             "28da9611ed9814d3fcd50f95d90199f4dfa0bf578a430e8356d735a428539cb8"
         );
         assert_eq!(
-            document_local_sha256(&ir, "pin", "pin:test:source-image#0"),
+            document_local_sha256(&ir, "pin", "pin:test:source-image#0").unwrap(),
             independently_normalized
         );
     }
@@ -560,12 +609,14 @@ mod tests {
                 &source,
                 "pin",
                 "pin:test:source-image#0",
-            ),
+            )
+            .unwrap(),
             document_local_sha256(
                 &pinned_document_with_source(),
                 "pin",
                 "pin:test:source-image#0"
             )
+            .unwrap()
         );
     }
 
@@ -667,11 +718,11 @@ mod tests {
         let (ir, _source_fidelity) = local_digest_fixture();
         let source_image = "synthetic:file:source-image#0";
         assert_eq!(
-            crate::hash::document_local_sha256(&ir, "synthetic", source_image),
+            crate::hash::document_local_sha256(&ir, "synthetic", source_image).unwrap(),
             cloned_local_digest(&ir, "synthetic", source_image)
         );
         assert_eq!(
-            crate::hash::document_local_sha256(&ir, "absent", source_image),
+            crate::hash::document_local_sha256(&ir, "absent", source_image).unwrap(),
             cloned_local_digest(&ir, "absent", source_image)
         );
     }
@@ -680,7 +731,7 @@ mod tests {
     fn document_local_sha256_ignores_the_recorded_digest_and_retained_bytes() {
         let source_image = "synthetic:file:source-image#0";
         let (ir, _source_fidelity) = local_digest_fixture();
-        let hash = crate::hash::document_local_sha256(&ir, "synthetic", source_image);
+        let hash = crate::hash::document_local_sha256(&ir, "synthetic", source_image).unwrap();
 
         let (mut recorded, _source_fidelity) = local_digest_fixture();
         recorded
@@ -690,7 +741,7 @@ mod tests {
             .attributes
             .insert(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(), hash.clone());
         assert_eq!(
-            crate::hash::document_local_sha256(&recorded, "synthetic", source_image),
+            crate::hash::document_local_sha256(&recorded, "synthetic", source_image).unwrap(),
             hash
         );
 
@@ -702,7 +753,7 @@ mod tests {
                 vec!["cube:body#0".into()],
             ));
         assert_eq!(
-            crate::hash::document_local_sha256(&repacked, "synthetic", source_image),
+            crate::hash::document_local_sha256(&repacked, "synthetic", source_image).unwrap(),
             hash
         );
     }
