@@ -603,7 +603,7 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
         ),
     ];
 
-    bind_sweep_result_modes(&mut features, &bodies).unwrap();
+    bind_sweep_result_modes(&mut features, &bodies);
 
     let modes = features.map(|feature| match feature.evaluation.definition() {
         FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) => shape.mode(),
