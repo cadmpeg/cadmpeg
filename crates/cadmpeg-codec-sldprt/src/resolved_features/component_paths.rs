@@ -426,7 +426,7 @@ pub(crate) fn project_dissected_sketches(
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &[cadmpeg_ir::sketches::Sketch],
     histories: &[crate::records::FeatureHistory],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let native_features = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -579,8 +579,6 @@ pub(crate) fn project_dissected_sketches(
         }
         feature.evaluation.set_definition(definition);
     }
-
-    Ok(())
 }
 
 fn compact_edge_selection_value(local_edge_ids: &[u32]) -> String {

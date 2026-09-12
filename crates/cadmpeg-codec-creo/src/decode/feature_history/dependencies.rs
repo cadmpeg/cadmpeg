@@ -401,7 +401,7 @@ pub(in super::super) fn reconcile_feature_links(
     scan: &ContainerScan,
     ir: &mut CadIr,
     prototype_dependencies: &BTreeMap<u32, Vec<u32>>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let output_updates = ir
         .model
         .features
@@ -474,7 +474,9 @@ pub(in super::super) fn reconcile_feature_links(
         }
     }
     for (child, parent) in regeneration_edges {
-        let _ = ir.model.set_feature_regeneration_parent(child, parent);
+        ir.model
+            .set_feature_regeneration_parent(child, parent)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     let parent_by_child = ir
         .model
@@ -509,6 +511,7 @@ pub(in super::super) fn reconcile_feature_links(
     for (ordinal, index) in ordered.into_iter().enumerate() {
         ir.model.features[index].ordinal = ordinal as u64;
     }
+    Ok(())
 }
 
 pub(in super::super) fn feature_generated_dependencies(

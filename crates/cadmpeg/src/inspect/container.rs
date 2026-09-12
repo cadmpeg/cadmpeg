@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Container member listing (ZIP or CFB) and exact member extraction.
 
-use std::fmt::Write as _;
 
 use anyhow::{Context, Result};
 use cadmpeg_container::compound::{CompoundAllocation, CompoundEntry, CompoundSnapshot};
@@ -259,17 +258,15 @@ pub fn render_json(listing: &Listing) -> String {
 
 /// Formats an entry listing as an aligned table.
 pub fn render(listing: &Listing) -> String {
+    let mut rows = Vec::new();
     match listing {
         Listing::Zip(entries) => {
-            let mut out = String::new();
-            let _ = writeln!(
-                out,
+            rows.push(format!(
                 "{:>10}  {:>10}  {:>12}  {:>12}  {:>8}  {:>10}  name",
                 "header", "data", "packed", "unpacked", "method", "crc32"
-            );
+            ));
             for entry in entries {
-                let _ = writeln!(
-                    out,
+                rows.push(format!(
                     "0x{:08x}  0x{:08x}  {:>12}  {:>12}  {:>8}  0x{:08x}  {}",
                     entry.header_start,
                     entry.data_start,
@@ -278,18 +275,15 @@ pub fn render(listing: &Listing) -> String {
                     entry.compression.label(),
                     entry.crc32,
                     shell_quote(&entry.name)
-                );
+                ));
             }
-            out
         }
-        Listing::Cfb(rows) => {
-            let mut out = String::new();
-            let _ = writeln!(
-                out,
+        Listing::Cfb(entries) => {
+            rows.push(format!(
                 "{:>4}  {:>8}  {:>12}  {:>8}  path",
                 "id", "kind", "size", "alloc"
-            );
-            for entry in rows {
+            ));
+            for entry in entries {
                 let (kind, size, allocation) = match entry {
                     CompoundEntry::Storage(_) => ("storage", String::new(), ""),
                     CompoundEntry::Stream(stream) => (
@@ -298,19 +292,20 @@ pub fn render(listing: &Listing) -> String {
                         allocation_label(stream.allocation()).unwrap_or(""),
                     ),
                 };
-                let _ = writeln!(
-                    out,
+                rows.push(format!(
                     "{:>4}  {:>8}  {:>12}  {:>8}  {}",
                     entry.directory_id(),
                     kind,
                     size,
                     allocation,
                     shell_quote(entry.path())
-                );
+                ));
             }
-            out
         }
     }
+    let mut out = rows.join("\n");
+    out.push('\n');
+    out
 }
 
 #[cfg(test)]

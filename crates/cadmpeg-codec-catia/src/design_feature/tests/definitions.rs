@@ -81,7 +81,7 @@ fn transfers_exact_definition_values_as_typed_feature_properties() {
         &mut ir,
         &native,
         &crate::decode::ModelingGraphScope::Unscoped,
-    );
+    ).unwrap();
 
     assert!(matches!(
         ir.model.features[0].evaluation.definition(),
@@ -226,7 +226,7 @@ fn transfers_exact_definition_chains_as_typed_feature_properties() {
         &mut ir,
         &native,
         &crate::decode::ModelingGraphScope::Unscoped,
-    );
+    ).unwrap();
 
     assert!(matches!(
         ir.model.features[0].evaluation.definition(),
@@ -373,7 +373,7 @@ fn transfers_definition_chains_from_exact_operation_owner_descendants() {
         &mut ir,
         &native,
         &crate::decode::ModelingGraphScope::Unscoped,
-    );
+    ).unwrap();
 
     assert!(matches!(
         ir.model.features[0].evaluation.definition(),

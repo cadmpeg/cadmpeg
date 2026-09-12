@@ -758,10 +758,9 @@ fn require_and_remove_null(value: String, field: &str) -> Result<String, CodecEr
 }
 
 fn hex(bytes: &[u8]) -> String {
-    use std::fmt::Write as _;
     let mut output = String::with_capacity(bytes.len() * 2);
     for byte in bytes {
-        let _ = write!(output, "{byte:02x}");
+        crate::decode::push_hex(&mut output, *byte);
     }
     output
 }

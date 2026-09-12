@@ -442,7 +442,7 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
         ],
     };
 
-    crate::history::bind_unique_sketch_feature(&mut features, &[sketch], &[history]).unwrap();
+    crate::history::bind_unique_sketch_feature(&mut features, &[sketch], &[history]);
 
     assert!(matches!(
         features[1].evaluation.definition(),

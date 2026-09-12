@@ -81,7 +81,7 @@ impl CodecBackend for InventorCodec {
         ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        Ok(container::InventorContainer::open(ctx, root)?.summary())
+        container::InventorContainer::open(ctx, root)?.summary()
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {

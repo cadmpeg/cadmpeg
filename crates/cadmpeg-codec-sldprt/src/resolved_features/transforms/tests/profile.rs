@@ -1182,7 +1182,7 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
     };
     let sketches = vec![sketch(single.clone(), 1), sketch(multiple, 2)];
 
-    project_dissected_sketches(&mut features, &sketches, std::slice::from_ref(&history)).unwrap();
+    project_dissected_sketches(&mut features, &sketches, std::slice::from_ref(&history));
 
     assert!(matches!(
         features[1].evaluation.definition(),

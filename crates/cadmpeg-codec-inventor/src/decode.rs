@@ -64,7 +64,7 @@ fn decode_container<'a>(
     // recomputes the other.
     let recovery = DialectRecovery::of(container);
     let matched = recovery.classify();
-    let dialects = crate::dialect::layers(matched.clone(), &container.rse.active_carrier);
+    let dialects = crate::dialect::layers(matched.clone(), &container.rse.active_carrier)?;
     // The kernel layer, classified from the carrier's own header. Non-primary:
     // its format is `acis`, the embedded layer `cadmpeg-asm` owns.
     let kernel_match = dialects
@@ -2211,11 +2211,21 @@ fn preview_bytes<'a>(value: &'a PropertyValue<'a>) -> Option<(&'a [u8], &'static
     Some((bytes, media_type))
 }
 
+/// Lowercase hexadecimal digits, indexed by nibble.
+const HEX_DIGITS: [char; 16] = [
+    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
+];
+
+/// Appends `byte` as two lowercase hexadecimal digits.
+pub(crate) fn push_hex(out: &mut String, byte: u8) {
+    out.push(HEX_DIGITS[usize::from(byte >> 4)]);
+    out.push(HEX_DIGITS[usize::from(byte & 0x0f)]);
+}
+
 fn hex(bytes: &[u8]) -> String {
-    use std::fmt::Write as _;
     let mut output = String::with_capacity(bytes.len() * 2);
     for byte in bytes {
-        let _ = write!(output, "{byte:02x}");
+        push_hex(&mut output, *byte);
     }
     output
 }

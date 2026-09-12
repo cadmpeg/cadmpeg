@@ -177,7 +177,7 @@ fn finish_decode(
         .flat_map(|graph| graph.records.iter().map(|record| record.id.clone()))
         .collect::<HashSet<_>>();
     let design_feature_transfer =
-        design_feature::transfer_design_features(&mut ir, &native, &modeling_graph_scope);
+        design_feature::transfer_design_features(&mut ir, &native, &modeling_graph_scope)?;
     let transferred_native_sketch_entity_records = sketch::transfer_native_sketch_entities(
         &mut ir,
         &native,

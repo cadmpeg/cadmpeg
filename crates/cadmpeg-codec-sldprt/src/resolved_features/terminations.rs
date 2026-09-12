@@ -737,7 +737,7 @@ pub(crate) fn project_surface_sweep_profiles(
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     use cadmpeg_ir::features::{GeneratedCurveRef, PlanarProfileRef};
 
     let history_features = histories
@@ -900,8 +900,6 @@ pub(crate) fn project_surface_sweep_profiles(
         }
         feature.evaluation.set_definition(definition);
     }
-
-    Ok(())
 }
 
 #[cfg(test)]

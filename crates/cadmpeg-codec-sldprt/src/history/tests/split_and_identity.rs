@@ -69,8 +69,7 @@ fn split_face_path_binds_to_projected_sketch_geometry() {
         &feature_id,
         &sketch_id,
         true,
-    )
-    .unwrap());
+    ));
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::SplitFace {

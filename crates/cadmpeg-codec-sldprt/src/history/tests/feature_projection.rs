@@ -1727,8 +1727,7 @@ fn profile_consumers_require_a_regeneration_profile() {
         &FeatureId::mint("synthetic:test:id#sketch-feature").expect("identity grammar"),
         &sketch,
         false,
-    )
-    .unwrap());
+    ));
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -1742,8 +1741,7 @@ fn profile_consumers_require_a_regeneration_profile() {
         &FeatureId::mint("synthetic:test:id#sketch-feature").expect("identity grammar"),
         &sketch,
         true,
-    )
-    .unwrap());
+    ));
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::Extrude {

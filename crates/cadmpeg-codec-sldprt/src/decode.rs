@@ -2279,7 +2279,7 @@ fn build_geometry_ir(
         &histories,
         &lanes,
         &mut annotations,
-    )?;
+    );
     crate::resolved_features::bindings::bind_unresolved_detached_sketch_objects(
         &ir.model.features,
         &histories,
@@ -2328,12 +2328,12 @@ fn build_geometry_ir(
         &histories,
         &sketch_lanes,
     );
-    crate::history::bind_unique_sketch_feature(&mut ir.model.features, &sketches, &histories)?;
+    crate::history::bind_unique_sketch_feature(&mut ir.model.features, &sketches, &histories);
     crate::resolved_features::component_paths::project_dissected_sketches(
         &mut ir.model.features,
         &sketches,
         &histories,
-    )?;
+    );
     crate::resolved_features::axes::bind_profile_revolution_axes(
         &mut ir.model.features,
         &histories,
@@ -2350,7 +2350,7 @@ fn build_geometry_ir(
         &mut ir.model.features,
         &histories,
         &lanes,
-    )?;
+    );
     crate::resolved_features::dimensions::project_dimensioned_sketch_geometry(
         &mut sketch_entities,
         &sketches,
@@ -3332,7 +3332,7 @@ fn build_metadata_ir(
         &histories,
         &lanes,
         &mut annotations,
-    )?;
+    );
     crate::resolved_features::bindings::bind_unresolved_detached_sketch_objects(
         &ir.model.features,
         &histories,
@@ -3385,12 +3385,12 @@ fn build_metadata_ir(
         &mut ir.model.features,
         &ir.model.sketches,
         &histories,
-    )?;
+    );
     crate::resolved_features::component_paths::project_dissected_sketches(
         &mut ir.model.features,
         &ir.model.sketches,
         &histories,
-    )?;
+    );
     crate::resolved_features::axes::bind_profile_revolution_axes(
         &mut ir.model.features,
         &histories,
@@ -3407,7 +3407,7 @@ fn build_metadata_ir(
         &mut ir.model.features,
         &histories,
         &lanes,
-    )?;
+    );
     crate::resolved_features::dimensions::project_dimensioned_sketch_geometry(
         &mut ir.model.sketch_entities,
         &ir.model.sketches,
@@ -3602,7 +3602,7 @@ fn project_design_history(
         crate::history::HistoryEnrichment::Read,
     );
     ir.model.semantic_annotations = crate::history::project_semantic_notes(&semantic_projection);
-    crate::history::project_feature_model(&semantic_projection)?.install(&mut ir.model);
+    crate::history::project_feature_model(&semantic_projection)?.install(&mut ir.model)?;
     crate::resolved_features::bindings::bind_pattern_inputs(
         &mut ir.model.features,
         &semantic_projection,

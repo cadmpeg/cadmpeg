@@ -47,7 +47,7 @@ impl<'a> InventorContainer<'a> {
         })
     }
 
-    pub(crate) fn summary(&self) -> ContainerSummary {
+    pub(crate) fn summary(&self) -> Result<ContainerSummary, CodecError> {
         let mut entries = self.snapshot.container_entries(classify);
         for segment in &self.rse.segments {
             let directory_id = segment.pair.metadata.directory_id().to_string();
@@ -124,14 +124,14 @@ impl<'a> InventorContainer<'a> {
         let matched = recovery.classify();
         let mut losses = Vec::new();
         losses.extend(crate::dialect::dialect_loss(&matched, &recovery));
-        let dialects = crate::dialect::layers(matched, &self.rse.active_carrier);
+        let dialects = crate::dialect::layers(matched, &self.rse.active_carrier)?;
         losses.extend(
             dialects
                 .iter()
                 .find(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
                 .and_then(crate::dialect::kernel_dialect_loss),
         );
-        ContainerSummary::classified(
+        Ok(ContainerSummary::classified(
             dialects,
             cadmpeg_ir::ContainerKind::Cfb,
             entries,
@@ -142,7 +142,7 @@ impl<'a> InventorContainer<'a> {
                 self.rse.segments.len(),
                 self.rse.databases.len()
             )],
-        )
+        ))
     }
 }
 

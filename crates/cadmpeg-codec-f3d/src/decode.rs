@@ -625,7 +625,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 && shape
                     .referenced_profiles()
                     .into_iter()
-                    .all(|profile| planar_profile_ref_is_resolved(profile));
+                    .all(planar_profile_ref_is_resolved);
             let mode_is_resolved = match mode {
                 SweepMode::Unresolved {} => false,
                 SweepMode::Solid {
@@ -2580,7 +2580,7 @@ impl<'a> F3dDecodeSession<'a> {
                 spatial_sketches: &self.ir.model.spatial_sketches,
                 spatial_sketch_entities: &self.ir.model.spatial_sketch_entities,
             },
-        )?;
+        );
         crate::design::profile_select::bind_split_face_sketch_selections(
             &mut self.ir.model.features,
             &crate::design::profile_select::SketchCurveSelectionResolution {
