@@ -13,7 +13,7 @@ fn mesh() -> Tessellation {
             Point3::new(0.0, 1.0, 0.0),
         ],
         vec![[0, 1, 2], [0, 2, 3]],
-        TessellationTopology::List,
+        TessellationTopology::List {},
         TessellationNormals::None,
         Vec::new(),
     )
@@ -34,7 +34,7 @@ fn per_corner_mesh_exposes_its_normals() {
         "test:mesh:tessellation#corners",
         base.vertices().to_vec(),
         base.triangles().to_vec(),
-        TessellationTopology::List,
+        TessellationTopology::List {},
         TessellationNormals::per_corner(normals.clone()),
         Vec::new(),
     )
@@ -56,7 +56,7 @@ fn per_vertex_mesh_exposes_its_normals() {
         "test:mesh:tessellation#vertices",
         base.vertices().to_vec(),
         base.triangles().to_vec(),
-        TessellationTopology::List,
+        TessellationTopology::List {},
         TessellationNormals::per_vertex(normals.clone()),
         Vec::new(),
     )
@@ -168,7 +168,7 @@ fn vertex_channels_may_retain_auxiliary_descriptors_with_a_different_count() {
         "test:mesh:tessellation#auxiliary",
         base.vertices().to_vec(),
         base.triangles().to_vec(),
-        TessellationTopology::List,
+        TessellationTopology::List {},
         TessellationNormals::None,
         vec![channel],
     )
@@ -190,7 +190,7 @@ fn tessellation_identity_admission() {
             id,
             Vec::new(),
             Vec::new(),
-            TessellationTopology::List,
+            TessellationTopology::List {},
             TessellationNormals::None,
             Vec::new(),
         )
@@ -217,7 +217,7 @@ fn numeric_admission_rejects_non_finite_vertices_and_normals() {
             "test:mesh:tessellation#numeric",
             vertices.clone(),
             base.triangles().to_vec(),
-            TessellationTopology::List,
+            TessellationTopology::List {},
             TessellationNormals::None,
             Vec::new(),
         )
@@ -240,7 +240,7 @@ fn numeric_admission_rejects_non_finite_vertices_and_normals() {
                 "test:mesh:tessellation#numeric",
                 base.vertices().to_vec(),
                 base.triangles().to_vec(),
-                TessellationTopology::List,
+                TessellationTopology::List {},
                 shading,
                 Vec::new(),
             )
@@ -265,7 +265,7 @@ fn numeric_edits_reject_invalid_values_without_partial_changes() {
             "test:mesh:tessellation#numeric",
             base.vertices().to_vec(),
             base.triangles().to_vec(),
-            TessellationTopology::List,
+            TessellationTopology::List {},
             if corner {
                 TessellationNormals::per_corner(normals)
             } else {
@@ -350,7 +350,7 @@ fn empty_wire_shading_is_the_absent_shading() {
         "test:mesh:tessellation#empty",
         Vec::new(),
         Vec::new(),
-        TessellationTopology::List,
+        TessellationTopology::List {},
         TessellationNormals::None,
         Vec::new(),
     )
@@ -366,4 +366,56 @@ fn empty_wire_shading_is_the_absent_shading() {
             serde_json::Value::Null
         );
     }
+}
+
+// The literal route to an empty strip run does not compile: `TessellationTopology::Strips`
+// carries a `StripLengths`, whose vector is private and whose only mint,
+// `StripLengths::new`, returns `None` for an empty vector.
+#[test]
+fn the_wire_spells_the_topology_by_name() {
+    assert!(StripLengths::new(Vec::new()).is_none());
+    let list = serde_json::to_value(mesh()).unwrap();
+    assert_eq!(list["topology"], serde_json::json!({"kind": "list"}));
+
+    let strips = Tessellation::from_decoded(
+        "test:mesh:tessellation#strips",
+        vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(1.0, 1.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+        ],
+        vec![[0, 1, 2], [1, 3, 2]],
+        vec![4],
+        TessellationNormals::None,
+        Vec::new(),
+    )
+    .unwrap();
+    let wire = serde_json::to_value(&strips).unwrap();
+    assert_eq!(
+        wire["topology"],
+        serde_json::json!({"kind": "strips", "strip_lengths": [4]})
+    );
+    let read: Tessellation = serde_json::from_value(wire).unwrap();
+    assert_eq!(read, strips);
+}
+
+#[test]
+fn a_strip_run_outside_the_topology_is_an_unknown_key() {
+    let mut wire = serde_json::to_value(mesh()).unwrap();
+    wire["strip_lengths"] = serde_json::json!([4]);
+    let error = serde_json::from_value::<Tessellation>(wire).unwrap_err();
+    let message = error.to_string();
+    assert!(message.contains("unknown field"), "{error}");
+    assert!(message.contains("strip_lengths"), "{error}");
+
+    let mut wire = serde_json::to_value(mesh()).unwrap();
+    wire["topology"] = serde_json::json!({"kind": "list", "strip_lengths": [4]});
+    let error = serde_json::from_value::<Tessellation>(wire).unwrap_err();
+    assert!(error.to_string().contains("strip_lengths"), "{error}");
+
+    let mut wire = serde_json::to_value(mesh()).unwrap();
+    wire["topology"] = serde_json::json!({"kind": "strips", "strip_lengths": []});
+    let error = serde_json::from_value::<Tessellation>(wire).unwrap_err();
+    assert!(error.to_string().contains("empty"), "{error}");
 }

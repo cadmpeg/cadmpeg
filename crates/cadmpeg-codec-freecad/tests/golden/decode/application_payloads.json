@@ -85,7 +85,9 @@
             "name": "Mesh",
             "object_id": "fcstd:native:object#Mesh"
           },
-          "strip_lengths": [],
+          "topology": {
+            "kind": "list"
+          },
           "triangles": [
             [
               0,

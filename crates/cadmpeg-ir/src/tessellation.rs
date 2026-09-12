@@ -91,13 +91,66 @@ impl TessellationNormals {
     }
 }
 
+/// One or more triangle-strip run lengths.
+///
+/// The vector is private and never empty, so an empty strip run has no
+/// [`TessellationTopology`] variant to live in: "the mesh is a flat triangle
+/// list" is spelled [`TessellationTopology::List`] and nothing else.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "Vec<u32>"))]
+#[serde(try_from = "Vec<u32>", into = "Vec<u32>")]
+pub struct StripLengths(Vec<u32>);
+
+impl StripLengths {
+    /// The run lengths, absent when `lengths` is empty.
+    #[must_use]
+    pub fn new(lengths: Vec<u32>) -> Option<Self> {
+        (!lengths.is_empty()).then_some(Self(lengths))
+    }
+
+    /// The run lengths in storage order.
+    #[must_use]
+    pub fn as_slice(&self) -> &[u32] {
+        &self.0
+    }
+}
+
+impl std::ops::Deref for StripLengths {
+    type Target = [u32];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl TryFrom<Vec<u32>> for StripLengths {
+    type Error = TessellationError;
+
+    fn try_from(lengths: Vec<u32>) -> Result<Self, Self::Error> {
+        Self::new(lengths).ok_or_else(|| tessellation_error("tessellation strip run is empty"))
+    }
+}
+
+impl From<StripLengths> for Vec<u32> {
+    fn from(lengths: StripLengths) -> Self {
+        lengths.0
+    }
+}
+
 /// Triangle storage selected by the source mesh.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum TessellationTopology {
     /// Independent triangle list.
-    List,
+    List {},
     /// Triangle-strip run lengths that expand to the stored triangles.
-    Strips(Vec<u32>),
+    Strips {
+        /// Run lengths, in strip order.
+        strip_lengths: StripLengths,
+    },
 }
 
 /// The mesh element addressed by one tessellation channel.
@@ -184,8 +237,7 @@ struct TessellationWire {
     triangles: Vec<[u32; 3]>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     feature_edges: Vec<[u32; 2]>,
-    #[serde(default)]
-    strip_lengths: Vec<u32>,
+    topology: TessellationTopology,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     shading: Option<TessellationShadingWire>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -371,9 +423,9 @@ fn topology_from_parts(
     triangles: &[[u32; 3]],
     strip_lengths: Vec<u32>,
 ) -> Result<TessellationTopology, TessellationError> {
-    if strip_lengths.is_empty() {
-        return Ok(TessellationTopology::List);
-    }
+    let Some(strip_lengths) = StripLengths::new(strip_lengths) else {
+        return Ok(TessellationTopology::List {});
+    };
     let vertex_total = strip_lengths.iter().try_fold(0usize, |total, length| {
         usize::try_from(*length)
             .ok()
@@ -389,7 +441,7 @@ fn topology_from_parts(
             "tessellation triangles do not match strips",
         ));
     }
-    Ok(TessellationTopology::Strips(strip_lengths))
+    Ok(TessellationTopology::Strips { strip_lengths })
 }
 
 fn require_channel_indices(
@@ -547,13 +599,8 @@ impl Tessellation {
             }
         }
         match &topology {
-            TessellationTopology::List => {}
-            TessellationTopology::Strips(strip_lengths) => {
-                if strip_lengths.is_empty() {
-                    return Err(tessellation_error(
-                        "tessellation strip topology cannot be empty",
-                    ));
-                }
+            TessellationTopology::List {} => {}
+            TessellationTopology::Strips { strip_lengths } => {
                 let vertex_total = strip_lengths.iter().try_fold(0usize, |total, length| {
                     usize::try_from(*length)
                         .ok()
@@ -636,8 +683,8 @@ impl Tessellation {
     #[must_use]
     pub fn strip_lengths(&self) -> &[u32] {
         match &self.topology {
-            TessellationTopology::List => &[],
-            TessellationTopology::Strips(lengths) => lengths,
+            TessellationTopology::List {} => &[],
+            TessellationTopology::Strips { strip_lengths } => strip_lengths.as_slice(),
         }
     }
 
@@ -884,7 +931,7 @@ impl TessellationChannel {
 
 impl From<Tessellation> for TessellationWire {
     fn from(mesh: Tessellation) -> Self {
-        let strip_lengths = mesh.strip_lengths().to_vec();
+        let topology = mesh.topology.clone();
         let shading = match &mesh.shading {
             TessellationNormals::None => None,
             TessellationNormals::PerVertex(values) => Some(TessellationShadingWire::PerVertex {
@@ -903,7 +950,7 @@ impl From<Tessellation> for TessellationWire {
             vertices: mesh.vertices,
             triangles: mesh.triangles,
             feature_edges: mesh.feature_edges,
-            strip_lengths,
+            topology,
             shading,
             triangle_groups: mesh.triangle_groups,
             texture_assignments: mesh.texture_assignments,
@@ -917,12 +964,11 @@ impl TryFrom<TessellationWire> for Tessellation {
 
     fn try_from(wire: TessellationWire) -> Result<Self, Self::Error> {
         let shading = shading_from_wire(&wire.vertices, &wire.triangles, wire.shading)?;
-        let topology = topology_from_parts(&wire.vertices, &wire.triangles, wire.strip_lengths)?;
         let mut mesh = Self::new(
             wire.id.into_string(),
             wire.vertices,
             wire.triangles,
-            topology,
+            wire.topology,
             shading,
             wire.channels,
         )?;
