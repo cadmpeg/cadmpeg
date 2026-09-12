@@ -298,11 +298,10 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
         .collect::<Vec<_>>();
     for (index, body) in ir.model.bodies.iter_mut().enumerate() {
         body.transform = Some(
-            Transform::from_rows([
+            Transform::affine([
                 [1.0, 0.0, 0.0, (index as f64 + 1.0) * 10.0],
                 [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
+                [0.0, 0.0, 1.0, 0.0]
             ])
             .expect("affine transform"),
         );
@@ -725,11 +724,10 @@ fn encoder_bakes_rigid_body_transform() {
         })
         .unwrap();
     ir.model.bodies[0].transform = Some(
-        Transform::from_rows([
+        Transform::affine([
             [0.0, -1.0, 0.0, 10.0],
             [1.0, 0.0, 0.0, 20.0],
-            [0.0, 0.0, 1.0, 30.0],
-            [0.0, 0.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0, 30.0]
         ])
         .expect("affine transform"),
     );

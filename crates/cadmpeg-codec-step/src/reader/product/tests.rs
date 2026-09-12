@@ -1314,11 +1314,10 @@ fn complex_shape_representation_relationship_inherits_references() {
 
 #[test]
 fn decode_applies_canonical_cartesian_operator_to_mapped_body() {
-    let transform = cadmpeg_ir::transform::Transform::from_rows([
+    let transform = cadmpeg_ir::transform::Transform::affine([
         [0.0, -1.0, 0.0, 15.0],
         [1.0, 0.0, 0.0, 4.0],
-        [0.0, 0.0, 1.0, 2.0],
-        [0.0, 0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0, 2.0]
     ])
     .expect("affine transform");
     let mut ir = unit_cube();

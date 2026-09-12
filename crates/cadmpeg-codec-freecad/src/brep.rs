@@ -1970,14 +1970,14 @@ pub(crate) fn parse_binary_prefix(
         let kind = cursor.u8("binary location kind")?;
         let location = match kind {
             1 => {
-                let mut rows = Transform::identity().rows();
-                for row in rows.iter_mut().take(3) {
+                let mut rows = Transform::identity().affine_rows();
+                for row in &mut rows {
                     for value in row {
                         *value = cursor.f64("binary location transform")?;
                     }
                 }
-                let transform = Transform::from_rows(rows).ok_or_else(|| {
-                    CodecError::Malformed("location transform is not affine".into())
+                let transform = Transform::affine(rows).ok_or_else(|| {
+                    CodecError::Malformed("location transform must be finite".into())
                 })?;
                 invert_affine(transform)?;
                 TextLocation {
@@ -3303,14 +3303,14 @@ fn parse_locations(
         let kind = cursor.integer("location type")?;
         let location = match kind {
             1 => {
-                let mut rows = Transform::identity().rows();
-                for row in rows.iter_mut().take(3) {
+                let mut rows = Transform::identity().affine_rows();
+                for row in &mut rows {
                     for value in row {
                         *value = cursor.real("location transform value")?;
                     }
                 }
-                let transform = Transform::from_rows(rows).ok_or_else(|| {
-                    CodecError::Malformed("location transform is not affine".into())
+                let transform = Transform::affine(rows).ok_or_else(|| {
+                    CodecError::Malformed("location transform must be finite".into())
                 })?;
                 invert_affine(transform)?;
                 TextLocation {

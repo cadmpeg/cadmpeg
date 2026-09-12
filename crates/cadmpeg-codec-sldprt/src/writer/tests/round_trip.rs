@@ -161,11 +161,10 @@ fn bake_transform_is_applied_and_output_stays_valid() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let original_x = decoded.ir().model.points[0].position.x;
     decoded.ir_mut().model.bodies[0].transform = Some(
-        Transform::from_rows([
+        Transform::affine([
             [1.0, 0.0, 0.0, 10.0],
             [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0, 0.0]
         ])
         .expect("affine transform"),
     );

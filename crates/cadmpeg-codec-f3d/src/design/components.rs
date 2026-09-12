@@ -273,11 +273,17 @@ fn project_component(components: &mut BTreeMap<String, ProductDefinition>, compo
 pub(crate) fn neutral_transform(
     transform: impl Into<[[f64; 4]; 4]>,
 ) -> Result<cadmpeg_ir::transform::Transform, cadmpeg_core::CodecError> {
-    let mut transform = transform.into();
-    for row in &mut transform[..3] {
+    let source = transform.into();
+    if source[3] != [0.0, 0.0, 0.0, 1.0] {
+        return Err(cadmpeg_core::CodecError::NotImplemented(
+            "F3D placement must project to a finite affine transform".into(),
+        ));
+    }
+    let mut rows = [source[0], source[1], source[2]];
+    for row in &mut rows {
         row[3] *= 10.0;
     }
-    cadmpeg_ir::transform::Transform::from_rows(transform).ok_or_else(|| {
+    cadmpeg_ir::transform::Transform::affine(rows).ok_or_else(|| {
         cadmpeg_core::CodecError::NotImplemented(
             "F3D placement must project to a finite affine transform".into(),
         )

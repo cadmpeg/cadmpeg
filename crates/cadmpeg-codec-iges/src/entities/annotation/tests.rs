@@ -689,11 +689,10 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
             cadmpeg_ir::geometry::CircleCurve::try_new(center, *axis, *ref_direction, radius)
                 .unwrap();
     }
-    let translated_pattern_plane = Transform::from_rows([
+    let translated_pattern_plane = Transform::affine([
         [1.0, 0.0, 0.0, 0.0],
         [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.01],
-        [0.0, 0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0, 0.01]
     ])
     .expect("affine transform");
     assert!(sectioned_area_valid(

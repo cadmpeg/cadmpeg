@@ -1003,16 +1003,14 @@ fn block_placement_admission_requires_a_right_handed_rigid_transform() {
             [1.0, 0.0, 0.0, 0.0],
             [0.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
         ],
         [
             [0.0, -1.0, 0.0, 3.0],
             [1.0, 0.0, 0.0, -2.0],
             [0.0, 0.0, 1.0, 5.0],
-            [0.0, 0.0, 0.0, 1.0],
         ],
     ] {
-        let transform = Transform::from_rows(rows).unwrap();
+        let transform = Transform::affine(rows).unwrap();
         let placement = FeatureRigidPlacement::new(transform).unwrap();
         let wire = serde_json::to_value(transform).unwrap();
         assert_eq!(serde_json::to_value(placement).unwrap(), wire);
@@ -1026,22 +1024,19 @@ fn block_placement_admission_requires_a_right_handed_rigid_transform() {
             [2.0, 0.0, 0.0, 0.0],
             [0.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
         ],
         [
             [1.0, 0.25, 0.0, 0.0],
             [0.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
         ],
         [
             [-1.0, 0.0, 0.0, 0.0],
             [0.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
         ],
     ] {
-        let transform = Transform::from_rows(rows).unwrap();
+        let transform = Transform::affine(rows).unwrap();
         assert!(FeatureRigidPlacement::new(transform).is_none());
         assert!(serde_json::from_value::<FeatureRigidPlacement>(
             serde_json::to_value(transform).unwrap()

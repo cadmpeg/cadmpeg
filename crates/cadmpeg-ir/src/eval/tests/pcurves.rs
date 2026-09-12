@@ -122,7 +122,7 @@ fn transformed_pcurves_apply_the_map_to_all_differential_orders() {
             )
             .unwrap(),
         )),
-        transform: Transform2::from_rows([[0.0, -2.0, 10.0], [2.0, 0.0, 20.0], [0.0, 0.0, 1.0]])
+        transform: Transform2::affine([[0.0, -2.0, 10.0], [2.0, 0.0, 20.0]])
             .expect("affine transform"),
     };
 

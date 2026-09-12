@@ -3,11 +3,10 @@ use super::*;
 
 #[test]
 fn rejects_transform_that_step_operator_cannot_represent() {
-    let anisotropic = Transform::from_rows([
+    let anisotropic = Transform::affine([
         [2.0, 0.0, 0.0, 0.0],
         [0.0, 3.0, 0.0, 0.0],
-        [0.0, 0.0, 2.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
+        [0.0, 0.0, 2.0, 0.0]
     ])
     .expect("affine transform");
     let curve = CurveGeometry::Solved(SolvedCurveGeometry::Transformed {

@@ -318,11 +318,10 @@ fn budgeted_nurbs_surface_evaluation_charges_degree_work() {
 
     let transformed = SolvedSurfaceGeometry::Transformed {
         basis: Box::new(SolvedSurfaceGeometry::Nurbs(surface)),
-        transform: Transform::from_rows([
+        transform: Transform::affine([
             [1.0, 0.0, 0.0, 0.0],
             [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 1.0],
-            [0.0, 0.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0, 1.0]
         ])
         .expect("affine transform"),
     };
@@ -751,11 +750,10 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
         )
         .unwrap(),
     );
-    let transform = Transform::from_rows([
+    let transform = Transform::affine([
         [-2.0, 0.0, 0.0, 1.0e6],
         [0.0, 0.5, 0.0, -2.0e6],
-        [0.0, 0.0, 3.0, 3.0e6],
-        [0.0, 0.0, 0.0, 1.0],
+        [0.0, 0.0, 3.0, 3.0e6]
     ])
     .expect("affine transform");
     let geometry = SolvedCurveGeometry::Transformed {
@@ -778,11 +776,10 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
 
     ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
         basis: Box::new(basis),
-        transform: Transform::from_rows([
+        transform: Transform::affine([
             [0.0, 0.0, 0.0, 0.0],
             [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0, 0.0]
         ])
         .expect("affine transform"),
     });
@@ -1245,11 +1242,10 @@ fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
                 )
                 .unwrap(),
             )),
-            transform: crate::transform::Transform::from_rows([
+            transform: crate::transform::Transform::affine([
                 [2.0, 0.0, 0.0, 1.0],
                 [0.0, 1.0, 0.0, 2.0],
-                [0.0, 0.0, 1.0, 3.0],
-                [0.0, 0.0, 0.0, 1.0],
+                [0.0, 0.0, 1.0, 3.0]
             ])
             .unwrap(),
         }),
@@ -1704,11 +1700,10 @@ fn analytic_and_transformed_surface_partials_follow_parameterization() {
             )
             .unwrap(),
         )),
-        transform: Transform::from_rows([
+        transform: Transform::affine([
             [2.0, 0.0, 0.0, 7.0],
             [0.0, 3.0, 0.0, 11.0],
-            [0.0, 0.0, 4.0, 13.0],
-            [0.0, 0.0, 0.0, 1.0],
+            [0.0, 0.0, 4.0, 13.0]
         ])
         .expect("affine transform"),
     };

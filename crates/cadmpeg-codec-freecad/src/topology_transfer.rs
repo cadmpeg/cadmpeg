@@ -1590,10 +1590,9 @@ fn transformed_pcurve_geometry(
     }
     PcurveGeometry::Transformed {
         basis: Box::new(geometry),
-        transform: Transform2::from_rows([
+        transform: Transform2::affine([
             [affine.u_scale, 0.0, affine.u_offset],
-            [0.0, affine.v_scale, affine.v_offset],
-            [0.0, 0.0, 1.0],
+            [0.0, affine.v_scale, affine.v_offset]
         ])
         .expect("affine transform"),
     }

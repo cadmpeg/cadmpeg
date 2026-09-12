@@ -114,10 +114,10 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                     .unwrap();
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Transformed { transform, .. }) => {
-                let mut rows = transform.rows();
+                let mut rows = transform.affine_rows();
                 rows[0][3] += dx;
                 *transform =
-                    cadmpeg_ir::transform::Transform::from_rows(rows).expect("affine transform");
+                    cadmpeg_ir::transform::Transform::affine(rows).expect("affine transform");
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. }) => {}
             CurveGeometry::Procedural { .. } => {}
@@ -226,10 +226,10 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                     .unwrap();
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed { transform, .. }) => {
-                let mut rows = transform.rows();
+                let mut rows = transform.affine_rows();
                 rows[0][3] += dx;
                 *transform =
-                    cadmpeg_ir::transform::Transform::from_rows(rows).expect("affine transform");
+                    cadmpeg_ir::transform::Transform::affine(rows).expect("affine transform");
             }
             SurfaceGeometry::Procedural { .. } => {}
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => {}

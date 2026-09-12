@@ -24,11 +24,10 @@ use crate::F3dCodec;
 #[test]
 fn generated_source_less_unit_cube_writes_body_transform() {
     let mut source_less = cadmpeg_ir::examples::unit_cube();
-    let expected = cadmpeg_ir::transform::Transform::from_rows([
+    let expected = cadmpeg_ir::transform::Transform::affine([
         [0.0, -1.0, 0.0, 20.0],
         [1.0, 0.0, 0.0, -30.0],
-        [0.0, 0.0, 1.0, 40.0],
-        [0.0, 0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0, 40.0]
     ])
     .expect("affine transform");
     source_less.model.bodies[0].transform = Some(expected);
@@ -437,11 +436,10 @@ fn generated_source_less_writes_two_independent_cube_bodies() {
     let mut second =
         cadmpeg_ir::document::CadIr::from_json(&second_json).expect("renamed second cube IR");
     second.model.bodies[0].transform = Some(
-        cadmpeg_ir::transform::Transform::from_rows([
+        cadmpeg_ir::transform::Transform::affine([
             [1.0, 0.0, 0.0, 30.0],
             [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0, 0.0]
         ])
         .expect("affine transform"),
     );

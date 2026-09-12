@@ -1482,11 +1482,10 @@ pub(crate) fn hidden_body_geometry_and_visibility_round_trip() {
     let mut transformed = unit_cube();
     transformed.model.bodies[0].visible = Some(false);
     transformed.model.bodies[0].transform = Some(
-        cadmpeg_ir::transform::Transform::from_rows([
+        cadmpeg_ir::transform::Transform::affine([
             [1.0, 0.0, 0.0, 10.0],
             [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0, 0.0]
         ])
         .expect("affine transform"),
     );
@@ -1741,11 +1740,10 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
             },
             parent: OccurrenceParent::Occurrence { occurrence: root },
             ordinal: 0,
-            transform: Transform::from_rows([
+            transform: Transform::affine([
                 [1.0, 0.0, 0.0, 25.0],
                 [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
+                [0.0, 0.0, 1.0, 0.0]
             ])
             .expect("affine transform"),
             linked_prototype: None,
