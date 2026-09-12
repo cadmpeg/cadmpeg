@@ -373,10 +373,10 @@ fn rectangular_pattern_directions(
                 .clone()
                 .map(|parameter| match distance_form {
                     RectangularPatternDistanceForm::AdjacentSpacing => {
-                        cadmpeg_ir::sketches::SketchPatternDistance::Spacing(parameter)
+                        cadmpeg_ir::sketches::SketchPatternDistance::Spacing { parameter }
                     }
                     RectangularPatternDistanceForm::SeedToFinalSpan => {
-                        cadmpeg_ir::sketches::SketchPatternDistance::Span(parameter)
+                        cadmpeg_ir::sketches::SketchPatternDistance::Span { parameter }
                     }
                 });
             cadmpeg_ir::sketches::SketchPatternDirection::new(
@@ -1144,7 +1144,7 @@ mod tests {
         assert_eq!(directions[1].spacing().get(), 0.0);
         assert!(matches!(
             directions[0].distance,
-            Some(cadmpeg_ir::sketches::SketchPatternDistance::Spacing(_))
+            Some(cadmpeg_ir::sketches::SketchPatternDistance::Spacing { .. })
         ));
         assert!(directions[0].count_parameter.is_some());
         assert_eq!(pattern.counts(), [3, 1]);
@@ -1167,7 +1167,7 @@ mod tests {
         assert_eq!(directions[0].spacing().get(), 15.0);
         assert!(matches!(
             directions[0].distance,
-            Some(cadmpeg_ir::sketches::SketchPatternDistance::Span(_))
+            Some(cadmpeg_ir::sketches::SketchPatternDistance::Span { .. })
         ));
         assert!(directions[0].count_parameter.is_some());
     }
@@ -1231,13 +1231,13 @@ mod tests {
                 RectangularPatternDistanceForm::AdjacentSpacing => {
                     assert!(matches!(
                         directions[0].distance,
-                        Some(cadmpeg_ir::sketches::SketchPatternDistance::Spacing(_))
+                        Some(cadmpeg_ir::sketches::SketchPatternDistance::Spacing { .. })
                     ));
                 }
                 RectangularPatternDistanceForm::SeedToFinalSpan => {
                     assert!(matches!(
                         directions[0].distance,
-                        Some(cadmpeg_ir::sketches::SketchPatternDistance::Span(_))
+                        Some(cadmpeg_ir::sketches::SketchPatternDistance::Span { .. })
                     ));
                 }
             }
