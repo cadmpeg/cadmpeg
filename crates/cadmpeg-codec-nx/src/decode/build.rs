@@ -1059,7 +1059,7 @@ pub(crate) fn try_decode_geometry(
                 &coupled_support_budget,
                 &coupled_support_uv_geometry_budget,
                 &mut completed_endpoint_witnesses,
-            );
+            )?;
         let mut validated_endpoint_witnesses = initial_endpoint_witnesses;
         for (key, witnesses) in validated_support_uv_endpoint_witnesses(
             &ir,

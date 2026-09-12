@@ -1042,6 +1042,12 @@ pub enum CacheContractError {
     Layout(&'static str),
 }
 
+impl From<CacheContractError> for cadmpeg_core::CodecError {
+    fn from(error: CacheContractError) -> Self {
+        Self::Malformed(error.to_string())
+    }
+}
+
 /// A rejected procedural definition or cache contract.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ProceduralGeometryError {
@@ -1055,6 +1061,9 @@ pub enum ProceduralGeometryError {
 
 /// A construction whose layout states no solved-cache fit tolerance.
 const NO_LEGACY_SLOT: &str = "this construction states no solved-cache fit tolerance";
+
+const PARAMETERIZED_NO_SOLVED_CACHE: &str =
+    "a parameterized cache form takes no solved-cache fit tolerance";
 
 /// A construction whose layout always states one.
 const REQUIRED_LEGACY_SLOT: &str = "this construction states a solved-cache fit tolerance";
@@ -1372,19 +1381,41 @@ impl ProceduralCurveDefinition {
     /// State that a solved carrier of this construction was fitted to `value`,
     /// raising an existing contract rather than lowering it.
     ///
-    /// Total over the layouts. A construction whose legacy slot is empty takes
-    /// the contract; one that already carries a cache raises it; a
-    /// parameterized form and a layout that states no slot keep their absence
-    /// of a solved cache. The write goes through `legacy_cache_slot_mut`, the
-    /// one write route to the slot, so a construction cannot answer it
-    /// differently from the setter and the clear.
-    pub fn require_cache_fit_tolerance(&mut self, value: FitTolerance) {
-        self.raise_cache_fit_tolerance(value);
-        if self.owns_revision_cache() {
-            return;
-        }
-        if let Some(slot @ None) = self.legacy_cache_slot_mut() {
-            *slot = Some(LegacyCache::new(value));
+    /// Answers every layout. A construction whose legacy slot is empty takes
+    /// the contract; one that already carries a cache raises it; a solved
+    /// revision cache raises its own tolerance. A parameterized form and a
+    /// layout that states no slot have no solved cache to state, so they
+    /// refuse: a caller that asked for a solved cache never gets a silent
+    /// nothing. The write goes through `legacy_cache_slot_mut`, the one write
+    /// route to the slot, so a construction cannot answer it differently from
+    /// the setter and the clear.
+    pub fn require_cache_fit_tolerance(
+        &mut self,
+        value: FitTolerance,
+    ) -> Result<(), CacheContractError> {
+        match self.revision_cache_mut() {
+            Some(RevisionCacheForm::SolvedCache { fit_tolerance }) => {
+                if value.get() > fit_tolerance.get() {
+                    *fit_tolerance = value;
+                }
+                Ok(())
+            }
+            Some(RevisionCacheForm::Parameterization(_)) => {
+                Err(CacheContractError::Layout(PARAMETERIZED_NO_SOLVED_CACHE))
+            }
+            None => match self.legacy_cache_slot_mut() {
+                Some(slot @ None) => {
+                    *slot = Some(LegacyCache::new(value));
+                    Ok(())
+                }
+                Some(Some(cache)) => {
+                    if value.get() > cache.fit_tolerance.get() {
+                        cache.fit_tolerance = value;
+                    }
+                    Ok(())
+                }
+                None => Err(CacheContractError::Layout(NO_LEGACY_SLOT)),
+            },
         }
     }
 }
@@ -6753,8 +6784,11 @@ impl ProceduralCurve {
 
     /// State that a solved carrier of this construction was fitted to `value`,
     /// raising an existing contract rather than lowering it.
-    pub fn require_cache_fit_tolerance(&mut self, value: FitTolerance) {
-        self.definition.require_cache_fit_tolerance(value);
+    pub fn require_cache_fit_tolerance(
+        &mut self,
+        value: FitTolerance,
+    ) -> Result<(), CacheContractError> {
+        self.definition.require_cache_fit_tolerance(value)
     }
 
     /// Scale the effective cache-fit tolerance in place.
