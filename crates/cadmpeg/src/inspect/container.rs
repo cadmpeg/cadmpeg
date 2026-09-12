@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Container member listing (ZIP or CFB) and exact member extraction.
 
-
 use anyhow::{Context, Result};
 use cadmpeg_container::compound::{CompoundAllocation, CompoundEntry, CompoundSnapshot};
 use cadmpeg_container::{ArchiveSnapshot, EntryRecord};

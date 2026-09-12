@@ -476,7 +476,10 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
         annotations.clear_exactness();
         source_fidelity.annotations = annotations.build();
     }
-    assert_eq!(crate::decode::brep_local_sha256(decoded.ir()).unwrap(), brep_hash);
+    assert_eq!(
+        crate::decode::brep_local_sha256(decoded.ir()).unwrap(),
+        brep_hash
+    );
     assert_ne!(
         crate::decode::document_local_sha256(decoded.ir()).unwrap(),
         document_hash

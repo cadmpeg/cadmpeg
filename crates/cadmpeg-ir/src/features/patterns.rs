@@ -228,7 +228,10 @@ impl<C> PatternKind<C> {
     /// # Errors
     ///
     /// Returns the admission message when the edited transform is inadmissible.
-    pub fn try_edit(&mut self, edit: impl FnOnce(&mut PatternTransform<C>)) -> Result<(), &'static str>
+    pub fn try_edit(
+        &mut self,
+        edit: impl FnOnce(&mut PatternTransform<C>),
+    ) -> Result<(), &'static str>
     where
         C: Clone,
     {

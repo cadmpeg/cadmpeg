@@ -1436,13 +1436,16 @@ fn brep_entities(topology: ValidatedTopology<'_>) -> Result<Vec<Entity>, CodecEr
                 let curve_index = edge_curve_indices[edge_id];
                 let start_index = vertex_indices[edge.start.as_str()];
                 let end_index = vertex_indices[edge.end.as_str()];
-                write!(parameters, ",{},{},{},{},{}",
+                write!(
+                    parameters,
+                    ",{},{},{},{},{}",
                     reference_marker(curve_index),
                     reference_marker(vertex_list_index),
                     start_index + 1,
                     reference_marker(vertex_list_index),
-                    end_index + 1)
-                    .map_err(CodecError::malformed)?;
+                    end_index + 1
+                )
+                .map_err(CodecError::malformed)?;
             }
             parameters.push(';');
             let index = entities.len();
@@ -1561,17 +1564,23 @@ fn brep_entities(topology: ValidatedTopology<'_>) -> Result<Vec<Entity>, CodecEr
                     &pcurve_indices,
                     &mut entities,
                 )?;
-                write!(parameters, ",0,{},{},{},{}",
+                write!(
+                    parameters,
+                    ",0,{},{},{},{}",
                     reference_marker(edge_list_index),
                     edge_index + 1,
                     sense,
-                    coedge.pcurves.len())
-                    .map_err(CodecError::malformed)?;
+                    coedge.pcurves.len()
+                )
+                .map_err(CodecError::malformed)?;
                 for (pcurve_use, pcurve_index) in pcurve_entities {
-                    write!(parameters, ",{},{}",
+                    write!(
+                        parameters,
+                        ",{},{}",
                         isoparametric_flag(pcurve_use, loop_.id.as_str())?,
-                        reference_marker(pcurve_index))
-                        .map_err(CodecError::malformed)?;
+                        reference_marker(pcurve_index)
+                    )
+                    .map_err(CodecError::malformed)?;
                 }
                 for vertex_use in loop_
                     .anchored_vertex_uses()
@@ -1579,33 +1588,45 @@ fn brep_entities(topology: ValidatedTopology<'_>) -> Result<Vec<Entity>, CodecEr
                     .filter(|vertex_use| vertex_use.after == coedge.id)
                 {
                     let vertex_index = vertex_indices[vertex_use.vertex.as_str()];
-                    write!(parameters, ",1,{},{},{},{}",
+                    write!(
+                        parameters,
+                        ",1,{},{},{},{}",
                         reference_marker(vertex_list_index),
                         vertex_index + 1,
                         0,
-                        vertex_use.pcurves.len())
-                        .map_err(CodecError::malformed)?;
+                        vertex_use.pcurves.len()
+                    )
+                    .map_err(CodecError::malformed)?;
                     for pcurve_use in &vertex_use.pcurves {
-                        write!(parameters, ",{},{}",
+                        write!(
+                            parameters,
+                            ",{},{}",
                             isoparametric_flag(pcurve_use, loop_.id.as_str())?,
-                            reference_marker(pcurve_indices[pcurve_use.pcurve.as_str()]))
-                            .map_err(CodecError::malformed)?;
+                            reference_marker(pcurve_indices[pcurve_use.pcurve.as_str()])
+                        )
+                        .map_err(CodecError::malformed)?;
                     }
                 }
             }
             if let Some((vertex, pcurves)) = loop_.singular_vertex() {
                 let vertex_index = vertex_indices[vertex.as_str()];
-                write!(parameters, ",1,{},{},{},{}",
+                write!(
+                    parameters,
+                    ",1,{},{},{},{}",
                     reference_marker(vertex_list_index),
                     vertex_index + 1,
                     0,
-                    pcurves.len())
-                    .map_err(CodecError::malformed)?;
+                    pcurves.len()
+                )
+                .map_err(CodecError::malformed)?;
                 for pcurve_use in pcurves {
-                    write!(parameters, ",{},{}",
+                    write!(
+                        parameters,
+                        ",{},{}",
                         isoparametric_flag(pcurve_use, loop_.id.as_str())?,
-                        reference_marker(pcurve_indices[pcurve_use.pcurve.as_str()]))
-                        .map_err(CodecError::malformed)?;
+                        reference_marker(pcurve_indices[pcurve_use.pcurve.as_str()])
+                    )
+                    .map_err(CodecError::malformed)?;
                 }
             }
             parameters.push(';');
@@ -1640,9 +1661,12 @@ fn brep_entities(topology: ValidatedTopology<'_>) -> Result<Vec<Entity>, CodecEr
                 i32::from(has_outer)
             );
             for loop_ in loops {
-                write!(parameters, ",{}",
-                    reference_marker(loop_indices[loop_.id.as_str()]))
-                    .map_err(CodecError::malformed)?;
+                write!(
+                    parameters,
+                    ",{}",
+                    reference_marker(loop_indices[loop_.id.as_str()])
+                )
+                .map_err(CodecError::malformed)?;
             }
             parameters.push(';');
             let index = entities.len();
@@ -1672,10 +1696,13 @@ fn brep_entities(topology: ValidatedTopology<'_>) -> Result<Vec<Entity>, CodecEr
                             shell.id, face_id
                         ))
                     })?;
-                write!(parameters, ",{},{}",
+                write!(
+                    parameters,
+                    ",{},{}",
                     reference_marker(face_indices[face.id.as_str()]),
-                    brep_sense(face.sense))
-                    .map_err(CodecError::malformed)?;
+                    brep_sense(face.sense)
+                )
+                .map_err(CodecError::malformed)?;
             }
             parameters.push(';');
             let index = entities.len();
@@ -1701,9 +1728,12 @@ fn brep_entities(topology: ValidatedTopology<'_>) -> Result<Vec<Entity>, CodecEr
                 void_shells.len()
             );
             for void_shell in void_shells {
-                write!(parameters, ",{},1",
-                    reference_marker(shell_indices[void_shell.as_str()]))
-                    .map_err(CodecError::malformed)?;
+                write!(
+                    parameters,
+                    ",{},1",
+                    reference_marker(shell_indices[void_shell.as_str()])
+                )
+                .map_err(CodecError::malformed)?;
             }
             parameters.push(';');
             entities.push(Entity {
@@ -2721,8 +2751,7 @@ fn boundary_entity(
         };
         parameters.push(',');
         parameters.push_str(&reference_marker(edge_index));
-        write!(parameters, ",{sense},{}", coedge.pcurves.len())
-            .map_err(CodecError::malformed)?;
+        write!(parameters, ",{sense},{}", coedge.pcurves.len()).map_err(CodecError::malformed)?;
         let pcurve_entities = if coedge.pcurves.is_empty() {
             Vec::new()
         } else {

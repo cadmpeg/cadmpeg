@@ -1584,8 +1584,18 @@ impl From<FeatureResultMembers> for Vec<SelectionMember> {
             .bodies
             .into_iter()
             .map(|id| SelectionMember::Body { id })
-            .chain(members.faces.into_iter().map(|id| SelectionMember::Face { id }))
-            .chain(members.edges.into_iter().map(|id| SelectionMember::Edge { id }))
+            .chain(
+                members
+                    .faces
+                    .into_iter()
+                    .map(|id| SelectionMember::Face { id }),
+            )
+            .chain(
+                members
+                    .edges
+                    .into_iter()
+                    .map(|id| SelectionMember::Edge { id }),
+            )
             .chain(
                 members
                     .vertices
@@ -4668,10 +4678,7 @@ impl FilledSurfaceContinuity {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "Vec<SurfaceContinuity>"))]
-#[serde(
-    from = "Vec<SurfaceContinuity>",
-    into = "Vec<SurfaceContinuity>"
-)]
+#[serde(from = "Vec<SurfaceContinuity>", into = "Vec<SurfaceContinuity>")]
 pub struct FilledSurfaceContinuityState(Option<FilledSurfaceContinuity>);
 
 impl FilledSurfaceContinuityState {

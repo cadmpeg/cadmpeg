@@ -301,7 +301,6 @@ pub(crate) fn bind_sweep_sketch_selections(
                     let _ = resolve_path(&mut guide_rail.path);
                 }
             }
-
         }
         feature.evaluation.set_definition(definition);
     }

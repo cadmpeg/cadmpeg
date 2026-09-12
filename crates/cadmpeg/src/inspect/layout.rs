@@ -30,7 +30,6 @@ pub fn push_hex(out: &mut String, byte: u8) {
     out.push(HEX_DIGITS[usize::from(byte & 0x0f)]);
 }
 
-
 /// A parse failure in a layout spec.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum LayoutError {

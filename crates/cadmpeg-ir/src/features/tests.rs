@@ -1043,11 +1043,7 @@ fn block_placement_admission_requires_a_right_handed_rigid_transform() {
 fn helical_sweep_travel_preserves_signed_and_planar_values_but_rejects_zero_travel() {
     use crate::{features::HelicalSweepTravel, scalar::Length};
     for (height, radial_growth, wire) in [
-        (
-            -2.0,
-            0.0,
-            serde_json::json!({"kind":"axial","height":-2.0}),
-        ),
+        (-2.0, 0.0, serde_json::json!({"kind":"axial","height":-2.0})),
         (
             0.0,
             -3.0,

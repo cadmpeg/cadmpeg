@@ -791,7 +791,9 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
     else {
         unreachable!("typed surface sweep");
     };
-    shape.set_referenced_profile(cadmpeg_ir::features::PlanarProfileRef::Native("other".into()));
+    shape.set_referenced_profile(cadmpeg_ir::features::PlanarProfileRef::Native(
+        "other".into(),
+    ));
     updated_changed_profile_evaluation.set_definition(updated_changed_profile_definition);
     let error = crate::test_support::plan_inherited_write(
         &changed_profile,

@@ -1321,8 +1321,8 @@ fn scale_pattern_kind<C: cadmpeg_ir::features::CompositeStages + Clone>(
             for stage in &mut scaled {
                 scale_pattern_kind(&mut stage.pattern, scale)?;
             }
-            *stages = C::rebuild(scaled)
-                .map_err(|message| CodecError::Malformed(message.into()))?;
+            *stages =
+                C::rebuild(scaled).map_err(|message| CodecError::Malformed(message.into()))?;
         }
         PatternTransform::Scale { center, .. } => {
             if let cadmpeg_ir::features::PatternScaleCenter::Point(point) = center {
@@ -2106,14 +2106,13 @@ mod tests {
 
     #[test]
     fn scales_explicit_pattern_scale_center() {
-        let mut pattern = PatternKind::<cadmpeg_ir::features::CompositePattern>::new(
-            PatternTransform::Scale {
+        let mut pattern =
+            PatternKind::<cadmpeg_ir::features::CompositePattern>::new(PatternTransform::Scale {
                 center: PatternScaleCenter::Point(Point3::new(1.0, 2.0, 3.0)),
                 final_factor: 2.0,
                 count: 3,
-            },
-        )
-        .expect("valid test fixture");
+            })
+            .expect("valid test fixture");
         scale_pattern_kind(&mut pattern, 25.4).expect("valid test fixture");
         let PatternTransform::Scale {
             center,

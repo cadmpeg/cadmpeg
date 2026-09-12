@@ -64,8 +64,8 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_core::dialect::DialectLayers;
-use cadmpeg_core::CodecError;
 use cadmpeg_core::dialect::{DialectId, DialectMatch, Grammar};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::LossNote;
 
 use crate::container::InventorContainer;
@@ -398,7 +398,9 @@ pub(crate) fn layers(
     let mut layers = DialectLayers::of(primary);
     if let Some(kernel) = kernel_layer_for_state(carrier) {
         layers.insert(kernel).map_err(|rejected| {
-            CodecError::malformed(format_args!("duplicate Inventor dialect layer: {rejected:?}"))
+            CodecError::malformed(format_args!(
+                "duplicate Inventor dialect layer: {rejected:?}"
+            ))
         })?;
     }
     Ok(layers)

@@ -112,29 +112,37 @@ fn pattern_locations_start_at_zero_and_increase() {
             .iter()
             .map(|value| Angle::new(*value).unwrap())
             .collect();
-        assert!(PatternKind::<CompositePattern>::new(PatternTransform::LinearOffsets {
+        assert!(
+            PatternKind::<CompositePattern>::new(PatternTransform::LinearOffsets {
+                direction: None,
+                offsets
+            })
+            .is_err()
+        );
+        assert!(
+            PatternKind::<CompositePattern>::new(PatternTransform::CircularAngles {
+                axis_origin: Point3::new(0.0, 0.0, 0.0),
+                axis_dir: Vector3::new(0.0, 0.0, 1.0),
+                angles,
+            })
+            .is_err()
+        );
+    }
+    assert!(
+        PatternKind::<CompositePattern>::new(PatternTransform::LinearOffsets {
             direction: None,
-            offsets
+            offsets: vec![Length::ZERO],
         })
-        .is_err());
-        assert!(PatternKind::<CompositePattern>::new(PatternTransform::CircularAngles {
+        .is_ok()
+    );
+    assert!(
+        PatternKind::<CompositePattern>::new(PatternTransform::CircularAngles {
             axis_origin: Point3::new(0.0, 0.0, 0.0),
             axis_dir: Vector3::new(0.0, 0.0, 1.0),
-            angles,
+            angles: vec![Angle::ZERO],
         })
-        .is_err());
-    }
-    assert!(PatternKind::<CompositePattern>::new(PatternTransform::LinearOffsets {
-        direction: None,
-        offsets: vec![Length::ZERO],
-    })
-    .is_ok());
-    assert!(PatternKind::<CompositePattern>::new(PatternTransform::CircularAngles {
-        axis_origin: Point3::new(0.0, 0.0, 0.0),
-        axis_dir: Vector3::new(0.0, 0.0, 1.0),
-        angles: vec![Angle::ZERO],
-    })
-    .is_ok());
+        .is_ok()
+    );
 }
 
 #[test]

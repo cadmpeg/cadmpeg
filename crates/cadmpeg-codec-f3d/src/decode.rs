@@ -949,13 +949,10 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                         | cadmpeg_ir::features::SurfaceContinuity::Curvature
                 )
             };
-            let support_is_required =
-                continuity
-                    .resolved()
-                    .is_some_and(|continuity| {
-                        needs_support(continuity.first)
-                            || continuity.rest.iter().copied().any(needs_support)
-                    });
+            let support_is_required = continuity.resolved().is_some_and(|continuity| {
+                needs_support(continuity.first)
+                    || continuity.rest.iter().copied().any(needs_support)
+            });
 
             !boundary_is_resolved
                 || !continuity_is_resolved

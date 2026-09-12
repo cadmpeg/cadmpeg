@@ -431,7 +431,9 @@ fn unresolved_hole_and_flex_wire_forms_preserve_their_layout() {
     let mode: FlexMode = serde_json::from_value(flex.clone()).unwrap();
     assert_eq!(
         mode,
-        FlexMode::Unresolved { form: Some(crate::features::FlexForm::Twisting) }
+        FlexMode::Unresolved {
+            form: Some(crate::features::FlexForm::Twisting)
+        }
     );
     assert_eq!(serde_json::to_value(mode).unwrap(), flex);
 }
@@ -658,7 +660,10 @@ fn filled_surface_continuity_preserves_aggregate_and_component_wire_fields() {
         merge_result: Some(false),
     });
     let wire = serde_json::to_value(&definition).unwrap();
-    assert_eq!(wire["continuity"], serde_json::json!(["contact", "contact"]));
+    assert_eq!(
+        wire["continuity"],
+        serde_json::json!(["contact", "contact"])
+    );
     assert_eq!(
         serde_json::from_value::<FeatureDefinition>(wire.clone()).unwrap(),
         definition
