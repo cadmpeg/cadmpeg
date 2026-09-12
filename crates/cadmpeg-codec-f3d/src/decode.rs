@@ -2492,10 +2492,7 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.asm_histories,
             &self.ir.model.bodies,
         );
-        crate::history::bind_sweep_result_modes(
-            &mut self.ir.model.features,
-            &self.ir.model.bodies,
-        );
+        crate::history::bind_sweep_result_modes(&mut self.ir.model.features, &self.ir.model.bodies);
         crate::history::bind_feature_body_selections(
             &mut self.ir.model.features,
             &crate::history::FeatureBodySelectionInputs {
