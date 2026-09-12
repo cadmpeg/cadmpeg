@@ -117,6 +117,15 @@ fn every_golden_shape_refuses_an_unknown_key() {
 ///   parameter properties no other field represents;
 /// * `/source/attributes` - `SourceMeta::attributes`, format-specific
 ///   attributes;
+/// * `/model/presentation_documents/#/states/#/attributes` and
+///   `/model/presentation_documents/#/states/#/kind/value/properties` -
+///   `PresentationState::attributes` and the view state's `properties`;
+/// * `/model/product_definitions/#/bom_properties` -
+///   `ProductDefinition::bom_properties`, the source's bill-of-materials
+///   fields;
+/// * `/model/semantic_annotations/#/parameters` -
+///   `SemanticAnnotation::parameters`, the native note's own fields;
+/// * `/model/view_presentations/#/properties` - `ViewPresentation::properties`;
 /// * `/source/identity/dialects/primary/declared` and
 ///   `/source/identity/dialects/extra/#/declared` - `DialectMatch::declared`,
 ///   the version fields the source declared verbatim.
@@ -130,6 +139,11 @@ const FREE_FORM_SHAPES: &[&str] = &[
     "/model/features/#/definition/parameters",
     "/model/features/#/source_properties",
     "/model/parameters/#/properties",
+    "/model/presentation_documents/#/states/#/attributes",
+    "/model/presentation_documents/#/states/#/kind/value/properties",
+    "/model/product_definitions/#/bom_properties",
+    "/model/semantic_annotations/#/parameters",
+    "/model/view_presentations/#/properties",
     "/source/attributes",
     "/source/identity/dialects/extra/#/declared",
     "/source/identity/dialects/primary/declared",
