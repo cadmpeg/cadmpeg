@@ -193,7 +193,18 @@ pub(crate) fn project_feature_model(
         };
         let child = features[child_index].id.clone();
         if !tree_nodes.contains(&parent) {
-            regeneration_parents.push((child, parent));
+            // A regeneration predecessor is by definition earlier. Two
+            // sub-features projected from one history record can share an
+            // ordinal, and neither precedes the other, so neither is the
+            // other's predecessor.
+            let child_ordinal = features[child_index].ordinal;
+            let precedes = features
+                .iter()
+                .find(|feature| feature.id == parent)
+                .is_some_and(|feature| feature.ordinal < child_ordinal);
+            if precedes {
+                regeneration_parents.push((child, parent));
+            }
             continue;
         }
         let Some(parent) = features.iter_mut().find(|feature| feature.id == parent) else {
