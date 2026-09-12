@@ -20718,11 +20718,7 @@
                 "kind": "sketch",
                 "value": "fcstd:design:sketch#HoleProfile"
               },
-              "profile_filter": {
-                "arcs": true,
-                "circles": true,
-                "points": true
-              },
+              "profile_filter": "all",
               "shape": {
                 "construction": {
                   "construction": "form",
