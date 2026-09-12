@@ -37,13 +37,14 @@ enum Step {
 /// path, together with the number of shapes swept.
 ///
 /// `ir` is a serialized `CadIr`. A document that does not read back at all
-/// yields no shapes and a zero count; a caller that snapshots an elided
-/// `native` arena sees that and skips the document.
-#[must_use]
-pub fn accepting_shapes(ir: &Value) -> (BTreeSet<String>, usize) {
-    if serde_json::from_value::<CadIr>(ir.clone()).is_err() {
-        return (BTreeSet::new(), 0);
-    }
+/// yields the serde error, which the caller accounts for; it is never a silent
+/// skip.
+///
+/// # Errors
+///
+/// Returns the serde error when `ir` does not read back as a `CadIr`.
+pub fn accepting_shapes(ir: &Value) -> Result<(BTreeSet<String>, usize), serde_json::Error> {
+    serde_json::from_value::<CadIr>(ir.clone())?;
     let mut shapes = Vec::new();
     let mut seen = BTreeSet::new();
     collect_shapes(ir, &mut Vec::new(), &mut seen, &mut shapes);
@@ -56,7 +57,7 @@ pub fn accepting_shapes(ir: &Value) -> (BTreeSet<String>, usize) {
             accepting.insert(shape.normalised);
         }
     }
-    (accepting, swept)
+    Ok((accepting, swept))
 }
 
 /// Records one shape per distinct (normalised path, key set) pair.
