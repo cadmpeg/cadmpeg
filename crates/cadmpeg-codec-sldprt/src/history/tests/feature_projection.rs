@@ -1784,3 +1784,34 @@ fn exact_native_profile_source_projects_a_feature_dependency() {
     ));
     assert_eq!(projected[1].dependencies.as_slice(), [sketch_id]);
 }
+
+#[test]
+fn a_regeneration_edge_the_model_refuses_is_reported_as_one_loss() {
+    // The projection offers every edge the source states. A parent that does
+    // not precede its child is the model's condition, and the projection does
+    // not recompute it: the edge is offered, refused, and reported.
+    let mut child = feature("sldprt:history:feature#0:0", None, 0);
+    child.tree_parent = Some(crate::records::TreeParent::Record {
+        record_id: "sldprt:history:feature#0:1".into(),
+        source_id: None,
+    });
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![child, feature("sldprt:history:feature#0:1", None, 1)],
+    };
+    let projection = project_feature_model(&[history]).unwrap();
+    let (model, losses) = projection.into_model();
+    let child_id = model.features[0].id.clone();
+    assert!(model.feature_regeneration_parent(&child_id).is_none());
+    assert_eq!(losses.len(), 1);
+    assert!(
+        losses[0].message.contains("was not installed")
+            && losses[0].message.contains("does not precede"),
+        "{}",
+        losses[0].message
+    );
+}

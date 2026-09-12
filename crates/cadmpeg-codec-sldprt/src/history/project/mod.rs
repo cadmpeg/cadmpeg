@@ -59,25 +59,43 @@ pub(crate) struct FeatureProjection {
 }
 
 impl FeatureProjection {
+    /// Install every projected feature and every regeneration edge the source
+    /// states. An edge the model refuses is reported as a loss naming both
+    /// features, both ordinals and the model's refusal; nothing is dropped
+    /// silently, and the projection recomputes no condition the model owns.
     pub(crate) fn install(
         self,
         model: &mut cadmpeg_ir::document::Model,
-    ) -> Result<(), cadmpeg_core::CodecError> {
+        losses: &mut Vec<cadmpeg_ir::LossNote>,
+    ) {
         model.features = self.features;
         for (child, parent) in self.regeneration_parents {
-            model
-                .set_feature_regeneration_parent(child, parent)
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            let ordinal = |id: &FeatureId| {
+                model
+                    .features
+                    .iter()
+                    .find(|feature| feature.id == *id)
+                    .map_or_else(|| "missing".to_owned(), |feature| feature.ordinal.to_string())
+            };
+            let child_ordinal = ordinal(&child);
+            let parent_ordinal = ordinal(&parent);
+            if let Err(error) = model.set_feature_regeneration_parent(child.clone(), parent.clone())
+            {
+                losses.push(crate::loss::SldprtLossCode::FeatureIncoherentEdges.note(format!(
+                    "regeneration edge from child `{child}` (ordinal {child_ordinal}) to parent \
+                     `{parent}` (ordinal {parent_ordinal}) was not installed: {error}"
+                )));
+            }
         }
-        Ok(())
     }
 
     pub(crate) fn into_model(
         self,
-    ) -> Result<cadmpeg_ir::document::Model, cadmpeg_core::CodecError> {
+    ) -> (cadmpeg_ir::document::Model, Vec<cadmpeg_ir::LossNote>) {
         let mut model = cadmpeg_ir::document::Model::default();
-        self.install(&mut model)?;
-        Ok(model)
+        let mut losses = Vec::new();
+        self.install(&mut model, &mut losses);
+        (model, losses)
     }
 }
 
@@ -193,18 +211,10 @@ pub(crate) fn project_feature_model(
         };
         let child = features[child_index].id.clone();
         if !tree_nodes.contains(&parent) {
-            // A regeneration predecessor is by definition earlier. Two
-            // sub-features projected from one history record can share an
-            // ordinal, and neither precedes the other, so neither is the
-            // other's predecessor.
-            let child_ordinal = features[child_index].ordinal;
-            let precedes = features
-                .iter()
-                .find(|feature| feature.id == parent)
-                .is_some_and(|feature| feature.ordinal < child_ordinal);
-            if precedes {
-                regeneration_parents.push((child, parent));
-            }
+            // Offer every edge the source states. Whether the parent exists and
+            // precedes the child is the model's condition, and `install` reports
+            // the model's refusal rather than recomputing it here.
+            regeneration_parents.push((child, parent));
             continue;
         }
         let Some(parent) = features.iter_mut().find(|feature| feature.id == parent) else {
