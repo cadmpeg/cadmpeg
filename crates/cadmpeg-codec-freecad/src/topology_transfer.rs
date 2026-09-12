@@ -639,7 +639,7 @@ impl<'a> Builder<'a> {
                         Vec::new(),
                         Vec::new(),
                     )
-                    .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?,
+                    .map_err(|message| cadmpeg_core::CodecError::Malformed(message.to_string()))?,
                 );
                 self.bind_topology(
                     TextShapeKind::Shell,
@@ -700,7 +700,7 @@ impl<'a> Builder<'a> {
                         wire_edges,
                         vec![vertex],
                     )
-                    .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?,
+                    .map_err(|message| cadmpeg_core::CodecError::Malformed(message.to_string()))?,
                 );
                 return Ok(vec![shell_id]);
             }
@@ -714,7 +714,7 @@ impl<'a> Builder<'a> {
                 wire_edges,
                 Vec::new(),
             )
-            .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?,
+            .map_err(|message| cadmpeg_core::CodecError::Malformed(message.to_string()))?,
         );
         if shape.kind() == TextShapeKind::Wire {
             self.bind_topology(

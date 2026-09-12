@@ -10,6 +10,7 @@ use crate::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
     SurfaceId, VertexId,
 };
+use crate::features::{BodySelectionError, NonEmptyMembers};
 use crate::math::Point3;
 use crate::transform::Transform;
 #[cfg(feature = "schema")]
@@ -212,28 +213,20 @@ pub enum ShellMember {
     },
 }
 
-/// Refusal for a shell that owns nothing.
-const SHELL_WITHOUT_MEMBERS: &str = "a shell must own at least one face, wire edge, or free vertex";
-
-/// The members of a shell, at least one, sorted into the three kinds.
+/// The members of a shell, sorted into the three kinds.
 ///
-/// The wire carries one member list, so "all three lists are empty" has no
-/// spelling: the only admission is that the list is not empty.
+/// The wire carries one non-empty member list, so "all three lists are empty"
+/// has no spelling and no arm refuses it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "Vec<ShellMember>", into = "Vec<ShellMember>")]
+#[serde(from = "NonEmptyMembers<ShellMember>", into = "Vec<ShellMember>")]
 struct ShellMembers {
     faces: Vec<FaceId>,
     wire_edges: Vec<EdgeId>,
     free_vertices: Vec<VertexId>,
 }
 
-impl TryFrom<Vec<ShellMember>> for ShellMembers {
-    type Error = &'static str;
-
-    fn try_from(members: Vec<ShellMember>) -> Result<Self, Self::Error> {
-        if members.is_empty() {
-            return Err(SHELL_WITHOUT_MEMBERS);
-        }
+impl From<NonEmptyMembers<ShellMember>> for ShellMembers {
+    fn from(members: NonEmptyMembers<ShellMember>) -> Self {
         let mut sorted = Self {
             faces: Vec::new(),
             wire_edges: Vec::new(),
@@ -246,7 +239,7 @@ impl TryFrom<Vec<ShellMember>> for ShellMembers {
                 ShellMember::FreeVertex { id } => sorted.free_vertices.push(id),
             }
         }
-        Ok(sorted)
+        sorted
     }
 }
 
@@ -297,7 +290,7 @@ impl Shell {
         faces: Vec<FaceId>,
         wire_edges: Vec<EdgeId>,
         free_vertices: Vec<VertexId>,
-    ) -> Result<Self, &'static str> {
+    ) -> Result<Self, BodySelectionError> {
         let members = ShellMembers {
             faces,
             wire_edges,
@@ -306,7 +299,7 @@ impl Shell {
         Ok(Self {
             id,
             region,
-            members: ShellMembers::try_from(Vec::<ShellMember>::from(members))?,
+            members: NonEmptyMembers::try_from(Vec::<ShellMember>::from(members))?.into(),
         })
     }
 
@@ -368,7 +361,7 @@ impl Shell {
     pub fn edit_topology<R>(
         &mut self,
         edit: impl FnOnce(&mut Vec<FaceId>, &mut Vec<EdgeId>, &mut Vec<VertexId>) -> R,
-    ) -> Result<R, &'static str> {
+    ) -> Result<R, BodySelectionError> {
         let mut faces = self.members.faces.clone();
         let mut wire_edges = self.members.wire_edges.clone();
         let mut free_vertices = self.members.free_vertices.clone();

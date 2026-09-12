@@ -7454,8 +7454,12 @@ pub(crate) fn project_surface_patch(
         FeatureOperation::FilledSurface {
             boundary: SurfaceBoundary::Path(boundary),
             support_faces: FaceSelection::Faces(Vec::new()),
-            continuity: cadmpeg_ir::features::FilledSurfaceContinuityState::per_boundary(
+            continuity: cadmpeg_ir::features::NonEmptyMembers::try_from(
                 surface_patch_boundary_continuities(scope),
+            )
+            .map_or_else(
+                |_| cadmpeg_ir::features::FilledSurfaceContinuityState::unresolved(),
+                cadmpeg_ir::features::FilledSurfaceContinuityState::per_boundary,
             ),
             merge_result: Some(false),
         },

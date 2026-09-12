@@ -1540,7 +1540,9 @@ fn feature_result(
         .iter()
         .map(|reference| {
             let body = resolve_property(&source.identity.segment_token, reference.index, index)?;
-            matches!(body.kind, PmDcFeaturePropertyKind::SurfaceBody { .. }).then(|| body.id())
+            matches!(body.kind, PmDcFeaturePropertyKind::SurfaceBody { .. })
+                .then(|| cadmpeg_ir::products::NonEmptyString::new(body.id()))
+                .flatten()
         })
         .collect::<Option<Vec<_>>>()?;
     if bodies.is_empty() {
@@ -2258,7 +2260,14 @@ mod tests {
             FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
                 if matches!(groups[0].radius, RadiusSpec::Constant { radius: actual_radius } if actual_radius.get() == 2.5)
         ));
-        assert_eq!(result.bodies(), vec![fillet_properties[8].id()]);
+        assert_eq!(
+            result
+                .bodies()
+                .iter()
+                .map(|id| id.as_str().to_owned())
+                .collect::<Vec<_>>(),
+            vec![fillet_properties[8].id()]
+        );
 
         let raw_distance = raw_parameter(40);
         let neutral_distance = neutral_parameter(

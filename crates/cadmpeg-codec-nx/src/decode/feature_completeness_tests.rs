@@ -810,7 +810,7 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
             FeatureResultTopologyId::mint("test:model:feature-result#extrude")
                 .expect("identity grammar"),
             ir.model.features[0].id.clone(),
-            vec!["test:feature-local-body#0".into()],
+            vec![cadmpeg_ir::nonempty_literal!("test:feature-local-body#0")],
             Vec::new(),
             Vec::new(),
             Vec::new(),

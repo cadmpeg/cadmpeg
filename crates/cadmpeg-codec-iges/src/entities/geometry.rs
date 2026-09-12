@@ -2286,7 +2286,7 @@ pub(crate) fn project_geometry(
         });
         ir.model.shells.push(
             Shell::new(shell, region, Vec::new(), wire_edges, free_vertices)
-                .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?,
+                .map_err(|message| cadmpeg_core::CodecError::Malformed(message.to_string()))?,
         );
     }
     admit_projected_entities(

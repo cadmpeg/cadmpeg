@@ -653,10 +653,13 @@ fn filled_surface_continuity_preserves_aggregate_and_component_wire_fields() {
     let definition = FeatureDefinition::Operation(FeatureOperation::FilledSurface {
         boundary: SurfaceBoundary::Edges(EdgeSelection::Unresolved),
         support_faces: FaceSelection::Faces(Vec::new()),
-        continuity: crate::features::FilledSurfaceContinuityState::per_boundary(vec![
-            SurfaceContinuity::Contact,
-            SurfaceContinuity::Contact,
-        ]),
+        continuity: crate::features::FilledSurfaceContinuityState::per_boundary(
+            crate::features::NonEmptyMembers::try_from(vec![
+                SurfaceContinuity::Contact,
+                SurfaceContinuity::Contact,
+            ])
+            .unwrap(),
+        ),
         merge_result: Some(false),
     });
     let wire = serde_json::to_value(&definition).unwrap();
@@ -703,6 +706,28 @@ fn unresolved_filled_surface_continuity_omits_both_wire_fields() {
     assert_eq!(
         serde_json::from_value::<FeatureDefinition>(wire).unwrap(),
         definition
+    );
+}
+
+#[test]
+fn empty_filled_surface_continuity_list_is_refused() {
+    use crate::features::{FilledSurfaceContinuityState, SurfaceContinuity};
+
+    // Absence is the only spelling of unresolved: an empty list is refused by
+    // the non-empty member mint, not read as a second spelling of it.
+    let error = serde_json::from_value::<FilledSurfaceContinuityState>(serde_json::json!([]))
+        .expect_err("an empty continuity list is refused");
+    assert!(error.to_string().contains("empty"), "{error}");
+
+    let unresolved: FilledSurfaceContinuityState =
+        serde_json::from_value(serde_json::Value::Null).unwrap();
+    assert!(unresolved.is_unresolved());
+
+    let resolved: FilledSurfaceContinuityState =
+        serde_json::from_value(serde_json::json!(["tangent"])).unwrap();
+    assert_eq!(
+        resolved.resolved().map(|value| value.conditions.as_slice()),
+        Some(&[SurfaceContinuity::Tangent][..])
     );
 }
 
@@ -946,10 +971,10 @@ fn feature_result_topology_round_trips_without_current_model_bodies() {
     let state = FeatureResultTopology::new(
         FeatureResultTopologyId::mint("synthetic:history-result:state#0").expect("valid identity"),
         FeatureId::mint("synthetic:model:feature#0").expect("identity grammar"),
-        vec!["body:17".into()],
-        vec!["face:3".into()],
-        vec!["edge:5".into()],
-        vec!["vertex:8".into()],
+        vec![crate::nonempty_literal!("body:17")],
+        vec![crate::nonempty_literal!("face:3")],
+        vec![crate::nonempty_literal!("edge:5")],
+        vec![crate::nonempty_literal!("vertex:8")],
         Some("native:result#0".into()),
     )
     .unwrap();

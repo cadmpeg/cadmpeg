@@ -159,7 +159,7 @@ impl Brep {
                         *id = qualify(id.as_str()).try_into().expect("qualified identity");
                     }
                 })
-                .map_err(cadmpeg_ir::geometry::ProceduralGeometryError::Payload)?;
+                .map_err(cadmpeg_ir::geometry::ProceduralGeometryError::Members)?;
         }
         for face in &mut self.faces {
             face.id = qualify(face.id.as_str())

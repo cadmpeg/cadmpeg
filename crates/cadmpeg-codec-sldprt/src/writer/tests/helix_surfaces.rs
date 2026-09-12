@@ -1069,7 +1069,9 @@ fn semantic_writer_accepts_all_equal_per_boundary_continuity() {
         vec![cadmpeg_ir::features::SurfaceContinuity::Curvature; 2],
     ] {
         filled_surface_round_trip(
-            cadmpeg_ir::features::FilledSurfaceContinuityState::per_boundary(conditions),
+            cadmpeg_ir::features::FilledSurfaceContinuityState::per_boundary(
+                cadmpeg_ir::features::NonEmptyMembers::try_from(conditions).unwrap(),
+            ),
         );
     }
 }

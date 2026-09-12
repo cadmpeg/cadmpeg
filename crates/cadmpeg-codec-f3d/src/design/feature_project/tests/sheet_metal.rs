@@ -907,9 +907,11 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
         scope
     };
     let uniform_continuity = |scope: &DesignParameterScope| {
-        cadmpeg_ir::features::FilledSurfaceContinuity::per_boundary(
+        cadmpeg_ir::features::NonEmptyMembers::try_from(
             crate::design::feature_project::surface_patch_boundary_continuities(scope),
         )
+        .ok()
+        .map(cadmpeg_ir::features::FilledSurfaceContinuity::per_boundary)
         .and_then(|continuity| continuity.uniform())
     };
 
@@ -1063,12 +1065,14 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
         Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             ref continuity,
             ..
-        })) if matches!(continuity.resolved(), Some(
-            cadmpeg_ir::features::FilledSurfaceContinuity {
-                first: SurfaceContinuity::Contact,
-                rest,
-            }
-        ) if rest == &[SurfaceContinuity::Contact, SurfaceContinuity::Contact])
+        })) if continuity.resolved().map(|resolved| resolved.conditions.as_slice())
+            == Some(
+                &[
+                    SurfaceContinuity::Contact,
+                    SurfaceContinuity::Contact,
+                    SurfaceContinuity::Contact,
+                ][..],
+            )
     ));
 
     scope
@@ -1101,12 +1105,14 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
         Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             ref continuity,
             ..
-        })) if matches!(continuity.resolved(), Some(
-            cadmpeg_ir::features::FilledSurfaceContinuity {
-                first: SurfaceContinuity::Contact,
-                rest,
-            }
-        ) if rest == &[SurfaceContinuity::Contact, SurfaceContinuity::Contact])
+        })) if continuity.resolved().map(|resolved| resolved.conditions.as_slice())
+            == Some(
+                &[
+                    SurfaceContinuity::Contact,
+                    SurfaceContinuity::Contact,
+                    SurfaceContinuity::Contact,
+                ][..],
+            )
     ));
 }
 

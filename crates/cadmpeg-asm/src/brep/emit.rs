@@ -2489,6 +2489,9 @@ fn emit_carrier_curve(
         cadmpeg_ir::geometry::ProceduralGeometryError::Cache(_) => {
             "invalid procedural curve cache tolerance"
         }
+        cadmpeg_ir::geometry::ProceduralGeometryError::Members(_) => {
+            "invalid procedural curve member list"
+        }
     };
     let procedural = match procedural_curve_defs.remove(&i) {
         Some(super::ProceduralCurveSource::Cached {
@@ -4021,7 +4024,7 @@ pub(crate) fn emit_containers(
                             })
                             .collect(),
                     )
-                    .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?,
+                    .map_err(|message| cadmpeg_core::CodecError::Malformed(message.to_string()))?,
                 );
             }
             // Save-format 231 names this record `region`; format-227 streams

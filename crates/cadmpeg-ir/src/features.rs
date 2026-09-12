@@ -1509,45 +1509,65 @@ pub enum SelectionMember {
     /// A feature-local body identity.
     Body {
         /// Feature-local identity.
-        id: String,
+        id: NonEmptyString,
     },
     /// A feature-local face identity.
     Face {
         /// Feature-local identity.
-        id: String,
+        id: NonEmptyString,
     },
     /// A feature-local edge identity.
     Edge {
         /// Feature-local identity.
-        id: String,
+        id: NonEmptyString,
     },
     /// A feature-local vertex identity.
     Vertex {
         /// Feature-local identity.
-        id: String,
+        id: NonEmptyString,
     },
 }
 
-/// The members of a feature result state, at least one, sorted into kinds.
+/// The members of a feature result state, sorted into kinds.
 ///
-/// The wire carries one member list, so "all four lists are empty" has no
-/// spelling: the only emptiness admission is over that one list.
+/// The wire carries one non-empty member list, so "all four lists are empty"
+/// has no spelling and no arm refuses it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "Vec<SelectionMember>", into = "Vec<SelectionMember>")]
+#[serde(
+    try_from = "NonEmptyMembers<SelectionMember>",
+    into = "Vec<SelectionMember>"
+)]
 struct FeatureResultMembers {
-    bodies: Vec<String>,
-    faces: Vec<String>,
-    edges: Vec<String>,
-    vertices: Vec<String>,
+    bodies: Vec<NonEmptyString>,
+    faces: Vec<NonEmptyString>,
+    edges: Vec<NonEmptyString>,
+    vertices: Vec<NonEmptyString>,
 }
 
-impl TryFrom<Vec<SelectionMember>> for FeatureResultMembers {
-    type Error = &'static str;
+/// Refusal for a feature result member list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum FeatureResultMemberError {
+    /// The member list carries no member.
+    #[error(transparent)]
+    Members(#[from] BodySelectionError),
+    /// A feature-local body identity occurs more than once.
+    #[error("feature result bodies must be distinct")]
+    RepeatedBody,
+    /// A feature-local face identity occurs more than once.
+    #[error("feature result faces must be distinct")]
+    RepeatedFace,
+    /// A feature-local edge identity occurs more than once.
+    #[error("feature result edges must be distinct")]
+    RepeatedEdge,
+    /// A feature-local vertex identity occurs more than once.
+    #[error("feature result vertices must be distinct")]
+    RepeatedVertex,
+}
 
-    fn try_from(members: Vec<SelectionMember>) -> Result<Self, Self::Error> {
-        if members.is_empty() {
-            return Err("feature result topology members must not be empty");
-        }
+impl TryFrom<NonEmptyMembers<SelectionMember>> for FeatureResultMembers {
+    type Error = FeatureResultMemberError;
+
+    fn try_from(members: NonEmptyMembers<SelectionMember>) -> Result<Self, Self::Error> {
         let mut sorted = Self {
             bodies: Vec::new(),
             faces: Vec::new(),
@@ -1563,14 +1583,12 @@ impl TryFrom<Vec<SelectionMember>> for FeatureResultMembers {
             }
         }
         for (error, members) in [
-            ("bodies must be nonblank and distinct", &sorted.bodies),
-            ("faces must be nonblank and distinct", &sorted.faces),
-            ("edges must be nonblank and distinct", &sorted.edges),
-            ("vertices must be nonblank and distinct", &sorted.vertices),
+            (FeatureResultMemberError::RepeatedBody, &sorted.bodies),
+            (FeatureResultMemberError::RepeatedFace, &sorted.faces),
+            (FeatureResultMemberError::RepeatedEdge, &sorted.edges),
+            (FeatureResultMemberError::RepeatedVertex, &sorted.vertices),
         ] {
-            if members.iter().any(|name| name.trim().is_empty())
-                || members.iter().collect::<HashSet<_>>().len() != members.len()
-            {
+            if members.iter().collect::<HashSet<_>>().len() != members.len() {
                 return Err(error);
             }
         }
@@ -1629,44 +1647,45 @@ pub struct FeatureResultTopology {
 }
 
 impl FeatureResultTopology {
-    /// A nonempty result with distinct nonblank local identities in each arena.
+    /// A nonempty result with distinct local identities in each arena.
     pub fn new(
         id: FeatureResultTopologyId,
         output_of: FeatureId,
-        bodies: Vec<String>,
-        faces: Vec<String>,
-        edges: Vec<String>,
-        vertices: Vec<String>,
+        bodies: Vec<NonEmptyString>,
+        faces: Vec<NonEmptyString>,
+        edges: Vec<NonEmptyString>,
+        vertices: Vec<NonEmptyString>,
         native_ref: Option<String>,
-    ) -> Result<Self, &'static str> {
+    ) -> Result<Self, FeatureResultMemberError> {
         let members = FeatureResultMembers {
             bodies,
             faces,
             edges,
             vertices,
         };
+        let members = NonEmptyMembers::try_from(Vec::<SelectionMember>::from(members))?;
         Ok(Self {
             id,
             output_of,
-            members: FeatureResultMembers::try_from(Vec::<SelectionMember>::from(members))?,
+            members: FeatureResultMembers::try_from(members)?,
             native_ref,
         })
     }
 
     /// Feature-local body identities.
-    pub fn bodies(&self) -> &[String] {
+    pub fn bodies(&self) -> &[NonEmptyString] {
         &self.members.bodies
     }
     /// Feature-local face identities.
-    pub fn faces(&self) -> &[String] {
+    pub fn faces(&self) -> &[NonEmptyString] {
         &self.members.faces
     }
     /// Feature-local edge identities.
-    pub fn edges(&self) -> &[String] {
+    pub fn edges(&self) -> &[NonEmptyString] {
         &self.members.edges
     }
     /// Feature-local vertex identities.
-    pub fn vertices(&self) -> &[String] {
+    pub fn vertices(&self) -> &[NonEmptyString] {
         &self.members.vertices
     }
 }
@@ -4641,33 +4660,29 @@ pub enum SurfaceContinuity {
 /// One condition per boundary component, in source order. A boundary whose
 /// components all impose the same condition is uniform, which [`Self::uniform`]
 /// reports; a uniform boundary has no second spelling to disagree with.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
 pub struct FilledSurfaceContinuity {
-    /// Condition of the first component; its presence makes the sequence non-empty.
-    pub first: SurfaceContinuity,
-    /// Conditions of the remaining components.
-    pub rest: Vec<SurfaceContinuity>,
+    /// Conditions of the boundary components, in source order.
+    pub conditions: NonEmptyMembers<SurfaceContinuity>,
 }
 
 impl FilledSurfaceContinuity {
-    /// Creates a non-empty component-specific condition sequence.
+    /// Creates a component-specific condition sequence.
     #[must_use]
-    pub fn per_boundary(conditions: Vec<SurfaceContinuity>) -> Option<Self> {
-        let mut conditions = conditions.into_iter();
-        Some(Self {
-            first: conditions.next()?,
-            rest: conditions.collect(),
-        })
+    pub const fn per_boundary(conditions: NonEmptyMembers<SurfaceContinuity>) -> Self {
+        Self { conditions }
     }
 
     /// Returns the aggregate condition when every component uses one value.
     #[must_use]
     pub fn uniform(&self) -> Option<SurfaceContinuity> {
-        self.rest
-            .iter()
-            .all(|continuity| continuity == &self.first)
-            .then_some(self.first)
+        let mut components = self.conditions.iter();
+        let first = *components.next()?;
+        components
+            .all(|continuity| continuity == &first)
+            .then_some(first)
     }
 }
 
@@ -4677,8 +4692,7 @@ impl FilledSurfaceContinuity {
 /// condition that disagrees with them is unrepresentable.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "Vec<SurfaceContinuity>"))]
-#[serde(from = "Vec<SurfaceContinuity>", into = "Vec<SurfaceContinuity>")]
+#[serde(transparent)]
 pub struct FilledSurfaceContinuityState(Option<FilledSurfaceContinuity>);
 
 impl FilledSurfaceContinuityState {
@@ -4690,17 +4704,16 @@ impl FilledSurfaceContinuityState {
 
     /// Creates one condition for the complete boundary.
     #[must_use]
-    pub const fn uniform(continuity: SurfaceContinuity) -> Self {
+    pub fn uniform(continuity: SurfaceContinuity) -> Self {
         Self(Some(FilledSurfaceContinuity {
-            first: continuity,
-            rest: Vec::new(),
+            conditions: NonEmptyMembers::one(continuity),
         }))
     }
 
-    /// Creates component-specific conditions, or unresolved state for no conditions.
+    /// Creates component-specific conditions.
     #[must_use]
-    pub fn per_boundary(conditions: Vec<SurfaceContinuity>) -> Self {
-        Self(FilledSurfaceContinuity::per_boundary(conditions))
+    pub const fn per_boundary(conditions: NonEmptyMembers<SurfaceContinuity>) -> Self {
+        Self(Some(FilledSurfaceContinuity { conditions }))
     }
 
     /// Returns the resolved continuity form.
@@ -4719,26 +4732,6 @@ impl FilledSurfaceContinuityState {
     #[must_use]
     pub const fn is_unresolved(&self) -> bool {
         self.0.is_none()
-    }
-}
-
-impl From<FilledSurfaceContinuityState> for Vec<SurfaceContinuity> {
-    fn from(value: FilledSurfaceContinuityState) -> Self {
-        match value.0 {
-            None => Self::new(),
-            Some(FilledSurfaceContinuity { first, rest }) => {
-                let mut conditions = Self::with_capacity(rest.len() + 1);
-                conditions.push(first);
-                conditions.extend(rest);
-                conditions
-            }
-        }
-    }
-}
-
-impl From<Vec<SurfaceContinuity>> for FilledSurfaceContinuityState {
-    fn from(conditions: Vec<SurfaceContinuity>) -> Self {
-        Self(FilledSurfaceContinuity::per_boundary(conditions))
     }
 }
 
@@ -5420,6 +5413,14 @@ impl<T> std::ops::Deref for NonEmptyMembers<T> {
     type Target = [T];
     fn deref(&self) -> &[T] {
         &self.0
+    }
+}
+
+impl<T> IntoIterator for NonEmptyMembers<T> {
+    type Item = T;
+    type IntoIter = std::vec::IntoIter<T>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
     }
 }
 

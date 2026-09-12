@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::collections::{HashMap, HashSet};
 
+use crate::features::NonEmptyMembers;
 use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
 use crate::scalar::FiniteReal;
 use crate::transform::Transform;
@@ -328,7 +329,7 @@ pub enum LinkMember {
 /// spelling: the only emptiness admission is over that one list, and the three
 /// members a link states at most once are refused only when repeated.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "Vec<LinkMember>", into = "Vec<LinkMember>")]
+#[serde(try_from = "NonEmptyMembers<LinkMember>", into = "Vec<LinkMember>")]
 struct LinkMembers {
     linked_subelements: Vec<String>,
     element_component: Option<ProductDefinitionId>,
@@ -336,13 +337,10 @@ struct LinkMembers {
     copy_on_change: Option<CopyOnChange>,
 }
 
-impl TryFrom<Vec<LinkMember>> for LinkMembers {
+impl TryFrom<NonEmptyMembers<LinkMember>> for LinkMembers {
     type Error = &'static str;
 
-    fn try_from(members: Vec<LinkMember>) -> Result<Self, Self::Error> {
-        if members.is_empty() {
-            return Err("link state must carry at least one member");
-        }
+    fn try_from(members: NonEmptyMembers<LinkMember>) -> Result<Self, Self::Error> {
         let mut sorted = Self {
             linked_subelements: Vec::new(),
             element_component: None,
@@ -424,8 +422,9 @@ impl LinkState {
             claim_child,
             copy_on_change,
         };
-        LinkMembers::try_from(Vec::<LinkMember>::from(members))
+        NonEmptyMembers::try_from(Vec::<LinkMember>::from(members))
             .ok()
+            .and_then(|members| LinkMembers::try_from(members).ok())
             .map(|members| Self { members })
     }
 

@@ -3740,7 +3740,7 @@ fn attach_feature_operations(
                             format_args!("{key}-{:010}", write.ordinal),
                         ),
                         id.clone(),
-                        vec![format!(
+                        vec![cadmpeg_ir::nonempty_literal!(
                             "nx:feature-history:body-identity#{:010}",
                             write.frame.body_identity()
                         )],
@@ -3749,7 +3749,7 @@ fn attach_feature_operations(
                         result_members.vertices,
                         Some(write.id.clone()),
                     )
-                    .map_err(|error| CodecError::Malformed(error.to_owned()))?,
+                    .map_err(|error| CodecError::Malformed(error.to_string()))?,
                 );
             }
         } else if !deletes_body {
@@ -3775,7 +3775,7 @@ fn attach_feature_operations(
                         Vec::new(),
                         Some(native_ref),
                     )
-                    .map_err(|error| CodecError::Malformed(error.to_owned()))?,
+                    .map_err(|error| CodecError::Malformed(error.to_string()))?,
                 );
             }
         }
@@ -3819,9 +3819,9 @@ fn attach_feature_operations(
 
 #[derive(Clone, Default, PartialEq, Eq)]
 struct FeatureResultGroupMembers {
-    faces: Vec<String>,
-    edges: Vec<String>,
-    vertices: Vec<String>,
+    faces: Vec<cadmpeg_ir::products::NonEmptyString>,
+    edges: Vec<cadmpeg_ir::products::NonEmptyString>,
+    vertices: Vec<cadmpeg_ir::products::NonEmptyString>,
 }
 
 fn operation_body_write_result_group_members(
@@ -3894,15 +3894,15 @@ fn feature_result_group_members(
             continue;
         };
         match family {
-            GroupNodeFamily::Face => result
-                .faces
-                .push(format!("nx:s{partition_stream_ordinal}:face#{xmt}")),
-            GroupNodeFamily::Edge => result
-                .edges
-                .push(format!("nx:s{partition_stream_ordinal}:edge#{xmt}")),
-            GroupNodeFamily::Vertex => result
-                .vertices
-                .push(format!("nx:s{partition_stream_ordinal}:vertex#{xmt}")),
+            GroupNodeFamily::Face => result.faces.push(cadmpeg_ir::nonempty_literal!(
+                "nx:s{partition_stream_ordinal}:face#{xmt}"
+            )),
+            GroupNodeFamily::Edge => result.edges.push(cadmpeg_ir::nonempty_literal!(
+                "nx:s{partition_stream_ordinal}:edge#{xmt}"
+            )),
+            GroupNodeFamily::Vertex => result.vertices.push(cadmpeg_ir::nonempty_literal!(
+                "nx:s{partition_stream_ordinal}:vertex#{xmt}"
+            )),
             _ => {}
         }
     }
@@ -3915,11 +3915,14 @@ fn feature_result_group_members(
 fn native_result_body_identity(
     primary: Option<&crate::native::features::FeatureBodyReference>,
     boolean: Option<&crate::native::features::FeatureBooleanOperation>,
-) -> Option<(String, String)> {
+) -> Option<(cadmpeg_ir::products::NonEmptyString, String)> {
     primary
         .map(|writer| (writer.id.clone(), writer.id.clone()))
         .or_else(|| {
             boolean.map(|operation| (format!("{}:target", operation.id), operation.id.clone()))
+        })
+        .and_then(|(local, native)| {
+            Some((cadmpeg_ir::products::NonEmptyString::new(local)?, native))
         })
 }
 

@@ -212,7 +212,7 @@ pub(super) fn emit_topology(
                 Vec::new(),
                 Vec::new(),
             )
-            .map_err(|message| cadmpeg_core::CodecError::Malformed(message.into()))?,
+            .map_err(|message| cadmpeg_core::CodecError::Malformed(message.to_string()))?,
         );
         if let Some(parent) = ir
             .model
