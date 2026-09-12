@@ -247,9 +247,11 @@ fn inspect_report_writes_summary_to_file() {
     assert_eq!(value["command"], "inspect");
     assert_eq!(value["selection"]["kind"], "detected");
     assert_eq!(value["selection"]["confidence"], "high");
-    assert_eq!(
-        value["summary"]["identity"]["dialects"]["primary"]["format"],
-        "rhino"
+    assert!(
+        value["summary"]["identity"]["dialects"]["primary"]["dialect"]
+            .as_str()
+            .is_some_and(|dialect| dialect.starts_with("rhino:")),
+        "{value}"
     );
 }
 
