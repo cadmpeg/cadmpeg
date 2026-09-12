@@ -832,10 +832,10 @@ pub(crate) fn try_decode_geometry(
             let mut definition = definition;
             if let Some(charted) = charted {
                 definition
-                    .set_legacy_cache(Some(
+                    .set_legacy_cache(
                         cadmpeg_ir::geometry::LegacyCache::try_new(charted.fit_tolerance)
                             .map_err(cadmpeg_core::CodecError::malformed)?,
-                    ))
+                    )
                     .map_err(cadmpeg_core::CodecError::malformed)?;
             }
             let procedural = ProceduralCurve::new(procedural_id, definition)

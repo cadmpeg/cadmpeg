@@ -1059,11 +1059,14 @@ const NO_LEGACY_SLOT: &str = "this construction states no solved-cache fit toler
 /// A construction whose layout always states one.
 const REQUIRED_LEGACY_SLOT: &str = "this construction states a solved-cache fit tolerance";
 
-/// The legacy solved-cache slot of one construction, borrowed for writing.
+/// The legacy solved-cache slot of one surface construction, borrowed for
+/// writing.
 ///
 /// A layout that may omit the cache lends `Optional`; a layout that always
 /// states one lends `Required`, which is why losing the cache is the one
-/// refusal a slot makes.
+/// refusal a slot makes. Surface-only: `ProceduralCurveDefinition` has no
+/// `Required` slot, so a curve lends its slot as a plain
+/// `&mut Option<LegacyCache>`.
 pub(crate) enum LegacyCacheSlot<'a> {
     /// Slot of a layout whose record may state no cache.
     Optional(&'a mut Option<LegacyCache>),
@@ -1072,14 +1075,6 @@ pub(crate) enum LegacyCacheSlot<'a> {
 }
 
 impl LegacyCacheSlot<'_> {
-    /// The cache the slot holds.
-    pub(crate) const fn get(&self) -> Option<LegacyCache> {
-        match self {
-            Self::Optional(slot) => **slot,
-            Self::Required(cache) => Some(**cache),
-        }
-    }
-
     /// Replace the cache the slot holds.
     pub(crate) const fn set(
         &mut self,
@@ -1095,19 +1090,6 @@ impl LegacyCacheSlot<'_> {
                 Ok(())
             }
             (Self::Required(_), None) => Err(CacheContractError::Layout(REQUIRED_LEGACY_SLOT)),
-        }
-    }
-
-    /// Raise the slot's fit tolerance, keeping a tolerance already at least
-    /// `value`.
-    pub(crate) fn raise(&mut self, value: FitTolerance) {
-        let raised = match self.get() {
-            Some(cache) if cache.fit_tolerance.get() >= value.get() => cache.fit_tolerance,
-            _ => value,
-        };
-        match self {
-            Self::Optional(slot) => **slot = Some(LegacyCache::new(raised)),
-            Self::Required(slot) => **slot = LegacyCache::new(raised),
         }
     }
 }
@@ -1199,8 +1181,12 @@ impl ProceduralSurfaceDefinition {
         }
     }
 
-    /// State the legacy solved-cache fit contract. A construction whose
-    /// layout states none refuses a contract.
+    /// State or clear the legacy solved-cache fit contract.
+    ///
+    /// Fallible in both directions, because a surface construction can hold a
+    /// cache it cannot lose. A layout that states none refuses `Some`, and a
+    /// `LawSurfaceTail::Full` tail, whose `Required` slot always states a
+    /// tolerance, refuses `None`.
     pub fn set_legacy_cache(
         &mut self,
         cache: Option<LegacyCache>,
@@ -1278,9 +1264,11 @@ impl ProceduralCurveDefinition {
     /// Mutable legacy solved-cache slot of this construction, absent when the
     /// layout states none.
     ///
-    /// The one write route to the legacy cache: both the setter and the raise
-    /// go through it, so a construction cannot answer them differently.
-    fn legacy_cache_slot_mut(&mut self) -> Option<LegacyCacheSlot<'_>> {
+    /// The one write route to the legacy cache: the setter, the clear and the
+    /// raise go through it, so a construction cannot answer them differently.
+    /// No curve construction holds a cache it cannot lose, so the slot is a
+    /// plain `&mut Option<LegacyCache>` and `LegacyCacheSlot` is surface-only.
+    fn legacy_cache_slot_mut(&mut self) -> Option<&mut Option<LegacyCache>> {
         match self {
             Self::Compound(construction) => Some(construction.legacy_cache_slot_mut()),
             Self::Helix(construction) => Some(construction.legacy_cache_slot_mut()),
@@ -1293,7 +1281,7 @@ impl ProceduralCurveDefinition {
             | Self::Law { cache, .. }
             | Self::Intersection { cache, .. }
             | Self::TolerantIntersection { cache, .. }
-            | Self::Unknown { cache, .. } => Some(LegacyCacheSlot::Optional(cache)),
+            | Self::Unknown { cache, .. } => Some(cache),
             Self::ThreeSurfaceIntersection(_)
             | Self::SurfaceCurve { .. }
             | Self::Silhouette(_)
@@ -1308,13 +1296,24 @@ impl ProceduralCurveDefinition {
 
     /// State the legacy solved-cache fit contract. A construction whose
     /// layout states none refuses a contract.
-    pub fn set_legacy_cache(
-        &mut self,
-        cache: Option<LegacyCache>,
-    ) -> Result<(), CacheContractError> {
+    pub fn set_legacy_cache(&mut self, cache: LegacyCache) -> Result<(), CacheContractError> {
         match self.legacy_cache_slot_mut() {
-            Some(mut slot) => slot.set(cache),
-            None => cache.map_or(Ok(()), |_| Err(CacheContractError::Layout(NO_LEGACY_SLOT))),
+            Some(slot) => {
+                *slot = Some(cache);
+                Ok(())
+            }
+            None => Err(CacheContractError::Layout(NO_LEGACY_SLOT)),
+        }
+    }
+
+    /// Clear the legacy solved-cache fit contract.
+    ///
+    /// Total: a construction with a slot loses the contract it states, and a
+    /// construction with no slot has none to lose. No curve construction holds
+    /// a cache it cannot lose, so this refuses nothing.
+    pub fn clear_legacy_cache(&mut self) {
+        if let Some(slot) = self.legacy_cache_slot_mut() {
+            *slot = None;
         }
     }
 
@@ -1337,7 +1336,13 @@ impl ProceduralCurveDefinition {
         if self.owns_revision_cache() {
             return set_revision_cache(self.revision_cache_mut(), value);
         }
-        self.set_legacy_cache(value.map(LegacyCache::new))
+        match value {
+            Some(value) => self.set_legacy_cache(LegacyCache::new(value)),
+            None => {
+                self.clear_legacy_cache();
+                Ok(())
+            }
+        }
     }
 
     /// Raise the fit tolerance of an existing solved cache.
@@ -1353,8 +1358,14 @@ impl ProceduralCurveDefinition {
             }
             Some(RevisionCacheForm::Parameterization(_)) => {}
             None => {
-                if let Some(mut slot) = self.legacy_cache_slot_mut() {
-                    slot.raise(value);
+                if let Some(slot) = self.legacy_cache_slot_mut() {
+                    let raised = match *slot {
+                        Some(cache) if cache.fit_tolerance.get() >= value.get() => {
+                            cache.fit_tolerance
+                        }
+                        _ => value,
+                    };
+                    *slot = Some(LegacyCache::new(raised));
                 }
             }
         }
@@ -6990,8 +7001,8 @@ impl CompoundCurveConstruction {
     }
 
     /// Mutable legacy solved-cache slot this construction states.
-    pub(crate) const fn legacy_cache_slot_mut(&mut self) -> LegacyCacheSlot<'_> {
-        LegacyCacheSlot::Optional(&mut self.cache)
+    pub(crate) const fn legacy_cache_slot_mut(&mut self) -> &mut Option<LegacyCache> {
+        &mut self.cache
     }
 }
 
@@ -7003,8 +7014,8 @@ impl HelixCurveConstruction {
     }
 
     /// Mutable legacy solved-cache slot this construction states.
-    pub(crate) const fn legacy_cache_slot_mut(&mut self) -> LegacyCacheSlot<'_> {
-        LegacyCacheSlot::Optional(&mut self.cache)
+    pub(crate) const fn legacy_cache_slot_mut(&mut self) -> &mut Option<LegacyCache> {
+        &mut self.cache
     }
 }
 

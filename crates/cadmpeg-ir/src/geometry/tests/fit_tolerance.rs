@@ -111,9 +111,7 @@ fn a_construction_with_no_cache_slot_refuses_a_fit_tolerance() {
     let mut definition = ProceduralCurveDefinition::Exact { cache: None };
     assert_eq!(definition.cache_fit_tolerance(), None);
     definition
-        .set_legacy_cache(Some(
-            LegacyCache::try_new(0.5).expect("admissible fit tolerance"),
-        ))
+        .set_legacy_cache(LegacyCache::try_new(0.5).expect("admissible fit tolerance"))
         .expect("an exact curve states its own cache tolerance");
     let mut curve = ProceduralCurve::new(curve_id(), definition).expect("procedural");
     assert_eq!(curve.cache_fit_tolerance(), Some(0.5));
@@ -122,9 +120,7 @@ fn a_construction_with_no_cache_slot_refuses_a_fit_tolerance() {
 
     let mut replica = replica_definition();
     assert!(replica
-        .set_legacy_cache(Some(
-            LegacyCache::try_new(0.5).expect("admissible fit tolerance")
-        ))
+        .set_legacy_cache(LegacyCache::try_new(0.5).expect("admissible fit tolerance"))
         .is_err());
     assert_eq!(replica.cache_fit_tolerance(), None);
 }
@@ -214,4 +210,20 @@ fn a_revision_exact_spline_refuses_a_legacy_cache_on_its_only_write_route() {
         definition.cache_fit_tolerance(),
         Some(FitTolerance::try_new(0.25).expect("admissible fit tolerance"))
     );
+}
+
+#[test]
+fn clearing_a_curve_legacy_cache_is_total() {
+    let mut stated = ProceduralCurveDefinition::Exact {
+        cache: Some(LegacyCache::try_new(0.5).expect("admissible fit tolerance")),
+    };
+    stated.clear_legacy_cache();
+    assert_eq!(stated, ProceduralCurveDefinition::Exact { cache: None });
+    assert_eq!(stated.cache_fit_tolerance(), None);
+
+    let mut slotless = replica_definition();
+    let before = slotless.clone();
+    slotless.clear_legacy_cache();
+    assert_eq!(slotless, before);
+    assert_eq!(slotless.cache_fit_tolerance(), None);
 }

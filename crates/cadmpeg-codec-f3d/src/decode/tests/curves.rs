@@ -417,9 +417,12 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
                 *definition_payload.roles(),
             )
             .unwrap();
-        definition
-            .set_legacy_cache(restored_cache)
-            .expect("the rebuilt construction states the same legacy cache slot");
+        match restored_cache {
+            Some(cache) => definition
+                .set_legacy_cache(cache)
+                .expect("the rebuilt construction states the same legacy cache slot"),
+            None => definition.clear_legacy_cache(),
+        }
     });
     edited.model.procedural_curves[0]
         .set_cache_fit_tolerance(Some(0.015))
@@ -569,9 +572,12 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
                 *definition_payload.sense(),
             )
             .unwrap();
-        definition
-            .set_legacy_cache(restored_cache)
-            .expect("the rebuilt construction states the same legacy cache slot");
+        match restored_cache {
+            Some(cache) => definition
+                .set_legacy_cache(cache)
+                .expect("the rebuilt construction states the same legacy cache slot"),
+            None => definition.clear_legacy_cache(),
+        }
     });
     let expected_edit = edited.model.procedural_curves[0].definition().clone();
     let mut regenerated = Vec::new();
@@ -989,9 +995,12 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
             components,
         )
         .unwrap();
-        definition
-            .set_legacy_cache(restored_cache)
-            .expect("the rebuilt construction states the same legacy cache slot");
+        match restored_cache {
+            Some(cache) => definition
+                .set_legacy_cache(cache)
+                .expect("the rebuilt construction states the same legacy cache slot"),
+            None => definition.clear_legacy_cache(),
+        }
     });
     let expected_edit = edited.model.procedural_curves[0].definition().clone();
     let mut regenerated = Vec::new();
@@ -1126,9 +1135,12 @@ fn generated_two_sided_offset_decodes_and_writes_source_less() {
                 offsets_value,
             )
             .unwrap();
-        definition
-            .set_legacy_cache(restored_cache)
-            .expect("the rebuilt construction states the same legacy cache slot");
+        match restored_cache {
+            Some(cache) => definition
+                .set_legacy_cache(cache)
+                .expect("the rebuilt construction states the same legacy cache slot"),
+            None => definition.clear_legacy_cache(),
+        }
     });
     let expected_edit = edited.model.procedural_curves[0].definition().clone();
     let mut regenerated = Vec::new();
@@ -1231,9 +1243,12 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
                 offsets_value,
             )
             .unwrap();
-        definition
-            .set_legacy_cache(restored_cache)
-            .expect("the rebuilt construction states the same legacy cache slot");
+        match restored_cache {
+            Some(cache) => definition
+                .set_legacy_cache(cache)
+                .expect("the rebuilt construction states the same legacy cache slot"),
+            None => definition.clear_legacy_cache(),
+        }
     });
     let expected_retained = retained.model.procedural_curves[0].definition().clone();
     let mut retained_bytes = Vec::new();
@@ -1354,9 +1369,12 @@ fn generated_mixed_offset_supports_write_source_less() {
                 *definition_payload.offsets(),
             )
             .unwrap();
-        definition
-            .set_legacy_cache(restored_cache)
-            .expect("the rebuilt construction states the same legacy cache slot");
+        match restored_cache {
+            Some(cache) => definition
+                .set_legacy_cache(cache)
+                .expect("the rebuilt construction states the same legacy cache slot"),
+            None => definition.clear_legacy_cache(),
+        }
         edit_result
     });
     let expected_surface = source_less
