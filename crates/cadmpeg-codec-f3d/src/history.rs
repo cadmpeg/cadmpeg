@@ -960,7 +960,7 @@ pub(crate) fn bind_feature_body_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     inputs: &FeatureBodySelectionInputs<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::{BodyMember, BodySelection, FeatureDefinition, FeatureOperation};
 
     let scopes = inputs.scopes;
     let groups = inputs.groups;
@@ -1123,15 +1123,16 @@ pub(crate) fn bind_feature_body_selections(
                         let Some(operation) = scope.combine_operation() else {
                             return;
                         };
-                        let mut native_tools = operation
+                        let native_tools = operation
                             .tools
                             .iter()
                             .map(|tool| format!("{stream}:design-record#{}", tool.record_index))
                             .collect::<Vec<_>>();
                         let current_history_source = historical_brep_source(&state.id);
-                        let mut historical_tool_bodies = Vec::with_capacity(native_tools.len());
-                        let mut direct_tool_bodies = Vec::with_capacity(native_tools.len());
+                        let mut historical_tool_rows = Vec::with_capacity(native_tools.len());
+                        let mut direct_tool_rows = Vec::with_capacity(native_tools.len());
                         for record_index in operation.tools.iter().map(|tool| tool.record_index) {
+                            let native = format!("{stream}:design-record#{record_index}");
                             let mut matching = body_recipe_operands.iter().filter(|operand| {
                                 crate::ids::native_stream(&operand.id) == Some(stream)
                                     && operand.scope_record_index == scope.record_index
@@ -1141,23 +1142,27 @@ pub(crate) fn bind_feature_body_selections(
                         ) && operand.record_index() == record_index
                             });
                             let Some(operand) = matching.next() else {
-                                historical_tool_bodies.clear();
-                                direct_tool_bodies.clear();
+                                historical_tool_rows.clear();
+                                direct_tool_rows.clear();
                                 break;
                             };
                             if matching.next().is_some() {
-                                historical_tool_bodies.clear();
-                                direct_tool_bodies.clear();
+                                historical_tool_rows.clear();
+                                direct_tool_rows.clear();
                                 break;
                             }
                             if let Some(body) = operand.resolved_body_slot {
                                 let body = crate::ids::history_input_body_id(&prefix, body);
-                                if historical_tool_bodies.contains(&body) {
-                                    historical_tool_bodies.clear();
-                                    direct_tool_bodies.clear();
+                                let repeated = historical_tool_rows
+                                    .iter()
+                                    .any(|row: &BodyMember<_>| row.body() == &body);
+                                let row = BodyMember::new(body, native);
+                                let (false, Ok(row)) = (repeated, row) else {
+                                    historical_tool_rows.clear();
+                                    direct_tool_rows.clear();
                                     break;
-                                }
-                                historical_tool_bodies.push(body);
+                                };
+                                historical_tool_rows.push(row);
                                 continue;
                             }
                             let Some(body) = unique_external_body_candidate(
@@ -1167,21 +1172,24 @@ pub(crate) fn bind_feature_body_selections(
                                 regions,
                                 shells,
                             ) else {
-                                historical_tool_bodies.clear();
-                                direct_tool_bodies.clear();
+                                historical_tool_rows.clear();
+                                direct_tool_rows.clear();
                                 break;
                             };
-                            if direct_tool_bodies.contains(&body) {
-                                historical_tool_bodies.clear();
-                                direct_tool_bodies.clear();
+                            let repeated = direct_tool_rows
+                                .iter()
+                                .any(|row: &BodyMember<_>| row.body() == &body);
+                            let row = BodyMember::new(body, native);
+                            let (false, Ok(row)) = (repeated, row) else {
+                                historical_tool_rows.clear();
+                                direct_tool_rows.clear();
                                 break;
-                            }
-                            direct_tool_bodies.push(body);
+                            };
+                            direct_tool_rows.push(row);
                         }
-                        if historical_tool_bodies.len() == native_tools.len() {
-                            let Ok(members) = cadmpeg_ir::features::BodyMembers::try_from_parts(
-                                historical_tool_bodies,
-                                native_tools,
+                        if historical_tool_rows.len() == native_tools.len() {
+                            let Ok(members) = cadmpeg_ir::features::BodyMembers::try_from_rows(
+                                historical_tool_rows,
                             ) else {
                                 return;
                             };
@@ -1189,17 +1197,19 @@ pub(crate) fn bind_feature_body_selections(
                                 state: input_state,
                                 members,
                             };
-                        } else if direct_tool_bodies.len() == native_tools.len() {
-                            *tools = if native_tools.len() == 1 {
+                        } else if direct_tool_rows.len() == native_tools.len() {
+                            *tools = if let [row] = direct_tool_rows.as_slice() {
+                                let (body, native) = row.clone().into_parts();
                                 BodySelection::Resolved {
-                                    bodies: direct_tool_bodies,
-                                    native: native_tools.remove(0),
+                                    bodies: vec![body],
+                                    native,
                                 }
                             } else {
-                                let Ok(members) = cadmpeg_ir::features::BodyMembers::try_from_parts(
-                                    direct_tool_bodies,
-                                    native_tools,
-                                ) else {
+                                let Ok(members) =
+                                    cadmpeg_ir::features::BodyMembers::try_from_rows(
+                                        direct_tool_rows,
+                                    )
+                                else {
                                     return;
                                 };
                                 BodySelection::ResolvedSet { members }
@@ -1219,15 +1229,25 @@ pub(crate) fn bind_feature_body_selections(
                                 body_recipe_operands,
                                 inputs.construction_recipes,
                             ) {
-                                let Ok(members) = cadmpeg_ir::features::BodyMembers::try_from_parts(
-                                    tool_slots
-                                        .into_iter()
-                                        .map(|slot| {
-                                            crate::ids::history_input_body_id(&prefix, slot)
-                                        })
-                                        .collect(),
-                                    native_tools,
-                                ) else {
+                                if tool_slots.len() != native_tools.len() {
+                                    return;
+                                }
+                                let Ok(rows) = tool_slots
+                                    .into_iter()
+                                    .zip(native_tools)
+                                    .map(|(slot, native)| {
+                                        BodyMember::new(
+                                            crate::ids::history_input_body_id(&prefix, slot),
+                                            native,
+                                        )
+                                    })
+                                    .collect::<Result<Vec<_>, _>>()
+                                else {
+                                    return;
+                                };
+                                let Ok(members) =
+                                    cadmpeg_ir::features::BodyMembers::try_from_rows(rows)
+                                else {
                                     return;
                                 };
                                 *tools = BodySelection::HistoricalSet {
@@ -1247,16 +1267,24 @@ pub(crate) fn bind_feature_body_selections(
                                     body,
                                     native_tools.len(),
                                 ) {
+                                    if tool_slots.len() != native_tools.len() {
+                                        return;
+                                    }
+                                    let Ok(rows) = tool_slots
+                                        .into_iter()
+                                        .zip(native_tools)
+                                        .map(|(slot, native)| {
+                                            BodyMember::new(
+                                                crate::ids::history_input_body_id(&prefix, slot),
+                                                native,
+                                            )
+                                        })
+                                        .collect::<Result<Vec<_>, _>>()
+                                    else {
+                                        return;
+                                    };
                                     let Ok(members) =
-                                        cadmpeg_ir::features::BodyMembers::try_from_parts(
-                                            tool_slots
-                                                .into_iter()
-                                                .map(|slot| {
-                                                    crate::ids::history_input_body_id(&prefix, slot)
-                                                })
-                                                .collect(),
-                                            native_tools,
-                                        )
+                                        cadmpeg_ir::features::BodyMembers::try_from_rows(rows)
                                     else {
                                         return;
                                     };
@@ -1766,7 +1794,7 @@ fn bind_direct_body_recipe_body_selection(
     scope: &crate::records::feature::DesignParameterScope,
     inputs: &FeatureBodySelectionInputs<'_>,
 ) {
-    use cadmpeg_ir::features::BodySelection;
+    use cadmpeg_ir::features::{BodyMember, BodySelection};
 
     let groups = inputs.groups;
     let operands = inputs.body_recipe_operands;
@@ -1850,7 +1878,7 @@ fn bind_direct_body_recipe_body_selection(
     {
         return;
     }
-    let mut selected = Vec::with_capacity(native_members.len());
+    let mut rows = Vec::with_capacity(native_members.len());
     for native in &native_members {
         let Some((native_stream_name, record_index)) = native.rsplit_once(":design-record#") else {
             return;
@@ -1886,13 +1914,15 @@ fn bind_direct_body_recipe_body_selection(
         ) else {
             return;
         };
-        if selected.contains(&body) {
+        if rows.iter().any(|row: &BodyMember<_>| row.body() == &body) {
             return;
         }
-        selected.push(body);
+        let Ok(row) = BodyMember::new(body, native.clone()) else {
+            return;
+        };
+        rows.push(row);
     }
-    if let Ok(members) = cadmpeg_ir::features::BodyMembers::try_from_parts(selected, native_members)
-    {
+    if let Ok(members) = cadmpeg_ir::features::BodyMembers::try_from_rows(rows) {
         *selection = BodySelection::ResolvedSet { members };
     }
 }

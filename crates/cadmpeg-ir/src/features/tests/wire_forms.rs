@@ -892,13 +892,18 @@ fn body_selections_round_trip_through_json() {
             native: "body:17".into(),
         },
         BodySelection::ResolvedSet {
-            members: crate::features::BodyMembers::try_from_parts(
-                vec![
+            members: crate::features::BodyMembers::try_from_rows(vec![
+                crate::features::BodyMember::new(
                     BodyId::mint("synthetic:test:body#0").expect("valid identity"),
+                    "body:17".into(),
+                )
+                .expect("valid body selection row"),
+                crate::features::BodyMember::new(
                     BodyId::mint("synthetic:test:body#1").expect("valid identity"),
-                ],
-                vec!["body:17".into(), "body:18".into()],
-            )
+                    "body:18".into(),
+                )
+                .expect("valid body selection row"),
+            ])
             .expect("valid body selection rows"),
         },
         BodySelection::historical(
@@ -911,15 +916,20 @@ fn body_selections_round_trip_through_json() {
         BodySelection::HistoricalSet {
             state: FeatureInputTopologyId::mint("synthetic:history-input:state#0")
                 .expect("valid identity"),
-            members: crate::features::BodyMembers::try_from_parts(
-                vec![
+            members: crate::features::BodyMembers::try_from_rows(vec![
+                crate::features::BodyMember::new(
                     HistoricalBodyId::mint("synthetic:history-input:body#0")
                         .expect("valid identity"),
+                    "body:16".into(),
+                )
+                .expect("valid historical body selection row"),
+                crate::features::BodyMember::new(
                     HistoricalBodyId::mint("synthetic:history-input:body#1")
                         .expect("valid identity"),
-                ],
-                vec!["body:16".into(), "body:17".into()],
-            )
+                    "body:17".into(),
+                )
+                .expect("valid historical body selection row"),
+            ])
             .expect("valid historical body selection rows"),
         },
         BodySelection::Native("body:17,body:18".into()),
@@ -939,7 +949,7 @@ fn body_selection_members_reject_blank_native_rows() {
 
     let body = BodyId::mint("synthetic:test:body#blank").expect("identity grammar");
     assert!(BodyMember::new(body.clone(), " \t".into()).is_err());
-    assert!(BodyMembers::try_from_parts(vec![body.clone()], vec!["\n".into()]).is_err());
+    assert!(BodyMember::new(body.clone(), "\n".into()).is_err());
     assert!(
         serde_json::from_value::<BodyMembers<BodyId>>(serde_json::json!([
             {"body": body, "native": " "}
