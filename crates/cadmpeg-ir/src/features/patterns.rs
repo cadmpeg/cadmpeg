@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 /// unreachable for a stage transform.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub enum NoNestedComposite {}
 
 /// A pattern transform a composite stage may apply.
