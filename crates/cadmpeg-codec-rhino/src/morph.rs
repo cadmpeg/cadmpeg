@@ -462,9 +462,10 @@ fn curve_properties(
         format!("{prefix}_knots"),
         numbers(curve.knots().iter().copied()),
     );
+    let control_points = curve.control_points();
     properties.insert(
         format!("{prefix}_control_points"),
-        points(curve.control_points()),
+        points(&control_points),
     );
     properties.insert(format!("{prefix}_periodic"), curve.periodic().to_string());
     if let Some(weights) = curve.weights() {
@@ -494,7 +495,7 @@ fn surface_properties(
     properties.insert(format!("{prefix}_v_count"), surface.v_count().to_string());
     properties.insert(
         format!("{prefix}_control_points"),
-        points(&surface.poles().copied().collect::<Vec<_>>()),
+        points(&surface.poles()),
     );
     properties.insert(
         format!("{prefix}_u_periodic"),

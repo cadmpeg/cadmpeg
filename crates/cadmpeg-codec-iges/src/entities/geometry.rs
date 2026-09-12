@@ -2102,7 +2102,7 @@ pub(crate) fn project_geometry(
             continue;
         }
         let weights = (!polynomial).then_some(native_weights);
-        let Ok(nurbs) = NurbsCurve::new(
+        let Ok(nurbs) = NurbsCurve::from_lanes(
             degree,
             knots,
             control_points,
@@ -2114,11 +2114,13 @@ pub(crate) fn project_geometry(
             losses.push(entity_loss(entry, "spline cardinalities are inconsistent"));
             continue;
         };
+        let nurbs_points = nurbs.control_points();
+        let nurbs_weights = nurbs.weights();
         let Some(start) = cadmpeg_ir::eval::nurbs_curve_point(
             nurbs.degree(),
             nurbs.knots(),
-            nurbs.control_points(),
-            nurbs.weights(),
+            &nurbs_points,
+            nurbs_weights.as_deref(),
             parameter_range[0],
         )
         .filter(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite()) else {
@@ -2128,8 +2130,8 @@ pub(crate) fn project_geometry(
         let Some(end) = cadmpeg_ir::eval::nurbs_curve_point(
             nurbs.degree(),
             nurbs.knots(),
-            nurbs.control_points(),
-            nurbs.weights(),
+            &nurbs_points,
+            nurbs_weights.as_deref(),
             parameter_range[1],
         )
         .filter(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite()) else {

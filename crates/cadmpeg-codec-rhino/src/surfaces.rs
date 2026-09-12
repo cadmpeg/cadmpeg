@@ -595,7 +595,7 @@ fn revolution_nurbs(
         }
     }
     let row_len = profile_count;
-    let mut result = NurbsSurface::new(
+    let mut result = NurbsSurface::from_lanes(
         2,
         profile.degree(),
         knots,
@@ -672,7 +672,7 @@ fn sum_nurbs(
         }
     }
     let row_len = v_count;
-    NurbsSurface::new(
+    NurbsSurface::from_lanes(
         first.degree(),
         second.degree(),
         first.knots().to_vec(),
@@ -720,7 +720,7 @@ pub(crate) fn extrusion_nurbs(
             target.push(source[index]);
         }
     }
-    let mut surface = NurbsSurface::new(
+    let mut surface = NurbsSurface::from_lanes(
         start.degree(),
         1,
         start.knots().to_vec(),
@@ -815,7 +815,7 @@ fn read_nurbs_curve_inner(
     let periodic = periodic_knots(&knots, order, cv_count);
     let full_knots = reconstruct_knots(&knots, order, cv_count)?;
     reader.skip_remaining()?;
-    NurbsCurve::new(
+    NurbsCurve::from_lanes(
         u32::try_from(order - 1).map_err(|_| error(reader.position(), "NURBS order overflow"))?,
         full_knots,
         control_points,
@@ -938,7 +938,7 @@ pub(crate) fn read_nurbs_surface_prefix(
     let u_knots = reconstruct_knots(&u_knots, u_order, u_count)?;
     let v_knots = reconstruct_knots(&v_knots, v_order, v_count)?;
     let row_len = v_count;
-    NurbsSurface::new(
+    NurbsSurface::from_lanes(
         u32::try_from(u_order - 1)
             .map_err(|_| error(reader.position(), "surface U order overflow"))?,
         u32::try_from(v_order - 1)

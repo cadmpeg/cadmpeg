@@ -3,7 +3,7 @@ use super::*;
 
 #[test]
 fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
-    let nurbs = crate::geometry::NurbsCurve::new(
+    let nurbs = crate::geometry::NurbsCurve::from_lanes(
         1,
         vec![0.0, 0.0, 1.0, 2.0, 2.0],
         vec![

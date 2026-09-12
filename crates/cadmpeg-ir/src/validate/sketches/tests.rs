@@ -158,7 +158,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
             source.clone(),
             sketch.clone(),
             SketchGeometry::nurbs(
-                crate::geometry::PcurveNurbs::new(
+                crate::geometry::PcurveNurbs::from_lanes(
                     2,
                     vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                     vec![
@@ -176,7 +176,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
             result.clone(),
             sketch.clone(),
             SketchGeometry::nurbs(
-                crate::geometry::PcurveNurbs::new(
+                crate::geometry::PcurveNurbs::from_lanes(
                     3,
                     vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
                     vec![
@@ -269,8 +269,15 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
                 unreachable!("test result is a NURBS")
             };
             curve.reverse_parameterization();
+            let last = curve.pole_count() - 1;
+            let mut index = 0;
             curve
-                .edit_control_points(|points| points.last_mut().unwrap().u += 0.01)
+                .edit_control_points(|point| {
+                    if index == last {
+                        point.u += 0.01;
+                    }
+                    index += 1;
+                })
                 .unwrap();
         })
         .unwrap();

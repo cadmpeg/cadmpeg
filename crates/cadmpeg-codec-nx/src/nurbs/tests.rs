@@ -65,19 +65,10 @@ fn assert_same_surfaces(actual: &[Surface], expected: &[Surface]) {
         assert_eq!(actual.normal_reversed(), expected.normal_reversed());
         assert_same_f64s(actual.u_knots(), expected.u_knots());
         assert_same_f64s(actual.v_knots(), expected.v_knots());
-        assert_same_points3(
-            &actual.poles().copied().collect::<Vec<_>>(),
-            &expected.poles().copied().collect::<Vec<_>>(),
-        );
+        assert_same_points3(&actual.poles(), &expected.poles());
         assert_same_weights(
-            actual
-                .pole_weights()
-                .map(std::iter::Iterator::collect::<Vec<f64>>)
-                .as_deref(),
-            expected
-                .pole_weights()
-                .map(std::iter::Iterator::collect::<Vec<f64>>)
-                .as_deref(),
+            actual.pole_weights().as_deref(),
+            expected.pole_weights().as_deref(),
         );
     }
 }
@@ -96,8 +87,11 @@ fn assert_same_curves(actual: &[Curve], expected: &[Curve]) {
         assert_eq!(actual.degree(), expected.degree());
         assert_eq!(actual.periodic(), expected.periodic());
         assert_same_f64s(actual.knots(), expected.knots());
-        assert_same_points3(actual.control_points(), expected.control_points());
-        assert_same_weights(actual.weights(), expected.weights());
+        assert_same_points3(&actual.control_points(), &expected.control_points());
+        assert_same_weights(
+            actual.weights().as_deref(),
+            expected.weights().as_deref(),
+        );
     }
 }
 
@@ -113,8 +107,11 @@ fn assert_same_pcurves(actual: &[Pcurve], expected: &[Pcurve]) {
         assert_eq!(actual.degree(), expected.degree());
         assert_eq!(actual.periodic(), expected.periodic());
         assert_same_f64s(actual.knots(), expected.knots());
-        assert_same_points2(actual.control_points(), expected.control_points());
-        assert_same_weights(actual.weights(), expected.weights());
+        assert_same_points2(&actual.control_points(), &expected.control_points());
+        assert_same_weights(
+            actual.weights().as_deref(),
+            expected.weights().as_deref(),
+        );
     }
 }
 
@@ -332,7 +329,7 @@ fn nurbs_knot_type_values_do_not_select_periodicity_or_rationality() {
             panic!("expected NURBS pcurve");
         };
         assert!(!nurbs.periodic());
-        assert_eq!(nurbs.weights(), Some([1.0, 1.0].as_slice()));
+        assert_eq!(nurbs.weights(), Some(vec![1.0, 1.0]));
     }
 }
 
@@ -523,7 +520,7 @@ fn nurbs_accepts_encoded_cardinality_without_arbitrary_ceiling() {
     let Some(SolvedSurfaceGeometry::Nurbs(wide_surface)) = wide_surface.geometry.solved() else {
         panic!("expected wide NURBS surface");
     };
-    assert_eq!(wide_surface.poles().count(), 4002);
+    assert_eq!(wide_surface.poles().len(), 4002);
     assert_eq!(wide_surface.u_knots().len(), 2003);
     assert_eq!(wide_surface.v_knots().len(), 4);
 
@@ -664,8 +661,9 @@ fn nurbs_decodes_extended_xmt_arrays_payload_and_long_surface_descriptor() {
     };
     assert_eq!(surface.u_knots(), [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(surface.v_knots(), [0.0, 0.0, 1.0, 1.0]);
-    assert_eq!(surface.poles().count(), 4);
-    assert_eq!(surface.poles().nth(3).copied().unwrap().y, 20.0);
+    let poles = surface.poles();
+    assert_eq!(poles.len(), 4);
+    assert_eq!(poles[3].y, 20.0);
 }
 
 #[test]
@@ -682,8 +680,9 @@ fn nurbs_decodes_escaped_surface_payload_envelope() {
     let Some(SolvedSurfaceGeometry::Nurbs(surface)) = surfaces[0].geometry.solved() else {
         panic!("expected NURBS surface");
     };
-    assert_eq!(surface.poles().count(), 4);
-    assert_eq!(surface.poles().nth(3).copied().unwrap().y, 20.0);
+    let poles = surface.poles();
+    assert_eq!(poles.len(), 4);
+    assert_eq!(poles[3].y, 20.0);
 }
 
 #[test]
@@ -713,7 +712,7 @@ fn nurbs_coalesces_equivalent_surface_descriptor_representations() {
     let Some(SolvedSurfaceGeometry::Nurbs(surface)) = surfaces[0].geometry.solved() else {
         panic!("expected NURBS surface");
     };
-    assert_eq!(surface.poles().count(), 4);
+    assert_eq!(surface.poles().len(), 4);
 }
 
 #[test]
@@ -810,6 +809,6 @@ fn nurbs_decodes_dimension_four_rational_curve() {
     let Some(SolvedCurveGeometry::Nurbs(curve)) = curves[0].geometry.solved() else {
         panic!("expected NURBS curve");
     };
-    assert_eq!(curve.weights(), Some([1.0, 2.0].as_slice()));
+    assert_eq!(curve.weights(), Some(vec![1.0, 2.0]));
     assert_eq!(curve.control_points()[1].x, 20.0);
 }

@@ -8,7 +8,7 @@ use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 fn line_nurbs(start: f64, end: f64, rational: bool) -> NurbsCurve {
-    NurbsCurve::new(
+    NurbsCurve::from_lanes(
         1,
         vec![start, start, end, end],
         vec![Point3::new(start, 0.0, 0.0), Point3::new(end, 0.0, 0.0)],
@@ -875,7 +875,7 @@ fn c2_polycurve_merges_clamped_rational_segments_in_parent_domain() {
     let merged = c2_curve_to_nurbs_join(compound, 0).expect("merge").curve;
     assert_eq!(merged.knots(), vec![10.0, 10.0, 20.0, 40.0, 40.0]);
     assert_eq!(merged.control_points().len(), 3);
-    assert_eq!(merged.weights(), Some(&[2.0, 1.0, 1.0][..]));
+    assert_eq!(merged.weights(), Some(vec![2.0, 1.0, 1.0]));
     assert!(!merged.periodic());
 }
 
@@ -902,7 +902,7 @@ fn recursive_c2_polycurve_preserves_nested_parent_parameterization() {
 
 #[test]
 fn unequal_degree_c2_polycurve_elevates_lower_degree() {
-    let quadratic = NurbsCurve::new(
+    let quadratic = NurbsCurve::from_lanes(
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         vec![
@@ -933,12 +933,12 @@ fn unequal_degree_c2_polycurve_elevates_lower_degree() {
 fn cap_boundary(points: &[Point3]) -> crate::extrusion::ExtrusionBoundary {
     let knots = vec![0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 4.0];
     let start =
-        NurbsCurve::new(1, knots.clone(), points.to_vec(), None, false).expect("valid cap start");
+        NurbsCurve::from_lanes(1, knots.clone(), points.to_vec(), None, false).expect("valid cap start");
     let end_points = points
         .iter()
         .map(|point| Point3::new(point.x, point.y, point.z + 5.0))
         .collect::<Vec<_>>();
-    let end = NurbsCurve::new(1, knots.clone(), end_points, None, false).expect("valid cap end");
+    let end = NurbsCurve::from_lanes(1, knots.clone(), end_points, None, false).expect("valid cap end");
     let pcurve_points = points
         .iter()
         .map(|point| Point2::new(point.x, point.y))

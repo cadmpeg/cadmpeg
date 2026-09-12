@@ -37,9 +37,13 @@ pub(crate) fn surface_is_supported(surface: &SolvedSurfaceGeometry) -> bool {
 
 fn valid_nurbs_surface(n: &NurbsSurface) -> bool {
     n.poles()
+        .iter()
         .all(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite())
-        && n.pole_weights()
-            .is_none_or(|mut weights| weights.all(|weight| weight.is_finite() && weight > 0.0))
+        && n.pole_weights().is_none_or(|weights| {
+            weights
+                .iter()
+                .all(|weight| weight.is_finite() && *weight > 0.0)
+        })
         && knots_nondecreasing(n.u_knots())
         && knots_nondecreasing(n.v_knots())
 }
@@ -246,7 +250,7 @@ pub fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
                     "B_SPLINE_CURVE_WITH_KNOTS",
                     &format!(
                         "( BOUNDED_CURVE() B_SPLINE_CURVE({base}) B_SPLINE_CURVE_WITH_KNOTS({with_knots}) CURVE() GEOMETRIC_REPRESENTATION_ITEM() RATIONAL_B_SPLINE_CURVE({}) REPRESENTATION_ITEM('') )",
-                        real_list(weights)
+                        real_list(&weights)
                     ),
                 )
             } else {
@@ -565,7 +569,7 @@ fn nurbs_curve(e: &mut Emitter, n: &NurbsCurve) -> Ref {
                  B_SPLINE_CURVE_WITH_KNOTS({with_knots}) CURVE() \
                  GEOMETRIC_REPRESENTATION_ITEM() \
                  RATIONAL_B_SPLINE_CURVE({}) REPRESENTATION_ITEM('') )",
-                real_list(w)
+                real_list(&w)
             );
             e.emit_raw("B_SPLINE_CURVE_WITH_KNOTS", &body)
         }
@@ -584,7 +588,7 @@ fn nurbs_surface(e: &mut Emitter, n: &NurbsSurface) -> Option<Ref> {
     for grid_row in n.control_grid() {
         let mut row: Vec<Ref> = Vec::with_capacity(v_count);
         for p in grid_row {
-            row.push(point(e, *p));
+            row.push(point(e, p));
         }
         rows.push(refs(&row));
     }
@@ -615,7 +619,7 @@ fn nurbs_surface(e: &mut Emitter, n: &NurbsSurface) -> Option<Ref> {
             // Rational surface weights are LIST(u) OF LIST(v), matching the grid.
             let mut wrows: Vec<String> = Vec::with_capacity(u_count);
             for row in w {
-                wrows.push(real_list(row));
+                wrows.push(real_list(&row));
             }
             let wgrid = format!("({})", wrows.join(","));
             let body = format!(

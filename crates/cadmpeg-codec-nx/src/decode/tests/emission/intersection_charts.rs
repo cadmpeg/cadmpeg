@@ -243,7 +243,7 @@ fn opposite_intersection_blend_contact_keeps_adaptive_fit_certification() {
     const CONTACT_FIT_TOLERANCE: f64 = 1.0e-2;
 
     let source_pcurve = PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::new(
+        nurbs: PcurveNurbs::from_lanes(
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
@@ -561,7 +561,7 @@ fn blend_contact_transfer_fixture(
         source_object: None,
     });
     let contact_pcurve = PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::new(
+        nurbs: PcurveNurbs::from_lanes(
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
@@ -861,7 +861,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
         Surface {
             id: nurbs.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                NurbsSurface::new(
+                NurbsSurface::from_lanes(
                     1,
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
@@ -899,7 +899,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::NurbsCurve::new(
+            cadmpeg_ir::geometry::NurbsCurve::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
@@ -1076,7 +1076,7 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::NurbsCurve::new(
+            cadmpeg_ir::geometry::NurbsCurve::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],

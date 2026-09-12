@@ -412,7 +412,7 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
             let surface = graph.surfaces.get(&loop_.surface)?;
             let cylinder_reparameterized = matches!(surface, B5Surface::Cylinder { .. });
             let geometry = PcurveGeometry::Nurbs {
-                nurbs: PcurveNurbs::new(
+                nurbs: PcurveNurbs::from_lanes(
                     pcurve.degree,
                     knots,
                     pcurve
@@ -755,7 +755,7 @@ pub(crate) fn resolved_object_stream_pcurve(
         surface_object_id: pcurve.support_id,
         carrier,
         geometry: PcurveGeometry::Nurbs {
-            nurbs: PcurveNurbs::new(
+            nurbs: PcurveNurbs::from_lanes(
                 crate::families::a5a8::records::A8Pcurve::DEGREE,
                 knots,
                 control_points
@@ -902,7 +902,7 @@ pub(crate) fn resolved_extrusion_surface(
             let domain = pcurve_parameter_domain(pcurve)?;
             bounded_occurrence_range(pcurve_parameter_range, domain)?;
             let pcurve_geometry = PcurveGeometry::Nurbs {
-                nurbs: PcurveNurbs::new(
+                nurbs: PcurveNurbs::from_lanes(
                     pcurve.degree,
                     knots,
                     pcurve
@@ -1024,7 +1024,7 @@ fn curve_on_parameter_range(
             let origin = *line_curve.origin();
             let direction = *line_curve.direction();
             if source_per_target != 1.0 {
-                return NurbsCurve::new(
+                return NurbsCurve::from_lanes(
                     1,
                     vec![target[0], target[0], target[1], target[1]],
                     source

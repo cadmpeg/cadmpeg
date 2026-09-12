@@ -71,10 +71,8 @@ fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
                             panic!("NURBS support lane");
                         };
                         nurbs
-                            .edit_control_points(|points| {
-                                for point in points {
-                                    point.u += 100.0;
-                                }
+                            .edit_control_points(|point| {
+                                point.u += 100.0;
                             })
                             .unwrap();
                     })
@@ -314,7 +312,7 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
         Surface {
             id: support.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                NurbsSurface::new(
+                NurbsSurface::from_lanes(
                     3,
                     1,
                     vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],

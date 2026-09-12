@@ -3342,7 +3342,7 @@ fn native_radius_function_pcurve_block(
         ));
     };
     let native = PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
             nurbs.degree(),
             nurbs.knots().to_vec(),
             nurbs
@@ -3350,7 +3350,7 @@ fn native_radius_function_pcurve_block(
                 .iter()
                 .map(|point| cadmpeg_ir::math::Point2::new(point.u / LEN_TO_MM, point.v))
                 .collect(),
-            nurbs.weights().map(<[f64]>::to_vec),
+            nurbs.weights(),
             nurbs.periodic(),
         )
         .map_err(|error| CodecError::Malformed(error.to_string()))?,
@@ -4414,7 +4414,7 @@ fn native_interval_curve(
                     origin.z + parameter * direction.z,
                 )
             };
-            NurbsCurve::new(
+            NurbsCurve::from_lanes(
                 1,
                 vec![
                     parameter_range[0],
@@ -4537,7 +4537,7 @@ fn native_conic_interval_curve(
             knots.extend([end, end, end]);
         }
     }
-    NurbsCurve::new(2, knots, control_points, Some(weights), false)
+    NurbsCurve::from_lanes(2, knots, control_points, Some(weights), false)
         .map_err(|error| CodecError::Malformed(error.to_string()))
 }
 
@@ -4562,11 +4562,13 @@ mod native_interval_curve_tests {
             [0.0, std::f64::consts::PI],
         )
         .expect("generated circle interval");
+        let control_points = curve.control_points();
+        let weights = curve.weights();
         let midpoint = cadmpeg_ir::eval::nurbs_curve_point(
             curve.degree(),
             curve.knots(),
-            curve.control_points(),
-            curve.weights(),
+            &control_points,
+            weights.as_deref(),
             std::f64::consts::FRAC_PI_2,
         )
         .expect("evaluate generated circle interval");
@@ -4624,7 +4626,7 @@ mod native_interval_curve_tests {
         assert_eq!(curve.knots().first().copied(), Some(0.0));
         assert_eq!(curve.knots().last().copied(), Some(std::f64::consts::TAU));
         assert_eq!(curve.control_points().len(), 9);
-        assert_eq!(curve.weights().map(<[f64]>::len), Some(9));
+        assert_eq!(curve.weights().map(|weights| weights.len()), Some(9));
     }
 
     #[test]
@@ -5712,7 +5714,7 @@ fn native_support_pcurve_for_range(
         _ => {}
     }
     Ok(PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
             degree,
             knots,
             control_points,
@@ -5743,7 +5745,7 @@ mod pcurve_chart_tests {
                 .unwrap(),
             ));
             let pcurve = PcurveGeometry::Nurbs {
-                nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+                nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point2::new(1.25, 15.0), Point2::new(2.5, -3.0)],
@@ -6574,7 +6576,7 @@ pub(crate) fn native_ref_pcurve_companion(
     })?;
     let native_geometry = native_support_pcurve_for_range(support, &pcurve.geometry, range)?;
     let native = native_pcurve_geometry(&native_geometry, range)?;
-    let lifted = NurbsCurve::new(
+    let lifted = NurbsCurve::from_lanes(
         native.degree,
         native.knots,
         native
@@ -6654,8 +6656,8 @@ fn native_pcurve_geometry(
         PcurveGeometry::Nurbs { nurbs } => Ok(NativePcurveGeometry {
             degree: nurbs.degree(),
             knots: nurbs.knots().to_vec(),
-            control_points: nurbs.control_points().to_vec(),
-            weights: nurbs.weights().map(<[f64]>::to_vec),
+            control_points: nurbs.control_points(),
+            weights: nurbs.weights(),
             periodic: nurbs.periodic(),
         }),
         PcurveGeometry::Trimmed(trimmed_pcurve) => {

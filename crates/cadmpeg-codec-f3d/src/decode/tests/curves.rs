@@ -173,10 +173,14 @@ fn decode_retains_generated_helix_construction() {
     let SolvedCurveGeometry::Nurbs(mut edited_cache) = solved_cache.clone() else {
         panic!("expected helix NURBS cache")
     };
+    let mut pole_index = 0usize;
     edited_cache
-        .edit_control_points(|points| {
-            points[1].x = 17.0;
-            points[1].z = -2.0;
+        .edit_control_points(|point| {
+            if pole_index == 1 {
+                point.x = 17.0;
+                point.z = -2.0;
+            }
+            pole_index += 1;
         })
         .unwrap();
     *solved_cache = SolvedCurveGeometry::Nurbs(edited_cache);
@@ -460,7 +464,7 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
         .find(|curve| curve.id == source_id)
         .expect("vector-offset source carrier")
         .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        cadmpeg_ir::geometry::NurbsCurve::new(
+        cadmpeg_ir::geometry::NurbsCurve::from_lanes(
             1,
             vec![-2.0, -2.0, 5.0, 5.0],
             vec![
@@ -608,7 +612,7 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
         .find(|curve| curve.id == source_id)
         .expect("subset source carrier")
         .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        cadmpeg_ir::geometry::NurbsCurve::new(
+        cadmpeg_ir::geometry::NurbsCurve::from_lanes(
             1,
             vec![-1.5, -1.5, 3.5, 3.5],
             vec![
@@ -653,7 +657,7 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
     assert_eq!(
         source_curve.geometry,
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::NurbsCurve::new(
+            cadmpeg_ir::geometry::NurbsCurve::from_lanes(
                 1,
                 vec![-1.5, -1.5, 3.5, 3.5],
                 vec![
@@ -1405,7 +1409,7 @@ fn generated_mixed_offset_supports_write_source_less() {
         context.sides()[0].pcurve,
         Some(
             cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-                nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+                nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![

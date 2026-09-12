@@ -72,7 +72,7 @@ fn generated_source_less_face_writes_nurbs_surface_carrier() {
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = SolvedSurfaceGeometry::Nurbs(
-        NurbsSurface::new(
+        NurbsSurface::from_lanes(
             1,
             1,
             vec![-1.0, -1.0, 2.0, 2.0],
@@ -125,7 +125,7 @@ fn generated_source_less_face_writes_rational_nurbs_surface_carrier() {
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = SolvedSurfaceGeometry::Nurbs(
-        NurbsSurface::new(
+        NurbsSurface::from_lanes(
             1,
             1,
             vec![0.0, 0.0, 1.0, 1.0],
@@ -181,7 +181,7 @@ fn generated_source_less_face_writes_rational_nurbs_edge_curve() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let curve_id = CurveId::mint("generated:test:nurbs_curve#0").expect("identity grammar");
     let expected = SolvedCurveGeometry::Nurbs(
-        NurbsCurve::new(
+        NurbsCurve::from_lanes(
             2,
             vec![-1.0, -1.0, -1.0, 2.0, 2.0, 2.0],
             vec![
@@ -326,7 +326,7 @@ fn generated_source_less_face_lowers_line_pcurve_exactly() {
     assert_eq!(
         round_trip.ir().model.pcurves[0].geometry,
         PcurveGeometry::Nurbs {
-            nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+            nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
                 1,
                 vec![-2.0, -2.0, 3.0, 3.0],
                 vec![Point2::new(1.0, -5.0), Point2::new(3.5, 5.0)],
@@ -351,7 +351,7 @@ fn generated_source_less_face_writes_rational_nurbs_pcurve() {
     assert!(matches!(
         &expected.geometry,
         cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs }
-            if nurbs.weights() == Some([1.0, 0.5].as_slice())
+            if nurbs.weights() == Some(vec![1.0, 0.5])
     ));
 
     let mut encoded = Vec::new();
@@ -581,7 +581,7 @@ fn generated_source_less_multi_face_writes_nurbs_carriers_and_pcurve() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
 
     let expected_surface = SolvedSurfaceGeometry::Nurbs(
-        NurbsSurface::new(
+        NurbsSurface::from_lanes(
             1,
             1,
             vec![0.0, 0.0, 1.0, 1.0],
@@ -607,7 +607,7 @@ fn generated_source_less_multi_face_writes_nurbs_carriers_and_pcurve() {
     source_less.model.surfaces[1].geometry = SurfaceGeometry::Solved(expected_surface.clone());
     let curve_id = CurveId::mint("generated:test:shared_nurbs#0").expect("identity grammar");
     let expected_curve = SolvedCurveGeometry::Nurbs(
-        NurbsCurve::new(
+        NurbsCurve::from_lanes(
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
@@ -943,7 +943,7 @@ fn generated_source_less_writes_translational_extrusion_definition() {
         .find(|curve| curve.id == directrix_id)
         .expect("extrusion directrix")
         .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        cadmpeg_ir::geometry::NurbsCurve::new(
+        cadmpeg_ir::geometry::NurbsCurve::from_lanes(
             1,
             vec![0.25, 0.25, 0.75, 0.75],
             vec![
@@ -1420,7 +1420,7 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
         .find(|curve| curve.id == spine)
         .expect("rolling-ball spine carrier")
         .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        cadmpeg_ir::geometry::NurbsCurve::new(
+        cadmpeg_ir::geometry::NurbsCurve::from_lanes(
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![

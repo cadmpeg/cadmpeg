@@ -666,7 +666,7 @@ fn legacy_spline(
             control_points.push(Point3::new(x * scale, y * scale, z * scale));
         }
     }
-    NurbsCurve::new(
+    NurbsCurve::from_lanes(
         u32::try_from(order - 1)
             .map_err(|_| CodecError::Malformed("V1 spline degree overflow".to_string()))?,
         knots,
@@ -1330,7 +1330,7 @@ fn legacy_surface(
         }
     }
     let row_len = counts[1];
-    NurbsSurface::new(
+    NurbsSurface::from_lanes(
         u32::try_from(orders[0] - 1)
             .map_err(|_| CodecError::Malformed("V1 surface degree overflow".to_string()))?,
         u32::try_from(orders[1] - 1)
@@ -1735,7 +1735,7 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
                 ir.model.pcurves.push(Pcurve {
                     id: pcurve_id.clone(),
                     geometry: PcurveGeometry::Nurbs {
-                        nurbs: PcurveNurbs::new(
+                        nurbs: PcurveNurbs::from_lanes(
                             trim.pcurve.degree(),
                             trim.pcurve.knots().to_vec(),
                             trim.pcurve
@@ -1743,7 +1743,7 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
                                 .iter()
                                 .map(|point| Point2::new(point.x, point.y))
                                 .collect(),
-                            trim.pcurve.weights().map(<[f64]>::to_vec),
+                            trim.pcurve.weights(),
                             trim.pcurve.periodic(),
                         )
                         .map_err(|error| CodecError::Malformed(error.to_string()))?,

@@ -600,7 +600,7 @@ fn targeted_surface_resolution_rejects_conflicting_exact_carriers() {
     let resolved = HashMap::from([(
         1,
         Some(B5Surface::Nurbs(
-            NurbsSurface::new(
+            NurbsSurface::from_lanes(
                 1,
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],

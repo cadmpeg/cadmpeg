@@ -804,16 +804,19 @@ fn rotated_sketch_geometry_matches(
             SketchGeometryDefinition::Nurbs { curve: first },
             SketchGeometryDefinition::Nurbs { curve: second },
         ) => {
+            let first_points = first.control_points();
+            let second_points = second.control_points();
+            let first_weights = first.weights();
+            let second_weights = second.weights();
             first.degree() == second.degree()
                 && first.periodic() == second.periodic()
                 && equal_scalars(first.knots(), second.knots())
-                && first.control_points().len() == second.control_points().len()
-                && first
-                    .control_points()
+                && first_points.len() == second_points.len()
+                && first_points
                     .iter()
-                    .zip(second.control_points())
+                    .zip(&second_points)
                     .all(|(a, b)| point_matches(*a, *b))
-                && match (first.weights(), second.weights()) {
+                && match (&first_weights, &second_weights) {
                     (None, None) => true,
                     (Some(a), Some(b)) => equal_scalars(a, b),
                     _ => false,
@@ -914,16 +917,19 @@ pub(crate) fn translated_sketch_geometry_matches(
             SketchGeometryDefinition::Nurbs { curve: first },
             SketchGeometryDefinition::Nurbs { curve: second },
         ) => {
+            let first_points = first.control_points();
+            let second_points = second.control_points();
+            let first_weights = first.weights();
+            let second_weights = second.weights();
             first.degree() == second.degree()
                 && first.periodic() == second.periodic()
                 && equal_scalars(first.knots(), second.knots())
-                && first.control_points().len() == second.control_points().len()
-                && first
-                    .control_points()
+                && first_points.len() == second_points.len()
+                && first_points
                     .iter()
-                    .zip(second.control_points())
+                    .zip(&second_points)
                     .all(|(a, b)| point_matches(*a, *b))
-                && match (first.weights(), second.weights()) {
+                && match (&first_weights, &second_weights) {
                     (None, None) => true,
                     (Some(a), Some(b)) => equal_scalars(a, b),
                     _ => false,

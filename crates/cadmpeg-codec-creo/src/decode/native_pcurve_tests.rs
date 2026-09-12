@@ -266,7 +266,7 @@ fn authoritative_native_endpoint_survives_conflicting_inferred_domain() {
 #[test]
 fn boundary_nurbs_endpoint_witnesses_use_the_intrinsic_domain() {
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        NurbsCurve::new(
+        NurbsCurve::from_lanes(
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
@@ -447,7 +447,7 @@ fn projects_exact_planar_carriers_without_changing_parameters() {
     );
 
     let nurbs = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        NurbsCurve::new(
+        NurbsCurve::from_lanes(
             1,
             vec![2.0, 2.0, 5.0, 5.0],
             vec![Point3::new(2.0, 4.0, 3.0), Point3::new(5.0, 7.0, 3.0)],
@@ -463,7 +463,7 @@ fn projects_exact_planar_carriers_without_changing_parameters() {
                 && nurbs.knots() == [2.0, 2.0, 5.0, 5.0]
                 && nurbs.control_points()
                     == [Point2::new(2.0, 4.0), Point2::new(5.0, 7.0)]
-                && nurbs.weights() == Some(&[2.0, 1.0][..])
+                && nurbs.weights() == Some(vec![2.0, 1.0])
                 && !nurbs.periodic()
     ));
 

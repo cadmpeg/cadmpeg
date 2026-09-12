@@ -31,7 +31,7 @@ const EPS_SOURCE_BOUND_REPRESENTATION: f64 = 5.0e-7;
 #[test]
 fn pcurve_bounds_use_the_active_nurbs_subrange() {
     let geometry = PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::new(
+        nurbs: PcurveNurbs::from_lanes(
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
@@ -59,7 +59,7 @@ fn pcurve_bounds_use_the_active_nurbs_subrange() {
 #[test]
 fn pcurve_bounds_handle_a_full_multiplicity_internal_knot() {
     let geometry = PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::new(
+        nurbs: PcurveNurbs::from_lanes(
             2,
             vec![0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0],
             vec![
@@ -94,7 +94,7 @@ fn pcurve_bounds_handle_a_full_multiplicity_internal_knot() {
 #[test]
 fn pcurve_bounds_keep_partial_domains_and_periodic_seams() {
     let geometry = PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::new(
+        nurbs: PcurveNurbs::from_lanes(
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.5, 0.3), Point2::new(0.5, 2.0)],

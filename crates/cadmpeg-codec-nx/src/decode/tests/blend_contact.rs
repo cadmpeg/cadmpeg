@@ -28,7 +28,7 @@ fn test_surface(
     weights: Option<Vec<f64>>,
     u_periodic: bool,
 ) -> cadmpeg_ir::geometry::NurbsSurface {
-    cadmpeg_ir::geometry::NurbsSurface::new(
+    cadmpeg_ir::geometry::NurbsSurface::from_lanes(
         1,
         1,
         u_knots,
@@ -49,7 +49,7 @@ fn test_pcurve(
     weights: Option<Vec<f64>>,
 ) -> PcurveGeometry {
     PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
             degree,
             knots,
             control_points,
@@ -540,7 +540,7 @@ fn nurbs_curve_closest_parameter_does_not_trust_a_remote_seed() {
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::new(
+            NurbsCurve::from_lanes(
                 1,
                 vec![0.0, 0.0, 0.5, 1.0, 1.0],
                 vec![
@@ -639,7 +639,7 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
     let PcurveGeometry::Nurbs { nurbs } = &mut rational_folded else {
         unreachable!("folded test pcurve is NURBS");
     };
-    *nurbs = cadmpeg_ir::geometry::PcurveNurbs::new(
+    *nurbs = cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
         nurbs.degree(),
         nurbs.knots().to_vec(),
         nurbs.control_points().to_vec(),
@@ -1644,7 +1644,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     };
     *cache = Some(
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::NurbsCurve::new(
+            cadmpeg_ir::geometry::NurbsCurve::from_lanes(
                 1,
                 vec![0.0, 0.0, 10.0, 10.0],
                 vec![

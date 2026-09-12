@@ -207,7 +207,7 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
     ir.model.surfaces.push(Surface {
         id: support.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-            NurbsSurface::new(
+            NurbsSurface::from_lanes(
                 3,
                 1,
                 vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
@@ -720,7 +720,7 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
                             surface: Some(surface),
                             pcurve: Some(
                                 PcurveGeometry::Nurbs {
-                                    nurbs: PcurveNurbs::new(
+                                    nurbs: PcurveNurbs::from_lanes(
                                         1,
                                         vec![0.0, 0.0, 1.0, 1.0],
                                         vec![Point2::new(0.0, 0.0), Point2::new(10.0, 0.0)],
@@ -811,7 +811,7 @@ fn linear_intersection_endpoint_witness_requires_a_clamped_linear_curve() {
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::NurbsCurve::new(
+            cadmpeg_ir::geometry::NurbsCurve::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![first, last],
@@ -830,7 +830,7 @@ fn linear_intersection_endpoint_witness_requires_a_clamped_linear_curve() {
     );
 
     ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        cadmpeg_ir::geometry::NurbsCurve::new(
+        cadmpeg_ir::geometry::NurbsCurve::from_lanes(
             1,
             vec![0.0, 0.5, 1.0, 1.0],
             vec![first, last],
@@ -970,7 +970,7 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-            NurbsSurface::new(
+            NurbsSurface::from_lanes(
                 1,
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
@@ -1579,12 +1579,16 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
                     let PcurveGeometry::Nurbs { nurbs } = &mut support.geometry else {
                         panic!("NURBS support lane");
                     };
+                    let mut pole_index = 0usize;
                     nurbs
-                        .edit_control_points(|points| {
-                            points[1] = Point2::new(
-                                crate::decode::MISSING_TOLERANCE,
-                                crate::decode::MISSING_TOLERANCE,
-                            );
+                        .edit_control_points(|point| {
+                            if pole_index == 1 {
+                                *point = Point2::new(
+                                    crate::decode::MISSING_TOLERANCE,
+                                    crate::decode::MISSING_TOLERANCE,
+                                );
+                            }
+                            pole_index += 1;
                         })
                         .unwrap();
                 })
@@ -1649,10 +1653,8 @@ fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
                         panic!("NURBS support lane");
                     };
                     nurbs
-                        .edit_control_points(|points| {
-                            for point in points {
-                                point.u += 100.0;
-                            }
+                        .edit_control_points(|point| {
+                            point.u += 100.0;
                         })
                         .unwrap();
                 })

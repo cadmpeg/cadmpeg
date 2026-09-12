@@ -699,7 +699,7 @@ fn collapsed_pcurve_ranges_are_unbounded() {
 #[test]
 fn adjacent_pcurve_domain_rounding_is_canonicalized() {
     let geometry = PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
             1,
             vec![2.0, 2.0, 4.0, 4.0],
             vec![

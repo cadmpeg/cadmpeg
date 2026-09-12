@@ -579,7 +579,7 @@ ${}
     let Some(SolvedSurfaceGeometry::Nurbs(surface)) = surface.geometry.solved() else {
         panic!("legacy spline geometry: {:?}", surface.geometry);
     };
-    assert_eq!(surface.poles().count(), 16);
+    assert_eq!(surface.poles().len(), 16);
     assert_eq!(surface.u_count(), 4);
     assert_eq!(surface.v_count(), 4);
     assert_eq!(

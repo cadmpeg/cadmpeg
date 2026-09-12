@@ -1532,7 +1532,7 @@ mod tests {
     fn curve_point_cache_reuses_an_exact_parameter_evaluation() {
         let curve = CurveId::mint("test:model:entity#synthetic:curve").expect("identity grammar");
         let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::NurbsCurve::new(
+            cadmpeg_ir::geometry::NurbsCurve::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(1.0, 2.0, 3.0), Point3::new(5.0, 7.0, 9.0)],

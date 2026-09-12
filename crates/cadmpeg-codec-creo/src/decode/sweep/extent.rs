@@ -374,10 +374,8 @@ pub(in super::super) fn nurbs_translation_candidate(
     let u_count = usize::try_from(nurbs.u_count()).ok()?;
     let v_count = usize::try_from(nurbs.v_count()).ok()?;
     let pair_count = if along_v { u_count } else { v_count };
-    let poles = nurbs.poles().copied().collect::<Vec<_>>();
-    let pole_weights = nurbs
-        .pole_weights()
-        .map(std::iter::Iterator::collect::<Vec<f64>>);
+    let poles = nurbs.poles();
+    let pole_weights = nurbs.pole_weights();
     let mut starts = Vec::with_capacity(pair_count);
     let mut vector: Option<[f64; 3]> = None;
     for index in 0..pair_count {

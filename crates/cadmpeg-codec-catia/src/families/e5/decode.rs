@@ -2093,10 +2093,8 @@ pub(crate) fn e5_pcurve_on_surface(
             };
             let scale = decoded_surface.uv_scale;
             nurbs
-                .edit_control_points(|points| {
-                    for point in points {
-                        *point = Point2::new(point.u * scale[0], point.v * scale[1]);
-                    }
+                .edit_control_points(|point| {
+                    *point = Point2::new(point.u * scale[0], point.v * scale[1]);
                 })
                 .ok()?;
             if !nurbs.control_points().iter().copied().all(finite_point2)
@@ -2214,7 +2212,7 @@ pub(crate) fn e5_pcurve_on_surface(
                 return None;
             }
             let geometry = PcurveGeometry::Nurbs {
-                nurbs: PcurveNurbs::new(*degree, knots, control_points, None, false).ok()?,
+                nurbs: PcurveNurbs::from_lanes(*degree, knots, control_points, None, false).ok()?,
             };
             let uv = range.map(|parameter| cadmpeg_ir::eval::pcurve_uv(&geometry, parameter));
             let uv = uv[0].zip(uv[1])?;
@@ -2321,11 +2319,11 @@ pub(crate) fn e5_boundary_curve(
         }
         return Some((
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::new(
+                NurbsCurve::from_lanes(
                     nurbs.degree(),
                     nurbs.knots().to_vec(),
                     control_points,
-                    nurbs.weights().map(<[f64]>::to_vec),
+                    nurbs.weights(),
                     nurbs.periodic(),
                 )
                 .ok()?,
@@ -2367,11 +2365,11 @@ pub(crate) fn e5_boundary_curve(
         }
         return Some((
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::new(
+                NurbsCurve::from_lanes(
                     nurbs.degree(),
                     nurbs.knots().to_vec(),
                     control_points,
-                    nurbs.weights().map(<[f64]>::to_vec),
+                    nurbs.weights(),
                     nurbs.periodic(),
                 )
                 .ok()?,
@@ -4208,7 +4206,7 @@ mod route_tests {
             range: [0.0, 1.0],
         };
         let pcurve = PcurveGeometry::Nurbs {
-            nurbs: PcurveNurbs::new(
+            nurbs: PcurveNurbs::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point2::new(large, 0.0), Point2::new(large, 1.0)],
@@ -4373,7 +4371,7 @@ mod route_tests {
             pos: 0,
             record_id: 7,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                NurbsSurface::new(
+                NurbsSurface::from_lanes(
                     1,
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],

@@ -228,7 +228,7 @@ pub(in super::super) fn saved_spline_nurbs(
         .into_iter()
         .map(|point| Point3::new(point[0], point[1], point[2]))
         .collect();
-    NurbsCurve::new(3, knots, control_points, None, false).ok()
+    NurbsCurve::from_lanes(3, knots, control_points, None, false).ok()
 }
 
 pub(in super::super) fn saved_spline_sketch_geometry(
@@ -243,7 +243,7 @@ pub(in super::super) fn saved_spline_sketch_geometry(
         return None;
     }
     Some(SketchGeometry::nurbs(
-        cadmpeg_ir::geometry::PcurveNurbs::new(
+        cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
             nurbs.degree(),
             nurbs.knots().to_vec(),
             nurbs
@@ -251,7 +251,7 @@ pub(in super::super) fn saved_spline_sketch_geometry(
                 .iter()
                 .map(|point| cadmpeg_ir::math::Point2::new(point.x, point.y))
                 .collect(),
-            nurbs.weights().map(<[f64]>::to_vec),
+            nurbs.weights(),
             nurbs.periodic(),
         )
         .ok()?,
@@ -342,7 +342,7 @@ pub(in super::super) fn interpolation_spline_surface(
         );
     }
 
-    NurbsSurface::new(
+    NurbsSurface::from_lanes(
         3,
         3,
         u_knots?,
@@ -365,11 +365,9 @@ pub(in super::super) fn placed_section_nurbs(
 ) -> Option<NurbsCurve> {
     let mut placed = nurbs.clone();
     placed
-        .edit_control_points(|points| {
-            for point in points {
-                let model = section_xyz_in_model(transform, [point.x, point.y, point.z]);
-                *point = Point3::new(model[0], model[1], model[2]);
-            }
+        .edit_control_points(|point| {
+            let model = section_xyz_in_model(transform, [point.x, point.y, point.z]);
+            *point = Point3::new(model[0], model[1], model[2]);
         })
         .ok()?;
     Some(placed)
@@ -381,14 +379,12 @@ pub(in super::super) fn translated_nurbs_curve(
 ) -> Option<NurbsCurve> {
     let mut translated = curve.clone();
     translated
-        .edit_control_points(|points| {
-            for point in points {
-                *point = Point3::new(
-                    point.x + translation[0],
-                    point.y + translation[1],
-                    point.z + translation[2],
-                );
-            }
+        .edit_control_points(|point| {
+            *point = Point3::new(
+                point.x + translation[0],
+                point.y + translation[1],
+                point.z + translation[2],
+            );
         })
         .ok()?;
     Some(translated)
@@ -413,7 +409,7 @@ pub(in super::super) fn extruded_nurbs_surface(
             target.extend([source[index], source[index]]);
         }
     }
-    NurbsSurface::new(
+    NurbsSurface::from_lanes(
         directrix.degree(),
         1,
         directrix.knots().to_vec(),
@@ -466,7 +462,7 @@ pub(in super::super) fn sketch_nurbs_pcurve(
 ) -> Option<PcurveGeometry> {
     let nurbs = oriented_sketch_nurbs_curve(geometry, reversed)?;
     Some(PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
             nurbs.degree(),
             nurbs.knots().to_vec(),
             nurbs
@@ -474,7 +470,7 @@ pub(in super::super) fn sketch_nurbs_pcurve(
                 .iter()
                 .map(|point| Point2::new(point.x, point.y))
                 .collect(),
-            nurbs.weights().map(<[f64]>::to_vec),
+            nurbs.weights(),
             nurbs.periodic(),
         )
         .ok()?,
@@ -788,7 +784,7 @@ pub(in super::super) fn placed_tabulated_cylinder_directrix(
         second[*sweep_axis] - first[*sweep_axis]
     };
     (sweep[*sweep_axis].is_finite() && sweep[*sweep_axis] != 0.0).then_some((
-        NurbsCurve::new(
+        NurbsCurve::from_lanes(
             3,
             vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
             control_points,
@@ -817,7 +813,7 @@ mod tests {
 
     #[test]
     fn translating_nurbs_rejects_nonfinite_poles() {
-        let curve = NurbsCurve::new(
+        let curve = NurbsCurve::from_lanes(
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(f64::MAX, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],

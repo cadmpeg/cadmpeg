@@ -18,7 +18,7 @@ use std::collections::BinaryHeap;
 
 use crate::geometry::{
     knots_nondecreasing, CurveGeometry, LawExpression, LawFormula, NurbsCurve, NurbsSurface,
-    PcurveGeometry, PcurveNurbs, PolylineCurve, ProceduralCurveDefinition, ProceduralSurfaceDefinition,
+    NurbsPoles3, PcurveGeometry, PcurveNurbs, PolylineCurve, ProceduralCurveDefinition, ProceduralSurfaceDefinition,
     SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry, SurfaceParameterAxis,
     SweepSurfaceLayout,
 };
@@ -329,7 +329,7 @@ fn rational_surface_patches_with_budget(
             .any(|knot| !knot.is_finite())
         || !knots_nondecreasing(surface.u_knots())
         || !knots_nondecreasing(surface.v_knots())
-        || surface.poles().any(|control| {
+        || surface.poles().iter().any(|control| {
             !control.x.is_finite() || !control.y.is_finite() || !control.z.is_finite()
         })
     {
@@ -337,7 +337,6 @@ fn rational_surface_patches_with_budget(
     }
     let weights = match surface.pole_weights() {
         Some(values) => {
-            let values = values.collect::<Vec<_>>();
             if !values
                 .iter()
                 .all(|weight| weight.is_finite() && *weight > 0.0)
@@ -350,6 +349,7 @@ fn rational_surface_patches_with_budget(
     };
     let homogeneous_controls = surface
         .poles()
+        .into_iter()
         .zip(weights)
         .map(|(control, weight)| {
             [
@@ -1644,7 +1644,7 @@ pub fn nurbs_curve_parameter_near_point(
         let position = nurbs_curve_point(
             curve.degree(),
             curve.knots(),
-            curve.control_points(),
+            &curve.control_points(),
             Some(weights.as_ref()),
             parameter,
         )?;
@@ -1716,7 +1716,7 @@ fn nurbs_curve_parameter_near_point_newton(
         let position = nurbs_curve_point(
             curve.degree(),
             curve.knots(),
-            curve.control_points(),
+            &curve.control_points(),
             Some(weights),
             parameter,
         )?;
@@ -1731,7 +1731,7 @@ fn nurbs_curve_parameter_near_point_newton(
         let tangent = nurbs_curve_tangent(
             curve.degree(),
             curve.knots(),
-            curve.control_points(),
+            &curve.control_points(),
             Some(weights),
             parameter,
         )?;
@@ -1759,11 +1759,11 @@ pub fn nurbs_curve_speed_bound(curve: &NurbsCurve) -> Option<f64> {
     nurbs_curve_speed_bound_about(curve, weights.as_ref(), Point3::new(0.0, 0.0, 0.0))
 }
 
-fn validated_nurbs_curve_weights(curve: &NurbsCurve) -> Option<Cow<'_, [f64]>> {
+fn validated_nurbs_curve_weights(curve: &NurbsCurve) -> Option<Cow<'static, [f64]>> {
     nurbs_curve_parameter_domain(curve)?;
-    let count = curve.control_points().len();
-    let weights = match curve.weights() {
-        Some(weights) => Cow::Borrowed(weights),
+    let count = curve.pole_count();
+    let weights: Cow<'static, [f64]> = match curve.weights() {
+        Some(weights) => Cow::Owned(weights),
         None => Cow::Owned(alloc_filled(count, 1.0, "ir_nurbs_curve_weights").ok()?),
     };
     if curve
@@ -2461,8 +2461,7 @@ pub fn nurbs_surface_isocurve(
     NurbsCurve::new(
         degree,
         knots,
-        control_points,
-        surface.weights().map(|_| derived_weights),
+        NurbsPoles3::from_lanes(control_points, surface.weights().map(|_| derived_weights))?,
         periodic,
     )
     .ok()
@@ -2902,8 +2901,8 @@ fn curve_tangent_inner(geometry: &SolvedCurveGeometry, t: f64, depth: usize) -> 
             nurbs_curve_tangent(
                 nurbs.degree(),
                 nurbs.knots(),
-                nurbs.control_points(),
-                nurbs.weights(),
+                &nurbs.control_points(),
+                nurbs.weights().as_deref(),
                 parameter,
             )
         }
@@ -2971,8 +2970,8 @@ fn curve_second_derivative_inner(
             nurbs_curve_second_derivative(
                 nurbs.degree(),
                 nurbs.knots(),
-                nurbs.control_points(),
-                nurbs.weights(),
+                &nurbs.control_points(),
+                nurbs.weights().as_deref(),
                 parameter,
             )
         }
@@ -4469,8 +4468,8 @@ fn curve_point_inner(geometry: &SolvedCurveGeometry, t: f64, depth: usize) -> Op
             nurbs_curve_point(
                 nurbs.degree(),
                 nurbs.knots(),
-                nurbs.control_points(),
-                nurbs.weights(),
+                &nurbs.control_points(),
+                nurbs.weights().as_deref(),
                 parameter,
             )
         }
@@ -7799,7 +7798,7 @@ fn pcurve_uv_differential_inner(
                 nurbs.degree(),
                 nurbs.knots(),
                 &radial_control_points,
-                nurbs.weights(),
+                nurbs.weights().as_deref(),
                 t,
             )?;
             let axial_points = nurbs
@@ -7811,7 +7810,7 @@ fn pcurve_uv_differential_inner(
                 nurbs.degree(),
                 nurbs.knots(),
                 &axial_points,
-                nurbs.weights(),
+                nurbs.weights().as_deref(),
                 t,
             )?;
             let radius_squared = radial.point.u * radial.point.u + radial.point.v * radial.point.v;
@@ -7891,8 +7890,8 @@ fn pcurve_uv_differential_inner(
             return nurbs_pcurve_differential(
                 nurbs.degree(),
                 nurbs.knots(),
-                nurbs.control_points(),
-                nurbs.weights(),
+                &nurbs.control_points(),
+                nurbs.weights().as_deref(),
                 t,
             );
         }

@@ -198,7 +198,7 @@ pub(in super::super) fn circular_pcurve(
         knots.extend([boundary as f64 / segment_count as f64; 2]);
     }
     knots.extend([1.0; 3]);
-    cadmpeg_ir::geometry::PcurveNurbs::new(2, knots, control_points, Some(weights), false)
+    cadmpeg_ir::geometry::PcurveNurbs::from_lanes(2, knots, control_points, Some(weights), false)
         .ok()
         .map(|nurbs| PcurveGeometry::Nurbs { nurbs })
 }

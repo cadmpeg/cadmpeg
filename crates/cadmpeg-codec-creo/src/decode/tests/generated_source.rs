@@ -1414,7 +1414,7 @@ fn rowless_round_cylinder_requires_the_four_entry_sibling_layout() {
 
 #[test]
 fn spline_extrusion_preserves_directrix_basis_and_weights() {
-    let directrix = NurbsCurve::new(
+    let directrix = NurbsCurve::from_lanes(
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         vec![
@@ -1434,7 +1434,7 @@ fn spline_extrusion_preserves_directrix_basis_and_weights() {
     assert_eq!(surface.u_knots(), directrix.knots());
     assert_eq!(surface.v_knots(), [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(
-        surface.poles().copied().collect::<Vec<_>>(),
+        surface.poles(),
         [
             Point3::new(1.0, 2.0, 3.0),
             Point3::new(1.0, 2.0, 7.0),
@@ -1446,8 +1446,7 @@ fn spline_extrusion_preserves_directrix_basis_and_weights() {
     );
     assert_eq!(
         surface
-            .pole_weights()
-            .map(std::iter::Iterator::collect::<Vec<_>>),
+            .pole_weights(),
         Some([1.0, 1.0, 0.5, 0.5, 1.0, 1.0].to_vec())
     );
 }

@@ -52,13 +52,17 @@ impl WritableEdgeCurve<'_> {
                 &CurveGeometry::Solved(SolvedCurveGeometry::Line(line)),
                 parameter,
             ),
-            Self::Nurbs(nurbs) => cadmpeg_ir::eval::nurbs_curve_point(
-                nurbs.degree(),
-                nurbs.knots(),
-                nurbs.control_points(),
-                nurbs.weights(),
-                cadmpeg_ir::eval::map_nurbs_curve_parameter(nurbs, parameter)?,
-            ),
+            Self::Nurbs(nurbs) => {
+                let control_points = nurbs.control_points();
+                let weights = nurbs.weights();
+                cadmpeg_ir::eval::nurbs_curve_point(
+                    nurbs.degree(),
+                    nurbs.knots(),
+                    &control_points,
+                    weights.as_deref(),
+                    cadmpeg_ir::eval::map_nurbs_curve_parameter(nurbs, parameter)?,
+                )
+            }
         }
     }
 }

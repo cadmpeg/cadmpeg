@@ -292,7 +292,7 @@ pub fn project_sketch_design(
                 && poles.points().all(planar_point) =>
             {
                 SketchGeometry::nurbs(
-                    cadmpeg_ir::geometry::PcurveNurbs::new(
+                    cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
                         *degree,
                         knots.clone(),
                         poles
@@ -576,7 +576,7 @@ pub fn project_spatial_sketch_design(
                         poles,
                         ..
                     } => SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Nurbs {
-                        curve: cadmpeg_ir::geometry::NurbsCurve::new(
+                        curve: cadmpeg_ir::geometry::NurbsCurve::from_lanes(
                             *degree,
                             knots.clone(),
                             poles

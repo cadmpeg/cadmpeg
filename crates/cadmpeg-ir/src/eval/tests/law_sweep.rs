@@ -88,7 +88,7 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
         Curve {
             id: profile_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::new(
+                NurbsCurve::from_lanes(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
@@ -102,7 +102,7 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
         Curve {
             id: spine_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::new(
+                NurbsCurve::from_lanes(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(4.0, 5.0, 6.0), Point3::new(4.0, 5.0, 7.0)],

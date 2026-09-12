@@ -736,7 +736,7 @@ pub(crate) fn try_decode_geometry(
                 id: curve_id.clone(),
                 geometry: if let Some(charted) = charted {
                     CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                        NurbsCurve::new(
+                        NurbsCurve::from_lanes(
                             1,
                             linear_knots(&charted.samples.parameters()),
                             charted.samples.points(),

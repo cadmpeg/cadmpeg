@@ -129,12 +129,13 @@ fn nurbs_surface_block_decodes_to_carrier() {
     assert_eq!((s.u_count(), s.v_count()), (2, 2));
     assert_eq!(s.u_knots(), [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(s.v_knots(), [0.0, 0.0, 1.0, 1.0]);
-    assert_eq!(s.poles().count(), 4);
+    let poles = s.poles();
+    assert_eq!(poles.len(), 4);
     assert!(s.weights().is_none());
     // Transposed to u-major: index u*v_count+v. Pole (u1,v0) sits at index 2,
     // and coordinates are cm→mm scaled (×10).
-    assert_eq!(s.poles().nth(2).copied().unwrap().x, 10.0);
-    assert_eq!(s.poles().nth(2).copied().unwrap().y, 0.0);
+    assert_eq!(poles[2].x, 10.0);
+    assert_eq!(poles[2].y, 0.0);
 }
 
 #[test]
@@ -464,7 +465,7 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
             .find(|curve| curve.id == directrix)
             .expect("revolution directrix")
             .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::NurbsCurve::new(
+            cadmpeg_ir::geometry::NurbsCurve::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![
@@ -727,7 +728,7 @@ fn generated_taper_surface_family_decodes_and_writes_source_less() {
             .find(|curve| curve.id == reference)
             .expect("taper reference curve")
             .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::NurbsCurve::new(
+            cadmpeg_ir::geometry::NurbsCurve::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![
@@ -845,7 +846,7 @@ fn generated_loft_surface_decodes_full_nested_graph() {
             .find(|curve| curve.id == line_profile)
             .expect("loft line profile")
             .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::NurbsCurve::new(
+            cadmpeg_ir::geometry::NurbsCurve::from_lanes(
                 1,
                 vec![-1.0, -1.0, 2.0, 2.0],
                 vec![

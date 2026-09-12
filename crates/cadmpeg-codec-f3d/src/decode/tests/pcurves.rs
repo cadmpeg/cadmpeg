@@ -376,7 +376,7 @@ fn generated_deformable_curves_decode_and_write_source_less() {
             .find(|curve| curve.id == source)
             .expect("deformable source carrier")
             .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::NurbsCurve::new(
+            cadmpeg_ir::geometry::NurbsCurve::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![
@@ -609,14 +609,14 @@ fn generated_f3d_rewrites_topology_bound_nurbs_curve() {
     let SolvedCurveGeometry::Nurbs(mut nurbs) = cache.clone() else {
         panic!("expected NURBS edge carrier")
     };
-    let mut control_points = nurbs.control_points().to_vec();
+    let mut control_points = nurbs.control_points();
     control_points[1].x = 14.0;
     control_points[1].z = -3.0;
-    nurbs = cadmpeg_ir::geometry::NurbsCurve::new(
+    nurbs = cadmpeg_ir::geometry::NurbsCurve::from_lanes(
         1,
         vec![-1.0, -1.0, 2.0, 2.0, 2.0],
         control_points,
-        nurbs.weights().map(<[f64]>::to_vec),
+        nurbs.weights(),
         nurbs.periodic(),
     )
     .unwrap();
@@ -1027,14 +1027,14 @@ fn generated_f3d_rewrites_nurbs_pcurve_control_points() {
     let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry else {
         panic!("expected NURBS pcurve")
     };
-    let mut control_points = nurbs.control_points().to_vec();
+    let mut control_points = nurbs.control_points();
     control_points[0].u = -0.5;
     control_points[1].v = 2.25;
-    *nurbs = cadmpeg_ir::geometry::PcurveNurbs::new(
+    *nurbs = cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
         1,
         vec![-1.0, -1.0, 2.0, 2.0],
         control_points,
-        nurbs.weights().map(<[f64]>::to_vec),
+        nurbs.weights(),
         true,
     )
     .unwrap();
@@ -1069,8 +1069,14 @@ fn generated_f3d_scopes_inline_pcurve_edits() {
     let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry else {
         panic!("expected NURBS pcurve")
     };
+    let mut pole_index = 0usize;
     nurbs
-        .edit_control_points(|points| points[0].u = -0.75)
+        .edit_control_points(|point| {
+            if pole_index == 0 {
+                point.u = -0.75;
+            }
+            pole_index += 1;
+        })
         .unwrap();
     let cadmpeg_ir::geometry::PcurveMetadata::AsmInline { form: inline } = &mut pcurve.metadata
     else {
@@ -1100,10 +1106,22 @@ fn generated_f3d_rewrites_rational_pcurve_weights() {
     else {
         panic!("expected rational pcurve")
     };
+    let mut pole_index = 0usize;
     nurbs
-        .edit_control_points(|points| points[0].u = -0.25)
+        .edit_control_points(|point| {
+            if pole_index == 0 {
+                point.u = -0.25;
+            }
+            pole_index += 1;
+        })
         .unwrap();
-    nurbs.edit_weights(|weights| weights[1] = 0.75).unwrap();
+    let mut weights = nurbs.weights();
+    if let Some(weights) = &mut weights {
+        weights[1] = 0.75;
+    }
+    let poles =
+        cadmpeg_ir::geometry::PcurveNurbsPoles::from_lanes(nurbs.control_points(), weights);
+    nurbs.set_poles(poles.unwrap()).unwrap();
     let expected = edited.model.pcurves[0].clone();
 
     let mut regenerated = Vec::new();
@@ -1129,10 +1147,16 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
     let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry else {
         panic!("expected ref-form NURBS pcurve")
     };
+    let mut pole_index = 0usize;
     nurbs
-        .edit_control_points(|points| {
-            points[0].u = -0.75;
-            points[1].v = 3.5;
+        .edit_control_points(|point| {
+            if pole_index == 0 {
+                point.u = -0.75;
+            }
+            if pole_index == 1 {
+                point.v = 3.5;
+            }
+            pole_index += 1;
         })
         .unwrap();
     nurbs

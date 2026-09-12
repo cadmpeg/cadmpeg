@@ -3230,7 +3230,9 @@ fn write_nurbs_curve(
     for attr in [control, multiplicity, knots] {
         be16(out, attr);
     }
-    let poles = homogeneous_poles(nurbs.control_points(), nurbs.weights(), length_scale)?;
+    let control_points = nurbs.control_points();
+    let curve_weights = nurbs.weights();
+    let poles = homogeneous_poles(&control_points, curve_weights.as_deref(), length_scale)?;
     f64_array(out, 0x2d, control, poles.into_iter(), entity)?;
     let unique = unique_knots(nurbs.knots(), entity)?;
     u16_array(
@@ -3291,14 +3293,7 @@ fn write_nurbs_surface(
             "NURBS surface knot vectors must be finite and nondecreasing".into(),
         ));
     }
-    let poles = homogeneous_poles(
-        &nurbs.poles().copied().collect::<Vec<_>>(),
-        nurbs
-            .pole_weights()
-            .map(std::iter::Iterator::collect::<Vec<f64>>)
-            .as_deref(),
-        length_scale,
-    )?;
+    let poles = homogeneous_poles(&nurbs.poles(), nurbs.pole_weights().as_deref(), length_scale)?;
     let dimension = if nurbs.weights().is_some() { 4 } else { 3 };
     let u_knot_count = u32::try_from(u_unique.len()).map_err(|_| {
         CodecError::NotImplemented(format!(
@@ -3736,7 +3731,7 @@ mod nurbs_write_tests {
 
     #[test]
     fn writes_surface_degree_from_stored_descriptor() {
-        let surface = NurbsSurface::new(
+        let surface = NurbsSurface::from_lanes(
             9,
             1,
             vec![0.0; 20],
@@ -3774,7 +3769,7 @@ mod nurbs_write_tests {
 
     #[test]
     fn writes_surface_shape_from_stored_counts() {
-        let surface = NurbsSurface::new(
+        let surface = NurbsSurface::from_lanes(
             2,
             1,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],

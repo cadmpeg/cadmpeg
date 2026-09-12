@@ -1664,7 +1664,7 @@ pub(crate) fn pcurve_geometry(curve: &TextCurve2d) -> Option<PcurveGeometry> {
             .ok()?,
         ),
         TextCurve2d::Nurbs(nurbs) => PcurveGeometry::Nurbs {
-            nurbs: PcurveNurbs::new(
+            nurbs: PcurveNurbs::from_lanes(
                 nurbs.degree,
                 nurbs.knots.clone(),
                 nurbs.control_points.clone(),

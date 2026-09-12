@@ -54,7 +54,7 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
     let second_line_id =
         SketchEntityId::mint("creo:model:sketch_entity#second-line".to_string()).unwrap();
     let spline = SketchGeometry::nurbs(
-        cadmpeg_ir::geometry::PcurveNurbs::new(
+        cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
             3,
             vec![2.0, 2.0, 2.0, 2.0, 5.0, 5.0, 5.0, 5.0],
             vec![
@@ -129,7 +129,7 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
     assert!(!profile_strictly_contains(&profiles[0], [2.0, 2.0]));
     let diagonal = ProfileEntity::new(
         SketchGeometry::nurbs(
-            cadmpeg_ir::geometry::PcurveNurbs::new(
+            cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
@@ -163,7 +163,7 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         let PcurveGeometry::Nurbs { nurbs } = &pcurve else {
             panic!("spline cap pcurve is not NURBS");
         };
-        assert_eq!(nurbs.weights(), Some(&[1.0, 0.75, 0.75, 1.0][..]));
+        assert_eq!(nurbs.weights(), Some(vec![1.0, 0.75, 0.75, 1.0]));
         let first = cadmpeg_ir::eval::pcurve_uv(&pcurve, 2.0).expect("spline start");
         let last = cadmpeg_ir::eval::pcurve_uv(&pcurve, 5.0).expect("spline end");
         assert!((first.u - start[0]).abs() < 1.0e-12);
@@ -218,24 +218,23 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
     assert_eq!(side.u_knots(), [2.0, 2.0, 2.0, 2.0, 5.0, 5.0, 5.0, 5.0]);
     assert_eq!(side.v_knots(), [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(
-        side.poles().next().copied().unwrap(),
+        side.poles().into_iter().next().unwrap(),
         Point3::new(11.0, 20.0, 28.0)
     );
     assert_eq!(
-        side.poles().nth(1).copied().unwrap(),
+        side.poles().into_iter().nth(1).unwrap(),
         Point3::new(11.0, 20.0, 33.0)
     );
     assert_eq!(
-        side.poles().nth(6).copied().unwrap(),
+        side.poles().into_iter().nth(6).unwrap(),
         Point3::new(10.0, 21.0, 28.0)
     );
     assert_eq!(
-        side.poles().nth(7).copied().unwrap(),
+        side.poles().into_iter().nth(7).unwrap(),
         Point3::new(10.0, 21.0, 33.0)
     );
     assert_eq!(
-        side.pole_weights()
-            .map(std::iter::Iterator::collect::<Vec<_>>),
+        side.pole_weights(),
         Some([1.0, 1.0, 0.75, 0.75, 0.75, 0.75, 1.0, 1.0].to_vec())
     );
 }

@@ -625,7 +625,7 @@ pub(crate) fn complete_ext11_support_uv_with_budget(
                 .map(|uv| surface_parameters(surface_geometry, *uv))
                 .collect::<Option<Vec<_>>>()?;
             Some(PcurveGeometry::Nurbs {
-                nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+                nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
                     1,
                     linear_knots(parameters),
                     control_points,
@@ -1381,7 +1381,7 @@ fn complete_support_uv_wave(
                         ];
                     }
                     let parameter_range = samples.parameter_range();
-                    let Ok(nurbs) = cadmpeg_ir::geometry::PcurveNurbs::new(
+                    let Ok(nurbs) = cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
                         1,
                         linear_knots(parameters),
                         uv,
@@ -1720,7 +1720,7 @@ fn complete_coupled_support_uv(
                             ]
                         });
                 let parameter_range = samples.parameter_range();
-                let Ok(nurbs) = cadmpeg_ir::geometry::PcurveNurbs::new(
+                let Ok(nurbs) = cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
                     1,
                     linear_knots(parameters),
                     lanes[side].clone(),
@@ -2397,7 +2397,7 @@ mod tests {
 
         let surface_id = SurfaceId::mint("test:model:entity#synthetic:coarse-nurbs-support")
             .expect("identity grammar");
-        let nurbs = cadmpeg_ir::geometry::NurbsSurface::new(
+        let nurbs = cadmpeg_ir::geometry::NurbsSurface::from_lanes(
             1,
             1,
             vec![0.0, 0.0, 1.0, 1.0],

@@ -449,11 +449,12 @@ fn source_periodic(curve: &NurbsCurve) -> bool {
         return false;
     }
     let degree = curve.degree() as usize;
-    curve.control_points().len() >= degree
+    let control_points = curve.control_points();
+    control_points.len() >= degree
         && (0..degree).all(|offset| {
             points_coincident(
-                curve.control_points()[degree - 1 - offset],
-                curve.control_points()[curve.control_points().len() - 1 - offset],
+                control_points[degree - 1 - offset],
+                control_points[control_points.len() - 1 - offset],
             )
         })
 }
@@ -463,11 +464,13 @@ fn evaluate_profile_point(
     parameter: f64,
     offset: usize,
 ) -> Result<Point3, GeometryError> {
+    let control_points = curve.control_points();
+    let weights = curve.weights();
     nurbs_curve_point(
         curve.degree(),
         curve.knots(),
-        curve.control_points(),
-        curve.weights(),
+        &control_points,
+        weights.as_deref(),
         parameter,
     )
     .filter(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite())
@@ -507,12 +510,16 @@ fn transform_nurbs(
     let mut result = curve.clone();
     let transformed = result
         .control_points()
-        .iter()
-        .copied()
+        .into_iter()
         .map(|point| transform_local(point, origin, xaxis, yaxis, zaxis, miter, offset))
         .collect::<Result<Vec<_>, _>>()?;
+    let mut transformed = transformed.into_iter();
     result
-        .edit_control_points(|points| points.copy_from_slice(&transformed))
+        .edit_control_points(|point| {
+            if let Some(value) = transformed.next() {
+                *point = value;
+            }
+        })
         .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
     Ok(result)
 }
@@ -562,8 +569,9 @@ fn cap_pcurve(
     frame: (Vector3, Vector3, Vector3),
     offset: usize,
 ) -> Result<CapPcurve, GeometryError> {
-    let mut points = Vec::with_capacity(curve.control_points().len());
-    for point in curve.control_points() {
+    let control_points = curve.control_points();
+    let mut points = Vec::with_capacity(control_points.len());
+    for point in control_points {
         let delta = point.vector_from(origin);
         let distance = delta.dot(frame.2);
         if distance.abs() > EPS_EXTRUSION_POSITION {
@@ -575,7 +583,7 @@ fn cap_pcurve(
         degree: curve.degree(),
         knots: curve.knots().to_vec(),
         control_points: points,
-        weights: curve.weights().map(<[f64]>::to_vec),
+        weights: curve.weights(),
         periodic: curve.periodic(),
     })
 }
@@ -1224,7 +1232,7 @@ pub(crate) mod tests {
         let count = points.len();
         DecodedCurve::leaf(
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::new(
+                NurbsCurve::from_lanes(
                     1,
                     (0..count + 2).map(|value| value as f64).collect(),
                     points,
@@ -1267,7 +1275,7 @@ pub(crate) mod tests {
         }
         DecodedCurve::leaf(
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::new(
+                NurbsCurve::from_lanes(
                     2,
                     vec![0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 4.0],
                     points,
@@ -1401,8 +1409,14 @@ pub(crate) mod tests {
         else {
             unreachable!()
         };
+        let mut index = 0usize;
         curve
-            .edit_control_points(|points| points[1].z = 1.0)
+            .edit_control_points(|point| {
+                if index == 1 {
+                    point.z = 1.0;
+                }
+                index += 1;
+            })
             .expect("valid test curve edit");
         assert!(exact_orientation(&off_plane, 0).is_err());
     }

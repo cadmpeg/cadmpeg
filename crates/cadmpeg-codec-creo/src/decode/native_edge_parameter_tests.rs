@@ -54,7 +54,7 @@ fn nurbs_curve(
     periodic: bool,
 ) -> CurveGeometry {
     CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        NurbsCurve::new(degree, knots, control_points, weights, periodic)
+        NurbsCurve::from_lanes(degree, knots, control_points, weights, periodic)
             .expect("cardinality-valid test curve"),
     ))
 }
@@ -135,7 +135,7 @@ fn orients_reversed_nonperiodic_nurbs_edges_with_increasing_ranges() {
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = nurbs else {
         panic!("NURBS carrier");
     };
-    assert_eq!(nurbs.weights(), Some(&[3.0, 2.0][..]));
+    assert_eq!(nurbs.weights(), Some(vec![3.0, 2.0]));
 }
 
 #[test]

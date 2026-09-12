@@ -114,7 +114,7 @@ pub(crate) fn reverse_pcurve_geometry(
                 return None;
             }
             Some(PcurveGeometry::Nurbs {
-                nurbs: PcurveNurbs::new(
+                nurbs: PcurveNurbs::from_lanes(
                     nurbs.degree(),
                     reversed_knots,
                     nurbs.control_points().iter().rev().copied().collect(),
@@ -231,7 +231,7 @@ pub(crate) fn reverse_curve_geometry(
             }
             Some((
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                    NurbsCurve::new(
+                    NurbsCurve::from_lanes(
                         nurbs.degree(),
                         knots,
                         nurbs.control_points().iter().rev().copied().collect(),
@@ -492,7 +492,7 @@ pub(crate) fn circular_helix_cache(
     knots.push(angle_range[0]);
     knots.extend(samples.iter().map(|(parameter, _)| *parameter));
     knots.push(angle_range[1]);
-    let curve = NurbsCurve::new(
+    let curve = NurbsCurve::from_lanes(
         1,
         knots,
         samples.into_iter().map(|(_, point)| point).collect(),
@@ -627,10 +627,12 @@ pub(crate) fn nurbs_surface_isocurve(
     if !parameter.is_finite()
         || !surface.u_knots().iter().copied().all(f64::is_finite)
         || !surface.v_knots().iter().copied().all(f64::is_finite)
-        || !surface.poles().copied().all(finite_point3)
-        || surface
-            .pole_weights()
-            .is_some_and(|mut weights| weights.any(|weight| !weight.is_finite() || weight == 0.0))
+        || !surface.poles().into_iter().all(finite_point3)
+        || surface.pole_weights().is_some_and(|weights| {
+            weights
+                .into_iter()
+                .any(|weight| !weight.is_finite() || weight == 0.0)
+        })
     {
         return None;
     }
@@ -698,7 +700,7 @@ pub(crate) fn nurbs_surface_isocurve(
     {
         return None;
     }
-    NurbsCurve::new(
+    NurbsCurve::from_lanes(
         degree,
         knots,
         control_points,
@@ -790,7 +792,7 @@ mod tests {
     #[allow(clippy::unwrap_used)]
     fn canonical_nurbs_range_clamps_rounding_at_the_domain_boundary() {
         let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::new(
+            NurbsCurve::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
@@ -864,7 +866,7 @@ mod tests {
     #[allow(clippy::unwrap_used)]
     fn reversed_nurbs_preserves_active_subrange() {
         let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::new(
+            NurbsCurve::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
@@ -933,7 +935,7 @@ mod tests {
     #[allow(clippy::unwrap_used)]
     fn surface_isocurve_preserves_tiny_weights_and_knot_domain() {
         let tiny = 1e-200;
-        let surface = NurbsSurface::new(
+        let surface = NurbsSurface::from_lanes(
             1,
             1,
             vec![0.0, 0.0, tiny, tiny],
@@ -954,7 +956,7 @@ mod tests {
             curve.control_points(),
             [Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)]
         );
-        assert_eq!(curve.weights(), Some([tiny, tiny].as_slice()));
+        assert_eq!(curve.weights(), Some(vec![tiny, tiny]));
     }
 
     #[test]
@@ -962,7 +964,7 @@ mod tests {
     #[allow(clippy::unwrap_used)]
     fn surface_isocurve_rejects_nonfinite_output() {
         let surface = |control_points: Vec<Point3>, weights: Option<Vec<f64>>| {
-            NurbsSurface::new(
+            NurbsSurface::from_lanes(
                 1,
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
@@ -1135,7 +1137,7 @@ mod tests {
         assert!(reverse_curve_geometry(&model_line, [0.0, f64::MAX]).is_none());
 
         let pcurve_nurbs = PcurveGeometry::Nurbs {
-            nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+            nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
                 1,
                 vec![-f64::MAX, 0.0, 1.0, 1.0],
                 vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],

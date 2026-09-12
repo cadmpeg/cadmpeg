@@ -401,14 +401,14 @@ fn affine_plane_lift_preserves_pcurve_weights() {
     else {
         panic!("expected lifted rational curve");
     };
-    assert_eq!(curve.weights(), pcurve.weights.as_deref());
+    assert_eq!(curve.weights(), pcurve.weights.clone());
     assert!(curve.control_points().iter().all(|point| point.z == 2.0));
 }
 
 #[test]
 fn affine_lift_range_orients_and_trims_the_nurbs_carrier() {
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        NurbsCurve::new(
+        NurbsCurve::from_lanes(
             1,
             vec![0.0, 0.0, 10.0, 10.0],
             vec![Point3::new(0.0, 0.0, 2.0), Point3::new(10.0, 0.0, 2.0)],
@@ -447,7 +447,7 @@ fn affine_lift_range_orients_and_trims_the_nurbs_carrier() {
 
     let tolerant = oriented_nurbs_range(
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::new(
+            NurbsCurve::from_lanes(
                 1,
                 vec![0.0, 0.0, 10.0, 10.0],
                 vec![Point3::new(0.0, 0.0, 2.0), Point3::new(10.0, 0.0, 2.0)],
@@ -1319,7 +1319,7 @@ fn torus_chart_lifts_meridians_and_latitudes_exactly() {
 
 #[test]
 fn tensor_surface_contraction_preserves_exact_isocurve() {
-    let surface = cadmpeg_ir::geometry::NurbsSurface::new(
+    let surface = cadmpeg_ir::geometry::NurbsSurface::from_lanes(
         1,
         1,
         vec![0.0, 0.0, 1.0, 1.0],

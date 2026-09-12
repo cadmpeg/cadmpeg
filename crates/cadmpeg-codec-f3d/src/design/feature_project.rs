@@ -8681,21 +8681,23 @@ pub(crate) fn spatial_sketch_entity_endpoints(
             Some([at(start_angle.get()), at(end_angle.get())])
         }
         SpatialSketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
+            let control_points = curve.control_points();
+            let weights = curve.weights();
             let start = curve.knots()[curve.degree() as usize];
-            let end = curve.knots()[curve.control_points().len()];
+            let end = curve.knots()[control_points.len()];
             Some([
                 cadmpeg_ir::eval::nurbs_curve_point(
                     curve.degree(),
                     curve.knots(),
-                    curve.control_points(),
-                    curve.weights(),
+                    &control_points,
+                    weights.as_deref(),
                     start,
                 )?,
                 cadmpeg_ir::eval::nurbs_curve_point(
                     curve.degree(),
                     curve.knots(),
-                    curve.control_points(),
-                    curve.weights(),
+                    &control_points,
+                    weights.as_deref(),
                     end,
                 )?,
             ])

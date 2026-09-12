@@ -120,7 +120,7 @@ fn decode_projects_copious_linear_paths_with_segment_parameters() {
     assert_eq!(path.degree(), 1);
     assert_eq!(path.knots(), [0.0, 0.0, 1.0, 2.0, 2.0]);
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_curve_point(1, path.knots(), path.control_points(), None, 1.5),
+        cadmpeg_ir::eval::nurbs_curve_point(1, path.knots(), &path.control_points(), None, 1.5),
         Some(cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0))
     );
     assert_eq!(result.ir().model.edges[0].param_range(), Some([0.0, 2.0]));

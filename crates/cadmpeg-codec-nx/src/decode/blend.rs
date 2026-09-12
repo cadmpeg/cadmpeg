@@ -2100,11 +2100,13 @@ pub(crate) fn closest_pcurve_parameters(
         return None;
     }
     let search_seed = seed.map(|seed| canonical_periodic_parameter(domain, nurbs.periodic(), seed));
+    let control_points = nurbs.control_points();
+    let weights = nurbs.weights();
     let homogeneous = homogeneous_pcurve_spans(
         degree,
         nurbs.knots(),
-        nurbs.control_points(),
-        nurbs.weights(),
+        &control_points,
+        weights.as_deref(),
         point,
     )?;
     let candidates = if degree != 1 || nurbs.weights().is_some() {

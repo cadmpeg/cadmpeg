@@ -9,7 +9,7 @@ use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 fn translated_surface() -> NurbsSurface {
-    NurbsSurface::new(
+    NurbsSurface::from_lanes(
         2,
         1,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],

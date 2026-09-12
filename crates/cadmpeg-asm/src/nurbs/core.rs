@@ -102,7 +102,7 @@ pub(crate) fn surface_block(toks: &[Token], marker_pos: usize) -> Option<(NurbsS
         }
     }
 
-    let surface = NurbsSurface::new(
+    let surface = NurbsSurface::from_lanes(
         degree_u as u32,
         degree_v as u32,
         u_knots,
@@ -143,7 +143,7 @@ pub(crate) fn curve_block(toks: &[Token], marker_pos: usize) -> Option<(NurbsCur
     let (knot_vector, n_poles) = knots(&mut cur, n_uniq as usize, degree)?;
     let (points, weights) = control_points(&mut cur, n_poles, marker)?;
 
-    let curve = NurbsCurve::new(
+    let curve = NurbsCurve::from_lanes(
         degree as u32,
         knot_vector,
         points,
@@ -285,7 +285,7 @@ impl SurfacePatchLayout {
         } else {
             3
         };
-        (0..self.surface.poles().count() * components)
+        (0..self.surface.poles().len() * components)
             .map(|ordinal| self.control_start + ordinal * 9 + 1)
     }
 }
@@ -353,7 +353,7 @@ pub(crate) fn decode_surface_block(
         }
     }
 
-    let surface = NurbsSurface::new(
+    let surface = NurbsSurface::from_lanes(
         degree_u as u32,
         degree_v as u32,
         u_knots,
@@ -460,7 +460,7 @@ pub(crate) fn decode_curve_block(
     let control_start = pos;
     let (control_points, weights) = read_control_points(b, &mut pos, n_poles, marker)?;
 
-    let curve = NurbsCurve::new(
+    let curve = NurbsCurve::from_lanes(
         degree as u32,
         knots,
         control_points,

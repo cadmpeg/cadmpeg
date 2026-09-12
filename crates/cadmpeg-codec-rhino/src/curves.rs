@@ -589,16 +589,20 @@ fn scale_decoded_curve(
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
                 let scaled = nurbs
                     .control_points()
-                    .iter()
-                    .copied()
+                    .into_iter()
                     .map(|point| {
                         scale_ir_point(point, scale).ok_or_else(|| {
                             GeometryError::malformed(offset, "scaled plane-space curve is invalid")
                         })
                     })
                     .collect::<Result<Vec<_>, _>>()?;
+                let mut scaled = scaled.into_iter();
                 nurbs
-                    .edit_control_points(|points| points.copy_from_slice(&scaled))
+                    .edit_control_points(|point| {
+                        if let Some(value) = scaled.next() {
+                            *point = value;
+                        }
+                    })
                     .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
@@ -931,7 +935,7 @@ fn elevate_to_degree(
         ));
         output_weights.push(weight);
     }
-    NurbsCurve::new(
+    NurbsCurve::from_lanes(
         target as u32,
         elevated_knots,
         control_points,
@@ -1033,21 +1037,25 @@ pub(crate) fn join_nurbs_segments(
                 );
             }
             *control_points.last_mut().expect("previous endpoint") = midpoint;
+            let mut first = true;
             segment
-                .edit_control_points(|points| points[0] = midpoint)
+                .edit_control_points(|point| {
+                    if first {
+                        *point = midpoint;
+                        first = false;
+                    }
+                })
                 .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
         }
         let skip = usize::from(index > 0);
+        let segment_points = segment.control_points();
         if let Some(target) = &mut weights {
             match segment.weights() {
                 Some(values) => target.extend(values.iter().copied().skip(skip)),
-                None => target.extend(std::iter::repeat_n(
-                    1.0,
-                    segment.control_points().len() - skip,
-                )),
+                None => target.extend(std::iter::repeat_n(1.0, segment_points.len() - skip)),
             }
         }
-        control_points.extend(segment.control_points().iter().copied().skip(skip));
+        control_points.extend(segment_points.iter().copied().skip(skip));
         let segment_start = segment.knots()[multiplicity - 1];
         let dk = if index == 0 {
             0.0
@@ -1067,7 +1075,7 @@ pub(crate) fn join_nurbs_segments(
         );
     }
     Ok(NurbsJoin {
-        curve: NurbsCurve::new(degree, knots, control_points, weights, false)
+        curve: NurbsCurve::from_lanes(degree, knots, control_points, weights, false)
             .map_err(|error| GeometryError::malformed(offset, error.to_string()))?,
         warnings,
     })
@@ -1304,7 +1312,7 @@ fn read_line(
     {
         return Err(error(reader.position(), "invalid bounded line"));
     }
-    NurbsCurve::new(
+    NurbsCurve::from_lanes(
         1,
         vec![domain[0], domain[0], domain[1], domain[1]],
         vec![from, to],
@@ -1366,7 +1374,7 @@ fn read_polyline(
     knots.extend_from_slice(&parameters[1..point_count - 1]);
     knots.push(parameters[point_count - 1]);
     knots.push(parameters[point_count - 1]);
-    NurbsCurve::new(1, knots, points, None, false)
+    NurbsCurve::from_lanes(1, knots, points, None, false)
         .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))
 }
 
@@ -1636,7 +1644,7 @@ fn arc_nurbs(
             knots.extend([t1, t1, t1]);
         }
     }
-    NurbsCurve::new(2, knots, control_points, Some(weights), false)
+    NurbsCurve::from_lanes(2, knots, control_points, Some(weights), false)
         .map_err(|error| GeometryError::malformed(offset, error.to_string()))
 }
 
@@ -1933,7 +1941,7 @@ mod tests {
 
     #[test]
     fn plane_space_nurbs_scaling_rejects_coordinate_overflow() {
-        let curve = NurbsCurve::new(
+        let curve = NurbsCurve::from_lanes(
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(2.0, 0.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
@@ -2024,7 +2032,7 @@ mod tests {
         let line = |start: f64, end: f64| {
             DecodedCurve::leaf(
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                    NurbsCurve::new(
+                    NurbsCurve::from_lanes(
                         1,
                         vec![start, start, end, end],
                         vec![Point3::new(start, 0.0, 0.0), Point3::new(end, 0.0, 0.0)],
@@ -2048,7 +2056,7 @@ mod tests {
 
     #[test]
     fn join_elevates_degree_and_midpoints_a_gap() {
-        let line = NurbsCurve::new(
+        let line = NurbsCurve::from_lanes(
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
@@ -2056,7 +2064,7 @@ mod tests {
             false,
         )
         .expect("valid test line");
-        let quadratic = NurbsCurve::new(
+        let quadratic = NurbsCurve::from_lanes(
             2,
             vec![5.0, 5.0, 5.0, 7.0, 7.0, 7.0],
             vec![

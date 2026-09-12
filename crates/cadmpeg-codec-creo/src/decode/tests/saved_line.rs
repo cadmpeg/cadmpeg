@@ -1340,7 +1340,7 @@ fn generated_saved_geometry_forms_closed_profiles() {
         (
             10,
             SketchGeometry::try_from(SketchGeometryDefinition::Nurbs {
-                curve: cadmpeg_ir::geometry::PcurveNurbs::new(
+                curve: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],

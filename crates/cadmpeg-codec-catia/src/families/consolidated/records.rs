@@ -1785,7 +1785,7 @@ mod tests {
     #[test]
     fn nurbs_carrier_offset_preserves_tiny_nonzero_distance() {
         let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-            NurbsSurface::new(
+            NurbsSurface::from_lanes(
                 1,
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],

@@ -22,7 +22,7 @@ const FORMAT: IdFormat<'static> = IdFormat("f3d");
 fn exact_circle_directrix() -> cadmpeg_ir::geometry::NurbsCurve {
     let center = Point3::new(2.0, 3.0, 4.0);
     let point = |x, y| Point3::new(center.x + x, center.y + y, center.z);
-    cadmpeg_ir::geometry::NurbsCurve::new(
+    cadmpeg_ir::geometry::NurbsCurve::from_lanes(
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 4.0],
         vec![
@@ -80,7 +80,15 @@ fn exact_circle_extrusion_reduces_to_cylinder_only_along_normal() {
     assert!(analytic_procedural_surface(&definition(Vector3::new(1.0, 0.0, 8.0))).is_none());
     let mut approximate = exact_circle_directrix();
     approximate
-        .edit_control_points(|points| points[3].x += 1.0e-5)
+        .edit_control_points({
+            let mut visited = 0;
+            move |point| {
+                if visited == 3 {
+                    point.x += 1.0e-5;
+                }
+                visited += 1;
+            }
+        })
         .unwrap();
     assert!(rational_four_arc_circle(&approximate).is_none());
 }
@@ -130,7 +138,7 @@ fn degree_elevated_circle() -> cadmpeg_ir::geometry::NurbsCurve {
             )
         })
         .unzip();
-    cadmpeg_ir::geometry::NurbsCurve::new(
+    cadmpeg_ir::geometry::NurbsCurve::from_lanes(
         3,
         vec![
             0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 3.0, 4.0, 4.0, 4.0, 4.0,
@@ -145,12 +153,16 @@ fn degree_elevated_circle() -> cadmpeg_ir::geometry::NurbsCurve {
 #[test]
 fn exact_circle_recognition_is_projective_and_degree_invariant() {
     let mut scaled = exact_circle_directrix();
+    let scaled_weights = scaled
+        .weights()
+        .map(|weights| weights.into_iter().map(|weight| weight * 7.0).collect());
     scaled
-        .edit_weights(|weights| {
-            for weight in weights {
-                *weight *= 7.0;
-            }
-        })
+        .set_poles(
+            scaled
+                .pole_rows()
+                .with_weights(scaled_weights)
+                .expect("scaled weights are finite and non-zero"),
+        )
         .unwrap();
     assert!(rational_four_arc_circle(&scaled).is_some());
 
@@ -169,7 +181,15 @@ fn exact_circle_recognition_is_projective_and_degree_invariant() {
         Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)))
     ));
     elevated
-        .edit_control_points(|points| points[5].x += 1.0e-5)
+        .edit_control_points({
+            let mut visited = 0;
+            move |point| {
+                if visited == 5 {
+                    point.x += 1.0e-5;
+                }
+                visited += 1;
+            }
+        })
         .unwrap();
     assert!(rational_four_arc_circle(&elevated).is_none());
 }
@@ -193,7 +213,7 @@ fn cylinder(origin: Point3, axis: Vector3, radius: f64) -> SurfaceGeometry {
 }
 
 fn linear_spine(points: Vec<Point3>) -> cadmpeg_ir::geometry::NurbsCurve {
-    cadmpeg_ir::geometry::NurbsCurve::new(
+    cadmpeg_ir::geometry::NurbsCurve::from_lanes(
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         points,
@@ -248,7 +268,15 @@ fn constant_circular_plane_plane_blend_reduces_to_tangent_cylinder() {
         unreachable!()
     };
     spine
-        .edit_control_points(|points| points[1].x = 2.1)
+        .edit_control_points({
+            let mut visited = 0;
+            move |point| {
+                if visited == 1 {
+                    point.x = 2.1;
+                }
+                visited += 1;
+            }
+        })
         .unwrap();
     assert!(analytic_procedural_surface(&definition).is_none());
 }
@@ -257,12 +285,10 @@ fn constant_circular_plane_plane_blend_reduces_to_tangent_cylinder() {
 fn constant_circular_plane_cylinder_blend_reduces_to_tangent_torus() {
     let mut circle = exact_circle_directrix();
     circle
-        .edit_control_points(|points| {
-            for point in points {
-                point.x -= 2.0;
-                point.y -= 3.0;
-                point.z -= 3.0;
-            }
+        .edit_control_points(|point| {
+            point.x -= 2.0;
+            point.y -= 3.0;
+            point.z -= 3.0;
         })
         .unwrap();
     let mut definition = nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Blend {
@@ -973,7 +999,7 @@ fn reversed_edge_negates_its_pcurve_validation_interval() {
         edge_pcurve_parameter_ranges(&edge),
         Some([[-0.55, -0.60], [0.55, 0.60]])
     );
-    let candidate = cadmpeg_ir::geometry::PcurveNurbs::new(
+    let candidate = cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![

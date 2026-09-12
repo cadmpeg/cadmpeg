@@ -161,17 +161,18 @@ fn add_edge(
     parameter_range: [f64; 2],
     sequences: &mut super::geometry::SourceSequences,
 ) -> Option<EdgeId> {
+    let control_points = nurbs.control_points();
     let start = cadmpeg_ir::eval::nurbs_curve_point(
         nurbs.degree(),
         nurbs.knots(),
-        nurbs.control_points(),
+        &control_points,
         None,
         parameter_range[0],
     )?;
     let end = cadmpeg_ir::eval::nurbs_curve_point(
         nurbs.degree(),
         nurbs.knots(),
-        nurbs.control_points(),
+        &control_points,
         None,
         parameter_range[1],
     )?;
@@ -559,7 +560,7 @@ pub(super) fn project(
             knots.extend([*breakpoint; 3]);
         }
         knots.extend([breakpoints[segment_count]; 4]);
-        let Ok(nurbs) = NurbsCurve::new(3, knots, control_points, None, false) else {
+        let Ok(nurbs) = NurbsCurve::from_lanes(3, knots, control_points, None, false) else {
             losses.push(entity_loss(
                 entry,
                 "converted spline cardinalities are inconsistent",
@@ -853,7 +854,7 @@ pub(super) fn project(
             ));
             continue;
         };
-        let Ok(nurbs) = NurbsSurface::new(
+        let Ok(nurbs) = NurbsSurface::from_lanes(
             3,
             3,
             u_knots,

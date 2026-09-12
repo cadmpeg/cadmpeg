@@ -209,22 +209,18 @@ fn normalize_support_pcurve(chart: NativeSupportChart, pcurve: &mut PcurveNurbs)
         NativeSupportChart::Canonical => {}
         NativeSupportChart::PlaneLengths => {
             pcurve
-                .edit_control_points(|points| {
-                    for point in points {
-                        point.u *= LEN_TO_MM;
-                        point.v *= -LEN_TO_MM;
-                    }
+                .edit_control_points(|point| {
+                    point.u *= LEN_TO_MM;
+                    point.v *= -LEN_TO_MM;
                 })
                 .ok()?;
         }
         NativeSupportChart::Cone { axial_scale } => {
             pcurve
-                .edit_control_points(|points| {
-                    for point in points {
-                        let native = *point;
-                        point.u = native.v;
-                        point.v = native.u * axial_scale;
-                    }
+                .edit_control_points(|point| {
+                    let native = *point;
+                    point.u = native.v;
+                    point.v = native.u * axial_scale;
                 })
                 .ok()?;
         }
@@ -1543,7 +1539,7 @@ pub(crate) fn embedded_base_curve_resolving_refs(
                 (origin[1] + direction[1]) * LEN_TO_MM,
                 (origin[2] + direction[2]) * LEN_TO_MM,
             );
-            NurbsCurve::new(1, vec![0.0, 0.0, 1.0, 1.0], vec![start, end], None, false).ok()
+            NurbsCurve::from_lanes(1, vec![0.0, 0.0, 1.0, 1.0], vec![start, end], None, false).ok()
         }
         "ellipse" => {
             let center = cur.take_position()?;
@@ -1559,7 +1555,7 @@ pub(crate) fn embedded_base_curve_resolving_refs(
                 point[1] * LEN_TO_MM,
                 point[2] * LEN_TO_MM,
             );
-            NurbsCurve::new(1, vec![0.0, 0.0, 1.0, 1.0], vec![at, at], None, false).ok()
+            NurbsCurve::from_lanes(1, vec![0.0, 0.0, 1.0, 1.0], vec![at, at], None, false).ok()
         }
         "intcurve" => {
             cur.take_bool()?;
@@ -3384,7 +3380,7 @@ mod cache_form_tests {
     use cadmpeg_ir::math::Point2;
 
     fn linear_pcurve(points: [Point2; 2]) -> PcurveNurbs {
-        PcurveNurbs::new(1, vec![0.0, 0.0, 1.0, 1.0], points.into(), None, false).unwrap()
+        PcurveNurbs::from_lanes(1, vec![0.0, 0.0, 1.0, 1.0], points.into(), None, false).unwrap()
     }
 
     #[test]
@@ -3500,7 +3496,7 @@ mod cache_form_tests {
 
     /// A degree-one solved curve whose parameter domain is `[0, 1]`.
     fn solved_curve() -> NurbsCurve {
-        NurbsCurve::new(
+        NurbsCurve::from_lanes(
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],

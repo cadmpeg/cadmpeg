@@ -141,7 +141,7 @@ fn decode_surfaces(
             Some(Surface {
                 pos: node.pos,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                    NurbsSurface::new(
+                    NurbsSurface::from_lanes(
                         descriptor.u_degree as u32,
                         descriptor.v_degree as u32,
                         full_u,
@@ -234,7 +234,7 @@ fn decode_pcurves(
             Some(Pcurve {
                 pos: node.pos,
                 geometry: PcurveGeometry::Nurbs {
-                    nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+                    nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
                         descriptor.basis.degree as u32,
                         knots,
                         control_points,
@@ -321,7 +321,7 @@ fn decode_curves(
             Some(Curve {
                 pos: node.pos,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                    NurbsCurve::new(
+                    NurbsCurve::from_lanes(
                         descriptor.basis.degree as u32,
                         knots,
                         control_points,

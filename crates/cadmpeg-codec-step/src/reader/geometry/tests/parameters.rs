@@ -46,7 +46,7 @@ fn edge_parameter_range_normalizes_periodic_interval_in_constant_time() {
 
 #[test]
 fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
-    let nurbs = NurbsCurve::new(
+    let nurbs = NurbsCurve::from_lanes(
         3,
         vec![0.0, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 1.0],
         vec![
@@ -63,10 +63,11 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
     )
     .unwrap();
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone()));
+    let control_points = nurbs.control_points();
     let start_point = nurbs_curve_point(
         nurbs.degree(),
         nurbs.knots(),
-        nurbs.control_points(),
+        &control_points,
         None,
         0.0,
     )
@@ -74,7 +75,7 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
     let end_point = nurbs_curve_point(
         nurbs.degree(),
         nurbs.knots(),
-        nurbs.control_points(),
+        &control_points,
         None,
         1.0,
     )

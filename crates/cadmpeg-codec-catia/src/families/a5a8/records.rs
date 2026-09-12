@@ -592,7 +592,7 @@ pub(crate) fn rolling_ball_limit_curve(
         &first,
         &second,
     )?;
-    NurbsCurve::new(
+    NurbsCurve::from_lanes(
         A5FreeformCurve::DEGREE,
         knots,
         control_points
@@ -737,7 +737,7 @@ fn parse_a5_nurbs_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5Nurbs
     Some(A5NurbsCurve {
         pos: frame.pos,
         header_token: frame.header_token,
-        geometry: NurbsCurve::new(degree, knots, control_points, None, false).ok()?,
+        geometry: NurbsCurve::from_lanes(degree, knots, control_points, None, false).ok()?,
     })
 }
 
@@ -1345,7 +1345,7 @@ pub fn a8_surface_from_external_grid(
     Some(FreeformSurface {
         pos: header.pos,
         identity: Some(header.object_id),
-        geometry: NurbsSurface::new(
+        geometry: NurbsSurface::from_lanes(
             header.u_degree,
             header.v_degree,
             header.u_knots.expanded()?,
@@ -1555,7 +1555,7 @@ fn a5_surface(data: &[u8], frame: ConsolidatedFrame) -> Option<FreeformSurface> 
     Some(FreeformSurface {
         pos,
         identity: None,
-        geometry: NurbsSurface::new(
+        geometry: NurbsSurface::from_lanes(
             u_degree,
             v_degree,
             u_knots,
@@ -1718,7 +1718,7 @@ fn a8_surface_from_parsed(data: &[u8], parsed: ParsedA8SurfaceHeader) -> Option<
     Some(FreeformSurface {
         pos,
         identity: Some(object_id),
-        geometry: NurbsSurface::new(
+        geometry: NurbsSurface::from_lanes(
             u_degree,
             v_degree,
             u_knots.expanded()?,

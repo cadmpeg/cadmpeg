@@ -555,13 +555,13 @@ fn decode_preserves_rational_bspline_weights_and_multiplicities() {
     };
     assert_eq!(nurbs.degree(), 2);
     assert_eq!(nurbs.knots(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
-    assert_eq!(nurbs.weights(), Some(&[1.0, 0.5, 1.0][..]));
+    assert_eq!(nurbs.weights(), Some(vec![1.0, 0.5, 1.0]));
     assert_eq!(
         cadmpeg_ir::eval::nurbs_curve_point(
             nurbs.degree(),
             nurbs.knots(),
-            nurbs.control_points(),
-            nurbs.weights(),
+            &nurbs.control_points(),
+            nurbs.weights().as_deref(),
             0.5,
         ),
         Some(cadmpeg_ir::math::Point3::new(1.0, 1.0 / 3.0, 0.0))
@@ -825,8 +825,8 @@ fn decode_projects_a_bounded_polynomial_bspline_curve() {
         cadmpeg_ir::eval::nurbs_curve_point(
             nurbs.degree(),
             nurbs.knots(),
-            nurbs.control_points(),
-            nurbs.weights(),
+            &nurbs.control_points(),
+            nurbs.weights().as_deref(),
             0.5,
         ),
         Some(cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0))
@@ -860,8 +860,8 @@ fn decode_projects_a_degree_zero_polynomial_bspline_curve() {
         cadmpeg_ir::eval::nurbs_curve_point(
             nurbs.degree(),
             nurbs.knots(),
-            nurbs.control_points(),
-            nurbs.weights(),
+            &nurbs.control_points(),
+            nurbs.weights().as_deref(),
             0.5,
         ),
         Some(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))

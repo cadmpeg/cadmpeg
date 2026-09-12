@@ -436,7 +436,7 @@ pub(super) fn project(
         ir.model.curves.push(Curve {
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::new(1, knots, points, None, false).map_err(|error| {
+                NurbsCurve::from_lanes(1, knots, points, None, false).map_err(|error| {
                     CodecError::malformed(format_args!("copious-data curve: {error}"))
                 })?,
             )),

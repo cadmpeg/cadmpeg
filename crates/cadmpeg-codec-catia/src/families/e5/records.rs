@@ -638,7 +638,7 @@ fn e5_nurbs_surface(data: &[u8], record: E5Record) -> Option<SurfaceGeometry> {
     let row_len = v_count;
     view.is_empty()
         .then(|| {
-            NurbsSurface::new(
+            NurbsSurface::from_lanes(
                 u_degree,
                 v_degree,
                 u_knots,
@@ -889,7 +889,7 @@ mod tests {
             assert_eq!(nurbs.v_knots(), [0.0, 0.0, 1.0, 1.0]);
             assert_eq!(nurbs.u_count(), 2);
             assert_eq!(nurbs.v_count(), 2);
-            assert_eq!(nurbs.poles().count(), 4);
+            assert_eq!(nurbs.poles().len(), 4);
             assert_eq!(nurbs.weights().is_some(), mode == 1);
         }
     }
