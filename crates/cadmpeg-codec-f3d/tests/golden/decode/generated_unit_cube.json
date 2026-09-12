@@ -414,121 +414,145 @@
       "edges": [
         {
           "id": "f3d:brep:entity#58",
-          "curve": "f3d:brep:entity#22",
-          "param_range": [
-            0.0,
-            10.0
-          ],
+          "carrier": {
+            "curve": "f3d:brep:entity#22",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "start": "f3d:brep:entity#70",
           "end": "f3d:brep:entity#71"
         },
         {
           "id": "f3d:brep:entity#59",
-          "curve": "f3d:brep:entity#23",
-          "param_range": [
-            0.0,
-            10.0
-          ],
+          "carrier": {
+            "curve": "f3d:brep:entity#23",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "start": "f3d:brep:entity#71",
           "end": "f3d:brep:entity#72"
         },
         {
           "id": "f3d:brep:entity#60",
-          "curve": "f3d:brep:entity#24",
-          "param_range": [
-            0.0,
-            10.0
-          ],
+          "carrier": {
+            "curve": "f3d:brep:entity#24",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "start": "f3d:brep:entity#72",
           "end": "f3d:brep:entity#76"
         },
         {
           "id": "f3d:brep:entity#61",
-          "curve": "f3d:brep:entity#25",
-          "param_range": [
-            0.0,
-            10.0
-          ],
+          "carrier": {
+            "curve": "f3d:brep:entity#25",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "start": "f3d:brep:entity#73",
           "end": "f3d:brep:entity#77"
         },
         {
           "id": "f3d:brep:entity#62",
-          "curve": "f3d:brep:entity#26",
-          "param_range": [
-            0.0,
-            10.0
-          ],
+          "carrier": {
+            "curve": "f3d:brep:entity#26",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "start": "f3d:brep:entity#72",
           "end": "f3d:brep:entity#73"
         },
         {
           "id": "f3d:brep:entity#63",
-          "curve": "f3d:brep:entity#27",
-          "param_range": [
-            0.0,
-            10.0
-          ],
+          "carrier": {
+            "curve": "f3d:brep:entity#27",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "start": "f3d:brep:entity#73",
           "end": "f3d:brep:entity#70"
         },
         {
           "id": "f3d:brep:entity#64",
-          "curve": "f3d:brep:entity#28",
-          "param_range": [
-            0.0,
-            10.0
-          ],
+          "carrier": {
+            "curve": "f3d:brep:entity#28",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "start": "f3d:brep:entity#74",
           "end": "f3d:brep:entity#75"
         },
         {
           "id": "f3d:brep:entity#65",
-          "curve": "f3d:brep:entity#29",
-          "param_range": [
-            0.0,
-            10.0
-          ],
+          "carrier": {
+            "curve": "f3d:brep:entity#29",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "start": "f3d:brep:entity#75",
           "end": "f3d:brep:entity#76"
         },
         {
           "id": "f3d:brep:entity#66",
-          "curve": "f3d:brep:entity#30",
-          "param_range": [
-            0.0,
-            10.0
-          ],
+          "carrier": {
+            "curve": "f3d:brep:entity#30",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "start": "f3d:brep:entity#76",
           "end": "f3d:brep:entity#77"
         },
         {
           "id": "f3d:brep:entity#67",
-          "curve": "f3d:brep:entity#31",
-          "param_range": [
-            0.0,
-            10.0
-          ],
+          "carrier": {
+            "curve": "f3d:brep:entity#31",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "start": "f3d:brep:entity#77",
           "end": "f3d:brep:entity#74"
         },
         {
           "id": "f3d:brep:entity#68",
-          "curve": "f3d:brep:entity#32",
-          "param_range": [
-            0.0,
-            10.0
-          ],
+          "carrier": {
+            "curve": "f3d:brep:entity#32",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "start": "f3d:brep:entity#70",
           "end": "f3d:brep:entity#74"
         },
         {
           "id": "f3d:brep:entity#69",
-          "curve": "f3d:brep:entity#33",
-          "param_range": [
-            0.0,
-            10.0
-          ],
+          "carrier": {
+            "curve": "f3d:brep:entity#33",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "start": "f3d:brep:entity#71",
           "end": "f3d:brep:entity#75"
         }
@@ -1756,8 +1780,10 @@
         ]
       }
     },
-    "transfer": "full",
-    "geometry_transferred": true,
+    "transfer": {
+      "transfer": "full",
+      "geometry_transferred": true
+    },
     "losses": [
       {
         "code": {

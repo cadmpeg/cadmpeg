@@ -397,7 +397,6 @@
       }
     },
     "report": {
-      "geometry_transferred": true,
       "identity": {
         "classification": "classified",
         "dialects": {
@@ -461,7 +460,10 @@
         "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
         "NX object model: 1 indexed section(s), 2 bounded entity record(s)"
       ],
-      "transfer": "full"
+      "transfer": {
+        "geometry_transferred": true,
+        "transfer": "full"
+      }
     },
     "source_fidelity": {
       "annotations": {

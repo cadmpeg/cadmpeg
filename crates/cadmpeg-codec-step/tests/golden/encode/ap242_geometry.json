@@ -61,6 +61,10 @@
       "fidelity": {
         "status": "not_provided"
       },
+      "identity": {
+        "payload": "native",
+        "target": "step:ap242-e3"
+      },
       "losses": [
         {
           "code": {
@@ -95,8 +99,6 @@
         }
       ],
       "notes": [],
-      "payload": "native",
-      "target": "step:ap242-e3",
       "write_path": "synthesized"
     }
   },
@@ -162,6 +164,10 @@
       "fidelity": {
         "status": "not_provided"
       },
+      "identity": {
+        "payload": "native",
+        "target": "step:ap214"
+      },
       "losses": [
         {
           "code": {
@@ -196,8 +202,6 @@
         }
       ],
       "notes": [],
-      "payload": "native",
-      "target": "step:ap214",
       "write_path": "synthesized"
     }
   },

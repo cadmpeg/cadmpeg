@@ -27,11 +27,13 @@
         {
           "definition": {
             "distance": 2.0,
-            "flags": {
-              "state": "absent"
+            "extension": {
+              "flags": {
+                "state": "absent"
+              },
+              "layout": "legacy"
             },
             "kind": "offset",
-            "layout": "legacy",
             "support": "iges:model:surface#D1",
             "u_sense": 0,
             "v_sense": 0
@@ -1625,7 +1627,6 @@
     }
   },
   "report": {
-    "geometry_transferred": true,
     "identity": {
       "classification": "classified",
       "dialects": {
@@ -1651,7 +1652,10 @@
       "parameter_tokens=16",
       "external_references=0"
     ],
-    "transfer": "full",
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    },
     "transfer_ledger": {
       "entries": [
         {

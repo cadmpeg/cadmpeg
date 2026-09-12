@@ -26,19 +26,21 @@
       "procedural_surfaces": [
         {
           "definition": {
-            "extension": 0,
             "kind": "exact",
-            "layout": "legacy",
-            "ranges": [
-              [
-                0.0,
-                1.0
-              ],
-              [
-                0.0,
-                1.0
+            "spline": {
+              "extension": 0,
+              "layout": "legacy",
+              "ranges": [
+                [
+                  0.0,
+                  1.0
+                ],
+                [
+                  0.0,
+                  1.0
+                ]
               ]
-            ]
+            }
           },
           "id": "iges:model:procedural-surface#D1",
           "record_bounds": [
@@ -1507,7 +1509,6 @@
     }
   },
   "report": {
-    "geometry_transferred": true,
     "identity": {
       "classification": "classified",
       "dialects": {
@@ -1532,7 +1533,10 @@
       "parameter_tokens=38",
       "external_references=0"
     ],
-    "transfer": "full",
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    },
     "transfer_ledger": {
       "entries": [
         {

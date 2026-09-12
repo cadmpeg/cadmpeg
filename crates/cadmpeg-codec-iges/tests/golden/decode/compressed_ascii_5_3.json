@@ -1545,7 +1545,6 @@
     }
   },
   "report": {
-    "geometry_transferred": true,
     "identity": {
       "classification": "classified",
       "dialects": {
@@ -1570,7 +1569,10 @@
       "parameter_tokens=8",
       "external_references=0"
     ],
-    "transfer": "full",
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    },
     "transfer_ledger": {
       "entries": [
         {

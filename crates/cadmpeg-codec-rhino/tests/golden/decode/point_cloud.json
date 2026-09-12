@@ -195,7 +195,6 @@
     }
   },
   "report": {
-    "geometry_transferred": true,
     "identity": {
       "classification": "classified",
       "dialects": {
@@ -246,7 +245,10 @@
     "notes": [
       "decoded 1/1 Rhino object records; retained metadata/digests for 1 records and complete bytes for 1; document cap 268435456 bytes, per-record cap 16777216 bytes"
     ],
-    "transfer": "full"
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {},

@@ -15,6 +15,10 @@
     "fidelity": {
       "status": "not_provided"
     },
+    "identity": {
+      "payload": "native",
+      "target": "iges:5.3-fixed-ascii"
+    },
     "losses": [
       {
         "code": {
@@ -60,8 +64,6 @@
     "notes": [
       "IGES Fixed ASCII container regenerated from supported neutral geometry"
     ],
-    "payload": "native",
-    "target": "iges:5.3-fixed-ascii",
     "write_path": "synthesized"
   }
 }

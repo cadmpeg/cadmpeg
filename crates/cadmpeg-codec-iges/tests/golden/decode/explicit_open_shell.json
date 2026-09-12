@@ -152,83 +152,99 @@
       "drawings": [],
       "edges": [
         {
-          "curve": "iges:model:curve#D11",
+          "carrier": {
+            "curve": "iges:model:curve#D11",
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
           "end": "iges:model:vertex#D11-end",
           "id": "iges:model:edge#D11",
-          "param_range": [
-            0.0,
-            1.0
-          ],
           "start": "iges:model:vertex#D11-start"
         },
         {
-          "curve": "iges:model:curve#D13",
+          "carrier": {
+            "curve": "iges:model:curve#D13",
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
           "end": "iges:model:vertex#D13-end",
           "id": "iges:model:edge#D13",
-          "param_range": [
-            0.0,
-            1.0
-          ],
           "start": "iges:model:vertex#D13-start"
         },
         {
-          "curve": "iges:model:curve#D7",
+          "carrier": {
+            "curve": "iges:model:curve#D7",
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
           "end": "iges:model:vertex#D23:D15:2",
           "id": "iges:model:edge#D23:D17:1",
-          "param_range": [
-            0.0,
-            1.0
-          ],
           "start": "iges:model:vertex#D23:D15:1"
         },
         {
-          "curve": "iges:model:curve#D9",
+          "carrier": {
+            "curve": "iges:model:curve#D9",
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
           "end": "iges:model:vertex#D23:D15:3",
           "id": "iges:model:edge#D23:D17:2",
-          "param_range": [
-            0.0,
-            1.0
-          ],
           "start": "iges:model:vertex#D23:D15:2"
         },
         {
-          "curve": "iges:model:curve#D11",
+          "carrier": {
+            "curve": "iges:model:curve#D11",
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
           "end": "iges:model:vertex#D23:D15:4",
           "id": "iges:model:edge#D23:D17:3",
-          "param_range": [
-            0.0,
-            1.0
-          ],
           "start": "iges:model:vertex#D23:D15:3"
         },
         {
-          "curve": "iges:model:curve#D13",
+          "carrier": {
+            "curve": "iges:model:curve#D13",
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
           "end": "iges:model:vertex#D23:D15:1",
           "id": "iges:model:edge#D23:D17:4",
-          "param_range": [
-            0.0,
-            1.0
-          ],
           "start": "iges:model:vertex#D23:D15:4"
         },
         {
-          "curve": "iges:model:curve#D7",
+          "carrier": {
+            "curve": "iges:model:curve#D7",
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
           "end": "iges:model:vertex#D7-end",
           "id": "iges:model:edge#D7",
-          "param_range": [
-            0.0,
-            1.0
-          ],
           "start": "iges:model:vertex#D7-start"
         },
         {
-          "curve": "iges:model:curve#D9",
+          "carrier": {
+            "curve": "iges:model:curve#D9",
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
           "end": "iges:model:vertex#D9-end",
           "id": "iges:model:edge#D9",
-          "param_range": [
-            0.0,
-            1.0
-          ],
           "start": "iges:model:vertex#D9-start"
         }
       ],
@@ -7330,7 +7346,6 @@
     }
   },
   "report": {
-    "geometry_transferred": true,
     "identity": {
       "classification": "classified",
       "dialects": {
@@ -7363,7 +7378,10 @@
       "parameter_tokens=107",
       "external_references=0"
     ],
-    "transfer": "full",
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    },
     "transfer_ledger": {
       "entries": [
         {

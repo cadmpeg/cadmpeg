@@ -136,28 +136,34 @@
       "edges": [
         {
           "id": "f3d:brep:entity#10",
-          "param_range": [
-            0.0,
-            1.0
-          ],
+          "carrier": {
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
           "start": "f3d:brep:entity#13",
           "end": "f3d:brep:entity#14"
         },
         {
           "id": "f3d:brep:entity#11",
-          "param_range": [
-            0.0,
-            1.0
-          ],
+          "carrier": {
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
           "start": "f3d:brep:entity#14",
           "end": "f3d:brep:entity#15"
         },
         {
           "id": "f3d:brep:entity#12",
-          "param_range": [
-            0.0,
-            1.0
-          ],
+          "carrier": {
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
           "start": "f3d:brep:entity#15",
           "end": "f3d:brep:entity#13"
         }
@@ -286,20 +292,22 @@
           "name": "0_277",
           "placement": {
             "kind": "resolved",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "frame": {
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-sketch-placement#3182"
@@ -2103,8 +2111,10 @@
         ]
       }
     },
-    "transfer": "full",
-    "geometry_transferred": true,
+    "transfer": {
+      "transfer": "full",
+      "geometry_transferred": true
+    },
     "losses": [
       {
         "code": {

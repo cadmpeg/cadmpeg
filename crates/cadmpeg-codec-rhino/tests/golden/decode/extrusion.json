@@ -85,13 +85,15 @@
       "drawings": [],
       "edges": [
         {
-          "curve": "rhino:object:curve#record-000000-offset-177.profile-0.start",
+          "carrier": {
+            "curve": "rhino:object:curve#record-000000-offset-177.profile-0.start",
+            "param_range": [
+              0.0,
+              4.0
+            ]
+          },
           "end": "rhino:object:vertex#record-000000-offset-177.cap-0.profile-0",
           "id": "rhino:object:edge#record-000000-offset-177.cap-0.profile-0",
-          "param_range": [
-            0.0,
-            4.0
-          ],
           "start": "rhino:object:vertex#record-000000-offset-177.cap-0.profile-0"
         }
       ],
@@ -477,7 +479,6 @@
     }
   },
   "report": {
-    "geometry_transferred": true,
     "identity": {
       "classification": "classified",
       "dialects": {
@@ -561,7 +562,10 @@
     "notes": [
       "decoded 1/1 Rhino object records; retained metadata/digests for 1 records and complete bytes for 1; document cap 268435456 bytes, per-record cap 16777216 bytes"
     ],
-    "transfer": "full"
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {

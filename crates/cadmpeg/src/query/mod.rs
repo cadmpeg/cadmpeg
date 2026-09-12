@@ -265,15 +265,23 @@ struct DecodeReportProbe {
     #[serde(default)]
     format: Option<String>,
     #[serde(default)]
-    transfer: Option<String>,
-    #[serde(default)]
-    geometry_transferred: Option<bool>,
+    transfer: Option<DecodeTransferProbe>,
     #[serde(default)]
     coverage: BTreeMap<String, u64>,
     #[serde(default)]
     losses: Vec<LossProbe>,
     #[serde(default)]
     dialects: Option<DialectLayers>,
+}
+
+/// Lenient decode-transfer state: the tag reads as a string so a future state
+/// does not break projection.
+#[derive(Deserialize)]
+struct DecodeTransferProbe {
+    #[serde(default)]
+    transfer: Option<String>,
+    #[serde(default)]
+    geometry_transferred: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -624,10 +632,18 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
                     if let Some(format) = &decode.format {
                         rows.push(("decode_format".to_owned(), cell(format)));
                     }
-                    if let Some(transfer) = &decode.transfer {
+                    if let Some(transfer) = decode
+                        .transfer
+                        .as_ref()
+                        .and_then(|state| state.transfer.as_ref())
+                    {
                         rows.push(("decode_transfer".to_owned(), cell(transfer)));
                     }
-                    if let Some(geometry) = decode.geometry_transferred {
+                    if let Some(geometry) = decode
+                        .transfer
+                        .as_ref()
+                        .and_then(|state| state.geometry_transferred)
+                    {
                         rows.push(("geometry_transferred".to_owned(), geometry.to_string()));
                     }
                     rows.push((

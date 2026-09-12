@@ -455,7 +455,6 @@
       "visible_spline_surface_row_count": 0,
       "visible_torus_or_sphere_surface_row_count": 0
     },
-    "geometry_transferred": false,
     "identity": {
       "classification": "classified",
       "dialects": {
@@ -543,7 +542,10 @@
       "expanded 1 Unix-compress section payload(s) with TOC-validated output lengths",
       "container-level enumeration; `decode` preserves PSB geometry sections as unknown records and transfers only carriers whose model-space placement is complete"
     ],
-    "transfer": "full"
+    "transfer": {
+      "geometry_transferred": false,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {

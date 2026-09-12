@@ -986,7 +986,6 @@
     }
   },
   "report": {
-    "geometry_transferred": false,
     "identity": {
       "classification": "classified",
       "dialects": {
@@ -1011,7 +1010,10 @@
       "parameter_tokens=1",
       "external_references=0"
     ],
-    "transfer": "full"
+    "transfer": {
+      "geometry_transferred": false,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {},

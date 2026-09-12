@@ -54,16 +54,19 @@
       "drawings": [],
       "edges": [
         {
+          "carrier": {},
           "end": "sldprt:brep:vertex#51",
           "id": "sldprt:brep:edge#40",
           "start": "sldprt:brep:vertex#50"
         },
         {
+          "carrier": {},
           "end": "sldprt:brep:vertex#52",
           "id": "sldprt:brep:edge#41",
           "start": "sldprt:brep:vertex#51"
         },
         {
+          "carrier": {},
           "end": "sldprt:brep:vertex#50",
           "id": "sldprt:brep:edge#42",
           "start": "sldprt:brep:vertex#52"
@@ -264,31 +267,33 @@
             "0:sldprt:brep:point#61"
           ],
           "geometry": {
-            "control_points": [
-              {
-                "u": 0.0,
-                "v": 0.0
-              },
-              {
-                "u": 500.0,
-                "v": 1000.0
-              },
-              {
-                "u": 1000.0,
-                "v": 0.0
-              }
-            ],
-            "degree": 2,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              0.0,
-              1.0,
-              1.0,
-              1.0
-            ],
-            "periodic": false
+            "curve": {
+              "control_points": [
+                {
+                  "u": 0.0,
+                  "v": 0.0
+                },
+                {
+                  "u": 500.0,
+                  "v": 1000.0
+                },
+                {
+                  "u": 1000.0,
+                  "v": 0.0
+                }
+              ],
+              "degree": 2,
+              "knots": [
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "periodic": false
+            },
+            "kind": "nurbs"
           },
           "geometry_ref": "0:sldprt:brep:curve#70",
           "id": "sldprt:model:sketch-entity#247:0:0:0",
@@ -344,36 +349,38 @@
             "1:sldprt:brep:point#61"
           ],
           "geometry": {
-            "control_points": [
-              {
-                "u": 0.0,
-                "v": 0.0
-              },
-              {
-                "u": 500.0,
-                "v": 1000.0
-              },
-              {
-                "u": 1000.0,
-                "v": 0.0
-              }
-            ],
-            "degree": 2,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              0.0,
-              1.0,
-              1.0,
-              1.0
-            ],
-            "periodic": false,
-            "weights": [
-              1.0,
-              0.5,
-              1.0
-            ]
+            "curve": {
+              "control_points": [
+                {
+                  "u": 0.0,
+                  "v": 0.0
+                },
+                {
+                  "u": 500.0,
+                  "v": 1000.0
+                },
+                {
+                  "u": 1000.0,
+                  "v": 0.0
+                }
+              ],
+              "degree": 2,
+              "knots": [
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "periodic": false,
+              "weights": [
+                1.0,
+                0.5,
+                1.0
+              ]
+            },
+            "kind": "nurbs"
           },
           "geometry_ref": "1:sldprt:brep:curve#70",
           "id": "sldprt:model:sketch-entity#247:1:0:0",
@@ -430,22 +437,24 @@
           "name": "feature input spline sketch",
           "native_ref": "sldprt:feature-input:resolved-features#247",
           "placement": {
-            "kind": "resolved",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "frame": {
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            }
+            "kind": "resolved"
           },
           "profiles": [
             [
@@ -470,22 +479,24 @@
           "name": "feature input rational spline sketch",
           "native_ref": "sldprt:feature-input:resolved-features#247",
           "placement": {
-            "kind": "resolved",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "frame": {
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            }
+            "kind": "resolved"
           },
           "profiles": [
             [
@@ -810,7 +821,6 @@
     }
   },
   "report": {
-    "geometry_transferred": true,
     "identity": {
       "classification": "classified",
       "dialects": {
@@ -891,7 +901,10 @@
       "active Parasolid B-rep candidate: Contents/Config-0-Partition (544 bytes, schema SCH_SW_33103_11000)",
       "Parasolid body streams supply the typed topology and analytic carriers used by decode"
     ],
-    "transfer": "full"
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {

@@ -46,13 +46,15 @@
       "drawings": [],
       "edges": [
         {
-          "curve": "iges:model:curve#D7",
+          "carrier": {
+            "curve": "iges:model:curve#D7",
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
           "end": "iges:model:vertex#D7-end",
           "id": "iges:model:edge#D7",
-          "param_range": [
-            0.0,
-            1.0
-          ],
           "start": "iges:model:vertex#D7-start"
         }
       ],
@@ -2707,7 +2709,6 @@
     }
   },
   "report": {
-    "geometry_transferred": true,
     "identity": {
       "classification": "classified",
       "dialects": {
@@ -2736,7 +2737,10 @@
       "external_references=0",
       "references.resolved=2"
     ],
-    "transfer": "full",
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    },
     "transfer_ledger": {
       "entries": [
         {

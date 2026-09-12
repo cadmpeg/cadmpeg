@@ -75,23 +75,27 @@
       "drawings": [],
       "edges": [
         {
-          "curve": "iges:model:curve#D11",
+          "carrier": {
+            "curve": "iges:model:curve#D11",
+            "param_range": [
+              0.0,
+              1.5707963267948966
+            ]
+          },
           "end": "iges:model:vertex#D11-end",
           "id": "iges:model:edge#D11",
-          "param_range": [
-            0.0,
-            1.5707963267948966
-          ],
           "start": "iges:model:vertex#D11-start"
         },
         {
-          "curve": "iges:model:curve#D9",
+          "carrier": {
+            "curve": "iges:model:curve#D9",
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
           "end": "iges:model:vertex#D9-end",
           "id": "iges:model:edge#D9",
-          "param_range": [
-            0.0,
-            1.0
-          ],
           "start": "iges:model:vertex#D9-start"
         }
       ],
@@ -6798,7 +6802,6 @@
     }
   },
   "report": {
-    "geometry_transferred": true,
     "identity": {
       "classification": "classified",
       "dialects": {
@@ -6850,7 +6853,10 @@
       "external_references=0",
       "references.resolved=17"
     ],
-    "transfer": "full",
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    },
     "transfer_ledger": {
       "entries": [
         {

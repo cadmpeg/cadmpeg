@@ -7054,11 +7054,11 @@ impl<'de> Deserialize<'de> for SweepShape {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "shape", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum GeneratedSweepSection {
     /// Filled or hollow circular region centered on the sweep path.
     CircularRegion {
         /// Outer radius and optional smaller radial wall thickness.
-        #[serde(flatten)]
         region: SweepCircularRegion,
     },
 }
@@ -7328,6 +7328,7 @@ impl TryFrom<HelicalSweepTravelWire> for HelicalSweepTravel {
 /// Complete construction of a solid helical sweep.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct HelicalSweepConstruction {
     /// Profile swept along the helical path.
     pub profile: PlanarProfileRef,
@@ -7340,7 +7341,6 @@ pub struct HelicalSweepConstruction {
     /// Positive axial advance per turn; zero is permitted for a planar spiral.
     pub pitch: NonNegativeLength,
     /// Signed axial travel and radial change per turn.
-    #[serde(flatten)]
     pub travel: HelicalSweepTravel,
     /// Positive number of turns.
     pub turns: PositiveReal,

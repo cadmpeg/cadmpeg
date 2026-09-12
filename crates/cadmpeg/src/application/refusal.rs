@@ -604,9 +604,9 @@ mod tests {
         let report = report_value(&refusal);
         assert_eq!(report["code"], "unsupported_target");
         assert_eq!(report["stage"], "plan");
-        assert_eq!(report["target"]["kind"], "unknown_explicit");
+        assert_eq!(report["target"]["refusal"]["kind"], "unknown_explicit");
         assert_eq!(report["target"]["format"], "iges");
-        assert_eq!(report["target"]["requested"], "iges:9.9");
+        assert_eq!(report["target"]["refusal"]["requested"], "iges:9.9");
         assert_eq!(
             report["target"]["available"][0]["id"],
             "iges:5.3-fixed-ascii"

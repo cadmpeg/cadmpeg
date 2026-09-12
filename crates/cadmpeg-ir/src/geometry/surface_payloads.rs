@@ -538,12 +538,12 @@ pub struct OffsetSurfaceConstruction {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     linear_support_extension: bool,
     /// Legacy conditional extension flags or the revision-gated form.
-    #[serde(flatten)]
     extension: OffsetExtension,
 }
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct OffsetSurfaceConstructionWire {
     /// Surface this surface is offset from.
     support: SurfaceId,
@@ -560,7 +560,6 @@ struct OffsetSurfaceConstructionWire {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     linear_support_extension: bool,
     /// Legacy conditional extension flags or the revision-gated form.
-    #[serde(flatten)]
     extension: OffsetExtension,
 }
 
@@ -1039,13 +1038,12 @@ impl TryFrom<SumSurfaceConstructionWire> for SumSurfaceConstruction {
 #[cfg_attr(feature = "schema", schemars(with = "ExactSurfacePayloadWire"))]
 #[serde(try_from = "ExactSurfacePayloadWire")]
 pub struct ExactSurfacePayload {
-    #[serde(flatten)]
     spline: ExactSpline,
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct ExactSurfacePayloadWire {
-    #[serde(flatten)]
     spline: ExactSpline,
 }
 impl ExactSurfacePayload {

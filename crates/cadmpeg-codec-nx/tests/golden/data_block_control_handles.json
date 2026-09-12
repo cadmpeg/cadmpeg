@@ -268,7 +268,6 @@
       }
     },
     "report": {
-      "geometry_transferred": false,
       "identity": {
         "classification": "classified",
         "dialects": {
@@ -312,7 +311,10 @@
         "NX object model: 0 of 1 bounded offset-store control block(s) have an admitted complete grammar",
         "NX object model: 1 indexed section(s), 0 ID-bounded entity record(s), 3 offset-only data block(s)"
       ],
-      "transfer": "full"
+      "transfer": {
+        "geometry_transferred": false,
+        "transfer": "full"
+      }
     },
     "source_fidelity": {
       "annotations": {

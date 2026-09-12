@@ -4306,915 +4306,1081 @@
       "drawings": [],
       "edges": [
         {
-          "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:5",
+          "carrier": {
+            "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:5",
+            "param_range": [
+              0.0,
+              1.570796326794897
+            ]
+          },
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:11",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:12",
-          "param_range": [
-            0.0,
-            1.570796326794897
-          ],
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:1",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:6",
+          "carrier": {
+            "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:6",
+            "param_range": [
+              0.0,
+              16.0
+            ]
+          },
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:13",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:14",
-          "param_range": [
-            0.0,
-            16.0
-          ],
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:2",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:7",
+          "carrier": {
+            "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:7",
+            "param_range": [
+              0.0,
+              15.0
+            ]
+          },
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:11",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:16",
-          "param_range": [
-            0.0,
-            15.0
-          ],
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:15",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:8",
+          "carrier": {
+            "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:8",
+            "param_range": [
+              0.0,
+              24.0
+            ]
+          },
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:15",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:17",
-          "param_range": [
-            0.0,
-            24.0
-          ],
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:13",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:9",
+          "carrier": {
+            "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:9",
+            "param_range": [
+              -0.0,
+              10.0
+            ]
+          },
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:20",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:21",
-          "param_range": [
-            -0.0,
-            10.0
-          ],
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:11",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:10",
+          "carrier": {
+            "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:10",
+            "param_range": [
+              0.0,
+              1.570796326794897
+            ]
+          },
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:20",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:22",
-          "param_range": [
-            0.0,
-            1.570796326794897
-          ],
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:4",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:11",
+          "carrier": {
+            "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:11",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:25",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:26",
-          "param_range": [
-            0.0,
-            10.0
-          ],
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:13",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:12%4076889a8b8100da92",
+          "carrier": {
+            "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:12%4076889a8b8100da92",
+            "param_range": [
+              0.0,
+              16.0
+            ]
+          },
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:25",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:27%4076889a8b8100da92",
-          "param_range": [
-            0.0,
-            16.0
-          ],
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:6",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:1",
+          "carrier": {
+            "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:1",
+            "param_range": [
+              1.0,
+              24.0
+            ]
+          },
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:2",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:3",
-          "param_range": [
-            1.0,
-            24.0
-          ],
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:1",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:13%4076889a8b8100da92",
+          "carrier": {
+            "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:13%4076889a8b8100da92",
+            "param_range": [
+              0.0,
+              15.0
+            ]
+          },
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:20",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:31%4076889a8b8100da92",
-          "param_range": [
-            0.0,
-            15.0
-          ],
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:30",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:14%4076889a8b8100da92",
+          "carrier": {
+            "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:14%4076889a8b8100da92",
+            "param_range": [
+              0.0,
+              24.0
+            ]
+          },
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:30",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:32%4076889a8b8100da92",
-          "param_range": [
-            0.0,
-            24.0
-          ],
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:25",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:15%4076889a8b8100da92",
+          "carrier": {
+            "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:15%4076889a8b8100da92",
+            "param_range": [
+              0.0,
+              6.283185307179586
+            ]
+          },
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:34",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:35%4076889a8b8100da92",
-          "param_range": [
-            0.0,
-            6.283185307179586
-          ],
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:34",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:16",
+          "carrier": {
+            "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:16",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:30",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:38",
-          "param_range": [
-            0.0,
-            10.0
-          ],
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:15",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:17",
+          "carrier": {
+            "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:17",
+            "param_range": [
+              0.0,
+              6.0
+            ]
+          },
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:43",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:44",
-          "param_range": [
-            0.0,
-            6.0
-          ],
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:34",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:18%40f9909aad000b01a7",
+          "carrier": {
+            "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:18%40f9909aad000b01a7",
+            "param_range": [
+              0.0,
+              6.283185307179586
+            ]
+          },
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:43",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:45%40f9909aad000b01a7",
-          "param_range": [
-            0.0,
-            6.283185307179586
-          ],
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:43",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:2",
+          "carrier": {
+            "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:2",
+            "param_range": [
+              -0.0,
+              10.0
+            ]
+          },
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:4",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:5",
-          "param_range": [
-            -0.0,
-            10.0
-          ],
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:1",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:3",
+          "carrier": {
+            "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:3",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:6",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:7",
-          "param_range": [
-            0.0,
-            10.0
-          ],
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:2",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:4%4076889a8b8100da92",
+          "carrier": {
+            "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:4%4076889a8b8100da92",
+            "param_range": [
+              1.0,
+              24.0
+            ]
+          },
           "end": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:6",
           "id": "fcstd:model:edge#Body:Shape:Body.Shape.brp:8%4076889a8b8100da92",
-          "param_range": [
-            1.0,
-            24.0
-          ],
           "start": "fcstd:model:vertex#Body:Shape:Body.Shape.brp:4",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:4",
+          "carrier": {
+            "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:4",
+            "param_range": [
+              0.0,
+              1.570796326794897
+            ]
+          },
           "end": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:10",
           "id": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:11",
-          "param_range": [
-            0.0,
-            1.570796326794897
-          ],
           "start": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:1",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:5",
+          "carrier": {
+            "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:5",
+            "param_range": [
+              0.0,
+              16.0
+            ]
+          },
           "end": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:12",
           "id": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:13",
-          "param_range": [
-            0.0,
-            16.0
-          ],
           "start": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:2",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:5%4076889a8b8100da92",
+          "carrier": {
+            "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:5%4076889a8b8100da92",
+            "param_range": [
+              0.0,
+              16.0
+            ]
+          },
           "end": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:12%4076889a8b8100da92",
           "id": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:13%4076889a8b8100da92",
-          "param_range": [
-            0.0,
-            16.0
-          ],
           "start": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:2%4076889a8b8100da92",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:6",
+          "carrier": {
+            "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:6",
+            "param_range": [
+              0.0,
+              15.0
+            ]
+          },
           "end": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:10",
           "id": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:15",
-          "param_range": [
-            0.0,
-            15.0
-          ],
           "start": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:14",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:7",
+          "carrier": {
+            "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:7",
+            "param_range": [
+              0.0,
+              24.0
+            ]
+          },
           "end": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:14",
           "id": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:16",
-          "param_range": [
-            0.0,
-            24.0
-          ],
           "start": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:12",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:7%4076889a8b8100da92",
+          "carrier": {
+            "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:7%4076889a8b8100da92",
+            "param_range": [
+              0.0,
+              24.0
+            ]
+          },
           "end": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:14%4076889a8b8100da92",
           "id": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:16%4076889a8b8100da92",
-          "param_range": [
-            0.0,
-            24.0
-          ],
           "start": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:12%4076889a8b8100da92",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:8",
+          "carrier": {
+            "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:8",
+            "param_range": [
+              -0.0,
+              10.0
+            ]
+          },
           "end": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:19",
           "id": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:20",
-          "param_range": [
-            -0.0,
-            10.0
-          ],
           "start": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:10",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:9",
+          "carrier": {
+            "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:9",
+            "param_range": [
+              0.0,
+              1.570796326794897
+            ]
+          },
           "end": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:19",
           "id": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:21",
-          "param_range": [
-            0.0,
-            1.570796326794897
-          ],
           "start": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:4",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:10",
+          "carrier": {
+            "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:10",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "end": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:12%4076889a8b8100da92",
           "id": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:24",
-          "param_range": [
-            0.0,
-            10.0
-          ],
           "start": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:12",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:6%4076889a8b8100da92",
+          "carrier": {
+            "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:6%4076889a8b8100da92",
+            "param_range": [
+              0.0,
+              15.0
+            ]
+          },
           "end": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:19",
           "id": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:27%4076889a8b8100da92",
-          "param_range": [
-            0.0,
-            15.0
-          ],
           "start": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:14%4076889a8b8100da92",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:1",
+          "carrier": {
+            "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:1",
+            "param_range": [
+              1.0,
+              24.0
+            ]
+          },
           "end": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:2",
           "id": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:3",
-          "param_range": [
-            1.0,
-            24.0
-          ],
           "start": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:1",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:11%4076889a8b8100da92",
+          "carrier": {
+            "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:11%4076889a8b8100da92",
+            "param_range": [
+              0.0,
+              6.283185307179586
+            ]
+          },
           "end": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:29",
           "id": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:30%4076889a8b8100da92",
-          "param_range": [
-            0.0,
-            6.283185307179586
-          ],
           "start": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:29",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:12",
+          "carrier": {
+            "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:12",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "end": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:14%4076889a8b8100da92",
           "id": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:33",
-          "param_range": [
-            0.0,
-            10.0
-          ],
           "start": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:14",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:13",
+          "carrier": {
+            "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:13",
+            "param_range": [
+              0.0,
+              6.0
+            ]
+          },
           "end": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:38%40f9909aad000b01a7",
           "id": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:39",
-          "param_range": [
-            0.0,
-            6.0
-          ],
           "start": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:29",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:11%40f9909aad000b01a7",
+          "carrier": {
+            "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:11%40f9909aad000b01a7",
+            "param_range": [
+              0.0,
+              6.283185307179586
+            ]
+          },
           "end": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:38%40f9909aad000b01a7",
           "id": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:40%40f9909aad000b01a7",
-          "param_range": [
-            0.0,
-            6.283185307179586
-          ],
           "start": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:38%40f9909aad000b01a7",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:2",
+          "carrier": {
+            "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:2",
+            "param_range": [
+              -0.0,
+              10.0
+            ]
+          },
           "end": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:4",
           "id": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:5",
-          "param_range": [
-            -0.0,
-            10.0
-          ],
           "start": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:1",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:3",
+          "carrier": {
+            "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:3",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "end": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:2%4076889a8b8100da92",
           "id": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:6",
-          "param_range": [
-            0.0,
-            10.0
-          ],
           "start": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:2",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:1%4076889a8b8100da92",
+          "carrier": {
+            "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:1%4076889a8b8100da92",
+            "param_range": [
+              1.0,
+              24.0
+            ]
+          },
           "end": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:2%4076889a8b8100da92",
           "id": "fcstd:model:edge#Fillet:Shape:Fillet.Shape.brp:7%4076889a8b8100da92",
-          "param_range": [
-            1.0,
-            24.0
-          ],
           "start": "fcstd:model:vertex#Fillet:Shape:Fillet.Shape.brp:4",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pad:AddSubShape:Pad.AddSubShape.brp:5",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pad:AddSubShape:Pad.AddSubShape.brp:5",
+            "param_range": [
+              0.0,
+              16.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:8",
           "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:10",
-          "param_range": [
-            0.0,
-            16.0
-          ],
           "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:3",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pad:AddSubShape:Pad.AddSubShape.brp:5%4076889a8b8100da92",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pad:AddSubShape:Pad.AddSubShape.brp:5%4076889a8b8100da92",
+            "param_range": [
+              0.0,
+              16.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:8%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:10%4076889a8b8100da92",
-          "param_range": [
-            0.0,
-            16.0
-          ],
           "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:3%4076889a8b8100da92",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pad:AddSubShape:Pad.AddSubShape.brp:6",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pad:AddSubShape:Pad.AddSubShape.brp:6",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:13%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:14",
-          "param_range": [
-            0.0,
-            10.0
-          ],
           "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:13",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pad:AddSubShape:Pad.AddSubShape.brp:7",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pad:AddSubShape:Pad.AddSubShape.brp:7",
+            "param_range": [
+              0.0,
+              24.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:13",
           "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:15",
-          "param_range": [
-            0.0,
-            24.0
-          ],
           "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:8",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pad:AddSubShape:Pad.AddSubShape.brp:7%4076889a8b8100da92",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pad:AddSubShape:Pad.AddSubShape.brp:7%4076889a8b8100da92",
+            "param_range": [
+              0.0,
+              24.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:13%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:15%4076889a8b8100da92",
-          "param_range": [
-            0.0,
-            24.0
-          ],
           "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:8%4076889a8b8100da92",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pad:AddSubShape:Pad.AddSubShape.brp:8",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pad:AddSubShape:Pad.AddSubShape.brp:8",
+            "param_range": [
+              0.0,
+              16.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1",
           "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:18",
-          "param_range": [
-            0.0,
-            16.0
-          ],
           "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:13",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pad:AddSubShape:Pad.AddSubShape.brp:8%4076889a8b8100da92",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pad:AddSubShape:Pad.AddSubShape.brp:8%4076889a8b8100da92",
+            "param_range": [
+              0.0,
+              16.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:18%4076889a8b8100da92",
-          "param_range": [
-            0.0,
-            16.0
-          ],
           "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:13%4076889a8b8100da92",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pad:AddSubShape:Pad.AddSubShape.brp:1",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pad:AddSubShape:Pad.AddSubShape.brp:1",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:2",
-          "param_range": [
-            0.0,
-            10.0
-          ],
           "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pad:AddSubShape:Pad.AddSubShape.brp:2",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pad:AddSubShape:Pad.AddSubShape.brp:2",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:3%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:4",
-          "param_range": [
-            0.0,
-            10.0
-          ],
           "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:3",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pad:AddSubShape:Pad.AddSubShape.brp:3",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pad:AddSubShape:Pad.AddSubShape.brp:3",
+            "param_range": [
+              0.0,
+              24.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:3",
           "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:5",
-          "param_range": [
-            0.0,
-            24.0
-          ],
           "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pad:AddSubShape:Pad.AddSubShape.brp:3%4076889a8b8100da92",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pad:AddSubShape:Pad.AddSubShape.brp:3%4076889a8b8100da92",
+            "param_range": [
+              0.0,
+              24.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:3%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:5%4076889a8b8100da92",
-          "param_range": [
-            0.0,
-            24.0
-          ],
           "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:1%4076889a8b8100da92",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pad:AddSubShape:Pad.AddSubShape.brp:4",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pad:AddSubShape:Pad.AddSubShape.brp:4",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:8%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pad:AddSubShape:Pad.AddSubShape.brp:9",
-          "param_range": [
-            0.0,
-            10.0
-          ],
           "start": "fcstd:model:vertex#Pad:AddSubShape:Pad.AddSubShape.brp:8",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:5",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:5",
+            "param_range": [
+              0.0,
+              16.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:8",
           "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:10",
-          "param_range": [
-            0.0,
-            16.0
-          ],
           "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:3",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:5%4076889a8b8100da92",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:5%4076889a8b8100da92",
+            "param_range": [
+              0.0,
+              16.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:8%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:10%4076889a8b8100da92",
-          "param_range": [
-            0.0,
-            16.0
-          ],
           "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:3%4076889a8b8100da92",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:6",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:6",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:13%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:14",
-          "param_range": [
-            0.0,
-            10.0
-          ],
           "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:13",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:7",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:7",
+            "param_range": [
+              0.0,
+              24.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:13",
           "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:15",
-          "param_range": [
-            0.0,
-            24.0
-          ],
           "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:8",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:7%4076889a8b8100da92",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:7%4076889a8b8100da92",
+            "param_range": [
+              0.0,
+              24.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:13%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:15%4076889a8b8100da92",
-          "param_range": [
-            0.0,
-            24.0
-          ],
           "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:8%4076889a8b8100da92",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:8",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:8",
+            "param_range": [
+              0.0,
+              16.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:1",
           "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:18",
-          "param_range": [
-            0.0,
-            16.0
-          ],
           "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:13",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:8%4076889a8b8100da92",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:8%4076889a8b8100da92",
+            "param_range": [
+              0.0,
+              16.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:1%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:18%4076889a8b8100da92",
-          "param_range": [
-            0.0,
-            16.0
-          ],
           "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:13%4076889a8b8100da92",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:1",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:1",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:1%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:2",
-          "param_range": [
-            0.0,
-            10.0
-          ],
           "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:1",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:2",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:2",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:3%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:4",
-          "param_range": [
-            0.0,
-            10.0
-          ],
           "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:3",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:3",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:3",
+            "param_range": [
+              0.0,
+              24.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:3",
           "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:5",
-          "param_range": [
-            0.0,
-            24.0
-          ],
           "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:1",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:3%4076889a8b8100da92",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:3%4076889a8b8100da92",
+            "param_range": [
+              0.0,
+              24.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:3%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:5%4076889a8b8100da92",
-          "param_range": [
-            0.0,
-            24.0
-          ],
           "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:1%4076889a8b8100da92",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:4",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:4",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:8%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:9",
-          "param_range": [
-            0.0,
-            10.0
-          ],
           "start": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:8",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#PadSketch:Shape:PadSketch.Shape.brp:1",
+          "carrier": {
+            "curve": "fcstd:model:curve#PadSketch:Shape:PadSketch.Shape.brp:1",
+            "param_range": [
+              0.0,
+              24.0
+            ]
+          },
           "end": "fcstd:model:vertex#PadSketch:Shape:PadSketch.Shape.brp:2",
           "id": "fcstd:model:edge#PadSketch:Shape:PadSketch.Shape.brp:3",
-          "param_range": [
-            0.0,
-            24.0
-          ],
           "start": "fcstd:model:vertex#PadSketch:Shape:PadSketch.Shape.brp:1",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#PadSketch:Shape:PadSketch.Shape.brp:2",
+          "carrier": {
+            "curve": "fcstd:model:curve#PadSketch:Shape:PadSketch.Shape.brp:2",
+            "param_range": [
+              0.0,
+              16.0
+            ]
+          },
           "end": "fcstd:model:vertex#PadSketch:Shape:PadSketch.Shape.brp:4",
           "id": "fcstd:model:edge#PadSketch:Shape:PadSketch.Shape.brp:5",
-          "param_range": [
-            0.0,
-            16.0
-          ],
           "start": "fcstd:model:vertex#PadSketch:Shape:PadSketch.Shape.brp:2",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#PadSketch:Shape:PadSketch.Shape.brp:3",
+          "carrier": {
+            "curve": "fcstd:model:curve#PadSketch:Shape:PadSketch.Shape.brp:3",
+            "param_range": [
+              0.0,
+              24.0
+            ]
+          },
           "end": "fcstd:model:vertex#PadSketch:Shape:PadSketch.Shape.brp:6",
           "id": "fcstd:model:edge#PadSketch:Shape:PadSketch.Shape.brp:7",
-          "param_range": [
-            0.0,
-            24.0
-          ],
           "start": "fcstd:model:vertex#PadSketch:Shape:PadSketch.Shape.brp:4",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#PadSketch:Shape:PadSketch.Shape.brp:4",
+          "carrier": {
+            "curve": "fcstd:model:curve#PadSketch:Shape:PadSketch.Shape.brp:4",
+            "param_range": [
+              0.0,
+              16.0
+            ]
+          },
           "end": "fcstd:model:vertex#PadSketch:Shape:PadSketch.Shape.brp:1",
           "id": "fcstd:model:edge#PadSketch:Shape:PadSketch.Shape.brp:8",
-          "param_range": [
-            0.0,
-            16.0
-          ],
           "start": "fcstd:model:vertex#PadSketch:Shape:PadSketch.Shape.brp:6",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pocket:AddSubShape:Pocket.AddSubShape.brp:1",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pocket:AddSubShape:Pocket.AddSubShape.brp:1",
+            "param_range": [
+              0.0,
+              6.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pocket:AddSubShape:Pocket.AddSubShape.brp:1%40f9909aad000b01a7",
           "id": "fcstd:model:edge#Pocket:AddSubShape:Pocket.AddSubShape.brp:2",
-          "param_range": [
-            0.0,
-            6.0
-          ],
           "start": "fcstd:model:vertex#Pocket:AddSubShape:Pocket.AddSubShape.brp:1%4076889a8b8100da92",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pocket:AddSubShape:Pocket.AddSubShape.brp:2%4076889a8b8100da92",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pocket:AddSubShape:Pocket.AddSubShape.brp:2%4076889a8b8100da92",
+            "param_range": [
+              0.0,
+              6.283185307179586
+            ]
+          },
           "end": "fcstd:model:vertex#Pocket:AddSubShape:Pocket.AddSubShape.brp:1%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pocket:AddSubShape:Pocket.AddSubShape.brp:3%4076889a8b8100da92",
-          "param_range": [
-            0.0,
-            6.283185307179586
-          ],
           "start": "fcstd:model:vertex#Pocket:AddSubShape:Pocket.AddSubShape.brp:1%4076889a8b8100da92",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pocket:AddSubShape:Pocket.AddSubShape.brp:2%40f9909aad000b01a7",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pocket:AddSubShape:Pocket.AddSubShape.brp:2%40f9909aad000b01a7",
+            "param_range": [
+              0.0,
+              6.283185307179586
+            ]
+          },
           "end": "fcstd:model:vertex#Pocket:AddSubShape:Pocket.AddSubShape.brp:1%40f9909aad000b01a7",
           "id": "fcstd:model:edge#Pocket:AddSubShape:Pocket.AddSubShape.brp:3%40f9909aad000b01a7",
-          "param_range": [
-            0.0,
-            6.283185307179586
-          ],
           "start": "fcstd:model:vertex#Pocket:AddSubShape:Pocket.AddSubShape.brp:1%40f9909aad000b01a7",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:5",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:5",
+            "param_range": [
+              0.0,
+              16.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:1",
           "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:10",
-          "param_range": [
-            0.0,
-            16.0
-          ],
           "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:8",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:5%4076889a8b8100da92",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:5%4076889a8b8100da92",
+            "param_range": [
+              0.0,
+              16.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:1%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:10%4076889a8b8100da92",
-          "param_range": [
-            0.0,
-            16.0
-          ],
           "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:8%4076889a8b8100da92",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:6",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:6",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:13%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:14",
-          "param_range": [
-            0.0,
-            10.0
-          ],
           "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:13",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:7",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:7",
+            "param_range": [
+              0.0,
+              16.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:13",
           "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:15",
-          "param_range": [
-            0.0,
-            16.0
-          ],
           "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:3",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:7%4076889a8b8100da92",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:7%4076889a8b8100da92",
+            "param_range": [
+              0.0,
+              16.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:13%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:15%4076889a8b8100da92",
-          "param_range": [
-            0.0,
-            16.0
-          ],
           "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:3%4076889a8b8100da92",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:8",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:8",
+            "param_range": [
+              0.0,
+              24.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:8",
           "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:18",
-          "param_range": [
-            0.0,
-            24.0
-          ],
           "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:13",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:8%4076889a8b8100da92",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:8%4076889a8b8100da92",
+            "param_range": [
+              0.0,
+              24.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:8%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:18%4076889a8b8100da92",
-          "param_range": [
-            0.0,
-            24.0
-          ],
           "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:13%4076889a8b8100da92",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:1",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:1",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:1%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:2",
-          "param_range": [
-            0.0,
-            10.0
-          ],
           "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:1",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:9%4076889a8b8100da92",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:9%4076889a8b8100da92",
+            "param_range": [
+              0.0,
+              6.283185307179586
+            ]
+          },
           "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:22",
           "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:23%4076889a8b8100da92",
-          "param_range": [
-            0.0,
-            6.283185307179586
-          ],
           "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:22",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:10",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:10",
+            "param_range": [
+              0.0,
+              6.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:28%40f9909aad000b01a7",
           "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:29",
-          "param_range": [
-            0.0,
-            6.0
-          ],
           "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:22",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:9%40f9909aad000b01a7",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:9%40f9909aad000b01a7",
+            "param_range": [
+              0.0,
+              6.283185307179586
+            ]
+          },
           "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:28%40f9909aad000b01a7",
           "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:30%40f9909aad000b01a7",
-          "param_range": [
-            0.0,
-            6.283185307179586
-          ],
           "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:28%40f9909aad000b01a7",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:2",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:2",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:3%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:4",
-          "param_range": [
-            0.0,
-            10.0
-          ],
           "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:3",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:3",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:3",
+            "param_range": [
+              0.0,
+              24.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:3",
           "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:5",
-          "param_range": [
-            0.0,
-            24.0
-          ],
           "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:1",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:3%4076889a8b8100da92",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:3%4076889a8b8100da92",
+            "param_range": [
+              0.0,
+              24.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:3%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:5%4076889a8b8100da92",
-          "param_range": [
-            0.0,
-            24.0
-          ],
           "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:1%4076889a8b8100da92",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:4",
+          "carrier": {
+            "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:4",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:8%4076889a8b8100da92",
           "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:9",
-          "param_range": [
-            0.0,
-            10.0
-          ],
           "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:8",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#PocketSketch:Shape:PocketSketch.Shape.brp:1",
+          "carrier": {
+            "curve": "fcstd:model:curve#PocketSketch:Shape:PocketSketch.Shape.brp:1",
+            "param_range": [
+              0.0,
+              6.283185307179586
+            ]
+          },
           "end": "fcstd:model:vertex#PocketSketch:Shape:PocketSketch.Shape.brp:1%4076889a8b8100da92",
           "id": "fcstd:model:edge#PocketSketch:Shape:PocketSketch.Shape.brp:2%4076889a8b8100da92",
-          "param_range": [
-            0.0,
-            6.283185307179586
-          ],
           "start": "fcstd:model:vertex#PocketSketch:Shape:PocketSketch.Shape.brp:1%4076889a8b8100da92",
           "tolerance": 1e-7
         }
@@ -8558,22 +8724,24 @@
           "name": "PadSketch",
           "native_ref": "fcstd:native:object#PadSketch",
           "placement": {
-            "kind": "resolved",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "frame": {
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            }
+            "kind": "resolved"
           },
           "profiles": [
             [
@@ -8601,22 +8769,24 @@
           "name": "PocketSketch",
           "native_ref": "fcstd:native:object#PocketSketch",
           "placement": {
-            "kind": "resolved",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "frame": {
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 10.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 10.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            }
+            "kind": "resolved"
           },
           "profiles": [
             [
@@ -10383,7 +10553,6 @@
     }
   },
   "report": {
-    "geometry_transferred": true,
     "identity": {
       "classification": "classified",
       "dialects": {
@@ -10410,7 +10579,10 @@
       "physical ledger spans=169 coverage=exact",
       "ProgramVersion=1.1R20260414 (Git shallow)"
     ],
-    "transfer": "full"
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {}

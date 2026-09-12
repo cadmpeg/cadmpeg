@@ -139,7 +139,6 @@
       }
     },
     "report": {
-      "geometry_transferred": false,
       "identity": {
         "classification": "classified",
         "dialects": {
@@ -192,7 +191,10 @@
         "SPLMSSTR container: file tag 0, footer offset 208, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 0 partition, 1 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
       ],
-      "transfer": "full"
+      "transfer": {
+        "geometry_transferred": false,
+        "transfer": "full"
+      }
     },
     "source_fidelity": {
       "annotations": {

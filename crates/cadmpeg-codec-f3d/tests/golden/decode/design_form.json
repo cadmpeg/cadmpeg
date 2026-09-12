@@ -136,28 +136,34 @@
       "edges": [
         {
           "id": "f3d:brep:entity#10",
-          "param_range": [
-            0.0,
-            1.0
-          ],
+          "carrier": {
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
           "start": "f3d:brep:entity#13",
           "end": "f3d:brep:entity#14"
         },
         {
           "id": "f3d:brep:entity#11",
-          "param_range": [
-            0.0,
-            1.0
-          ],
+          "carrier": {
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
           "start": "f3d:brep:entity#14",
           "end": "f3d:brep:entity#15"
         },
         {
           "id": "f3d:brep:entity#12",
-          "param_range": [
-            0.0,
-            1.0
-          ],
+          "carrier": {
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
           "start": "f3d:brep:entity#15",
           "end": "f3d:brep:entity#13"
         }
@@ -230,128 +236,130 @@
         {
           "id": "f3d:tspline:subd#TSpline.synthetic",
           "scheme": "catmull_clark",
-          "vertices": [
-            {
-              "point": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "tag": "crease"
-            },
-            {
-              "point": {
-                "x": 10.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "tag": "crease"
-            },
-            {
-              "point": {
-                "x": 10.0,
-                "y": 10.0,
-                "z": 0.0
-              },
-              "tag": "crease"
-            },
-            {
-              "point": {
-                "x": 0.0,
-                "y": 10.0,
-                "z": 0.0
-              },
-              "tag": "crease"
-            }
-          ],
-          "edges": [
-            {
-              "vertices": [
-                3,
-                0
-              ],
-              "sharpness": [
-                1.0,
-                1.0
-              ],
-              "tag": "crease",
-              "knot_interval": 1.0,
-              "sector_coefficients": [
-                0.0,
-                0.0
-              ]
-            },
-            {
-              "vertices": [
-                0,
-                1
-              ],
-              "sharpness": [
-                1.0,
-                1.0
-              ],
-              "tag": "crease",
-              "knot_interval": 1.0,
-              "sector_coefficients": [
-                0.0,
-                0.0
-              ]
-            },
-            {
-              "vertices": [
-                1,
-                2
-              ],
-              "sharpness": [
-                1.0,
-                1.0
-              ],
-              "tag": "crease",
-              "knot_interval": 1.0,
-              "sector_coefficients": [
-                0.0,
-                0.0
-              ]
-            },
-            {
-              "vertices": [
-                2,
-                3
-              ],
-              "sharpness": [
-                1.0,
-                1.0
-              ],
-              "tag": "crease",
-              "knot_interval": 1.0,
-              "sector_coefficients": [
-                0.0,
-                0.0
-              ]
-            }
-          ],
-          "faces": [
-            {
-              "edges": [
-                {
-                  "edge": 0,
-                  "reversed": false
+          "cage": {
+            "vertices": [
+              {
+                "point": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
                 },
-                {
-                  "edge": 1,
-                  "reversed": false
+                "tag": "crease"
+              },
+              {
+                "point": {
+                  "x": 10.0,
+                  "y": 0.0,
+                  "z": 0.0
                 },
-                {
-                  "edge": 2,
-                  "reversed": false
+                "tag": "crease"
+              },
+              {
+                "point": {
+                  "x": 10.0,
+                  "y": 10.0,
+                  "z": 0.0
                 },
-                {
-                  "edge": 3,
-                  "reversed": false
-                }
-              ]
-            }
-          ],
+                "tag": "crease"
+              },
+              {
+                "point": {
+                  "x": 0.0,
+                  "y": 10.0,
+                  "z": 0.0
+                },
+                "tag": "crease"
+              }
+            ],
+            "edges": [
+              {
+                "vertices": [
+                  3,
+                  0
+                ],
+                "sharpness": [
+                  1.0,
+                  1.0
+                ],
+                "tag": "crease",
+                "knot_interval": 1.0,
+                "sector_coefficients": [
+                  0.0,
+                  0.0
+                ]
+              },
+              {
+                "vertices": [
+                  0,
+                  1
+                ],
+                "sharpness": [
+                  1.0,
+                  1.0
+                ],
+                "tag": "crease",
+                "knot_interval": 1.0,
+                "sector_coefficients": [
+                  0.0,
+                  0.0
+                ]
+              },
+              {
+                "vertices": [
+                  1,
+                  2
+                ],
+                "sharpness": [
+                  1.0,
+                  1.0
+                ],
+                "tag": "crease",
+                "knot_interval": 1.0,
+                "sector_coefficients": [
+                  0.0,
+                  0.0
+                ]
+              },
+              {
+                "vertices": [
+                  2,
+                  3
+                ],
+                "sharpness": [
+                  1.0,
+                  1.0
+                ],
+                "tag": "crease",
+                "knot_interval": 1.0,
+                "sector_coefficients": [
+                  0.0,
+                  0.0
+                ]
+              }
+            ],
+            "faces": [
+              {
+                "edges": [
+                  {
+                    "edge": 0,
+                    "reversed": false
+                  },
+                  {
+                    "edge": 1,
+                    "reversed": false
+                  },
+                  {
+                    "edge": 2,
+                    "reversed": false
+                  },
+                  {
+                    "edge": 3,
+                    "reversed": false
+                  }
+                ]
+              }
+            ]
+          },
           "source_object": {
             "format": "f3d",
             "object_id": "FusionAssetName[Active]/TSplines.BlobParts/TSpline.synthetic.tsm"
@@ -1544,8 +1552,10 @@
         ]
       }
     },
-    "transfer": "full",
-    "geometry_transferred": true,
+    "transfer": {
+      "transfer": "full",
+      "geometry_transferred": true
+    },
     "losses": [
       {
         "code": {

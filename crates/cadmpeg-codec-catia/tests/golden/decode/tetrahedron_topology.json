@@ -227,63 +227,75 @@
       "drawings": [],
       "edges": [
         {
-          "curve": "catia:standard:curve#290",
+          "carrier": {
+            "curve": "catia:standard:curve#290",
+            "param_range": [
+              0.0,
+              2.8284271247461903
+            ]
+          },
           "end": "catia:standard:v#1",
           "id": "catia:standard:edge#0",
-          "param_range": [
-            0.0,
-            2.8284271247461903
-          ],
           "start": "catia:standard:v#0"
         },
         {
-          "curve": "catia:standard:curve#301",
+          "carrier": {
+            "curve": "catia:standard:curve#301",
+            "param_range": [
+              0.0,
+              2.8284271247461903
+            ]
+          },
           "end": "catia:standard:v#2",
           "id": "catia:standard:edge#1",
-          "param_range": [
-            0.0,
-            2.8284271247461903
-          ],
           "start": "catia:standard:v#1"
         },
         {
-          "curve": "catia:standard:curve#312",
+          "carrier": {
+            "curve": "catia:standard:curve#312",
+            "param_range": [
+              0.0,
+              2.8284271247461903
+            ]
+          },
           "end": "catia:standard:v#0",
           "id": "catia:standard:edge#2",
-          "param_range": [
-            0.0,
-            2.8284271247461903
-          ],
           "start": "catia:standard:v#2"
         },
         {
-          "curve": "catia:standard:curve#323",
+          "carrier": {
+            "curve": "catia:standard:curve#323",
+            "param_range": [
+              0.0,
+              2.8284271247461903
+            ]
+          },
           "end": "catia:standard:v#3",
           "id": "catia:standard:edge#3",
-          "param_range": [
-            0.0,
-            2.8284271247461903
-          ],
           "start": "catia:standard:v#0"
         },
         {
-          "curve": "catia:standard:curve#334",
+          "carrier": {
+            "curve": "catia:standard:curve#334",
+            "param_range": [
+              0.0,
+              2.8284271247461903
+            ]
+          },
           "end": "catia:standard:v#3",
           "id": "catia:standard:edge#4",
-          "param_range": [
-            0.0,
-            2.8284271247461903
-          ],
           "start": "catia:standard:v#1"
         },
         {
-          "curve": "catia:standard:curve#345",
+          "carrier": {
+            "curve": "catia:standard:curve#345",
+            "param_range": [
+              0.0,
+              2.8284271247461903
+            ]
+          },
           "end": "catia:standard:v#3",
           "id": "catia:standard:edge#5",
-          "param_range": [
-            0.0,
-            2.8284271247461903
-          ],
           "start": "catia:standard:v#2"
         }
       ],
@@ -1130,7 +1142,6 @@
       "unresolved_storage_record_count": 0,
       "unresolved_unreferenced_relation_expression_count": 0
     },
-    "geometry_transferred": true,
     "identity": {
       "classification": "classified",
       "dialects": {
@@ -1170,7 +1181,10 @@
       "reconstructed BREP stream from MainDataStream + SurfacicReps: 1 FBB group(s) containing 4 face row(s), 4 vertex record(s), 1 edge-table delimiter(s)",
       "container-level enumeration; `decode` applies the identified storage family's standard, freeform, E5, zero-entity, or metadata-fallback route"
     ],
-    "transfer": "full"
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {

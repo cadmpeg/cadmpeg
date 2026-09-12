@@ -808,365 +808,431 @@
       "drawings": [],
       "edges": [
         {
-          "curve": "fcstd:model:curve#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:3",
+          "carrier": {
+            "curve": "fcstd:model:curve#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:3",
+            "param_range": [
+              0.0,
+              5.063344303129471
+            ]
+          },
           "end": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:10",
           "id": "fcstd:model:edge#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:11",
-          "param_range": [
-            0.0,
-            5.063344303129471
-          ],
           "start": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:9",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:4",
+          "carrier": {
+            "curve": "fcstd:model:curve#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:4",
+            "param_range": [
+              0.0,
+              8.94427190999916
+            ]
+          },
           "end": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:14",
           "id": "fcstd:model:edge#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:15",
-          "param_range": [
-            0.0,
-            8.94427190999916
-          ],
           "start": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:13",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:5",
+          "carrier": {
+            "curve": "fcstd:model:curve#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:5",
+            "param_range": [
+              0.0,
+              8.94427190999916
+            ]
+          },
           "end": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:18",
           "id": "fcstd:model:edge#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:19",
-          "param_range": [
-            0.0,
-            8.94427190999916
-          ],
           "start": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:17",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:6",
+          "carrier": {
+            "curve": "fcstd:model:curve#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:6",
+            "param_range": [
+              0.0,
+              9.899494936611665
+            ]
+          },
           "end": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:22",
           "id": "fcstd:model:edge#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:23",
-          "param_range": [
-            0.0,
-            9.899494936611665
-          ],
           "start": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:21",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:7",
+          "carrier": {
+            "curve": "fcstd:model:curve#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:7",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "end": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:24",
           "id": "fcstd:model:edge#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:25",
-          "param_range": [
-            0.0,
-            10.0
-          ],
           "start": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:21",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:8",
+          "carrier": {
+            "curve": "fcstd:model:curve#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:8",
+            "param_range": [
+              0.0,
+              6.283185307179586
+            ]
+          },
           "end": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:27",
           "id": "fcstd:model:edge#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:28",
-          "param_range": [
-            0.0,
-            6.283185307179586
-          ],
           "start": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:27",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:1",
+          "carrier": {
+            "curve": "fcstd:model:curve#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:1",
+            "param_range": [
+              0.0,
+              9.000000000025445
+            ]
+          },
           "end": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:2",
           "id": "fcstd:model:edge#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:3",
-          "param_range": [
-            0.0,
-            9.000000000025445
-          ],
           "start": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:1",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:9",
+          "carrier": {
+            "curve": "fcstd:model:curve#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:9",
+            "param_range": [
+              0.0,
+              6.283185307179586
+            ]
+          },
           "end": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:30",
           "id": "fcstd:model:edge#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:31",
-          "param_range": [
-            0.0,
-            6.283185307179586
-          ],
           "start": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:30",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:2",
+          "carrier": {
+            "curve": "fcstd:model:curve#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:2",
+            "param_range": [
+              0.0,
+              4.145117893676446
+            ]
+          },
           "end": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:6",
           "id": "fcstd:model:edge#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:7",
-          "param_range": [
-            0.0,
-            4.145117893676446
-          ],
           "start": "fcstd:model:vertex#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:5",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:3",
+          "carrier": {
+            "curve": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:3",
+            "param_range": [
+              0.0,
+              10.770329614269007
+            ]
+          },
           "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:10",
           "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:11",
-          "param_range": [
-            0.0,
-            10.770329614269007
-          ],
           "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:9",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:4",
+          "carrier": {
+            "curve": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:4",
+            "param_range": [
+              0.0,
+              10.770329614269007
+            ]
+          },
           "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:14",
           "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:15",
-          "param_range": [
-            0.0,
-            10.770329614269007
-          ],
           "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:13",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:5",
+          "carrier": {
+            "curve": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:5",
+            "param_range": [
+              0.0,
+              10.770329614269007
+            ]
+          },
           "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:18",
           "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:19",
-          "param_range": [
-            0.0,
-            10.770329614269007
-          ],
           "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:17",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:6",
+          "carrier": {
+            "curve": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:6",
+            "param_range": [
+              0.0,
+              10.770329614269007
+            ]
+          },
           "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:22",
           "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:23",
-          "param_range": [
-            0.0,
-            10.770329614269007
-          ],
           "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:21",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:7",
+          "carrier": {
+            "curve": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:7",
+            "param_range": [
+              0.0,
+              10.245999764626488
+            ]
+          },
           "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:26",
           "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:27",
-          "param_range": [
-            0.0,
-            10.245999764626488
-          ],
           "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:25",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:1",
+          "carrier": {
+            "curve": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:1",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:2",
           "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:3",
-          "param_range": [
-            0.0,
-            10.0
-          ],
           "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:1",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:8",
+          "carrier": {
+            "curve": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:8",
+            "param_range": [
+              0.0,
+              5.171657246885603
+            ]
+          },
           "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:30",
           "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:31",
-          "param_range": [
-            0.0,
-            5.171657246885603
-          ],
           "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:29",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:9",
+          "carrier": {
+            "curve": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:9",
+            "param_range": [
+              0.0,
+              10.44030650891055
+            ]
+          },
           "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:34",
           "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:35",
-          "param_range": [
-            0.0,
-            10.44030650891055
-          ],
           "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:33",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:10",
+          "carrier": {
+            "curve": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:10",
+            "param_range": [
+              0.0,
+              10.44030650891055
+            ]
+          },
           "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:36",
           "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:37",
-          "param_range": [
-            0.0,
-            10.44030650891055
-          ],
           "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:34",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:11",
+          "carrier": {
+            "curve": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:11",
+            "param_range": [
+              0.0,
+              10.770329614269007
+            ]
+          },
           "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:40",
           "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:41",
-          "param_range": [
-            0.0,
-            10.770329614269007
-          ],
           "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:39",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:12",
+          "carrier": {
+            "curve": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:12",
+            "param_range": [
+              0.0,
+              10.770329614269007
+            ]
+          },
           "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:42",
           "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:43",
-          "param_range": [
-            0.0,
-            10.770329614269007
-          ],
           "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:39",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:13",
+          "carrier": {
+            "curve": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:13",
+            "param_range": [
+              0.0,
+              10.770329614269007
+            ]
+          },
           "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:46",
           "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:47",
-          "param_range": [
-            0.0,
-            10.770329614269007
-          ],
           "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:45",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:14",
+          "carrier": {
+            "curve": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:14",
+            "param_range": [
+              0.0,
+              6.283185307179586
+            ]
+          },
           "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:49",
           "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:50",
-          "param_range": [
-            0.0,
-            6.283185307179586
-          ],
           "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:49",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:15",
+          "carrier": {
+            "curve": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:15",
+            "param_range": [
+              0.0,
+              6.283185307179586
+            ]
+          },
           "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:52",
           "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:53",
-          "param_range": [
-            0.0,
-            6.283185307179586
-          ],
           "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:52",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:2",
+          "carrier": {
+            "curve": "fcstd:model:curve#GeometricRelations:Shape:GeometricRelations.Shape.brp:2",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "end": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:6",
           "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:7",
-          "param_range": [
-            0.0,
-            10.0
-          ],
           "start": "fcstd:model:vertex#GeometricRelations:Shape:GeometricRelations.Shape.brp:5",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#InactiveRelation:Shape:InactiveRelation.Shape.brp:1",
+          "carrier": {
+            "curve": "fcstd:model:curve#InactiveRelation:Shape:InactiveRelation.Shape.brp:1",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "end": "fcstd:model:vertex#InactiveRelation:Shape:InactiveRelation.Shape.brp:2",
           "id": "fcstd:model:edge#InactiveRelation:Shape:InactiveRelation.Shape.brp:3",
-          "param_range": [
-            0.0,
-            10.0
-          ],
           "start": "fcstd:model:vertex#InactiveRelation:Shape:InactiveRelation.Shape.brp:1",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#InternalAlignmentRelations:Shape:InternalAlignmentRelations.Shape.brp:1",
+          "carrier": {
+            "curve": "fcstd:model:curve#InternalAlignmentRelations:Shape:InternalAlignmentRelations.Shape.brp:1",
+            "param_range": [
+              0.0,
+              6.283185307179586
+            ]
+          },
           "end": "fcstd:model:vertex#InternalAlignmentRelations:Shape:InternalAlignmentRelations.Shape.brp:1",
           "id": "fcstd:model:edge#InternalAlignmentRelations:Shape:InternalAlignmentRelations.Shape.brp:2",
-          "param_range": [
-            0.0,
-            6.283185307179586
-          ],
           "start": "fcstd:model:vertex#InternalAlignmentRelations:Shape:InternalAlignmentRelations.Shape.brp:1",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#OpticalRelation:Shape:OpticalRelation.Shape.brp:3",
+          "carrier": {
+            "curve": "fcstd:model:curve#OpticalRelation:Shape:OpticalRelation.Shape.brp:3",
+            "param_range": [
+              0.0,
+              24.000065495796303
+            ]
+          },
           "end": "fcstd:model:vertex#OpticalRelation:Shape:OpticalRelation.Shape.brp:10",
           "id": "fcstd:model:edge#OpticalRelation:Shape:OpticalRelation.Shape.brp:11",
-          "param_range": [
-            0.0,
-            24.000065495796303
-          ],
           "start": "fcstd:model:vertex#OpticalRelation:Shape:OpticalRelation.Shape.brp:9",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#OpticalRelation:Shape:OpticalRelation.Shape.brp:1",
+          "carrier": {
+            "curve": "fcstd:model:curve#OpticalRelation:Shape:OpticalRelation.Shape.brp:1",
+            "param_range": [
+              0.0,
+              11.181185289516602
+            ]
+          },
           "end": "fcstd:model:vertex#OpticalRelation:Shape:OpticalRelation.Shape.brp:2",
           "id": "fcstd:model:edge#OpticalRelation:Shape:OpticalRelation.Shape.brp:3",
-          "param_range": [
-            0.0,
-            11.181185289516602
-          ],
           "start": "fcstd:model:vertex#OpticalRelation:Shape:OpticalRelation.Shape.brp:1",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#OpticalRelation:Shape:OpticalRelation.Shape.brp:2",
+          "carrier": {
+            "curve": "fcstd:model:curve#OpticalRelation:Shape:OpticalRelation.Shape.brp:2",
+            "param_range": [
+              0.0,
+              10.737597064267645
+            ]
+          },
           "end": "fcstd:model:vertex#OpticalRelation:Shape:OpticalRelation.Shape.brp:6",
           "id": "fcstd:model:edge#OpticalRelation:Shape:OpticalRelation.Shape.brp:7",
-          "param_range": [
-            0.0,
-            10.737597064267645
-          ],
           "start": "fcstd:model:vertex#OpticalRelation:Shape:OpticalRelation.Shape.brp:5",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:1",
+          "carrier": {
+            "curve": "fcstd:model:curve#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:1",
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
           "end": "fcstd:model:vertex#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:2",
           "id": "fcstd:model:edge#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:3",
-          "param_range": [
-            0.0,
-            1.0
-          ],
           "start": "fcstd:model:vertex#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:1",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:3",
+          "carrier": {
+            "curve": "fcstd:model:curve#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:3",
+            "param_range": [
+              0.0,
+              20.0
+            ]
+          },
           "end": "fcstd:model:vertex#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:10",
           "id": "fcstd:model:edge#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:11",
-          "param_range": [
-            0.0,
-            20.0
-          ],
           "start": "fcstd:model:vertex#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:9",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:1",
+          "carrier": {
+            "curve": "fcstd:model:curve#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:1",
+            "param_range": [
+              0.0,
+              2.82842712474619
+            ]
+          },
           "end": "fcstd:model:vertex#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:2",
           "id": "fcstd:model:edge#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:3",
-          "param_range": [
-            0.0,
-            2.82842712474619
-          ],
           "start": "fcstd:model:vertex#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:1",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:2",
+          "carrier": {
+            "curve": "fcstd:model:curve#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:2",
+            "param_range": [
+              0.0,
+              2.82842712474619
+            ]
+          },
           "end": "fcstd:model:vertex#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:6",
           "id": "fcstd:model:edge#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:7",
-          "param_range": [
-            0.0,
-            2.82842712474619
-          ],
           "start": "fcstd:model:vertex#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:5",
           "tolerance": 1e-7
         }
@@ -3770,43 +3836,45 @@
         {
           "construction": false,
           "geometry": {
-            "control_points": [
-              {
-                "u": 0.0,
-                "v": 0.0
-              },
-              {
-                "u": 4.0,
-                "v": 8.0
-              },
-              {
-                "u": 8.0,
-                "v": 7.0
-              },
-              {
-                "u": 12.0,
-                "v": 2.0
-              }
-            ],
-            "degree": 3,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              0.0,
-              0.0,
-              1.0,
-              1.0,
-              1.0,
-              1.0
-            ],
-            "periodic": false,
-            "weights": [
-              1.0,
-              1.2,
-              1.0,
-              1.0
-            ]
+            "curve": {
+              "control_points": [
+                {
+                  "u": 0.0,
+                  "v": 0.0
+                },
+                {
+                  "u": 4.0,
+                  "v": 8.0
+                },
+                {
+                  "u": 8.0,
+                  "v": 7.0
+                },
+                {
+                  "u": 12.0,
+                  "v": 2.0
+                }
+              ],
+              "degree": 3,
+              "knots": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "periodic": false,
+              "weights": [
+                1.0,
+                1.2,
+                1.0,
+                1.0
+              ]
+            },
+            "kind": "nurbs"
           },
           "id": "fcstd:design:sketch-entity#SplineWeightRelation:1",
           "native_ref": "fcstd:native:property#SplineWeightRelation:Geometry",
@@ -3952,22 +4020,24 @@
           "name": "DimensionalRelations",
           "native_ref": "fcstd:native:object#DimensionalRelations",
           "placement": {
-            "kind": "resolved",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "frame": {
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            }
+            "kind": "resolved"
           },
           "profiles": [
             [
@@ -4029,22 +4099,24 @@
           "name": "GeometricRelations",
           "native_ref": "fcstd:native:object#GeometricRelations",
           "placement": {
-            "kind": "resolved",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "frame": {
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            }
+            "kind": "resolved"
           },
           "profiles": [
             [
@@ -4140,22 +4212,24 @@
           "name": "InactiveRelation",
           "native_ref": "fcstd:native:object#InactiveRelation",
           "placement": {
-            "kind": "resolved",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "frame": {
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            }
+            "kind": "resolved"
           },
           "profiles": [
             [
@@ -4171,22 +4245,24 @@
           "name": "InternalAlignmentRelations",
           "native_ref": "fcstd:native:object#InternalAlignmentRelations",
           "placement": {
-            "kind": "resolved",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "frame": {
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            }
+            "kind": "resolved"
           },
           "profiles": [
             [
@@ -4202,22 +4278,24 @@
           "name": "OpticalRelation",
           "native_ref": "fcstd:native:object#OpticalRelation",
           "placement": {
-            "kind": "resolved",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "frame": {
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            }
+            "kind": "resolved"
           },
           "profiles": [
             [
@@ -4245,22 +4323,24 @@
           "name": "SplineWeightRelation",
           "native_ref": "fcstd:native:object#SplineWeightRelation",
           "placement": {
-            "kind": "resolved",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "frame": {
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            }
+            "kind": "resolved"
           },
           "profiles": [
             [
@@ -4276,22 +4356,24 @@
           "name": "SymmetryRelation",
           "native_ref": "fcstd:native:object#SymmetryRelation",
           "placement": {
-            "kind": "resolved",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "frame": {
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            }
+            "kind": "resolved"
           },
           "profiles": [
             [
@@ -4682,7 +4764,6 @@
     }
   },
   "report": {
-    "geometry_transferred": true,
     "identity": {
       "classification": "classified",
       "dialects": {
@@ -4709,7 +4790,10 @@
       "physical ledger spans=155 coverage=exact",
       "ProgramVersion=1.1R20260414 (Git shallow)"
     ],
-    "transfer": "full"
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {}

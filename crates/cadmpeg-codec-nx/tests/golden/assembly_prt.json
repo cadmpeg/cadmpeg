@@ -83,7 +83,6 @@
       }
     },
     "report": {
-      "geometry_transferred": false,
       "identity": {
         "classification": "classified",
         "dialects": {
@@ -115,7 +114,10 @@
         "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
         "no inline Parasolid geometry (assembly .prt: geometry in external child parts)"
       ],
-      "transfer": "full"
+      "transfer": {
+        "geometry_transferred": false,
+        "transfer": "full"
+      }
     },
     "source_fidelity": {
       "annotations": {}

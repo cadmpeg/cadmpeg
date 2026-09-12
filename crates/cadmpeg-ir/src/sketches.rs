@@ -151,13 +151,13 @@ pub struct Sketch {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SketchPlacement {
     /// Local geometry is decoded but its model-space frame is unresolved.
     Unresolved,
     /// Complete model-space sketch frame.
     Resolved {
         /// Checked origin and nonzero perpendicular axes.
-        #[serde(flatten)]
         frame: SketchPlaneFrame,
     },
 }
@@ -582,6 +582,7 @@ impl TryFrom<SketchGeometryDefinition> for SketchGeometry {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SketchGeometryDefinition {
     /// Isolated point.
     Point {
@@ -663,7 +664,6 @@ pub enum SketchGeometryDefinition {
     /// NURBS curve in sketch coordinates.
     Nurbs {
         /// Checked two-dimensional knot, pole, and weight payload.
-        #[serde(flatten)]
         curve: crate::geometry::PcurveNurbs,
     },
     /// Text placed in sketch coordinates.
@@ -1366,6 +1366,7 @@ impl TryFrom<SpatialSketchGeometryDefinition> for SpatialSketchGeometry {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SpatialSketchGeometryDefinition {
     /// Model-space point.
     Point {
@@ -1408,13 +1409,11 @@ pub enum SpatialSketchGeometryDefinition {
     /// Model-space NURBS curve.
     Nurbs {
         /// Checked model-space knot, pole, and weight payload.
-        #[serde(flatten)]
         curve: SpatialSketchNurbsCurve,
     },
     /// Polynomial tensor-product B-spline surface embedded in model space.
     NurbsSurface {
         /// Checked rectangular control grid and full knot vectors.
-        #[serde(flatten)]
         surface: crate::geometry::BsplineSurface,
     },
     /// Source-native spatial geometry not yet reduced to a neutral family.
@@ -1487,7 +1486,14 @@ where
                 "kind".into(),
                 serde_json::Value::String("same_coordinate".into()),
             );
-            object.insert("axis".into(), serde_json::Value::String(axis.into()));
+            let mut relation = serde_json::Map::new();
+            for key in ["first", "second"] {
+                if let Some(value) = object.remove(key) {
+                    relation.insert(key.into(), value);
+                }
+            }
+            relation.insert("axis".into(), serde_json::Value::String(axis.into()));
+            object.insert("relation".into(), serde_json::Value::Object(relation));
         }
     }
     serde_json::from_value(value).map_err(serde::de::Error::custom)
@@ -2384,6 +2390,7 @@ impl TryFrom<SketchConstraintDefinitionInput> for SketchConstraintDefinition {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum SketchConstraintDefinitionInput {
     /// Persisted no-op relation slot.
     Disabled,
@@ -2395,7 +2402,6 @@ pub enum SketchConstraintDefinitionInput {
     /// Entities participate in one native polygon relation.
     Polygon {
         /// Checked polygon members.
-        #[serde(flatten)]
         polygon: SketchPolygon,
     },
     /// A spline's defining entities grouped by one native spline relation.
@@ -2438,7 +2444,6 @@ pub enum SketchConstraintDefinitionInput {
     /// Two loci share one sketch-space coordinate.
     SameCoordinate {
         /// Checked coordinate relation.
-        #[serde(flatten)]
         relation: SketchSameCoordinate,
     },
     /// A point locus lies on another sketch entity.

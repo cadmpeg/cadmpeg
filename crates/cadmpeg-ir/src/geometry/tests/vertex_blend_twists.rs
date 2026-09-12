@@ -35,14 +35,13 @@ fn vertex_blend_circle_keeps_the_flat_form_and_twists_fields() {
         "kind": "circle",
         "curve": "test:model:curve#0",
         "curve_endpoints": [null, null],
-        "form": 1,
-        "twists": [{"x": 2.0, "y": 3.0, "z": 4.0}],
+        "twists": {"form": 1, "twists": [{"x": 2.0, "y": 3.0, "z": 4.0}]},
         "parameters": [0.0, 1.0],
         "sense": true,
     });
     let definition: VertexBlendBoundaryGeometry = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(definition).unwrap(), wire);
     let mut invalid = wire;
-    invalid["form"] = serde_json::json!(3);
+    invalid["twists"]["form"] = serde_json::json!(3);
     assert!(serde_json::from_value::<VertexBlendBoundaryGeometry>(invalid).is_err());
 }

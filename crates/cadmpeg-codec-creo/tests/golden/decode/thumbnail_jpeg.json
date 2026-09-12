@@ -449,7 +449,6 @@
       "visible_spline_surface_row_count": 0,
       "visible_torus_or_sphere_surface_row_count": 0
     },
-    "geometry_transferred": false,
     "identity": {
       "classification": "classified",
       "dialects": {
@@ -537,7 +536,10 @@
       "THMB_IMG_MAIN carries a JPEG preview (excluded from geometry)",
       "container-level enumeration; `decode` preserves PSB geometry sections as unknown records and transfers only carriers whose model-space placement is complete"
     ],
-    "transfer": "full"
+    "transfer": {
+      "geometry_transferred": false,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {

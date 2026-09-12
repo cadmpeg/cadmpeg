@@ -319,13 +319,12 @@ impl Serialize for TargetRefusal {
         #[derive(Serialize)]
         struct Wire<'a> {
             format: &'a str,
-            #[serde(flatten)]
-            kind: &'a TargetRefusalKind,
+            refusal: &'a TargetRefusalKind,
             available: TargetCatalog,
         }
         Wire {
             format: self.format(),
-            kind: &self.kind,
+            refusal: &self.kind,
             available: self.available,
         }
         .serialize(serializer)
@@ -511,10 +510,12 @@ mod tests {
             serde_json::to_value(refusal).expect("target refusal serializes"),
             serde_json::json!({
                 "format": "fcstd",
-                "kind": "explicit_unavailable",
-                "target": "fcstd:schema-4",
-                "requested": "4",
-                "reason": "the source image cannot be patched",
+                "refusal": {
+                    "kind": "explicit_unavailable",
+                    "target": "fcstd:schema-4",
+                    "requested": "4",
+                    "reason": "the source image cannot be patched",
+                },
                 "available": [{
                     "id": "fcstd:schema-4",
                     "aliases": ["4"],
@@ -538,7 +539,9 @@ mod tests {
         assert_eq!(
             serde_json::to_value(&refusal).expect("serialize target refusal"),
             serde_json::json!({
-                "format": "cadir", "kind": "unknown_explicit", "requested": "future", "available": []
+                "format": "cadir",
+                "refusal": {"kind": "unknown_explicit", "requested": "future"},
+                "available": []
             })
         );
         assert_eq!(refusal.to_string(), "cadir cannot write future: not a target this encoder can synthesize; available targets: none");

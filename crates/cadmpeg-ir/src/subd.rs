@@ -11,13 +11,13 @@ use serde::{Deserialize, Serialize};
 /// A subdivision surface represented by its control cage.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct SubdSurface {
     /// Arena identity.
     pub id: SubdId,
     /// Subdivision scheme.
     pub scheme: SubdScheme,
     /// Control cage with admitted local topology and payloads.
-    #[serde(flatten)]
     pub cage: SubdCage,
     /// Native source-object identity and effective display metadata.
     #[serde(default, skip_serializing_if = "Option::is_none")]

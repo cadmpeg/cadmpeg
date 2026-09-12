@@ -199,8 +199,10 @@
         ]
       }
     },
-    "transfer": "full",
-    "geometry_transferred": false,
+    "transfer": {
+      "transfer": "full",
+      "geometry_transferred": false
+    },
     "losses": [
       {
         "code": {

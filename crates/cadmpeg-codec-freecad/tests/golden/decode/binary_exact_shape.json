@@ -261,52 +261,61 @@
       "drawings": [],
       "edges": [
         {
+          "carrier": {},
           "end": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:8",
           "id": "fcstd:model:edge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:10",
           "start": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:8",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:1",
+          "carrier": {
+            "curve": "fcstd:model:curve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:1",
+            "param_range": [
+              1.5707963267948963,
+              7.853981633974483
+            ]
+          },
           "end": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:1",
           "id": "fcstd:model:edge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:2",
-          "param_range": [
-            1.5707963267948963,
-            7.853981633974483
-          ],
           "start": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:1",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:2",
+          "carrier": {
+            "curve": "fcstd:model:curve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:2",
+            "param_range": [
+              0.0,
+              8.12701665379223
+            ]
+          },
           "end": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:1",
           "id": "fcstd:model:edge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:4",
-          "param_range": [
-            0.0,
-            8.12701665379223
-          ],
           "start": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:3",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:3",
+          "carrier": {
+            "curve": "fcstd:model:curve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:3",
+            "param_range": [
+              0.0,
+              6.283185307179586
+            ]
+          },
           "end": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:3",
           "id": "fcstd:model:edge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:5",
-          "param_range": [
-            0.0,
-            6.283185307179586
-          ],
           "start": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:3",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:4",
+          "carrier": {
+            "curve": "fcstd:model:curve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:4",
+            "param_range": [
+              5.777824796895384,
+              7.853981633974483
+            ]
+          },
           "end": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:8",
           "id": "fcstd:model:edge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:9",
-          "param_range": [
-            5.777824796895384,
-            7.853981633974483
-          ],
           "start": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:1",
           "tolerance": 1e-7
         }
@@ -863,7 +872,6 @@
     }
   },
   "report": {
-    "geometry_transferred": true,
     "identity": {
       "classification": "classified",
       "dialects": {
@@ -890,7 +898,10 @@
       "physical ledger spans=15 coverage=exact",
       "ProgramVersion=1.1R20260414 (Git shallow)"
     ],
-    "transfer": "full"
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {}

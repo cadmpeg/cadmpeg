@@ -88,13 +88,15 @@
       "drawings": [],
       "edges": [
         {
-          "curve": "iges:model:curve#D1",
+          "carrier": {
+            "curve": "iges:model:curve#D1",
+            "param_range": [
+              0.0,
+              2.0
+            ]
+          },
           "end": "iges:model:vertex#D1-end",
           "id": "iges:model:edge#D1",
-          "param_range": [
-            0.0,
-            2.0
-          ],
           "start": "iges:model:vertex#D1-start"
         }
       ],
@@ -1590,7 +1592,6 @@
     }
   },
   "report": {
-    "geometry_transferred": true,
     "identity": {
       "classification": "classified",
       "dialects": {
@@ -1632,7 +1633,10 @@
       "parameter_tokens=44",
       "external_references=0"
     ],
-    "transfer": "full",
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    },
     "transfer_ledger": {
       "entries": [
         {

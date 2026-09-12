@@ -34,8 +34,8 @@ fn artifact_reports_cover_success_and_semantic_refusal() {
     assert!(value["refusal"].is_null());
     assert!(value["decode_report"].is_null());
     assert!(value["check_report"].is_object());
-    assert_eq!(value["export"]["payload"], "native");
-    assert_eq!(value["export"]["target"], "step:ap214");
+    assert_eq!(value["export"]["identity"]["payload"], "native");
+    assert_eq!(value["export"]["identity"]["target"], "step:ap214");
     assert_eq!(value["export"]["census"]["basis"], "target_records");
     assert!(value["export"]["census"]["counts"].is_object());
     assert_eq!(value["export"]["fidelity"]["status"], "not_provided");
@@ -171,8 +171,11 @@ fn f3d_export_report_identifies_regenerated_output() {
         .assert()
         .success();
     let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
-    assert_eq!(value["export"]["payload"], "native");
-    assert_eq!(value["export"]["target"], "f3d:manifest-3-2-0-0");
+    assert_eq!(value["export"]["identity"]["payload"], "native");
+    assert_eq!(
+        value["export"]["identity"]["target"],
+        "f3d:manifest-3-2-0-0"
+    );
     assert!(value["export"]["notes"]
         .as_array()
         .unwrap()

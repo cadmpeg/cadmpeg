@@ -1152,7 +1152,6 @@
       "unresolved_storage_record_count": 0,
       "unresolved_unreferenced_relation_expression_count": 0
     },
-    "geometry_transferred": true,
     "identity": {
       "classification": "classified",
       "dialects": {
@@ -1214,7 +1213,10 @@
       "reconstructed BREP stream from MainDataStream + SurfacicReps: 1 FBB group(s) containing 2 face row(s), 3 vertex record(s), 2 edge-table delimiter(s)",
       "container-level enumeration; `decode` applies the identified storage family's standard, freeform, E5, zero-entity, or metadata-fallback route"
     ],
-    "transfer": "full"
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {

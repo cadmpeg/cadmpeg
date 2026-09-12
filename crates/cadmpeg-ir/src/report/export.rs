@@ -19,7 +19,6 @@ use crate::document::CensusKey;
 #[cfg_attr(feature = "schema", schemars(with = "ExportReportWire"))]
 #[serde(try_from = "ExportReportWire")]
 pub struct ExportReport {
-    #[serde(flatten)]
     identity: ExportIdentity,
     /// Entity counts and the semantic basis on which they were measured.
     pub census: EntityCensus,
@@ -48,8 +47,8 @@ enum ExportIdentity {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct ExportReportWire {
-    #[serde(flatten)]
     identity: ExportIdentity,
     census: EntityCensus,
     fidelity: FidelityResolution,

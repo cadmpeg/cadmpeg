@@ -1126,7 +1126,6 @@
       "visible_spline_surface_row_count": 1,
       "visible_torus_or_sphere_surface_row_count": 0
     },
-    "geometry_transferred": true,
     "identity": {
       "classification": "classified",
       "dialects": {
@@ -1212,7 +1211,10 @@
       "VisibGeom namespace census: srf_array=1, crv_array=0 (byte-backed count headers; per-instance row geometry is not decoded)",
       "container-level enumeration; `decode` preserves PSB geometry sections as unknown records and transfers only carriers whose model-space placement is complete"
     ],
-    "transfer": "full"
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {

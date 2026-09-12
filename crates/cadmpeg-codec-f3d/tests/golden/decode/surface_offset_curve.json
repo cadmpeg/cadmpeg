@@ -129,29 +129,35 @@
       "edges": [
         {
           "id": "f3d:brep:entity#10",
-          "curve": "f3d:brep:entity#19",
-          "param_range": [
-            0.0,
-            1.0
-          ],
+          "carrier": {
+            "curve": "f3d:brep:entity#19",
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
           "start": "f3d:brep:entity#13",
           "end": "f3d:brep:entity#14"
         },
         {
           "id": "f3d:brep:entity#11",
-          "param_range": [
-            0.0,
-            1.0
-          ],
+          "carrier": {
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
           "start": "f3d:brep:entity#14",
           "end": "f3d:brep:entity#15"
         },
         {
           "id": "f3d:brep:entity#12",
-          "param_range": [
-            0.0,
-            1.0
-          ],
+          "carrier": {
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
           "start": "f3d:brep:entity#15",
           "end": "f3d:brep:entity#13"
         }
@@ -640,8 +646,10 @@
         ]
       }
     },
-    "transfer": "full",
-    "geometry_transferred": true,
+    "transfer": {
+      "transfer": "full",
+      "geometry_transferred": true
+    },
     "losses": [
       {
         "code": {

@@ -6065,7 +6065,6 @@
       }
     },
     "report": {
-      "geometry_transferred": false,
       "identity": {
         "classification": "classified",
         "dialects": {
@@ -6110,7 +6109,10 @@
         "NX object model: 1 size-framed section(s), 2 class declaration(s), 2 field declaration(s)",
         "NX object model: 1 indexed section(s), 0 ID-bounded entity record(s), 7 offset-only data block(s)"
       ],
-      "transfer": "full"
+      "transfer": {
+        "geometry_transferred": false,
+        "transfer": "full"
+      }
     },
     "source_fidelity": {
       "annotations": {
