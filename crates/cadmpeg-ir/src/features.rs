@@ -7497,48 +7497,68 @@ pub enum SweepTransformation {
     Interpolation,
 }
 
-/// Signed axial travel and radial growth with at least one nonzero component.
+/// Signed axial travel and radial growth, named by which components move.
+///
+/// Each arm carries only the components that move, and each is a
+/// [`NonZeroLength`], which refuses zero and every non-finite value. A helix
+/// that neither rises nor grows has no spelling.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "HelicalSweepTravelWire")]
-pub struct HelicalSweepTravel {
-    height: Length,
-    radial_growth: Length,
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
-struct HelicalSweepTravelWire {
-    height: Length,
-    radial_growth: Length,
+pub enum HelicalSweepTravel {
+    /// The helix rises along its axis at a constant radius.
+    Axial {
+        /// Total signed axial travel.
+        height: NonZeroLength,
+    },
+    /// The helix grows radially in its base plane.
+    Radial {
+        /// Signed radial change per turn.
+        radial_growth: NonZeroLength,
+    },
+    /// The helix rises and grows.
+    Conical {
+        /// Total signed axial travel.
+        height: NonZeroLength,
+        /// Signed radial change per turn.
+        radial_growth: NonZeroLength,
+    },
 }
 
 impl HelicalSweepTravel {
     /// Admit finite signed travel with nonzero height or radial growth.
     pub fn new(height: Length, radial_growth: Length) -> Option<Self> {
-        (height.get() != 0.0 || radial_growth.get() != 0.0).then_some(Self {
-            height,
-            radial_growth,
-        })
+        match (
+            NonZeroLength::new(height.get()),
+            NonZeroLength::new(radial_growth.get()),
+        ) {
+            (None, None) => None,
+            (Some(height), None) => Some(Self::Axial { height }),
+            (None, Some(radial_growth)) => Some(Self::Radial { radial_growth }),
+            (Some(height), Some(radial_growth)) => Some(Self::Conical {
+                height,
+                radial_growth,
+            }),
+        }
     }
 
     /// Return the total axial travel.
     pub fn height(self) -> Length {
-        self.height
+        match self {
+            Self::Radial { .. } => Length::ZERO,
+            Self::Axial { height } | Self::Conical { height, .. } => height.into(),
+        }
     }
 
     /// Return the radial change per turn.
     pub fn radial_growth(self) -> Length {
-        self.radial_growth
-    }
-}
-
-impl TryFrom<HelicalSweepTravelWire> for HelicalSweepTravel {
-    type Error = &'static str;
-    fn try_from(wire: HelicalSweepTravelWire) -> Result<Self, Self::Error> {
-        Self::new(wire.height, wire.radial_growth)
-            .ok_or("helical-sweep height and radial_growth cannot both be zero")
+        match self {
+            Self::Axial { .. } => Length::ZERO,
+            Self::Radial { radial_growth } | Self::Conical { radial_growth, .. } => {
+                radial_growth.into()
+            }
+        }
     }
 }
 

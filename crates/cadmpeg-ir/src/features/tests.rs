@@ -1042,13 +1042,30 @@ fn block_placement_admission_requires_a_right_handed_rigid_transform() {
 #[test]
 fn helical_sweep_travel_preserves_signed_and_planar_values_but_rejects_zero_travel() {
     use crate::{features::HelicalSweepTravel, scalar::Length};
-    for [height, radial_growth] in [[-2.0, 0.0], [0.0, -3.0], [2.0, -3.0]] {
+    for (height, radial_growth, wire) in [
+        (
+            -2.0,
+            0.0,
+            serde_json::json!({"kind":"axial","height":-2.0}),
+        ),
+        (
+            0.0,
+            -3.0,
+            serde_json::json!({"kind":"radial","radial_growth":-3.0}),
+        ),
+        (
+            2.0,
+            -3.0,
+            serde_json::json!({"kind":"conical","height":2.0,"radial_growth":-3.0}),
+        ),
+    ] {
         let travel = HelicalSweepTravel::new(
             Length::new(height).unwrap(),
             Length::new(radial_growth).unwrap(),
         )
         .unwrap();
-        let wire = serde_json::json!({"height":height,"radial_growth":radial_growth});
+        assert_eq!(travel.height().get(), height);
+        assert_eq!(travel.radial_growth().get(), radial_growth);
         assert_eq!(serde_json::to_value(travel).unwrap(), wire);
         assert_eq!(
             serde_json::from_value::<HelicalSweepTravel>(wire).unwrap(),
@@ -1056,8 +1073,18 @@ fn helical_sweep_travel_preserves_signed_and_planar_values_but_rejects_zero_trav
         );
     }
     assert!(HelicalSweepTravel::new(Length::ZERO, Length::ZERO).is_none());
+    // A zero component has no spelling: the arm that would carry it is a
+    // `NonZeroLength`, and the arm that omits it names a different travel.
     assert!(serde_json::from_value::<HelicalSweepTravel>(
-        serde_json::json!({"height":0.0,"radial_growth":0.0})
+        serde_json::json!({"kind":"axial","height":0.0})
+    )
+    .is_err());
+    assert!(serde_json::from_value::<HelicalSweepTravel>(
+        serde_json::json!({"kind":"conical","height":1.0,"radial_growth":0.0})
+    )
+    .is_err());
+    assert!(serde_json::from_value::<HelicalSweepTravel>(
+        serde_json::json!({"kind":"axial","height":1.0,"radial_growth":2.0})
     )
     .is_err());
 }
