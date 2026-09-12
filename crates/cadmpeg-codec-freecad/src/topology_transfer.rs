@@ -1600,8 +1600,8 @@ fn transformed_pcurve_geometry(
     }
 }
 
-fn positive_tolerance(value: f64) -> Option<cadmpeg_ir::units::PositiveScalar> {
-    cadmpeg_ir::units::PositiveScalar::new(value)
+fn positive_tolerance(value: f64) -> Option<cadmpeg_ir::scalar::PositiveReal> {
+    cadmpeg_ir::scalar::PositiveReal::new(value)
 }
 
 pub(crate) fn pcurve_geometry(curve: &TextCurve2d) -> Option<PcurveGeometry> {

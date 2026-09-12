@@ -126,7 +126,7 @@ pub(crate) fn recovers_techdraw_page_template_and_view_graph() {
     assert_eq!(
         neutral_view
             .scale
-            .map(cadmpeg_ir::units::PositiveScalar::get),
+            .map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(2.0)
     );
     assert_eq!(
@@ -311,7 +311,7 @@ fn accepts_enumeration_metadata_and_registered_optional_carriers() {
         Some([25.0, 40.0])
     );
     assert_eq!(
-        drawing.scale.map(cadmpeg_ir::units::PositiveScalar::get),
+        drawing.scale.map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(2.0)
     );
     assert_eq!(
@@ -321,7 +321,7 @@ fn accepts_enumeration_metadata_and_registered_optional_carriers() {
     assert_eq!(
         drawing
             .rotation_degrees
-            .map(cadmpeg_ir::units::FiniteScalar::get),
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
         Some(15.0)
     );
     assert_eq!(drawing.parameters["ScaleType"], r#"<Integer value="1"/>"#);

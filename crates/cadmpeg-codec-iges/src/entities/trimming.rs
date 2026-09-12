@@ -143,7 +143,7 @@ fn find_cluster_root(parents: &mut [usize], index: usize) -> usize {
 
 fn cluster_boundary_positions(
     positions: &[Point3],
-    tolerance: cadmpeg_ir::units::PositiveScalar,
+    tolerance: cadmpeg_ir::scalar::PositiveReal,
 ) -> Result<Vec<BoundaryVertexCluster>, BoundaryVertexClusterError> {
     let tolerance = tolerance.get();
     let mut parents = (0..positions.len()).collect::<Vec<_>>();
@@ -197,7 +197,7 @@ fn create_boundary_vertices(
     source_entity: &str,
     boundary: usize,
     source_endpoints: &[BoundaryVertexSourceEndpoint],
-    tolerance: cadmpeg_ir::units::PositiveScalar,
+    tolerance: cadmpeg_ir::scalar::PositiveReal,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<(Vec<VertexId>, Vec<BoundaryVertexDerivation>), BoundaryVertexClusterError> {
     let positions = source_endpoints
@@ -2199,7 +2199,7 @@ pub(super) fn project(
                 })
                 .collect::<Vec<_>>();
             let Some(checked_sewing_tolerance) =
-                cadmpeg_ir::units::PositiveScalar::new(sewing_tolerance)
+                cadmpeg_ir::scalar::PositiveReal::new(sewing_tolerance)
             else {
                 losses.push(entity_loss(entry, "boundary sewing tolerance is invalid"));
                 valid = false;
@@ -2379,7 +2379,7 @@ pub(super) fn project(
             surface_id
         };
         let checked_face_tolerance = if face_tolerance > 0.0 {
-            let Some(value) = cadmpeg_ir::units::PositiveScalar::new(face_tolerance) else {
+            let Some(value) = cadmpeg_ir::scalar::PositiveReal::new(face_tolerance) else {
                 losses.push(entity_loss(entry, "face tolerance is invalid"));
                 continue;
             };

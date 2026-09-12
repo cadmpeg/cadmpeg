@@ -77,7 +77,7 @@ struct SurfacePlan {
 struct CurvePlan {
     geometry: CurveGeometry,
     parameter_range: Option<[f64; 2]>,
-    edge_tolerance: Option<cadmpeg_ir::units::PositiveScalar>,
+    edge_tolerance: Option<cadmpeg_ir::scalar::PositiveReal>,
     cache_fit_tolerance: Option<f64>,
 }
 
@@ -146,7 +146,7 @@ struct TransferPlan {
     /// Solved member order and coedge senses per loop (read by `faces`).
     loop_orientation: BTreeMap<u32, OrientedLoop>,
     /// Endpoint tolerances keyed by vertex index (read by `vertices`).
-    vertex_tolerances: BTreeMap<usize, cadmpeg_ir::units::PositiveScalar>,
+    vertex_tolerances: BTreeMap<usize, cadmpeg_ir::scalar::PositiveReal>,
     /// Edges whose supports reproduce the edge endpoints (read by `edges`).
     exact_support_edges: HashSet<u32>,
     /// Edges whose supports reproduce the lifted curve (read by `edges`).
@@ -521,7 +521,7 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
                             helix.cache.clone(),
                         )),
                         parameter_range: Some(helix.parameter_range),
-                        edge_tolerance: Some(cadmpeg_ir::units::PositiveScalar::new(
+                        edge_tolerance: Some(cadmpeg_ir::scalar::PositiveReal::new(
                             helix.fit_tolerance,
                         )?),
                         cache_fit_tolerance: Some(helix.fit_tolerance),
@@ -611,7 +611,7 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
         loop_orientation,
         vertex_tolerances: vertex_tolerances
             .into_iter()
-            .map(|(vertex, value)| Some((vertex, cadmpeg_ir::units::PositiveScalar::new(value)?)))
+            .map(|(vertex, value)| Some((vertex, cadmpeg_ir::scalar::PositiveReal::new(value)?)))
             .collect::<Option<_>>()?,
         exact_support_edges,
         exact_support_curves,

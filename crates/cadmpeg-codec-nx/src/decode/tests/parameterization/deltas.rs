@@ -93,7 +93,7 @@ fn decode_preserves_partition_edge_topology_over_deltas_history() {
     assert_eq!(
         result.ir().model.edges[0]
             .tolerance
-            .map(cadmpeg_ir::units::PositiveScalar::get),
+            .map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(0.3)
     );
     assert_eq!(
@@ -113,14 +113,14 @@ fn decode_preserves_partition_face_and_vertex_topology_over_deltas_history() {
     assert_eq!(
         result.ir().model.faces[0]
             .tolerance
-            .map(cadmpeg_ir::units::PositiveScalar::get),
+            .map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(0.2)
     );
     assert_eq!(result.ir().model.vertices.len(), 1);
     assert_eq!(
         result.ir().model.vertices[0]
             .tolerance
-            .map(cadmpeg_ir::units::PositiveScalar::get),
+            .map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(0.1)
     );
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());

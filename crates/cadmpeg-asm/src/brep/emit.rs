@@ -3497,7 +3497,7 @@ pub(crate) fn emit_vertices(
                                 Ok(match r.chunk(slot) {
                                     Some(Token::Double(value)) if *value < 0.0 => None,
                                     Some(Token::Double(value)) => Some(
-                                        cadmpeg_ir::units::PositiveScalar::new(*value * LEN_TO_MM)
+                                        cadmpeg_ir::scalar::PositiveReal::new(*value * LEN_TO_MM)
                                             .ok_or_else(|| {
                                                 cadmpeg_core::CodecError::malformed(
                                                     "vertex tolerance must be positive and finite",
@@ -3674,7 +3674,7 @@ pub(crate) fn emit_edges(
                 end: VertexId::mint(id(format, end)).expect("identity grammar"),
                 tolerance: tolerant_tail
                     .map(|(tolerance, _, _)| {
-                        cadmpeg_ir::units::PositiveScalar::new(tolerance * LEN_TO_MM).ok_or_else(
+                        cadmpeg_ir::scalar::PositiveReal::new(tolerance * LEN_TO_MM).ok_or_else(
                             || {
                                 cadmpeg_core::CodecError::malformed(
                                     "edge tolerance must be positive and finite",

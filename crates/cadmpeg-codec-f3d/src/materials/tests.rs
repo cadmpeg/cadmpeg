@@ -1107,7 +1107,7 @@ fn source_less_tolerant_vertex_retains_custom_attribute_ownership() {
     source.set_native_unknowns("f3d", &[]).unwrap();
     let vertex = source.model.vertices[0].id.clone();
     source.model.vertices[0].tolerance =
-        Some(cadmpeg_ir::units::PositiveScalar::new(0.025).expect("positive finite tolerance"));
+        Some(cadmpeg_ir::scalar::PositiveReal::new(0.025).expect("positive finite tolerance"));
     f3d_native_mut(&mut source).creation_timestamps = vec![crate::records::CreationTimestamp {
         id: "f3d:asm:creation-timestamp#generated".into(),
         target: AttributeTarget::Vertex(vertex),
@@ -1129,7 +1129,7 @@ fn source_less_tolerant_vertex_retains_custom_attribute_ownership() {
         .model
         .vertices
         .iter()
-        .find(|vertex| vertex.tolerance.map(cadmpeg_ir::units::PositiveScalar::get) == Some(0.025))
+        .find(|vertex| vertex.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get) == Some(0.025))
         .expect("tolerant vertex");
     let attribute = round_trip
         .ir()

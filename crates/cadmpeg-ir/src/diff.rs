@@ -687,14 +687,14 @@ mod tests {
     fn a_last_place_tolerance_move_is_not_a_difference() {
         let left = unit_cube();
         let mut right = left.clone();
-        right.tolerances.linear = crate::units::PositiveScalar::new(f64::from_bits(
+        right.tolerances.linear = crate::scalar::PositiveReal::new(f64::from_bits(
             left.tolerances.linear.get().to_bits() + 1,
         ))
         .expect("positive finite tolerance");
         assert!(diff(&left, &right).is_empty());
 
         right.tolerances.linear =
-            crate::units::PositiveScalar::new(left.tolerances.linear.get() * 2.0)
+            crate::scalar::PositiveReal::new(left.tolerances.linear.get() * 2.0)
                 .expect("positive finite tolerance");
         assert!(diff(&left, &right).tolerance_change.is_some());
     }

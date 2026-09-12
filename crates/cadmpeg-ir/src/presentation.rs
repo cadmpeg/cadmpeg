@@ -219,11 +219,11 @@ pub struct ViewPresentation {
     /// Line width in persisted display units.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(deserialize_with = "deserialize_line_width")]
-    pub line_width: Option<crate::units::NonNegativeScalar>,
+    pub line_width: Option<crate::scalar::NonNegativeReal>,
     /// Point size in persisted display units.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(deserialize_with = "deserialize_point_size")]
-    pub point_size: Option<crate::units::NonNegativeScalar>,
+    pub point_size: Option<crate::scalar::NonNegativeReal>,
     /// Remaining view properties by exact source property name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub properties: BTreeMap<String, String>,
@@ -342,13 +342,13 @@ crate::units::named_field!(
 
 crate::units::named_field!(
     deserialize_line_width,
-    Option<crate::units::NonNegativeScalar>,
+    Option<crate::scalar::NonNegativeReal>,
     "line_width"
 );
 
 crate::units::named_field!(
     deserialize_point_size,
-    Option<crate::units::NonNegativeScalar>,
+    Option<crate::scalar::NonNegativeReal>,
     "point_size"
 );
 

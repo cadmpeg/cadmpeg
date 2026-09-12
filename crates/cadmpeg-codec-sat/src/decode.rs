@@ -220,7 +220,7 @@ fn build_result(
         ("angular", header.angular, &mut ir.tolerances.angular),
     ] {
         if let Some(value) = value {
-            if let Some(value) = cadmpeg_ir::units::PositiveScalar::new(value) {
+            if let Some(value) = cadmpeg_ir::scalar::PositiveReal::new(value) {
                 *tolerance = value;
             } else {
                 losses.push(SatLossCode::HeaderToleranceUnresolved.note(format!(

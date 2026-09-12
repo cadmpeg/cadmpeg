@@ -336,7 +336,7 @@ fn generated_global_matches_the_4_0_and_5_0_field_contracts() {
 fn encode_uses_neutral_linear_tolerance_as_global_floor() {
     let mut ir = CadIr::empty();
     ir.tolerances.linear =
-        cadmpeg_ir::units::PositiveScalar::new(2.5).expect("positive finite tolerance");
+        cadmpeg_ir::scalar::PositiveReal::new(2.5).expect("positive finite tolerance");
     ir.model.points.push(Point {
         id: PointId::mint("test:model:point#resolution-floor").expect("identity grammar"),
         source_object: None,

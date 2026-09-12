@@ -214,11 +214,11 @@ fn writer_reports_unrepresented_topology_metadata() {
         .into_parts()
         .0;
     ir.model.faces[0].tolerance =
-        Some(cadmpeg_ir::units::PositiveScalar::new(0.01).expect("positive finite tolerance"));
+        Some(cadmpeg_ir::scalar::PositiveReal::new(0.01).expect("positive finite tolerance"));
     ir.model.edges[0].tolerance =
-        Some(cadmpeg_ir::units::PositiveScalar::new(0.02).expect("positive finite tolerance"));
+        Some(cadmpeg_ir::scalar::PositiveReal::new(0.02).expect("positive finite tolerance"));
     ir.model.vertices[0].tolerance =
-        Some(cadmpeg_ir::units::PositiveScalar::new(0.03).expect("positive finite tolerance"));
+        Some(cadmpeg_ir::scalar::PositiveReal::new(0.03).expect("positive finite tolerance"));
     let edge_curve = ir.model.edges[0].curve().clone().expect("edge curve");
     let coedge = ir
         .model

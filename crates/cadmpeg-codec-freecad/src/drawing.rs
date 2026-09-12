@@ -141,14 +141,14 @@ pub(crate) fn transfer_neutral(
         };
         let scale = parameter("Scale")?
             .map(|value| {
-                cadmpeg_ir::units::PositiveScalar::new(value).ok_or_else(|| {
+                cadmpeg_ir::scalar::PositiveReal::new(value).ok_or_else(|| {
                     CodecError::malformed("drawing scale must be positive and finite")
                 })
             })
             .transpose()?;
         let rotation_degrees = parameter("Rotation")?
             .map(|value| {
-                cadmpeg_ir::units::FiniteScalar::new(value)
+                cadmpeg_ir::scalar::FiniteReal::new(value)
                     .ok_or_else(|| CodecError::malformed("drawing rotation must be finite"))
             })
             .transpose()?;

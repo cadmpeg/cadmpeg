@@ -358,12 +358,12 @@ fn keeps_registered_non_presentation_properties_native() {
     assert_eq!(view.selection_style.as_deref(), Some("1"));
     assert_eq!(
         view.line_width
-            .map(cadmpeg_ir::units::NonNegativeScalar::get),
+            .map(cadmpeg_ir::scalar::NonNegativeReal::get),
         Some(3.5)
     );
     assert_eq!(
         view.point_size
-            .map(cadmpeg_ir::units::NonNegativeScalar::get),
+            .map(cadmpeg_ir::scalar::NonNegativeReal::get),
         Some(4.5)
     );
     for name in [

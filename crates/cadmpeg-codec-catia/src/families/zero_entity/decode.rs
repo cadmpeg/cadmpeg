@@ -321,7 +321,7 @@ fn transfer_closed_wire_loops(
                     point: point_id,
                     tolerance: Some(
                         const {
-                            cadmpeg_ir::units::PositiveScalar::new(ZERO_ENTITY_WIRE_TOLERANCE)
+                            cadmpeg_ir::scalar::PositiveReal::new(ZERO_ENTITY_WIRE_TOLERANCE)
                                 .expect("positive finite tolerance")
                         },
                     ),
@@ -541,7 +541,7 @@ fn transfer_closed_wire_loops(
                     end: vertex_ids[(index + 1) % member_count].clone(),
                     tolerance: Some(
                         const {
-                            cadmpeg_ir::units::PositiveScalar::new(ZERO_ENTITY_WIRE_TOLERANCE)
+                            cadmpeg_ir::scalar::PositiveReal::new(ZERO_ENTITY_WIRE_TOLERANCE)
                                 .expect("positive finite tolerance")
                         },
                     ),

@@ -135,7 +135,7 @@ fn current_v5_dimension_extension_reaches_dimension_semantics() {
         DETAIL_MEASURED.to_string()
     );
     assert_eq!(
-        annotation.value.map(cadmpeg_ir::units::FiniteScalar::get),
+        annotation.value.map(cadmpeg_ir::scalar::FiniteReal::get),
         Some(7.5)
     );
     assert_object_record(&result, &record);

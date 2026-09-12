@@ -1636,7 +1636,7 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
             point: point_id,
             tolerance: (tolerance > 0.0)
                 .then(|| {
-                    cadmpeg_ir::units::PositiveScalar::new(tolerance)
+                    cadmpeg_ir::scalar::PositiveReal::new(tolerance)
                         .ok_or_else(|| CodecError::malformed("vertex tolerance must be finite"))
                 })
                 .transpose()?,
@@ -1691,7 +1691,7 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
                 .copied()
                 .filter(|value| *value > 0.0)
                 .map(|value| {
-                    cadmpeg_ir::units::PositiveScalar::new(value)
+                    cadmpeg_ir::scalar::PositiveReal::new(value)
                         .ok_or_else(|| CodecError::malformed("edge tolerance must be finite"))
                 })
                 .transpose()?,

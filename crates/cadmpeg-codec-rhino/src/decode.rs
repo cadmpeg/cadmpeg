@@ -4899,14 +4899,14 @@ fn finite_tolerance(value: f64) -> Option<f64> {
 fn scaled_tolerance(
     value: f64,
     scale: f64,
-) -> Result<Option<cadmpeg_ir::units::PositiveScalar>, crate::curves::GeometryError> {
+) -> Result<Option<cadmpeg_ir::scalar::PositiveReal>, crate::curves::GeometryError> {
     if !value.is_finite() || value <= 0.0 {
         return Ok(None);
     }
     let scaled = crate::wire::scaled_coordinate(value, scale)
         .ok_or_else(|| crate::curves::error(0, "scaled tolerance is invalid"))?;
     Ok(Some(
-        cadmpeg_ir::units::PositiveScalar::new(scaled).ok_or_else(|| {
+        cadmpeg_ir::scalar::PositiveReal::new(scaled).ok_or_else(|| {
             crate::curves::error(0, "scaled tolerance must be positive and finite")
         })?,
     ))
@@ -5592,11 +5592,11 @@ pub(crate) fn seal_for_test(
 /// Admits an archive tolerance with a recorded default repair.
 pub(crate) fn admitted_tolerance(
     value: f64,
-    default: cadmpeg_ir::units::PositiveScalar,
+    default: cadmpeg_ir::scalar::PositiveReal,
     field: &str,
     losses: &mut Vec<LossNote>,
-) -> cadmpeg_ir::units::PositiveScalar {
-    cadmpeg_ir::units::PositiveScalar::new(value).unwrap_or_else(|| {
+) -> cadmpeg_ir::scalar::PositiveReal {
+    cadmpeg_ir::scalar::PositiveReal::new(value).unwrap_or_else(|| {
         losses.push(RhinoLossCode::RedundantFieldRepaired.note(format!(
             "{field} tolerance {value} replaced with default {}",
             default.get()

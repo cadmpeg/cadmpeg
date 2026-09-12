@@ -106,9 +106,9 @@ fn unit_scalar_names_share_const_admitted_domains() {
     const POSITIVE: Option<PositiveReal> = PositiveReal::new(2.0);
     const NONNEGATIVE: Option<NonNegativeReal> = NonNegativeReal::new(0.0);
     const INVALID: Option<NonNegativeReal> = NonNegativeReal::new(-1.0);
-    let signed: crate::units::FiniteScalar = SIGNED.unwrap();
-    let positive: crate::units::PositiveScalar = POSITIVE.unwrap();
-    let nonnegative: crate::units::NonNegativeScalar = NONNEGATIVE.unwrap();
+    let signed: crate::scalar::FiniteReal = SIGNED.unwrap();
+    let positive: crate::scalar::PositiveReal = POSITIVE.unwrap();
+    let nonnegative: crate::scalar::NonNegativeReal = NONNEGATIVE.unwrap();
     assert_eq!(signed.get(), -2.0);
     assert_eq!(positive.get(), 2.0);
     assert_eq!(nonnegative.get(), 0.0);

@@ -63,7 +63,7 @@ fn source_less_points_round_trip_across_target_versions() {
 fn coarse_absolute_tolerance_writes_valid_independent_relative_tolerance() {
     let mut ir = CadIr::empty();
     ir.tolerances.linear =
-        cadmpeg_ir::units::PositiveScalar::new(2.0).expect("positive finite tolerance");
+        cadmpeg_ir::scalar::PositiveReal::new(2.0).expect("positive finite tolerance");
     ir.model.points.push(Point {
         id: PointId::mint("rhino:test:point#coarse-tolerance").expect("identity grammar"),
         position: Point3::new(1.0, 2.0, 3.0),
@@ -93,7 +93,7 @@ fn coarse_absolute_tolerance_writes_valid_independent_relative_tolerance() {
 #[test]
 fn invalid_archive_tolerances_are_rejected_before_output() {
     let mut ir = CadIr::empty();
-    ir.tolerances.angular = cadmpeg_ir::units::PositiveScalar::new(std::f64::consts::PI.next_up())
+    ir.tolerances.angular = cadmpeg_ir::scalar::PositiveReal::new(std::f64::consts::PI.next_up())
         .expect("positive finite tolerance");
     let mut output = vec![0xaa];
     let error = RhinoCodec
