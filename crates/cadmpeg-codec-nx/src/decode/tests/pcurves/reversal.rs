@@ -7,7 +7,7 @@ use super::*;
 #[test]
 fn reversed_nurbs_pcurve_preserves_the_selected_interval() {
     let pcurve = PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
             2,
             vec![0.0, 0.0, 0.0, 2.0, 2.0, 2.0],
             vec![

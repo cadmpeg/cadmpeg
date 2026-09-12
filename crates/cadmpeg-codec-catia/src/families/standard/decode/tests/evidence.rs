@@ -562,7 +562,7 @@ fn shared_nurbs_boundary_filters_identity_free_endpoint_pairs() {
             [Point3::new(offset, 0.0, 0.0), Point3::new(offset, 1.0, 0.0)]
         };
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-            NurbsSurface::new(
+            NurbsSurface::from_lanes(
                 1,
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
@@ -952,7 +952,7 @@ fn limit_curve_point_binding_rejects_separated_occurrences_with_unequal_residual
             .map(|index| Point3::new(-1.0 + 0.4 * f64::from(index) + offset, 0.0, 0.0))
             .collect::<Vec<_>>()
     };
-    let curve = NurbsCurve::new(
+    let curve = NurbsCurve::from_lanes(
         5,
         [vec![0.0; 6], vec![0.5; 6], vec![1.0; 6]].concat(),
         [line_span(0.0), line_span(1e-3)].concat(),
@@ -1001,7 +1001,7 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
         faces: [0, 0],
         geometry: StandardCurveGeometry::Bspline,
     };
-    let limit_curve = NurbsCurve::new(
+    let limit_curve = NurbsCurve::from_lanes(
         5,
         vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
         (0..6)

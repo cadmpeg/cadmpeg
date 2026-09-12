@@ -34,7 +34,7 @@ fn unit_preserves_tiny_finite_direction() {
 
 #[test]
 fn affine_curve_ranges_reparameterize_without_changing_geometry() {
-    let nurbs = NurbsCurve::new(
+    let nurbs = NurbsCurve::from_lanes(
         1,
         vec![10.0, 10.0, 20.0, 20.0],
         vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
@@ -102,7 +102,7 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
             [0.0, 2.0],
         ),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::new(
+            NurbsCurve::from_lanes(
                 1,
                 vec![0.0, 0.0, 2.0, 2.0],
                 vec![Point3::new(20.0, 0.0, 0.0), Point3::new(30.0, 0.0, 0.0)],
@@ -848,7 +848,7 @@ fn exact_revolution_builders_reject_unbounded_subdivision_counts() {
         [0.0, 1.0],
     )
     .is_none());
-    let profile = NurbsCurve::new(
+    let profile = NurbsCurve::from_lanes(
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 0.0, 1.0)],
@@ -866,7 +866,7 @@ fn exact_revolution_builders_reject_unbounded_subdivision_counts() {
     .is_none());
     let mut wide_knots = vec![0.0; 123];
     wide_knots.extend([1.0, 1.0]);
-    let wide_profile = NurbsCurve::new(
+    let wide_profile = NurbsCurve::from_lanes(
         1,
         wide_knots,
         vec![Point3::new(1.0, 0.0, 0.0); 123],
@@ -1174,7 +1174,7 @@ fn emitted_carriers_determine_logical_vertex_tolerance() {
         2,
         (
             PcurveGeometry::Nurbs {
-                nurbs: PcurveNurbs::new(
+                nurbs: PcurveNurbs::from_lanes(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],

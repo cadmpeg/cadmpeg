@@ -124,7 +124,7 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
     let cases = [
         (
             "planar-open",
-            NurbsCurve::new(
+            NurbsCurve::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 2.0, 2.0],
                 vec![
@@ -140,7 +140,7 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
         ),
         (
             "unique-planar-open",
-            NurbsCurve::new(
+            NurbsCurve::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 2.0, 2.0],
                 vec![
@@ -156,7 +156,7 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
         ),
         (
             "nonplanar-open",
-            NurbsCurve::new(
+            NurbsCurve::from_lanes(
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0],
                 vec![
@@ -173,7 +173,7 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
         ),
         (
             "closed-planar",
-            NurbsCurve::new(
+            NurbsCurve::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 2.0, 2.0],
                 vec![
@@ -189,7 +189,7 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
         ),
         (
             "equal-weight-rational",
-            NurbsCurve::new(
+            NurbsCurve::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],

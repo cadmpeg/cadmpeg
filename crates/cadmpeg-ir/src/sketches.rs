@@ -1258,7 +1258,7 @@ impl SpatialSketchNurbsCurve {
     /// Atomically edit control points and preserve finite coordinates.
     pub fn edit_control_points(
         &mut self,
-        edit: impl FnOnce(&mut [Point3]),
+        edit: impl FnMut(&mut Point3),
     ) -> Result<(), crate::geometry::NurbsError> {
         self.0.edit_control_points(edit)
     }

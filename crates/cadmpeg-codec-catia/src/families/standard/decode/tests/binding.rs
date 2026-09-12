@@ -2,7 +2,7 @@ use super::*;
 use std::collections::BTreeMap;
 
 fn unit_square_surface() -> NurbsSurface {
-    NurbsSurface::new(
+    NurbsSurface::from_lanes(
         1,
         1,
         vec![0.0, 0.0, 1.0, 1.0],
@@ -950,7 +950,7 @@ fn standard_plane_full_circle_pcurve_preserves_closed_carrier() {
     assert_eq!(nurbs.degree(), 2);
     assert_eq!(nurbs.knots().len(), 12);
     assert_eq!(nurbs.control_points().len(), 9);
-    assert_eq!(nurbs.weights().map(<[f64]>::len), Some(9));
+    assert_eq!(nurbs.weights().map(|weights| weights.len()), Some(9));
     for parameter in [range[0], range[1]] {
         let uv = pcurve_uv(&geometry, parameter).expect("closed pcurve endpoint");
         let point = surface_point(&surface, uv.u, uv.v).expect("closed surface endpoint");

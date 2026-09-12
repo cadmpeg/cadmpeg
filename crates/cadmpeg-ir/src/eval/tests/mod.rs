@@ -76,7 +76,7 @@ mod variable_blend;
 const EPS_DEGREE_ZERO_SURFACE_BOUND: f64 = 1.0e-12;
 
 fn bilinear_surface() -> NurbsSurface {
-    NurbsSurface::new(
+    NurbsSurface::from_lanes(
         1,
         1,
         vec![0.0, 0.0, 1.0, 1.0],
@@ -357,7 +357,7 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::new(
+            NurbsCurve::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
@@ -419,7 +419,7 @@ fn nurbs_surface_local_inverse_returns_a_forward_checked_candidate() {
 
 #[test]
 fn nurbs_surface_inverse_handles_rational_internal_spans() {
-    let surface = NurbsSurface::new(
+    let surface = NurbsSurface::from_lanes(
         1,
         1,
         vec![0.0, 0.0, 0.5, 1.0, 1.0],
@@ -446,8 +446,14 @@ fn nurbs_surface_inverse_handles_rational_internal_spans() {
 #[test]
 fn nurbs_surface_parameter_segment_bound_contains_curved_diagonal() {
     let mut surface = bilinear_surface();
+    let mut visited = 0;
     surface
-        .edit_control_points(|points| points[1][1].z = 1.0)
+        .edit_control_points(|point| {
+            if visited == 3 {
+                point.z = 1.0;
+            }
+            visited += 1;
+        })
         .unwrap();
     let parameters = [Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)];
     let chord = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0)];
@@ -476,7 +482,7 @@ fn nurbs_surface_parameter_segment_bound_contains_curved_diagonal() {
 
 #[test]
 fn degree_zero_nurbs_surface_has_an_exact_parameter_segment_bound() {
-    let surface = NurbsSurface::new(
+    let surface = NurbsSurface::from_lanes(
         0,
         0,
         vec![0.0, 1.0],
@@ -501,7 +507,7 @@ fn degree_zero_nurbs_surface_has_an_exact_parameter_segment_bound() {
 
 #[test]
 fn degree_zero_nurbs_surface_patch_spans_use_their_matching_poles() {
-    let surface = NurbsSurface::new(
+    let surface = NurbsSurface::from_lanes(
         0,
         0,
         vec![0.0, 1.0, 2.0],
@@ -530,7 +536,7 @@ fn degree_zero_nurbs_surface_patch_spans_use_their_matching_poles() {
 
 #[test]
 fn nurbs_surface_parameter_segment_bound_splits_internal_knots() {
-    let surface = NurbsSurface::new(
+    let surface = NurbsSurface::from_lanes(
         1,
         1,
         vec![0.0, 0.0, 0.5, 1.0, 1.0],
@@ -805,7 +811,7 @@ fn degenerate_curve_inverse_preserves_the_selected_parameter() {
 fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
     // Rational, quadratic in u and linear in v, so the blend across the
     // fixed direction has to carry weights to stay exact.
-    let surface = NurbsSurface::new(
+    let surface = NurbsSurface::from_lanes(
         2,
         1,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
@@ -834,11 +840,13 @@ fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
                 IsolineDirection::ConstantV => (sample, at),
             };
             let expected = nurbs_surface_point(&surface, u, v).expect("surface point");
+            let control_points = curve.control_points();
+            let weights = curve.weights();
             let actual = nurbs_curve_point(
                 curve.degree(),
                 curve.knots(),
-                curve.control_points(),
-                curve.weights(),
+                &control_points,
+                weights.as_deref(),
                 sample,
             )
             .expect("curve point");
@@ -855,7 +863,7 @@ fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
 
 #[test]
 fn bilinear_surface_partials_follow_stored_parameterization() {
-    let surface = NurbsSurface::new(
+    let surface = NurbsSurface::from_lanes(
         1,
         1,
         vec![0.0, 0.0, 1.0, 1.0],
@@ -878,7 +886,7 @@ fn bilinear_surface_partials_follow_stored_parameterization() {
 
 #[test]
 fn quadratic_surface_second_partials_follow_stored_parameterization() {
-    let surface = NurbsSurface::new(
+    let surface = NurbsSurface::from_lanes(
         2,
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
@@ -1001,7 +1009,7 @@ fn linear_offset_support_extension_uses_the_boundary_tangent_plane() {
         Surface {
             id: support_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                NurbsSurface::new(
+                NurbsSurface::from_lanes(
                     1,
                     2,
                     vec![0.0, 0.0, 1.0, 1.0],
@@ -1292,7 +1300,7 @@ fn cacheless_revision_extrusion_uses_the_directrix_sense_chart() {
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::new(
+            NurbsCurve::from_lanes(
                 1,
                 vec![0.0, 0.0, 2.0, 2.0],
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
@@ -1763,7 +1771,7 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
     );
 
     let arc = SolvedCurveGeometry::Nurbs(
-        NurbsCurve::new(
+        NurbsCurve::from_lanes(
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
@@ -1809,7 +1817,7 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
 
 #[test]
 fn rational_surface_partials_apply_the_weight_quotient_rule() {
-    let surface = NurbsSurface::new(
+    let surface = NurbsSurface::from_lanes(
         1,
         1,
         vec![0.0, 0.0, 1.0, 1.0],
@@ -1840,7 +1848,7 @@ fn rational_surface_partials_apply_the_weight_quotient_rule() {
 
 #[test]
 fn rational_surface_isocurves_preserve_the_tensor_product_parameterization() {
-    let surface = NurbsSurface::new(
+    let surface = NurbsSurface::from_lanes(
         1,
         1,
         vec![0.0, 0.0, 1.0, 1.0],
@@ -1882,7 +1890,7 @@ fn rational_surface_isocurves_preserve_the_tensor_product_parameterization() {
 
 #[test]
 fn nurbs_curve_inverse_uses_the_seed_to_select_an_ambiguous_witness() {
-    let curve = NurbsCurve::new(
+    let curve = NurbsCurve::from_lanes(
         1,
         vec![0.0, 0.0, 0.5, 1.0, 1.0],
         vec![

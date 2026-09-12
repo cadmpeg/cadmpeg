@@ -2781,7 +2781,7 @@ fn parse_binary_surface(
                 }
             }
             TextSurface::Nurbs(
-                NurbsSurface::new(
+                NurbsSurface::from_lanes(
                     u32::try_from(u_degree).map_err(|_| {
                         CodecError::Malformed("binary Bezier u degree exceeds u32".into())
                     })?,
@@ -2947,7 +2947,7 @@ fn parse_binary_curve(
                 }
             }
             TextCurve::Nurbs(
-                NurbsCurve::new(
+                NurbsCurve::from_lanes(
                     u32::try_from(degree).map_err(|_| {
                         CodecError::Malformed("binary Bezier degree exceeds u32".into())
                     })?,
@@ -2979,7 +2979,7 @@ fn parse_binary_curve(
             let (knots, padding) = normalize_periodic_knots(knots, degree, periodic)?;
             append_periodic_curve_poles(&mut control_points, weights.as_mut(), padding)?;
             TextCurve::Nurbs(
-                NurbsCurve::new(degree, knots, control_points, weights, periodic)
+                NurbsCurve::from_lanes(degree, knots, control_points, weights, periodic)
                     .map_err(|error| CodecError::Malformed(error.to_string()))?,
             )
         }
@@ -4425,7 +4425,7 @@ fn parse_bezier_surface(cursor: &mut TokenCursor<'_>) -> Result<NurbsSurface, Co
             weights.push(cursor.real("Bezier surface weight")?);
         }
     }
-    NurbsSurface::new(
+    NurbsSurface::from_lanes(
         u_degree as u32,
         v_degree as u32,
         clamped_bezier_knots(u_degree),
@@ -4608,7 +4608,7 @@ fn normalize_periodic_surface(
     };
     let v_count = u32::try_from(new_v)
         .map_err(|_| CodecError::Malformed("periodic B-spline v pole count exceeds u32".into()))?;
-    NurbsSurface::new(
+    NurbsSurface::from_lanes(
         degrees[0],
         degrees[1],
         u_knots,
@@ -4775,7 +4775,7 @@ fn parse_nurbs_curve(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve, CodecEr
     let knots = parse_knots(cursor, knot_count, degree, "B-spline")?;
     let (knots, padding) = normalize_periodic_knots(knots, degree as u32, periodic)?;
     append_periodic_curve_poles(&mut control_points, weights.as_mut(), padding)?;
-    NurbsCurve::new(degree as u32, knots, control_points, weights, periodic)
+    NurbsCurve::from_lanes(degree as u32, knots, control_points, weights, periodic)
         .map_err(|error| CodecError::Malformed(error.to_string()))
 }
 
@@ -4791,7 +4791,7 @@ fn parse_bezier_curve(cursor: &mut TokenCursor<'_>) -> Result<NurbsCurve, CodecE
             weights.push(cursor.real("Bezier weight")?);
         }
     }
-    NurbsCurve::new(
+    NurbsCurve::from_lanes(
         degree as u32,
         clamped_bezier_knots(degree),
         control_points,
@@ -5536,15 +5536,10 @@ pub(crate) mod tests {
             normalized.u_knots(),
             [-0.5, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 1.5]
         );
-        assert_eq!(normalized.poles().count(), 14);
-        assert_eq!(
-            normalized.poles().nth(12).copied().unwrap(),
-            normalized.poles().next().copied().unwrap()
-        );
-        assert_eq!(
-            normalized.poles().nth(13).copied().unwrap(),
-            normalized.poles().nth(1).copied().unwrap()
-        );
+        let poles = normalized.poles();
+        assert_eq!(poles.len(), 14);
+        assert_eq!(poles[12], poles[0]);
+        assert_eq!(poles[13], poles[1]);
         let start = cadmpeg_ir::eval::nurbs_surface_point(&normalized, 0.0, 0.5)
             .expect("periodic start point");
         let end = cadmpeg_ir::eval::nurbs_surface_point(&normalized, 1.0, 0.5)
@@ -5815,7 +5810,7 @@ pub(crate) mod tests {
         };
         assert_eq!(curve.degree(), 2);
         assert_eq!(curve.knots(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
-        assert_eq!(curve.weights(), Some(&[1.0, 2.0, 1.0][..]));
+        assert_eq!(curve.weights(), Some(vec![1.0, 2.0, 1.0]));
     }
 
     #[test]

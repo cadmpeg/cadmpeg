@@ -1332,7 +1332,7 @@ pub(crate) fn append_freeform_surface_pools(
         ) else {
             continue;
         };
-        let Ok(geometry) = NurbsCurve::new(
+        let Ok(geometry) = NurbsCurve::from_lanes(
             guide.degree,
             knots,
             control_points
@@ -2798,10 +2798,8 @@ fn rechart_equivalent_surface_pcurve(
         PcurveGeometry::Nurbs { nurbs } => {
             let mut shifted = nurbs.clone();
             shifted
-                .edit_control_points(|points| {
-                    for point in points {
-                        point.v += v_shift;
-                    }
+                .edit_control_points(|point| {
+                    point.v += v_shift;
                 })
                 .map_err(|_| RechartFailure::NonFinite)?;
             Ok(Some(PcurveGeometry::Nurbs { nurbs: shifted }))
@@ -2981,7 +2979,7 @@ mod tests {
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::new(
+                NurbsCurve::from_lanes(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(2.0, 3.0, 5.0), Point3::new(7.0, 11.0, 13.0)],
@@ -3019,7 +3017,7 @@ mod tests {
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::new(
+                NurbsCurve::from_lanes(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
@@ -3266,7 +3264,7 @@ mod tests {
         let target = cone(Point3::new(0.0, 0.0, 0.0), 0.0);
         assert!(same_surface_locus(&source, &target));
         let pcurve = PcurveGeometry::Nurbs {
-            nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+            nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![
@@ -3858,7 +3856,7 @@ mod tests {
         let endpoints = [*loci.first().expect("sites"), *loci.last().expect("sites")];
         let range = [0.0, 1.0];
         let line_through = |first: [f64; 2], last: [f64; 2]| PcurveGeometry::Nurbs {
-            nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+            nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
                 1,
                 vec![range[0], range[0], range[1], range[1]],
                 vec![

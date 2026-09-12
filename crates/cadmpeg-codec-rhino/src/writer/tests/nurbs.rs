@@ -20,7 +20,7 @@ fn shared_rational_nurbs_edge_round_trips_c3_and_reversed_c2() {
     edge.set_param_range(Some([2.0, 5.0])).unwrap();
     ir.model.curves[1].geometry =
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::NurbsCurve::new(
+            cadmpeg_ir::geometry::NurbsCurve::from_lanes(
                 2,
                 vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
                 vec![
@@ -98,7 +98,7 @@ fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
     ir.model.edges[1].set_param_range(Some([2.0, 5.0])).unwrap();
     ir.model.curves[1].geometry =
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::NurbsCurve::new(
+            cadmpeg_ir::geometry::NurbsCurve::from_lanes(
                 2,
                 vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
                 vec![
@@ -126,7 +126,7 @@ fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
         ir.model.pcurves.push(cadmpeg_ir::geometry::Pcurve {
             id: id.clone(),
             geometry: cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-                nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+                nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
                     2,
                     vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
                     control_points,
@@ -511,7 +511,7 @@ fn generally_trimmed_nurbs_face_round_trips_outer_loop_and_hole() {
     ];
     ir.model.curves[0].geometry =
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::NurbsCurve::new(
+            cadmpeg_ir::geometry::NurbsCurve::from_lanes(
                 2,
                 vec![
                     domain[0], domain[0], domain[0], domain[1], domain[1], domain[1],
@@ -523,7 +523,7 @@ fn generally_trimmed_nurbs_face_round_trips_outer_loop_and_hole() {
             .expect("valid trimmed edge"),
         ));
     ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
             2,
             vec![
                 domain[0], domain[0], domain[0], domain[1], domain[1], domain[1],

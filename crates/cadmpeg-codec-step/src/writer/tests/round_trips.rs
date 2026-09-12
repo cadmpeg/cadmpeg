@@ -105,11 +105,11 @@ fn curve_geometry_for_sheet_pcurve(geometry: &PcurveGeometry) -> Option<CurveGeo
             )))
         }
         PcurveGeometry::Nurbs { nurbs } => Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::new(
+            NurbsCurve::from_lanes(
                 nurbs.degree(),
                 nurbs.knots().to_vec(),
                 nurbs.control_points().iter().copied().map(point).collect(),
-                nurbs.weights().map(<[f64]>::to_vec),
+                nurbs.weights(),
                 nurbs.periodic(),
             )
             .ok()?,
@@ -296,7 +296,7 @@ pub(crate) fn writer_round_trips_rational_nurbs_pcurves() {
         .into_parts()
         .0;
     ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![
@@ -328,7 +328,7 @@ pub(crate) fn writer_round_trips_rational_nurbs_pcurves() {
             if nurbs.degree() == 1
                 && !nurbs.periodic()
                 && nurbs.control_points().len() == 2
-                && nurbs.weights() == Some(&[1.0, 2.0][..])
+                && nurbs.weights() == Some(vec![1.0, 2.0])
     ));
 }
 
@@ -1197,7 +1197,7 @@ fn analytic_surface_placements_preserve_orientation() {
 
 #[test]
 fn nurbs_curve_non_rational_uses_with_knots() {
-    let n = NurbsCurve::new(
+    let n = NurbsCurve::from_lanes(
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         vec![
@@ -1218,7 +1218,7 @@ fn nurbs_curve_non_rational_uses_with_knots() {
 
 #[test]
 fn nurbs_curve_rational_uses_complex_form() {
-    let n = NurbsCurve::new(
+    let n = NurbsCurve::from_lanes(
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         vec![
@@ -1237,7 +1237,7 @@ fn nurbs_curve_rational_uses_complex_form() {
 
 #[test]
 pub(crate) fn nurbs_surface_grid_orientation_is_u_major() {
-    let n = NurbsSurface::new(
+    let n = NurbsSurface::from_lanes(
         1,
         1,
         vec![0.0, 0.0, 1.0, 1.0],

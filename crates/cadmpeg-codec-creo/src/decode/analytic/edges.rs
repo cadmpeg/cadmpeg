@@ -695,7 +695,7 @@ mod tests {
 
     #[test]
     fn reversing_nurbs_rejects_overflow_without_mutating_the_carrier() {
-        let original = NurbsCurve::new(
+        let original = NurbsCurve::from_lanes(
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],

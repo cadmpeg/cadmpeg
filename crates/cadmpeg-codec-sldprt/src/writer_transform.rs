@@ -267,10 +267,8 @@ fn transform_surface(
             .map_err(CodecError::malformed)?;
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => nurbs
-            .edit_control_points(|rows| {
-                for point in rows.iter_mut().flatten() {
-                    *point = transform.apply_point(*point);
-                }
+            .edit_control_points(|point| {
+                *point = transform.apply_point(*point);
             })
             .map_err(|error| {
                 CodecError::malformed(format_args!("invalid transformed NURBS: {error}"))
@@ -339,10 +337,8 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             .map_err(CodecError::malformed)?;
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => nurbs
-            .edit_control_points(|points| {
-                for point in points {
-                    *point = transform.apply_point(*point);
-                }
+            .edit_control_points(|point| {
+                *point = transform.apply_point(*point);
             })
             .map_err(|error| {
                 CodecError::malformed(format_args!("invalid transformed NURBS: {error}"))

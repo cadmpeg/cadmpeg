@@ -606,7 +606,7 @@ fn spatial_nurbs_rejects_general_curve_context_mismatches() {
     use crate::geometry::NurbsCurve;
     use crate::sketches::{SpatialSketchGeometry, SpatialSketchNurbsCurve};
 
-    let negative = NurbsCurve::new(
+    let negative = NurbsCurve::from_lanes(
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
@@ -614,7 +614,7 @@ fn spatial_nurbs_rejects_general_curve_context_mismatches() {
         false,
     )
     .unwrap();
-    let degree_zero = NurbsCurve::new(
+    let degree_zero = NurbsCurve::from_lanes(
         0,
         vec![0.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0)],
@@ -641,7 +641,7 @@ fn spatial_nurbs_preserves_wire_fields_and_checked_point_edits() {
         SpatialSketchGeometry, SpatialSketchGeometryDefinition, SpatialSketchNurbsCurve,
     };
 
-    let curve = NurbsCurve::new(
+    let curve = NurbsCurve::from_lanes(
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
@@ -652,8 +652,13 @@ fn spatial_nurbs_preserves_wire_fields_and_checked_point_edits() {
     let wire = serde_json::json!({"kind": "nurbs", "curve": &curve});
     let mut curve = SpatialSketchNurbsCurve::try_from(curve).unwrap();
     let before = curve.clone();
+    let mut first = true;
     assert!(curve
-        .edit_control_points(|points| points[0].x = f64::NAN)
+        .edit_control_points(|point| {
+            if std::mem::take(&mut first) {
+                point.x = f64::NAN;
+            }
+        })
         .is_err());
     assert_eq!(curve, before);
     let geometry =

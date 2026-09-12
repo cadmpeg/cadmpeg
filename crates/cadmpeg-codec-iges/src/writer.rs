@@ -1950,7 +1950,7 @@ fn curve_matches_pcurve(curve: &CurveGeometry, range: [f64; 2], pcurve: &Pcurve)
             (Some(left), Some(right)) if left.len() == right.len() => left
                 .iter()
                 .zip(right)
-                .all(|(left, right)| same_float(*left, *right)),
+                .all(|(left, right)| same_float(*left, right)),
             _ => false,
         }
         && pcurve
@@ -3221,7 +3221,7 @@ fn oriented_curve_entity(
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)) => {
             let values = polyline_parameters(polyline.point_count(), polyline.parameters())?;
-            let original = NurbsCurve::new(
+            let original = NurbsCurve::from_lanes(
                 1,
                 polyline_knots(&values),
                 polyline.points().collect(),
@@ -3469,11 +3469,9 @@ fn source_pcurve(ir: &CadIr, pcurve: &Pcurve) -> Result<Pcurve, CodecError> {
         return Ok(pcurve);
     };
     nurbs
-        .edit_control_points(|points| {
-            for point in points {
-                point.u = point.u.mul_add(u_factor, u_offset);
-                point.v = point.v.mul_add(v_factor, v_offset);
-            }
+        .edit_control_points(|point| {
+            point.u = point.u.mul_add(u_factor, u_offset);
+            point.v = point.v.mul_add(v_factor, v_offset);
         })
         .map_err(|error| {
             CodecError::malformed(format_args!(
@@ -3498,7 +3496,7 @@ fn oriented_pcurve_entity(ir: &CadIr, pcurve: &Pcurve) -> Result<Entity, CodecEr
             pcurve.id
         )));
     };
-    let nurbs = NurbsCurve::new(
+    let nurbs = NurbsCurve::from_lanes(
         nurbs.degree(),
         nurbs.knots().to_vec(),
         nurbs
@@ -3506,7 +3504,7 @@ fn oriented_pcurve_entity(ir: &CadIr, pcurve: &Pcurve) -> Result<Entity, CodecEr
             .iter()
             .map(|point| Point3::new(point.u, point.v, 0.0))
             .collect(),
-        nurbs.weights().map(<[f64]>::to_vec),
+        nurbs.weights(),
         nurbs.periodic(),
     )
     .map_err(|error| CodecError::malformed(format_args!("pcurve {}: {error}", pcurve.id)))?;
@@ -3552,7 +3550,7 @@ fn reverse_nurbs(
             "IGES reversed NURBS knot vector or parameter range is non-finite".into(),
         ));
     }
-    let reversed = NurbsCurve::new(
+    let reversed = NurbsCurve::from_lanes(
         nurbs.degree(),
         knots,
         nurbs.control_points().iter().rev().copied().collect(),
@@ -3584,11 +3582,11 @@ fn pcurve_entity(ir: &CadIr, pcurve: &Pcurve) -> Result<Entity, CodecError> {
         .iter()
         .map(|point| Point3::new(point.u, point.v, 0.0))
         .collect();
-    let curve = NurbsCurve::new(
+    let curve = NurbsCurve::from_lanes(
         nurbs.degree(),
         nurbs.knots().to_vec(),
         control_points,
-        nurbs.weights().map(<[f64]>::to_vec),
+        nurbs.weights(),
         nurbs.periodic(),
     )
     .map_err(|error| CodecError::malformed(format_args!("pcurve {}: {error}", pcurve.id)))?;
@@ -5066,7 +5064,7 @@ fn encode_nurbs_surface(nurbs: &NurbsSurface) -> Result<Entity, CodecError> {
         || nurbs.v_knots().iter().any(|value| !value.is_finite())
         || !knots_nondecreasing(nurbs.u_knots())
         || !knots_nondecreasing(nurbs.v_knots())
-        || nurbs.poles().any(|point| {
+        || nurbs.poles().iter().any(|point| {
             [point.x, point.y, point.z]
                 .iter()
                 .any(|value| !value.is_finite())
@@ -5078,7 +5076,6 @@ fn encode_nurbs_surface(nurbs: &NurbsSurface) -> Result<Entity, CodecError> {
     }
     let weights = match nurbs.pole_weights() {
         Some(values) => {
-            let values = values.collect::<Vec<_>>();
             if values
                 .iter()
                 .any(|weight| !weight.is_finite() || *weight <= 0.0)
@@ -5914,7 +5911,7 @@ fn curve_entity(
         SolvedCurveGeometry::Nurbs(nurbs) => encode_nurbs(nurbs, range, "NURBS"),
         SolvedCurveGeometry::Polyline(polyline) => {
             let values = polyline_parameters(polyline.point_count(), polyline.parameters())?;
-            let nurbs = NurbsCurve::new(
+            let nurbs = NurbsCurve::from_lanes(
                 1,
                 polyline_knots(&values),
                 polyline.points().collect(),
@@ -5988,7 +5985,8 @@ fn encode_nurbs(
     let polynomial = weights
         .first()
         .is_some_and(|first| weights.iter().all(|weight| weight == first));
-    let plane_normal = nurbs_plane_normal(nurbs.control_points());
+    let control_points = nurbs.control_points();
+    let plane_normal = nurbs_plane_normal(&control_points);
     let planar = plane_normal.is_some();
     let closed = nurbs_is_closed(nurbs, &weights, domain);
     let k = control_count - 1;
@@ -6089,10 +6087,11 @@ fn nurbs_plane_normal(points: &[Point3]) -> Option<Vector3> {
 }
 
 fn nurbs_is_closed(nurbs: &NurbsCurve, weights: &[f64], domain: [f64; 2]) -> bool {
+    let control_points = nurbs.control_points();
     let Some(start) = cadmpeg_ir::eval::nurbs_curve_point(
         nurbs.degree(),
         nurbs.knots(),
-        nurbs.control_points(),
+        &control_points,
         Some(weights),
         domain[0],
     ) else {
@@ -6101,14 +6100,13 @@ fn nurbs_is_closed(nurbs: &NurbsCurve, weights: &[f64], domain: [f64; 2]) -> boo
     let Some(end) = cadmpeg_ir::eval::nurbs_curve_point(
         nurbs.degree(),
         nurbs.knots(),
-        nurbs.control_points(),
+        &control_points,
         Some(weights),
         domain[1],
     ) else {
         return false;
     };
-    let scale = nurbs
-        .control_points()
+    let scale = control_points
         .iter()
         .map(|point| point.distance(start))
         .filter(|distance| distance.is_finite())
@@ -6222,10 +6220,8 @@ fn apply_rigid_transform(
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mut nurbs)) => {
             nurbs
-                .edit_control_points(|points| {
-                    for control_point in points {
-                        *control_point = point(*control_point);
-                    }
+                .edit_control_points(|control_point| {
+                    *control_point = point(*control_point);
                 })
                 .map_err(|error| {
                     CodecError::malformed(format_args!("transformed NURBS curve: {error}"))

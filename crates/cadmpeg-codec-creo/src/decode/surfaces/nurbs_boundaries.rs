@@ -28,10 +28,8 @@ pub(in super::super) fn nurbs_surface_boundaries(
 ) -> Option<[NurbsSurfaceBoundary; 4]> {
     let u_count = usize::try_from(nurbs.u_count()).ok()?;
     let v_count = usize::try_from(nurbs.v_count()).ok()?;
-    let poles = nurbs.poles().copied().collect::<Vec<_>>();
-    let pole_weights = nurbs
-        .pole_weights()
-        .map(std::iter::Iterator::collect::<Vec<f64>>);
+    let poles = nurbs.poles();
+    let pole_weights = nurbs.pole_weights();
     (poles
         .iter()
         .all(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite())
@@ -72,7 +70,7 @@ pub(in super::super) fn nurbs_surface_boundaries(
                 )
             };
             Some(NurbsSurfaceBoundary {
-                curve: NurbsCurve::new(
+                curve: NurbsCurve::from_lanes(
                     degree,
                     knots,
                     control_indices.iter().map(|index| poles[*index]).collect(),
@@ -117,10 +115,11 @@ pub(in super::super) fn nurbs_plane_boundary_curve(
 ) -> Option<CurveGeometry> {
     let boundaries = nurbs_surface_boundaries(nurbs)?;
     let normal = normalize(plane.normal)?;
-    let tolerance = point_tolerance(nurbs.poles())?
+    let poles = nurbs.poles();
+    let tolerance = point_tolerance(poles.iter())?
         .max(32.0 * f64::EPSILON * plane.origin.into_iter().map(f64::abs).fold(1.0, f64::max));
-    let signed_distances = nurbs
-        .poles()
+    let signed_distances = poles
+        .iter()
         .map(|point| {
             dot(
                 normal,
@@ -184,19 +183,20 @@ pub(in super::super) fn nurbs_curves_match(
 ) -> bool {
     if left.degree() != right.degree()
         || left.periodic() != right.periodic()
-        || left.control_points().len() != right.control_points().len()
+        || left.pole_count() != right.pole_count()
         || left.knots().len() != right.knots().len()
         || left.weights().is_some() != right.weights().is_some()
     {
         return false;
     }
+    let left_points = left.control_points();
+    let right_control_points = right.control_points();
     let right_points = if reversed {
-        right.control_points().iter().rev().collect::<Vec<_>>()
+        right_control_points.iter().rev().collect::<Vec<_>>()
     } else {
-        right.control_points().iter().collect()
+        right_control_points.iter().collect()
     };
-    if !left
-        .control_points()
+    if !left_points
         .iter()
         .zip(right_points)
         .all(|(left, right)| {
@@ -265,7 +265,8 @@ pub(in super::super) fn generator_separates_control_nets(
     second: &NurbsSurface,
     second_boundary: &NurbsSurfaceBoundary,
 ) -> bool {
-    let [origin, end] = first_boundary.curve.control_points() else {
+    let boundary_control_points = first_boundary.curve.control_points();
+    let [origin, end] = boundary_control_points.as_slice() else {
         return false;
     };
     let generator = [end.x - origin.x, end.y - origin.y, end.z - origin.z];
@@ -281,8 +282,8 @@ pub(in super::super) fn generator_separates_control_nets(
         return false;
     };
     let second_axis = cross(generator, first_axis);
-    let first_poles = first.poles().copied().collect::<Vec<_>>();
-    let second_poles = second.poles().copied().collect::<Vec<_>>();
+    let first_poles = first.poles();
+    let second_poles = second.poles();
     let first_outside = first_poles
         .iter()
         .enumerate()
@@ -312,7 +313,8 @@ pub(in super::super) fn generator_separates_control_nets(
         })
         .collect::<Vec<_>>();
     boundary_angles.sort_by(f64::total_cmp);
-    let tolerance = point_tolerance(first.poles().chain(second.poles())).unwrap_or(f64::INFINITY);
+    let tolerance =
+        point_tolerance(first_poles.iter().chain(second_poles.iter())).unwrap_or(f64::INFINITY);
     (0..boundary_angles.len()).any(|index| {
         let start = boundary_angles[index];
         let end = if index + 1 == boundary_angles.len() {
@@ -353,7 +355,9 @@ pub(in super::super) fn shared_extrusion_generator_curve(
 ) -> Option<CurveGeometry> {
     let first_boundaries = nurbs_surface_boundaries(first)?;
     let second_boundaries = nurbs_surface_boundaries(second)?;
-    let tolerance = point_tolerance(first.poles().chain(second.poles()))?;
+    let first_poles = first.poles();
+    let second_poles = second.poles();
+    let tolerance = point_tolerance(first_poles.iter().chain(second_poles.iter()))?;
     let candidates = first_boundaries
         .iter()
         .flat_map(|first_boundary| {
@@ -502,9 +506,9 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve(
                 .zip([0.0, 0.0, 1.0, 1.0])
                 .all(|(actual, expected)| scalar_near(*actual, expected, EPS_ENDPOINT_AGREEMENT)))
         .then_some(())?;
-        let poles = nurbs.poles().copied().collect::<Vec<_>>();
+        let poles = nurbs.poles();
         let weights = match nurbs.pole_weights() {
-            Some(weights) => weights.collect(),
+            Some(weights) => weights,
             None => match ctx.alloc_filled(poles.len(), 1.0, "creo_nurbs_weights") {
                 Ok(weights) => weights,
                 Err(error) => return Some(Err(error)),
@@ -617,7 +621,7 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve(
         let first = evaluated(0);
         let second = evaluated(1);
         let curve = &boundaries[0].curve;
-        let curve = NurbsCurve::new(
+        let curve = NurbsCurve::from_lanes(
             curve.degree(),
             curve.knots().to_vec(),
             vec![first.0, second.0],

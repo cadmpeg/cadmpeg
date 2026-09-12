@@ -1535,12 +1535,11 @@ fn legacy_decoded_curve_endpoints(
     };
     match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
-            let first = nurbs
-                .control_points()
+            let control_points = nurbs.control_points();
+            let first = control_points
                 .first()
                 .ok_or_else(|| error(offset, "legacy Brep curve has no first pole"))?;
-            let last = nurbs
-                .control_points()
+            let last = control_points
                 .last()
                 .ok_or_else(|| error(offset, "legacy Brep curve has no last pole"))?;
             Ok([

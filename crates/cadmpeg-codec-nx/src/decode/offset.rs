@@ -201,9 +201,11 @@ pub(crate) fn certified_offset_cache_fit_with_budget(
                 distance * normal.y,
                 distance * normal.z,
             );
-            let maximum_error = support
-                .poles()
-                .zip(candidate.poles())
+            let support_poles = support.poles();
+            let candidate_poles = candidate.poles();
+            let maximum_error = support_poles
+                .iter()
+                .zip(candidate_poles.iter())
                 .map(|(support, candidate)| {
                     let expected = Point3::new(
                         support.x + translation.x,
@@ -353,6 +355,7 @@ impl HomogeneousSurfaceNet {
         let v_degree = usize::try_from(surface.v_degree()).ok()?;
         let u_count = usize::try_from(surface.u_count()).ok()?;
         let v_count = usize::try_from(surface.v_count()).ok()?;
+        let poles = surface.poles();
         if surface
             .u_knots()
             .iter()
@@ -360,18 +363,16 @@ impl HomogeneousSurfaceNet {
             .any(|knot| !knot.is_finite())
             || !knots_nondecreasing(surface.u_knots())
             || !knots_nondecreasing(surface.v_knots())
-            || surface
-                .poles()
+            || poles
+                .iter()
                 .any(|point| !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite())
             || !positive_weights(surface.pole_weights())
         {
             return None;
         }
-        let pole_weights = surface
-            .pole_weights()
-            .map(std::iter::Iterator::collect::<Vec<f64>>);
-        let controls = surface
-            .poles()
+        let pole_weights = surface.pole_weights();
+        let controls = poles
+            .iter()
             .enumerate()
             .map(|(index, point)| {
                 components(
@@ -827,7 +828,7 @@ fn oriented_nurbs_normal(surface: &NurbsSurface, normal: Vector3) -> Option<Vect
     })
 }
 
-pub(crate) fn positive_weights(weights: Option<impl Iterator<Item = f64>>) -> bool {
+pub(crate) fn positive_weights(weights: Option<impl IntoIterator<Item = f64>>) -> bool {
     let Some(weights) = weights else {
         return true;
     };
@@ -857,11 +858,12 @@ fn offset_support_control_hull_excludes_point(
             .is_some_and(|carrier| match &carrier.geometry {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
                     if positive_weights(nurbs.pole_weights())
-                        && nurbs.poles().all(|control| {
+                        && nurbs.poles().iter().all(|control| {
                             control.x.is_finite() && control.y.is_finite() && control.z.is_finite()
                         }) =>
                 {
-                    let (minimum, maximum) = nurbs.poles().fold(
+                    let poles = nurbs.poles();
+                    let (minimum, maximum) = poles.iter().fold(
                         (
                             Point3::new(f64::INFINITY, f64::INFINITY, f64::INFINITY),
                             Point3::new(f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY),
@@ -2230,7 +2232,7 @@ pub(crate) fn intersection_side(
             .map(|pair| surface_parameters(geometry, *pair))
             .collect::<Option<Vec<_>>>()?;
         Some(PcurveGeometry::Nurbs {
-            nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+            nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
                 1,
                 linear_knots(parameters),
                 control_points,
@@ -2298,8 +2300,13 @@ pub(crate) fn normalize_pcurve_parameters(
                 .iter()
                 .map(|point| surface_parameters(surface, [point.u, point.v]))
                 .collect::<Option<Vec<_>>>()?;
+            let mut converted = converted.into_iter();
             nurbs
-                .edit_control_points(|points| points.copy_from_slice(&converted))
+                .edit_control_points(|point| {
+                    if let Some(next) = converted.next() {
+                        *point = next;
+                    }
+                })
                 .ok()?;
         }
         _ => {}
@@ -2315,7 +2322,7 @@ mod tests {
     fn pointwise_offset_rejection_preserves_the_adaptive_budget() {
         let coordinates = [0.0, 0.5, 1.0];
         let square_controls = [0.0, 0.0, 1.0];
-        let support = NurbsSurface::new(
+        let support = NurbsSurface::from_lanes(
             2,
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
@@ -2340,8 +2347,14 @@ mod tests {
         )
         .expect("valid offset support");
         let mut candidate = support.clone();
+        let mut pole_index = 0usize;
         candidate
-            .edit_control_points(|rows| rows[1][1].z += 1.0)
+            .edit_control_points(|pole| {
+                if pole_index == 4 {
+                    pole.z += 1.0;
+                }
+                pole_index += 1;
+            })
             .expect("finite offset-support test pole edit");
         let support = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(support));
         let candidate = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(candidate));
@@ -2363,7 +2376,7 @@ mod tests {
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
             id: support.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                NurbsSurface::new(
+                NurbsSurface::from_lanes(
                     1,
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
@@ -2414,7 +2427,7 @@ mod tests {
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
             id: support.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                NurbsSurface::new(
+                NurbsSurface::from_lanes(
                     1,
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],

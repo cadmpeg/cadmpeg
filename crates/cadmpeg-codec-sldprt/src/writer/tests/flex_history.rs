@@ -70,7 +70,7 @@ fn encoder_writes_source_less_curved_sketches() {
         })
         .unwrap(),
         cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Nurbs {
-            curve: cadmpeg_ir::geometry::PcurveNurbs::new(
+            curve: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                 vec![

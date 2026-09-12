@@ -681,7 +681,7 @@ pub(crate) fn transfers_bounded_rational_sketch_nurbs() {
                 if curve.degree() == 2 && !curve.periodic()
                 && curve.knots() == [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
                 && curve.control_points().len() == 3
-                && curve.weights() == Some(&[1.0, 0.5, 1.0])
+                && curve.weights() == Some(vec![1.0, 0.5, 1.0])
         )
     );
 }

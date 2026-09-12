@@ -71,7 +71,7 @@ fn ordered_pcurve_uses_round_trip_with_isoparametric_state() {
 
 #[test]
 fn pcurve_lift_rejects_non_finite_model_poles() {
-    let curve = crate::geometry::PcurveNurbs::new(
+    let curve = crate::geometry::PcurveNurbs::from_lanes(
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![

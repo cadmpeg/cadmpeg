@@ -1338,7 +1338,7 @@ fn zero_entity_support_pcurve(data: &[u8], record: ZeroEntityRecord) -> Option<P
         None
     };
     Some(PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::new(degree, knots, control_points, weights, false).ok()?,
+        nurbs: PcurveNurbs::from_lanes(degree, knots, control_points, weights, false).ok()?,
     })
 }
 
@@ -1383,11 +1383,11 @@ pub(crate) fn zero_entity_neutral_pcurve(
         })
         .collect::<Option<Vec<_>>>()?;
     Some(PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::new(
+        nurbs: PcurveNurbs::from_lanes(
             nurbs.degree(),
             nurbs.knots().to_vec(),
             control_points,
-            nurbs.weights().map(<[f64]>::to_vec),
+            nurbs.weights(),
             nurbs.periodic(),
         )
         .ok()?,
@@ -1438,7 +1438,7 @@ fn zero_entity_model_curve(
             ];
             Some((
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                    NurbsCurve::new(
+                    NurbsCurve::from_lanes(
                         nurbs.degree(),
                         nurbs.knots().to_vec(),
                         nurbs
@@ -1452,7 +1452,7 @@ fn zero_entity_model_curve(
                                 )
                             })
                             .collect(),
-                        nurbs.weights().map(<[f64]>::to_vec),
+                        nurbs.weights(),
                         false,
                     )
                     .ok()?,
@@ -1675,7 +1675,8 @@ fn zero_entity_model_curve_construction(
     if nurbs.degree() != 1 || nurbs.weights().is_some() || nurbs.periodic() {
         return None;
     }
-    let [first, second] = nurbs.control_points() else {
+    let control_points = nurbs.control_points();
+    let [first, second] = control_points.as_slice() else {
         return None;
     };
     if first.u == second.u || first.v == second.v {
@@ -2058,7 +2059,7 @@ fn zero_entity_nurbs_surface(data: &[u8], record: usize) -> Option<SurfaceGeomet
         )?);
     }
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-        NurbsSurface::new(
+        NurbsSurface::from_lanes(
             layout.u_degree,
             layout.v_degree,
             expand_knots(&layout.u_distinct, &layout.u_mults)?,
@@ -2171,7 +2172,7 @@ mod tests {
     #[allow(clippy::unwrap_used)]
     fn test_pcurve(points: Vec<Point2>) -> PcurveGeometry {
         PcurveGeometry::Nurbs {
-            nurbs: PcurveNurbs::new(1, vec![0.0, 0.0, 1.0, 1.0], points, None, false).unwrap(),
+            nurbs: PcurveNurbs::from_lanes(1, vec![0.0, 0.0, 1.0, 1.0], points, None, false).unwrap(),
         }
     }
 

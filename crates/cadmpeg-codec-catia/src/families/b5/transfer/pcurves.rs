@@ -400,7 +400,7 @@ pub(super) fn lifted_curve_geometry(
             direction_v,
             ..
         } => Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::new(
+            NurbsCurve::from_lanes(
                 pcurve.degree,
                 knots,
                 pcurve
@@ -665,8 +665,9 @@ pub(super) fn cylinder_helix(
         .ok()?,
     );
     let cache = crate::nurbs::circular_helix_cache(&definition, FIT_TOLERANCE)?;
-    let cache_start = cache.curve.control_points().first()?;
-    let cache_end = cache.curve.control_points().last()?;
+    let cache_points = cache.curve.control_points();
+    let cache_start = cache_points.first()?;
+    let cache_end = cache_points.last()?;
     if distance([cache_start.x, cache_start.y, cache_start.z], edge_start) > POINT_TOLERANCE
         || distance([cache_end.x, cache_end.y, cache_end.z], edge_end) > POINT_TOLERANCE
     {

@@ -245,7 +245,7 @@ mod tests {
 
     #[test]
     fn evaluates_rational_nurbs_in_homogeneous_coordinates() {
-        let curve = NurbsCurve::new(
+        let curve = NurbsCurve::from_lanes(
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],

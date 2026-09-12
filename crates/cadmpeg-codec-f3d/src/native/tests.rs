@@ -368,8 +368,14 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
     else {
         panic!("embedded use curve must be NURBS")
     };
+    let mut pole_index = 0usize;
     nurbs
-        .edit_control_points(|points| points[0].x += 1.0)
+        .edit_control_points(|point| {
+            if pole_index == 0 {
+                point.x += 1.0;
+            }
+            pole_index += 1;
+        })
         .unwrap();
     let expected = nurbs.clone();
     let mut preserved = Vec::new();

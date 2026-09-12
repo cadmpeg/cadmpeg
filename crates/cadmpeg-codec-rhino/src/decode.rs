@@ -3583,7 +3583,7 @@ fn stage_extrusion_caps(
                     "extrusion cap staging: pcurve parameter range indexes {degree} and {end_index} exceed knot count {}",
                     pcurve.knots.len()
                 ))?;
-            let nurbs = PcurveNurbs::new(
+            let nurbs = PcurveNurbs::from_lanes(
                 pcurve.degree,
                 pcurve.knots.clone(),
                 pcurve.control_points.clone(),
@@ -4555,11 +4555,9 @@ fn scale_plane_pcurves(
         }
         if let PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry {
             nurbs
-                .edit_control_points(|points| {
-                    for pole in points {
-                        pole.u *= scale;
-                        pole.v *= scale;
-                    }
+                .edit_control_points(|pole| {
+                    pole.u *= scale;
+                    pole.v *= scale;
                 })
                 .map_err(|error| crate::curves::error(0, &error.to_string()))?;
         }
@@ -4805,8 +4803,7 @@ fn decode_pcurves(
             .and_then(|surface| surface.plane_parameterization);
         let control_points = nurbs
             .control_points()
-            .iter()
-            .copied()
+            .into_iter()
             .map(|point| {
                 let point = Point2::new(point.x, point.y);
                 plane_parameterization.map_or(point, |map| map.map_point(point))
@@ -4815,11 +4812,11 @@ fn decode_pcurves(
         let id: cadmpeg_ir::ids::PcurveId = format!("rhino:object:pcurve#{key}.trim-{index}")
             .try_into()
             .expect("valid identity");
-        let Ok(nurbs) = PcurveNurbs::new(
+        let Ok(nurbs) = PcurveNurbs::from_lanes(
             nurbs.degree(),
             nurbs.knots().to_vec(),
             control_points,
-            nurbs.weights().map(<[f64]>::to_vec),
+            nurbs.weights(),
             nurbs.periodic(),
         ) else {
             warnings.push(format!("trim {index} C2 has an invalid NURBS shape"));
@@ -5270,10 +5267,8 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
     curve.geometry = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mut nurbs)) => {
             nurbs
-                .edit_control_points(|points| {
-                    for pole in points {
-                        *pole = transform.apply_point(*pole);
-                    }
+                .edit_control_points(|pole| {
+                    *pole = transform.apply_point(*pole);
                 })
                 .map_err(|error| error.to_string())?;
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
@@ -5286,10 +5281,8 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
             let mut nurbs = crate::curves::exact_nurbs(&decoded, 0)
                 .map_err(|error| format!("analytic instance curve conversion failed: {error}"))?;
             nurbs
-                .edit_control_points(|points| {
-                    for pole in points {
-                        *pole = transform.apply_point(*pole);
-                    }
+                .edit_control_points(|pole| {
+                    *pole = transform.apply_point(*pole);
                 })
                 .map_err(|error| error.to_string())?;
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
@@ -5347,10 +5340,8 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
     surface.geometry = match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(mut nurbs)) => {
             nurbs
-                .edit_control_points(|rows| {
-                    for pole in rows.iter_mut().flatten() {
-                        *pole = transform.apply_point(*pole);
-                    }
+                .edit_control_points(|pole| {
+                    *pole = transform.apply_point(*pole);
                 })
                 .map_err(|error| error.to_string())?;
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))

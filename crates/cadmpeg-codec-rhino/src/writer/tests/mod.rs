@@ -779,7 +779,7 @@ pub(crate) fn rectangular_nurbs_patch() -> CadIr {
     ];
     let mut ir = polygon_sheet(&points);
     ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-        NurbsSurface::new(
+        NurbsSurface::from_lanes(
             1,
             1,
             vec![2.0, 2.0, 5.0, 5.0],
@@ -828,7 +828,7 @@ pub(crate) fn rectangular_nurbs_patch() -> CadIr {
     {
         ir.model.edges[index].set_param_range(Some(domain)).unwrap();
         ir.model.curves[index].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::new(
+            NurbsCurve::from_lanes(
                 1,
                 vec![domain[0], domain[0], domain[1], domain[1]],
                 control_points,
@@ -876,7 +876,7 @@ pub(crate) fn mixed_plane_nurbs_sheet() -> CadIr {
         Point3::new(0.0, 1.0, 0.0),
     ];
     ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-        NurbsSurface::new(
+        NurbsSurface::from_lanes(
             1,
             1,
             vec![2.0, 2.0, 5.0, 5.0],
@@ -925,7 +925,7 @@ pub(crate) fn mixed_plane_nurbs_sheet() -> CadIr {
     {
         ir.model.edges[index].set_param_range(Some(domain)).unwrap();
         ir.model.curves[index].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::new(
+            NurbsCurve::from_lanes(
                 1,
                 vec![domain[0], domain[0], domain[1], domain[1]],
                 control_points,
@@ -965,7 +965,7 @@ pub(crate) fn make_planar_nurbs_trimmed_face(ir: &mut CadIr) {
     };
 
     ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-        NurbsSurface::new(
+        NurbsSurface::from_lanes(
             1,
             1,
             vec![0.0, 0.0, 4.0, 4.0],

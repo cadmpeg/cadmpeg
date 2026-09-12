@@ -181,7 +181,7 @@ fn rational_nurbs_curve_round_trips_homogeneous_poles() {
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
         id: cadmpeg_ir::ids::CurveId::mint("rhino:test:curve#nurbs").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::NurbsCurve::new(
+            cadmpeg_ir::geometry::NurbsCurve::from_lanes(
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                 vec![
@@ -215,7 +215,7 @@ fn rational_nurbs_curve_round_trips_homogeneous_poles() {
 
 #[test]
 fn reversed_unclamped_nurbs_knots_are_native_canonical() {
-    let mut curve = cadmpeg_ir::geometry::NurbsCurve::new(
+    let mut curve = cadmpeg_ir::geometry::NurbsCurve::from_lanes(
         2,
         vec![-3.0, 0.0, 1.0, 5.0, 8.0, 9.0, 10.0, 11.0, 14.0],
         (0..6)
@@ -254,7 +254,7 @@ fn free_plane_and_rational_nurbs_surface_round_trip() {
     ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
         id: cadmpeg_ir::ids::SurfaceId::mint("rhino:test:surface#nurbs").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-            cadmpeg_ir::geometry::NurbsSurface::new(
+            cadmpeg_ir::geometry::NurbsSurface::from_lanes(
                 1,
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
@@ -681,7 +681,7 @@ fn noncanonical_nurbs_periodicity_is_rejected_atomically() {
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
         id: cadmpeg_ir::ids::CurveId::mint("cadir:model:curve#periodic").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::NurbsCurve::new(
+            cadmpeg_ir::geometry::NurbsCurve::from_lanes(
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                 vec![

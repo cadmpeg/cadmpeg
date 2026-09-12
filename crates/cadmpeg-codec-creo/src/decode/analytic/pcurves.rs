@@ -1906,11 +1906,11 @@ pub fn planar_curve_pcurve(
                 .map(|point| project_point([point.x, point.y, point.z], tolerance))
                 .collect::<Option<Vec<_>>>()?;
             Some(PcurveGeometry::Nurbs {
-                nurbs: PcurveNurbs::new(
+                nurbs: PcurveNurbs::from_lanes(
                     nurbs.degree(),
                     nurbs.knots().to_vec(),
                     control_points,
-                    nurbs.weights().map(<[f64]>::to_vec),
+                    nurbs.weights(),
                     nurbs.periodic(),
                 )
                 .ok()?,
@@ -2006,7 +2006,7 @@ mod tests {
                 id: SurfaceId::mint("creo:visibgeom:surface#7".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                    NurbsSurface::new(
+                    NurbsSurface::from_lanes(
                         1,
                         1,
                         vec![0.0, 0.0, 1.0, 1.0],

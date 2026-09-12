@@ -666,11 +666,7 @@ fn blend_value_name(cur: &mut Cur<'_>) -> Option<String> {
 
 fn radius_function_geometry(mut function: PcurveNurbs) -> Option<PcurveGeometry> {
     function
-        .edit_control_points(|points| {
-            for point in points {
-                point.u *= LEN_TO_MM;
-            }
-        })
+        .edit_control_points(|point| point.u *= LEN_TO_MM)
         .ok()?;
     Some(PcurveGeometry::Nurbs { nurbs: function })
 }

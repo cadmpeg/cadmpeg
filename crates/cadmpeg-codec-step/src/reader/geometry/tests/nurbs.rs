@@ -55,7 +55,7 @@ fn defaulted_spline_curve_subtypes_derive_knot_vectors() {
     );
     let rational = nurbs("step:data:curve#7");
     assert_eq!(rational.knots(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
-    assert_eq!(rational.weights(), Some(&[1.0, 0.5, 1.0][..]));
+    assert_eq!(rational.weights(), Some(vec![1.0, 0.5, 1.0]));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -145,9 +145,7 @@ fn complex_rational_quasi_uniform_surface_decodes_with_weight_grid() {
     assert_eq!(nurbs.u_knots(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
     assert_eq!(nurbs.v_knots(), [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(
-        nurbs
-            .pole_weights()
-            .map(std::iter::Iterator::collect::<Vec<_>>),
+        nurbs.pole_weights(),
         Some(vec![1.0, 0.5, 1.0, 0.5, 1.0, 1.0])
     );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());

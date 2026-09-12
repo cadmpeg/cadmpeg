@@ -4312,7 +4312,7 @@ fn nurbs_curve(
         .into_iter()
         .map(|id| points.get(&id).copied())
         .collect::<Option<Vec<_>>>()?;
-    NurbsCurve::new(
+    NurbsCurve::from_lanes(
         definition.degree,
         definition.knots,
         control_points,
@@ -4335,7 +4335,7 @@ fn nurbs_pcurve(
         .map(|id| points.get(&id).copied())
         .collect::<Option<Vec<_>>>()?;
     Some(PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::new(
+        nurbs: PcurveNurbs::from_lanes(
             definition.degree,
             definition.knots,
             control_points,
@@ -4978,7 +4978,7 @@ fn polyline_pcurve(record: &RawRecord, points: &BTreeMap<u64, Point2>) -> Option
     knots.extend((0..control_points.len()).map(|index| index as f64));
     knots.push(last);
     Some(PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::new(1, knots, control_points, None, false).ok()?,
+        nurbs: PcurveNurbs::from_lanes(1, knots, control_points, None, false).ok()?,
     })
 }
 
@@ -4997,7 +4997,7 @@ fn polyline(record: &RawRecord, points: &BTreeMap<u64, Point3>) -> Option<NurbsC
     knots.push(0.0);
     knots.extend((0..control_points.len()).map(|index| index as f64));
     knots.push(last);
-    NurbsCurve::new(1, knots, control_points, None, false).ok()
+    NurbsCurve::from_lanes(1, knots, control_points, None, false).ok()
 }
 
 fn nurbs_surface(
@@ -5121,7 +5121,7 @@ fn nurbs_surface(
     } else {
         None
     };
-    NurbsSurface::new(
+    NurbsSurface::from_lanes(
         u_degree,
         v_degree,
         u_knots,

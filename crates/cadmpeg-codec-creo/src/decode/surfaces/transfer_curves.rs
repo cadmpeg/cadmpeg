@@ -544,7 +544,7 @@ mod tests {
         let extrusion = Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#1".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                NurbsSurface::new(
+                NurbsSurface::from_lanes(
                     1,
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],

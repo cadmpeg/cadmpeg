@@ -49,7 +49,7 @@ fn encode_emits_the_typed_ellipse_form_for_v5_0() {
 
 #[test]
 fn transformed_nurbs_overflow_is_refused_without_changing_the_source() {
-    let nurbs = NurbsCurve::new(
+    let nurbs = NurbsCurve::from_lanes(
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![

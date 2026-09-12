@@ -186,7 +186,7 @@ pub(crate) fn profile_nurbs(geometry: &CurveGeometry) -> Option<NurbsCurve> {
         );
         weights.push(if index % 2 == 0 { 1.0 } else { half_sqrt2 });
     }
-    NurbsCurve::new(
+    NurbsCurve::from_lanes(
         2,
         vec![
             0.0,
@@ -238,7 +238,7 @@ pub(crate) fn swept_nurbs(
             }
         }
     }
-    NurbsSurface::new(
+    NurbsSurface::from_lanes(
         profile.degree(),
         1,
         profile.knots().to_vec(),
@@ -324,7 +324,7 @@ pub(crate) fn spun_nurbs(
         2.0 * PI,
         2.0 * PI,
     ];
-    NurbsSurface::new(
+    NurbsSurface::from_lanes(
         profile.degree(),
         2,
         profile.knots().to_vec(),
@@ -427,11 +427,13 @@ mod tests {
     }
 
     fn eval_curve(curve: &NurbsCurve, parameter: f64) -> Point3 {
+        let control_points = curve.control_points();
+        let weights = curve.weights();
         nurbs_curve_point(
             curve.degree(),
             curve.knots(),
-            curve.control_points(),
-            curve.weights(),
+            &control_points,
+            weights.as_deref(),
             parameter,
         )
         .expect("evaluable curve")
@@ -554,7 +556,7 @@ mod tests {
     #[test]
     fn spun_line_reproduces_cylinder() {
         // Profile: vertical line x=2, from z=0 to z=1 (degree 1).
-        let profile = NurbsCurve::new(
+        let profile = NurbsCurve::from_lanes(
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, 1.0)],
@@ -599,7 +601,7 @@ mod tests {
 
     #[test]
     fn swept_line_reproduces_ruled_plane() {
-        let profile = NurbsCurve::new(
+        let profile = NurbsCurve::from_lanes(
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],

@@ -1180,11 +1180,11 @@ fn decode_places_first_interpolation_spline_instance_from_named_prototype() {
     assert_eq!((nurbs.u_degree(), nurbs.v_degree()), (3, 3));
     assert_eq!((nurbs.u_count(), nurbs.v_count()), (4, 4));
     assert_eq!(
-        nurbs.poles().next().copied().unwrap(),
+        nurbs.poles().into_iter().next().unwrap(),
         cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)
     );
     assert_eq!(
-        nurbs.poles().nth(15).copied().unwrap(),
+        nurbs.poles().into_iter().nth(15).unwrap(),
         cadmpeg_ir::math::Point3::new(1.0, 1.0, 2.0)
     );
 }

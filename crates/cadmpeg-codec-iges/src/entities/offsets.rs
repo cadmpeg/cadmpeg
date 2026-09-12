@@ -592,7 +592,7 @@ pub(super) fn project(
                     control_range,
                 };
                 let Ok(offset_nurbs) =
-                    NurbsCurve::new(1, vec![start, start, end, end], controls, None, false)
+                    NurbsCurve::from_lanes(1, vec![start, start, end, end], controls, None, false)
                 else {
                     losses.push(entity_loss(entry, "linear offset carrier is inconsistent"));
                     continue;
@@ -776,7 +776,7 @@ pub(super) fn project(
                     function_parameter_scale,
                 };
                 let Ok(offset_nurbs) =
-                    NurbsCurve::new(function_nurbs.degree(), knots, controls, None, false)
+                    NurbsCurve::from_lanes(function_nurbs.degree(), knots, controls, None, false)
                 else {
                     losses.push(entity_loss(
                         entry,

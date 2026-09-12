@@ -783,7 +783,7 @@ pub(crate) fn rational_pcurve_arc(
         return None;
     }
     Some(PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
             2,
             knots,
             control_points,
@@ -804,7 +804,7 @@ pub(crate) fn quintic_jet_pcurve(
     let (full_knots, controls) =
         crate::nurbs::quintic_jet_bspline(degree, knots, points, first, second)?;
     Some(PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
             degree,
             full_knots,
             controls
@@ -847,7 +847,7 @@ mod route_tests {
         assert_eq!(nurbs.knots().first(), Some(&range[0]));
         assert_eq!(nurbs.knots().last(), Some(&range[1]));
         assert_eq!(nurbs.control_points().len(), 3);
-        assert_eq!(nurbs.weights(), Some(&[1.0, 1.0, 1.0][..]));
+        assert_eq!(nurbs.weights(), Some(vec![1.0, 1.0, 1.0]));
     }
 
     #[test]

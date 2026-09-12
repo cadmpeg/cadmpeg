@@ -728,7 +728,7 @@ mod tests {
         let nurbs = |degree: u32| Curve {
             id: CurveId::mint("synthetic:tolerance:curve#nurbs").expect("valid identity"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::new(
+                NurbsCurve::from_lanes(
                     degree,
                     if degree == 1 {
                         vec![0.0, 0.0, 0.5, 1.0, 1.0]

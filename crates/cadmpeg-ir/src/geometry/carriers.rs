@@ -4,6 +4,7 @@ use crate::features::FinitePoint3;
 use crate::ids::PcurveId;
 use crate::math::{Point2, Point3, Vector3};
 use crate::transform::Transform2;
+use crate::scalar::{NonZeroReal, PositiveReal};
 use crate::units::{
     FinitePoint2, FiniteScalar, NonNegativeScalar, NonzeroPoint2, OrthonormalFrame3,
     PositiveScalar, UnitVector3,
@@ -11,6 +12,359 @@ use crate::units::{
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+/// One rational pole in model space: its position and its weight.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct WeightedPole3 {
+    /// Pole position in model space.
+    pub point: Point3,
+    /// Rational weight at this pole.
+    pub weight: NonZeroReal,
+}
+
+/// The poles of a NURBS curve, stating the curve's rational form.
+///
+/// A rational pole carries its weight in its own row, so a weight list that
+/// does not cover the poles has no spelling, and "the curve is polynomial" has
+/// exactly one spelling.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "form", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+pub enum NurbsPoles3 {
+    /// A polynomial curve: its poles carry no weight.
+    Polynomial {
+        /// Poles in parameter order.
+        points: Vec<Point3>,
+    },
+    /// A rational curve: every pole carries its weight.
+    Rational {
+        /// Pole rows in parameter order.
+        points: Vec<WeightedPole3>,
+    },
+}
+
+impl NurbsPoles3 {
+    /// Pair a source's pole lane with its weight lane.
+    ///
+    /// A source that states poles and weights as two arrays pairs them here,
+    /// once, at the decode boundary: the result is absent when the weight lane
+    /// does not cover the poles or carries a zero or non-finite weight.
+    #[must_use]
+    pub fn from_lanes(points: Vec<Point3>, weights: Option<Vec<f64>>) -> Option<Self> {
+        let Some(weights) = weights else {
+            return Some(Self::Polynomial { points });
+        };
+        if weights.len() != points.len() {
+            return None;
+        }
+        Some(Self::Rational {
+            points: points
+                .into_iter()
+                .zip(weights)
+                .map(|(point, weight)| {
+                    Some(WeightedPole3 {
+                        point,
+                        weight: NonZeroReal::new(weight)?,
+                    })
+                })
+                .collect::<Option<Vec<_>>>()?,
+        })
+    }
+
+    /// Number of poles.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        match self {
+            Self::Polynomial { points } => points.len(),
+            Self::Rational { points } => points.len(),
+        }
+    }
+
+    /// True when the curve states no pole.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Pole positions in parameter order.
+    #[must_use]
+    pub fn points(&self) -> Vec<Point3> {
+        match self {
+            Self::Polynomial { points } => points.clone(),
+            Self::Rational { points } => points.iter().map(|pole| pole.point).collect(),
+        }
+    }
+
+    /// Rational weights in pole order, absent on a polynomial curve.
+    #[must_use]
+    pub fn weights(&self) -> Option<Vec<f64>> {
+        match self {
+            Self::Polynomial { .. } => None,
+            Self::Rational { points } => {
+                Some(points.iter().map(|pole| pole.weight.get()).collect())
+            }
+        }
+    }
+
+    /// Reverse the pole order.
+    pub fn reverse(&mut self) {
+        match self {
+            Self::Polynomial { points } => points.reverse(),
+            Self::Rational { points } => points.reverse(),
+        }
+    }
+
+    /// Edit every pole position in place.
+    pub fn edit_points(&mut self, mut edit: impl FnMut(&mut Point3)) {
+        match self {
+            Self::Polynomial { points } => points.iter_mut().for_each(&mut edit),
+            Self::Rational { points } => {
+                points.iter_mut().for_each(|pole| edit(&mut pole.point));
+            }
+        }
+    }
+
+    /// Replace the weights, keeping the pole positions.
+    ///
+    /// Absent when the weight lane does not cover the poles or carries a zero
+    /// or non-finite weight.
+    #[must_use]
+    pub fn with_weights(&self, weights: Option<Vec<f64>>) -> Option<Self> {
+        Self::from_lanes(self.points(), weights)
+    }
+}
+
+/// The control grid of a NURBS surface, stating the surface's rational form.
+///
+/// A rational pole carries its weight in its own row, so a weight grid that
+/// does not cover the pole grid has no spelling.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "form", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+pub enum NurbsPoleGrid {
+    /// A polynomial surface: its poles carry no weight.
+    Polynomial {
+        /// Control grid rows: `rows[i][j]` is pole `(i, j)`.
+        rows: Vec<Vec<Point3>>,
+    },
+    /// A rational surface: every pole carries its weight.
+    Rational {
+        /// Control grid rows: `rows[i][j]` is pole `(i, j)`.
+        rows: Vec<Vec<WeightedPole3>>,
+    },
+}
+
+impl NurbsPoleGrid {
+    /// Pair a source's pole grid with its weight grid.
+    ///
+    /// The result is absent when the weight grid does not cover the pole grid
+    /// or carries a zero or non-finite weight.
+    #[must_use]
+    pub fn from_lanes(rows: Vec<Vec<Point3>>, weights: Option<Vec<Vec<f64>>>) -> Option<Self> {
+        let Some(weights) = weights else {
+            return Some(Self::Polynomial { rows });
+        };
+        if weights.len() != rows.len() {
+            return None;
+        }
+        let paired = rows
+            .into_iter()
+            .zip(weights)
+            .map(|(row, weight_row)| {
+                if weight_row.len() != row.len() {
+                    return None;
+                }
+                row.into_iter()
+                    .zip(weight_row)
+                    .map(|(point, weight)| {
+                        Some(WeightedPole3 {
+                            point,
+                            weight: NonZeroReal::new(weight)?,
+                        })
+                    })
+                    .collect::<Option<Vec<_>>>()
+            })
+            .collect::<Option<Vec<_>>>()?;
+        Some(Self::Rational { rows: paired })
+    }
+
+    /// Number of grid rows, the pole count along u.
+    #[must_use]
+    pub fn u_count(&self) -> usize {
+        match self {
+            Self::Polynomial { rows } => rows.len(),
+            Self::Rational { rows } => rows.len(),
+        }
+    }
+
+    /// Length of the first grid row, the pole count along v.
+    #[must_use]
+    pub fn v_count(&self) -> usize {
+        match self {
+            Self::Polynomial { rows } => rows.first().map_or(0, Vec::len),
+            Self::Rational { rows } => rows.first().map_or(0, Vec::len),
+        }
+    }
+
+    /// Pole positions as grid rows.
+    #[must_use]
+    pub fn points(&self) -> Vec<Vec<Point3>> {
+        match self {
+            Self::Polynomial { rows } => rows.clone(),
+            Self::Rational { rows } => rows
+                .iter()
+                .map(|row| row.iter().map(|pole| pole.point).collect())
+                .collect(),
+        }
+    }
+
+    /// Rational weight rows, absent on a polynomial surface.
+    #[must_use]
+    pub fn weights(&self) -> Option<Vec<Vec<f64>>> {
+        match self {
+            Self::Polynomial { .. } => None,
+            Self::Rational { rows } => Some(
+                rows.iter()
+                    .map(|row| row.iter().map(|pole| pole.weight.get()).collect())
+                    .collect(),
+            ),
+        }
+    }
+
+    /// Exchange the outer and inner grid index.
+    pub fn transpose(&mut self) {
+        match self {
+            Self::Polynomial { rows } => *rows = transpose_rows(rows),
+            Self::Rational { rows } => *rows = transpose_rows(rows),
+        }
+    }
+
+    /// Edit every pole position in place.
+    pub fn edit_points(&mut self, mut edit: impl FnMut(&mut Point3)) {
+        match self {
+            Self::Polynomial { rows } => rows
+                .iter_mut()
+                .for_each(|row| row.iter_mut().for_each(&mut edit)),
+            Self::Rational { rows } => rows.iter_mut().for_each(|row| {
+                row.iter_mut().for_each(|pole| edit(&mut pole.point));
+            }),
+        }
+    }
+}
+
+/// One rational pole in parameter space: its position and its weight.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct WeightedPole2 {
+    /// Pole position in parameter space.
+    pub point: Point2,
+    /// Rational weight at this pole.
+    pub weight: PositiveReal,
+}
+
+/// The poles of a parameter-space NURBS curve.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "form", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+pub enum PcurveNurbsPoles {
+    /// A polynomial pcurve: its poles carry no weight.
+    Polynomial {
+        /// Poles in parameter order.
+        points: Vec<Point2>,
+    },
+    /// A rational pcurve: every pole carries its weight.
+    Rational {
+        /// Pole rows in parameter order.
+        points: Vec<WeightedPole2>,
+    },
+}
+
+impl PcurveNurbsPoles {
+    /// Pair a source's pole lane with its weight lane.
+    ///
+    /// The result is absent when the weight lane does not cover the poles or
+    /// carries a non-positive or non-finite weight.
+    #[must_use]
+    pub fn from_lanes(points: Vec<Point2>, weights: Option<Vec<f64>>) -> Option<Self> {
+        let Some(weights) = weights else {
+            return Some(Self::Polynomial { points });
+        };
+        if weights.len() != points.len() {
+            return None;
+        }
+        Some(Self::Rational {
+            points: points
+                .into_iter()
+                .zip(weights)
+                .map(|(point, weight)| {
+                    Some(WeightedPole2 {
+                        point,
+                        weight: PositiveReal::new(weight)?,
+                    })
+                })
+                .collect::<Option<Vec<_>>>()?,
+        })
+    }
+
+    /// Number of poles.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        match self {
+            Self::Polynomial { points } => points.len(),
+            Self::Rational { points } => points.len(),
+        }
+    }
+
+    /// True when the pcurve states no pole.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Pole positions in parameter order.
+    #[must_use]
+    pub fn points(&self) -> Vec<Point2> {
+        match self {
+            Self::Polynomial { points } => points.clone(),
+            Self::Rational { points } => points.iter().map(|pole| pole.point).collect(),
+        }
+    }
+
+    /// Rational weights in pole order, absent on a polynomial pcurve.
+    #[must_use]
+    pub fn weights(&self) -> Option<Vec<f64>> {
+        match self {
+            Self::Polynomial { .. } => None,
+            Self::Rational { points } => {
+                Some(points.iter().map(|pole| pole.weight.get()).collect())
+            }
+        }
+    }
+
+    /// Reverse the pole order.
+    pub fn reverse(&mut self) {
+        match self {
+            Self::Polynomial { points } => points.reverse(),
+            Self::Rational { points } => points.reverse(),
+        }
+    }
+
+    /// Edit every pole position in place.
+    pub fn edit_points(&mut self, mut edit: impl FnMut(&mut Point2)) {
+        match self {
+            Self::Polynomial { points } => points.iter_mut().for_each(&mut edit),
+            Self::Rational { points } => {
+                points.iter_mut().for_each(|pole| edit(&mut pole.point));
+            }
+        }
+    }
+}
 
 /// A tensor-product NURBS surface.
 ///
@@ -28,11 +382,8 @@ pub struct NurbsSurface {
     u_knots: Vec<f64>,
     /// Full knot vector in v.
     v_knots: Vec<f64>,
-    /// Control grid rows: `control_points[i][j]` is pole `(i, j)`.
-    control_points: Vec<Vec<Point3>>,
-    /// Per-pole weights in control-grid order; `None` denotes non-rational.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    weights: Option<Vec<Vec<f64>>>,
+    /// Control grid rows, with the surface's rational form.
+    poles: NurbsPoleGrid,
     /// Whether the carrier's oriented normal is opposite `Pu × Pv`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     normal_reversed: bool,
@@ -82,8 +433,8 @@ impl BsplineSurface {
             )?;
             require_nondecreasing_knots(knots)?;
         }
+        require_rectangular_grid("control_points", &control_points)?;
         for row in &control_points {
-            require_length("control_points row", row.len(), v_count)?;
             require_finite_points_3("control_points", row)?;
         }
         Ok(Self {
@@ -132,6 +483,7 @@ impl BsplineSurface {
             }
             require_finite_points_3("control_points", row)?;
         }
+        require_rectangular_grid("control_points", &points)?;
         self.control_points = points;
         Ok(())
     }
@@ -194,6 +546,18 @@ fn checked_knot_count(field: &str, pole_count: usize, degree: u32) -> Result<usi
         .ok_or_else(|| NurbsError(format!("{field} knot count overflows usize")))
 }
 
+/// Every row of a control grid states the same pole count.
+///
+/// The grid is one object, so its rectangularity is one shape mint over that
+/// object, not a comparison between two independently stated lists.
+fn require_rectangular_grid(field: &str, rows: &[Vec<Point3>]) -> Result<(), NurbsError> {
+    let width = rows.first().map_or(0, Vec::len);
+    for row in rows {
+        require_length(&format!("{field} row"), row.len(), width)?;
+    }
+    Ok(())
+}
+
 fn require_length(field: &str, actual: usize, expected: usize) -> Result<(), NurbsError> {
     if actual == expected {
         Ok(())
@@ -243,37 +607,10 @@ fn require_nondecreasing_knots(knots: &[f64]) -> Result<(), NurbsError> {
     }
 }
 
-fn require_3d_weights(weights: &[f64]) -> Result<(), NurbsError> {
-    if weights
-        .iter()
-        .all(|weight| weight.is_finite() && *weight != 0.0)
-    {
-        Ok(())
-    } else {
-        Err(NurbsError(
-            "3D NURBS weights must be finite and non-zero".into(),
-        ))
-    }
-}
-
-fn require_pcurve_weights(weights: &[f64]) -> Result<(), NurbsError> {
-    if weights
-        .iter()
-        .all(|weight| weight.is_finite() && *weight > 0.0)
-    {
-        Ok(())
-    } else {
-        Err(NurbsError(
-            "pcurve NURBS weights must be finite and positive".into(),
-        ))
-    }
-}
-
 fn require_curve_cardinality(
     degree: u32,
     knot_count: usize,
     pole_count: usize,
-    weight_count: Option<usize>,
     point_field: &str,
 ) -> Result<(), NurbsError> {
     if pole_count <= degree as usize {
@@ -285,11 +622,7 @@ fn require_curve_cardinality(
         "knots",
         knot_count,
         checked_knot_count("curve", pole_count, degree)?,
-    )?;
-    if let Some(weight_count) = weight_count {
-        require_length("weights", weight_count, pole_count)?;
-    }
-    Ok(())
+    )
 }
 
 impl NurbsSurface {
@@ -301,14 +634,14 @@ impl NurbsSurface {
         v_degree: u32,
         u_knots: Vec<f64>,
         v_knots: Vec<f64>,
-        control_points: Vec<Vec<Point3>>,
-        weights: Option<Vec<Vec<f64>>>,
+        poles: NurbsPoleGrid,
         normal_reversed: bool,
         u_periodic: bool,
         v_periodic: bool,
     ) -> Result<Self, NurbsError> {
-        let u_count = control_points.len();
-        let v_count = control_points.first().map_or(0, Vec::len);
+        let control_points = poles.points();
+        let u_count = poles.u_count();
+        let v_count = poles.v_count();
         if u_count <= u_degree as usize {
             return Err(NurbsError(format!(
                 "u_count must exceed u_degree {u_degree}, found {u_count}"
@@ -329,26 +662,18 @@ impl NurbsSurface {
             v_knots.len(),
             checked_knot_count("v", v_count, v_degree)?,
         )?;
+        require_rectangular_grid("control_points", &control_points)?;
         for row in &control_points {
-            require_length("control_points row", row.len(), v_count)?;
             require_finite_points_3("control_points", row)?;
         }
         require_nondecreasing_knots(&u_knots).map_err(|error| NurbsError(format!("u_{error}")))?;
         require_nondecreasing_knots(&v_knots).map_err(|error| NurbsError(format!("v_{error}")))?;
-        if let Some(weights) = &weights {
-            require_length("weights", weights.len(), u_count)?;
-            for row in weights {
-                require_length("weights row", row.len(), v_count)?;
-                require_3d_weights(row)?;
-            }
-        }
         Ok(Self {
             u_degree,
             v_degree,
             u_knots,
             v_knots,
-            control_points,
-            weights,
+            poles,
             normal_reversed,
             u_periodic,
             v_periodic,
@@ -395,86 +720,107 @@ impl NurbsSurface {
 
     /// Number of control points along u, the number of grid rows.
     pub fn u_count(&self) -> u32 {
-        self.control_points.len() as u32
+        self.poles.u_count() as u32
     }
 
     /// Number of control points along v, the length of every grid row.
     pub fn v_count(&self) -> u32 {
-        self.control_points.first().map_or(0, Vec::len) as u32
+        self.poles.v_count() as u32
     }
 
-    /// Control grid rows, outer index u and inner index v.
-    pub fn control_grid(&self) -> &[Vec<Point3>] {
-        &self.control_points
+    /// Build a NURBS surface from a source's pole grid and weight grid.
+    ///
+    /// A source that states poles and weights as two grids pairs them here,
+    /// once, at the decode boundary; the surface itself carries pole rows.
+    // Both parameter axes and their shared control grid form one NURBS invariant.
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_lanes(
+        u_degree: u32,
+        v_degree: u32,
+        u_knots: Vec<f64>,
+        v_knots: Vec<f64>,
+        control_points: Vec<Vec<Point3>>,
+        weights: Option<Vec<Vec<f64>>>,
+        normal_reversed: bool,
+        u_periodic: bool,
+        v_periodic: bool,
+    ) -> Result<Self, NurbsError> {
+        let poles = NurbsPoleGrid::from_lanes(control_points, weights).ok_or_else(|| {
+            NurbsError("3D NURBS weights must cover the pole grid and be finite and non-zero".into())
+        })?;
+        Self::new(
+            u_degree,
+            v_degree,
+            u_knots,
+            v_knots,
+            poles,
+            normal_reversed,
+            u_periodic,
+            v_periodic,
+        )
+    }
+
+    /// Control grid rows, with the surface's rational form.
+    pub const fn pole_grid(&self) -> &NurbsPoleGrid {
+        &self.poles
+    }
+
+    /// Control-point rows, outer index u and inner index v.
+    pub fn control_grid(&self) -> Vec<Vec<Point3>> {
+        self.poles.points()
     }
 
     /// Control points in u-major order.
-    pub fn poles(&self) -> impl Iterator<Item = &Point3> {
-        self.control_points.iter().flatten()
+    pub fn poles(&self) -> Vec<Point3> {
+        self.poles.points().into_iter().flatten().collect()
     }
 
     /// Pole at grid position `(u, v)`.
-    pub fn pole(&self, u: usize, v: usize) -> Option<&Point3> {
-        self.control_points.get(u)?.get(v)
+    pub fn pole(&self, u: usize, v: usize) -> Option<Point3> {
+        self.poles.points().get(u)?.get(v).copied()
     }
 
     /// Rational weight at grid position `(u, v)`, absent when non-rational.
     pub fn weight(&self, u: usize, v: usize) -> Option<f64> {
-        self.weights.as_ref()?.get(u)?.get(v).copied()
+        self.poles.weights()?.get(u)?.get(v).copied()
     }
 
-    /// Atomically edit control points and preserve the grid invariants.
+    /// Atomically edit pole positions and preserve finite coordinates.
     pub fn edit_control_points(
         &mut self,
-        edit: impl FnOnce(&mut Vec<Vec<Point3>>),
+        edit: impl FnMut(&mut Point3),
     ) -> Result<(), NurbsError> {
-        let mut values = self.control_points.clone();
-        edit(&mut values);
-        let v_count = values.first().map_or(0, Vec::len);
-        for row in &values {
-            require_length("control_points row", row.len(), v_count)?;
+        let mut poles = self.poles.clone();
+        poles.edit_points(edit);
+        for row in &poles.points() {
             require_finite_points_3("control_points", row)?;
         }
-        self.control_points = values;
+        self.poles = poles;
         Ok(())
     }
 
     /// Rational weight rows in control-grid order.
-    pub fn weights(&self) -> Option<&[Vec<f64>]> {
-        self.weights.as_deref()
+    pub fn weights(&self) -> Option<Vec<Vec<f64>>> {
+        self.poles.weights()
     }
 
     /// Rational weights in control-point order.
-    pub fn pole_weights(&self) -> Option<impl Iterator<Item = f64> + '_> {
-        self.weights
-            .as_ref()
-            .map(|rows| rows.iter().flatten().copied())
+    pub fn pole_weights(&self) -> Option<Vec<f64>> {
+        Some(self.poles.weights()?.into_iter().flatten().collect())
     }
 
-    /// Atomically edit rational weights and preserve their invariants.
-    pub fn edit_weights(
-        &mut self,
-        edit: impl FnOnce(&mut Vec<Vec<f64>>),
-    ) -> Result<(), NurbsError> {
-        let Some(weights) = &self.weights else {
-            return Err(NurbsError("surface has no rational weights".into()));
-        };
-        let mut values = weights.clone();
-        edit(&mut values);
-        self.set_weights(Some(values))
-    }
-
-    /// Replace rational weights after checking grid cardinality.
-    pub fn set_weights(&mut self, weights: Option<Vec<Vec<f64>>>) -> Result<(), NurbsError> {
-        if let Some(rows) = &weights {
-            require_length("weights", rows.len(), self.control_points.len())?;
-            let v_count = self.control_points.first().map_or(0, Vec::len);
-            for row in rows {
-                require_length("weights row", row.len(), v_count)?;
-                require_3d_weights(row)?;
-            }
-        }
-        self.weights = weights;
+    /// Replace the control grid, keeping the knot cardinalities.
+    pub fn set_poles(&mut self, poles: NurbsPoleGrid) -> Result<(), NurbsError> {
+        *self = Self::new(
+            self.u_degree,
+            self.v_degree,
+            self.u_knots.clone(),
+            self.v_knots.clone(),
+            poles,
+            self.normal_reversed,
+            self.u_periodic,
+            self.v_periodic,
+        )?;
         Ok(())
     }
 
@@ -511,8 +857,7 @@ impl NurbsSurface {
     /// Exchange the u and v parameter axes and transpose pole storage.
     /// The natural normal changes sign; `normal_reversed` remains unchanged.
     pub fn transpose_parameter_axes(&mut self) {
-        self.control_points = transpose_rows(&self.control_points);
-        self.weights = self.weights.as_deref().map(transpose_rows);
+        self.poles.transpose();
         std::mem::swap(&mut self.u_degree, &mut self.v_degree);
         std::mem::swap(&mut self.u_knots, &mut self.v_knots);
         std::mem::swap(&mut self.u_periodic, &mut self.v_periodic);
@@ -531,9 +876,7 @@ impl<'de> Deserialize<'de> for NurbsSurface {
             v_degree: u32,
             u_knots: Vec<f64>,
             v_knots: Vec<f64>,
-            control_points: Vec<Vec<Point3>>,
-            #[serde(default)]
-            weights: Option<Vec<Vec<f64>>>,
+            poles: NurbsPoleGrid,
             #[serde(default)]
             normal_reversed: bool,
             u_periodic: bool,
@@ -546,8 +889,7 @@ impl<'de> Deserialize<'de> for NurbsSurface {
             wire.v_degree,
             wire.u_knots,
             wire.v_knots,
-            wire.control_points,
-            wire.weights,
+            wire.poles,
             wire.normal_reversed,
             wire.u_periodic,
             wire.v_periodic,
@@ -576,11 +918,8 @@ pub struct NurbsCurve {
     degree: u32,
     /// Full knot vector.
     knots: Vec<f64>,
-    /// Control points in parameter order.
-    control_points: Vec<Point3>,
-    /// Per-pole weights; `None` denotes non-rational.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    weights: Option<Vec<f64>>,
+    /// Poles in parameter order, with the curve's rational form.
+    poles: NurbsPoles3,
     /// Whether the curve is periodic.
     periodic: bool,
 }
@@ -590,27 +929,16 @@ impl NurbsCurve {
     pub fn new(
         degree: u32,
         knots: Vec<f64>,
-        control_points: Vec<Point3>,
-        weights: Option<Vec<f64>>,
+        poles: NurbsPoles3,
         periodic: bool,
     ) -> Result<Self, NurbsError> {
-        require_curve_cardinality(
-            degree,
-            knots.len(),
-            control_points.len(),
-            weights.as_ref().map(Vec::len),
-            "control_points",
-        )?;
-        require_finite_points_3("control_points", &control_points)?;
+        require_curve_cardinality(degree, knots.len(), poles.len(), "control_points")?;
+        require_finite_points_3("control_points", &poles.points())?;
         require_nondecreasing_knots(&knots)?;
-        if let Some(weights) = &weights {
-            require_3d_weights(weights)?;
-        }
         Ok(Self {
             degree,
             knots,
-            control_points,
-            weights,
+            poles,
             periodic,
         })
     }
@@ -634,47 +962,58 @@ impl NurbsCurve {
         Ok(())
     }
 
-    /// Control points in parameter order.
-    pub fn control_points(&self) -> &[Point3] {
-        &self.control_points
+    /// Build a NURBS curve from a source's pole lane and weight lane.
+    ///
+    /// A source that states poles and weights as two arrays pairs them here,
+    /// once, at the decode boundary; the curve itself carries pole rows.
+    pub fn from_lanes(
+        degree: u32,
+        knots: Vec<f64>,
+        control_points: Vec<Point3>,
+        weights: Option<Vec<f64>>,
+        periodic: bool,
+    ) -> Result<Self, NurbsError> {
+        let poles = NurbsPoles3::from_lanes(control_points, weights).ok_or_else(|| {
+            NurbsError("3D NURBS weights must cover the poles and be finite and non-zero".into())
+        })?;
+        Self::new(degree, knots, poles, periodic)
     }
 
-    /// Atomically edit control points and preserve finite coordinates.
+    /// Poles in parameter order, with the curve's rational form.
+    pub const fn pole_rows(&self) -> &NurbsPoles3 {
+        &self.poles
+    }
+
+    /// Control points in parameter order.
+    pub fn control_points(&self) -> Vec<Point3> {
+        self.poles.points()
+    }
+
+    /// Number of poles.
+    pub fn pole_count(&self) -> usize {
+        self.poles.len()
+    }
+
+    /// Atomically edit pole positions and preserve finite coordinates.
     pub fn edit_control_points(
         &mut self,
-        edit: impl FnOnce(&mut [Point3]),
+        edit: impl FnMut(&mut Point3),
     ) -> Result<(), NurbsError> {
-        let mut values = self.control_points.clone();
-        edit(&mut values);
-        require_finite_points_3("control_points", &values)?;
-        self.control_points = values;
+        let mut poles = self.poles.clone();
+        poles.edit_points(edit);
+        require_finite_points_3("control_points", &poles.points())?;
+        self.poles = poles;
         Ok(())
     }
 
     /// Rational weights in pole order.
-    pub fn weights(&self) -> Option<&[f64]> {
-        self.weights.as_deref()
+    pub fn weights(&self) -> Option<Vec<f64>> {
+        self.poles.weights()
     }
 
-    /// Atomically edit rational weights and preserve their invariants.
-    pub fn edit_weights(&mut self, edit: impl FnOnce(&mut [f64])) -> Result<(), NurbsError> {
-        let Some(weights) = &self.weights else {
-            return Err(NurbsError("curve has no rational weights".into()));
-        };
-        let mut values = weights.clone();
-        edit(&mut values);
-        require_3d_weights(&values)?;
-        self.weights = Some(values);
-        Ok(())
-    }
-
-    /// Replace rational weights after checking pole cardinality.
-    pub fn set_weights(&mut self, weights: Option<Vec<f64>>) -> Result<(), NurbsError> {
-        if let Some(values) = &weights {
-            require_length("weights", values.len(), self.control_points.len())?;
-            require_3d_weights(values)?;
-        }
-        self.weights = weights;
+    /// Replace the poles, keeping the knot cardinality.
+    pub fn set_poles(&mut self, poles: NurbsPoles3) -> Result<(), NurbsError> {
+        *self = Self::new(self.degree, self.knots.clone(), poles, self.periodic)?;
         Ok(())
     }
 
@@ -690,10 +1029,7 @@ impl NurbsCurve {
 
     /// Reverse poles, weights, and the signed knot parameterization together.
     pub fn reverse_parameterization(&mut self) {
-        self.control_points.reverse();
-        if let Some(weights) = &mut self.weights {
-            weights.reverse();
-        }
+        self.poles.reverse();
         self.knots.reverse();
         for knot in &mut self.knots {
             *knot = -*knot;
@@ -711,21 +1047,13 @@ impl<'de> Deserialize<'de> for NurbsCurve {
         struct Wire {
             degree: u32,
             knots: Vec<f64>,
-            control_points: Vec<Point3>,
-            #[serde(default)]
-            weights: Option<Vec<f64>>,
+            poles: NurbsPoles3,
             periodic: bool,
         }
 
         let wire = Wire::deserialize(deserializer)?;
-        Self::new(
-            wire.degree,
-            wire.knots,
-            wire.control_points,
-            wire.weights,
-            wire.periodic,
-        )
-        .map_err(serde::de::Error::custom)
+        Self::new(wire.degree, wire.knots, wire.poles, wire.periodic)
+            .map_err(serde::de::Error::custom)
     }
 }
 
@@ -2927,22 +3255,127 @@ pub struct PolarNurbsPole {
 pub struct PolarPcurveNurbs {
     degree: u32,
     knots: Vec<f64>,
-    poles: Vec<PolarNurbsPole>,
-    weights: Option<Vec<f64>>,
+    poles: PolarNurbsPoles,
     periodic: bool,
 }
 
-#[derive(Serialize, Deserialize)]
+/// One rational polar pole: its radial and axial halves and its weight.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
-struct PolarPcurveNurbsWire {
-    degree: u32,
-    knots: Vec<f64>,
-    poles: Vec<PolarNurbsPole>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    weights: Option<Vec<f64>>,
-    #[serde(default)]
-    periodic: bool,
+pub struct WeightedPolarNurbsPole {
+    /// Euclidean radial-plane pole.
+    pub radial: Point2,
+    /// Axial pole value.
+    pub axial: f64,
+    /// Rational weight at this pole.
+    pub weight: PositiveReal,
+}
+
+/// The poles of a polar parameter-space NURBS curve.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "form", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+pub enum PolarNurbsPoles {
+    /// A polynomial polar curve: its poles carry no weight.
+    Polynomial {
+        /// Poles in parameter order.
+        poles: Vec<PolarNurbsPole>,
+    },
+    /// A rational polar curve: every pole carries its weight.
+    Rational {
+        /// Pole rows in parameter order.
+        poles: Vec<WeightedPolarNurbsPole>,
+    },
+}
+
+impl PolarNurbsPoles {
+    /// Pair a source's pole lane with its weight lane.
+    ///
+    /// The result is absent when the weight lane does not cover the poles or
+    /// carries a non-positive or non-finite weight.
+    #[must_use]
+    pub fn from_lanes(poles: Vec<PolarNurbsPole>, weights: Option<Vec<f64>>) -> Option<Self> {
+        let Some(weights) = weights else {
+            return Some(Self::Polynomial { poles });
+        };
+        if weights.len() != poles.len() {
+            return None;
+        }
+        Some(Self::Rational {
+            poles: poles
+                .into_iter()
+                .zip(weights)
+                .map(|(pole, weight)| {
+                    Some(WeightedPolarNurbsPole {
+                        radial: pole.radial,
+                        axial: pole.axial,
+                        weight: PositiveReal::new(weight)?,
+                    })
+                })
+                .collect::<Option<Vec<_>>>()?,
+        })
+    }
+
+    /// Number of poles.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        match self {
+            Self::Polynomial { poles } => poles.len(),
+            Self::Rational { poles } => poles.len(),
+        }
+    }
+
+    /// True when the curve states no pole.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Paired radial and axial poles in parameter order.
+    #[must_use]
+    pub fn poles(&self) -> Vec<PolarNurbsPole> {
+        match self {
+            Self::Polynomial { poles } => poles.clone(),
+            Self::Rational { poles } => poles
+                .iter()
+                .map(|pole| PolarNurbsPole {
+                    radial: pole.radial,
+                    axial: pole.axial,
+                })
+                .collect(),
+        }
+    }
+
+    /// Rational weights in pole order, absent on a polynomial curve.
+    #[must_use]
+    pub fn weights(&self) -> Option<Vec<f64>> {
+        match self {
+            Self::Polynomial { .. } => None,
+            Self::Rational { poles } => Some(poles.iter().map(|pole| pole.weight.get()).collect()),
+        }
+    }
+
+    /// Reverse the pole order.
+    pub fn reverse(&mut self) {
+        match self {
+            Self::Polynomial { poles } => poles.reverse(),
+            Self::Rational { poles } => poles.reverse(),
+        }
+    }
+
+    /// Edit every pole in place.
+    pub fn edit_poles(&mut self, mut edit: impl FnMut(&mut Point2, &mut f64)) {
+        match self {
+            Self::Polynomial { poles } => poles
+                .iter_mut()
+                .for_each(|pole| edit(&mut pole.radial, &mut pole.axial)),
+            Self::Rational { poles } => poles
+                .iter_mut()
+                .for_each(|pole| edit(&mut pole.radial, &mut pole.axial)),
+        }
+    }
 }
 
 impl PolarPcurveNurbs {
@@ -2953,34 +3386,23 @@ impl PolarPcurveNurbs {
     pub fn new(
         degree: u32,
         knots: Vec<f64>,
-        poles: Vec<PolarNurbsPole>,
-        weights: Option<Vec<f64>>,
+        poles: PolarNurbsPoles,
         periodic: bool,
     ) -> Result<Self, NurbsError> {
-        require_curve_cardinality(
-            degree,
-            knots.len(),
-            poles.len(),
-            weights.as_ref().map(Vec::len),
-            "poles",
-        )?;
+        require_curve_cardinality(degree, knots.len(), poles.len(), "poles")?;
         if degree == 0 {
             return Err(NurbsError("polar NURBS degree must be positive".into()));
         }
-        if !poles.iter().all(|pole| {
+        if !poles.poles().iter().all(|pole| {
             pole.radial.u.is_finite() && pole.radial.v.is_finite() && pole.axial.is_finite()
         }) {
             return Err(NurbsError("poles contain a non-finite value".into()));
         }
         require_nondecreasing_knots(&knots)?;
-        if let Some(weights) = &weights {
-            require_pcurve_weights(weights)?;
-        }
         Ok(Self {
             degree,
             knots,
             poles,
-            weights,
             periodic,
         })
     }
@@ -3004,22 +3426,41 @@ impl PolarPcurveNurbs {
         Ok(())
     }
 
+    /// Build a polar NURBS from a source's pole and weight lanes.
+    pub fn from_lanes(
+        degree: u32,
+        knots: Vec<f64>,
+        poles: Vec<PolarNurbsPole>,
+        weights: Option<Vec<f64>>,
+        periodic: bool,
+    ) -> Result<Self, NurbsError> {
+        let poles = PolarNurbsPoles::from_lanes(poles, weights).ok_or_else(|| {
+            NurbsError("polar NURBS weights must cover the poles and be finite and positive".into())
+        })?;
+        Self::new(degree, knots, poles, periodic)
+    }
+
     /// Paired radial and axial poles.
-    pub fn poles(&self) -> &[PolarNurbsPole] {
+    pub fn poles(&self) -> Vec<PolarNurbsPole> {
+        self.poles.poles()
+    }
+
+    /// Poles in parameter order, with the curve's rational form.
+    pub const fn pole_rows(&self) -> &PolarNurbsPoles {
         &self.poles
     }
 
     /// Atomically edit paired poles and preserve finite coordinates.
     pub fn edit_poles(
         &mut self,
-        edit: impl FnOnce(&mut [PolarNurbsPole]),
+        edit: impl FnMut(&mut Point2, &mut f64),
     ) -> Result<(), NurbsError> {
-        let mut values = self.poles.clone();
-        edit(&mut values);
-        if values.iter().all(|pole| {
+        let mut poles = self.poles.clone();
+        poles.edit_poles(edit);
+        if poles.poles().iter().all(|pole| {
             pole.radial.u.is_finite() && pole.radial.v.is_finite() && pole.axial.is_finite()
         }) {
-            self.poles = values;
+            self.poles = poles;
             Ok(())
         } else {
             Err(NurbsError("poles contain a non-finite value".into()))
@@ -3027,29 +3468,13 @@ impl PolarPcurveNurbs {
     }
 
     /// Rational weights in pole order.
-    pub fn weights(&self) -> Option<&[f64]> {
-        self.weights.as_deref()
+    pub fn weights(&self) -> Option<Vec<f64>> {
+        self.poles.weights()
     }
 
-    /// Atomically edit rational weights and preserve their invariants.
-    pub fn edit_weights(&mut self, edit: impl FnOnce(&mut [f64])) -> Result<(), NurbsError> {
-        let Some(weights) = &self.weights else {
-            return Err(NurbsError("polar pcurve has no rational weights".into()));
-        };
-        let mut values = weights.clone();
-        edit(&mut values);
-        require_pcurve_weights(&values)?;
-        self.weights = Some(values);
-        Ok(())
-    }
-
-    /// Replace rational weights after checking pole cardinality.
-    pub fn set_weights(&mut self, weights: Option<Vec<f64>>) -> Result<(), NurbsError> {
-        if let Some(values) = &weights {
-            require_length("weights", values.len(), self.poles.len())?;
-            require_pcurve_weights(values)?;
-        }
-        self.weights = weights;
+    /// Replace the poles, keeping the knot cardinality.
+    pub fn set_poles(&mut self, poles: PolarNurbsPoles) -> Result<(), NurbsError> {
+        *self = Self::new(self.degree, self.knots.clone(), poles, self.periodic)?;
         Ok(())
     }
 
@@ -3061,14 +3486,22 @@ impl PolarPcurveNurbs {
     /// Reverse paired poles, weights, and the signed knot parameterization together.
     pub fn reverse_parameterization(&mut self) {
         self.poles.reverse();
-        if let Some(weights) = &mut self.weights {
-            weights.reverse();
-        }
         self.knots.reverse();
         for knot in &mut self.knots {
             *knot = -*knot;
         }
     }
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct PolarPcurveNurbsWire {
+    degree: u32,
+    knots: Vec<f64>,
+    poles: PolarNurbsPoles,
+    #[serde(default)]
+    periodic: bool,
 }
 
 impl Serialize for PolarPcurveNurbs {
@@ -3080,7 +3513,6 @@ impl Serialize for PolarPcurveNurbs {
             degree: self.degree,
             knots: self.knots.clone(),
             poles: self.poles.clone(),
-            weights: self.weights.clone(),
             periodic: self.periodic,
         }
         .serialize(serializer)
@@ -3093,14 +3525,8 @@ impl<'de> Deserialize<'de> for PolarPcurveNurbs {
         D: serde::Deserializer<'de>,
     {
         let wire = PolarPcurveNurbsWire::deserialize(deserializer)?;
-        Self::new(
-            wire.degree,
-            wire.knots,
-            wire.poles,
-            wire.weights,
-            wire.periodic,
-        )
-        .map_err(serde::de::Error::custom)
+        Self::new(wire.degree, wire.knots, wire.poles, wire.periodic)
+            .map_err(serde::de::Error::custom)
     }
 }
 
@@ -3110,9 +3536,7 @@ impl<'de> Deserialize<'de> for PolarPcurveNurbs {
 pub struct PcurveNurbs {
     degree: u32,
     knots: Vec<f64>,
-    control_points: Vec<Point2>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    weights: Option<Vec<f64>>,
+    poles: PcurveNurbsPoles,
     #[serde(default)]
     periodic: bool,
 }
@@ -3122,43 +3546,29 @@ impl PcurveNurbs {
     pub fn new(
         degree: u32,
         knots: Vec<f64>,
-        control_points: Vec<Point2>,
-        weights: Option<Vec<f64>>,
+        poles: PcurveNurbsPoles,
         periodic: bool,
     ) -> Result<Self, NurbsError> {
-        require_curve_cardinality(
-            degree,
-            knots.len(),
-            control_points.len(),
-            weights.as_ref().map(Vec::len),
-            "control_points",
-        )?;
+        require_curve_cardinality(degree, knots.len(), poles.len(), "control_points")?;
         if degree == 0 {
             return Err(NurbsError("pcurve NURBS degree must be positive".into()));
         }
-        require_finite_points_2("control_points", &control_points)?;
+        require_finite_points_2("control_points", &poles.points())?;
         require_nondecreasing_knots(&knots)?;
-        if let Some(weights) = &weights {
-            require_pcurve_weights(weights)?;
-        }
         Ok(Self {
             degree,
             knots,
-            control_points,
-            weights,
+            poles,
             periodic,
         })
     }
 
-    /// Lift each two-dimensional pole into model space without changing knot or weight cardinalities.
+    /// Lift each two-dimensional pole into model space, keeping its weight.
     pub fn lift(&self, lift: impl FnMut(Point2) -> Point3) -> Result<NurbsCurve, NurbsError> {
-        NurbsCurve::new(
-            self.degree,
-            self.knots.clone(),
-            self.control_points.iter().copied().map(lift).collect(),
-            self.weights.clone(),
-            self.periodic,
-        )
+        let points: Vec<Point3> = self.poles.points().into_iter().map(lift).collect();
+        let poles = NurbsPoles3::from_lanes(points, self.poles.weights())
+            .ok_or_else(|| NurbsError("lifted pcurve weights are not admissible".into()))?;
+        NurbsCurve::new(self.degree, self.knots.clone(), poles, self.periodic)
     }
 
     /// Curve degree.
@@ -3180,47 +3590,55 @@ impl PcurveNurbs {
         Ok(())
     }
 
-    /// Control points in parameter order.
-    pub fn control_points(&self) -> &[Point2] {
-        &self.control_points
+    /// Build a parameter-space NURBS from a source's pole and weight lanes.
+    pub fn from_lanes(
+        degree: u32,
+        knots: Vec<f64>,
+        control_points: Vec<Point2>,
+        weights: Option<Vec<f64>>,
+        periodic: bool,
+    ) -> Result<Self, NurbsError> {
+        let poles = PcurveNurbsPoles::from_lanes(control_points, weights).ok_or_else(|| {
+            NurbsError("pcurve NURBS weights must cover the poles and be finite and positive".into())
+        })?;
+        Self::new(degree, knots, poles, periodic)
     }
 
-    /// Atomically edit control points and preserve finite coordinates.
+    /// Poles in parameter order, with the pcurve's rational form.
+    pub const fn pole_rows(&self) -> &PcurveNurbsPoles {
+        &self.poles
+    }
+
+    /// Control points in parameter order.
+    pub fn control_points(&self) -> Vec<Point2> {
+        self.poles.points()
+    }
+
+    /// Number of poles.
+    pub fn pole_count(&self) -> usize {
+        self.poles.len()
+    }
+
+    /// Atomically edit pole positions and preserve finite coordinates.
     pub fn edit_control_points(
         &mut self,
-        edit: impl FnOnce(&mut [Point2]),
+        edit: impl FnMut(&mut Point2),
     ) -> Result<(), NurbsError> {
-        let mut values = self.control_points.clone();
-        edit(&mut values);
-        require_finite_points_2("control_points", &values)?;
-        self.control_points = values;
+        let mut poles = self.poles.clone();
+        poles.edit_points(edit);
+        require_finite_points_2("control_points", &poles.points())?;
+        self.poles = poles;
         Ok(())
     }
 
     /// Rational weights in pole order.
-    pub fn weights(&self) -> Option<&[f64]> {
-        self.weights.as_deref()
+    pub fn weights(&self) -> Option<Vec<f64>> {
+        self.poles.weights()
     }
 
-    /// Atomically edit rational weights and preserve their invariants.
-    pub fn edit_weights(&mut self, edit: impl FnOnce(&mut [f64])) -> Result<(), NurbsError> {
-        let Some(weights) = &self.weights else {
-            return Err(NurbsError("pcurve has no rational weights".into()));
-        };
-        let mut values = weights.clone();
-        edit(&mut values);
-        require_pcurve_weights(&values)?;
-        self.weights = Some(values);
-        Ok(())
-    }
-
-    /// Replace rational weights after checking pole cardinality.
-    pub fn set_weights(&mut self, weights: Option<Vec<f64>>) -> Result<(), NurbsError> {
-        if let Some(values) = &weights {
-            require_length("weights", values.len(), self.control_points.len())?;
-            require_pcurve_weights(values)?;
-        }
-        self.weights = weights;
+    /// Replace the poles, keeping the knot cardinality.
+    pub fn set_poles(&mut self, poles: PcurveNurbsPoles) -> Result<(), NurbsError> {
+        *self = Self::new(self.degree, self.knots.clone(), poles, self.periodic)?;
         Ok(())
     }
 
@@ -3231,10 +3649,7 @@ impl PcurveNurbs {
 
     /// Reverse poles, weights, and the signed knot parameterization together.
     pub fn reverse_parameterization(&mut self) {
-        self.control_points.reverse();
-        if let Some(weights) = &mut self.weights {
-            weights.reverse();
-        }
+        self.poles.reverse();
         self.knots.reverse();
         for knot in &mut self.knots {
             *knot = -*knot;
@@ -3252,22 +3667,14 @@ impl<'de> Deserialize<'de> for PcurveNurbs {
         struct Wire {
             degree: u32,
             knots: Vec<f64>,
-            control_points: Vec<Point2>,
-            #[serde(default)]
-            weights: Option<Vec<f64>>,
+            poles: PcurveNurbsPoles,
             #[serde(default)]
             periodic: bool,
         }
 
         let wire = Wire::deserialize(deserializer)?;
-        Self::new(
-            wire.degree,
-            wire.knots,
-            wire.control_points,
-            wire.weights,
-            wire.periodic,
-        )
-        .map_err(serde::de::Error::custom)
+        Self::new(wire.degree, wire.knots, wire.poles, wire.periodic)
+            .map_err(serde::de::Error::custom)
     }
 }
 
@@ -3359,11 +3766,7 @@ impl PcurveGeometry {
             Self::Nurbs { nurbs } => {
                 let mut nurbs = nurbs.clone();
                 nurbs
-                    .edit_control_points(|points| {
-                        for point in points {
-                            *point = scale(*point);
-                        }
-                    })
+                    .edit_control_points(|point| *point = scale(*point))
                     .map_err(|error| error.to_string())?;
                 Self::Nurbs { nurbs }
             }

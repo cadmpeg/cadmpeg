@@ -147,7 +147,7 @@ pub(crate) fn decode_pcurve_block_with_end(
         }
     }
     Some((
-        PcurveNurbs::new(
+        PcurveNurbs::from_lanes(
             degree as u32,
             knots,
             control_points,
@@ -208,7 +208,7 @@ pub(crate) fn pcurve_block_with_end(
         }
     }
     Some((
-        PcurveNurbs::new(
+        PcurveNurbs::from_lanes(
             degree as u32,
             knots,
             control_points,

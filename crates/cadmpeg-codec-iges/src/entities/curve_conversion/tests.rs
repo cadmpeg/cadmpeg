@@ -64,6 +64,8 @@ fn an_ellipse_arc_has_exact_rational_quadratic_points() {
     .expect("valid ellipse arc");
     assert_eq!(curve.degree(), 2);
     assert_eq!(curve.control_points().len(), 3);
+    let control_points = curve.control_points();
+    let weights = curve.weights();
     for (parameter, expected) in [
         (0.0, Point3::new(5.0, 2.0, 3.0)),
         (
@@ -75,8 +77,8 @@ fn an_ellipse_arc_has_exact_rational_quadratic_points() {
         let actual = nurbs_curve_point(
             curve.degree(),
             curve.knots(),
-            curve.control_points(),
-            curve.weights(),
+            &control_points,
+            weights.as_deref(),
             parameter,
         )
         .expect("ellipse NURBS evaluates");
@@ -97,6 +99,7 @@ fn a_parabola_arc_has_exact_quadratic_points() {
         [-1.0, 3.0],
     )
     .expect("valid parabola arc");
+    let control_points = curve.control_points();
     for (parameter, expected) in [
         (-1.0, Point3::new(3.0, -2.0, 3.0)),
         (1.0, Point3::new(3.0, 6.0, 3.0)),
@@ -105,7 +108,7 @@ fn a_parabola_arc_has_exact_quadratic_points() {
         let actual = nurbs_curve_point(
             curve.degree(),
             curve.knots(),
-            curve.control_points(),
+            &control_points,
             None,
             parameter,
         )

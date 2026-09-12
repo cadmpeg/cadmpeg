@@ -634,5 +634,5 @@ fn decode_projects_non_rational_and_rational_nurbs_sketch_geometry() {
     assert!(splines.iter().any(|curve| curve.weights().is_none()));
     assert!(splines
         .iter()
-        .any(|curve| curve.weights() == Some(&[1.0, 0.5, 1.0])));
+        .any(|curve| curve.weights() == Some(vec![1.0, 0.5, 1.0])));
 }

@@ -677,11 +677,10 @@ fn aligned_homogeneous_spans(
 }
 
 fn curve_weights(curve: &NurbsCurve) -> Option<Vec<f64>> {
-    let count = curve.control_points().len();
-    let weights = curve.weights().map_or_else(
-        || std::iter::repeat_n(1.0, count).collect(),
-        <[f64]>::to_vec,
-    );
+    let count = curve.pole_count();
+    let weights = curve
+        .weights()
+        .unwrap_or_else(|| std::iter::repeat_n(1.0, count).collect());
     (weights.len() == count
         && weights
             .iter()
@@ -723,7 +722,7 @@ fn same_basis_ruled_surface(
     } else {
         Some(surface_weights)
     };
-    NurbsSurface::new(
+    NurbsSurface::from_lanes(
         first.degree(),
         1,
         first.knots().to_vec(),
@@ -840,7 +839,7 @@ fn ruled_surface_carrier(
     } else {
         Some(weights)
     };
-    NurbsSurface::new(
+    NurbsSurface::from_lanes(
         u32::try_from(degree).ok()?,
         1,
         u_knots,
@@ -1583,10 +1582,8 @@ pub(super) fn project(
         let mut placed_directrix = directrix;
         if entry.transform != 0
             && placed_directrix
-                .edit_control_points(|points| {
-                    for point in points {
-                        *point = transform.point(*point);
-                    }
+                .edit_control_points(|point| {
+                    *point = transform.point(*point);
                 })
                 .is_err()
         {
@@ -1597,11 +1594,13 @@ pub(super) fn project(
             );
             continue;
         }
+        let directrix_points = placed_directrix.control_points();
+        let directrix_weights = placed_directrix.weights();
         let Some(start) = cadmpeg_ir::eval::nurbs_curve_point(
             placed_directrix.degree(),
             placed_directrix.knots(),
-            placed_directrix.control_points(),
-            placed_directrix.weights(),
+            &directrix_points,
+            directrix_weights.as_deref(),
             cached_interval[0],
         ) else {
             losses.push(entity_loss(entry, "directrix start cannot be evaluated"));
@@ -1649,7 +1648,7 @@ pub(super) fn project(
             placed_id
         };
         let surface_id = crate::ids::surface(&crate::ids::Stem::directory(entry.sequence));
-        let Ok(surface) = NurbsSurface::new(
+        let Ok(surface) = NurbsSurface::from_lanes(
             placed_directrix.degree(),
             1,
             placed_directrix.knots().to_vec(),
@@ -1907,12 +1906,14 @@ pub(super) fn project(
         }
         let mut control_points = Vec::with_capacity(surface_pole_count);
         let mut weights = Vec::with_capacity(control_points.capacity());
-        for (u_index, point) in generatrix.control_points().iter().enumerate() {
+        let generatrix_points = generatrix.control_points();
+        let generatrix_weights = generatrix.weights();
+        for (u_index, point) in generatrix_points.iter().enumerate() {
             let delta = point.vector_from(axis_origin);
             let axis_point = axis_origin.translated(axis_direction, delta.dot(axis_direction));
             let radial = point.vector_from(axis_point);
-            let u_weight = generatrix
-                .weights()
+            let u_weight = generatrix_weights
+                .as_ref()
                 .and_then(|values| values.get(u_index))
                 .copied()
                 .unwrap_or(1.0);
@@ -1925,7 +1926,7 @@ pub(super) fn project(
         }
         let placed_generatrix = (entry.transform != 0).then(|| generatrix.clone());
         let surface_id = crate::ids::surface(&crate::ids::Stem::directory(entry.sequence));
-        let Ok(surface) = NurbsSurface::new(
+        let Ok(surface) = NurbsSurface::from_lanes(
             generatrix.degree(),
             2,
             generatrix.knots().to_vec(),
@@ -1965,10 +1966,8 @@ pub(super) fn project(
             let mut placed_generatrix = placed_generatrix
                 .expect("a transformed revolution retains its generatrix until placement");
             if placed_generatrix
-                .edit_control_points(|points| {
-                    for point in points {
-                        *point = transform.point(*point);
-                    }
+                .edit_control_points(|point| {
+                    *point = transform.point(*point);
                 })
                 .is_err()
             {
@@ -2312,7 +2311,7 @@ pub(super) fn project(
                 }
             }
         }
-        let Ok(surface) = NurbsSurface::new(
+        let Ok(surface) = NurbsSurface::from_lanes(
             u_degree,
             v_degree,
             u_knots,

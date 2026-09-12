@@ -1113,16 +1113,14 @@ fn generated_projected_brep_c2_curve(
         WritableEdgeCurve::Nurbs(nurbs) => {
             let mut projected = nurbs.clone();
             projected
-                .edit_control_points(|points| {
-                    for point in points {
-                        let uv = plane_uv(*point, origin, u_axis, v_axis);
-                        *point = cadmpeg_ir::math::Point3::new(uv[0], uv[1], 0.0);
-                    }
+                .edit_control_points(|point| {
+                    let uv = plane_uv(*point, origin, u_axis, v_axis);
+                    *point = cadmpeg_ir::math::Point3::new(uv[0], uv[1], 0.0);
                 })
                 .map_err(|error| CodecError::malformed(error.to_string()))?;
             if sense == Sense::Reversed {
                 let sum = projected.knots()[projected.degree() as usize]
-                    + projected.knots()[projected.control_points().len()];
+                    + projected.knots()[projected.pole_count()];
                 projected.reverse_parameterization();
                 projected
                     .edit_knots(|knots| {
@@ -1209,22 +1207,22 @@ fn admit_pcurve<'a>(
             )
         }
         cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } => {
-            let curve = cadmpeg_ir::geometry::NurbsCurve::new(
+            let curve = cadmpeg_ir::geometry::NurbsCurve::from_lanes(
                 nurbs.degree(),
                 nurbs.knots().to_vec(),
                 nurbs
                     .control_points()
-                    .iter()
+                    .into_iter()
                     .map(|point| cadmpeg_ir::math::Point3::new(point.u, point.v, 0.0))
                     .collect(),
-                nurbs.weights().map(<[f64]>::to_vec),
+                nurbs.weights(),
                 nurbs.periodic(),
             )
             .map_err(|error| {
                 CodecError::malformed(format_args!("pcurve {}: {error}", pcurve.id.as_str()))
             })?;
             check_nurbs_curve(pcurve.id.as_str(), &curve)?;
-            let count = curve.control_points().len();
+            let count = curve.pole_count();
             if curve.periodic()
                 || [curve.knots()[curve.degree() as usize], curve.knots()[count]] != domain
             {
@@ -1721,7 +1719,7 @@ fn check_nurbs_surface(
         || i32::try_from(v_order).is_err()
         || i32::try_from(u_count).is_err()
         || i32::try_from(v_count).is_err()
-        || i32::try_from(surface.poles().count()).is_err()
+        || i32::try_from(surface.poles().len()).is_err()
     {
         return Err(CodecError::malformed(format_args!(
             "surface {id} cannot be represented by Rhino NURBS counts"
@@ -1993,10 +1991,11 @@ fn nurbs_surface_payload(surface: &cadmpeg_ir::geometry::NurbsSurface) -> Vec<u8
     ] {
         payload.extend(value.to_le_bytes());
     }
-    let min = surface.poles().fold([f64::INFINITY; 3], |a, p| {
+    let poles = surface.poles();
+    let min = poles.iter().fold([f64::INFINITY; 3], |a, p| {
         [a[0].min(p.x), a[1].min(p.y), a[2].min(p.z)]
     });
-    let max = surface.poles().fold([f64::NEG_INFINITY; 3], |a, p| {
+    let max = poles.iter().fold([f64::NEG_INFINITY; 3], |a, p| {
         [a[0].max(p.x), a[1].max(p.y), a[2].max(p.z)]
     });
     for value in min.into_iter().chain(max) {
@@ -2008,11 +2007,9 @@ fn nurbs_surface_payload(surface: &cadmpeg_ir::geometry::NurbsSurface) -> Vec<u8
             payload.extend(knot.to_le_bytes());
         }
     }
-    payload.extend((surface.poles().count() as i32).to_le_bytes());
-    let pole_weights = surface
-        .pole_weights()
-        .map(std::iter::Iterator::collect::<Vec<f64>>);
-    for (index, point) in surface.poles().enumerate() {
+    payload.extend((poles.len() as i32).to_le_bytes());
+    let pole_weights = surface.pole_weights();
+    for (index, point) in poles.iter().enumerate() {
         let weight = pole_weights.as_ref().map_or(1.0, |weights| weights[index]);
         payload.extend((point.x * weight).to_le_bytes());
         payload.extend((point.y * weight).to_le_bytes());

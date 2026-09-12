@@ -429,7 +429,7 @@ fn boundary_pcurve_requires_an_affine_carrier_witness() {
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::new(
+            NurbsCurve::from_lanes(
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                 vec![
@@ -468,7 +468,7 @@ fn boundary_pcurve_requires_an_affine_carrier_witness() {
     .is_none());
 
     ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        cadmpeg_ir::geometry::NurbsCurve::new(
+        cadmpeg_ir::geometry::NurbsCurve::from_lanes(
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
@@ -500,7 +500,7 @@ fn boundary_pcurve_accepts_a_certified_affine_nurbs_boundary() {
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::NurbsCurve::new(
+            cadmpeg_ir::geometry::NurbsCurve::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
@@ -534,7 +534,7 @@ fn boundary_pcurve_accepts_a_certified_affine_nurbs_boundary() {
 
 fn affine_nurbs_surface(z: f64) -> SurfaceGeometry {
     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-        NurbsSurface::new(
+        NurbsSurface::from_lanes(
             1,
             1,
             vec![0.0, 0.0, 1.0, 1.0],
@@ -554,7 +554,7 @@ fn affine_nurbs_surface(z: f64) -> SurfaceGeometry {
 
 fn quadratic_translation_surface(z: f64) -> SurfaceGeometry {
     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-        NurbsSurface::new(
+        NurbsSurface::from_lanes(
             2,
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
@@ -579,7 +579,7 @@ fn quadratic_translation_surface(z: f64) -> SurfaceGeometry {
 
 fn degree_elevated_affine_surface(z: f64) -> SurfaceGeometry {
     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-        NurbsSurface::new(
+        NurbsSurface::from_lanes(
             2,
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
@@ -606,7 +606,7 @@ fn quadratic_paraboloid_surface() -> SurfaceGeometry {
     let coordinates = [0.0, 0.5, 1.0];
     let square_controls = [0.0, 0.0, 1.0];
     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-        NurbsSurface::new(
+        NurbsSurface::from_lanes(
             2,
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
@@ -640,8 +640,14 @@ fn planar_offset_cache_fit_is_certified_over_the_control_net() {
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(candidate)) = &mut candidate else {
         unreachable!();
     };
+    let mut pole_index = 0usize;
     candidate
-        .edit_control_points(|rows| rows[1][0].z += 0.000_5)
+        .edit_control_points(|pole| {
+            if pole_index == 2 {
+                pole.z += 0.000_5;
+            }
+            pole_index += 1;
+        })
         .unwrap();
 
     let fit = certified_offset_cache_fit(
@@ -831,7 +837,7 @@ fn offset_cache_fit_decouples_distant_knot_span_scale() {
     let x = [0.0, 0.25, 0.5, 1.0e9 + 0.5];
     let z = [0.0, 0.0, 0.1, 0.2];
     let support = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-        NurbsSurface::new(
+        NurbsSurface::from_lanes(
             2,
             1,
             vec![0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 1.0],
@@ -860,7 +866,7 @@ fn offset_cache_fit_certifies_regular_c0_knot_spans() {
     let x = [0.0, 0.25, 0.5, 1.0, 1.5];
     let z = [0.0, 0.0, 0.1, 0.1, 0.2];
     let support = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-        NurbsSurface::new(
+        NurbsSurface::from_lanes(
             2,
             1,
             vec![0.0, 0.0, 0.0, 0.5, 0.5, 1.0, 1.0, 1.0],
@@ -893,9 +899,13 @@ fn curved_offset_cache_fit_rejects_an_uncertified_fold() {
     let replacement = (0..3)
         .map(|v| surface.control_grid()[1][v])
         .collect::<Vec<_>>();
+    let mut pole_index = 0usize;
     surface
-        .edit_control_points(|rows| {
-            rows[2].copy_from_slice(&replacement);
+        .edit_control_points(|pole| {
+            if let Some(source) = pole_index.checked_sub(6).and_then(|v| replacement.get(v)) {
+                *pole = *source;
+            }
+            pole_index += 1;
         })
         .unwrap();
     assert!(certified_offset_cache_fit(&support, &support, 0.0, 1.0).is_none());
@@ -907,11 +917,13 @@ fn curved_offset_cache_fit_accepts_a_regular_turning_control_net() {
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = &mut support else {
         unreachable!();
     };
+    let mut pole_index = 0usize;
     surface
-        .edit_control_points(|rows| {
-            for point in rows[2].iter_mut().take(3) {
-                point.x = 0.0;
+        .edit_control_points(|pole| {
+            if (6..9).contains(&pole_index) {
+                pole.x = 0.0;
             }
+            pole_index += 1;
         })
         .unwrap();
     assert_eq!(
@@ -926,7 +938,7 @@ fn curved_offset_cache_fit_certifies_deeply_localized_regularity() {
     let x = [0.0, epsilon / 3.0, 2.0 * epsilon / 3.0, 1.0 + epsilon];
     let z = [0.0, 0.0, 1.0 / 3.0, 1.0];
     let support = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-        NurbsSurface::new(
+        NurbsSurface::from_lanes(
             3,
             1,
             vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
@@ -978,13 +990,14 @@ fn curved_offset_cache_fit_certifies_varying_positive_weights() {
         unreachable!();
     };
     let axis_weights = [1.0, 1.01, 1.02];
-    surface
-        .set_weights(Some(
-            (0..3)
-                .map(|u| (0..3).map(|v| axis_weights[u] * axis_weights[v]).collect())
-                .collect(),
-        ))
-        .unwrap();
+    let weight_grid = (0..3)
+        .map(|u| (0..3).map(|v| axis_weights[u] * axis_weights[v]).collect())
+        .collect::<Vec<Vec<f64>>>();
+    let poles = cadmpeg_ir::geometry::NurbsPoleGrid::from_lanes(
+        surface.control_grid(),
+        Some(weight_grid),
+    );
+    surface.set_poles(poles.unwrap()).unwrap();
 
     assert_eq!(
         certified_offset_cache_fit(&support, &support, 0.0, 0.0),
@@ -1000,22 +1013,21 @@ fn rational_offset_cache_bounds_are_translation_invariant() {
         unreachable!();
     };
     surface
-        .edit_control_points(|rows| {
-            for point in rows.iter_mut().flatten() {
-                point.x += 1.0e12;
-                point.y -= 2.0e12;
-                point.z += 3.0e12;
-            }
+        .edit_control_points(|point| {
+            point.x += 1.0e12;
+            point.y -= 2.0e12;
+            point.z += 3.0e12;
         })
         .unwrap();
     let axis_weights = [1.0, 1.01, 1.02];
-    surface
-        .set_weights(Some(
-            (0..3)
-                .map(|u| (0..3).map(|v| axis_weights[u] * axis_weights[v]).collect())
-                .collect(),
-        ))
-        .unwrap();
+    let weight_grid = (0..3)
+        .map(|u| (0..3).map(|v| axis_weights[u] * axis_weights[v]).collect())
+        .collect::<Vec<Vec<f64>>>();
+    let poles = cadmpeg_ir::geometry::NurbsPoleGrid::from_lanes(
+        surface.control_grid(),
+        Some(weight_grid),
+    );
+    surface.set_poles(poles.unwrap()).unwrap();
 
     let bound = certified_offset_cache_fit(&support, &support, 0.01, 0.02)
         .expect("absolute placement does not widen rational derivative bounds");
@@ -1536,7 +1548,7 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::new(
+            NurbsCurve::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
@@ -1658,7 +1670,7 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
         .unwrap(),
     );
     let pcurve = PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
@@ -1693,7 +1705,7 @@ fn boundary_coincidence_is_certified_between_uniform_samples() {
         SurfaceId::mint("nx:test:surface#1").expect("identity grammar"),
     ];
     let surface = || {
-        NurbsSurface::new(
+        NurbsSurface::from_lanes(
             1,
             1,
             vec![0.0, 0.0, 1.0, 1.0],
@@ -1745,8 +1757,14 @@ fn boundary_coincidence_is_certified_between_uniform_samples() {
     else {
         unreachable!()
     };
+    let mut pole_index = 0usize;
     second
-        .edit_control_points(|rows| rows[0][1].z = 1.0)
+        .edit_control_points(|pole| {
+            if pole_index == 1 {
+                pole.z = 1.0;
+            }
+            pole_index += 1;
+        })
         .unwrap();
     assert!(!coincident_pcurve_pair(
         &ir,
@@ -1772,7 +1790,7 @@ fn rational_pcurve_incidence_isolates_close_branches() {
     .map(|(numerator, weight)| Point2::new(numerator / weight, 0.0))
     .collect::<Vec<_>>();
     let pcurve = PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
             4,
             vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
             controls,
@@ -1805,7 +1823,7 @@ fn rational_pcurve_closest_search_retains_close_global_branches() {
     .map(|(numerator, weight)| Point2::new(numerator / weight, 0.0))
     .collect();
     let pcurve = PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
             4,
             vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
             control_points,
@@ -1837,7 +1855,7 @@ fn rational_spine_closest_search_resolves_close_global_branches() {
     .zip(weights)
     .map(|(numerator, weight)| Point3::new(numerator / weight, 0.0, 0.0))
     .collect();
-    let curve = NurbsCurve::new(
+    let curve = NurbsCurve::from_lanes(
         4,
         vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
         control_points,
@@ -1863,7 +1881,7 @@ fn rational_spine_closest_search_resolves_close_global_branches() {
 fn periodic_nurbs_inversion_lifts_the_continuation_phase() {
     let knots = vec![0.0, 0.0, 1.0, 2.0, 2.0];
     let pcurve = PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
             1,
             knots.clone(),
             vec![
@@ -1876,7 +1894,7 @@ fn periodic_nurbs_inversion_lifts_the_continuation_phase() {
         )
         .unwrap(),
     };
-    let curve = NurbsCurve::new(
+    let curve = NurbsCurve::from_lanes(
         1,
         knots,
         vec![
@@ -1914,7 +1932,7 @@ fn polynomial_root_isolation_retains_repeated_real_roots() {
 #[test]
 fn coincident_pcurve_interval_retains_seed_and_boundaries() {
     let pcurve = PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![Point2::new(2.0, -3.0); 3],

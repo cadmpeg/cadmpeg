@@ -449,7 +449,7 @@ fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
 fn untrimmed_nurbs_pcurve_uses_its_own_endpoint_parameters() {
     let mut ir = untrimmed_surface_curve();
     ir.model.pcurves[0].geometry = PcurveGeometry::Nurbs {
-        nurbs: crate::geometry::PcurveNurbs::new(
+        nurbs: crate::geometry::PcurveNurbs::from_lanes(
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
@@ -495,7 +495,7 @@ fn raw_nurbs_domain_is_not_treated_as_edge_trim() {
             .try_into()
             .expect("valid identity"),
         geometry: PcurveGeometry::Nurbs {
-            nurbs: crate::geometry::PcurveNurbs::new(
+            nurbs: crate::geometry::PcurveNurbs::from_lanes(
                 2,
                 vec![-1.0, 0.0, 0.0, 1.0, 1.0, 2.0],
                 vec![
@@ -521,7 +521,7 @@ fn collapsed_trimmed_pcurve_falls_back_to_its_basis_domain() {
             [1.0, 1.0],
             true,
             Box::new(PcurveGeometry::Nurbs {
-                nurbs: crate::geometry::PcurveNurbs::new(
+                nurbs: crate::geometry::PcurveNurbs::from_lanes(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
@@ -542,7 +542,7 @@ fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
     // seed at t=0 therefore cannot start Newton recovery; the finite
     // surface domain supplies an interior seed on the same branch.
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-        NurbsSurface::new(
+        NurbsSurface::from_lanes(
             1,
             2,
             vec![0.0, 0.0, 1.0, 1.0],
@@ -808,7 +808,7 @@ fn pcurve_surface_mismatch_is_flagged() {
         ir.model.pcurves.push(crate::geometry::Pcurve {
             id: crate::ids::PcurveId::mint("synthetic:cube:pcurve#0").expect("valid identity"),
             geometry: crate::geometry::PcurveGeometry::Nurbs {
-                nurbs: crate::geometry::PcurveNurbs::new(
+                nurbs: crate::geometry::PcurveNurbs::from_lanes(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![
@@ -873,7 +873,7 @@ fn pcurve_surface_mismatch_is_flagged() {
     procedural.model.pcurves.push(crate::geometry::Pcurve {
         id: crate::ids::PcurveId::mint("synthetic:cube:pcurve#procedural").expect("valid identity"),
         geometry: crate::geometry::PcurveGeometry::Nurbs {
-            nurbs: crate::geometry::PcurveNurbs::new(
+            nurbs: crate::geometry::PcurveNurbs::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![
@@ -963,7 +963,7 @@ fn pcurve_surface_mismatch_is_flagged() {
             id: crate::ids::PcurveId::mint("synthetic:cube:pcurve#negative")
                 .expect("valid identity"),
             geometry: crate::geometry::PcurveGeometry::Nurbs {
-                nurbs: crate::geometry::PcurveNurbs::new(
+                nurbs: crate::geometry::PcurveNurbs::from_lanes(
                     1,
                     vec![-10.0, -10.0, 0.0, 0.0],
                     vec![

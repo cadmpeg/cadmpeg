@@ -77,7 +77,7 @@ fn occurrence_intersection_cache_requires_one_admitted_exact_carrier() {
         .expect("valid LineCurve fixture"),
     ));
     let nurbs = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        NurbsCurve::new(
+        NurbsCurve::from_lanes(
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
@@ -182,7 +182,7 @@ fn quintic_jet_reproduces_endpoint_second_order_data() {
 fn reversing_nurbs_preserves_tiny_knot_domain() {
     let tiny = 1e-200;
     let curve = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        NurbsCurve::new(
+        NurbsCurve::from_lanes(
             1,
             vec![tiny, tiny, 2.0 * tiny, 2.0 * tiny],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],

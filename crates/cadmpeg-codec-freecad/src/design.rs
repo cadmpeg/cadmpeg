@@ -1786,7 +1786,7 @@ fn sketch_nurbs(kind: &str, node: roxmltree::Node<'_, '_>) -> Option<SketchGeome
         .map(|(_, _, weight)| *weight)
         .collect::<Vec<_>>();
     Some(SketchGeometry::nurbs(
-        cadmpeg_ir::geometry::PcurveNurbs::new(
+        cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
             degree,
             full_knots,
             control_points,

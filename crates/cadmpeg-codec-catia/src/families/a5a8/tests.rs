@@ -23,7 +23,7 @@ fn a8_surface_parser_reads_common_form_nurbs() {
     let surface = &surfaces[0].geometry;
     assert_eq!((surface.u_degree(), surface.v_degree()), (2, 2));
     assert_eq!((surface.u_count(), surface.v_count()), (3, 3));
-    assert_eq!(surface.poles().nth(8).copied().unwrap().x, 8.0);
+    assert_eq!(surface.poles().into_iter().nth(8).unwrap().x, 8.0);
 }
 
 #[test]
@@ -64,7 +64,7 @@ fn selected_nested_a8_surface_frame_decodes_without_a_flat_rescan() {
     )
     .expect("selected nested surface");
     let surface = surface.geometry;
-    assert_eq!(surface.poles().nth(8).copied().unwrap().x, 8.0);
+    assert_eq!(surface.poles().into_iter().nth(8).unwrap().x, 8.0);
     assert!(
         crate::families::a5a8::records::resolved_a8_surface_from_object_frame(
             &bytes,
@@ -83,7 +83,7 @@ fn a8_surface_parser_accepts_frame_bounded_knot_and_pole_counts() {
     assert_eq!(surfaces.len(), 1);
     let surface = &surfaces[0].geometry;
     assert_eq!((surface.u_count(), surface.v_count()), (20_002, 3));
-    assert_eq!(surface.poles().count(), 60_006);
+    assert_eq!(surface.poles().len(), 60_006);
 }
 
 #[test]
@@ -119,7 +119,7 @@ fn a8_surface_parser_accepts_a_valid_tail_after_inline_poles() {
         .try_into()
         .expect("one inline-tail surface");
     let surface = surface.geometry;
-    assert_eq!(surface.poles().nth(8).copied().unwrap().x, 8.0);
+    assert_eq!(surface.poles().into_iter().nth(8).unwrap().x, 8.0);
 }
 
 #[test]
@@ -135,8 +135,7 @@ fn a8_surface_parser_accepts_a_valid_tail_after_inline_weights() {
     let surface = surface.geometry;
     assert_eq!(
         surface
-            .pole_weights()
-            .map(std::iter::Iterator::collect::<Vec<_>>),
+            .pole_weights(),
         Some(vec![2.0; 9])
     );
 }
@@ -360,9 +359,9 @@ fn a8_elided_surface_resolves_one_external_pole_grid_gap() {
     let surface = crate::families::a5a8::records::a8_surface_from_external_grid(&bytes, &header)
         .expect("unique external pole allocation");
     let surface = surface.geometry;
-    assert_eq!(surface.poles().count(), 9);
+    assert_eq!(surface.poles().len(), 9);
     assert_eq!(
-        surface.poles().nth(8).copied().unwrap(),
+        surface.poles().into_iter().nth(8).unwrap(),
         Point3::new(8.0, 2.0, 2.0)
     );
 
@@ -443,7 +442,7 @@ fn a8_elided_surface_accepts_finite_large_external_poles() {
         .try_into()
         .expect("one resolved surface");
     let surface = resolved.geometry;
-    assert_eq!(surface.poles().next().copied().unwrap().x, 2e12);
+    assert_eq!(surface.poles().into_iter().next().unwrap().x, 2e12);
 
     bytes[pole_start..pole_start + 8].copy_from_slice(&le_f64(f64::NAN));
     assert!(crate::families::a5a8::records::resolved_a8_surfaces(&bytes).is_empty());
@@ -648,8 +647,7 @@ fn a8_surface_parser_reads_rational_weight_grid() {
     assert_eq!(
         surfaces[0]
             .geometry
-            .pole_weights()
-            .map(std::iter::Iterator::collect::<Vec<_>>),
+            .pole_weights(),
         Some(vec![2.0; 9])
     );
 }
@@ -663,7 +661,7 @@ fn surface_parsers_require_finite_nonzero_weights() {
         .expect("one consolidated rational surface");
     let surface = surface.geometry;
     assert_eq!(
-        surface.pole_weights().expect("weights").next().unwrap(),
+        surface.pole_weights().expect("weights").into_iter().next().unwrap(),
         2e12
     );
     a5[146..154].copy_from_slice(&le_f64(f64::NAN));
@@ -676,7 +674,7 @@ fn surface_parsers_require_finite_nonzero_weights() {
         .expect("one common-form rational surface");
     let surface = surface.geometry;
     assert_eq!(
-        surface.pole_weights().expect("weights").next().unwrap(),
+        surface.pole_weights().expect("weights").into_iter().next().unwrap(),
         2e12
     );
     a8[275..283].copy_from_slice(&le_f64(f64::NAN));
@@ -692,7 +690,7 @@ fn a5_surface_parser_reads_consolidated_nurbs() {
     let surface = &surfaces[0].geometry;
     assert_eq!((surface.u_degree(), surface.v_degree()), (1, 1));
     assert_eq!((surface.u_count(), surface.v_count()), (2, 2));
-    assert_eq!(surface.poles().nth(3).copied().unwrap().x, 3.0);
+    assert_eq!(surface.poles().into_iter().nth(3).unwrap().x, 3.0);
 }
 
 #[test]
@@ -730,7 +728,7 @@ fn a5_surface_parser_reads_multispan_cubic_nurbs() {
         surface.u_knots(),
         vec![0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0, 2.0]
     );
-    assert_eq!(surface.poles().count(), 25);
+    assert_eq!(surface.poles().len(), 25);
 }
 
 #[test]
@@ -741,7 +739,7 @@ fn surface_parsers_accept_finite_large_control_points() {
         .try_into()
         .expect("one consolidated surface");
     let surface = surface.geometry;
-    assert_eq!(surface.poles().next().copied().unwrap().x, 2e12);
+    assert_eq!(surface.poles().into_iter().next().unwrap().x, 2e12);
 
     let mut a8 = a8_surface_stream();
     a8[59..67].copy_from_slice(&le_f64(2e12));
@@ -749,7 +747,7 @@ fn surface_parsers_accept_finite_large_control_points() {
         .try_into()
         .expect("one common-form surface");
     let surface = surface.geometry;
-    assert_eq!(surface.poles().next().copied().unwrap().x, 2e12);
+    assert_eq!(surface.poles().into_iter().next().unwrap().x, 2e12);
 
     a5[47..55].copy_from_slice(&le_f64(f64::NAN));
     a8[59..67].copy_from_slice(&le_f64(f64::NAN));
@@ -791,8 +789,7 @@ fn a5_surface_parser_reads_rational_weight_program() {
     assert_eq!(
         surfaces[0]
             .geometry
-            .pole_weights()
-            .map(std::iter::Iterator::collect::<Vec<_>>),
+            .pole_weights(),
         Some(vec![2.0; 4])
     );
 }
@@ -1295,9 +1292,9 @@ fn decode_geometry_fallback_transfers_an_external_a8_pole_grid() {
     else {
         panic!("NURBS surface");
     };
-    assert_eq!(surface.poles().count(), 9);
+    assert_eq!(surface.poles().len(), 9);
     assert_eq!(
-        surface.poles().nth(8).copied().unwrap(),
+        surface.poles().into_iter().nth(8).unwrap(),
         Point3::new(8.0, 2.0, 2.0)
     );
 }
@@ -1343,7 +1340,7 @@ fn decode_float_packed_stream_transfers_an_elided_a8_surface_with_native_topolog
         panic!("NURBS surface");
     };
     assert_eq!(
-        surface.poles().nth(8).copied().unwrap(),
+        surface.poles().into_iter().nth(8).unwrap(),
         Point3::new(1.0, 1.0, 0.0)
     );
     assert_eq!(result.ir().model.bodies.len(), 1);

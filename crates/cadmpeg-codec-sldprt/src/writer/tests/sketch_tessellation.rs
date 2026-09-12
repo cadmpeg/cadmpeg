@@ -498,11 +498,22 @@ fn semantic_writer_applies_rational_and_non_rational_sketch_nurbs_edits() {
                 let SketchGeometryDefinition::Nurbs { curve } = definition else {
                     return;
                 };
+                let mut pole_index = 0usize;
                 curve
-                    .edit_control_points(|points| points[1].v += 250.0)
+                    .edit_control_points(|point| {
+                        if pole_index == 1 {
+                            point.v += 250.0;
+                        }
+                        pole_index += 1;
+                    })
                     .unwrap();
-                if curve.weights().is_some() {
-                    curve.edit_weights(|weights| weights[1] = 0.75).unwrap();
+                if let Some(mut weights) = curve.weights() {
+                    weights[1] = 0.75;
+                    let poles = cadmpeg_ir::geometry::PcurveNurbsPoles::from_lanes(
+                        curve.control_points(),
+                        Some(weights),
+                    );
+                    curve.set_poles(poles.unwrap()).unwrap();
                 }
             })
             .unwrap();
@@ -536,7 +547,7 @@ fn semantic_writer_applies_rational_and_non_rational_sketch_nurbs_edits() {
         .all(|(points, _)| (points[1].v - 1250.0).abs() < 1.0e-12));
     assert!(splines
         .iter()
-        .any(|(_, weights)| *weights == Some(&[1.0, 0.75, 1.0])));
+        .any(|(_, weights)| *weights == Some(vec![1.0, 0.75, 1.0])));
 }
 
 #[test]

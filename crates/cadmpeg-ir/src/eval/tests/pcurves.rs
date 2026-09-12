@@ -34,7 +34,7 @@ fn analytic_pcurves_preserve_angular_parameterization() {
         .unwrap(),
     );
     let polar_nurbs = PcurveGeometry::PolarNurbs {
-        nurbs: crate::geometry::PolarPcurveNurbs::new(
+        nurbs: crate::geometry::PolarPcurveNurbs::from_lanes(
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
@@ -179,7 +179,7 @@ fn signed_offset_pcurves_use_the_exact_left_normal() {
         crate::geometry::OffsetPcurve::try_new(
             0.25,
             Box::new(PcurveGeometry::Nurbs {
-                nurbs: crate::geometry::PcurveNurbs::new(
+                nurbs: crate::geometry::PcurveNurbs::from_lanes(
                     2,
                     vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                     vec![

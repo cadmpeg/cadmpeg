@@ -1219,7 +1219,7 @@ fn analytic_offset_gate_requires_coaxial_equal_family_carriers() {
 fn offset_surface_accepts_an_identity_checked_class_31_cache() {
     assert!(is_referenced_geometry_class(0xb5, 0x31));
     let source = B5Surface::Nurbs(
-        NurbsSurface::new(
+        NurbsSurface::from_lanes(
             1,
             1,
             vec![0.0, 0.0, 1.0, 1.0],

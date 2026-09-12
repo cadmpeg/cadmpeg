@@ -44,7 +44,7 @@ use std::collections::{BTreeMap, BTreeSet};
 #[test]
 fn generated_nurbs_translations_define_a_blind_extrusion() {
     let translated_surface = |last_z| {
-        NurbsSurface::new(
+        NurbsSurface::from_lanes(
             2,
             1,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
@@ -152,7 +152,7 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
         ))
     );
 
-    let ambiguous = NurbsSurface::new(
+    let ambiguous = NurbsSurface::from_lanes(
         1,
         translated_surface(2.0).v_degree(),
         vec![0.0, 0.0, 1.0, 1.0],

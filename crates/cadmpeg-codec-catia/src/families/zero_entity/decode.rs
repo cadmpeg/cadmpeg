@@ -1028,7 +1028,7 @@ mod tests {
         ir.model.curves.push(Curve {
             id: CurveId::mint("catia:test:nurbs#0".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::new(
+                NurbsCurve::from_lanes(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![first, corner],

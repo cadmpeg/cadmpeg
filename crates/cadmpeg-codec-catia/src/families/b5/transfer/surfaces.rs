@@ -291,7 +291,7 @@ pub(super) fn profile_nurbs(profile: &B5Profile, interval: [f64; 2]) -> Option<N
     match profile {
         B5Profile::Line {
             point, direction, ..
-        } => NurbsCurve::new(
+        } => NurbsCurve::from_lanes(
             1,
             vec![interval[0], interval[0], interval[1], interval[1]],
             interval
@@ -366,7 +366,7 @@ pub(super) fn rational_arc(
         weights.push(1.0);
         append_quadratic_span_knots(&mut knots, interval, span, span_count);
     }
-    NurbsCurve::new(2, knots, control_points, Some(weights), false).ok()
+    NurbsCurve::from_lanes(2, knots, control_points, Some(weights), false).ok()
 }
 
 pub(super) fn revolve_nurbs(
@@ -439,7 +439,7 @@ pub(super) fn revolve_nurbs(
         }
     }
     let row_len = angular_count;
-    NurbsSurface::new(
+    NurbsSurface::from_lanes(
         profile.degree(),
         2,
         profile.knots().to_vec(),
@@ -962,7 +962,7 @@ mod tests {
             ),
         ]);
         let pcurve = |x| PcurveGeometry::Nurbs {
-            nurbs: PcurveNurbs::new(
+            nurbs: PcurveNurbs::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point2::new(x, 0.0), Point2::new(x, 1.0)],

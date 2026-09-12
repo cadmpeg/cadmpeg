@@ -798,9 +798,9 @@ pub(crate) fn reverse_pcurve_over_range(
                 .rev()
                 .map(|knot| reflection - knot)
                 .collect::<Vec<_>>();
-            let mut poles = nurbs.poles().to_vec();
+            let mut poles = nurbs.poles();
             poles.reverse();
-            let mut weights = nurbs.weights().map(<[f64]>::to_vec);
+            let mut weights = nurbs.weights();
             if let Some(weights) = &mut weights {
                 weights.reverse();
             }
@@ -814,7 +814,7 @@ pub(crate) fn reverse_pcurve_over_range(
                 .all(|value| value.is_finite());
             finite
                 .then(|| {
-                    PolarPcurveNurbs::new(
+                    PolarPcurveNurbs::from_lanes(
                         nurbs.degree(),
                         reversed_knots,
                         poles,
@@ -878,9 +878,9 @@ pub(crate) fn reverse_pcurve_over_range(
                 .rev()
                 .map(|knot| reflection - knot)
                 .collect::<Vec<_>>();
-            let mut control_points = nurbs.control_points().to_vec();
+            let mut control_points = nurbs.control_points();
             control_points.reverse();
-            let mut weights = nurbs.weights().map(<[f64]>::to_vec);
+            let mut weights = nurbs.weights();
             if let Some(weights) = &mut weights {
                 weights.reverse();
             }
@@ -890,7 +890,7 @@ pub(crate) fn reverse_pcurve_over_range(
                 .all(|value| value.is_finite());
             finite
                 .then(|| {
-                    PcurveNurbs::new(
+                    PcurveNurbs::from_lanes(
                         nurbs.degree(),
                         reversed_knots,
                         control_points,
@@ -1020,7 +1020,7 @@ pub(crate) fn reverse_pcurve_over_range(
                 .into_iter()
                 .all(f64::is_finite)
                 .then(|| {
-                    PcurveNurbs::new(
+                    PcurveNurbs::from_lanes(
                         2,
                         vec![start, start, start, end, end, end],
                         vec![first, middle, last],
@@ -2622,7 +2622,7 @@ fn transfer_intersection_pcurve_with_budget(
         )?;
     }
     Some(PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::new(
+        nurbs: PcurveNurbs::from_lanes(
             1,
             linear_knots(&samples.iter().map(|sample| sample.0).collect::<Vec<_>>()),
             samples.iter().map(|sample| sample.1).collect(),
@@ -3216,7 +3216,11 @@ fn surface_parameters_for_fit_with_index_and_budget_and_grid_cache(
 fn nurbs_surface_control_bounds(surface: &NurbsSurface) -> Option<([f64; 3], [f64; 3])> {
     if surface
         .pole_weights()
-        .is_some_and(|mut weights| weights.any(|weight| !weight.is_finite() || weight <= 0.0))
+        .is_some_and(|weights| {
+            weights
+                .iter()
+                .any(|weight| !weight.is_finite() || *weight <= 0.0)
+        })
     {
         return None;
     }

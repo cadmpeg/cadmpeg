@@ -304,7 +304,7 @@ fn nonperiodic_nurbs_boundary_resolves_atomic_region() {
         })
         .unwrap(),
         SketchGeometry::nurbs(
-            cadmpeg_ir::geometry::PcurveNurbs::new(
+            cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                 vec![
@@ -858,7 +858,7 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
     ));
 
     let nurbs = entity(SketchGeometry::nurbs(
-        cadmpeg_ir::geometry::PcurveNurbs::new(
+        cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
@@ -884,11 +884,13 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
     let SketchGeometryDefinition::Nurbs { curve } = nurbs.geometry.definition() else {
         unreachable!()
     };
+    let control_points = curve.control_points();
+    let weights = curve.weights();
     let interior = cadmpeg_ir::eval::nurbs_pcurve_uv(
         curve.degree(),
         curve.knots(),
-        curve.control_points(),
-        curve.weights(),
+        &control_points,
+        weights.as_deref(),
         0.375,
     )
     .unwrap();

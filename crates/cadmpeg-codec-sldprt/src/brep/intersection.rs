@@ -347,7 +347,7 @@ fn solved_curve(
         return None;
     };
     let knots = degree_one_knots(&parameters);
-    let nurbs = NurbsCurve::new(
+    let nurbs = NurbsCurve::from_lanes(
         1,
         knots,
         points

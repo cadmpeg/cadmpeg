@@ -26,7 +26,7 @@ fn nurbs_curve(
     weights: Option<Vec<f64>>,
 ) -> CurveGeometry {
     CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        NurbsCurve::new(degree, knots, control_points, weights, false)
+        NurbsCurve::from_lanes(degree, knots, control_points, weights, false)
             .expect("cardinality-valid test curve"),
     ))
 }

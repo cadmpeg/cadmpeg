@@ -231,13 +231,13 @@ fn generated_f3d_rewrites_binaryfile4_nurbs_integer_fields() {
     let SolvedCurveGeometry::Nurbs(mut nurbs) = cache.clone() else {
         unreachable!()
     };
-    let mut control_points = nurbs.control_points().to_vec();
+    let mut control_points = nurbs.control_points();
     control_points[1].z = 4.5;
-    nurbs = cadmpeg_ir::geometry::NurbsCurve::new(
+    nurbs = cadmpeg_ir::geometry::NurbsCurve::from_lanes(
         1,
         vec![-1.0, -1.0, 2.0, 2.0, 2.0],
         control_points,
-        nurbs.weights().map(<[f64]>::to_vec),
+        nurbs.weights(),
         true,
     )
     .unwrap();

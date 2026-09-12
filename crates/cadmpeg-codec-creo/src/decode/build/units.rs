@@ -1409,10 +1409,8 @@ fn scale_surface_geometry(
         }
         SolvedSurfaceGeometry::Nurbs(surface) => {
             surface
-                .edit_control_points(|rows| {
-                    for point in rows.iter_mut().flatten() {
-                        scale_point3(point, scale);
-                    }
+                .edit_control_points(|point| {
+                    scale_point3(point, scale);
                 })
                 .map_err(|error| {
                     CodecError::malformed(format_args!(
@@ -1523,10 +1521,8 @@ fn scale_curve_geometry(geometry: &mut SolvedCurveGeometry, scale: f64) -> Resul
         }
         SolvedCurveGeometry::Nurbs(curve) => {
             curve
-                .edit_control_points(|points| {
-                    for point in points {
-                        scale_point3(point, scale);
-                    }
+                .edit_control_points(|point| {
+                    scale_point3(point, scale);
                 })
                 .map_err(|error| {
                     CodecError::malformed(format_args!(
@@ -1814,10 +1810,8 @@ fn scale_sketch_geometry(geometry: &mut SketchGeometry, scale: f64) -> Result<()
         }
         SketchGeometryDefinition::Nurbs { curve } => {
             curve
-                .edit_control_points(|points| {
-                    for point in points {
-                        scale_point2(point, scale);
-                    }
+                .edit_control_points(|point| {
+                    scale_point2(point, scale);
                 })
                 .map_err(|error| {
                     CodecError::malformed(format_args!(
@@ -1860,10 +1854,8 @@ fn scale_spatial_sketch_geometry(
         }
         SpatialSketchGeometryDefinition::Nurbs { curve } => {
             curve
-                .edit_control_points(|points| {
-                    for point in points {
-                        scale_point3(point, scale);
-                    }
+                .edit_control_points(|point| {
+                    scale_point3(point, scale);
                 })
                 .map_err(|error| {
                     CodecError::malformed(format_args!(
@@ -2032,7 +2024,7 @@ mod tests {
     fn rejects_nurbs_unit_overflow_without_committing_nonfinite_poles() {
         let curve_id = cadmpeg_ir::ids::CurveId::mint("test:model:entity#overflow-curve")
             .expect("identity grammar");
-        let curve = cadmpeg_ir::geometry::NurbsCurve::new(
+        let curve = cadmpeg_ir::geometry::NurbsCurve::from_lanes(
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(f64::MAX, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],

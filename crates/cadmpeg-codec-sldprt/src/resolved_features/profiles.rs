@@ -2387,12 +2387,16 @@ fn transform_sketch_block_geometry(
             let mut curve = curve.clone();
             let transformed = curve
                 .control_points()
-                .iter()
-                .copied()
+                .into_iter()
                 .map(point)
                 .collect::<Option<Vec<_>>>()?;
+            let mut transformed = transformed.into_iter();
             curve
-                .edit_control_points(|points| points.copy_from_slice(&transformed))
+                .edit_control_points(|point| {
+                    if let Some(next) = transformed.next() {
+                        *point = next;
+                    }
+                })
                 .ok()?;
             SketchGeometry::nurbs(curve)
         }

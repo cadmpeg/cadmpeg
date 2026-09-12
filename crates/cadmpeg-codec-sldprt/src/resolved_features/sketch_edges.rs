@@ -214,7 +214,7 @@ pub(super) fn project_edge(
         }
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))) => {
             Some(SketchGeometry::nurbs(
-                cadmpeg_ir::geometry::PcurveNurbs::new(
+                cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
                     nurbs.degree(),
                     nurbs.knots().to_vec(),
                     nurbs
@@ -222,7 +222,7 @@ pub(super) fn project_edge(
                         .iter()
                         .map(|point| project_point(*point, origin, u_axis, v_axis))
                         .collect(),
-                    nurbs.weights().map(<[f64]>::to_vec),
+                    nurbs.weights(),
                     nurbs.periodic(),
                 )
                 .ok()?,

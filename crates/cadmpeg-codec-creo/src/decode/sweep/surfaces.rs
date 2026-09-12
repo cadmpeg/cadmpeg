@@ -390,7 +390,7 @@ pub(in super::super) fn revolved_nurbs_surface(
             weights.push(directrix_weight * angular_weight);
         }
     }
-    NurbsSurface::new(
+    NurbsSurface::from_lanes(
         directrix.degree(),
         2,
         directrix.knots().to_vec(),

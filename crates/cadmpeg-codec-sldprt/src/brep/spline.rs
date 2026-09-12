@@ -587,7 +587,9 @@ pub(crate) fn patch_nurbs_curve(
     {
         return None;
     }
-    let poles = homogeneous_poles(new.control_points(), new.weights(), scale)?;
+    let control_points = new.control_points();
+    let weights = new.weights();
+    let poles = homogeneous_poles(&control_points, weights.as_deref(), scale)?;
     patch_f64_array(bytes, 0x2d, descriptor.control_attr, &poles)?;
     patch_f64_array(bytes, 0x80, descriptor.knot_attr, &new_unique)
 }
@@ -604,7 +606,7 @@ pub(crate) fn patch_nurbs_surface(
         || old.v_degree() != new.v_degree()
         || old.u_count() != new.u_count()
         || old.v_count() != new.v_count()
-        || old.poles().count() != new.poles().count()
+        || old.poles().len() != new.poles().len()
         || old.weights().is_some() != new.weights().is_some()
         || old.u_periodic() != new.u_periodic()
         || old.v_periodic() != new.v_periodic()
@@ -646,20 +648,8 @@ pub(crate) fn patch_nurbs_surface(
     {
         return None;
     }
-    let old_poles = homogeneous_poles(
-        &old.poles().copied().collect::<Vec<_>>(),
-        old.pole_weights()
-            .map(std::iter::Iterator::collect::<Vec<f64>>)
-            .as_deref(),
-        scale,
-    )?;
-    let poles = homogeneous_poles(
-        &new.poles().copied().collect::<Vec<_>>(),
-        new.pole_weights()
-            .map(std::iter::Iterator::collect::<Vec<f64>>)
-            .as_deref(),
-        scale,
-    )?;
+    let old_poles = homogeneous_poles(&old.poles(), old.pole_weights().as_deref(), scale)?;
+    let poles = homogeneous_poles(&new.poles(), new.pole_weights().as_deref(), scale)?;
     let control_span = unique_control_span(bytes, &arrays, control_attr, &old_poles)?;
     let u_knot_span = unique_surface_knot_span(
         bytes,
@@ -758,7 +748,7 @@ pub(crate) fn scan_curve_carriers(bytes: &[u8]) -> HashMap<u16, CurveCarrier> {
         if knots.len() != expected {
             continue;
         }
-        let Ok(nurbs) = NurbsCurve::new(descriptor.degree, knots, points, weights, false) else {
+        let Ok(nurbs) = NurbsCurve::from_lanes(descriptor.degree, knots, points, weights, false) else {
             continue;
         };
         out.entry(attr).or_insert(CurveCarrier {
@@ -960,7 +950,7 @@ pub(crate) fn scan_surface_carriers(bytes: &[u8]) -> HashMap<u16, SurfaceCarrier
         if u_knots.len() != u_expected || v_knots.len() != v_expected {
             continue;
         }
-        let Ok(nurbs) = NurbsSurface::new(
+        let Ok(nurbs) = NurbsSurface::from_lanes(
             descriptor.u_degree,
             descriptor.v_degree,
             u_knots,

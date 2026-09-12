@@ -22,8 +22,15 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
         panic!("compact NURBS surface");
     };
     let mut new = old.clone();
-    new.edit_control_points(|rows| rows[1][1].z = 750.0)
-        .unwrap();
+    let target = new.v_count() as usize + 1;
+    let mut pole_index = 0usize;
+    new.edit_control_points(|pole| {
+        if pole_index == target {
+            pole.z = 750.0;
+        }
+        pole_index += 1;
+    })
+    .unwrap();
     new.edit_u_knots(|knots| knots[2..].fill(2.0)).unwrap();
     new.edit_v_knots(|knots| knots[2..].fill(3.0)).unwrap();
     let dirty_slots = [
@@ -97,8 +104,14 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
                 _ => None,
             })
             .unwrap();
+        let mut pole_index = 0usize;
         curve
-            .edit_control_points(|points| points[1].y = 1_500.0)
+            .edit_control_points(|point| {
+                if pole_index == 1 {
+                    point.y = 1_500.0;
+                }
+                pole_index += 1;
+            })
             .unwrap();
         curve.edit_knots(|knots| knots[3..].fill(2.0)).unwrap();
         let expected_curve = curve.clone();
@@ -111,8 +124,15 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
                 _ => None,
             })
             .unwrap();
+        let target = surface.v_count() as usize + 1;
+        let mut pole_index = 0usize;
         surface
-            .edit_control_points(|rows| rows[1][1].z = 750.0)
+            .edit_control_points(|pole| {
+                if pole_index == target {
+                    pole.z = 750.0;
+                }
+                pole_index += 1;
+            })
             .unwrap();
         surface.edit_u_knots(|knots| knots[2..].fill(2.0)).unwrap();
         surface.edit_v_knots(|knots| knots[2..].fill(3.0)).unwrap();

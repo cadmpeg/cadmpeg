@@ -5,7 +5,7 @@ use super::*;
 #[test]
 fn degree_elevation_preserves_nonzero_declared_interval_endpoints() {
     let interval = [-29.063_334_917_342_4, 2.000_000_000_000_02];
-    let mut curve = NurbsCurve::new(
+    let mut curve = NurbsCurve::from_lanes(
         1,
         vec![interval[0], interval[0], interval[1], interval[1]],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],

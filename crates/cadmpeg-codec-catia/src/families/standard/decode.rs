@@ -6354,7 +6354,11 @@ fn standard_nurbs_line_pair_on_face(
 fn nurbs_surface_control_bounds(surface: &NurbsSurface) -> Option<[[f64; 2]; 3]> {
     if surface
         .pole_weights()
-        .is_some_and(|mut weights| weights.any(|weight| !weight.is_finite() || weight <= 0.0))
+        .is_some_and(|weights| {
+            weights
+                .into_iter()
+                .any(|weight| !weight.is_finite() || weight <= 0.0)
+        })
     {
         return None;
     }
@@ -6412,7 +6416,7 @@ fn reverse_nurbs_curve(curve: &NurbsCurve) -> Option<NurbsCurve> {
         .copied()
         .all(f64::is_finite)
         .then(|| {
-            NurbsCurve::new(
+            NurbsCurve::from_lanes(
                 curve.degree(),
                 knots,
                 curve.control_points().iter().rev().copied().collect(),
@@ -6434,6 +6438,8 @@ fn nurbs_shared_boundary_scalar_matches(left: f64, right: f64) -> bool {
 
 fn nurbs_shared_boundary_curves_match(left: &NurbsCurve, right: &NurbsCurve) -> bool {
     let same_payload = |left: &NurbsCurve, right: &NurbsCurve| {
+        let left_points = left.control_points();
+        let right_points = right.control_points();
         left.degree() == right.degree()
             && left.periodic() == right.periodic()
             && left.knots().len() == right.knots().len()
@@ -6442,11 +6448,10 @@ fn nurbs_shared_boundary_curves_match(left: &NurbsCurve, right: &NurbsCurve) -> 
                 .iter()
                 .zip(right.knots())
                 .all(|(left, right)| nurbs_shared_boundary_scalar_matches(*left, *right))
-            && left.control_points().len() == right.control_points().len()
-            && left
-                .control_points()
+            && left.pole_count() == right.pole_count()
+            && left_points
                 .iter()
-                .zip(right.control_points())
+                .zip(right_points)
                 .all(|(left, right)| {
                     [left.x, left.y, left.z]
                         .into_iter()
@@ -6457,8 +6462,8 @@ fn nurbs_shared_boundary_curves_match(left: &NurbsCurve, right: &NurbsCurve) -> 
                 (None, None) => true,
                 (Some(left), Some(right)) => {
                     left.len() == right.len()
-                        && left.iter().zip(right).all(|(left, right)| {
-                            nurbs_shared_boundary_scalar_matches(*left, *right)
+                        && left.into_iter().zip(right).all(|(left, right)| {
+                            nurbs_shared_boundary_scalar_matches(left, right)
                         })
                 }
                 _ => false,

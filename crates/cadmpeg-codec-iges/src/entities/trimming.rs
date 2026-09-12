@@ -373,7 +373,7 @@ pub(super) fn pcurve_geometry(
         }
     };
     let (u_factor, u_offset, v_factor, v_offset) = pcurve_parameter_map(ir, support)?;
-    let parameter_curve = PcurveNurbs::new(
+    let parameter_curve = PcurveNurbs::from_lanes(
         nurbs.degree(),
         nurbs.knots().to_vec(),
         nurbs
@@ -397,7 +397,7 @@ pub(super) fn pcurve_geometry(
                 )
             })
             .collect(),
-        nurbs.weights().map(<[f64]>::to_vec),
+        nurbs.weights(),
         nurbs.periodic(),
     )
     .ok()?;
@@ -755,10 +755,11 @@ fn linear_model_nurbs_points(nurbs: &NurbsCurve, range: [f64; 2]) -> Option<Vec<
     {
         return None;
     }
+    let control_points = nurbs.control_points();
     linear_nurbs_parameters(
         nurbs.degree(),
         nurbs.knots(),
-        nurbs.control_points().len(),
+        nurbs.pole_count(),
         nurbs.periodic(),
         range,
     )?
@@ -767,7 +768,7 @@ fn linear_model_nurbs_points(nurbs: &NurbsCurve, range: [f64; 2]) -> Option<Vec<
         cadmpeg_ir::eval::nurbs_curve_point(
             nurbs.degree(),
             nurbs.knots(),
-            nurbs.control_points(),
+            &control_points,
             None,
             parameter,
         )

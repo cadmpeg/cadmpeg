@@ -16,7 +16,7 @@ fn direct_surface_fixture(
         Curve {
             id: CurveId::mint("test:model:entity#first").expect("valid identity"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                crate::geometry::NurbsCurve::new(
+                crate::geometry::NurbsCurve::from_lanes(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(1.0, 2.0, 3.0), Point3::new(3.0, 2.0, 3.0)],
@@ -30,7 +30,7 @@ fn direct_surface_fixture(
         Curve {
             id: CurveId::mint("test:model:entity#second").expect("valid identity"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                crate::geometry::NurbsCurve::new(
+                crate::geometry::NurbsCurve::from_lanes(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point3::new(5.0, 10.0, 13.0), Point3::new(5.0, 13.0, 13.0)],

@@ -1600,7 +1600,7 @@ fn patch_nurbs_surface_record(
     };
     let values = (0..v_count).flat_map(|v| {
         (0..u_count).flat_map(move |u| {
-            let point = surface.pole(u, v).copied();
+            let point = surface.pole(u, v);
             [
                 point.map_or(0.0, |point| point.x / LEN_TO_MM),
                 point.map_or(0.0, |point| point.y / LEN_TO_MM),
@@ -1668,8 +1668,8 @@ fn patch_nurbs_curve_record(
         3
     };
     let weights = curve.weights();
-    let values = curve
-        .control_points()
+    let control_points = curve.control_points();
+    let values = control_points
         .iter()
         .enumerate()
         .flat_map(|(index, point)| {
@@ -1677,7 +1677,7 @@ fn patch_nurbs_curve_record(
                 point.x / LEN_TO_MM,
                 point.y / LEN_TO_MM,
                 point.z / LEN_TO_MM,
-                weights.map_or(0.0, |weights| weights[index]),
+                weights.as_ref().map_or(0.0, |weights| weights[index]),
             ]
             .into_iter()
             .take(components)
@@ -2210,7 +2210,7 @@ mod tests {
         original.push(0x11);
         let records = crate::sab::frame(&original, 0, original.len(), RefWidth::Eight).unwrap();
         let geometry = PcurveGeometry::Nurbs {
-            nurbs: PcurveNurbs::new(
+            nurbs: PcurveNurbs::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],

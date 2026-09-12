@@ -393,7 +393,7 @@ fn test_nurbs_surface() -> NurbsSurface {
                 .collect()
         })
         .collect();
-    NurbsSurface::new(
+    NurbsSurface::from_lanes(
         2,
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
@@ -410,10 +410,8 @@ fn test_nurbs_surface() -> NurbsSurface {
 fn flat_test_nurbs_surface() -> NurbsSurface {
     let mut surface = test_nurbs_surface();
     surface
-        .edit_control_points(|rows| {
-            for point in rows.iter_mut().flatten() {
-                point.z = 0.0;
-            }
+        .edit_control_points(|point| {
+            point.z = 0.0;
         })
         .unwrap();
     surface

@@ -1716,7 +1716,10 @@ fn b2_nurbs_curve_parser_preserves_asymmetric_weights_in_source_order() {
     };
     assert_eq!(curve.geometry.degree(), 3);
     assert_eq!(curve.geometry.control_points().len(), 4);
-    assert_eq!(curve.geometry.weights(), Some(&[1.0, 0.72, 1.31, 0.93][..]));
+    assert_eq!(
+        curve.geometry.weights(),
+        Some(vec![1.0, 0.72, 1.31, 0.93])
+    );
     assert_eq!(curve.geometry.knots().len(), 8);
     assert_eq!(curve.geometry.knots()[..4], [0.0; 4]);
     assert_eq!(curve.geometry.knots()[4..], [41.693_759_535_8; 4]);

@@ -97,10 +97,8 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
                 nurbs
-                    .edit_control_points(|points| {
-                        for pole in points {
-                            pole.x += dx;
-                        }
+                    .edit_control_points(|pole| {
+                        pole.x += dx;
                     })
                     .unwrap();
             }
@@ -207,10 +205,8 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
                 nurbs
-                    .edit_control_points(|rows| {
-                        for pole in rows.iter_mut().flatten() {
-                            pole.x += dx;
-                        }
+                    .edit_control_points(|pole| {
+                        pole.x += dx;
                     })
                     .unwrap();
             }

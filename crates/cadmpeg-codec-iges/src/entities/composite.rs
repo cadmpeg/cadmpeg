@@ -517,7 +517,7 @@ fn reverse_nurbs(curve: NurbsCurve, interval: [f64; 2]) -> Option<(NurbsCurve, [
     if knots.iter().any(|knot| !knot.is_finite()) {
         return None;
     }
-    let reversed = NurbsCurve::new(
+    let reversed = NurbsCurve::from_lanes(
         curve.degree(),
         knots,
         curve.control_points().iter().rev().copied().collect(),
@@ -650,7 +650,7 @@ fn trim_nurbs_to_interval(curve: &NurbsCurve, interval: [f64; 2]) -> Option<Nurb
     }
     let (control_points, weights) =
         euclidean_control_points(trimmed_homogeneous, curve.weights().is_some())?;
-    NurbsCurve::new(
+    NurbsCurve::from_lanes(
         curve.degree(),
         trimmed_knots,
         control_points,
@@ -779,7 +779,7 @@ fn elevate_nurbs_to_degree(
             return false;
         };
         piece_knots.extend(end_knots);
-        let Ok(piece) = NurbsCurve::new(
+        let Ok(piece) = NurbsCurve::from_lanes(
             target_degree as u32,
             piece_knots,
             control_points,
@@ -805,11 +805,11 @@ fn elevate_nurbs_to_degree(
     elevated_knots[..=target_degree].fill(interval[0]);
     let end_start = elevated_knots.len() - target_degree - 1;
     elevated_knots[end_start..].fill(interval[1]);
-    let Ok(elevated) = NurbsCurve::new(
+    let Ok(elevated) = NurbsCurve::from_lanes(
         elevated_degree,
         elevated_knots,
-        concatenated.nurbs.control_points().to_vec(),
-        concatenated.nurbs.weights().map(<[f64]>::to_vec),
+        concatenated.nurbs.control_points(),
+        concatenated.nurbs.weights(),
         false,
     ) else {
         return false;
@@ -929,7 +929,7 @@ fn concatenate_nurbs<T>(
     let rational = weights
         .first()
         .is_some_and(|first| weights.iter().any(|weight| weight != first));
-    let nurbs = NurbsCurve::new(
+    let nurbs = NurbsCurve::from_lanes(
         degree,
         knots,
         control_points,
@@ -937,18 +937,20 @@ fn concatenate_nurbs<T>(
         false,
     )
     .ok()?;
+    let nurbs_points = nurbs.control_points();
+    let nurbs_weights = nurbs.weights();
     cadmpeg_ir::eval::nurbs_curve_point(
         degree,
         nurbs.knots(),
-        nurbs.control_points(),
-        nurbs.weights(),
+        &nurbs_points,
+        nurbs_weights.as_deref(),
         0.0,
     )?;
     cadmpeg_ir::eval::nurbs_curve_point(
         degree,
         nurbs.knots(),
-        nurbs.control_points(),
-        nurbs.weights(),
+        &nurbs_points,
+        nurbs_weights.as_deref(),
         cursor,
     )?;
     Some(ConcatenatedNurbs { nurbs, segments })
@@ -1059,7 +1061,7 @@ fn bounded_nurbs_for_id(
             Some((trim_nurbs_to_interval(nurbs, interval)?, interval))
         }
         SolvedCurveGeometry::Line(_) => Some((
-            NurbsCurve::new(
+            NurbsCurve::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![
@@ -1243,18 +1245,20 @@ fn anchor_analytic_nurbs_endpoint_poles(
     };
     let start = point_for_vertex(ir, &edge.start, index)?;
     let end = point_for_vertex(ir, &edge.end, index)?;
+    let control_points = nurbs.control_points();
+    let weights = nurbs.weights();
     let evaluated_start = cadmpeg_ir::eval::nurbs_curve_point(
         nurbs.degree(),
         nurbs.knots(),
-        nurbs.control_points(),
-        nurbs.weights(),
+        &control_points,
+        weights.as_deref(),
         interval[0],
     )?;
     let evaluated_end = cadmpeg_ir::eval::nurbs_curve_point(
         nurbs.degree(),
         nurbs.knots(),
-        nurbs.control_points(),
-        nurbs.weights(),
+        &control_points,
+        weights.as_deref(),
         interval[1],
     )?;
     if !close_with_tolerance(evaluated_start, start, Some(tolerance))
@@ -1262,11 +1266,17 @@ fn anchor_analytic_nurbs_endpoint_poles(
     {
         return None;
     }
+    let last = nurbs.pole_count().checked_sub(1)?;
+    let mut visited = 0usize;
     nurbs
-        .edit_control_points(|points| {
-            points[0] = start;
-            let last = points.len() - 1;
-            points[last] = end;
+        .edit_control_points(|point| {
+            if visited == 0 {
+                *point = start;
+            }
+            if visited == last {
+                *point = end;
+            }
+            visited += 1;
         })
         .ok()?;
     Some(())
@@ -1678,11 +1688,13 @@ fn project_with_type_130_policy(
         };
         let degree = nurbs.degree();
         let cursor = segments.end();
+        let nurbs_points = nurbs.control_points();
+        let nurbs_weights = nurbs.weights();
         let Some(start) = cadmpeg_ir::eval::nurbs_curve_point(
             degree,
             nurbs.knots(),
-            nurbs.control_points(),
-            nurbs.weights(),
+            &nurbs_points,
+            nurbs_weights.as_deref(),
             0.0,
         ) else {
             let (edge, loss) = project_degraded_composite(
@@ -1705,8 +1717,8 @@ fn project_with_type_130_policy(
         let Some(end) = cadmpeg_ir::eval::nurbs_curve_point(
             degree,
             nurbs.knots(),
-            nurbs.control_points(),
-            nurbs.weights(),
+            &nurbs_points,
+            nurbs_weights.as_deref(),
             cursor,
         ) else {
             let (edge, loss) = project_degraded_composite(

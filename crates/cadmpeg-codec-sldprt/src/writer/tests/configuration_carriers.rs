@@ -1242,8 +1242,14 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
         else {
             panic!("expected NURBS curve");
         };
+        let mut pole_index = 0usize;
         curve
-            .edit_control_points(|points| points[1].y += 250.0)
+            .edit_control_points(|point| {
+                if pole_index == 1 {
+                    point.y += 250.0;
+                }
+                pole_index += 1;
+            })
             .unwrap();
         let expected_curve = curve.clone();
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) =
@@ -1251,8 +1257,15 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
         else {
             panic!("expected NURBS surface");
         };
+        let target = surface.v_count() as usize + 1;
+        let mut pole_index = 0usize;
         surface
-            .edit_control_points(|rows| rows[1][1].z += 500.0)
+            .edit_control_points(|pole| {
+                if pole_index == target {
+                    pole.z += 500.0;
+                }
+                pole_index += 1;
+            })
             .unwrap();
         let expected_surface = surface.clone();
         (expected_curve, expected_surface)

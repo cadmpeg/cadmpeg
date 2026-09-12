@@ -1049,10 +1049,15 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
     let SolvedSurfaceGeometry::Nurbs(mut nurbs) = cache.clone() else {
         unreachable!()
     };
+    let target = nurbs.v_count() as usize;
+    let mut pole_index = 0usize;
     nurbs
-        .edit_control_points(|rows| {
-            rows[1][0].x = 17.5;
-            rows[1][0].z = -3.25;
+        .edit_control_points(|pole| {
+            if pole_index == target {
+                pole.x = 17.5;
+                pole.z = -3.25;
+            }
+            pole_index += 1;
         })
         .unwrap();
     nurbs
@@ -1113,7 +1118,13 @@ fn generated_f3d_rewrites_rational_nurbs_surface_weights() {
     let SolvedSurfaceGeometry::Nurbs(mut nurbs) = cache.clone() else {
         unreachable!()
     };
-    nurbs.edit_weights(|rows| rows[0][1] = 0.65).unwrap();
+    let mut weight_rows = nurbs.weights();
+    if let Some(rows) = &mut weight_rows {
+        rows[0][1] = 0.65;
+    }
+    let poles =
+        cadmpeg_ir::geometry::NurbsPoleGrid::from_lanes(nurbs.control_grid(), weight_rows);
+    nurbs.set_poles(poles.unwrap()).unwrap();
     *cache = SolvedSurfaceGeometry::Nurbs(nurbs.clone());
     let expected = nurbs.clone();
     let surface_id = surface.id.clone();
@@ -1164,14 +1175,14 @@ fn generated_f3d_rewrites_extrusion_directrix_control_points() {
     else {
         panic!("expected NURBS directrix")
     };
-    let mut control_points = nurbs.control_points().to_vec();
+    let mut control_points = nurbs.control_points();
     control_points[1].y = 12.5;
     control_points[1].z = -2.0;
-    *nurbs = cadmpeg_ir::geometry::NurbsCurve::new(
+    *nurbs = cadmpeg_ir::geometry::NurbsCurve::from_lanes(
         1,
         vec![-2.0, -2.0, 3.0, 3.0, 3.0],
         control_points,
-        nurbs.weights().map(<[f64]>::to_vec),
+        nurbs.weights(),
         true,
     )
     .unwrap();
@@ -1369,7 +1380,7 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
         .find(|curve| curve.id == spine_id)
         .expect("rolling-ball spine")
         .geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        NurbsCurve::new(
+        NurbsCurve::from_lanes(
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
@@ -1537,14 +1548,14 @@ fn generated_f3d_rewrites_rolling_ball_spine_cache() {
     else {
         panic!("expected NURBS blend spine")
     };
-    let mut control_points = nurbs.control_points().to_vec();
+    let mut control_points = nurbs.control_points();
     control_points[1].x = 8.0;
     control_points[1].y = -6.0;
-    *nurbs = cadmpeg_ir::geometry::NurbsCurve::new(
+    *nurbs = cadmpeg_ir::geometry::NurbsCurve::from_lanes(
         1,
         vec![-1.0, -1.0, 2.0, 2.0, 2.0],
         control_points,
-        nurbs.weights().map(<[f64]>::to_vec),
+        nurbs.weights(),
         nurbs.periodic(),
     )
     .unwrap();
@@ -1596,10 +1607,14 @@ fn generated_f3d_rewrites_rolling_ball_support_cache() {
     else {
         panic!("expected NURBS blend support")
     };
+    let mut pole_index = 0usize;
     nurbs
-        .edit_control_points(|rows| {
-            rows[0][1].x = 6.0;
-            rows[0][1].z = 4.0;
+        .edit_control_points(|pole| {
+            if pole_index == 1 {
+                pole.x = 6.0;
+                pole.z = 4.0;
+            }
+            pole_index += 1;
         })
         .unwrap();
     nurbs
