@@ -1173,15 +1173,15 @@ impl ProceduralSurfaceDefinition {
     fn legacy_cache_slot_mut(&mut self) -> Option<LegacyCacheSlot<'_>> {
         match self {
             Self::Exact(payload) => payload.legacy_cache_slot_mut(),
-            Self::Compound(payload) => payload.legacy_cache_slot_mut(),
+            Self::Compound(payload) => Some(payload.legacy_cache_slot_mut()),
             Self::Taper(payload) => payload.legacy_cache_slot_mut(),
             Self::Loft(payload) => payload.legacy_cache_slot_mut(),
-            Self::CompoundLoft(payload) => payload.legacy_cache_slot_mut(),
-            Self::ScaledCompoundLoft(payload) => payload.legacy_cache_slot_mut(),
-            Self::Skin(payload) => payload.legacy_cache_slot_mut(),
+            Self::CompoundLoft(payload) => Some(payload.legacy_cache_slot_mut()),
+            Self::ScaledCompoundLoft(payload) => Some(payload.legacy_cache_slot_mut()),
+            Self::Skin(payload) => Some(payload.legacy_cache_slot_mut()),
             Self::Law(payload) => payload.legacy_cache_slot_mut(),
-            Self::Net(payload) => payload.legacy_cache_slot_mut(),
-            Self::G2Blend(payload) => payload.legacy_cache_slot_mut(),
+            Self::Net(payload) => Some(payload.legacy_cache_slot_mut()),
+            Self::G2Blend(payload) => Some(payload.legacy_cache_slot_mut()),
             Self::Extrusion(payload) => payload.legacy_cache_slot_mut(),
             Self::Revolution(payload) => payload.legacy_cache_slot_mut(),
             Self::Sum(payload) => payload.legacy_cache_slot_mut(),
@@ -1189,15 +1189,15 @@ impl ProceduralSurfaceDefinition {
             Self::TSpline { construction } => construction.legacy_cache_slot_mut(),
             Self::Deformable(payload) => payload.legacy_cache_slot_mut(),
             Self::Offset(payload) => payload.legacy_cache_slot_mut(),
-            Self::Subset(payload) => payload.legacy_cache_slot_mut(),
+            Self::Subset(payload) => Some(payload.legacy_cache_slot_mut()),
             Self::Blend(payload) => payload.legacy_cache_slot_mut(),
-            Self::VariableBlend(payload) => payload.legacy_cache_slot_mut(),
             Self::Ruled { cache, .. } | Self::Unknown { cache, .. } => {
                 Some(LegacyCacheSlot::Optional(cache))
             }
             Self::SubSurface(_)
             | Self::RevisionCompoundLoft { .. }
             | Self::RevisionG2Blend { .. }
+            | Self::VariableBlend(_)
             | Self::VertexBlend(_)
             | Self::LinearSweep(_)
             | Self::AxisRevolution(_)
@@ -1293,11 +1293,11 @@ impl ProceduralCurveDefinition {
     /// go through it, so a construction cannot answer them differently.
     fn legacy_cache_slot_mut(&mut self) -> Option<LegacyCacheSlot<'_>> {
         match self {
-            Self::Compound(construction) => construction.legacy_cache_slot_mut(),
-            Self::Helix(construction) => construction.legacy_cache_slot_mut(),
-            Self::Subset(payload) => payload.legacy_cache_slot_mut(),
-            Self::VectorOffset(payload) => payload.legacy_cache_slot_mut(),
-            Self::TwoSidedOffset(payload) => payload.legacy_cache_slot_mut(),
+            Self::Compound(construction) => Some(construction.legacy_cache_slot_mut()),
+            Self::Helix(construction) => Some(construction.legacy_cache_slot_mut()),
+            Self::Subset(payload) => Some(payload.legacy_cache_slot_mut()),
+            Self::VectorOffset(payload) => Some(payload.legacy_cache_slot_mut()),
+            Self::TwoSidedOffset(payload) => Some(payload.legacy_cache_slot_mut()),
             Self::Spring(payload) => payload.legacy_cache_slot_mut(),
             Self::SurfaceOffset(payload) => payload.legacy_cache_slot_mut(),
             Self::Exact { cache }
@@ -7006,8 +7006,8 @@ impl CompoundCurveConstruction {
     }
 
     /// Mutable legacy solved-cache slot this construction states.
-    pub(crate) fn legacy_cache_slot_mut(&mut self) -> Option<LegacyCacheSlot<'_>> {
-        Some(LegacyCacheSlot::Optional(&mut self.cache))
+    pub(crate) const fn legacy_cache_slot_mut(&mut self) -> LegacyCacheSlot<'_> {
+        LegacyCacheSlot::Optional(&mut self.cache)
     }
 }
 
@@ -7024,8 +7024,8 @@ impl HelixCurveConstruction {
     }
 
     /// Mutable legacy solved-cache slot this construction states.
-    pub(crate) fn legacy_cache_slot_mut(&mut self) -> Option<LegacyCacheSlot<'_>> {
-        Some(LegacyCacheSlot::Optional(&mut self.cache))
+    pub(crate) const fn legacy_cache_slot_mut(&mut self) -> LegacyCacheSlot<'_> {
+        LegacyCacheSlot::Optional(&mut self.cache)
     }
 }
 
