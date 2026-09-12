@@ -15,22 +15,34 @@ pub(super) fn check_typed_references(
         ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
             $(for entity in &ir.model.$field {
                 let owner = entity.identity();
-                entity.visit_references(&mut |reference| {
-                    if !index.contains(&reference.target)
-                        && !findings.iter().any(|finding| {
-                            finding.check == Check::ReferentialIntegrity
-                                && finding.entity.as_deref() == Some(owner)
-                                && finding.message.contains(&reference.target)
-                        })
-                    {
+                let mut unresolved = Vec::new();
+                let walk = entity.visit_references(&mut |reference| {
+                    if !index.contains(&reference.target) {
+                        unresolved.push(reference.target);
+                    }
+                });
+                for target in unresolved {
+                    if !findings.iter().any(|finding| {
+                        finding.check == Check::ReferentialIntegrity
+                            && finding.entity.as_deref() == Some(owner)
+                            && finding.message.contains(&target)
+                    }) {
                         findings.push(Finding {
                             check: Check::ReferentialIntegrity,
                             severity: Severity::Error,
-                            message: format!("unresolved typed reference {}", reference.target),
+                            message: format!("unresolved typed reference {target}"),
                             entity: Some(owner.to_owned()),
                         });
                     }
-                });
+                }
+                if let Err(error) = walk {
+                    findings.push(Finding {
+                        check: Check::ReferentialIntegrity,
+                        severity: Severity::Error,
+                        message: format!("entity schema cannot state its typed references: {error}"),
+                        entity: Some(owner.to_owned()),
+                    });
+                }
             })*
         };
     }

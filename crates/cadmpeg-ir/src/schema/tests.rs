@@ -28,7 +28,8 @@ fn typed_reference_walk_ignores_id_shaped_plain_strings() {
 
     let mut references = Vec::new();
     ir.model
-        .visit_references(&mut |reference| references.push(reference.target));
+        .visit_references(&mut |reference| references.push(reference.target))
+        .expect("every entity states its typed references");
     assert_eq!(references, vec![target.as_str().to_owned()]);
 
     let report = validate_neutral(&ir, Vec::new());
@@ -97,11 +98,15 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
     };
 
     let mut state_references = Vec::new();
-    state.visit_references(&mut |reference| state_references.push(reference.target));
+    state
+        .visit_references(&mut |reference| state_references.push(reference.target))
+        .expect("state states its typed references");
     assert_eq!(state_references, vec![feature_id.as_str().to_owned()]);
 
     let mut feature_references = Vec::new();
-    feature.visit_references(&mut |reference| feature_references.push(reference.target));
+    feature
+        .visit_references(&mut |reference| feature_references.push(reference.target))
+        .expect("feature states its typed references");
     assert_eq!(feature_references, vec![state_id.as_str()]);
 
     let mut ir = CadIr::empty();

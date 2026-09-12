@@ -413,18 +413,22 @@ macro_rules! declare_model {
             }
 
             /// Visits every typed identity reference in canonical arena order.
+            ///
+            /// Returns the first [`crate::schema::ReferenceWalkError`] an
+            /// entity raises; no arena swallows one.
             pub fn visit_references(
                 &self,
                 visitor: &mut dyn FnMut(crate::schema::Reference),
-            ) {
+            ) -> Result<(), crate::schema::ReferenceWalkError> {
                 $(for entity in &self.$field {
-                    crate::schema::EntitySchema::visit_references(entity, visitor);
+                    crate::schema::EntitySchema::visit_references(entity, visitor)?;
                 })*
                 for parent in self.feature_regeneration_parents.0.values() {
                     visitor(crate::schema::Reference {
                         target: parent.as_str().to_owned(),
                     });
                 }
+                Ok(())
             }
 
             /// Sort each arena lexicographically by its entity identity.
