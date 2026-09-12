@@ -172,10 +172,12 @@ impl From<&str> for AllocatedLen {
     }
 }
 
-/// The widening in [`FramedSpan::from_parts`] is exact on this target.
+/// The widening in [`FramedSpan::from_parts`] is exact on this target, so a
+/// payload length reaches the span unchanged.
 const _: () = assert!(usize::BITS <= 64);
-/// The sum [`FramedSpan::stored`] adds fits a `u64` for a span minted by
-/// [`FramedSpan::from_parts`].
+/// A live allocation is at most `isize::MAX` bytes and a framing at most
+/// `u32::MAX`, so their sum is inside `u64`. This is what justifies the
+/// unchecked `+` in [`FramedSpan::stored`], and it justifies nothing else.
 const _: () = assert!((isize::MAX as u128) + (u32::MAX as u128) < (u64::MAX as u128));
 
 /// A verbatim payload inside a strictly larger stored span.
@@ -193,7 +195,8 @@ impl FramedSpan {
     ///
     /// `payload` is the length of a live allocation and so at most `isize::MAX`
     /// and `framing` at most `u32::MAX`, and the module assertions above prove
-    /// that sum inside `u64`, so the absent arm never fires.
+    /// that sum inside `u64`, so [`Self::stored`] adds it unchecked and this
+    /// mint is total.
     #[must_use]
     pub fn from_parts(payload: AllocatedLen, framing: NonZeroU32) -> Self {
         Self {
@@ -322,7 +325,8 @@ impl EntryStorage {
     /// Verbatim bytes whose stored span is the payload plus `framing` bytes of
     /// container framing the producer knows.
     ///
-    /// Absent when the stored span would not fit a `u64`.
+    /// Total: [`FramedSpan::from_parts`] mints every `(payload, framing)` pair
+    /// a live allocation and a `u32` framing can state.
     #[must_use]
     pub fn framed_by(label: VerbatimLabel, payload: AllocatedLen, framing: NonZeroU32) -> Self {
         Self::Verbatim {
