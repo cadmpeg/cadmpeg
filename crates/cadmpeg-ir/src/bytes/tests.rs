@@ -10,14 +10,22 @@ use crate::ids::UnknownId;
 use crate::tessellation::{ChannelAddressing, TessellationChannel};
 use crate::unknown::UnknownRecord;
 
-fn assert_base64_round_trip_and_rejection<T>(value: &T, field: &str)
+fn assert_base64_round_trip_and_rejection<T>(value: &T, path: &[&str])
 where
     T: Serialize + DeserializeOwned + PartialEq + Debug,
 {
     let mut json = serde_json::to_value(value).unwrap();
-    assert_eq!(json[field], "AQID");
+    let mut at = &json;
+    for step in path {
+        at = &at[*step];
+    }
+    assert_eq!(*at, serde_json::json!("AQID"));
     assert_eq!(serde_json::from_value::<T>(json.clone()).unwrap(), *value);
-    json[field] = serde_json::Value::String("%%%".into());
+    let mut at = &mut json;
+    for step in path {
+        at = &mut at[*step];
+    }
+    *at = serde_json::Value::String("%%%".into());
     assert!(serde_json::from_value::<T>(json).is_err());
 }
 
@@ -30,11 +38,11 @@ fn byte_payloads_use_nonempty_base64_and_reject_invalid_text() {
             vec![1, 2, 3],
             Vec::new(),
         ),
-        "data",
+        &["retention", "data"],
     );
     assert_base64_round_trip_and_rejection(
         &TessellationChannel::new(ChannelAddressing::Vertex {}, 3, 0, 0, vec![1, 2, 3])
             .expect("valid channel"),
-        "data",
+        &["data"],
     );
 }

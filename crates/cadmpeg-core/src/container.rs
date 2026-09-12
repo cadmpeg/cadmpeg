@@ -449,7 +449,7 @@ struct EntryIdentityWire {
 }
 
 /// What a container declares about an entry's two sizes.
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct DeclaredSizesWire {

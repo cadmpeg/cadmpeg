@@ -3564,7 +3564,7 @@ fn mesh_attribute_channels(
                 };
                 channels.push(
                     cadmpeg_ir::tessellation::TessellationChannel::new(
-                        cadmpeg_ir::tessellation::ChannelAddressing::Triangle { indices: indices },
+                        cadmpeg_ir::tessellation::ChannelAddressing::Triangle { indices },
                         item_size,
                         attribute.role,
                         attribute.element_code(),
