@@ -118,8 +118,8 @@ impl IgesVersion {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct IgesCodec;
 
-pub(crate) fn document_digest(ir: &CadIr) -> String {
-    document_local_sha256(ir, "iges", SOURCE_IMAGE_ID)
+pub(crate) fn document_digest(ir: &CadIr) -> Result<String, cadmpeg_core::CodecError> {
+    Ok(document_local_sha256(ir, "iges", SOURCE_IMAGE_ID)?)
 }
 
 impl CodecBackend for IgesCodec {

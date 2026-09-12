@@ -52,7 +52,7 @@ fn semantic_writer_rejects_retained_sketch_constraint_edits() {
         });
     assert_ne!(
         decoded.ir().source.as_ref().unwrap().attributes["document_local_sha256"],
-        crate::decode::document_local_sha256(decoded.ir())
+        crate::decode::document_local_sha256(decoded.ir()).unwrap()
     );
 
     let error = SldprtCodec

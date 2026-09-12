@@ -154,7 +154,7 @@ impl F3dCodec {
             .as_ref()
             .and_then(|source| source.attributes.get(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE))
             .ok_or_else(|| CodecError::NotImplemented("IR has no F3D document baseline".into()))?;
-        if decode::document_local_sha256(ir) != *expected {
+        if decode::document_local_sha256(ir)? != *expected {
             writer::patch::write_semantic(ir, data, writer, notes)?;
             return Ok(PreservedWritePath::Patched);
         }

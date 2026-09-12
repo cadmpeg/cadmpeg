@@ -456,7 +456,7 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let brep_hash = crate::decode::brep_local_sha256(decoded.ir());
-    let document_hash = crate::decode::document_local_sha256(decoded.ir());
+    let document_hash = crate::decode::document_local_sha256(decoded.ir()).unwrap();
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_histories[0].features[0]
             .parameters
@@ -478,7 +478,7 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
     }
     assert_eq!(crate::decode::brep_local_sha256(decoded.ir()), brep_hash);
     assert_ne!(
-        crate::decode::document_local_sha256(decoded.ir()),
+        crate::decode::document_local_sha256(decoded.ir()).unwrap(),
         document_hash
     );
 

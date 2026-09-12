@@ -174,7 +174,7 @@ fn replay_bytes(ir: &CadIr, fidelity: Option<&SourceFidelity>) -> Result<Replay,
             ),
         ));
     };
-    if crate::document_digest(ir) != *expected {
+    if crate::document_digest(ir)? != *expected {
         return Ok(Replay::declined_for_record(
             record,
             "decoded model no longer matches the preserved IGES source digest; byte replay skipped",

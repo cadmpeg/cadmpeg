@@ -188,7 +188,7 @@ impl SldprtCodec {
                 writer,
             );
         };
-        if decode::document_local_sha256(ir) != *expected {
+        if decode::document_local_sha256(ir)? != *expected {
             return Self::write_semantic(
                 ir,
                 annotations,
