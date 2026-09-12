@@ -690,9 +690,9 @@ pub(crate) fn sweep_definition_is_incomplete(feature: &Feature) -> bool {
             .iter()
             .copied()
             .any(planar_profile_ref_is_incomplete)
-        || profiles.iter().any(|profile| {
-            planar_profile_dependency_is_incomplete(profile, &feature.dependencies)
-        })
+        || profiles
+            .iter()
+            .any(|profile| planar_profile_dependency_is_incomplete(profile, &feature.dependencies))
         || path.as_ref().is_none_or(path_ref_is_incomplete)
         || sweep_mode_is_incomplete(mode)
         || orientation

@@ -216,7 +216,10 @@ pub(crate) fn bind_sweep_operations(
                 break 'feature_edit;
             };
             'sweep_mode: {
-                if !matches!(shape.mode(), cadmpeg_ir::features::SweepMode::Unresolved { .. }) {
+                if !matches!(
+                    shape.mode(),
+                    cadmpeg_ir::features::SweepMode::Unresolved { .. }
+                ) {
                     break 'sweep_mode;
                 }
                 let Some(history) = feature

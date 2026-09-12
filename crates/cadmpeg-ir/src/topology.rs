@@ -213,8 +213,7 @@ pub enum ShellMember {
 }
 
 /// Refusal for a shell that owns nothing.
-const SHELL_WITHOUT_MEMBERS: &str =
-    "a shell must own at least one face, wire edge, or free vertex";
+const SHELL_WITHOUT_MEMBERS: &str = "a shell must own at least one face, wire edge, or free vertex";
 
 /// The members of a shell, at least one, sorted into the three kinds.
 ///

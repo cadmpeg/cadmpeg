@@ -12,8 +12,8 @@ pub use decode::{
     TransferDisposition, TransferLedger, TransferOutcome, TransferRecord,
 };
 pub use export::{
-    CensusBasis, EntityCensus, ExportReport, FidelityResolution, ReplayFidelity,
-    SynthesisFidelity, WritePath,
+    CensusBasis, EntityCensus, ExportReport, FidelityResolution, ReplayFidelity, SynthesisFidelity,
+    WritePath,
 };
 pub use loss::{
     LossCategory, LossKind, LossNamespace, LossNamespaceError, LossNote, LossTaxonomy,

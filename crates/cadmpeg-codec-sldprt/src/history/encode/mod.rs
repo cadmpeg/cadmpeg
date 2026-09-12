@@ -371,23 +371,21 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 taper,
                 scale,
                 allow_multi_profile_faces,
-            }) => {
-                self.encode_sweep(
-                    shape,
-                    path,
-                    orientation,
-                    transition,
-                    transformation,
-                    path_tangent,
-                    linearize,
-                    twist,
-                    path_extent,
-                    guide_rail,
-                    taper,
-                    scale,
-                    allow_multi_profile_faces,
-                )
-            }
+            }) => self.encode_sweep(
+                shape,
+                path,
+                orientation,
+                transition,
+                transformation,
+                path_tangent,
+                linearize,
+                twist,
+                path_extent,
+                guide_rail,
+                taper,
+                scale,
+                allow_multi_profile_faces,
+            ),
             FeatureDefinition::Operation(FeatureOperation::Loft {
                 sections,
                 guidance,

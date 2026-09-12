@@ -156,8 +156,7 @@ pub(crate) fn bind_sketch_profiles(
                 }
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::Sweep { shape, .. },
-                ) if shape.section_is_unresolved() =>
-                {
+                ) if shape.section_is_unresolved() => {
                     shape.set_referenced_profile(sketch.id.clone().into());
                 }
                 cadmpeg_ir::features::FeatureDefinition::Operation(

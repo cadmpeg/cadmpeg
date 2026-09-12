@@ -386,7 +386,11 @@ impl From<LinkMembers> for Vec<LinkMember> {
                     .element_component
                     .map(|component| LinkMember::ElementComponent { component }),
             )
-            .chain(members.claim_child.map(|claim| LinkMember::ClaimChild { claim }))
+            .chain(
+                members
+                    .claim_child
+                    .map(|claim| LinkMember::ClaimChild { claim }),
+            )
             .chain(
                 members
                     .copy_on_change
@@ -1083,8 +1087,9 @@ impl JointLimits {
             (None, None) => None,
             (Some(minimum), None) => Some(Self::Minimum { minimum }),
             (None, Some(maximum)) => Some(Self::Maximum { maximum }),
-            (Some(minimum), Some(maximum)) => (minimum.get() <= maximum.get())
-                .then_some(Self::Range { minimum, maximum }),
+            (Some(minimum), Some(maximum)) => {
+                (minimum.get() <= maximum.get()).then_some(Self::Range { minimum, maximum })
+            }
         }
     }
 

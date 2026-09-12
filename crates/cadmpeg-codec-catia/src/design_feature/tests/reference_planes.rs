@@ -49,7 +49,8 @@ fn transfers_exact_reference_plane_owners_as_unresolved_datum_planes() {
             &mut ir,
             &native,
             &crate::decode::ModelingGraphScope::Unscoped,
-        ).unwrap();
+        )
+        .unwrap();
 
         assert_eq!(ir.model.features.len(), 1);
         assert_eq!(ir.model.features[0].source_tag.as_deref(), Some(class_name));

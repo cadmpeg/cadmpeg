@@ -552,13 +552,11 @@ pub(crate) fn project_dissected_sketches(
                     .and_then(replace_planar)
                     .into_iter()
                     .collect(),
-                FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) => {
-                    shape
-                        .referenced_profile_mut()
-                        .and_then(replace_planar)
-                        .into_iter()
-                        .collect()
-                }
+                FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) => shape
+                    .referenced_profile_mut()
+                    .and_then(replace_planar)
+                    .into_iter()
+                    .collect(),
                 FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. }) => sections
                     .iter_mut()
                     .filter_map(|section| match section {

@@ -620,13 +620,12 @@ impl From<ContainerEntryWire> for ContainerEntry {
             label,
             size: size.into(),
         };
-        let compressed = |method: CompressionMethod, sizes: CompressedSizesWire| {
-            EntryStorage::Compressed {
+        let compressed =
+            |method: CompressionMethod, sizes: CompressedSizesWire| EntryStorage::Compressed {
                 method,
                 stored: sizes.stored,
                 expanded: sizes.expanded,
-            }
-        };
+            };
         let (identity, storage) = match wire {
             ContainerEntryWire::Directory { identity } => (identity, EntryStorage::Directory),
             ContainerEntryWire::VerbatimNone { identity, size } => {
@@ -729,7 +728,10 @@ mod tests {
     #[test]
     fn each_declared_verbatim_size_has_one_spelling() {
         for (size, expected) in [
-            (serde_json::json!({"form": "unreported"}), VerbatimSize::Unreported),
+            (
+                serde_json::json!({"form": "unreported"}),
+                VerbatimSize::Unreported,
+            ),
             (
                 serde_json::json!({"form": "payload_only", "payload": 12}),
                 VerbatimSize::PayloadOnly(12),
@@ -877,8 +879,10 @@ mod tests {
             "none",
             &serde_json::json!({"form": "exact", "size": 0}),
         ));
-        let unreported =
-            admit(verbatim_wire("none", &serde_json::json!({"form": "unreported"})));
+        let unreported = admit(verbatim_wire(
+            "none",
+            &serde_json::json!({"form": "unreported"}),
+        ));
         assert_ne!(reported.storage, unreported.storage);
         assert_eq!(reported.stored_size(), Some(0));
         assert_eq!(reported.expanded_size(), Some(0));
