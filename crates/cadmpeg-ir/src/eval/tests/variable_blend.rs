@@ -493,11 +493,10 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
         id: replica_construction,
         definition: ProceduralSurfaceDefinition::Replica {
             source: blend_surface.clone(),
-            transform: Transform::from_rows([
+            transform: Transform::affine([
                     [1.0, 0.0, 0.0, 10.0],
                     [0.0, 1.0, 0.0, 20.0],
-                    [0.0, 0.0, 1.0, 30.0],
-                    [0.0, 0.0, 0.0, 1.0],
+                    [0.0, 0.0, 1.0, 30.0]
                 ]).expect("affine transform"),
         },
         cache_fit_tolerance: None,

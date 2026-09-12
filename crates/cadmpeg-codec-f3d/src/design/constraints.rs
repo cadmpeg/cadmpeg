@@ -548,11 +548,15 @@ pub(crate) fn exact_text_relation(
             let glyph_transforms = glyph_transforms
                 .iter()
                 .map(|source| {
-                    let mut rows = source.rows();
-                    for row in rows.iter_mut().take(3) {
+                    let source = source.rows();
+                    if source[3] != [0.0, 0.0, 0.0, 1.0] {
+                        return None;
+                    }
+                    let mut rows = [source[0], source[1], source[2]];
+                    for row in &mut rows {
                         row[3] *= 10.0;
                     }
-                    Transform::from_rows(rows)
+                    Transform::affine(rows)
                 })
                 .collect::<Option<Vec<_>>>()?;
             Some(Definition::TextPath {

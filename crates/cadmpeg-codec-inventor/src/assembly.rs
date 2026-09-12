@@ -153,11 +153,15 @@ pub(crate) fn project_occurrences(
         let suppressed = reference.state[0] & SUPPRESSED_REFERENCE_STATE != 0;
         let (transform, visible) = match placements.get(&source.occurrence_id) {
             Some(placement) => {
-                let mut rows = placement.transform.rows();
-                for row in rows.iter_mut().take(3) {
+                let source = placement.transform.rows();
+                let mut rows = [source[0], source[1], source[2]];
+                for row in &mut rows {
                     row[3] *= INVENTOR_LENGTH_TO_MILLIMETRES;
                 }
-                let Some(transform) = Transform::from_rows(rows) else {
+                let Some(transform) = (source[3] == [0.0, 0.0, 0.0, 1.0])
+                    .then(|| Transform::affine(rows))
+                    .flatten()
+                else {
                     count_unresolved(
                         &mut unresolved_placements,
                         UnresolvedCause::InvalidTransform,

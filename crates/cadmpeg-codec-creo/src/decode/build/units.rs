@@ -247,11 +247,11 @@ fn scale_vector3(vector: &mut Vector3, scale: f64) {
 }
 
 fn scale_transform_translation(transform: &mut Transform, scale: f64) {
-    let mut rows = transform.rows();
-    for row in &mut rows[..3] {
+    let mut rows = transform.affine_rows();
+    for row in &mut rows {
         row[3] *= scale;
     }
-    *transform = Transform::from_rows(rows).expect("affine transform");
+    *transform = Transform::affine(rows).expect("affine transform");
 }
 
 fn scale_length(length: &mut Length, scale: f64) -> Result<(), CodecError> {
@@ -531,11 +531,11 @@ fn scale_feature_operation(
                 }
             }
             if let Some(placement) = placement {
-                let mut rows = placement.rows();
-                for row in &mut rows[..3] {
+                let mut rows = placement.affine_rows();
+                for row in &mut rows {
                     row[3] *= scale;
                 }
-                *placement = Transform::from_rows(rows)
+                *placement = Transform::affine(rows)
                     .and_then(cadmpeg_ir::features::FeatureRigidPlacement::new)
                     .ok_or_else(|| {
                         CodecError::Malformed(

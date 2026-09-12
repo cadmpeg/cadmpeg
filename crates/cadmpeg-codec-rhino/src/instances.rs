@@ -1193,17 +1193,17 @@ pub(crate) fn parse_reference(
     }
     Ok(InstanceReference {
         definition_id,
-        transform: Transform::from_rows(rows).expect("affine transform"),
+        transform: Transform::affine([rows[0], rows[1], rows[2]]).expect("affine transform"),
     })
 }
 
 /// Converts source-unit translation coefficients to canonical millimeters.
 pub(crate) fn scale_translation(transform: Transform, scale: f64) -> Option<Transform> {
-    let mut rows = transform.rows();
-    for row in rows.iter_mut().take(3) {
+    let mut rows = transform.affine_rows();
+    for row in &mut rows {
         row[3] = crate::wire::scaled_coordinate(row[3], scale)?;
     }
-    Transform::from_rows(rows)
+    Transform::affine(rows)
 }
 
 /// Returns whether a class UUID denotes an instance reference.

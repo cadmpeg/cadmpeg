@@ -268,11 +268,16 @@ fn apply_occurrence_transform(
     model: &mut Model,
     source_rows: [[f64; 4]; 4],
 ) -> Result<(), CodecError> {
-    let mut rows = source_rows;
-    for row in rows.iter_mut().take(3) {
+    if source_rows[3] != [0.0, 0.0, 0.0, 1.0] {
+        return Err(CodecError::malformed(format_args!(
+            "F3Z occurrence translation is not a finite affine transform"
+        )));
+    }
+    let mut rows = [source_rows[0], source_rows[1], source_rows[2]];
+    for row in &mut rows {
         row[3] *= 10.0;
     }
-    let occurrence = cadmpeg_ir::transform::Transform::from_rows(rows).ok_or_else(|| {
+    let occurrence = cadmpeg_ir::transform::Transform::affine(rows).ok_or_else(|| {
         CodecError::malformed(format_args!(
             "F3Z occurrence translation is not a finite affine transform"
         ))
@@ -291,7 +296,7 @@ pub(super) fn compose_transforms(
     outer: cadmpeg_ir::transform::Transform,
     inner: cadmpeg_ir::transform::Transform,
 ) -> Result<cadmpeg_ir::transform::Transform, CodecError> {
-    let mut rows = [[0.0; 4]; 4];
+    let mut rows = [[0.0; 4]; 3];
     for (row, values) in rows.iter_mut().enumerate() {
         for (column, value) in values.iter_mut().enumerate() {
             *value = (0..4)
@@ -299,7 +304,7 @@ pub(super) fn compose_transforms(
                 .sum();
         }
     }
-    cadmpeg_ir::transform::Transform::from_rows(rows).ok_or_else(|| {
+    cadmpeg_ir::transform::Transform::affine(rows).ok_or_else(|| {
         CodecError::malformed(format_args!(
             "F3Z occurrence composition is not a finite affine transform"
         ))
@@ -436,9 +441,8 @@ mod tests {
             [1.0, 0.0, 0.0, f64::MAX],
             [0.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
         ];
-        let source = cadmpeg_ir::transform::Transform::from_rows(rows).unwrap();
+        let source = cadmpeg_ir::transform::Transform::affine(rows).unwrap();
         let error = apply_occurrence_transform(&mut Model::default(), source.rows()).unwrap_err();
         assert!(error
             .to_string()
@@ -447,11 +451,10 @@ mod tests {
 
     #[test]
     fn occurrence_composition_overflow_is_rejected() {
-        let transform = cadmpeg_ir::transform::Transform::from_rows([
+        let transform = cadmpeg_ir::transform::Transform::affine([
             [1.0, 0.0, 0.0, f64::MAX],
             [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0, 0.0]
         ])
         .unwrap();
         let error = compose_transforms(transform, transform).unwrap_err();

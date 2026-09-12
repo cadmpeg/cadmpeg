@@ -442,11 +442,10 @@ mod tests {
             )
             .unwrap(),
         ));
-        let rotation = Transform::from_rows([
+        let rotation = Transform::affine([
             [0.0, 0.0, 1.0, 0.0],
             [0.0, 1.0, 0.0, 0.0],
-            [-1.0, 0.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
+            [-1.0, 0.0, 0.0, 0.0]
         ])
         .unwrap();
         transform_curve(&mut geometry, rotation).unwrap();

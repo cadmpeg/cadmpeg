@@ -82,11 +82,10 @@ fn body_instance_transform_composes_before_existing_body_transform() {
         kind: BodyKind::General,
         regions: Vec::new(),
         transform: Some(
-            Transform::from_rows([
+            Transform::affine([
                 [2.0, 0.0, 0.0, 0.0],
                 [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
+                [0.0, 0.0, 1.0, 0.0]
             ])
             .expect("affine transform"),
         ),
@@ -94,11 +93,10 @@ fn body_instance_transform_composes_before_existing_body_transform() {
         color: None,
         visible: None,
     };
-    let instance = Transform::from_rows([
+    let instance = Transform::affine([
         [1.0, 0.0, 0.0, 10.0],
         [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0, 0.0]
     ])
     .expect("affine transform");
     compose_body_transform(&mut body, instance).unwrap();

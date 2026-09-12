@@ -207,11 +207,15 @@ pub fn decode_transform(
     let [x, y, z, translation] = vectors.as_slice() else {
         return None;
     };
-    cadmpeg_ir::transform::Transform::from_rows([
+    // The attribute stores a homogeneous scale in the `w` slot. Only the
+    // unscaled spelling maps to an affine transform.
+    if scale != 1.0 {
+        return None;
+    }
+    cadmpeg_ir::transform::Transform::affine([
         [x[0], y[0], z[0], translation[0] * header_scale * LEN_TO_MM],
         [x[1], y[1], z[1], translation[1] * header_scale * LEN_TO_MM],
         [x[2], y[2], z[2], translation[2] * header_scale * LEN_TO_MM],
-        [0.0, 0.0, 0.0, scale],
     ])
 }
 

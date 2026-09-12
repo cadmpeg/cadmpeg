@@ -5504,11 +5504,10 @@ fn sweep_rail_basis(formula: &LawFormula) -> Option<[Vector3; 3]> {
     {
         return None;
     }
-    let transform = Transform::from_rows([
+    let transform = Transform::affine([
         [vectors[0].x, vectors[1].x, vectors[2].x, 0.0],
         [vectors[0].y, vectors[1].y, vectors[2].y, 0.0],
         [vectors[0].z, vectors[1].z, vectors[2].z, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
     ])
     .expect("affine transform");
     transform

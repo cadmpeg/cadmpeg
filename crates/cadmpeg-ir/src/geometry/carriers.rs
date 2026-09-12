@@ -3381,13 +3381,13 @@ impl PcurveGeometry {
                         "transformed pcurve coordinate scales must be finite and nonzero".into(),
                     );
                 }
-                let mut rows = transform.rows();
+                let mut rows = transform.affine_rows();
                 rows[0][1] *= u_scale / v_scale;
                 rows[0][2] *= u_scale;
                 rows[1][0] *= v_scale / u_scale;
                 rows[1][2] *= v_scale;
                 let transform =
-                    Transform2::from_rows(rows).ok_or("scaled pcurve transform is invalid")?;
+                    Transform2::affine(rows).ok_or("scaled pcurve transform is invalid")?;
                 let mut basis = basis.clone();
                 basis.try_scale_coordinates(scales)?;
                 Self::Transformed { basis, transform }

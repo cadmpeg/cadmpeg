@@ -5398,8 +5398,9 @@ impl DesignAffineTransform {
 impl TryFrom<[[f64; 4]; 4]> for DesignAffineTransform {
     type Error = String;
     fn try_from(rows: [[f64; 4]; 4]) -> Result<Self, Self::Error> {
-        cadmpeg_ir::transform::Transform::from_rows(rows)
-            .map(|_| Self(rows))
+        (rows.iter().flatten().all(|value| value.is_finite())
+            && rows[3] == [0.0, 0.0, 0.0, 1.0])
+            .then_some(Self(rows))
             .ok_or_else(|| "transform must be finite and affine".into())
     }
 }

@@ -53,7 +53,7 @@ pub(super) fn placement_transform(
         [x_axis.y, y_axis.y, z_axis.y],
         [x_axis.z, y_axis.z, z_axis.z],
     ];
-    let mut rows = Transform::identity().rows();
+    let mut rows = Transform::identity().affine_rows();
     for row in 0..3 {
         for column in 0..3 {
             rows[row][column] = placement_basis[row][column];
@@ -62,7 +62,7 @@ pub(super) fn placement_transform(
     rows[0][3] = origin.x;
     rows[1][3] = origin.y;
     rows[2][3] = origin.z;
-    Transform::from_rows(rows)
+    Transform::affine(rows)
 }
 
 /// Infer the carrier interval trimmed by each edge's endpoint vertices.
@@ -5274,7 +5274,7 @@ fn cartesian_transformation_operator(
     .ok()?;
     let [axis_x, axis_y, axis_z] = base_axis_3d(axis1, axis2, axis3)?;
     Some(
-        Transform::from_rows([
+        Transform::affine([
             [
                 axis_x.x * scale,
                 axis_y.x * scale,
@@ -5292,8 +5292,7 @@ fn cartesian_transformation_operator(
                 axis_y.z * scale,
                 axis_z.z * scale,
                 origin.z,
-            ],
-            [0.0, 0.0, 0.0, 1.0],
+            ]
         ])
         .expect("affine transform"),
     )
@@ -5330,10 +5329,9 @@ fn cartesian_transformation_operator_2d(
         return None;
     }
     Some(
-        Transform2::from_rows([
+        Transform2::affine([
             [axis1.u * scale, axis2.u * scale, origin.u],
-            [axis1.v * scale, axis2.v * scale, origin.v],
-            [0.0, 0.0, 1.0],
+            [axis1.v * scale, axis2.v * scale, origin.v]
         ])
         .expect("affine transform"),
     )

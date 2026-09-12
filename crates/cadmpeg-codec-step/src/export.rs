@@ -4580,6 +4580,7 @@ fn is_identity(rows: &[[f64; 4]; 4]) -> bool {
 }
 
 pub(crate) fn is_rigid_transform(rows: &[[f64; 4]; 4]) -> bool {
-    cadmpeg_ir::transform::Transform::from_rows(*rows)
-        .is_some_and(|transform| transform.is_proper_rigid())
+    rows[3] == [0.0, 0.0, 0.0, 1.0]
+        && cadmpeg_ir::transform::Transform::affine([rows[0], rows[1], rows[2]])
+            .is_some_and(|transform| transform.is_proper_rigid())
 }

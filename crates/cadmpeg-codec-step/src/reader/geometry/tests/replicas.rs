@@ -299,11 +299,10 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
 
 #[test]
 fn transformed_curves_and_surfaces_round_trip_through_step_replicas() {
-    let transform = Transform::from_rows([
+    let transform = Transform::affine([
         [0.0, -2.0, 0.0, 10.0],
         [2.0, 0.0, 0.0, 20.0],
-        [0.0, 0.0, 2.0, 30.0],
-        [0.0, 0.0, 0.0, 1.0],
+        [0.0, 0.0, 2.0, 30.0]
     ])
     .expect("affine transform");
     let curve_geometry = SolvedCurveGeometry::Transformed {
@@ -493,11 +492,10 @@ fn forward_replica_dependencies_resolve_to_nested_transforms() {
 #13=SURFACE_REPLICA('',#14,#8);
 #14=SURFACE_REPLICA('',#12,#8);",
     );
-    let transform = Transform::from_rows([
+    let transform = Transform::affine([
         [2.0, 0.0, 0.0, 10.0],
         [0.0, 2.0, 0.0, 20.0],
-        [0.0, 0.0, 2.0, 30.0],
-        [0.0, 0.0, 0.0, 1.0],
+        [0.0, 0.0, 2.0, 30.0]
     ])
     .expect("affine transform");
     let base_curve = CurveGeometry::Solved(SolvedCurveGeometry::Line(

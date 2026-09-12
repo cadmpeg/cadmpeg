@@ -144,11 +144,10 @@ fn analytic_parabola_and_hyperbola_use_step_parameterization() {
 
 #[test]
 fn transformed_carriers_preserve_basis_parameters() {
-    let transform = crate::transform::Transform::from_rows([
+    let transform = crate::transform::Transform::affine([
         [-2.0, 0.0, 0.0, 4.0],
         [0.0, 2.0, 0.0, 5.0],
-        [0.0, 0.0, 2.0, 6.0],
-        [0.0, 0.0, 0.0, 1.0],
+        [0.0, 0.0, 2.0, 6.0]
     ])
     .expect("affine transform");
     let curve = CurveGeometry::Solved(SolvedCurveGeometry::Transformed {

@@ -12,7 +12,9 @@ pub struct FiniteFrame(Transform);
 impl TryFrom<[[f64; 4]; 4]> for FiniteFrame {
     type Error = String;
     fn try_from(rows: [[f64; 4]; 4]) -> Result<Self, Self::Error> {
-        Transform::from_rows(rows)
+        (rows[3] == [0.0, 0.0, 0.0, 1.0])
+            .then(|| Transform::affine([rows[0], rows[1], rows[2]]))
+            .flatten()
             .filter(Transform::is_proper_rigid)
             .map(Self)
             .ok_or_else(|| "frame must be finite, affine, and orthonormal".to_owned())

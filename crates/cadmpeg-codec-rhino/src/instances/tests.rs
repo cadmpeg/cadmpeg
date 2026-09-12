@@ -26,11 +26,10 @@ fn parent_child_composition_uses_column_point_order() {
         [0.0, 0.0, 1.0, 0.0],
     ])
     .expect("affine transform");
-    let child = Transform::from_rows([
+    let child = Transform::affine([
         [2.0, 0.0, 0.0, 0.0],
         [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0, 0.0]
     ])
     .expect("affine transform");
     assert_eq!(
@@ -44,11 +43,10 @@ fn parent_child_composition_uses_column_point_order() {
 
 #[test]
 fn translation_scales_once_without_scaling_linear_coefficients() {
-    let source = Transform::from_rows([
+    let source = Transform::affine([
         [2.0, 0.0, 0.0, 0.0],
         [0.0, 1.0, 0.0, 3.0],
-        [0.0, 0.0, 1.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0, 0.0]
     ])
     .expect("affine transform");
     let scaled = scale_translation(source, 25.4).expect("finite translation");
@@ -98,11 +96,10 @@ fn anonymous_instance_crc_mismatch_warns_and_consumes_boundary() {
 
 #[test]
 fn normals_use_inverse_transpose_and_normalization() {
-    let transform = Transform::from_rows([
+    let transform = Transform::affine([
         [2.0, 0.0, 0.0, 0.0],
         [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 0.5, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
+        [0.0, 0.0, 0.5, 0.0]
     ])
     .expect("affine transform");
     assert_eq!(

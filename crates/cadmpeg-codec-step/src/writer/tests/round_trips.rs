@@ -122,7 +122,7 @@ fn curve_geometry_for_sheet_pcurve(geometry: &PcurveGeometry) -> Option<CurveGeo
             };
             let origin = line_curve.origin();
             let direction = line_curve.direction();
-            let transform = Transform::from_rows([
+            let transform = Transform::affine([
                 [
                     transform.rows()[0][0],
                     transform.rows()[0][1],
@@ -135,8 +135,7 @@ fn curve_geometry_for_sheet_pcurve(geometry: &PcurveGeometry) -> Option<CurveGeo
                     0.0,
                     transform.rows()[1][2],
                 ],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
+                [0.0, 0.0, 1.0, 0.0]
             ])
             .expect("affine transform");
             let direction = transform.apply_vector(*direction);
@@ -418,10 +417,9 @@ fn writer_round_trips_every_exact_step_pcurve_family() {
                 )
                 .unwrap(),
             )),
-            transform: Transform2::from_rows([
+            transform: Transform2::affine([
                 [0.0, -2.0, 10.0],
-                [2.0, 0.0, 20.0],
-                [0.0, 0.0, 1.0],
+                [2.0, 0.0, 20.0]
             ])
             .expect("affine transform"),
         },
@@ -464,11 +462,10 @@ fn writer_round_trips_every_exact_step_pcurve_family() {
 pub(crate) fn writer_round_trips_rigid_body_placements() {
     let mut ir = unit_cube();
     ir.model.bodies[0].transform = Some(
-        cadmpeg_ir::transform::Transform::from_rows([
+        cadmpeg_ir::transform::Transform::affine([
             [0.0, -1.0, 0.0, 15.0],
             [1.0, 0.0, 0.0, 4.0],
-            [0.0, 0.0, 1.0, 2.0],
-            [0.0, 0.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0, 2.0]
         ])
         .expect("affine transform"),
     );
