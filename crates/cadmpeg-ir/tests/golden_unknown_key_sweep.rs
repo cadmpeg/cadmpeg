@@ -7,7 +7,7 @@
 //! that the whole `CadIr` then fails to deserialise. The codec-private
 //! `/native` subtree is free-form by design and is skipped.
 //!
-//! The FreeCAD decode goldens store `native` as an elision marker, so their
+//! The `FreeCAD` decode goldens store `native` as an elision marker, so their
 //! `ir` does not read back as a `CadIr` at all. This walker skips a document
 //! whose `ir` does not read back; the companion sweep in
 //! `cadmpeg-codec-freecad` covers those documents from a live decode.
