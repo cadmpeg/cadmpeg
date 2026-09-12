@@ -167,11 +167,9 @@ fn raising_the_fit_tolerance_of_a_legacy_slot_keeps_the_higher_of_the_two() {
     curve.raise_cache_fit_tolerance(FitTolerance::try_new(0.25).expect("admissible"));
     assert_eq!(curve.cache_fit_tolerance(), Some(0.75));
 
-    let mut empty = ProceduralCurve::new(
-        curve_id(),
-        ProceduralCurveDefinition::Exact { cache: None },
-    )
-    .expect("procedural");
+    let mut empty =
+        ProceduralCurve::new(curve_id(), ProceduralCurveDefinition::Exact { cache: None })
+            .expect("procedural");
     empty.raise_cache_fit_tolerance(FitTolerance::try_new(0.25).expect("admissible"));
     assert_eq!(empty.cache_fit_tolerance(), Some(0.25));
 }

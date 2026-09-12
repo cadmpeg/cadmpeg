@@ -1092,7 +1092,10 @@ impl LegacyCacheSlot<'_> {
     }
 
     /// Replace the cache the slot holds.
-    pub(crate) const fn set(&mut self, cache: Option<LegacyCache>) -> Result<(), CacheContractError> {
+    pub(crate) const fn set(
+        &mut self,
+        cache: Option<LegacyCache>,
+    ) -> Result<(), CacheContractError> {
         match (self, cache) {
             (Self::Optional(slot), cache) => {
                 **slot = cache;
@@ -1102,9 +1105,7 @@ impl LegacyCacheSlot<'_> {
                 **slot = cache;
                 Ok(())
             }
-            (Self::Required(_), None) => {
-                Err(CacheContractError::Layout(REQUIRED_LEGACY_SLOT))
-            }
+            (Self::Required(_), None) => Err(CacheContractError::Layout(REQUIRED_LEGACY_SLOT)),
         }
     }
 
@@ -1217,9 +1218,7 @@ impl ProceduralSurfaceDefinition {
     ) -> Result<(), CacheContractError> {
         match self.legacy_cache_slot_mut() {
             Some(mut slot) => slot.set(cache),
-            None => cache.map_or(Ok(()), |_| {
-                Err(CacheContractError::Layout(NO_LEGACY_SLOT))
-            }),
+            None => cache.map_or(Ok(()), |_| Err(CacheContractError::Layout(NO_LEGACY_SLOT))),
         }
     }
 
@@ -1326,9 +1325,7 @@ impl ProceduralCurveDefinition {
     ) -> Result<(), CacheContractError> {
         match self.legacy_cache_slot_mut() {
             Some(mut slot) => slot.set(cache),
-            None => cache.map_or(Ok(()), |_| {
-                Err(CacheContractError::Layout(NO_LEGACY_SLOT))
-            }),
+            None => cache.map_or(Ok(()), |_| Err(CacheContractError::Layout(NO_LEGACY_SLOT))),
         }
     }
 
@@ -1366,10 +1363,11 @@ impl ProceduralCurveDefinition {
                 }
             }
             Some(RevisionCacheForm::Parameterization(_)) => {}
-            None => match self.legacy_cache_slot_mut() {
-                Some(mut slot) => slot.raise(value),
-                None => {}
-            },
+            None => {
+                if let Some(mut slot) = self.legacy_cache_slot_mut() {
+                    slot.raise(value);
+                }
+            }
         }
     }
 }
