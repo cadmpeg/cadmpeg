@@ -166,7 +166,15 @@ pub trait EntitySchema: Serialize {
     fn identity(&self) -> &str;
 
     /// Visits every typed identity reference held by this entity.
-    fn visit_references(&self, visitor: &mut dyn FnMut(Reference));
+    ///
+    /// Returns [`ReferenceWalkError`] when the walk cannot read a typed
+    /// reference out of the entity. The walk is a serialization of the entity,
+    /// so the failure is a defect in the entity's own schema and the caller
+    /// reports it as one.
+    fn visit_references(
+        &self,
+        visitor: &mut dyn FnMut(Reference),
+    ) -> Result<(), ReferenceWalkError>;
 }
 
 /// Serializes a typed reference ID while preserving its ordinary string wire shape.
@@ -181,8 +189,13 @@ where
     }
 }
 
-#[derive(Debug)]
-struct ReferenceWalkError(String);
+/// Failure raised while walking one entity's typed identity references.
+///
+/// The walk serializes the entity through a serializer that emits nothing and
+/// only observes typed-ID newtypes, so this error states that the entity could
+/// not describe its own references, not that any output was rejected.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReferenceWalkError(String);
 
 impl fmt::Display for ReferenceWalkError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -433,7 +446,7 @@ impl SerializeStructVariant for &mut ReferenceSerializer<'_> {
 pub(crate) fn visit_typed_references<T: EntitySchema>(
     entity: &T,
     visitor: &mut dyn FnMut(Reference),
-) {
+) -> Result<(), ReferenceWalkError> {
     struct WalkScope(bool);
 
     impl Drop for WalkScope {
@@ -447,8 +460,9 @@ pub(crate) fn visit_typed_references<T: EntitySchema>(
         identity: entity.identity(),
         visitor,
     };
-    let _ = entity.serialize(&mut serializer);
+    let outcome = entity.serialize(&mut serializer);
     drop(scope);
+    outcome
 }
 
 macro_rules! impl_entity_schema {
@@ -460,9 +474,12 @@ macro_rules! impl_entity_schema {
                 self.$identity $(.$inner)?.as_str()
             }
 
-            fn visit_references(&self, visitor: &mut dyn FnMut(Reference)) {
+            fn visit_references(
+                &self,
+                visitor: &mut dyn FnMut(Reference),
+            ) -> Result<(), ReferenceWalkError> {
                 let Self { $($field: _),+ } = self;
-                visit_typed_references(self, visitor);
+                visit_typed_references(self, visitor)
             }
         }
     };
@@ -475,8 +492,11 @@ impl EntitySchema for crate::topology::Shell {
     fn identity(&self) -> &str {
         self.id.as_str()
     }
-    fn visit_references(&self, visitor: &mut dyn FnMut(Reference)) {
-        visit_typed_references(self, visitor);
+    fn visit_references(
+        &self,
+        visitor: &mut dyn FnMut(Reference),
+    ) -> Result<(), ReferenceWalkError> {
+        visit_typed_references(self, visitor)
     }
 }
 impl_entity_schema!(crate::topology::Face, Face, id; id, shell, surface, sense, loops, name, color, tolerance);
@@ -496,8 +516,11 @@ impl EntitySchema for crate::geometry::ProceduralSurface {
         self.id.as_str()
     }
 
-    fn visit_references(&self, visitor: &mut dyn FnMut(Reference)) {
-        visit_typed_references(self, visitor);
+    fn visit_references(
+        &self,
+        visitor: &mut dyn FnMut(Reference),
+    ) -> Result<(), ReferenceWalkError> {
+        visit_typed_references(self, visitor)
     }
 }
 
@@ -508,8 +531,11 @@ impl EntitySchema for crate::geometry::ProceduralCurve {
         self.id.as_str()
     }
 
-    fn visit_references(&self, visitor: &mut dyn FnMut(Reference)) {
-        visit_typed_references(self, visitor);
+    fn visit_references(
+        &self,
+        visitor: &mut dyn FnMut(Reference),
+    ) -> Result<(), ReferenceWalkError> {
+        visit_typed_references(self, visitor)
     }
 }
 impl_entity_schema!(crate::assets::Asset, Asset, id; id, name, media_type, content, native_ref);
@@ -527,8 +553,11 @@ impl EntitySchema for crate::features::FeatureResultTopology {
         self.id.as_str()
     }
 
-    fn visit_references(&self, visitor: &mut dyn FnMut(Reference)) {
-        visit_typed_references(self, visitor);
+    fn visit_references(
+        &self,
+        visitor: &mut dyn FnMut(Reference),
+    ) -> Result<(), ReferenceWalkError> {
+        visit_typed_references(self, visitor)
     }
 }
 impl_entity_schema!(
@@ -547,8 +576,11 @@ impl EntitySchema for crate::sketches::SketchEntity {
         self.id().as_str()
     }
 
-    fn visit_references(&self, visitor: &mut dyn FnMut(Reference)) {
-        visit_typed_references(self, visitor);
+    fn visit_references(
+        &self,
+        visitor: &mut dyn FnMut(Reference),
+    ) -> Result<(), ReferenceWalkError> {
+        visit_typed_references(self, visitor)
     }
 }
 impl_entity_schema!(crate::sketches::SketchConstraint, SketchConstraint, id; id, sketch, definition, name, driving, active, virtual_space, visible, orientation, label_distance, label_position, metadata, native_ref);
@@ -560,8 +592,11 @@ impl EntitySchema for crate::sketches::SpatialSketchEntity {
         self.id().as_str()
     }
 
-    fn visit_references(&self, visitor: &mut dyn FnMut(Reference)) {
-        visit_typed_references(self, visitor);
+    fn visit_references(
+        &self,
+        visitor: &mut dyn FnMut(Reference),
+    ) -> Result<(), ReferenceWalkError> {
+        visit_typed_references(self, visitor)
     }
 }
 impl_entity_schema!(
@@ -580,8 +615,11 @@ impl EntitySchema for crate::products::AssemblyJoint {
         self.id.as_str()
     }
 
-    fn visit_references(&self, visitor: &mut dyn FnMut(Reference)) {
-        visit_typed_references(self, visitor);
+    fn visit_references(
+        &self,
+        visitor: &mut dyn FnMut(Reference),
+    ) -> Result<(), ReferenceWalkError> {
+        visit_typed_references(self, visitor)
     }
 }
 impl_entity_schema!(crate::drawings::Drawing, Drawing, id; id, object, kind, runtime_type, order, visible, relationships, template, position, scale, direction, rotation_degrees, parameters, assets, native_ref);
@@ -599,8 +637,11 @@ impl EntitySchema for crate::presentation::PresentationDocument {
         self.id.as_str()
     }
 
-    fn visit_references(&self, visitor: &mut dyn FnMut(Reference)) {
-        visit_typed_references(self, visitor);
+    fn visit_references(
+        &self,
+        visitor: &mut dyn FnMut(Reference),
+    ) -> Result<(), ReferenceWalkError> {
+        visit_typed_references(self, visitor)
     }
 }
 impl_entity_schema!(
@@ -617,8 +658,11 @@ impl EntitySchema for crate::tessellation::Tessellation {
         self.id.as_str()
     }
 
-    fn visit_references(&self, visitor: &mut dyn FnMut(Reference)) {
-        visit_typed_references(self, visitor);
+    fn visit_references(
+        &self,
+        visitor: &mut dyn FnMut(Reference),
+    ) -> Result<(), ReferenceWalkError> {
+        visit_typed_references(self, visitor)
     }
 }
 impl_entity_schema!(crate::appearance::Appearance, Appearance, id; id, name, asset_guid, library_id, visual_guid, physical_token, schema, category, base_color, properties, textures);

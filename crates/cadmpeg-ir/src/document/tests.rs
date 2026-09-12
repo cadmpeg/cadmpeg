@@ -52,11 +52,13 @@ fn entity_schema_registry_covers_arenas_and_unit_cube_references_resolve() {
     let mut ids = std::collections::HashSet::new();
     collect_ids(&serde_json::to_value(&ir.model).unwrap(), &mut ids);
     let mut missing = Vec::new();
-    ir.model.visit_references(&mut |reference| {
-        if !ids.contains(&reference.target) {
-            missing.push(reference.target);
-        }
-    });
+    ir.model
+        .visit_references(&mut |reference| {
+            if !ids.contains(&reference.target) {
+                missing.push(reference.target);
+            }
+        })
+        .expect("every entity states its typed references");
     assert!(missing.is_empty(), "unresolved references: {missing:?}");
 }
 

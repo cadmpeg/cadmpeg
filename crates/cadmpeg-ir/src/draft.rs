@@ -181,6 +181,15 @@ pub enum DraftError {
         /// Missing target identity.
         target: String,
     },
+    /// A staged entity cannot state its own typed references.
+    #[error("staged entity {owner} cannot state its typed references: {source}")]
+    ReferenceWalk {
+        /// Staged entity whose schema walk failed.
+        owner: String,
+        /// Walk failure raised by the entity's own serialization.
+        #[source]
+        source: crate::schema::ReferenceWalkError,
+    },
 }
 
 /// Transactional collection of staged model entities and decode accounting.
@@ -366,7 +375,11 @@ impl ModelDraft {
                         {
                             missing = Some(reference.target);
                         }
-                    });
+                    })
+                    .map_err(|source| DraftError::ReferenceWalk {
+                        owner: owner.to_owned(),
+                        source,
+                    })?;
                     if let Some(target) = missing {
                         return Err(DraftError::UnresolvedReference {
                             owner: owner.to_owned(),

@@ -105,7 +105,9 @@ fn historical_vertex_selection_requires_input_state_membership() {
     });
 
     let mut references = Vec::new();
-    ir.model.features[0].visit_references(&mut |reference| references.push(reference.target));
+    ir.model.features[0]
+        .visit_references(&mut |reference| references.push(reference.target))
+        .expect("feature states its typed references");
     assert_eq!(references, vec![state_id.as_str()]);
 
     assert!(!validate_neutral(&ir, Vec::new())
