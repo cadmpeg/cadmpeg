@@ -664,9 +664,12 @@ pub(crate) fn exact_circular_pattern(
         }
         divisors.dedup_by(|left, right| scalar_close(*left, *right));
         for divisor in divisors {
+            // The seed is the first chunk; it is not an instance, and the
+            // instances carry only their nonzero rotations.
             let instances = patterned
                 .chunks_exact(arity)
                 .enumerate()
+                .skip(1)
                 .map(|(index, instance)| {
                     let rotation = *evaluated_angle * index as f64 / divisor;
                     seed.iter()
@@ -681,7 +684,7 @@ pub(crate) fn exact_circular_pattern(
                         })
                         .then(|| {
                             Some(SketchCircularPatternInstance {
-                                angle: cadmpeg_ir::scalar::Angle::new(rotation)?,
+                                angle: cadmpeg_ir::scalar::NonZeroAngle::new(rotation)?,
                                 entities: instance
                                     .iter()
                                     .map(|entity| entity.id().clone())
@@ -692,12 +695,16 @@ pub(crate) fn exact_circular_pattern(
                 })
                 .collect::<Option<Vec<_>>>();
             if let Some(instances) = instances {
-                candidates.push((center.id().clone(), instances));
+                let seed_entities = seed
+                    .iter()
+                    .map(|entity| entity.id().clone())
+                    .collect::<Vec<_>>();
+                candidates.push((center.id().clone(), seed_entities, instances));
             }
         }
     }
     candidates.dedup();
-    let [(center, instances)] = candidates.as_slice() else {
+    let [(center, seed_entities, instances)] = candidates.as_slice() else {
         return None;
     };
     let pattern = SketchCircularPattern::new(
@@ -705,6 +712,7 @@ pub(crate) fn exact_circular_pattern(
         angle,
         angle_parameter.map(neutral_parameter_id),
         count_parameter.map(neutral_parameter_id),
+        seed_entities.clone(),
         instances.clone(),
     )?;
     Some(Definition::CircularPattern { pattern })

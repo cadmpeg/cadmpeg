@@ -1644,7 +1644,7 @@ pub struct SketchPatternInstance {
 #[serde(deny_unknown_fields)]
 pub struct SketchCircularPatternInstance {
     /// Signed rotation from the seed instance in radians.
-    pub angle: Angle,
+    pub angle: crate::scalar::NonZeroAngle,
     /// Entities in fixed seed-entity order.
     pub entities: Vec<SketchEntityId>,
 }
@@ -1733,7 +1733,8 @@ pub struct SketchCircularPattern {
     angle: Angle,
     angle_parameter: Option<ParameterId>,
     count_parameter: Option<ParameterId>,
-    instances: Vec<SketchCircularPatternInstance>,
+    seed: Vec<SketchEntityId>,
+    instances: crate::features::NonEmptyMembers<SketchCircularPatternInstance>,
 }
 
 impl SketchCircularPattern {
@@ -1744,10 +1745,11 @@ impl SketchCircularPattern {
         angle: Angle,
         angle_parameter: Option<ParameterId>,
         count_parameter: Option<ParameterId>,
+        seed: Vec<SketchEntityId>,
         instances: Vec<SketchCircularPatternInstance>,
     ) -> Option<Self> {
-        u32::try_from(instances.len()).ok()?;
-        let entity_arity = instances.first()?.entities.len();
+        u32::try_from(instances.len().checked_add(1)?).ok()?;
+        let entity_arity = seed.len();
         if entity_arity == 0
             || instances
                 .iter()
@@ -1756,13 +1758,10 @@ impl SketchCircularPattern {
             return None;
         }
         let mut entities = std::collections::HashSet::new();
-        if instances.first()?.angle.get() != 0.0
-            || instances.iter().any(|instance| {
-                instance
-                    .entities
-                    .iter()
-                    .any(|entity| entity == &center || !entities.insert(entity))
-            })
+        if seed
+            .iter()
+            .chain(instances.iter().flat_map(|instance| instance.entities.iter()))
+            .any(|entity| entity == &center || !entities.insert(entity))
         {
             return None;
         }
@@ -1771,7 +1770,8 @@ impl SketchCircularPattern {
             angle,
             angle_parameter,
             count_parameter,
-            instances,
+            seed,
+            instances: crate::features::NonEmptyMembers::try_from(instances).ok()?,
         })
     }
 
@@ -1790,7 +1790,13 @@ impl SketchCircularPattern {
     /// Number of instances, including the seed instance.
     #[must_use]
     pub fn count(&self) -> u32 {
-        self.instances.len() as u32
+        self.instances.len() as u32 + 1
+    }
+
+    /// Seed entities in fixed order.
+    #[must_use]
+    pub fn seed(&self) -> &[SketchEntityId] {
+        &self.seed
     }
 
     /// Driving angular-span parameter.
@@ -1805,7 +1811,8 @@ impl SketchCircularPattern {
         self.count_parameter.as_ref()
     }
 
-    /// Instances in pattern order. Slice position is the zero-based index.
+    /// Instances in pattern order, after the seed. Slice position plus one is
+    /// the zero-based pattern index.
     #[must_use]
     pub fn instances(&self) -> &[SketchCircularPatternInstance] {
         &self.instances
@@ -1865,6 +1872,7 @@ struct SketchCircularPatternWire {
     angle_parameter: Option<ParameterId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     count_parameter: Option<ParameterId>,
+    seed: Vec<SketchEntityId>,
     instances: Vec<SketchCircularPatternInstance>,
 }
 
@@ -1899,7 +1907,8 @@ impl From<SketchCircularPattern> for SketchCircularPatternWire {
             angle: pattern.angle,
             angle_parameter: pattern.angle_parameter,
             count_parameter: pattern.count_parameter,
-            instances: pattern.instances,
+            seed: pattern.seed,
+            instances: pattern.instances.into_iter().collect(),
         }
     }
 }
@@ -1913,10 +1922,11 @@ impl TryFrom<SketchCircularPatternWire> for SketchCircularPattern {
             wire.angle,
             wire.angle_parameter,
             wire.count_parameter,
+            wire.seed,
             wire.instances,
         )
         .ok_or(
-            "circular pattern instances must start at the seed and have one fixed positive entity arity",
+            "circular pattern seed and instances must share one fixed positive entity arity over distinct entities",
         )
     }
 }
