@@ -83,9 +83,9 @@ impl DecodeTransfer {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct DecodeReportWire {
     identity: FormatIdentity<DialectLayers>,
-    #[serde(flatten)]
     transfer: DecodeTransfer,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     coverage: BTreeMap<String, usize>,

@@ -773,7 +773,6 @@
     }
   },
   "report": {
-    "geometry_transferred": true,
     "identity": {
       "classification": "classified",
       "dialects": {
@@ -845,7 +844,10 @@
     "notes": [
       "byte accounting: 314 structural, 2563 typed, 85 named opaque, 0 unclassified"
     ],
-    "transfer": "full"
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {},

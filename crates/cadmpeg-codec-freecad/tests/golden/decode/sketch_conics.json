@@ -199,79 +199,93 @@
       "drawings": [],
       "edges": [
         {
-          "curve": "fcstd:model:curve#ConicWitness:Shape:ConicWitness.Shape.brp:4",
+          "carrier": {
+            "curve": "fcstd:model:curve#ConicWitness:Shape:ConicWitness.Shape.brp:4",
+            "param_range": [
+              5.863185307179586,
+              7.653185307179586
+            ]
+          },
           "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:9",
           "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:10",
-          "param_range": [
-            5.863185307179586,
-            7.653185307179586
-          ],
           "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:8",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#ConicWitness:Shape:ConicWitness.Shape.brp:5",
+          "carrier": {
+            "curve": "fcstd:model:curve#ConicWitness:Shape:ConicWitness.Shape.brp:5",
+            "param_range": [
+              0.0,
+              6.283185307179586
+            ]
+          },
           "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:12",
           "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:13",
-          "param_range": [
-            0.0,
-            6.283185307179586
-          ],
           "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:12",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#ConicWitness:Shape:ConicWitness.Shape.brp:6",
+          "carrier": {
+            "curve": "fcstd:model:curve#ConicWitness:Shape:ConicWitness.Shape.brp:6",
+            "param_range": [
+              -0.63,
+              0.88
+            ]
+          },
           "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:16",
           "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:17",
-          "param_range": [
-            -0.63,
-            0.88
-          ],
           "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:15",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#ConicWitness:Shape:ConicWitness.Shape.brp:7",
+          "carrier": {
+            "curve": "fcstd:model:curve#ConicWitness:Shape:ConicWitness.Shape.brp:7",
+            "param_range": [
+              -0.26250000000000007,
+              0.30000000000000004
+            ]
+          },
           "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:20",
           "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:21",
-          "param_range": [
-            -0.26250000000000007,
-            0.30000000000000004
-          ],
           "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:19",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#ConicWitness:Shape:ConicWitness.Shape.brp:1",
+          "carrier": {
+            "curve": "fcstd:model:curve#ConicWitness:Shape:ConicWitness.Shape.brp:1",
+            "param_range": [
+              0.28,
+              1.46
+            ]
+          },
           "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:2",
           "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:3",
-          "param_range": [
-            0.28,
-            1.46
-          ],
           "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:1",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#ConicWitness:Shape:ConicWitness.Shape.brp:2",
+          "carrier": {
+            "curve": "fcstd:model:curve#ConicWitness:Shape:ConicWitness.Shape.brp:2",
+            "param_range": [
+              0.0,
+              14.232237761025381
+            ]
+          },
           "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:2",
           "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:5",
-          "param_range": [
-            0.0,
-            14.232237761025381
-          ],
           "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:4",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#ConicWitness:Shape:ConicWitness.Shape.brp:3",
+          "carrier": {
+            "curve": "fcstd:model:curve#ConicWitness:Shape:ConicWitness.Shape.brp:3",
+            "param_range": [
+              0.0,
+              7.636889796298946
+            ]
+          },
           "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:4",
           "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:6",
-          "param_range": [
-            0.0,
-            7.636889796298946
-          ],
           "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:1",
           "tolerance": 1e-7
         }
@@ -649,22 +663,24 @@
           "name": "ConicWitness",
           "native_ref": "fcstd:native:object#ConicWitness",
           "placement": {
-            "kind": "resolved",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "frame": {
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            }
+            "kind": "resolved"
           },
           "profiles": [
             [
@@ -835,7 +851,6 @@
     }
   },
   "report": {
-    "geometry_transferred": true,
     "identity": {
       "classification": "classified",
       "dialects": {
@@ -862,7 +877,10 @@
       "physical ledger spans=29 coverage=exact",
       "ProgramVersion=1.1R20260414 (Git shallow)"
     ],
-    "transfer": "full"
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {}

@@ -55,8 +55,7 @@ const SIDECAR: &str = r#"{
   "ir_sha256": "abc123",
   "report": {
     "format": "f3d",
-    "transfer": "full",
-    "geometry_transferred": true,
+    "transfer": {"transfer": "full", "geometry_transferred": true},
     "coverage": {"streams": 7, "segments": 3},
     "losses": [{"code": {"namespace": "shared", "code": "metadata_not_transferred",
                          "kind": "metadata_not_transferred"},
@@ -134,8 +133,7 @@ fn summary_exposes_document_and_decode_dialect_identity() {
           "ir_sha256": "abc123",
           "report": {
             "format": "f3d",
-            "transfer": "full",
-            "geometry_transferred": true,
+            "transfer": {"transfer": "full", "geometry_transferred": true},
             "coverage": {},
             "losses": [],
             "dialects": {
@@ -1281,7 +1279,7 @@ fn schema_sidecar_and_json_envelope() {
 const FIDELITY_SIDECAR: &str = r#"{
   "ir_sha256": "abc",
   "report": {"identity": {"classification": "unclassified", "format": "f3d"},
-             "transfer": "full", "geometry_transferred": true,
+             "transfer": {"transfer": "full", "geometry_transferred": true},
              "coverage": {}, "losses": [], "notes": []},
   "fidelity": {
     "annotations": {"provenance": {"a:b:c#1": {"stream": "Contents/Config-0", "offset": 0}},

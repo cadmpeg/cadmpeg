@@ -54,16 +54,19 @@
       "drawings": [],
       "edges": [
         {
+          "carrier": {},
           "end": "sldprt:brep:vertex#51",
           "id": "sldprt:brep:edge#40",
           "start": "sldprt:brep:vertex#50"
         },
         {
+          "carrier": {},
           "end": "sldprt:brep:vertex#52",
           "id": "sldprt:brep:edge#41",
           "start": "sldprt:brep:vertex#51"
         },
         {
+          "carrier": {},
           "end": "sldprt:brep:vertex#50",
           "id": "sldprt:brep:edge#42",
           "start": "sldprt:brep:vertex#52"
@@ -277,22 +280,24 @@
           "name": "feature input compressed sketch",
           "native_ref": "sldprt:feature-input:resolved-features#247",
           "placement": {
-            "kind": "resolved",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "frame": {
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            }
+            "kind": "resolved"
           },
           "profiles": [
             [
@@ -629,7 +634,6 @@
     }
   },
   "report": {
-    "geometry_transferred": true,
     "identity": {
       "classification": "classified",
       "dialects": {
@@ -700,7 +704,10 @@
       "active Parasolid B-rep candidate: Contents/Config-0-Partition (544 bytes, schema SCH_SW_33103_11000)",
       "Parasolid body streams supply the typed topology and analytic carriers used by decode"
     ],
-    "transfer": "full"
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {

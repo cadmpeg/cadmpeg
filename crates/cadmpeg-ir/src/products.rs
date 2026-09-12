@@ -549,7 +549,7 @@ mod tests {
         let root_wire = serde_json::to_value(&root).unwrap();
         assert_eq!(
             root_wire,
-            serde_json::json!({"container": "root", "object": "Body1"})
+            serde_json::json!({"container": {"container": "root"}, "object": "Body1"})
         );
         assert_eq!(
             serde_json::from_value::<JointOperand>(root_wire.clone()).unwrap(),
@@ -559,7 +559,7 @@ mod tests {
         let occurrence_id = OccurrenceId::mint("test:model:occurrence#0").unwrap();
         let occurrence = JointOperand::occurrence(occurrence_id.clone(), "Body1", Vec::new());
         let occurrence_wire = serde_json::to_value(&occurrence).unwrap();
-        assert_eq!(occurrence_wire["container"], "occurrence");
+        assert_eq!(occurrence_wire["container"]["container"], "occurrence");
         assert_eq!(
             serde_json::from_value::<JointOperand>(occurrence_wire.clone()).unwrap(),
             occurrence
@@ -571,21 +571,21 @@ mod tests {
             Vec::new(),
         );
         let external_wire = serde_json::to_value(&external).unwrap();
-        assert_eq!(external_wire["container"], "external");
+        assert_eq!(external_wire["container"]["container"], "external");
         assert_eq!(
             serde_json::from_value::<JointOperand>(external_wire).unwrap(),
             external
         );
 
         let mut both = occurrence_wire;
-        both["external_document"] = serde_json::json!({"resolution": "missing"});
+        both["container"]["external_document"] = serde_json::json!({"resolution": "missing"});
         let error = serde_json::from_value::<JointOperand>(both)
             .unwrap_err()
             .to_string();
         assert!(error.contains("external_document"), "{error}");
 
         let mut stray = root_wire.clone();
-        stray["occurrence"] = serde_json::json!(occurrence_id.as_str());
+        stray["container"]["occurrence"] = serde_json::json!(occurrence_id.as_str());
         let error = serde_json::from_value::<JointOperand>(stray)
             .unwrap_err()
             .to_string();
@@ -924,9 +924,9 @@ pub enum OperandContainer {
 /// One connector operand and its selected native subelements.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct JointOperand {
     /// Container that owns the object.
-    #[serde(flatten)]
     pub container: OperandContainer,
     /// Exact referenced application object identity.
     pub object: String,

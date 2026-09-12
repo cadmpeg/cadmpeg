@@ -114,33 +114,39 @@
       "drawings": [],
       "edges": [
         {
-          "curve": "step:data:curve#23",
+          "carrier": {
+            "curve": "step:data:curve#23",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "end": "step:data:vertex#14",
           "id": "step:data:edge#26",
-          "param_range": [
-            0.0,
-            10.0
-          ],
           "start": "step:data:vertex#13"
         },
         {
-          "curve": "step:data:curve#24",
+          "carrier": {
+            "curve": "step:data:curve#24",
+            "param_range": [
+              0.0,
+              14.142135623730953
+            ]
+          },
           "end": "step:data:vertex#15",
           "id": "step:data:edge#27",
-          "param_range": [
-            0.0,
-            14.142135623730953
-          ],
           "start": "step:data:vertex#14"
         },
         {
-          "curve": "step:data:curve#25",
+          "carrier": {
+            "curve": "step:data:curve#25",
+            "param_range": [
+              0.0,
+              10.0
+            ]
+          },
           "end": "step:data:vertex#13",
           "id": "step:data:edge#28",
-          "param_range": [
-            0.0,
-            10.0
-          ],
           "start": "step:data:vertex#15"
         }
       ],
@@ -438,7 +444,6 @@
     }
   },
   "report": {
-    "geometry_transferred": true,
     "identity": {
       "classification": "classified",
       "dialects": {
@@ -485,7 +490,10 @@
       "geometric validation surface area intentional mismatch: expected 51, tessellation approximation 50",
       "byte accounting: 329 structural, 3013 typed, 0 named opaque, 0 unclassified"
     ],
-    "transfer": "full"
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {}

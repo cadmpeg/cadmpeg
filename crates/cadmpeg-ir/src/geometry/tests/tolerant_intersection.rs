@@ -50,17 +50,20 @@ fn tolerant_parameterization_requires_a_finite_strict_interval() {
 #[test]
 fn tolerant_intersection_wire_retains_flat_fields_and_rejects_invalid_admission() {
     let wire = json!({
-        "kind": "tolerant_intersection", "supports": supports(),
-        "endpoints": [{"x": 0.0, "y": 0.0, "z": 0.0}, {"x": 0.0, "y": 0.0, "z": 0.0}],
-        "tolerance": 0.0
+        "kind": "tolerant_intersection",
+        "construction": {
+            "supports": supports(),
+            "endpoints": [{"x": 0.0, "y": 0.0, "z": 0.0}, {"x": 0.0, "y": 0.0, "z": 0.0}],
+            "tolerance": 0.0
+        }
     });
     let value: ProceduralCurveDefinition = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(value).unwrap(), wire);
     let mut invalid = wire.clone();
-    invalid["supports"][1] = invalid["supports"][0].clone();
+    invalid["construction"]["supports"][1] = invalid["construction"]["supports"][0].clone();
     assert!(serde_json::from_value::<ProceduralCurveDefinition>(invalid).is_err());
     let mut invalid = wire;
-    invalid["tolerance"] = json!(-1.0);
+    invalid["construction"]["tolerance"] = json!(-1.0);
     assert!(serde_json::from_value::<ProceduralCurveDefinition>(invalid).is_err());
     let parameterization = TolerantIntersectionParameterization::try_new(
         [

@@ -352,7 +352,6 @@ pub struct OffsetCurveConstruction {
     /// Signed offset distance, in document length units.
     distance: FiniteReal,
     /// Exclusive plane-normal or explicit-direction carrier.
-    #[serde(flatten)]
     side: OffsetSide,
     /// Retained parameter range, with its distance law when variable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -361,13 +360,13 @@ pub struct OffsetCurveConstruction {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct OffsetCurveConstructionWire {
     /// Curve this curve is offset from.
     source: CurveId,
     /// Signed offset distance, in document length units.
     distance: f64,
     /// Exclusive plane-normal or explicit-direction carrier.
-    #[serde(flatten)]
     side: OffsetSide,
     /// Retained parameter range, with its distance law when variable.
     #[serde(default, skip_serializing_if = "Option::is_none")]

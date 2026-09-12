@@ -1089,11 +1089,11 @@ impl From<EdgeCarrier> for EdgeCarrierWire {
 /// An edge between two vertices with an optional curve carrier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct Edge {
     /// Arena id.
     pub id: EdgeId,
     /// Carrier and its admitted parameter range.
-    #[serde(flatten)]
     pub carrier: EdgeCarrier,
     /// Start vertex.
     pub start: VertexId,

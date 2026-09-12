@@ -52,10 +52,13 @@ fn subd_round_trip_and_directed_ring_validation() {
     let parsed = CadIr::from_json(&ir.to_canonical_json().unwrap()).unwrap();
     assert_eq!(parsed, ir);
     let wire = serde_json::to_value(&ir.model.subds[0]).unwrap();
-    assert!(wire.get("cage").is_none());
-    assert_eq!(wire["vertices"].as_array().unwrap().len(), 3);
-    assert_eq!(wire["edges"].as_array().unwrap().len(), 3);
-    assert_eq!(wire["faces"][0]["edges"].as_array().unwrap().len(), 3);
+    assert!(wire.get("vertices").is_none());
+    assert_eq!(wire["cage"]["vertices"].as_array().unwrap().len(), 3);
+    assert_eq!(wire["cage"]["edges"].as_array().unwrap().len(), 3);
+    assert_eq!(
+        wire["cage"]["faces"][0]["edges"].as_array().unwrap().len(),
+        3
+    );
     assert_eq!(
         serde_json::to_value(SubdEdgeTag::SmoothX).unwrap(),
         serde_json::json!("smooth_x")

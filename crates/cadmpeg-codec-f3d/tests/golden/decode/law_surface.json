@@ -175,46 +175,56 @@
       "edges": [
         {
           "id": "f3d:brep:entity#16",
-          "param_range": [
-            0.0,
-            1.0
-          ],
+          "carrier": {
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
           "start": "f3d:brep:entity#21",
           "end": "f3d:brep:entity#22"
         },
         {
           "id": "f3d:brep:entity#17",
-          "param_range": [
-            0.0,
-            1.0
-          ],
+          "carrier": {
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
           "start": "f3d:brep:entity#22",
           "end": "f3d:brep:entity#23"
         },
         {
           "id": "f3d:brep:entity#18",
-          "param_range": [
-            0.0,
-            1.0
-          ],
+          "carrier": {
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
           "start": "f3d:brep:entity#23",
           "end": "f3d:brep:entity#21"
         },
         {
           "id": "f3d:brep:entity#19",
-          "param_range": [
-            0.0,
-            1.0
-          ],
+          "carrier": {
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
           "start": "f3d:brep:entity#21",
           "end": "f3d:brep:entity#24"
         },
         {
           "id": "f3d:brep:entity#20",
-          "param_range": [
-            0.0,
-            1.0
-          ],
+          "carrier": {
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
           "start": "f3d:brep:entity#24",
           "end": "f3d:brep:entity#22"
         }
@@ -675,8 +685,10 @@
         ]
       }
     },
-    "transfer": "full",
-    "geometry_transferred": true,
+    "transfer": {
+      "transfer": "full",
+      "geometry_transferred": true
+    },
     "losses": [
       {
         "code": {

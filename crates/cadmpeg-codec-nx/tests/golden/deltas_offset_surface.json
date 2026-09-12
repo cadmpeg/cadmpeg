@@ -47,7 +47,9 @@
         "drawings": [],
         "edges": [
           {
-            "curve": "nx:s0:crv#0",
+            "carrier": {
+              "curve": "nx:s0:crv#0"
+            },
             "end": "nx:s0:vertex#10",
             "id": "nx:s0:edge#8",
             "start": "nx:s0:vertex#10",
@@ -103,11 +105,13 @@
           {
             "definition": {
               "distance": 4.5,
-              "flags": {
-                "state": "absent"
+              "extension": {
+                "flags": {
+                  "state": "absent"
+                },
+                "layout": "legacy"
               },
               "kind": "offset",
-              "layout": "legacy",
               "linear_support_extension": true,
               "support": "nx:s0:surf#0"
             },
@@ -306,7 +310,6 @@
       }
     },
     "report": {
-      "geometry_transferred": true,
       "identity": {
         "classification": "classified",
         "dialects": {
@@ -390,7 +393,10 @@
         "SPLMSSTR container: file tag 0, footer offset 476, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 1 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
       ],
-      "transfer": "full"
+      "transfer": {
+        "geometry_transferred": true,
+        "transfer": "full"
+      }
     },
     "source_fidelity": {
       "annotations": {

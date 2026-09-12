@@ -359,9 +359,12 @@ fn an_unknown_dialect_is_refused_with_the_encoder_catalog() {
         .stderr(predicate::str::contains("iges cannot write 9.9"));
     let value: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
     assert_eq!(value["refusal"]["code"], "unsupported_target");
-    assert_eq!(value["refusal"]["target"]["kind"], "unknown_explicit");
+    assert_eq!(
+        value["refusal"]["target"]["refusal"]["kind"],
+        "unknown_explicit"
+    );
     assert_eq!(value["refusal"]["target"]["format"], "iges");
-    assert_eq!(value["refusal"]["target"]["requested"], "9.9");
+    assert_eq!(value["refusal"]["target"]["refusal"]["requested"], "9.9");
     assert!(value["refusal"]["target"]["available"]
         .as_array()
         .is_some_and(|available| !available.is_empty()));
@@ -513,7 +516,7 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
         serde_json::from_slice(&fs::read(export_report).unwrap()).unwrap();
     assert_eq!(report["refusal"]["code"], "export_loss_rejected");
     assert!(report["export"].is_object());
-    assert_eq!(report["export"]["payload"], "native");
+    assert_eq!(report["export"]["identity"]["payload"], "native");
     assert_eq!(report["export"]["losses"].as_array().unwrap().len(), 1);
 
     let lossless = fixture(dir.path(), "cube.cadir.json", &unit_cube());

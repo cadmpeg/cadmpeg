@@ -80,7 +80,6 @@
     }
   },
   "report": {
-    "geometry_transferred": false,
     "identity": {
       "classification": "classified",
       "dialects": {
@@ -125,7 +124,10 @@
       "external source https://example.invalid/library item fastener-table",
       "byte accounting: 289 structural, 396 typed, 0 named opaque, 0 unclassified"
     ],
-    "transfer": "full"
+    "transfer": {
+      "geometry_transferred": false,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {}

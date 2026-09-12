@@ -36,131 +36,133 @@
       "spreadsheets": [],
       "subds": [
         {
-          "edges": [
-            {
-              "sector_coefficients": [
-                0.125,
-                0.875
-              ],
-              "sharpness": [
-                0.25,
-                0.25
-              ],
-              "tag": "smooth",
-              "vertices": [
-                0,
-                1
-              ]
-            },
-            {
-              "sector_coefficients": [
-                0.125,
-                0.875
-              ],
-              "sharpness": [
-                0.25,
-                0.25
-              ],
-              "tag": "smooth",
-              "vertices": [
-                1,
-                2
-              ]
-            },
-            {
-              "sector_coefficients": [
-                0.125,
-                0.875
-              ],
-              "sharpness": [
-                0.25,
-                0.25
-              ],
-              "tag": "smooth",
-              "vertices": [
-                2,
-                3
-              ]
-            },
-            {
-              "sector_coefficients": [
-                0.125,
-                0.875
-              ],
-              "sharpness": [
-                0.25,
-                0.25
-              ],
-              "tag": "smooth",
-              "vertices": [
-                3,
-                0
-              ]
-            }
-          ],
-          "faces": [
-            {
-              "edges": [
-                {
-                  "edge": 0,
-                  "reversed": false
+          "cage": {
+            "edges": [
+              {
+                "sector_coefficients": [
+                  0.125,
+                  0.875
+                ],
+                "sharpness": [
+                  0.25,
+                  0.25
+                ],
+                "tag": "smooth",
+                "vertices": [
+                  0,
+                  1
+                ]
+              },
+              {
+                "sector_coefficients": [
+                  0.125,
+                  0.875
+                ],
+                "sharpness": [
+                  0.25,
+                  0.25
+                ],
+                "tag": "smooth",
+                "vertices": [
+                  1,
+                  2
+                ]
+              },
+              {
+                "sector_coefficients": [
+                  0.125,
+                  0.875
+                ],
+                "sharpness": [
+                  0.25,
+                  0.25
+                ],
+                "tag": "smooth",
+                "vertices": [
+                  2,
+                  3
+                ]
+              },
+              {
+                "sector_coefficients": [
+                  0.125,
+                  0.875
+                ],
+                "sharpness": [
+                  0.25,
+                  0.25
+                ],
+                "tag": "smooth",
+                "vertices": [
+                  3,
+                  0
+                ]
+              }
+            ],
+            "faces": [
+              {
+                "edges": [
+                  {
+                    "edge": 0,
+                    "reversed": false
+                  },
+                  {
+                    "edge": 1,
+                    "reversed": false
+                  },
+                  {
+                    "edge": 2,
+                    "reversed": false
+                  },
+                  {
+                    "edge": 3,
+                    "reversed": false
+                  }
+                ]
+              }
+            ],
+            "vertices": [
+              {
+                "point": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
                 },
-                {
-                  "edge": 1,
-                  "reversed": false
+                "tag": "smooth"
+              },
+              {
+                "point": {
+                  "x": 1.0,
+                  "y": 0.0,
+                  "z": 0.0
                 },
-                {
-                  "edge": 2,
-                  "reversed": false
+                "tag": "smooth"
+              },
+              {
+                "point": {
+                  "x": 1.0,
+                  "y": 1.0,
+                  "z": 0.0
                 },
-                {
-                  "edge": 3,
-                  "reversed": false
-                }
-              ]
-            }
-          ],
+                "tag": "smooth"
+              },
+              {
+                "point": {
+                  "x": 0.0,
+                  "y": 1.0,
+                  "z": 0.0
+                },
+                "tag": "smooth"
+              }
+            ]
+          },
           "id": "rhino:object:subd#record-000000-offset-177",
           "scheme": "catmull_clark",
           "source_object": {
             "format": "rhino",
             "object_id": "00000000-0000-0000-0000-000000000000",
             "visible": true
-          },
-          "vertices": [
-            {
-              "point": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "tag": "smooth"
-            },
-            {
-              "point": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "tag": "smooth"
-            },
-            {
-              "point": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 0.0
-              },
-              "tag": "smooth"
-            },
-            {
-              "point": {
-                "x": 0.0,
-                "y": 1.0,
-                "z": 0.0
-              },
-              "tag": "smooth"
-            }
-          ]
+          }
         }
       ],
       "surfaces": [],
@@ -260,7 +262,6 @@
     }
   },
   "report": {
-    "geometry_transferred": true,
     "identity": {
       "classification": "classified",
       "dialects": {
@@ -322,7 +323,10 @@
     "notes": [
       "decoded 1/1 Rhino object records; retained metadata/digests for 1 records and complete bytes for 1; document cap 268435456 bytes, per-record cap 16777216 bytes"
     ],
-    "transfer": "full"
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {},

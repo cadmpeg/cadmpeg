@@ -110,33 +110,39 @@
       "drawings": [],
       "edges": [
         {
-          "curve": "iges:model:curve#D11",
+          "carrier": {
+            "curve": "iges:model:curve#D11",
+            "param_range": [
+              0.0,
+              6.283185307179586
+            ]
+          },
           "end": "iges:model:vertex#D11-end",
           "id": "iges:model:edge#D11",
-          "param_range": [
-            0.0,
-            6.283185307179586
-          ],
           "start": "iges:model:vertex#D11-start"
         },
         {
-          "curve": "iges:model:curve#D3",
+          "carrier": {
+            "curve": "iges:model:curve#D3",
+            "param_range": [
+              0.0,
+              6.283185307179586
+            ]
+          },
           "end": "iges:model:vertex#D3-end",
           "id": "iges:model:edge#D3",
-          "param_range": [
-            0.0,
-            6.283185307179586
-          ],
           "start": "iges:model:vertex#D3-start"
         },
         {
-          "curve": "iges:model:curve#D9",
+          "carrier": {
+            "curve": "iges:model:curve#D9",
+            "param_range": [
+              0.0,
+              6.283185307179586
+            ]
+          },
           "end": "iges:model:vertex#D9-end",
           "id": "iges:model:edge#D9",
-          "param_range": [
-            0.0,
-            6.283185307179586
-          ],
           "start": "iges:model:vertex#D9-start"
         }
       ],
@@ -4551,7 +4557,6 @@
     }
   },
   "report": {
-    "geometry_transferred": true,
     "identity": {
       "classification": "classified",
       "dialects": {
@@ -4581,7 +4586,10 @@
       "external_references=0",
       "references.resolved=5"
     ],
-    "transfer": "full",
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    },
     "transfer_ledger": {
       "entries": [
         {

@@ -39,9 +39,11 @@
                 ]
               ],
               "operand": {
-                "container": "occurrence",
-                "object": "fcstd:native:object#BracketOccurrence",
-                "occurrence": "fcstd:model:occurrence#BracketOccurrence:container"
+                "container": {
+                  "container": "occurrence",
+                  "occurrence": "fcstd:model:occurrence#BracketOccurrence:container"
+                },
+                "object": "fcstd:native:object#BracketOccurrence"
               }
             }
           },
@@ -82,9 +84,11 @@
                   ]
                 ],
                 "operand": {
-                  "container": "occurrence",
+                  "container": {
+                    "container": "occurrence",
+                    "occurrence": "fcstd:model:occurrence#BracketOccurrence:container"
+                  },
                   "object": "fcstd:native:object#BracketOccurrence",
-                  "occurrence": "fcstd:model:occurrence#BracketOccurrence:container",
                   "subelements": [
                     "Face1",
                     "Edge1"
@@ -120,9 +124,11 @@
                   ]
                 ],
                 "operand": {
-                  "container": "occurrence",
+                  "container": {
+                    "container": "occurrence",
+                    "occurrence": "fcstd:model:occurrence#PinOccurrence:instance"
+                  },
                   "object": "fcstd:native:object#PinOccurrence",
-                  "occurrence": "fcstd:model:occurrence#PinOccurrence:instance",
                   "subelements": [
                     "Face2",
                     "Edge3"
@@ -1013,167 +1019,197 @@
       "drawings": [],
       "edges": [
         {
-          "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:5",
+          "carrier": {
+            "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:5",
+            "param_range": [
+              0.0,
+              6.0
+            ]
+          },
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:11",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:13",
-          "param_range": [
-            0.0,
-            6.0
-          ],
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:12",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:6",
+          "carrier": {
+            "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:6",
+            "param_range": [
+              0.0,
+              12.0
+            ]
+          },
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:14",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:15",
-          "param_range": [
-            0.0,
-            12.0
-          ],
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:11",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:7",
+          "carrier": {
+            "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:7",
+            "param_range": [
+              0.0,
+              6.0
+            ]
+          },
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:14",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:17",
-          "param_range": [
-            0.0,
-            6.0
-          ],
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:16",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:8",
+          "carrier": {
+            "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:8",
+            "param_range": [
+              0.0,
+              12.0
+            ]
+          },
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:16",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:18",
-          "param_range": [
-            0.0,
-            12.0
-          ],
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:12",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:9",
+          "carrier": {
+            "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:9",
+            "param_range": [
+              0.0,
+              20.0
+            ]
+          },
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:12",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:21",
-          "param_range": [
-            0.0,
-            20.0
-          ],
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:2",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:10",
+          "carrier": {
+            "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:10",
+            "param_range": [
+              0.0,
+              20.0
+            ]
+          },
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:11",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:22",
-          "param_range": [
-            0.0,
-            20.0
-          ],
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:1",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:11",
+          "carrier": {
+            "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:11",
+            "param_range": [
+              0.0,
+              20.0
+            ]
+          },
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:16",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:25",
-          "param_range": [
-            0.0,
-            20.0
-          ],
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:6",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:12",
+          "carrier": {
+            "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:12",
+            "param_range": [
+              0.0,
+              20.0
+            ]
+          },
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:14",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:26",
-          "param_range": [
-            0.0,
-            20.0
-          ],
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:4",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:1",
+          "carrier": {
+            "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:1",
+            "param_range": [
+              0.0,
+              6.0
+            ]
+          },
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:1",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:3",
-          "param_range": [
-            0.0,
-            6.0
-          ],
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:2",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:2",
+          "carrier": {
+            "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:2",
+            "param_range": [
+              0.0,
+              12.0
+            ]
+          },
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:4",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:5",
-          "param_range": [
-            0.0,
-            12.0
-          ],
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:1",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:3",
+          "carrier": {
+            "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:3",
+            "param_range": [
+              0.0,
+              6.0
+            ]
+          },
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:4",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:7",
-          "param_range": [
-            0.0,
-            6.0
-          ],
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:6",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:4",
+          "carrier": {
+            "curve": "fcstd:model:curve#BracketPrototype:Shape:BracketPrototype.Shape.brp:4",
+            "param_range": [
+              0.0,
+              12.0
+            ]
+          },
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:6",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:8",
-          "param_range": [
-            0.0,
-            12.0
-          ],
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:2",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#PinPrototype:Shape:PinPrototype.Shape.brp:1",
+          "carrier": {
+            "curve": "fcstd:model:curve#PinPrototype:Shape:PinPrototype.Shape.brp:1",
+            "param_range": [
+              0.0,
+              6.283185307179586
+            ]
+          },
           "end": "fcstd:model:vertex#PinPrototype:Shape:PinPrototype.Shape.brp:1",
           "id": "fcstd:model:edge#PinPrototype:Shape:PinPrototype.Shape.brp:2",
-          "param_range": [
-            0.0,
-            6.283185307179586
-          ],
           "start": "fcstd:model:vertex#PinPrototype:Shape:PinPrototype.Shape.brp:1",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#PinPrototype:Shape:PinPrototype.Shape.brp:2",
+          "carrier": {
+            "curve": "fcstd:model:curve#PinPrototype:Shape:PinPrototype.Shape.brp:2",
+            "param_range": [
+              0.0,
+              20.0
+            ]
+          },
           "end": "fcstd:model:vertex#PinPrototype:Shape:PinPrototype.Shape.brp:1",
           "id": "fcstd:model:edge#PinPrototype:Shape:PinPrototype.Shape.brp:4",
-          "param_range": [
-            0.0,
-            20.0
-          ],
           "start": "fcstd:model:vertex#PinPrototype:Shape:PinPrototype.Shape.brp:3",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#PinPrototype:Shape:PinPrototype.Shape.brp:3",
+          "carrier": {
+            "curve": "fcstd:model:curve#PinPrototype:Shape:PinPrototype.Shape.brp:3",
+            "param_range": [
+              0.0,
+              6.283185307179586
+            ]
+          },
           "end": "fcstd:model:vertex#PinPrototype:Shape:PinPrototype.Shape.brp:3",
           "id": "fcstd:model:edge#PinPrototype:Shape:PinPrototype.Shape.brp:5",
-          "param_range": [
-            0.0,
-            6.283185307179586
-          ],
           "start": "fcstd:model:vertex#PinPrototype:Shape:PinPrototype.Shape.brp:3",
           "tolerance": 1e-7
         }
@@ -4243,7 +4279,6 @@
     }
   },
   "report": {
-    "geometry_transferred": true,
     "identity": {
       "classification": "classified",
       "dialects": {
@@ -4270,7 +4305,10 @@
       "physical ledger spans=92 coverage=exact",
       "ProgramVersion=1.1R20260414 (Git shallow)"
     ],
-    "transfer": "full"
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {}

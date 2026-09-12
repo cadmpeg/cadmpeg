@@ -1091,16 +1091,10 @@ struct CadIrWriteWire<'a> {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct CadIrReadWire {
     #[serde(default, rename = "ir_version")]
     ir_version: Option<serde_json::Value>,
-    #[serde(flatten)]
-    payload: CadIrPayload,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct CadIrPayload {
     #[serde(default)]
     source: Option<SourceMeta>,
     #[serde(default, rename = "units")]
@@ -1129,17 +1123,17 @@ impl<'de> Deserialize<'de> for CadIr {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let wire = CadIrReadWire::deserialize(deserializer)?;
         check_ir_version(wire.ir_version.as_ref())?;
-        Ok(wire.payload.into())
+        Ok(wire.into())
     }
 }
 
-impl From<CadIrPayload> for CadIr {
-    fn from(payload: CadIrPayload) -> Self {
+impl From<CadIrReadWire> for CadIr {
+    fn from(wire: CadIrReadWire) -> Self {
         Self {
-            source: payload.source,
-            tolerances: payload.tolerances,
-            model: payload.model,
-            native: payload.native,
+            source: wire.source,
+            tolerances: wire.tolerances,
+            model: wire.model,
+            native: wire.native,
         }
     }
 }
@@ -1277,7 +1271,7 @@ impl CadIr {
 
         let probe = serde_json::from_str::<VersionProbe>(s)?;
         check_ir_version(probe.ir_version.as_ref())?;
-        serde_json::from_str::<CadIrReadWire>(s).map(|wire| wire.payload.into())
+        serde_json::from_str::<CadIrReadWire>(s).map(Into::into)
     }
 
     /// Sort model, native, and unknown-record arenas by identity.

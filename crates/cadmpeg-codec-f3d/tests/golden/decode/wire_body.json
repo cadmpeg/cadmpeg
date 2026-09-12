@@ -82,11 +82,13 @@
       "edges": [
         {
           "id": "f3d:brep:entity#6",
-          "curve": "f3d:brep:entity#11",
-          "param_range": [
-            0.0,
-            20.0
-          ],
+          "carrier": {
+            "curve": "f3d:brep:entity#11",
+            "param_range": [
+              0.0,
+              20.0
+            ]
+          },
           "start": "f3d:brep:entity#7",
           "end": "f3d:brep:entity#8"
         }
@@ -323,8 +325,10 @@
         ]
       }
     },
-    "transfer": "full",
-    "geometry_transferred": true,
+    "transfer": {
+      "transfer": "full",
+      "geometry_transferred": true
+    },
     "losses": [
       {
         "code": {

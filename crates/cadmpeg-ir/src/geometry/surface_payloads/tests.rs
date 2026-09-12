@@ -86,14 +86,20 @@ fn an_offset_extension_layout_carries_only_the_keys_its_own_arm_owns() {
     let revision = offset(OffsetExtension::Revision { form: form.clone() });
 
     let legacy_wire = serde_json::to_value(&legacy).unwrap();
-    assert_eq!(legacy_wire["layout"], serde_json::json!("legacy"));
     assert_eq!(
-        legacy_wire["flags"],
+        legacy_wire["extension"]["layout"],
+        serde_json::json!("legacy")
+    );
+    assert_eq!(
+        legacy_wire["extension"]["flags"],
         serde_json::json!({"state": "enabled", "secondary": true})
     );
     assert!(legacy_wire.get("extension_flags").is_none());
     let revision_wire = serde_json::to_value(&revision).unwrap();
-    assert_eq!(revision_wire["layout"], serde_json::json!("revision"));
+    assert_eq!(
+        revision_wire["extension"]["layout"],
+        serde_json::json!("revision")
+    );
     assert!(revision_wire.get("extension_flags").is_none());
     assert!(revision_wire.get("revision_form").is_none());
     assert_eq!(
@@ -106,8 +112,8 @@ fn an_offset_extension_layout_carries_only_the_keys_its_own_arm_owns() {
     );
 
     let mut legacy_with_form = legacy_wire;
-    legacy_with_form["flags"] = serde_json::json!({"state": "absent"});
-    legacy_with_form["form"] = serde_json::to_value(&form).unwrap();
+    legacy_with_form["extension"]["flags"] = serde_json::json!({"state": "absent"});
+    legacy_with_form["extension"]["form"] = serde_json::to_value(&form).unwrap();
     let error = serde_json::from_value::<OffsetSurfaceConstruction>(legacy_with_form)
         .unwrap_err()
         .to_string();
@@ -131,7 +137,7 @@ fn an_offset_extension_layout_carries_only_the_keys_its_own_arm_owns() {
     }
 
     let mut short_run = revision_wire;
-    short_run["form"]["flags"] = serde_json::json!([true, true, true]);
+    short_run["extension"]["form"]["flags"] = serde_json::json!([true, true, true]);
     let error = serde_json::from_value::<OffsetSurfaceConstruction>(short_run)
         .unwrap_err()
         .to_string();
@@ -173,12 +179,15 @@ fn an_exact_spline_layout_carries_only_the_keys_its_own_arm_owns() {
     .unwrap();
 
     let legacy_wire = serde_json::to_value(&legacy).unwrap();
-    assert_eq!(legacy_wire["layout"], serde_json::json!("legacy"));
+    assert_eq!(legacy_wire["spline"]["layout"], serde_json::json!("legacy"));
     assert!(legacy_wire.get("parameters").is_none());
     assert!(legacy_wire.get("revision_form").is_none());
     let revision_wire = serde_json::to_value(&revision).unwrap();
-    assert_eq!(revision_wire["layout"], serde_json::json!("revision"));
-    assert!(revision_wire.get("form").is_some());
+    assert_eq!(
+        revision_wire["spline"]["layout"],
+        serde_json::json!("revision")
+    );
+    assert!(revision_wire["spline"].get("form").is_some());
     assert_eq!(
         serde_json::from_value::<ExactSurfacePayload>(legacy_wire.clone()).unwrap(),
         legacy
@@ -189,14 +198,14 @@ fn an_exact_spline_layout_carries_only_the_keys_its_own_arm_owns() {
     );
 
     let mut legacy_with_form = legacy_wire;
-    legacy_with_form["form"] = serde_json::to_value(&form).unwrap();
+    legacy_with_form["spline"]["form"] = serde_json::to_value(&form).unwrap();
     let error = serde_json::from_value::<ExactSurfacePayload>(legacy_with_form)
         .unwrap_err()
         .to_string();
     assert!(error.contains("form"), "{error}");
 
     let mut revision_without_form = revision_wire;
-    revision_without_form
+    revision_without_form["spline"]
         .as_object_mut()
         .unwrap()
         .remove("form");
@@ -228,7 +237,7 @@ fn exact_and_compound_payloads_reject_nonfinite_nested_parameters() {
         assert!(exact(range).is_err());
     }
     let mut invalid = wire;
-    invalid["ranges"][0] = serde_json::json!([2.0, 1.0]);
+    invalid["spline"]["ranges"][0] = serde_json::json!([2.0, 1.0]);
     assert!(serde_json::from_value::<ProceduralSurfaceDefinition>(invalid).is_err());
     assert!(CompoundSurfacePayload::try_new(Vec::new()).is_ok());
     for parameter in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {

@@ -333,8 +333,8 @@ fn a_native_export_report_states_its_payload_and_names_its_target() {
         Some("step:ap242-e3")
     );
     let rendered = serde_json::to_value(&report).unwrap();
-    assert_eq!(rendered["payload"], "native");
-    assert_eq!(rendered["target"], "step:ap242-e3");
+    assert_eq!(rendered["identity"]["payload"], "native");
+    assert_eq!(rendered["identity"]["target"], "step:ap242-e3");
     assert!(rendered.get("format").is_none());
     assert_eq!(
         serde_json::from_value::<ExportReport>(rendered).unwrap(),
@@ -345,18 +345,17 @@ fn a_native_export_report_states_its_payload_and_names_its_target() {
 #[test]
 fn an_export_payload_carries_only_the_target_key_its_own_arm_owns() {
     let native = serde_json::json!({
-        "payload": "native",
+        "identity": {"payload": "native", "target": "step:ap242-e3"},
         "census": { "basis": "target_records", "counts": {} },
         "fidelity": { "status": "not_provided" },
         "write_path": "synthesized",
         "losses": [],
         "notes": [],
-        "target": "step:ap242-e3",
     });
     serde_json::from_value::<ExportReport>(native.clone()).expect("a native export report");
 
     let mut without_target = native.clone();
-    without_target
+    without_target["identity"]
         .as_object_mut()
         .expect("map")
         .remove("target");
@@ -365,7 +364,7 @@ fn an_export_payload_carries_only_the_target_key_its_own_arm_owns() {
     assert!(error.to_string().contains("target"), "{error}");
 
     let mut cadir_with_target = native;
-    cadir_with_target["payload"] = serde_json::json!("cadir");
+    cadir_with_target["identity"]["payload"] = serde_json::json!("cadir");
     cadir_with_target["census"]["basis"] = serde_json::json!("ir_arenas");
     let error = serde_json::from_value::<ExportReport>(cadir_with_target)
         .expect_err("CADIR has no native dialect target");
@@ -387,7 +386,7 @@ fn classified_report_wire_requires_its_primary_format() {
     let golden = serde_json::to_string(&report).unwrap();
     assert_eq!(
         golden,
-        r#"{"identity":{"classification":"classified","dialects":{"primary":{"format":"rhino","dialect":"rhino:archive-80","admission":"admitted"},"extra":[]}},"transfer":"full","geometry_transferred":true,"losses":[],"notes":[]}"#
+        r#"{"identity":{"classification":"classified","dialects":{"primary":{"format":"rhino","dialect":"rhino:archive-80","admission":"admitted"},"extra":[]}},"transfer":{"transfer":"full","geometry_transferred":true},"losses":[],"notes":[]}"#
     );
     assert_eq!(
         serde_json::from_str::<DecodeReport>(&golden).unwrap(),
@@ -454,17 +453,19 @@ fn namespaced_loss_rejects_reserved_namespace() {
 fn a_decode_transfer_states_its_scope_and_carries_only_its_own_keys() {
     let base = serde_json::json!({
         "identity": {"classification": "unclassified", "format": "rhino"},
-        "transfer": "full",
-        "geometry_transferred": true,
+        "transfer": {"transfer": "full", "geometry_transferred": true},
         "losses": [],
         "notes": [],
     });
     let report = serde_json::from_value::<DecodeReport>(base.clone()).expect("a full decode");
     assert_eq!(report.transfer(), DecodeTransfer::full(true));
-    assert_eq!(serde_json::to_value(&report).unwrap()["transfer"], "full");
+    assert_eq!(
+        serde_json::to_value(&report).unwrap()["transfer"]["transfer"],
+        "full"
+    );
 
     let mut container_only = base.clone();
-    container_only["transfer"] = serde_json::json!("container_only");
+    container_only["transfer"]["transfer"] = serde_json::json!("container_only");
     let error = serde_json::from_value::<DecodeReport>(container_only.clone())
         .expect_err("a container-only report has no geometry outcome");
     assert!(
@@ -472,18 +473,18 @@ fn a_decode_transfer_states_its_scope_and_carries_only_its_own_keys() {
         "{error}"
     );
 
-    container_only
+    container_only["transfer"]
         .as_object_mut()
         .expect("map")
         .remove("geometry_transferred");
     let report = serde_json::from_value::<DecodeReport>(container_only).expect("container only");
     assert_eq!(report.transfer(), DecodeTransfer::ContainerOnly {});
     let wire = serde_json::to_value(&report).unwrap();
-    assert_eq!(wire["transfer"], "container_only");
-    assert!(wire.get("geometry_transferred").is_none());
+    assert_eq!(wire["transfer"]["transfer"], "container_only");
+    assert!(wire["transfer"].get("geometry_transferred").is_none());
 
     let mut without_outcome = base;
-    without_outcome
+    without_outcome["transfer"]
         .as_object_mut()
         .expect("map")
         .remove("geometry_transferred");

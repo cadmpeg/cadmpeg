@@ -81,23 +81,27 @@
       "drawings": [],
       "edges": [
         {
-          "curve": "iges:model:curve#D1",
+          "carrier": {
+            "curve": "iges:model:curve#D1",
+            "param_range": [
+              0.0,
+              1.5707963267948966
+            ]
+          },
           "end": "iges:model:vertex#D1-end",
           "id": "iges:model:edge#D1",
-          "param_range": [
-            0.0,
-            1.5707963267948966
-          ],
           "start": "iges:model:vertex#D1-start"
         },
         {
-          "curve": "iges:model:curve#D3",
+          "carrier": {
+            "curve": "iges:model:curve#D3",
+            "param_range": [
+              0.0,
+              1.5707963267948966
+            ]
+          },
           "end": "iges:model:vertex#D3:end",
           "id": "iges:model:edge#D3",
-          "param_range": [
-            0.0,
-            1.5707963267948966
-          ],
           "start": "iges:model:vertex#D3:start"
         }
       ],
@@ -150,11 +154,6 @@
           "definition": {
             "distance": 0.5,
             "kind": "offset",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
             "range": {
               "kind": "uniform",
               "parameter_range": [
@@ -162,7 +161,14 @@
                 1.5707963267948966
               ]
             },
-            "side": "plane_normal",
+            "side": {
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "side": "plane_normal"
+            },
             "source": "iges:model:curve#D1"
           },
           "id": "iges:model:procedural-curve#D3"
@@ -1755,7 +1761,6 @@
     }
   },
   "report": {
-    "geometry_transferred": true,
     "identity": {
       "classification": "classified",
       "dialects": {
@@ -1781,7 +1786,10 @@
       "parameter_tokens=23",
       "external_references=0"
     ],
-    "transfer": "full",
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    },
     "transfer_ledger": {
       "entries": [
         {

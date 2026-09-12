@@ -854,134 +854,158 @@
       ],
       "edges": [
         {
-          "curve": "fcstd:model:curve#Model:Shape:Model.Shape.brp:5",
+          "carrier": {
+            "curve": "fcstd:model:curve#Model:Shape:Model.Shape.brp:5",
+            "param_range": [
+              0.0,
+              8.0
+            ]
+          },
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:11",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:13",
-          "param_range": [
-            0.0,
-            8.0
-          ],
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:12",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Model:Shape:Model.Shape.brp:6",
+          "carrier": {
+            "curve": "fcstd:model:curve#Model:Shape:Model.Shape.brp:6",
+            "param_range": [
+              0.0,
+              15.0
+            ]
+          },
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:14",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:15",
-          "param_range": [
-            0.0,
-            15.0
-          ],
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:11",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Model:Shape:Model.Shape.brp:7",
+          "carrier": {
+            "curve": "fcstd:model:curve#Model:Shape:Model.Shape.brp:7",
+            "param_range": [
+              0.0,
+              8.0
+            ]
+          },
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:14",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:17",
-          "param_range": [
-            0.0,
-            8.0
-          ],
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:16",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Model:Shape:Model.Shape.brp:8",
+          "carrier": {
+            "curve": "fcstd:model:curve#Model:Shape:Model.Shape.brp:8",
+            "param_range": [
+              0.0,
+              15.0
+            ]
+          },
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:16",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:18",
-          "param_range": [
-            0.0,
-            15.0
-          ],
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:12",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Model:Shape:Model.Shape.brp:9",
+          "carrier": {
+            "curve": "fcstd:model:curve#Model:Shape:Model.Shape.brp:9",
+            "param_range": [
+              0.0,
+              25.0
+            ]
+          },
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:12",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:21",
-          "param_range": [
-            0.0,
-            25.0
-          ],
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:2",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Model:Shape:Model.Shape.brp:10",
+          "carrier": {
+            "curve": "fcstd:model:curve#Model:Shape:Model.Shape.brp:10",
+            "param_range": [
+              0.0,
+              25.0
+            ]
+          },
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:11",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:22",
-          "param_range": [
-            0.0,
-            25.0
-          ],
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:1",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Model:Shape:Model.Shape.brp:11",
+          "carrier": {
+            "curve": "fcstd:model:curve#Model:Shape:Model.Shape.brp:11",
+            "param_range": [
+              0.0,
+              25.0
+            ]
+          },
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:16",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:25",
-          "param_range": [
-            0.0,
-            25.0
-          ],
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:6",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Model:Shape:Model.Shape.brp:12",
+          "carrier": {
+            "curve": "fcstd:model:curve#Model:Shape:Model.Shape.brp:12",
+            "param_range": [
+              0.0,
+              25.0
+            ]
+          },
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:14",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:26",
-          "param_range": [
-            0.0,
-            25.0
-          ],
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:4",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Model:Shape:Model.Shape.brp:1",
+          "carrier": {
+            "curve": "fcstd:model:curve#Model:Shape:Model.Shape.brp:1",
+            "param_range": [
+              0.0,
+              8.0
+            ]
+          },
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:1",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:3",
-          "param_range": [
-            0.0,
-            8.0
-          ],
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:2",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Model:Shape:Model.Shape.brp:2",
+          "carrier": {
+            "curve": "fcstd:model:curve#Model:Shape:Model.Shape.brp:2",
+            "param_range": [
+              0.0,
+              15.0
+            ]
+          },
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:4",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:5",
-          "param_range": [
-            0.0,
-            15.0
-          ],
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:1",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Model:Shape:Model.Shape.brp:3",
+          "carrier": {
+            "curve": "fcstd:model:curve#Model:Shape:Model.Shape.brp:3",
+            "param_range": [
+              0.0,
+              8.0
+            ]
+          },
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:4",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:7",
-          "param_range": [
-            0.0,
-            8.0
-          ],
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:6",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#Model:Shape:Model.Shape.brp:4",
+          "carrier": {
+            "curve": "fcstd:model:curve#Model:Shape:Model.Shape.brp:4",
+            "param_range": [
+              0.0,
+              15.0
+            ]
+          },
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:6",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:8",
-          "param_range": [
-            0.0,
-            15.0
-          ],
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:2",
           "tolerance": 1e-7
         }
@@ -2291,7 +2315,6 @@
     }
   },
   "report": {
-    "geometry_transferred": true,
     "identity": {
       "classification": "classified",
       "dialects": {
@@ -2318,7 +2341,10 @@
       "physical ledger spans=36 coverage=exact",
       "ProgramVersion=1.1R20260414 (Git shallow)"
     ],
-    "transfer": "full"
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {}

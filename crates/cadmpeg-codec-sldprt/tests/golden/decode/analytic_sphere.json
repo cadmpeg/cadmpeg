@@ -163,25 +163,33 @@
       "drawings": [],
       "edges": [
         {
-          "curve": "sldprt:brep:curve#70",
+          "carrier": {
+            "curve": "sldprt:brep:curve#70"
+          },
           "end": "sldprt:brep:vertex#51",
           "id": "sldprt:brep:edge#40",
           "start": "sldprt:brep:vertex#50"
         },
         {
-          "curve": "sldprt:brep:curve#71",
+          "carrier": {
+            "curve": "sldprt:brep:curve#71"
+          },
           "end": "sldprt:brep:vertex#52",
           "id": "sldprt:brep:edge#41",
           "start": "sldprt:brep:vertex#51"
         },
         {
-          "curve": "sldprt:brep:curve#72",
+          "carrier": {
+            "curve": "sldprt:brep:curve#72"
+          },
           "end": "sldprt:brep:vertex#50",
           "id": "sldprt:brep:edge#42",
           "start": "sldprt:brep:vertex#52"
         },
         {
-          "curve": "sldprt:brep:curve#sphere-seam-face:0",
+          "carrier": {
+            "curve": "sldprt:brep:curve#sphere-seam-face:0"
+          },
           "end": "sldprt:brep:vertex#52",
           "id": "sldprt:brep:edge#sphere-seam-face:0",
           "start": "sldprt:brep:vertex#52"
@@ -478,7 +486,6 @@
     }
   },
   "report": {
-    "geometry_transferred": true,
     "identity": {
       "classification": "classified",
       "dialects": {
@@ -538,7 +545,10 @@
       "active Parasolid B-rep candidate: Contents/Config-0-Partition (849 bytes, schema SCH_SW_33103_11000)",
       "Parasolid body streams supply the typed topology and analytic carriers used by decode"
     ],
-    "transfer": "full"
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {

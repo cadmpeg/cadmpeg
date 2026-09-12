@@ -542,10 +542,13 @@ fn spatial_nurbs_wire_preserves_flat_fields_and_checks_cardinality() {
     use crate::sketches::SpatialSketchGeometry;
 
     let wire = serde_json::json!({
-        "kind": "nurbs", "degree": 1,
-        "knots": [0.0, 0.0, 1.0, 1.0],
-        "control_points": [{"x": 2.0, "y": 3.0, "z": 4.0}, {"x": 5.0, "y": 6.0, "z": 7.0}],
-        "weights": [1.0, 0.5], "periodic": false
+        "kind": "nurbs",
+        "curve": {
+            "degree": 1,
+            "knots": [0.0, 0.0, 1.0, 1.0],
+            "control_points": [{"x": 2.0, "y": 3.0, "z": 4.0}, {"x": 5.0, "y": 6.0, "z": 7.0}],
+            "weights": [1.0, 0.5], "periodic": false
+        }
     });
     let geometry: SpatialSketchGeometry = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(&geometry).unwrap(), wire);
@@ -556,7 +559,7 @@ fn spatial_nurbs_wire_preserves_flat_fields_and_checks_cardinality() {
         ("weights", serde_json::json!([1.0])),
     ] {
         let mut invalid = wire.clone();
-        invalid[field] = value;
+        invalid["curve"][field] = value;
         assert!(
             serde_json::from_value::<SpatialSketchGeometry>(invalid).is_err(),
             "{field}"
@@ -569,25 +572,31 @@ fn spatial_surface_wire_checks_rectangular_grid_and_full_knots() {
     use crate::sketches::SpatialSketchGeometry;
 
     let wire = serde_json::json!({
-        "kind": "nurbs_surface", "u_degree": 1, "v_degree": 1,
-        "u_knots": [0.0, 0.0, 1.0, 1.0], "v_knots": [0.0, 0.0, 1.0, 1.0],
-        "control_points": [
-            [{"x": 0.0, "y": 0.0, "z": 0.0}, {"x": 0.0, "y": 1.0, "z": 0.0}],
-            [{"x": 1.0, "y": 0.0, "z": 0.0}, {"x": 1.0, "y": 1.0, "z": 0.0}]
-        ]
+        "kind": "nurbs_surface",
+        "surface": {
+            "u_degree": 1, "v_degree": 1,
+            "u_knots": [0.0, 0.0, 1.0, 1.0], "v_knots": [0.0, 0.0, 1.0, 1.0],
+            "control_points": [
+                [{"x": 0.0, "y": 0.0, "z": 0.0}, {"x": 0.0, "y": 1.0, "z": 0.0}],
+                [{"x": 1.0, "y": 0.0, "z": 0.0}, {"x": 1.0, "y": 1.0, "z": 0.0}]
+            ]
+        }
     });
     let geometry: SpatialSketchGeometry = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(&geometry).unwrap(), wire);
     for field in ["u_knots", "v_knots", "control_points"] {
         let mut invalid = wire.clone();
-        invalid[field].as_array_mut().unwrap().pop();
+        invalid["surface"][field].as_array_mut().unwrap().pop();
         assert!(
             serde_json::from_value::<SpatialSketchGeometry>(invalid).is_err(),
             "{field}"
         );
     }
     let mut ragged = wire;
-    ragged["control_points"][1].as_array_mut().unwrap().pop();
+    ragged["surface"]["control_points"][1]
+        .as_array_mut()
+        .unwrap()
+        .pop();
     let error = serde_json::from_value::<SpatialSketchGeometry>(ragged).unwrap_err();
     assert!(error.to_string().contains("control_points row"));
 }
@@ -617,8 +626,7 @@ fn spatial_nurbs_rejects_general_curve_context_mismatches() {
         assert!(SpatialSketchNurbsCurve::try_from(curve.clone())
             .unwrap_err()
             .contains(field));
-        let mut wire = serde_json::to_value(&curve).unwrap();
-        wire["kind"] = "nurbs".into();
+        let wire = serde_json::json!({"kind": "nurbs", "curve": curve});
         assert!(serde_json::from_value::<SpatialSketchGeometry>(wire)
             .unwrap_err()
             .to_string()
@@ -641,8 +649,7 @@ fn spatial_nurbs_preserves_wire_fields_and_checked_point_edits() {
         false,
     )
     .unwrap();
-    let mut wire = serde_json::to_value(&curve).unwrap();
-    wire["kind"] = "nurbs".into();
+    let wire = serde_json::json!({"kind": "nurbs", "curve": &curve});
     let mut curve = SpatialSketchNurbsCurve::try_from(curve).unwrap();
     let before = curve.clone();
     assert!(curve

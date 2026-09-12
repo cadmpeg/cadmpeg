@@ -928,7 +928,7 @@ fn same_coordinate_accepts_legacy_relation_tags() {
         let wire = serde_json::to_value(constraint).unwrap();
         assert_eq!(wire["definition"]["kind"], "same_coordinate");
         assert_eq!(
-            wire["definition"]["axis"],
+            wire["definition"]["relation"]["axis"],
             if axis == SketchCoordinateAxis::U {
                 "u"
             } else {
@@ -989,10 +989,13 @@ fn planar_nurbs_wire_preserves_flat_fields_and_checks_cardinality() {
     use crate::sketches::{SketchGeometry, SketchGeometryDefinition};
 
     let wire = serde_json::json!({
-        "kind": "nurbs", "degree": 1,
-        "knots": [0.0, 0.0, 1.0, 1.0],
-        "control_points": [{"u": 2.0, "v": 3.0}, {"u": 4.0, "v": 5.0}],
-        "weights": [1.0, 0.5], "periodic": false
+        "kind": "nurbs",
+        "curve": {
+            "degree": 1,
+            "knots": [0.0, 0.0, 1.0, 1.0],
+            "control_points": [{"u": 2.0, "v": 3.0}, {"u": 4.0, "v": 5.0}],
+            "weights": [1.0, 0.5], "periodic": false
+        }
     });
     let geometry: SketchGeometry = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(&geometry).unwrap(), wire);
@@ -1004,15 +1007,21 @@ fn planar_nurbs_wire_preserves_flat_fields_and_checks_cardinality() {
         ("weights", serde_json::json!([1.0])),
     ] {
         let mut invalid = wire.clone();
-        invalid[field] = value;
+        invalid["curve"][field] = value;
         assert!(
             serde_json::from_value::<SketchGeometry>(invalid).is_err(),
             "{field}"
         );
     }
     let mut nonrational = wire;
-    nonrational.as_object_mut().unwrap().remove("weights");
-    nonrational.as_object_mut().unwrap().remove("periodic");
+    nonrational["curve"]
+        .as_object_mut()
+        .unwrap()
+        .remove("weights");
+    nonrational["curve"]
+        .as_object_mut()
+        .unwrap()
+        .remove("periodic");
     let geometry = serde_json::from_value::<SketchGeometry>(nonrational).unwrap();
     let SketchGeometryDefinition::Nurbs { curve } = geometry.definition() else {
         panic!("NURBS geometry");
@@ -1059,10 +1068,10 @@ fn polygon_membership_is_checked_at_admission() {
         vec![members[0].clone(), members[1].clone(), members[0].clone()],
     ] {
         assert!(SketchPolygon::try_new(entities.clone()).is_err());
-        let wire = serde_json::json!({"kind": "polygon", "entities": entities});
+        let wire = serde_json::json!({"kind": "polygon", "polygon": {"entities": entities}});
         assert!(serde_json::from_value::<SketchConstraintDefinitionInput>(wire).is_err());
     }
-    let wire = serde_json::json!({"kind": "polygon", "entities": members});
+    let wire = serde_json::json!({"kind": "polygon", "polygon": {"entities": members}});
     let definition = SketchConstraintDefinitionInput::Polygon {
         polygon: SketchPolygon::try_new(members).unwrap(),
     };
@@ -1084,10 +1093,10 @@ fn coordinate_locus_distinctness_is_checked_at_admission() {
     let first = SketchLocus::Start(entity.clone());
     for axis in [SketchCoordinateAxis::U, SketchCoordinateAxis::V] {
         assert!(SketchSameCoordinate::try_new(first.clone(), first.clone(), axis).is_err());
-        let mut wire = serde_json::json!({"kind": "same_coordinate", "first": first, "second": first, "axis": axis});
+        let mut wire = serde_json::json!({"kind": "same_coordinate", "relation": {"first": first, "second": first, "axis": axis}});
         assert!(serde_json::from_value::<SketchConstraintDefinitionInput>(wire.clone()).is_err());
         let second = SketchLocus::End(entity.clone());
-        wire["second"] = serde_json::to_value(&second).unwrap();
+        wire["relation"]["second"] = serde_json::to_value(&second).unwrap();
         let definition = SketchConstraintDefinitionInput::SameCoordinate {
             relation: SketchSameCoordinate::try_new(first.clone(), second, axis).unwrap(),
         };
@@ -1274,9 +1283,11 @@ fn planar_placement_admits_nonunit_perpendicular_axes_at_both_boundaries() {
     assert_eq!(placement.resolved(), Some((origin, normal, u_axis)));
     let wire = serde_json::json!({
         "kind": "resolved",
-        "origin": {"x": 1.0, "y": 2.0, "z": 3.0},
-        "normal": {"x": 0.0, "y": 0.0, "z": 2.0},
-        "u_axis": {"x": 3.0, "y": 0.0, "z": 0.0}
+        "frame": {
+            "origin": {"x": 1.0, "y": 2.0, "z": 3.0},
+            "normal": {"x": 0.0, "y": 0.0, "z": 2.0},
+            "u_axis": {"x": 3.0, "y": 0.0, "z": 0.0}
+        }
     });
     assert_eq!(serde_json::to_value(placement).unwrap(), wire);
     assert_eq!(

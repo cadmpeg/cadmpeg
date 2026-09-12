@@ -183,7 +183,6 @@
       "unknown_records": 0,
       "unknown_surface_faces": 0
     },
-    "geometry_transferred": true,
     "identity": {
       "classification": "classified",
       "dialects": {
@@ -211,7 +210,10 @@
     },
     "losses": [],
     "notes": [],
-    "transfer": "full"
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {}

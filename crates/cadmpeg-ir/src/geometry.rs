@@ -4638,6 +4638,7 @@ impl From<VertexBlendTwists> for VertexBlendTwistsWire {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
 pub enum VertexBlendBoundaryGeometry {
     /// Curve boundary with a circle/ellipse/unknown twist form.
     Circle {
@@ -4649,7 +4650,6 @@ pub enum VertexBlendBoundaryGeometry {
         curve_endpoints: [Option<f64>; 2],
         /// Twist payload. Pre-revision layouts store model-space locations;
         /// the revision-gated layout stores unscaled twist vectors.
-        #[serde(flatten)]
         twists: VertexBlendTwists,
         /// Two ordered curve parameters.
         parameters: [f64; 2],
@@ -6506,7 +6506,6 @@ pub enum ProceduralCurveDefinition {
     /// Tolerance-bounded intersection relation selected by topology endpoints.
     TolerantIntersection {
         /// Distinct supports and finite endpoint bounds.
-        #[serde(flatten)]
         construction: TolerantIntersectionConstruction,
         /// Atomic neutral parameterization established by validated support charts.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -6520,7 +6519,6 @@ pub enum ProceduralCurveDefinition {
     /// Surface-related curve whose native subtype has no tail beyond the shared prefix.
     SurfaceCurve {
         /// Native family, support context, and optional cache-first tail.
-        #[serde(flatten)]
         family: SurfaceCurveFamily,
     },
     /// Silhouette of a cast surface in a light direction.
@@ -6604,7 +6602,6 @@ enum ProceduralCurveDefinitionWire {
         cache: Option<LegacyCache>,
     },
     TolerantIntersection {
-        #[serde(flatten)]
         construction: TolerantIntersectionConstruction,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         parameterization: Option<TolerantIntersectionParameterization>,
@@ -6614,7 +6611,6 @@ enum ProceduralCurveDefinitionWire {
     },
     ThreeSurfaceIntersection(curve_payloads::ThreeSurfaceIntersectionCurvePayload),
     SurfaceCurve {
-        #[serde(flatten)]
         family: SurfaceCurveFamily,
     },
     Silhouette(curve_payloads::SilhouetteCurveConstruction),

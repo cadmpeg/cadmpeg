@@ -263,7 +263,6 @@
       "ufrx_model_states": 0,
       "ufrx_occurrences": 0
     },
-    "geometry_transferred": false,
     "identity": {
       "classification": "classified",
       "dialects": {
@@ -307,7 +306,10 @@
       }
     ],
     "notes": [],
-    "transfer": "full"
+    "transfer": {
+      "geometry_transferred": false,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {}

@@ -191,35 +191,41 @@
       "drawings": [],
       "edges": [
         {
-          "curve": "fcstd:model:curve#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:1",
+          "carrier": {
+            "curve": "fcstd:model:curve#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:1",
+            "param_range": [
+              0.0,
+              6.283185307179586
+            ]
+          },
           "end": "fcstd:model:vertex#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:1",
           "id": "fcstd:model:edge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:2",
-          "param_range": [
-            0.0,
-            6.283185307179586
-          ],
           "start": "fcstd:model:vertex#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:1",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:2",
+          "carrier": {
+            "curve": "fcstd:model:curve#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:2",
+            "param_range": [
+              0.0,
+              4.0
+            ]
+          },
           "end": "fcstd:model:vertex#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:1",
           "id": "fcstd:model:edge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:4",
-          "param_range": [
-            0.0,
-            4.0
-          ],
           "start": "fcstd:model:vertex#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:3",
           "tolerance": 1e-7
         },
         {
-          "curve": "fcstd:model:curve#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:3",
+          "carrier": {
+            "curve": "fcstd:model:curve#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:3",
+            "param_range": [
+              0.0,
+              6.283185307179586
+            ]
+          },
           "end": "fcstd:model:vertex#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:3",
           "id": "fcstd:model:edge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:5",
-          "param_range": [
-            0.0,
-            6.283185307179586
-          ],
           "start": "fcstd:model:vertex#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:3",
           "tolerance": 1e-7
         }
@@ -691,7 +697,6 @@
     }
   },
   "report": {
-    "geometry_transferred": true,
     "identity": {
       "classification": "classified",
       "dialects": {
@@ -718,7 +723,10 @@
       "physical ledger spans=15 coverage=exact",
       "ProgramVersion=1.1R20260414 (Git shallow)"
     ],
-    "transfer": "full"
+    "transfer": {
+      "geometry_transferred": true,
+      "transfer": "full"
+    }
   },
   "source_fidelity": {
     "annotations": {}
