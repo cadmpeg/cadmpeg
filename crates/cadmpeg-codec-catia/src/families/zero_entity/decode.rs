@@ -147,10 +147,14 @@ fn append_oriented_wire_curve(
             .map(cadmpeg_ir::geometry::LegacyCache::try_new)
             .transpose()
             .map_err(|error| error.to_string())
-            .and_then(|cache| {
-                definition
+            .and_then(|cache| match cache {
+                Some(cache) => definition
                     .set_legacy_cache(cache)
-                    .map_err(|error| error.to_string())
+                    .map_err(|error| error.to_string()),
+                None => {
+                    definition.clear_legacy_cache();
+                    Ok(())
+                }
             }) {
             Ok(()) => ProceduralCurve::new(construction_id.clone(), definition)
                 .map_err(|error| error.to_string()),

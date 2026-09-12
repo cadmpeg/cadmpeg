@@ -3785,12 +3785,8 @@ fn definition_without_legacy_cache(
     definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
 ) -> cadmpeg_ir::geometry::ProceduralCurveDefinition {
     let mut cleared = definition.clone();
-    match cleared.set_legacy_cache(None) {
-        Ok(()) => cleared,
-        // A construction whose layout states no contract already compares on
-        // its construction fields alone.
-        Err(_) => definition.clone(),
-    }
+    cleared.clear_legacy_cache();
+    cleared
 }
 
 fn spring_patch_shape_agrees(

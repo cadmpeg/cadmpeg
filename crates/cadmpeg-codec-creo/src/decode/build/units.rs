@@ -2227,9 +2227,7 @@ mod tests {
             .unwrap(),
         );
         curve_definition
-            .set_legacy_cache(Some(
-                cadmpeg_ir::geometry::LegacyCache::try_new(13.0).unwrap(),
-            ))
+            .set_legacy_cache(cadmpeg_ir::geometry::LegacyCache::try_new(13.0).unwrap())
             .unwrap();
         let curve = cadmpeg_ir::geometry::ProceduralCurve::new(
             cadmpeg_ir::ids::ProceduralCurveId::mint("test:model:entity#curve-construction")

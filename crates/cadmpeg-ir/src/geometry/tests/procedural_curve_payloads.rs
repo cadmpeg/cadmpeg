@@ -23,7 +23,7 @@ fn curve_payload_admission_requires_finite_ordered_subset_ranges() {
     use crate::geometry::curve_payloads::SubsetCurveConstruction;
     let mut definition = subset([1.0, 1.0]);
     definition
-        .set_legacy_cache(Some(crate::geometry::LegacyCache::try_new(0.5).unwrap()))
+        .set_legacy_cache(crate::geometry::LegacyCache::try_new(0.5).unwrap())
         .unwrap();
     let curve = ProceduralCurve::new(id(), definition).unwrap();
     let wire = serde_json::to_value(&curve).unwrap();
@@ -250,7 +250,7 @@ fn silhouette_admission_requires_a_nondegenerate_light_direction_and_finite_draf
 fn rejected_curve_definition_replacements_preserve_serialized_owner() {
     let mut definition = subset([0.0, 1.0]);
     definition
-        .set_legacy_cache(Some(crate::geometry::LegacyCache::try_new(0.5).unwrap()))
+        .set_legacy_cache(crate::geometry::LegacyCache::try_new(0.5).unwrap())
         .unwrap();
     let curve = ProceduralCurve::new(id(), definition).unwrap();
     let before = serde_json::to_vec(&curve).unwrap();

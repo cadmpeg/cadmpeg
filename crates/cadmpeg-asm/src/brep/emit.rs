@@ -2841,7 +2841,7 @@ fn emit_carrier_curve(
                         let cache = cadmpeg_ir::geometry::LegacyCache::try_new(tolerance)
                             .map_err(|_| "invalid procedural curve cache tolerance")?;
                         definition
-                            .set_legacy_cache(Some(cache))
+                            .set_legacy_cache(cache)
                             .map_err(|_| "invalid procedural curve cache tolerance")?;
                     }
                 }

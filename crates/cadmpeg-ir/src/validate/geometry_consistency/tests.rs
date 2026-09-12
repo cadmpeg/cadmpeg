@@ -42,12 +42,16 @@ macro_rules! procedural_curve {
         cache_fit_tolerance: $cache_fit_tolerance:expr $(,)?
     ) => {{
         let mut definition = $definition;
-        definition
-            .set_legacy_cache($cache_fit_tolerance.map(|value: f64| {
-                crate::geometry::LegacyCache::try_new(value)
-                    .expect("admissible fit tolerance fixture")
-            }))
-            .expect("valid procedural curve cache fixture");
+        let cache_fit_tolerance: Option<f64> = $cache_fit_tolerance;
+        match cache_fit_tolerance {
+            Some(value) => definition
+                .set_legacy_cache(
+                    crate::geometry::LegacyCache::try_new(value)
+                        .expect("admissible fit tolerance fixture"),
+                )
+                .expect("valid procedural curve cache fixture"),
+            None => definition.clear_legacy_cache(),
+        }
         ProceduralCurve::new($id, definition).expect("valid procedural curve fixture")
     }};
 }
@@ -332,9 +336,12 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
                 [*definition_payload.shift(), *definition_payload.scale()],
             )
             .unwrap();
-        definition
-            .set_legacy_cache(restored_cache)
-            .expect("a context-first surface offset states a legacy cache slot");
+        match restored_cache {
+            Some(cache) => definition
+                .set_legacy_cache(cache)
+                .expect("a context-first surface offset states a legacy cache slot"),
+            None => definition.clear_legacy_cache(),
+        }
     });
     check_procedural_support_consistency(&context_first, &mut findings);
     assert!(findings.is_empty());
