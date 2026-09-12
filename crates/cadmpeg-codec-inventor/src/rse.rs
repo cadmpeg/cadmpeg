@@ -739,11 +739,11 @@ fn parse_meta_stream_v8<'a>(
 }
 
 pub(crate) fn fuzz_meta_stream(ctx: &DecodeContext<'_>, source: View<'_>) {
-    let _ = parse_meta_stream(ctx, source);
+    let _probe = parse_meta_stream(ctx, source);
 }
 
 pub(crate) fn fuzz_bulk_stream(ctx: &DecodeContext<'_>, source: View<'_>) {
-    let _ = parse_bulk_stream(ctx, source);
+    let _probe = parse_bulk_stream(ctx, source);
 }
 
 struct MetaCursor<'a> {

@@ -130,6 +130,10 @@ missing_docs = "warn"
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
 
+# A discarded `Result` is a dropped refusal. Propagate it; never `#[allow]`,
+# `drop(...)` or `.ok()` it away.
+let_underscore_must_use = "deny"
+
 # The codecs are wall-to-wall u32/usize/f64 conversions over file offsets and
 # fixed-width records.
 cast_possible_truncation = "allow"

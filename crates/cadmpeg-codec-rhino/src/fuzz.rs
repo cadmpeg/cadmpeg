@@ -40,7 +40,7 @@ fn uuid(mut canonical: [u8; uuid_wire::LEN]) -> Uuid {
 
 /// Exercises header, table, record, and EOF framing.
 pub fn container(data: &[u8]) {
-    let _ = crate::container::scan(data);
+    let _probe = crate::container::scan(data);
 }
 
 /// Exercises chunk framing at sequential and arbitrary bounded offsets.
@@ -58,7 +58,7 @@ pub fn chunks(data: &[u8]) {
     for archive in ARCHIVES {
         for offset in [0, selected_offset] {
             if let Ok(chunk) = chunks::chunk_at(data, offset, data.len(), archive, false) {
-                let _ = chunks::verify_checksum(data, &chunk);
+                let _probe = chunks::verify_checksum(data, &chunk);
             }
         }
     }
@@ -71,7 +71,7 @@ pub fn chunks(data: &[u8]) {
         else {
             break;
         };
-        let _ = chunks::verify_checksum(data, &chunk);
+        let _probe = chunks::verify_checksum(data, &chunk);
         offset = chunk.next_offset();
     }
 }
@@ -83,7 +83,7 @@ pub fn object_record(data: &[u8]) {
     }
     let record = Record::long(0x2000_8070, 1..data.len(), 1..data.len());
     let mut warnings = Diagnostics::new();
-    let _ = crate::objects::parse_object_record(
+    let _probe = crate::objects::parse_object_record(
         data,
         &record,
         selected_archive(data[0]),
@@ -111,7 +111,7 @@ pub fn nurbs(data: &[u8]) {
             0x22, 0xf0,
         ]),
     };
-    let _ = crate::curves::decode(data, class, 2..data.len(), 1.0, selected_archive(data[1]));
+    let _probe = crate::curves::decode(data, class, 2..data.len(), 1.0, selected_archive(data[1]));
 }
 
 /// Exercises compressed-buffer inflation and checksum handling.
@@ -124,7 +124,7 @@ pub fn brep(data: &[u8]) {
     if data.len() < 2 {
         return;
     }
-    let _ = crate::brep::parse(data, 1..data.len(), selected_archive(data[0]), None, &[]);
+    let _probe = crate::brep::parse(data, 1..data.len(), selected_archive(data[0]), None, &[]);
 }
 
 /// Exercises `SubD` framing, archive ID maps, and directed rings.
@@ -133,7 +133,7 @@ pub fn subd(data: &[u8]) {
         return;
     }
     let id = "rhino:fuzz:subd#0".try_into().expect("valid identity");
-    let _ = crate::subd::decode(data, 1..data.len(), selected_archive(data[0]), 1.0, id);
+    let _probe = crate::subd::decode(data, 1..data.len(), selected_archive(data[0]), 1.0, id);
 }
 
 /// Desktop salvage ceilings for fuzz wrappers.
@@ -162,7 +162,7 @@ pub fn cage(data: &[u8]) {
     }
     let archive = selected_archive(data[0]);
     with_expand(data, |expand| {
-        let _ = crate::cage::decode(expand, 1..data.len(), 1.0, archive);
+        let _probe = crate::cage::decode(expand, 1..data.len(), 1.0, archive);
     });
 }
 
@@ -173,7 +173,7 @@ pub fn hatch(data: &[u8]) {
     }
     let archive = selected_archive(data[0]);
     with_expand(data, |expand| {
-        let _ = crate::hatch::decode(expand, 1..data.len(), 1.0, archive);
+        let _probe = crate::hatch::decode(expand, 1..data.len(), 1.0, archive);
     });
 }
 
@@ -184,6 +184,6 @@ pub fn polyedge(data: &[u8]) {
     }
     let archive = selected_archive(data[0]);
     with_expand(data, |expand| {
-        let _ = crate::polyedge::decode(expand, 1..data.len(), archive);
+        let _probe = crate::polyedge::decode(expand, 1..data.len(), archive);
     });
 }

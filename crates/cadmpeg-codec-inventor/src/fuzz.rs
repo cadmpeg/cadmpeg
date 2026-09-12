@@ -26,9 +26,9 @@ fn with_source(data: &[u8], run: impl FnOnce(&DecodeContext<'_>, cadmpeg_core::d
 /// Exercises the schema-governed database, registry, and revision parsers.
 pub fn database(data: &[u8]) {
     with_source(data, |ctx, _| {
-        let _ = crate::database::parse_database(ctx, data);
-        let _ = crate::database::parse_registry(ctx, data);
-        let _ = crate::database::parse_revisions(ctx, data);
+        let _probe = crate::database::parse_database(ctx, data);
+        let _probe = crate::database::parse_registry(ctx, data);
+        let _probe = crate::database::parse_revisions(ctx, data);
     });
 }
 
@@ -57,7 +57,7 @@ pub fn record_tables(data: &[u8]) {
         return;
     };
     let version = data.first().copied().unwrap_or_default();
-    let _ = crate::records::frame_bulk_records(&ctx, bulk_source, &tables, version);
+    let _probe = crate::records::frame_bulk_records(&ctx, bulk_source, &tables, version);
 }
 
 /// Exercises the bulk envelope and its exact zlib member.
@@ -68,7 +68,7 @@ pub fn bulk_stream(data: &[u8]) {
 /// Exercises OLE property-set section and typed-value parsing.
 pub fn property_set(data: &[u8]) {
     with_source(data, |ctx, source| {
-        let _ = crate::property_set::parse_property_set_stream(ctx, source);
+        let _probe = crate::property_set::parse_property_set_stream(ctx, source);
     });
 }
 

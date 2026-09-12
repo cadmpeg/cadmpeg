@@ -340,8 +340,8 @@ fn fuzz_oom_splmsstr_header_is_rejected_without_count_allocation() {
     ];
     assert!(container::scan_bytes(bytes.to_vec()).is_err());
     let _ = NxCodec.detect(bytes);
-    let _ = NxCodec.inspect(&mut Cursor::new(bytes), &InspectOptions::default());
-    let _ = NxCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default());
+    let _probe = NxCodec.inspect(&mut Cursor::new(bytes), &InspectOptions::default());
+    let _probe = NxCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default());
 }
 
 #[test]

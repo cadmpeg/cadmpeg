@@ -4128,7 +4128,10 @@ where
                         return None;
                     }
                     visited = 1;
-                    let _ = visitor(&pairs);
+                    // This fixed assignment is the last solution to visit, so a
+                    // request to stop and a request to continue end the
+                    // traversal alike.
+                    let (ControlFlow::Continue(()) | ControlFlow::Break(())) = visitor(&pairs);
                     return Some(());
                 };
                 let outcome = quotient.coordinate_root_closure_outcome_for_incidence(
@@ -4155,7 +4158,9 @@ where
                 }
             }
             visited = 1;
-            let _ = visitor(&pairs);
+            // This fixed assignment is the last solution to visit, so a request
+            // to stop and a request to continue end the traversal alike.
+            let (ControlFlow::Continue(()) | ControlFlow::Break(())) = visitor(&pairs);
             return Some(());
         }
         for component in &components {

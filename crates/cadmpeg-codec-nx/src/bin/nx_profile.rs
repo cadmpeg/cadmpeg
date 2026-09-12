@@ -753,8 +753,12 @@ fn wait_for_worker(mut worker: Child) -> Result<Output, WorkerFailure> {
                 .map_err(|error| WorkerFailure::Failed(error.to_string()));
         }
         if Instant::now() >= deadline {
-            let _ = worker.kill();
-            let _ = worker.wait();
+            worker
+                .kill()
+                .map_err(|error| WorkerFailure::Failed(error.to_string()))?;
+            worker
+                .wait()
+                .map_err(|error| WorkerFailure::Failed(error.to_string()))?;
             return Err(WorkerFailure::TimedOut);
         }
         thread::sleep(Duration::from_millis(20));

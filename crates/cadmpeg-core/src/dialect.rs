@@ -864,7 +864,7 @@ mod tests {
             DialectMatch::residual(DialectId::pinned("acis:other")).with_instance("body");
 
         let panic = std::panic::catch_unwind(|| {
-            let _ = DialectLayers::of(layer("rhino"))
+            let _layers = DialectLayers::of(layer("rhino"))
                 .with(first)
                 .with(replacement);
         })

@@ -3386,7 +3386,7 @@ fn append_record_links(ir: &mut CadIr, unknown: &UnknownId, links: &[String]) {
         return;
     };
     append_links_to_native_record(record, links);
-    let _ = ir.set_native_unknowns("rhino", &unknowns);
+    let _probe = ir.set_native_unknowns("rhino", &unknowns);
 }
 
 #[cfg(test)]
