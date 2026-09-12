@@ -798,18 +798,8 @@ pub(crate) fn reverse_pcurve_over_range(
                 .rev()
                 .map(|knot| reflection - knot)
                 .collect::<Vec<_>>();
-            let mut radial_control_points = nurbs
-                .poles()
-                .iter()
-                .map(|pole| pole.radial)
-                .collect::<Vec<_>>();
-            radial_control_points.reverse();
-            let mut axial_control_points = nurbs
-                .poles()
-                .iter()
-                .map(|pole| pole.axial)
-                .collect::<Vec<_>>();
-            axial_control_points.reverse();
+            let mut poles = nurbs.poles().to_vec();
+            poles.reverse();
             let mut weights = nurbs.weights().map(<[f64]>::to_vec);
             if let Some(weights) = &mut weights {
                 weights.reverse();
@@ -817,19 +807,17 @@ pub(crate) fn reverse_pcurve_over_range(
             let finite = reversed_knots
                 .iter()
                 .chain(
-                    radial_control_points
+                    poles
                         .iter()
-                        .flat_map(|point| [&point.u, &point.v]),
+                        .flat_map(|pole| [&pole.radial.u, &pole.radial.v, &pole.axial]),
                 )
-                .chain(&axial_control_points)
                 .all(|value| value.is_finite());
             finite
                 .then(|| {
                     PolarPcurveNurbs::new(
                         nurbs.degree(),
                         reversed_knots,
-                        radial_control_points,
-                        axial_control_points,
+                        poles,
                         weights,
                         nurbs.periodic(),
                     )

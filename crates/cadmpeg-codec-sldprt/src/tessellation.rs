@@ -98,7 +98,7 @@ impl Mesh {
             self.vertices,
             self.triangles,
             self.strip_lengths,
-            cadmpeg_ir::tessellation::TessellationNormals::per_vertex(self.normals),
+            cadmpeg_ir::tessellation::NormalSamples::new(self.normals).map_or(cadmpeg_ir::tessellation::TessellationNormals::None, cadmpeg_ir::tessellation::TessellationNormals::per_vertex),
             self.channels,
         )
     }

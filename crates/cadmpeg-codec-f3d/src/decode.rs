@@ -3348,7 +3348,7 @@ fn project_mesh_bodies(
             body.vertices,
             body.triangles,
             Vec::new(),
-            cadmpeg_ir::tessellation::TessellationNormals::per_corner(body.corner_normals),
+            cadmpeg_ir::tessellation::NormalSamples::new(body.corner_normals).map_or(cadmpeg_ir::tessellation::TessellationNormals::None, cadmpeg_ir::tessellation::TessellationNormals::per_corner),
             channels,
         )
         .map_err(|err| CodecError::Malformed(err.to_string()))?

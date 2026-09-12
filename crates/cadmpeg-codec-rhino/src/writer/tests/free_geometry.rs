@@ -324,9 +324,7 @@ fn standalone_mesh_round_trips_across_archive_versions() {
             ],
             vec![[0, 1, 2]],
             Vec::new(),
-            cadmpeg_ir::tessellation::TessellationNormals::per_vertex(
-                vec![cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0); 3],
-            ),
+            cadmpeg_ir::tessellation::NormalSamples::new(vec![cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0); 3]).map_or(cadmpeg_ir::tessellation::TessellationNormals::None, cadmpeg_ir::tessellation::TessellationNormals::per_vertex),
             Vec::new(),
         )
         .expect("valid tessellation"),

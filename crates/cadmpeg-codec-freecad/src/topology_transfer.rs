@@ -357,9 +357,7 @@ impl<'a> Builder<'a> {
                     triangulation.nodes().to_vec(),
                     triangulation.triangles().to_vec(),
                     Vec::new(),
-                    cadmpeg_ir::tessellation::TessellationNormals::per_vertex(
-                        triangulation.normals().unwrap_or_default().to_vec(),
-                    ),
+                    cadmpeg_ir::tessellation::NormalSamples::new(triangulation.normals().unwrap_or_default().to_vec()).map_or(cadmpeg_ir::tessellation::TessellationNormals::None, cadmpeg_ir::tessellation::TessellationNormals::per_vertex),
                     Vec::new(),
                 )
                 .map_err(|error| {
@@ -885,7 +883,7 @@ impl<'a> Builder<'a> {
                     vertices,
                     triangles,
                     Vec::new(),
-                    cadmpeg_ir::tessellation::TessellationNormals::per_vertex(normals),
+                    cadmpeg_ir::tessellation::NormalSamples::new(normals).map_or(cadmpeg_ir::tessellation::TessellationNormals::None, cadmpeg_ir::tessellation::TessellationNormals::per_vertex),
                     Vec::new(),
                 )
                 .map_err(|error| {

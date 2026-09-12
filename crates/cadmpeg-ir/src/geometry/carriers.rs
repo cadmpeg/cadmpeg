@@ -2897,7 +2897,9 @@ pub enum PcurveGeometry {
 }
 
 /// One paired radial and axial pole of a polar parameter-space NURBS.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct PolarNurbsPole {
     /// Euclidean radial-plane pole.
     pub radial: Point2,
@@ -2921,8 +2923,7 @@ pub struct PolarPcurveNurbs {
 struct PolarPcurveNurbsWire {
     degree: u32,
     knots: Vec<f64>,
-    radial_control_points: Vec<Point2>,
-    axial_control_points: Vec<f64>,
+    poles: Vec<PolarNurbsPole>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     weights: Option<Vec<f64>>,
     #[serde(default)]
@@ -2930,32 +2931,32 @@ struct PolarPcurveNurbsWire {
 }
 
 impl PolarPcurveNurbs {
-    /// Build a polar NURBS with paired radial and axial poles.
+    /// Build a polar NURBS from its pole rows.
+    ///
+    /// A pole is one row carrying its radial and axial halves together, so
+    /// there are no two lists to pair up and no length to compare.
     pub fn new(
         degree: u32,
         knots: Vec<f64>,
-        radial_control_points: Vec<Point2>,
-        axial_control_points: Vec<f64>,
+        poles: Vec<PolarNurbsPole>,
         weights: Option<Vec<f64>>,
         periodic: bool,
     ) -> Result<Self, NurbsError> {
-        require_length(
-            "axial_control_points",
-            axial_control_points.len(),
-            radial_control_points.len(),
-        )?;
         require_curve_cardinality(
             degree,
             knots.len(),
-            radial_control_points.len(),
+            poles.len(),
             weights.as_ref().map(Vec::len),
-            "radial_control_points",
+            "poles",
         )?;
         if degree == 0 {
             return Err(NurbsError("polar NURBS degree must be positive".into()));
         }
-        require_finite_points_2("radial_control_points", &radial_control_points)?;
-        require_finite_scalars("axial_control_points", &axial_control_points)?;
+        if !poles.iter().all(|pole| {
+            pole.radial.u.is_finite() && pole.radial.v.is_finite() && pole.axial.is_finite()
+        }) {
+            return Err(NurbsError("poles contain a non-finite value".into()));
+        }
         require_nondecreasing_knots(&knots)?;
         if let Some(weights) = &weights {
             require_pcurve_weights(weights)?;
@@ -2963,11 +2964,7 @@ impl PolarPcurveNurbs {
         Ok(Self {
             degree,
             knots,
-            poles: radial_control_points
-                .into_iter()
-                .zip(axial_control_points)
-                .map(|(radial, axial)| PolarNurbsPole { radial, axial })
-                .collect(),
+            poles,
             weights,
             periodic,
         })
@@ -3067,8 +3064,7 @@ impl Serialize for PolarPcurveNurbs {
         PolarPcurveNurbsWire {
             degree: self.degree,
             knots: self.knots.clone(),
-            radial_control_points: self.poles.iter().map(|pole| pole.radial).collect(),
-            axial_control_points: self.poles.iter().map(|pole| pole.axial).collect(),
+            poles: self.poles.clone(),
             weights: self.weights.clone(),
             periodic: self.periodic,
         }
@@ -3085,8 +3081,7 @@ impl<'de> Deserialize<'de> for PolarPcurveNurbs {
         Self::new(
             wire.degree,
             wire.knots,
-            wire.radial_control_points,
-            wire.axial_control_points,
+            wire.poles,
             wire.weights,
             wire.periodic,
         )

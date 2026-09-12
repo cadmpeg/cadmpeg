@@ -38,11 +38,19 @@ fn analytic_pcurves_preserve_angular_parameterization() {
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
-                Point2::new(2.0, 0.0),
-                Point2::new(2.0, 2.0),
-                Point2::new(0.0, 2.0),
+                crate::geometry::PolarNurbsPole {
+                    radial: Point2::new(2.0, 0.0),
+                    axial: 3.0,
+                },
+                crate::geometry::PolarNurbsPole {
+                    radial: Point2::new(2.0, 2.0),
+                    axial: 4.0,
+                },
+                crate::geometry::PolarNurbsPole {
+                    radial: Point2::new(0.0, 2.0),
+                    axial: 5.0,
+                },
             ],
-            vec![3.0, 4.0, 5.0],
             Some(vec![1.0, std::f64::consts::FRAC_1_SQRT_2, 1.0]),
             false,
         )
