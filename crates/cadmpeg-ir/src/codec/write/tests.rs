@@ -151,30 +151,27 @@ fn fidelity_resolution_follows_the_backend_consumption_when_provided() {
 fn write_path_structurally_authors_fidelity_resolution() {
     assert_eq!(
         WritePath::VerbatimReplay.into_report(true),
-        (
-            crate::report::WritePath::VerbatimReplay,
-            FidelityResolution::Replayed {}
-        )
+        crate::report::WritePath::VerbatimReplay {
+            fidelity: crate::report::ReplayFidelity::Replayed {}
+        }
     );
     assert_eq!(
         WritePath::Patched {
             consumption: PatchConsumption::Replayed,
         }
         .into_report(true),
-        (
-            crate::report::WritePath::Patched,
-            FidelityResolution::Replayed {}
-        )
+        crate::report::WritePath::Patched {
+            fidelity: FidelityResolution::Replayed {}
+        }
     );
     assert_eq!(
         WritePath::Patched {
             consumption: PatchConsumption::Independent(Consumption::NotConsumed),
         }
         .into_report(true),
-        (
-            crate::report::WritePath::Patched,
-            FidelityResolution::NotConsumed {}
-        )
+        crate::report::WritePath::Patched {
+            fidelity: FidelityResolution::NotConsumed {}
+        }
     );
     assert_eq!(
         WritePath::Synthesized {
@@ -183,10 +180,9 @@ fn write_path_structurally_authors_fidelity_resolution() {
             },
         }
         .into_report(false),
-        (
-            crate::report::WritePath::Synthesized,
-            FidelityResolution::NotProvided {}
-        )
+        crate::report::WritePath::Synthesized {
+            fidelity: crate::report::SynthesisFidelity::NotProvided {}
+        }
     );
 }
 

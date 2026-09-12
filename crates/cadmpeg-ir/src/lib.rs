@@ -123,8 +123,8 @@ pub use references::{ReferenceSelection, ReferenceTarget};
 pub use report::{
     CensusBasis, Check, Coverage, CoverageKey, DecodeReport, DecodeTransfer, EntityCensus,
     ExportReport, FidelityResolution, Finding, HexByteCoverageKey, IndexedCoverageKey,
-    LossCategory, LossKind, LossNote, LossTaxonomy, Severity, StrictConsequence, ValidationReport,
-    WritePath, SHARED_LOSS_NAMESPACE,
+    LossCategory, LossKind, LossNote, LossTaxonomy, ReplayFidelity, Severity, StrictConsequence,
+    SynthesisFidelity, ValidationReport, WritePath, SHARED_LOSS_NAMESPACE,
 };
 pub use sketches::{
     NativeOperandField, Sketch, SketchAxis, SketchConstraint, SketchConstraintDefinition,

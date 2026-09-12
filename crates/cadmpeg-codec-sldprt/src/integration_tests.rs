@@ -304,10 +304,10 @@ fn inherit_replays_a_versioned_part_and_names_its_dialect() {
         cadmpeg_ir::codec::write::TargetRequest::Inherit,
     )
     .expect("the source's own dialect is preserved");
-    assert_eq!(
+    assert!(matches!(
         plan.report().write_path(),
-        cadmpeg_ir::WritePath::VerbatimReplay
-    );
+        cadmpeg_ir::WritePath::VerbatimReplay { .. }
+    ));
     assert_eq!(named_target(&plan), "sldprt:sw-version-12000-plus");
 
     let mut written = Vec::new();
@@ -364,10 +364,10 @@ fn an_explicit_catalog_row_synthesizes_without_consuming_a_different_dialect() {
     )
     .expect("the catalog row is synthesized from the neutral IR");
     assert_eq!(named_target(&plan), "sldprt:unknown");
-    assert_eq!(
+    assert!(matches!(
         plan.report().write_path(),
-        cadmpeg_ir::WritePath::Synthesized
-    );
+        cadmpeg_ir::WritePath::Synthesized { .. }
+    ));
     assert_eq!(
         plan.report().fidelity(),
         cadmpeg_ir::FidelityResolution::NotConsumed {}
@@ -397,7 +397,10 @@ fn the_patch_path_names_the_preserved_dialect() {
             cadmpeg_ir::codec::write::TargetRequest::Inherit,
         )
         .expect("an edited part still preserves its dialect");
-    assert_eq!(plan.report().write_path(), cadmpeg_ir::WritePath::Patched);
+    assert!(matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::WritePath::Patched { .. }
+    ));
     let cadmpeg_ir::FidelityResolution::Degraded { reason } = &plan.report().fidelity() else {
         panic!("digest mismatch must report degraded fidelity");
     };
@@ -443,10 +446,10 @@ fn a_retained_source_record_without_data_reports_degraded_fidelity() {
             cadmpeg_ir::codec::write::TargetRequest::Inherit,
         )
         .expect("missing retained bytes fall back to semantic writing");
-    assert_ne!(
+    assert!(!matches!(
         plan.report().write_path(),
-        cadmpeg_ir::WritePath::VerbatimReplay
-    );
+        cadmpeg_ir::WritePath::VerbatimReplay { .. }
+    ));
     assert_eq!(
         &plan.report().fidelity(),
         &cadmpeg_ir::FidelityResolution::Degraded {
@@ -477,10 +480,10 @@ fn the_generation_path_names_the_catalog_row() {
             cadmpeg_ir::codec::write::TargetRequest::Inherit,
         )
         .expect("nothing to inherit, so the catalog default stands in");
-    assert_eq!(
+    assert!(matches!(
         plan.report().write_path(),
-        cadmpeg_ir::WritePath::Synthesized
-    );
+        cadmpeg_ir::WritePath::Synthesized { .. }
+    ));
     let claimed = named_target(&plan);
     assert_eq!(claimed, "sldprt:unknown");
 

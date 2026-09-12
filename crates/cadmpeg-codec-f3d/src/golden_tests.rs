@@ -15,7 +15,8 @@ use cadmpeg_ir::examples;
 use cadmpeg_ir::{CadIr, WritePath};
 use cadmpeg_test_support::golden::{elide_local_digests, snapshot_text, snapshots_agree};
 use cadmpeg_test_support::roundtrip::{
-    mutation_roundtrip, semantic_roundtrip, verbatim_replay_holds, MutationOutcome, SemanticOutcome,
+    mutation_roundtrip, semantic_roundtrip, verbatim_replay_holds, ExpectedWritePath,
+    MutationOutcome, SemanticOutcome,
 };
 
 use super::*;
@@ -366,12 +367,11 @@ fn replay_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
         TargetRequest::Inherit,
     ) {
         Ok(plan) => {
-            let path = plan.report().write_path();
+            let path = plan.report().write_path().clone();
             match plan.write_to(&mut out) {
                 Ok(_) => {
-                    assert_eq!(
-                        path,
-                        WritePath::VerbatimReplay,
+                    assert!(
+                        matches!(path, WritePath::VerbatimReplay { .. }),
                         "the replay lane must take the verbatim-replay write path"
                     );
                     Ok(out)
@@ -389,9 +389,8 @@ fn generate_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
     let mut out = Vec::new();
     Some(match F3dCodec.encode(result.ir(), &mut out) {
         Ok(report) => {
-            assert_eq!(
-                report.write_path(),
-                WritePath::Synthesized,
+            assert!(
+                matches!(report.write_path(), WritePath::Synthesized { .. }),
                 "the generate lane withholds the sidecar, so the writer must author every byte"
             );
             Ok(out)
@@ -412,9 +411,8 @@ fn patch_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
         match crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut out)
         {
             Ok(path) => {
-                assert_eq!(
-                    path,
-                    WritePath::Patched,
+                assert!(
+                    matches!(path, WritePath::Patched { .. }),
                     "the patch lane edits the IR, so the writer must run"
                 );
                 Ok(out)
@@ -777,7 +775,7 @@ fn an_edit_survives_the_patch_writer() {
             &F3dCodec,
             name,
             &input,
-            WritePath::Patched,
+            ExpectedWritePath::Patched,
             |ir| {
                 let Some(point) = ir.model.points.first_mut() else {
                     return false;

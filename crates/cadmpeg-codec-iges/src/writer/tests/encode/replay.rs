@@ -34,7 +34,10 @@ fn encode_reports_a_version_mismatch_as_dialect_displacement() {
         )
         .unwrap();
 
-    assert_eq!(plan.report().write_path(), WritePath::Synthesized);
+    assert!(matches!(
+        plan.report().write_path(),
+        WritePath::Synthesized { .. }
+    ));
     assert_eq!(
         &plan.report().fidelity(),
         &FidelityResolution::NotConsumed {}
@@ -73,7 +76,10 @@ fn encode_does_not_attempt_replay_when_the_source_records_no_dialect() {
         )
         .unwrap();
 
-    assert_eq!(plan.report().write_path(), WritePath::Synthesized);
+    assert!(matches!(
+        plan.report().write_path(),
+        WritePath::Synthesized { .. }
+    ));
     assert_eq!(
         &plan.report().fidelity(),
         &FidelityResolution::NotConsumed {}
@@ -91,7 +97,10 @@ fn a_replayed_export_states_the_preserved_dialect_as_its_target() {
             TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
         )
         .unwrap();
-    assert_eq!(plan.report().write_path(), WritePath::VerbatimReplay);
+    assert!(matches!(
+        plan.report().write_path(),
+        WritePath::VerbatimReplay { .. }
+    ));
 
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
@@ -152,7 +161,10 @@ fn encode_reports_a_digest_mismatch_as_degraded_fidelity() {
         )
         .unwrap();
 
-    assert_eq!(plan.report().write_path(), WritePath::Synthesized);
+    assert!(matches!(
+        plan.report().write_path(),
+        WritePath::Synthesized { .. }
+    ));
     let reason = degraded_reason(&plan, "an edited model must degrade");
     assert!(reason.contains("digest"), "{reason}");
 }

@@ -19,7 +19,8 @@ use cadmpeg_test_support::golden::{
     elide_local_digests, snapshot_text, snapshots_agree, Branch, Harness,
 };
 use cadmpeg_test_support::roundtrip::{
-    mutation_roundtrip, semantic_roundtrip, verbatim_replay_holds, MutationOutcome, SemanticOutcome,
+    mutation_roundtrip, semantic_roundtrip, verbatim_replay_holds, ExpectedWritePath,
+    MutationOutcome, SemanticOutcome,
 };
 
 use super::SldprtCodec;
@@ -288,9 +289,8 @@ fn fixtures_survive_the_semantic_write_path() {
         semantic_roundtrip(&SldprtCodec, &name, &bytes, |outcome| match outcome {
             SemanticOutcome::Written { report, bytes, .. } => {
                 written_count += 1;
-                assert_eq!(
-                    report.write_path(),
-                    WritePath::Patched,
+                assert!(
+                    matches!(report.write_path(), WritePath::Patched { .. }),
                     "fixture `{name}`: retained records fed the write, so it patched rather than synthesized"
                 );
                 if let Err(mismatch) = snapshots_agree(&expected, &neutral_document(bytes)) {
@@ -366,7 +366,7 @@ fn an_edited_depth_survives_the_semantic_write_path() {
             &SldprtCodec,
             &name,
             &bytes,
-            WritePath::Patched,
+            ExpectedWritePath::Patched,
             |ir| {
                 visit_blind_extrude_lengths(ir, |depth| {
                     *depth =

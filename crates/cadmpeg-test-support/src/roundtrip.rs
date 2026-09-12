@@ -73,14 +73,13 @@ where
         TargetRequest::Inherit,
     )
     .unwrap_or_else(|error| panic!("{label}: plan failed: {error}"));
-    let path = plan.report().write_path();
+    let path = plan.report().write_path().clone();
     let mut written = Vec::new();
     let report = plan
         .write_to(&mut written)
         .unwrap_or_else(|error| panic!("{label}: write failed: {error}"));
-    assert_eq!(
-        path,
-        WritePath::VerbatimReplay,
+    assert!(
+        matches!(path, WritePath::VerbatimReplay { .. }),
         "{label}: this fixture was expected to replay its retained bytes, but the encoder took the {path} path; \
          a byte comparison here would not describe the replay it claims to cover"
     );
@@ -153,7 +152,7 @@ pub fn semantic_roundtrip<C>(
         TargetRequest::Inherit,
     ) {
         Ok(plan) => {
-            let path = plan.report().write_path();
+            let path = plan.report().write_path().clone();
             let mut bytes = Vec::new();
             let report = plan
                 .write_to(&mut bytes)
@@ -164,9 +163,8 @@ pub fn semantic_roundtrip<C>(
     };
     let outcome = match written {
         Ok((path, report, bytes)) => {
-            assert_ne!(
-                path,
-                WritePath::VerbatimReplay,
+            assert!(
+                !matches!(path, WritePath::VerbatimReplay { .. }),
                 "{label}: the baseline was removed, so the encoder could not show the retained bytes still \
                  describe this document, yet it replayed them"
             );
@@ -198,6 +196,38 @@ pub enum MutationOutcome {
     },
 }
 
+/// Which write path a mutation round trip demands.
+///
+/// A replay copies the retained bytes and would discard the edit, so this helper
+/// cannot be asked for it and the variant does not exist.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExpectedWritePath {
+    /// The writer rewrote part of a container it did not author in full.
+    Patched,
+    /// The writer authored every output byte from neutral IR.
+    Synthesized,
+}
+
+impl ExpectedWritePath {
+    /// Whether `path` is the write path this value names.
+    #[must_use]
+    pub fn describes(self, path: &WritePath) -> bool {
+        match self {
+            Self::Patched => matches!(path, WritePath::Patched { .. }),
+            Self::Synthesized => matches!(path, WritePath::Synthesized { .. }),
+        }
+    }
+}
+
+impl std::fmt::Display for ExpectedWritePath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Patched => "patched",
+            Self::Synthesized => "synthesized",
+        })
+    }
+}
+
 /// Decodes `fixture`, applies `mutate` to the decoded document, encodes it with
 /// the write baseline left in place, and hands the outcome to `check`.
 ///
@@ -208,26 +238,19 @@ pub enum MutationOutcome {
 ///
 /// Panics when the decode fails, when `mutate` reports an edit that left the
 /// document equal to the decode, when `mutate` removed the baseline, when the
-/// write fails after planning succeeded, when the encoder took a write path
-/// other than `expected_path`, or when `expected_path` is
-/// [`WritePath::VerbatimReplay`].
+/// write fails after planning succeeded, or when the encoder took a write path
+/// other than `expected_path`.
 pub fn mutation_roundtrip<C>(
     codec: &C,
     label: &str,
     fixture: &[u8],
-    expected_path: WritePath,
+    expected_path: ExpectedWritePath,
     mutate: impl FnOnce(&mut CadIr) -> bool,
     check: impl FnOnce(&MutationOutcome),
 ) -> bool
 where
     C: Codec + Encoder,
 {
-    assert_ne!(
-        expected_path,
-        WritePath::VerbatimReplay,
-        "{label}: this helper edits the document, so replaying the retained bytes would discard the edit; \
-         no caller may name that path as expected"
-    );
     let decoded = Codec::decode(
         codec,
         &mut std::io::Cursor::new(fixture.to_vec()),
@@ -259,7 +282,7 @@ where
         TargetRequest::Inherit,
     ) {
         Ok(plan) => {
-            let path = plan.report().write_path();
+            let path = plan.report().write_path().clone();
             let mut bytes = Vec::new();
             plan.write_to(&mut bytes)
                 .unwrap_or_else(|error| panic!("{label}: write failed: {error}"));
@@ -269,8 +292,8 @@ where
     };
     let outcome = match written {
         Ok((path, bytes)) => {
-            assert_eq!(
-                path, expected_path,
+            assert!(
+                expected_path.describes(&path),
                 "{label}: the document was edited, so the encoder was expected to write by the \
                  {expected_path} path, but it took the {path} path"
             );
