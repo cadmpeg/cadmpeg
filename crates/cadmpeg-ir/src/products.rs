@@ -818,17 +818,18 @@ mod tests {
         );
         let wire = serde_json::to_value(&linked).expect("App::Link occurrence wire");
         assert_eq!(
-            wire["link"]["linked_subelements"],
-            serde_json::json!(["Face1"])
-        );
-        assert_eq!(
-            wire["link"]["copy_on_change"],
-            serde_json::json!({
-                "policy": {"policy": "owned"},
-                "source": "test:model:product#source",
-                "group": "test:model:product#group",
-                "touched": true
-            })
+            wire["link"]["members"],
+            serde_json::json!([
+                {"kind": "linked_subelement", "subelement": "Face1"},
+                {"kind": "element_component", "component": "test:model:product#element"},
+                {"kind": "claim_child", "claim": true},
+                {"kind": "copy_on_change", "state": {
+                    "policy": {"policy": "owned"},
+                    "source": "test:model:product#source",
+                    "group": "test:model:product#group",
+                    "touched": true
+                }}
+            ])
         );
         assert_eq!(
             serde_json::from_value::<Occurrence>(wire.clone()).unwrap(),
@@ -836,7 +837,7 @@ mod tests {
         );
 
         let mut without_policy = wire.clone();
-        without_policy["link"]["copy_on_change"]
+        without_policy["link"]["members"][3]["state"]
             .as_object_mut()
             .expect("a copy-on-change object")
             .remove("policy");
@@ -846,7 +847,7 @@ mod tests {
         assert!(error.contains("policy"), "{error}");
 
         let mut bogus = wire;
-        bogus["link"]["copy_on_change"]["zz_bogus"] = serde_json::json!(1);
+        bogus["link"]["members"][3]["state"]["zz_bogus"] = serde_json::json!(1);
         let error = serde_json::from_value::<Occurrence>(bogus)
             .unwrap_err()
             .to_string();
@@ -858,7 +859,7 @@ mod tests {
             1.0,
         ))
         .unwrap();
-        empty["link"] = serde_json::json!({});
+        empty["link"] = serde_json::json!({"members": []});
         assert!(serde_json::from_value::<Occurrence>(empty).is_err());
     }
 

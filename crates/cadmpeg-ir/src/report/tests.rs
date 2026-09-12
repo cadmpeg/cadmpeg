@@ -347,8 +347,7 @@ fn an_export_payload_carries_only_the_target_key_its_own_arm_owns() {
     let native = serde_json::json!({
         "identity": {"payload": "native", "target": "step:ap242-e3"},
         "census": { "basis": "target_records", "counts": {} },
-        "fidelity": { "status": "not_provided" },
-        "write_path": "synthesized",
+        "write_path": { "path": "synthesized", "fidelity": { "status": "not_provided" } },
         "losses": [],
         "notes": [],
     });
