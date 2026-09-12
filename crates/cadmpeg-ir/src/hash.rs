@@ -519,7 +519,6 @@ mod tests {
     ///       "classification": "classified",
     ///       "dialects": {
     ///         "primary": {
-    ///           "format": "pin",
     ///           "dialect": "pin:test",
     ///           "admission": "admitted"
     ///         },
@@ -532,7 +531,8 @@ mod tests {
     ///   },
     /// ```
     ///
-    /// The identity states the format once, inside its classification. The other
+    /// The identity states the format once, in the dialect id its classified
+    /// payload carries. The other
     /// pinned documents carry no source metadata, so their normalized form still
     /// elides the whole `source` member.
     #[test]
@@ -541,7 +541,7 @@ mod tests {
         let independently_normalized = cloned_local_digest(&ir, "pin", "pin:test:source-image#0");
         assert_eq!(
             independently_normalized,
-            "fb3cb2be7e4de64132d2a0bb7029faf9f0d6edb69aa2b8dbed06ec632101c202"
+            "28da9611ed9814d3fcd50f95d90199f4dfa0bf578a430e8356d735a428539cb8"
         );
         assert_eq!(
             document_local_sha256(&ir, "pin", "pin:test:source-image#0"),
