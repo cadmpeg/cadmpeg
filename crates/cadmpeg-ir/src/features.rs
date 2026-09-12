@@ -7218,51 +7218,32 @@ impl SweepShape {
         }
     }
 
-    /// Replaces the result mode, keeping the cross-sections.
-    ///
-    /// A solid sweep that generates its own geometry cannot become a sheet
-    /// sweep, which generates none; the sweep is then left unchanged.
-    pub fn set_mode(&mut self, mode: SweepMode) -> Result<(), &'static str> {
-        let current = std::mem::replace(self, Self::unresolved(None));
-        let sheet = match current {
-            Self::Unresolved { section, sections } | Self::Surface { section, sections } => {
-                (section, sections)
-            }
+    /// A solid sweep under `op` with the given cross-sections.
+    #[must_use]
+    pub fn solid_sections(
+        op: SolidSweepOperation,
+        section: SweepSection,
+        sections: Vec<SweepSection>,
+    ) -> Self {
+        Self::Solid {
+            op,
+            section,
+            sections,
+        }
+    }
+
+    /// Take the cross-sections out of the shape, in path order.
+    #[must_use]
+    pub fn into_sections(self) -> (SweepSection, Vec<SweepSection>) {
+        match self {
+            Self::Unresolved { section, sections } | Self::Surface { section, sections } => (
+                section.into(),
+                sections.into_iter().map(Into::into).collect(),
+            ),
             Self::Solid {
-                op,
-                section,
-                sections,
-            } => {
-                if let SweepMode::Solid { op } = mode {
-                    *self = Self::Solid {
-                        op,
-                        section,
-                        sections,
-                    };
-                    return Ok(());
-                }
-                let demoted = std::iter::once(section.clone())
-                    .chain(sections.iter().cloned())
-                    .map(|section| match section {
-                        SweepSection::Unresolved(native) => Some(SweepSection::Unresolved(native)),
-                        SweepSection::Profile(profile) => Some(SweepSection::Profile(profile)),
-                        SweepSection::Generated(_) => None,
-                    })
-                    .collect::<Option<Vec<SheetSweepSection>>>();
-                let Some(mut demoted) = demoted else {
-                    *self = Self::Solid {
-                        op,
-                        section,
-                        sections,
-                    };
-                    return Err("a sheet sweep generates no cross-section geometry");
-                };
-                let first = demoted.remove(0);
-                (first, demoted)
-            }
-        };
-        *self = Self::sheet_sections(mode, sheet.0, sheet.1);
-        Ok(())
+                section, sections, ..
+            } => (section, sections),
+        }
     }
 
     /// Replaces the primary cross-section with referenced profile geometry.

@@ -23,7 +23,6 @@ use crate::records::topology::{
 };
 use crate::records::{DesignBodyBinding, DesignComponentNamingSpace};
 use cadmpeg_asm::kernel_header::RefWidth;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -921,7 +920,15 @@ pub(crate) fn bind_sweep_result_modes(
                 }
                 _ => SweepMode::Unresolved {},
             };
-            shape.set_mode(mode).map_err(CodecError::malformed)?;
+            // The guard above admits only the unresolved shape, whose sections
+            // generate no geometry, so the shape is built once under the mode
+            // the outputs name.
+            let cadmpeg_ir::features::SweepShape::Unresolved { section, sections } =
+                std::mem::replace(shape, cadmpeg_ir::features::SweepShape::unresolved(None))
+            else {
+                break 'feature_edit;
+            };
+            *shape = cadmpeg_ir::features::SweepShape::sheet_sections(mode, section, sections);
         }
         feature.evaluation.set_definition(definition);
     }

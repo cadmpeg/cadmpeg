@@ -248,24 +248,21 @@ pub(crate) fn bind_sweep_operations(
                     break 'sweep_mode;
                 };
                 if operations.all(|operation| operation == first) {
-                    let mode = match first {
-                        BooleanOp::Join => cadmpeg_ir::features::SweepMode::Solid {
-                            op: cadmpeg_ir::features::SolidSweepOperation::Join,
-                        },
-                        BooleanOp::Cut => cadmpeg_ir::features::SweepMode::Solid {
-                            op: cadmpeg_ir::features::SolidSweepOperation::Cut,
-                        },
-                        BooleanOp::Intersect => cadmpeg_ir::features::SweepMode::Solid {
-                            op: cadmpeg_ir::features::SolidSweepOperation::Intersect,
-                        },
-                        BooleanOp::NewBody => cadmpeg_ir::features::SweepMode::Solid {
-                            op: cadmpeg_ir::features::SolidSweepOperation::NewBody,
-                        },
+                    let op = match first {
+                        BooleanOp::Join => cadmpeg_ir::features::SolidSweepOperation::Join,
+                        BooleanOp::Cut => cadmpeg_ir::features::SolidSweepOperation::Cut,
+                        BooleanOp::Intersect => cadmpeg_ir::features::SolidSweepOperation::Intersect,
+                        BooleanOp::NewBody => cadmpeg_ir::features::SolidSweepOperation::NewBody,
                         BooleanOp::Unresolved => break 'sweep_mode,
                     };
-                    shape
-                        .set_mode(mode)
-                        .map_err(cadmpeg_core::CodecError::malformed)?;
+                    // The lane always names a solid result, which admits every
+                    // cross-section, so the shape is built once from the
+                    // sections it already holds.
+                    let (section, sections) =
+                        std::mem::replace(shape, cadmpeg_ir::features::SweepShape::unresolved(None))
+                            .into_sections();
+                    *shape =
+                        cadmpeg_ir::features::SweepShape::solid_sections(op, section, sections);
                 }
             }
         }
