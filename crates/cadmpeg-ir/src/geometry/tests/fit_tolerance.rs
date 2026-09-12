@@ -155,19 +155,53 @@ fn raising_the_fit_tolerance_of_a_legacy_slot_keeps_the_higher_of_the_two() {
         .expect("procedural")
     };
 
-    let mut curve = legacy(0.25);
-    curve.raise_cache_fit_tolerance(FitTolerance::try_new(0.75).expect("admissible"));
-    assert_eq!(curve.cache_fit_tolerance(), Some(0.75));
+    let mut curve = legacy(3.0);
+    curve.raise_cache_fit_tolerance(FitTolerance::try_new(7.0).expect("admissible"));
+    assert_eq!(curve.cache_fit_tolerance(), Some(7.0));
 
-    let mut curve = legacy(0.75);
-    curve.raise_cache_fit_tolerance(FitTolerance::try_new(0.25).expect("admissible"));
-    assert_eq!(curve.cache_fit_tolerance(), Some(0.75));
+    let mut curve = legacy(9.0);
+    curve.raise_cache_fit_tolerance(FitTolerance::try_new(7.0).expect("admissible"));
+    assert_eq!(curve.cache_fit_tolerance(), Some(9.0));
+}
 
+#[test]
+fn requiring_a_fit_tolerance_states_the_contract_an_empty_legacy_slot_holds_none_of() {
     let mut empty =
         ProceduralCurve::new(curve_id(), ProceduralCurveDefinition::Exact { cache: None })
             .expect("procedural");
-    empty.raise_cache_fit_tolerance(FitTolerance::try_new(0.25).expect("admissible"));
-    assert_eq!(empty.cache_fit_tolerance(), Some(0.25));
+    empty.require_cache_fit_tolerance(FitTolerance::try_new(7.0).expect("admissible"));
+    assert_eq!(empty.cache_fit_tolerance(), Some(7.0));
+
+    let mut stated = ProceduralCurve::new(
+        curve_id(),
+        ProceduralCurveDefinition::Exact {
+            cache: Some(LegacyCache::try_new(9.0).expect("admissible")),
+        },
+    )
+    .expect("procedural");
+    stated.require_cache_fit_tolerance(FitTolerance::try_new(7.0).expect("admissible"));
+    assert_eq!(stated.cache_fit_tolerance(), Some(9.0));
+
+    let untouched = ProceduralCurve::new(curve_id(), replica_definition()).expect("procedural");
+    let mut slotless = ProceduralCurve::new(curve_id(), replica_definition()).expect("procedural");
+    slotless.require_cache_fit_tolerance(FitTolerance::try_new(7.0).expect("admissible"));
+    assert_eq!(slotless, untouched);
+    assert_eq!(slotless.cache_fit_tolerance(), None);
+}
+
+#[test]
+fn raising_the_fit_tolerance_of_an_empty_legacy_slot_states_no_cache() {
+    let empty = || {
+        ProceduralCurve::new(curve_id(), ProceduralCurveDefinition::Exact { cache: None })
+            .expect("procedural")
+    };
+    let untouched = empty();
+    let mut raised = empty();
+
+    raised.raise_cache_fit_tolerance(FitTolerance::try_new(7.0).expect("admissible"));
+
+    assert_eq!(raised, untouched);
+    assert_eq!(raised.cache_fit_tolerance(), None);
 }
 
 fn revision_exact_definition() -> ProceduralSurfaceDefinition {

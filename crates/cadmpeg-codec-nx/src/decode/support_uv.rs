@@ -1447,7 +1447,7 @@ fn complete_support_uv_wave(
                 }
             });
             if completed && cache_backed_constructions.contains(&procedural.id) {
-                procedural.raise_cache_fit_tolerance(effective_fit_tolerance);
+                procedural.require_cache_fit_tolerance(effective_fit_tolerance);
             }
         }
     }
