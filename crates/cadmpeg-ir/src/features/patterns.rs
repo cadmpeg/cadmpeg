@@ -305,22 +305,12 @@ pub enum PatternTransform {
 pub struct CompositePattern(Vec<PatternStage>);
 
 impl CompositePattern {
-    /// Admits ordered stages whose combination rules and counts compose.
+    /// Admits ordered stages whose occurrence counts compose.
     pub fn new(stages: Vec<PatternStage>) -> Result<Self, &'static str> {
         if stages.is_empty() {
             return Err("pattern stages must be nonempty");
         }
-        for (index, stage) in stages.iter().enumerate() {
-            let combination = if index == 0 {
-                PatternStageCombination::Initialize
-            } else if matches!(stage.pattern.definition(), PatternTransform::Scale { .. }) {
-                PatternStageCombination::AlignedSlices
-            } else {
-                PatternStageCombination::CartesianProduct
-            };
-            if stage.combination != combination {
-                return Err("pattern stage combination must match its position and transform");
-            }
+        for stage in &stages {
             if matches!(
                 stage.pattern.definition(),
                 PatternTransform::Composite { .. }
@@ -332,6 +322,40 @@ impl CompositePattern {
             return Err("pattern stage counts must not overflow and must divide aligned slices");
         }
         Ok(Self(stages))
+    }
+
+    /// The rule that combines the stage at `index` with the stages before it.
+    ///
+    /// The rule is the stage's position and its transform: the first stage
+    /// establishes the sequence, a progressive scale slices the sequence it
+    /// follows, and every other transform multiplies it.
+    #[must_use]
+    pub fn combination(&self, index: usize) -> Option<PatternStageCombination> {
+        self.0
+            .get(index)
+            .map(|stage| stage_combination(index, stage))
+    }
+
+    /// Each stage paired with the rule that combines it with the stages
+    /// before it.
+    pub fn combinations(
+        &self,
+    ) -> impl Iterator<Item = (&PatternStage, PatternStageCombination)> + '_ {
+        self.0
+            .iter()
+            .enumerate()
+            .map(|(index, stage)| (stage, stage_combination(index, stage)))
+    }
+}
+
+/// The rule that combines the stage at `index` with the stages before it.
+fn stage_combination(index: usize, stage: &PatternStage) -> PatternStageCombination {
+    if index == 0 {
+        PatternStageCombination::Initialize
+    } else if matches!(stage.pattern.definition(), PatternTransform::Scale { .. }) {
+        PatternStageCombination::AlignedSlices
+    } else {
+        PatternStageCombination::CartesianProduct
     }
 }
 
@@ -405,7 +429,7 @@ fn composite_composition_is_valid(stages: &[crate::features::PatternStage]) -> b
             occurrences = Some(stage_count);
             return true;
         }
-        match stage.combination {
+        match stage_combination(index, stage) {
             PatternStageCombination::CartesianProduct => {
                 if let Some(count) = occurrences {
                     occurrences = count.checked_mul(stage_count);
@@ -469,8 +493,6 @@ pub enum PatternScaleCenter {
 pub struct PatternStage {
     /// Pattern transform sequence contributed by this stage.
     pub pattern: Box<PatternKind>,
-    /// Rule used to combine this stage with preceding stages.
-    pub combination: PatternStageCombination,
 }
 
 /// Combination rule for a composite-pattern stage.

@@ -351,7 +351,7 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
             if direction.y == -1.0 && offsets.iter().map(|offset| offset.get()).collect::<Vec<_>>() == [0.0, 1.0, 5.0]
     ));
     assert_eq!(
-        stages[1].combination,
+        stages.combination(1).expect("stage 1"),
         cadmpeg_ir::features::PatternStageCombination::CartesianProduct
     );
     assert!(matches!(
@@ -1347,7 +1347,7 @@ fn transfers_progressive_scale_and_ordered_multi_transform_stages() {
     };
     assert_eq!(stages.len(), 2);
     assert_eq!(
-        stages[0].combination,
+        stages.combination(0).expect("stage 0"),
         cadmpeg_ir::features::PatternStageCombination::Initialize
     );
     assert!(matches!(
@@ -1355,7 +1355,7 @@ fn transfers_progressive_scale_and_ordered_multi_transform_stages() {
         cadmpeg_ir::features::PatternTransform::Linear { count: 3, .. }
     ));
     assert_eq!(
-        stages[1].combination,
+        stages.combination(1).expect("stage 1"),
         cadmpeg_ir::features::PatternStageCombination::AlignedSlices
     );
     assert!(matches!(

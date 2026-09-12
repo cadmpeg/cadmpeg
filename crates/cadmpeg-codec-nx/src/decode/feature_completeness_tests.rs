@@ -389,7 +389,7 @@ fn nx_sweep_completeness_checks_nested_mode_and_orientation_operands() {
 fn nx_pattern_completeness_requires_every_regeneration_operand() {
     use cadmpeg_ir::math::Vector3;
     use cadmpeg_ir::{
-        features::{PathRef, PatternKind, PatternStage, PatternStageCombination, PatternTransform},
+        features::{PathRef, PatternKind, PatternStage, PatternTransform},
         scalar::Length,
     };
 
@@ -439,7 +439,6 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
                     })
                     .unwrap()
                 ),
-                combination: PatternStageCombination::Initialize,
             }])
             .unwrap(),
         })
@@ -449,7 +448,6 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
         stages: cadmpeg_ir::features::CompositePattern::new(vec![
             PatternStage {
                 pattern: Box::new(linear),
-                combination: PatternStageCombination::Initialize,
             },
             PatternStage {
                 pattern: Box::new(
@@ -459,7 +457,6 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
                     })
                     .unwrap(),
                 ),
-                combination: PatternStageCombination::CartesianProduct,
             },
         ])
         .unwrap(),
