@@ -88,7 +88,7 @@ pub(crate) fn bind_sketch_profiles(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     annotations: &mut Annotations,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let declared_carriers = declared_entity_handle_circular_carriers(features, parameters, lanes);
     let mut superseded = HashSet::new();
     let metadata_ids = history_metadata_ids(histories);
@@ -202,8 +202,6 @@ pub(crate) fn bind_sketch_profiles(
     builder.retain_exactness(|id| !removed.contains(id));
     *annotations = builder.build();
     bind_circular_profile_by_dimension(features, sketches, sketch_entities, parameters);
-
-    Ok(())
 }
 
 fn declared_entity_handle_circular_carriers(

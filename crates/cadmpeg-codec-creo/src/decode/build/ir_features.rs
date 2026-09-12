@@ -455,7 +455,9 @@ pub(super) fn emit_model_features(
         refresh_feature_outputs(scan, ir);
     }
     for (child, parent) in regeneration_edges {
-        let _ = ir.model.set_feature_regeneration_parent(child, parent);
+        ir.model
+            .set_feature_regeneration_parent(child, parent)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     Ok(geometry_generator_feature_count)
 }
@@ -468,7 +470,7 @@ pub(super) fn finish_feature_transfers(
 ) -> Result<(usize, usize), cadmpeg_core::CodecError> {
     let prototype_feature_dependencies = surface_prototype_feature_dependencies(scan);
     link_feature_sketch_history(scan, ir);
-    reconcile_feature_links(scan, ir, &prototype_feature_dependencies);
+    reconcile_feature_links(scan, ir, &prototype_feature_dependencies)?;
     let feature_result_topology_count = emit_feature_result_topologies(scan, ir);
     let feature_result_edge_count = ir
         .model

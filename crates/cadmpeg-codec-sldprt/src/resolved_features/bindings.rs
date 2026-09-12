@@ -823,7 +823,7 @@ pub(crate) fn bind_sweep_adjacent_profiles(
     model_features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let metadata_ids = history_metadata_ids(histories);
     let history_features = histories
         .iter()
@@ -948,8 +948,6 @@ pub(crate) fn bind_sweep_adjacent_profiles(
             }
         }
     }
-
-    Ok(())
 }
 
 pub(crate) fn bind_scalar_operands(

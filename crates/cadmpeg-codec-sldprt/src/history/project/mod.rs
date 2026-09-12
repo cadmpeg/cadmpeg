@@ -59,17 +59,25 @@ pub(crate) struct FeatureProjection {
 }
 
 impl FeatureProjection {
-    pub(crate) fn install(self, model: &mut cadmpeg_ir::document::Model) {
+    pub(crate) fn install(
+        self,
+        model: &mut cadmpeg_ir::document::Model,
+    ) -> Result<(), cadmpeg_core::CodecError> {
         model.features = self.features;
         for (child, parent) in self.regeneration_parents {
-            let _ = model.set_feature_regeneration_parent(child, parent);
+            model
+                .set_feature_regeneration_parent(child, parent)
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
+        Ok(())
     }
 
-    pub(crate) fn into_model(self) -> cadmpeg_ir::document::Model {
+    pub(crate) fn into_model(
+        self,
+    ) -> Result<cadmpeg_ir::document::Model, cadmpeg_core::CodecError> {
         let mut model = cadmpeg_ir::document::Model::default();
-        self.install(&mut model);
-        model
+        self.install(&mut model)?;
+        Ok(model)
     }
 }
 
@@ -200,7 +208,7 @@ pub(crate) fn project_feature_model(
         });
     }
     bind_offset_plane_references(&mut features);
-    bind_native_construction_features(&mut features, histories)?;
+    bind_native_construction_features(&mut features, histories);
     Ok(FeatureProjection {
         features,
         regeneration_parents,
@@ -672,7 +680,7 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
 pub(crate) fn bind_native_construction_features(
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[FeatureHistory],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let construction_native_refs = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -765,8 +773,6 @@ pub(crate) fn bind_native_construction_features(
             }
         }
     }
-
-    Ok(())
 }
 
 /// Project Keywords custom-property records into document-owned attributes.

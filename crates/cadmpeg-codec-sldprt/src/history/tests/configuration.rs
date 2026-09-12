@@ -487,7 +487,7 @@ fn dissected_sketch_alias_inherits_an_omitted_class_without_solved_geometry() {
         neutral("synthetic:test:id#owner", "Sketch1", "owner-native", 0),
         neutral("synthetic:test:id#alias", "Sketch1<3>", "alias-native", 1),
     ];
-    bind_unique_sketch_feature(&mut features, &[], std::slice::from_ref(&history)).unwrap();
+    bind_unique_sketch_feature(&mut features, &[], std::slice::from_ref(&history));
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Sketch {
@@ -505,8 +505,7 @@ fn dissected_sketch_alias_inherits_an_omitted_class_without_solved_geometry() {
         &mut features,
         &[],
         &[history],
-    )
-    .unwrap();
+    );
     assert!(matches!(
         features[1].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::TreeNode {

@@ -139,7 +139,7 @@ impl<'a> SketchCurveSelectionResolution<'a> {
 pub(crate) fn bind_sweep_sketch_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     resolution: &SketchCurveSelectionResolution<'_>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PathRef, PlanarProfileRef};
     let SketchCurveSelectionResolution {
         scopes,
@@ -305,8 +305,6 @@ pub(crate) fn bind_sweep_sketch_selections(
         }
         feature.evaluation.set_definition(definition);
     }
-
-    Ok(())
 }
 
 /// Resolve `SplitFace` curve-tool groups to ordered curves in one sketch.

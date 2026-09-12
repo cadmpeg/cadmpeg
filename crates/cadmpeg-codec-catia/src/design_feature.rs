@@ -117,7 +117,11 @@ impl DesignFeatureTransfer {
     /// operation roles remain unresolved. A malformed owner cycle or a parent
     /// that does not precede its child is omitted rather than creating an
     /// invalid neutral history.
-    pub(crate) fn assign_feature_parents(&self, ir: &mut CadIr, native: &CatiaNative) {
+    pub(crate) fn assign_feature_parents(
+        &self,
+        ir: &mut CadIr,
+        native: &CatiaNative,
+    ) -> Result<(), cadmpeg_core::CodecError> {
         let parents = self.feature_parents(ir, native);
         for feature in &mut ir.model.features {
             feature.dependencies.retain(|dependency| {
@@ -127,8 +131,11 @@ impl DesignFeatureTransfer {
             });
         }
         for (child, parent) in parents {
-            let _ = ir.model.set_feature_regeneration_parent(child, parent);
+            ir.model
+                .set_feature_regeneration_parent(child, parent)
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         }
+        Ok(())
     }
 
     pub(crate) fn feature_parent_count(&self, ir: &CadIr, native: &CatiaNative) -> usize {
@@ -514,7 +521,7 @@ pub(crate) fn transfer_design_features(
     ir: &mut CadIr,
     native: &CatiaNative,
     graph_scope: &crate::decode::ModelingGraphScope,
-) -> DesignFeatureTransfer {
+) -> Result<DesignFeatureTransfer, cadmpeg_core::CodecError> {
     let records = native
         .object_graphs
         .iter()
@@ -582,9 +589,9 @@ pub(crate) fn transfer_design_features(
         }
     }
 
-    transfer.assign_feature_parents(ir, native);
+    transfer.assign_feature_parents(ir, native)?;
     transfer.assign_feature_dependencies(ir, native);
-    transfer
+    Ok(transfer)
 }
 
 fn transfer_principal_plane(

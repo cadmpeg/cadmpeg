@@ -15,7 +15,7 @@ pub(crate) fn bind_unique_sketch_feature(
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &[cadmpeg_ir::sketches::Sketch],
     histories: &[FeatureHistory],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let native_features = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -164,7 +164,7 @@ pub(crate) fn bind_unique_sketch_feature(
                     dependency,
                     sketch,
                     *has_profile,
-                )? && !feature.dependencies.contains(dependency)
+                ) && !feature.dependencies.contains(dependency)
                 {
                     feature.dependencies.insert(dependency.clone());
                 }
@@ -172,8 +172,6 @@ pub(crate) fn bind_unique_sketch_feature(
         }
         feature.evaluation.set_definition(definition);
     }
-
-    Ok(())
 }
 
 pub(crate) fn sketch_alias_base_name(name: &str) -> Option<&str> {
@@ -441,7 +439,7 @@ pub(crate) fn bind_definition_sketch(
     feature_ref: &FeatureId,
     sketch: &cadmpeg_ir::sketches::SketchId,
     has_profile: bool,
-) -> Result<bool, cadmpeg_core::CodecError> {
+) -> bool {
     let bind_profile = |profile: &mut ProfileRef| {
         if has_profile
             && (matches!(profile, ProfileRef::Planar(PlanarProfileRef::Unresolved(owner)) if owner == native_ref)
@@ -474,7 +472,7 @@ pub(crate) fn bind_definition_sketch(
             false
         }
     };
-    Ok(match definition {
+    match definition {
         FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) => {
             bind_profile(profile)
         }
@@ -528,5 +526,5 @@ pub(crate) fn bind_definition_sketch(
             profile_bound || guide_bound
         }
         _ => false,
-    })
+    }
 }

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Hexadecimal rendering with absolute file offsets and an ASCII gutter.
 
-use std::fmt::Write as _;
 use std::num::NonZeroUsize;
 
 /// Number of hexadecimal digits used for the offset column.
@@ -25,14 +24,16 @@ pub fn render(base: u64, bytes: &[u8], width: NonZeroUsize) -> String {
     let mut out = String::new();
     for (index, chunk) in bytes.chunks(width).enumerate() {
         let offset = base.saturating_add((index * width) as u64);
-        let _ = write!(out, "{offset:0digits$x}  ");
+        let rendered_offset = format!("{offset:0digits$x}  ");
+        out.push_str(&rendered_offset);
         for column in 0..width {
             if column > 0 && column.is_multiple_of(8) {
                 out.push(' ');
             }
             match chunk.get(column) {
                 Some(byte) => {
-                    let _ = write!(out, "{byte:02x} ");
+                    crate::inspect::layout::push_hex(&mut out, *byte);
+                    out.push(' ');
                 }
                 None => out.push_str("   "),
             }

@@ -1384,8 +1384,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         &[history],
         &[lane],
         &mut annotations,
-    )
-    .unwrap();
+    );
 
     assert!(sketches.is_empty());
     assert!(entities.is_empty());

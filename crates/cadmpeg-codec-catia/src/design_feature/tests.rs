@@ -220,7 +220,7 @@ fn compact_self_owned_operation_root_remains_an_identity_anchor() {
         &mut ir,
         &native,
         &crate::decode::ModelingGraphScope::Unscoped,
-    );
+    ).unwrap();
 
     assert!(ir.model.features.is_empty());
     assert!(transfer.native_operation_records.is_empty());
@@ -279,7 +279,7 @@ fn malformed_compact_root_does_not_promote_an_operation() {
         &mut ir,
         &native,
         &crate::decode::ModelingGraphScope::Unscoped,
-    );
+    ).unwrap();
 
     assert!(ir.model.features.is_empty());
     assert!(transfer.native_operation_records.is_empty());
@@ -474,7 +474,7 @@ fn transfers_admitted_native_operations_with_exact_parentage() {
         &mut ir,
         &native,
         &crate::decode::ModelingGraphScope::Unscoped,
-    );
+    ).unwrap();
 
     assert_eq!(ir.model.features.len(), 2);
     assert_eq!(ir.model.features[0].ordinal, 10);
@@ -605,7 +605,7 @@ fn maps_each_admitted_operation_class_to_its_neutral_family() {
         &mut ir,
         &native,
         &crate::decode::ModelingGraphScope::Unscoped,
-    );
+    ).unwrap();
 
     assert_eq!(ir.model.features.len(), cases.len());
     for feature in &ir.model.features {
@@ -749,7 +749,7 @@ fn orders_exact_feature_parameters_by_serialized_field_position() {
         &mut ir,
         &native,
         &crate::decode::ModelingGraphScope::Unscoped,
-    );
+    ).unwrap();
     transfer.assign_parameter_owners(&mut ir, &native);
 
     assert_eq!(
@@ -875,7 +875,7 @@ fn assigns_a_nested_parameter_to_the_nearest_operation() {
         &mut ir,
         &native,
         &crate::decode::ModelingGraphScope::Unscoped,
-    );
+    ).unwrap();
     transfer.assign_parameter_owners(&mut ir, &native);
 
     let child_feature =
@@ -1073,7 +1073,7 @@ fn does_not_promote_an_unadmitted_helper_owner_class() {
         &mut ir,
         &native,
         &crate::decode::ModelingGraphScope::Unscoped,
-    );
+    ).unwrap();
 
     assert!(ir.model.features.is_empty());
     assert!(transfer.native_operation_records.is_empty());
@@ -1107,7 +1107,7 @@ fn pattern_schema_definition_does_not_create_a_feature_instance() {
         &mut ir,
         &native,
         &crate::decode::ModelingGraphScope::Unscoped,
-    );
+    ).unwrap();
     assert!(ir.model.features.is_empty());
     assert!(transfer.consumed_records().is_empty());
 }
@@ -1137,7 +1137,7 @@ fn prt_sketch_schema_field_does_not_create_a_feature_instance() {
         &mut ir,
         &native,
         &crate::decode::ModelingGraphScope::Unscoped,
-    );
+    ).unwrap();
 
     assert!(ir.model.features.is_empty());
     assert!(ir.model.sketches.is_empty());
@@ -1194,7 +1194,7 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
         &mut ir,
         &native,
         &crate::decode::ModelingGraphScope::Unscoped,
-    );
+    ).unwrap();
 
     let parameter_entity = native
         .entity_records
@@ -1301,7 +1301,7 @@ fn incompatible_exact_feature_candidates_on_one_object_remain_unresolved() {
         &mut ir,
         &native,
         &crate::decode::ModelingGraphScope::Unscoped,
-    );
+    ).unwrap();
 
     assert!(ir.model.features.is_empty());
     assert!(ir.model.sketches.is_empty());
@@ -1396,7 +1396,7 @@ fn parameter_owner_follows_one_exact_child_design_object() {
         &mut ir,
         &native,
         &crate::decode::ModelingGraphScope::Unscoped,
-    );
+    ).unwrap();
     ir.model
         .parameters
         .push(cadmpeg_ir::features::DesignParameter {
@@ -1459,7 +1459,7 @@ fn complete_standalone_principal_plane_declarations_transfer_one_history_node() 
             &mut ir,
             &native,
             &crate::decode::ModelingGraphScope::Unscoped,
-        );
+        ).unwrap();
 
         assert!(ir.model.sketches.is_empty());
         assert_eq!(ir.model.features.len(), 1);
@@ -1482,7 +1482,7 @@ fn complete_standalone_principal_plane_declarations_transfer_one_history_node() 
             &mut excluded_ir,
             &native,
             &crate::decode::ModelingGraphScope::Unresolved,
-        );
+        ).unwrap();
         assert!(excluded_ir.model.features.is_empty());
         assert!(excluded.consumed_records().is_empty());
     }
@@ -1528,7 +1528,7 @@ fn mixed_or_payload_bearing_principal_plane_fields_do_not_transfer() {
             &mut ir,
             &native,
             &crate::decode::ModelingGraphScope::Unscoped,
-        );
+        ).unwrap();
 
         assert!(ir.model.features.is_empty());
         assert!(transfer.principal_plane_records.is_empty());

@@ -15,10 +15,21 @@
 //!
 //! Example: `u32le:count,pad4,f64le:x,f64le:y,bytes4:tag`.
 
-use std::fmt::Write as _;
 use std::num::NonZeroUsize;
 
 use super::numeric::{Endian, ScalarType, ScalarValue};
+
+/// Lowercase hexadecimal digits, indexed by nibble.
+const HEX_DIGITS: [char; 16] = [
+    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
+];
+
+/// Appends `byte` as two lowercase hexadecimal digits.
+pub fn push_hex(out: &mut String, byte: u8) {
+    out.push(HEX_DIGITS[usize::from(byte >> 4)]);
+    out.push(HEX_DIGITS[usize::from(byte & 0x0f)]);
+}
+
 
 /// A parse failure in a layout spec.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -446,7 +457,7 @@ fn hex_bytes(bytes: &[u8]) -> String {
         if index > 0 {
             out.push(' ');
         }
-        let _ = write!(out, "{byte:02x}");
+        push_hex(&mut out, *byte);
     }
     out
 }

@@ -668,12 +668,12 @@ mod tests {
     use std::collections::BTreeMap;
     use std::num::{NonZeroU32, NonZeroU64};
 
-    fn verbatim_wire(compression: &str, size: serde_json::Value) -> serde_json::Value {
+    fn verbatim_wire(compression: &str, size: &serde_json::Value) -> serde_json::Value {
         serde_json::json!({
             "name": "entry",
             "role": "stream",
             "compression": compression,
-            "size": size,
+            "size": size.clone(),
         })
     }
 
@@ -763,9 +763,9 @@ mod tests {
                 label: VerbatimLabel::None,
                 size: expected,
             };
-            let read = admit(verbatim_wire("none", size.clone()));
+            let read = admit(verbatim_wire("none", &size));
             assert_eq!(read.storage, storage, "{size}");
-            let mut expected_wire = verbatim_wire("none", size.clone());
+            let mut expected_wire = verbatim_wire("none", &size);
             expected_wire["attributes"] = serde_json::json!({});
             assert_eq!(
                 serde_json::to_value(entry(storage)).expect("a container entry serializes"),
@@ -779,20 +779,20 @@ mod tests {
     fn a_framed_payload_carries_no_stored_span_to_disagree_with() {
         let error = reject(verbatim_wire(
             "none",
-            serde_json::json!({"form": "framed", "payload": 9, "framing": 1, "stored": 5}),
+            &serde_json::json!({"form": "framed", "payload": 9, "framing": 1, "stored": 5}),
         ));
         assert!(error.contains("unknown field"), "{error}");
         assert!(error.contains("stored"), "{error}");
 
         let error = reject(verbatim_wire(
             "none",
-            serde_json::json!({"form": "framed", "payload": 9, "framing": 0}),
+            &serde_json::json!({"form": "framed", "payload": 9, "framing": 0}),
         ));
         assert!(error.contains("zero"), "{error}");
 
         let error = reject(verbatim_wire(
             "none",
-            serde_json::json!({"form": "framed", "payload": u64::MAX, "framing": 1}),
+            &serde_json::json!({"form": "framed", "payload": u64::MAX, "framing": 1}),
         ));
         assert!(
             error.contains("declared length exceeds the largest live allocation"),
@@ -875,9 +875,10 @@ mod tests {
     fn a_reported_zero_size_is_not_an_unreported_one() {
         let reported = admit(verbatim_wire(
             "none",
-            serde_json::json!({"form": "exact", "size": 0}),
+            &serde_json::json!({"form": "exact", "size": 0}),
         ));
-        let unreported = admit(verbatim_wire("none", serde_json::json!({"form": "unreported"})));
+        let unreported =
+            admit(verbatim_wire("none", &serde_json::json!({"form": "unreported"})));
         assert_ne!(reported.storage, unreported.storage);
         assert_eq!(reported.stored_size(), Some(0));
         assert_eq!(reported.expanded_size(), Some(0));
@@ -893,7 +894,7 @@ mod tests {
     fn a_storage_label_cannot_declare_a_byte_size() {
         let error = reject(verbatim_wire(
             "storage",
-            serde_json::json!({"form": "exact", "size": 4}),
+            &serde_json::json!({"form": "exact", "size": 4}),
         ));
         assert!(error.contains("unknown field"), "{error}");
         assert!(error.contains("size"), "{error}");
@@ -913,13 +914,13 @@ mod tests {
     fn reported_sizes_are_absent_rather_than_zero() {
         let payload_only = admit(verbatim_wire(
             "none",
-            serde_json::json!({"form": "payload_only", "payload": 12}),
+            &serde_json::json!({"form": "payload_only", "payload": 12}),
         ));
         assert_eq!(payload_only.stored_size(), None);
         assert_eq!(payload_only.expanded_size(), Some(12));
         let framed_entry = admit(verbatim_wire(
             "none",
-            serde_json::json!({"form": "framed", "payload": 10, "framing": 20}),
+            &serde_json::json!({"form": "framed", "payload": 10, "framing": 20}),
         ));
         assert_eq!(framed_entry.stored_size(), Some(30));
         assert_eq!(framed_entry.expanded_size(), Some(10));

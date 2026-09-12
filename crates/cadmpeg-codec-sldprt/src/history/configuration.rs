@@ -145,7 +145,7 @@ pub(crate) fn project_compact_and_generated(
     crate::resolved_features::projections::project_draft_operands(features, projection, lanes);
     crate::resolved_features::terminations::project_surface_sweep_profiles(
         features, projection, lanes,
-    )?;
+    );
     crate::resolved_features::holes::project_helix_axes(features, projection, lanes)?;
     crate::resolved_features::component_paths::project_adjacent_extrusion_profiles(
         features, projection, lanes,
@@ -265,7 +265,7 @@ pub(crate) fn project_configuration_design_states(
             &mut features,
             histories,
             scoped_lanes,
-        )?;
+        );
         restore_configuration_tree_node_definitions(&mut features, &ir.model.features);
         ir.model.configurations[configuration_index].feature_states = features
             .into_iter()
@@ -567,7 +567,7 @@ pub(crate) fn project_configuration_sketch_states(
             histories,
             scoped_lanes,
             annotations,
-        )?;
+        );
         crate::resolved_features::profiles::project_compact_sketch_profiles(
             &mut features,
             &mut ir.model.sketches,
@@ -590,12 +590,12 @@ pub(crate) fn project_configuration_sketch_states(
             histories,
             scoped_lanes,
         );
-        bind_unique_sketch_feature(&mut features, &ir.model.sketches, histories)?;
+        bind_unique_sketch_feature(&mut features, &ir.model.sketches, histories);
         crate::resolved_features::component_paths::project_dissected_sketches(
             &mut features,
             &ir.model.sketches,
             histories,
-        )?;
+        );
         crate::resolved_features::axes::bind_profile_revolution_axes(
             &mut features,
             histories,
@@ -617,7 +617,7 @@ pub(crate) fn project_configuration_sketch_states(
             &mut features,
             histories,
             scoped_lanes,
-        )?;
+        );
         crate::resolved_features::dimensions::project_dimensioned_sketch_geometry(
             &mut ir.model.sketch_entities,
             &ir.model.sketches,

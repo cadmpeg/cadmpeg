@@ -840,8 +840,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             scale: None,
             allow_multi_profile_faces: None,
         }));
-    bind_sweep_adjacent_profiles(&mut features, &[sweep_history], std::slice::from_ref(&lane))
-        .unwrap();
+    bind_sweep_adjacent_profiles(&mut features, &[sweep_history], std::slice::from_ref(&lane));
     assert!(matches!(
         features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep {
             shape,

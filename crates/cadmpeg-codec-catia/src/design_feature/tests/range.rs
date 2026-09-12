@@ -87,7 +87,7 @@ fn transfers_exact_range_fields_as_unresolved_operation_properties() {
         &mut ir,
         &native,
         &crate::decode::ModelingGraphScope::Unscoped,
-    );
+    ).unwrap();
 
     let properties = &ir.model.features[0].source_properties;
     assert_eq!(properties["catia_range_0_entity"], "range-entity");
