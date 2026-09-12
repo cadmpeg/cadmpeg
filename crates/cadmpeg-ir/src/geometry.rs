@@ -2294,8 +2294,7 @@ enum TSplineSubtransformWire {
     },
     Reference {
         index: SubtypeTableIndex,
-        #[serde(default)]
-        resolved: Option<Box<InlineTSplineSubtransform>>,
+        resolved: Box<InlineTSplineSubtransform>,
     },
 }
 
@@ -2310,7 +2309,7 @@ impl TryFrom<TSplineSubtransformWire> for TSplineSubtransform {
             } => InlineTSplineSubtransform::try_new(program, separator, values).map(Self::Inline),
             TSplineSubtransformWire::Reference { index, resolved } => Ok(Self::Resolved {
                 index,
-                transform: resolved.ok_or("T-spline subtransform is unresolved")?,
+                transform: resolved,
             }),
         }
     }

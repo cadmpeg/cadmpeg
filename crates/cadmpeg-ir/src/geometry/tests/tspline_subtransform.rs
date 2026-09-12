@@ -86,8 +86,8 @@ fn subtransform_wire_rejects_missing_resolved_payload() {
         json!({"kind": "reference", "index": 0}),
         json!({"kind": "reference", "index": 0, "resolved": null}),
     ] {
-        let error = serde_json::from_value::<TSplineSubtransform>(wire).unwrap_err();
-        assert_eq!(error.to_string(), "T-spline subtransform is unresolved");
+        serde_json::from_value::<TSplineSubtransform>(wire)
+            .expect_err("a reference states its resolved program");
     }
 }
 

@@ -112,11 +112,11 @@ fn a_joint_family_refuses_a_scalar_outside_it_by_name() {
         ("distance2", serde_json::json!(3.0)),
         (
             "angular_limits",
-            serde_json::json!({"minimum": 0.0, "maximum": 1.0}),
+            serde_json::json!({"bounds": "range", "minimum": 0.0, "maximum": 1.0}),
         ),
         (
             "linear_limits",
-            serde_json::json!({"minimum": 0.0, "maximum": 2.0}),
+            serde_json::json!({"bounds": "range", "minimum": 0.0, "maximum": 2.0}),
         ),
     ];
     for (kind, allowed) in families {
