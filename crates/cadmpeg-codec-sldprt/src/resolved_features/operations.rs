@@ -134,12 +134,10 @@ pub(crate) fn bind_feature_operations(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     bind_extrusion_operations(features, histories, lanes, form_padding);
     bind_revolution_operations(features, histories, lanes, form_padding);
-    bind_sweep_operations(features, histories, lanes, form_padding)?;
-
-    Ok(())
+    bind_sweep_operations(features, histories, lanes, form_padding);
 }
 
 /// Project revolution Boolean form words from declared and compact objects.
@@ -201,7 +199,7 @@ pub(crate) fn bind_sweep_operations(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let history_features = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -272,8 +270,6 @@ pub(crate) fn bind_sweep_operations(
         }
         feature.evaluation.set_definition(definition);
     }
-
-    Ok(())
 }
 
 /// Inline extrusion trailer fields: the family word and operation byte.
