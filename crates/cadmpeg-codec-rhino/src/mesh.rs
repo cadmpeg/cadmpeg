@@ -1021,7 +1021,7 @@ pub(crate) fn fuzz_buffer(data: &[u8]) {
     let mut warnings = Diagnostics::new();
     let mut decompressed_bytes = 0;
     let mut document_budget = MeshBudget::new();
-    let _ = read_buffer(
+    let _probe = read_buffer(
         expand,
         &mut reader,
         expected,

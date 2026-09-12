@@ -7,7 +7,7 @@
 
 /// Exercise IGES physical-card scanning.
 pub fn cards(data: &[u8]) {
-    let _ = crate::card::scan_with_context(data, None);
+    let _probe = crate::card::scan_with_context(data, None);
 }
 
 /// Exercise IGES global-section parsing.
@@ -15,7 +15,7 @@ pub fn global(data: &[u8]) {
     let Ok(scan) = crate::card::scan_with_context(data, None) else {
         return;
     };
-    let _ = crate::global::parse(&scan);
+    let _probe = crate::global::parse(&scan);
 }
 
 /// Exercise IGES directory-section parsing.
@@ -35,7 +35,7 @@ pub fn parameters(data: &[u8]) {
         return;
     };
     let (directory, quarantined) = crate::directory::parse(&scan, global.global_table());
-    let _ = crate::parameter::assemble_with_context(&scan, &directory, &quarantined, &global, None);
+    let _probe = crate::parameter::assemble_with_context(&scan, &directory, &quarantined, &global, None);
 }
 
 #[cfg(test)]

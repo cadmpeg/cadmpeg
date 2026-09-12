@@ -7,12 +7,12 @@
 
 /// Exercise STEP lexical scanning.
 pub fn lex(data: &[u8]) {
-    let _ = crate::lex::lex(data);
+    let _probe = crate::lex::lex(data);
 }
 
 /// Exercise STEP entity parsing.
 pub fn parse(data: &[u8]) {
-    let _ = crate::parse::parse(data);
+    let _probe = crate::parse::parse(data);
 }
 
 /// Entity count for the parse benchmark; hides the typed exchange.

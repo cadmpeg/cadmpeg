@@ -96,11 +96,13 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 *degenerate_curve = cadmpeg_ir::geometry::DegenerateCurve::try_new(point).unwrap();
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
-                let _ = nurbs.edit_control_points(|points| {
-                    for pole in points {
-                        pole.x += dx;
-                    }
-                });
+                nurbs
+                    .edit_control_points(|points| {
+                        for pole in points {
+                            pole.x += dx;
+                        }
+                    })
+                    .unwrap();
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)) => {
                 polyline
@@ -206,11 +208,13 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 .unwrap();
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
-                let _ = nurbs.edit_control_points(|rows| {
-                    for pole in rows.iter_mut().flatten() {
-                        pole.x += dx;
-                    }
-                });
+                nurbs
+                    .edit_control_points(|rows| {
+                        for pole in rows.iter_mut().flatten() {
+                            pole.x += dx;
+                        }
+                    })
+                    .unwrap();
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(surface)) => {
                 surface

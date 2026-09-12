@@ -530,7 +530,7 @@ mod tests {
     fn target_catalog_rejects_mixed_namespaces() {
         static MIXED: &[TargetDescriptor] =
             &[target("fcstd:schema-4", &[]), target("step:ap242-e3", &[])];
-        let _ = TargetCatalog::new(MIXED, None);
+        let _catalog = TargetCatalog::new(MIXED, None);
     }
 
     #[test]
@@ -569,7 +569,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "target catalog default is out of bounds")]
     fn a_target_catalog_rejects_an_invalid_default_index() {
-        let _ = TargetCatalog::new(TARGETS, Some(TARGETS.len()));
+        let _catalog = TargetCatalog::new(TARGETS, Some(TARGETS.len()));
     }
 
     #[test]
@@ -594,7 +594,7 @@ mod tests {
             target("test:same", NO_ALIASES),
             target("test:same", NO_ALIASES),
         ];
-        let _ = TargetCatalog::new(DUPLICATES, None);
+        let _catalog = TargetCatalog::new(DUPLICATES, None);
     }
 
     #[test]
@@ -604,7 +604,7 @@ mod tests {
             target("test:first", &["same"]),
             target("test:second", &["same"]),
         ];
-        let _ = TargetCatalog::new(DUPLICATES, None);
+        let _catalog = TargetCatalog::new(DUPLICATES, None);
     }
 
     #[test]
@@ -614,7 +614,7 @@ mod tests {
             target("test:first", &["test:second"]),
             target("test:second", NO_ALIASES),
         ];
-        let _ = TargetCatalog::new(DUPLICATES, None);
+        let _catalog = TargetCatalog::new(DUPLICATES, None);
     }
 
     #[test]
@@ -624,7 +624,7 @@ mod tests {
             target("test:first", &["second"]),
             target("test:second", NO_ALIASES),
         ];
-        let _ = TargetCatalog::new(DUPLICATES, None);
+        let _catalog = TargetCatalog::new(DUPLICATES, None);
     }
 
     #[test]
