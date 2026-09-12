@@ -172,7 +172,7 @@ fn tolerant_edge_does_not_replace_a_serialized_fin_curve() {
 fn opposite_intersection_chart_transfers_adaptively_within_edge_tolerance() {
     let mut ir = cylinder_plane_transfer_fixture(std::f64::consts::TAU, 0.01);
 
-    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir);
+    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir).unwrap();
 
     let ProceduralCurveDefinition::Intersection { context, .. } =
         ir.model.procedural_curves[0].definition()
@@ -201,7 +201,7 @@ fn opposite_intersection_chart_transfer_fails_closed_at_sample_budget() {
 
     let mut ir =
         cylinder_plane_transfer_fixture(std::f64::consts::TAU * 10_000.0, TIGHT_EDGE_TOLERANCE);
-    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir);
+    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir).unwrap();
 
     let ProceduralCurveDefinition::Intersection { context, .. } =
         ir.model.procedural_curves[0].definition()
@@ -227,7 +227,7 @@ fn opposite_intersection_blend_contact_transfers_many_candidates_within_budget()
         true,
     );
 
-    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir);
+    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir).unwrap();
 
     assert!(ir.model.procedural_curves[1..].iter().all(|procedural| {
         let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
@@ -258,7 +258,7 @@ fn opposite_intersection_blend_contact_keeps_adaptive_fit_certification() {
     };
     let mut ir = blend_contact_transfer_fixture(1, &source_pcurve, CONTACT_FIT_TOLERANCE, true);
 
-    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir);
+    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir).unwrap();
 
     let ProceduralCurveDefinition::Intersection { context, .. } =
         ir.model.procedural_curves[1].definition()
@@ -298,7 +298,7 @@ fn opposite_intersection_complete_blend_boundary_transfers_many_candidates_witho
         false,
     );
 
-    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir);
+    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir).unwrap();
 
     assert!(ir.model.procedural_curves[1..].iter().all(|procedural| {
         let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
@@ -356,7 +356,8 @@ fn opposite_intersection_chart_transfer_scopes_to_new_procedural_curves() {
         1,
         &transfer_budget,
         &geometry_budget,
-    );
+    )
+    .unwrap();
 
     let ProceduralCurveDefinition::Intersection { context: first, .. } =
         ir.model.procedural_curves[0].definition()
@@ -829,7 +830,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
         ),
     });
 
-    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir);
+    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir).unwrap();
 
     let ProceduralCurveDefinition::Intersection { context, .. } =
         ir.model.procedural_curves[0].definition()

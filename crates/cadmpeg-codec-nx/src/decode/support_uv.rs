@@ -660,7 +660,10 @@ pub(crate) fn complete_ext11_support_uv_with_budget(
 }
 
 #[cfg(test)]
-pub(super) fn complete_support_uv(ir: &mut CadIr, pending: &[PendingExt11SupportUv]) {
+pub(super) fn complete_support_uv(
+    ir: &mut CadIr,
+    pending: &[PendingExt11SupportUv],
+) -> Result<bool, cadmpeg_core::CodecError> {
     let support_budget = new_support_uv_budget();
     let coupled_support_budget = new_support_uv_budget();
     let geometry_budget = GeometryWorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
@@ -671,7 +674,7 @@ pub(super) fn complete_support_uv(ir: &mut CadIr, pending: &[PendingExt11Support
         &geometry_budget,
         &coupled_support_budget,
         &geometry_budget,
-    );
+    )
 }
 
 #[cfg(test)]
@@ -682,7 +685,7 @@ pub(super) fn complete_support_uv_with_budget(
     geometry_budget: &GeometryWorkBudget<'_>,
     coupled_support_budget: &SupportUvBudget<'_>,
     coupled_geometry_budget: &GeometryWorkBudget<'_>,
-) -> bool {
+) -> Result<bool, cadmpeg_core::CodecError> {
     let mut endpoint_witnesses = BTreeMap::new();
     complete_support_uv_with_budget_and_endpoint_witnesses(
         ir,
@@ -703,7 +706,7 @@ pub(super) fn complete_support_uv_with_budget_and_endpoint_witnesses(
     coupled_support_budget: &SupportUvBudget<'_>,
     coupled_geometry_budget: &GeometryWorkBudget<'_>,
     endpoint_witnesses: &mut EndpointWitnesses,
-) -> bool {
+) -> Result<bool, cadmpeg_core::CodecError> {
     // A failed fit can become solvable when either lane is filled by an
     // earlier wave. Keep those dependencies as the direct and coupled retry
     // keys; unrelated progress must not repeat the same inverse problems.
@@ -728,13 +731,13 @@ pub(super) fn complete_support_uv_with_budget_and_endpoint_witnesses(
             &mut failed_attempts,
             &mut failed_coupled_attempts,
             endpoint_witnesses,
-        );
+        )?;
         let after = pending_support_lanes_requiring_completion(ir, pending);
         if after >= before || support_uv_budget_exhausted(support_budget) {
             break;
         }
     }
-    lane_geometry_exhausted
+    Ok(lane_geometry_exhausted)
 }
 
 #[cfg(test)]
@@ -942,7 +945,7 @@ fn complete_support_uv_wave(
         [Option<cadmpeg_ir::geometry::SupportPcurve>; 2],
     >,
     endpoint_witnesses: &mut EndpointWitnesses,
-) -> bool {
+) -> Result<bool, cadmpeg_core::CodecError> {
     let mut lane_geometry_exhausted = false;
     if !support_uv_budget_exhausted(support_budget) && !geometry_budget.exhausted() {
         let mut replacements = Vec::new();
@@ -1447,7 +1450,7 @@ fn complete_support_uv_wave(
                 }
             });
             if completed && cache_backed_constructions.contains(&procedural.id) {
-                procedural.require_cache_fit_tolerance(effective_fit_tolerance);
+                procedural.require_cache_fit_tolerance(effective_fit_tolerance)?;
             }
         }
     }
@@ -1466,7 +1469,7 @@ fn complete_support_uv_wave(
             endpoint_witnesses,
         );
     }
-    lane_geometry_exhausted
+    Ok(lane_geometry_exhausted)
 }
 
 #[cfg(test)]

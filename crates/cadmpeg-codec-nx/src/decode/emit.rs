@@ -896,7 +896,7 @@ pub(super) fn emit_topology(
         procedural_start,
         completion_transfer_budget,
         completion_geometry_budget,
-    );
+    )?;
     intersection_index.complete_new_pcurves_from_stream(ir, intersection_starts.pcurves);
 
     let owned_edges: BTreeSet<_> = ir

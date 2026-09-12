@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::geometry::{
-    CacheContractError, ExactSpline, FitTolerance, LawFormula, LawSurfaceConstruction,
+    CacheContractError, CacheFirstCurveParameterization, ExactSpline, FitTolerance,
+    IntcurveSupportContext, IntcurveSupportSide, LawFormula, LawSurfaceConstruction,
     LawSurfaceTail, LegacyCache, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, RevisionCacheForm, RevisionSurfaceForm,
+    ProceduralSurfaceDefinition, RevisionCacheForm, RevisionSurfaceForm, SurfaceCurveCacheFirst,
+    SurfaceCurveFamily, SurfaceCurveTail,
 };
 use crate::ids::{ProceduralCurveId, ProceduralSurfaceId};
 
@@ -164,12 +166,50 @@ fn raising_the_fit_tolerance_of_a_legacy_slot_keeps_the_higher_of_the_two() {
     assert_eq!(curve.cache_fit_tolerance(), Some(9.0));
 }
 
+fn parameterized_curve_definition() -> ProceduralCurveDefinition {
+    ProceduralCurveDefinition::SurfaceCurve {
+        family: SurfaceCurveFamily::Blend {
+            context: IntcurveSupportContext::try_new(
+                [
+                    IntcurveSupportSide {
+                        surface: None,
+                        pcurve: None,
+                    },
+                    IntcurveSupportSide {
+                        surface: None,
+                        pcurve: None,
+                    },
+                ],
+                [0.0, 1.0],
+                [Vec::new(), Vec::new(), Vec::new()],
+            )
+            .expect("finite ordered support context"),
+            tail: Some(SurfaceCurveCacheFirst {
+                form: SurfaceCurveTail {
+                    extension: 7,
+                    revision: 23100,
+                    cache: RevisionCacheForm::Parameterization(CacheFirstCurveParameterization {
+                        interval: [Some(0.0), Some(1.0)],
+                        closed_form: 0,
+                    }),
+                    support_bounds: [[None; 4]; 2],
+                    solved_range: [Some(-1.0), Some(2.0)],
+                },
+                flags: true,
+            }),
+        },
+    }
+}
+
 #[test]
 fn requiring_a_fit_tolerance_states_the_contract_an_empty_legacy_slot_holds_none_of() {
     let mut empty =
         ProceduralCurve::new(curve_id(), ProceduralCurveDefinition::Exact { cache: None })
             .expect("procedural");
-    empty.require_cache_fit_tolerance(FitTolerance::try_new(7.0).expect("admissible"));
+    assert_eq!(
+        empty.require_cache_fit_tolerance(FitTolerance::try_new(7.0).expect("admissible")),
+        Ok(())
+    );
     assert_eq!(empty.cache_fit_tolerance(), Some(7.0));
 
     let mut stated = ProceduralCurve::new(
@@ -179,14 +219,41 @@ fn requiring_a_fit_tolerance_states_the_contract_an_empty_legacy_slot_holds_none
         },
     )
     .expect("procedural");
-    stated.require_cache_fit_tolerance(FitTolerance::try_new(7.0).expect("admissible"));
+    assert_eq!(
+        stated.require_cache_fit_tolerance(FitTolerance::try_new(7.0).expect("admissible")),
+        Ok(())
+    );
     assert_eq!(stated.cache_fit_tolerance(), Some(9.0));
+}
 
+/// A caller that asked for a solved cache on a layout that states none, or on
+/// a parameterized form, is refused. It is never answered with a silent
+/// unchanged construction.
+#[test]
+fn requiring_a_fit_tolerance_refuses_a_layout_that_states_no_solved_cache() {
     let untouched = ProceduralCurve::new(curve_id(), replica_definition()).expect("procedural");
     let mut slotless = ProceduralCurve::new(curve_id(), replica_definition()).expect("procedural");
-    slotless.require_cache_fit_tolerance(FitTolerance::try_new(7.0).expect("admissible"));
+    assert_eq!(
+        slotless.require_cache_fit_tolerance(FitTolerance::try_new(7.0).expect("admissible")),
+        Err(CacheContractError::Layout(
+            "this construction states no solved-cache fit tolerance"
+        ))
+    );
     assert_eq!(slotless, untouched);
     assert_eq!(slotless.cache_fit_tolerance(), None);
+
+    let untouched =
+        ProceduralCurve::new(curve_id(), parameterized_curve_definition()).expect("procedural");
+    let mut parameterized =
+        ProceduralCurve::new(curve_id(), parameterized_curve_definition()).expect("procedural");
+    assert_eq!(
+        parameterized.require_cache_fit_tolerance(FitTolerance::try_new(7.0).expect("admissible")),
+        Err(CacheContractError::Layout(
+            "a parameterized cache form takes no solved-cache fit tolerance"
+        ))
+    );
+    assert_eq!(parameterized, untouched);
+    assert_eq!(parameterized.cache_fit_tolerance(), None);
 }
 
 #[test]

@@ -1088,7 +1088,9 @@ pub(crate) fn reverse_pcurve_over_range(
 }
 
 #[cfg(test)]
-pub(super) fn complete_intersection_pcurves_from_opposite_charts(ir: &mut CadIr) {
+pub(super) fn complete_intersection_pcurves_from_opposite_charts(
+    ir: &mut CadIr,
+) -> Result<(), cadmpeg_core::CodecError> {
     let transfer_budget = new_transfer_budget();
     let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     complete_intersection_pcurves_from_opposite_charts_with_budget(
@@ -1096,7 +1098,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts(ir: &mut CadIr)
         0,
         &transfer_budget,
         &geometry_budget,
-    );
+    )
 }
 
 pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
@@ -1105,7 +1107,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
     procedural_start: usize,
     transfer_budget: &TransferBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let edge_tolerances = ir
         .model
         .edges
@@ -1265,9 +1267,10 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
             }
         });
         if completed && cache_backed {
-            procedural.require_cache_fit_tolerance(tolerance);
+            procedural.require_cache_fit_tolerance(tolerance)?;
         }
     }
+    Ok(())
 }
 
 fn opposite_chart_transfer_priority(
@@ -1564,7 +1567,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
             continue;
         }
         if cache_backed {
-            procedural.require_cache_fit_tolerance(tolerance);
+            procedural.require_cache_fit_tolerance(tolerance)?;
         }
         if tolerant {
             bounded_tolerant_curves.push((curve, range));

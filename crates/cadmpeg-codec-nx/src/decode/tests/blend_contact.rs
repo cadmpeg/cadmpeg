@@ -1584,7 +1584,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                 .expect("positive finite tolerance"),
         ),
     });
-    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir);
+    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir).unwrap();
     let ProceduralCurveDefinition::Intersection { context, .. } =
         ir.model.procedural_curves.last().unwrap().definition()
     else {

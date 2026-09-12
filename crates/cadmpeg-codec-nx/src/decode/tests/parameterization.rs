@@ -938,7 +938,7 @@ fn analytic_uv_completion_fills_missing_intersection_support_lanes() {
         SerializedSupportUv::default(),
     )];
 
-    crate::decode::support_uv::complete_support_uv(&mut result.ir_mut(), &pending);
+    crate::decode::support_uv::complete_support_uv(&mut result.ir_mut(), &pending).unwrap();
 
     let ProceduralCurveDefinition::Intersection { context, .. } =
         &result.ir().model.procedural_curves[0].definition()
@@ -1066,7 +1066,8 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
         &geometry_budget,
         &coupled_support_budget,
         &geometry_budget,
-    );
+    )
+    .unwrap();
 
     let ProceduralCurveDefinition::Intersection { context, .. } =
         ir.model.procedural_curves[0].definition()
@@ -1416,7 +1417,7 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
         ),
     ];
 
-    crate::decode::support_uv::complete_support_uv(&mut result.ir_mut(), &pending);
+    crate::decode::support_uv::complete_support_uv(&mut result.ir_mut(), &pending).unwrap();
 
     let ProceduralCurveDefinition::Intersection { context, .. } =
         &result.ir().model.procedural_curves[0].definition()
@@ -1522,7 +1523,8 @@ fn support_uv_completion_does_not_retry_unchanged_failed_lanes() {
         &geometry_budget,
         &coupled_support_budget,
         &geometry_budget,
-    );
+    )
+    .unwrap();
 
     let successful = result
         .ir()
@@ -1603,7 +1605,7 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
         SerializedSupportUv::default(),
     )];
 
-    crate::decode::support_uv::complete_support_uv(&mut result.ir_mut(), &pending);
+    crate::decode::support_uv::complete_support_uv(&mut result.ir_mut(), &pending).unwrap();
 
     let ProceduralCurveDefinition::Intersection { context, .. } =
         &result.ir().model.procedural_curves[0].definition()
@@ -1672,7 +1674,7 @@ fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
     )];
 
     invalidate_inconsistent_support_uv(&mut result.ir_mut(), &pending);
-    crate::decode::support_uv::complete_support_uv(&mut result.ir_mut(), &pending);
+    crate::decode::support_uv::complete_support_uv(&mut result.ir_mut(), &pending).unwrap();
 
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
