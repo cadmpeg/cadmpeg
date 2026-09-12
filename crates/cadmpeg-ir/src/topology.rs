@@ -189,22 +189,105 @@ impl Region {
     }
 }
 
-/// An oriented nonempty boundary of a region.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+/// One member of a shell: a face, a wire edge, or a free vertex.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+pub enum ShellMember {
+    /// A face bounded by the owning shell.
+    Face {
+        /// Arena id of the face.
+        id: FaceId,
+    },
+    /// An edge belonging directly to a wire shell.
+    WireEdge {
+        /// Arena id of the edge.
+        id: EdgeId,
+    },
+    /// A vertex belonging directly to the shell and bounding no edge.
+    FreeVertex {
+        /// Arena id of the vertex.
+        id: VertexId,
+    },
+}
+
+/// Refusal for a shell that owns nothing.
+const SHELL_WITHOUT_MEMBERS: &str =
+    "a shell must own at least one face, wire edge, or free vertex";
+
+/// The members of a shell, at least one, sorted into the three kinds.
+///
+/// The wire carries one member list, so "all three lists are empty" has no
+/// spelling: the only admission is that the list is not empty.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "Vec<ShellMember>", into = "Vec<ShellMember>")]
+struct ShellMembers {
+    faces: Vec<FaceId>,
+    wire_edges: Vec<EdgeId>,
+    free_vertices: Vec<VertexId>,
+}
+
+impl TryFrom<Vec<ShellMember>> for ShellMembers {
+    type Error = &'static str;
+
+    fn try_from(members: Vec<ShellMember>) -> Result<Self, Self::Error> {
+        if members.is_empty() {
+            return Err(SHELL_WITHOUT_MEMBERS);
+        }
+        let mut sorted = Self {
+            faces: Vec::new(),
+            wire_edges: Vec::new(),
+            free_vertices: Vec::new(),
+        };
+        for member in members {
+            match member {
+                ShellMember::Face { id } => sorted.faces.push(id),
+                ShellMember::WireEdge { id } => sorted.wire_edges.push(id),
+                ShellMember::FreeVertex { id } => sorted.free_vertices.push(id),
+            }
+        }
+        Ok(sorted)
+    }
+}
+
+impl From<ShellMembers> for Vec<ShellMember> {
+    fn from(members: ShellMembers) -> Self {
+        members
+            .faces
+            .into_iter()
+            .map(|id| ShellMember::Face { id })
+            .chain(
+                members
+                    .wire_edges
+                    .into_iter()
+                    .map(|id| ShellMember::WireEdge { id }),
+            )
+            .chain(
+                members
+                    .free_vertices
+                    .into_iter()
+                    .map(|id| ShellMember::FreeVertex { id }),
+            )
+            .collect()
+    }
+}
+
+/// An oriented nonempty boundary of a region.
+///
+/// The members travel as one tagged list, so a shell that owns nothing is
+/// unrepresentable beyond the empty list the member type refuses.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct Shell {
     /// Arena id.
     pub id: ShellId,
     /// Owning region.
     pub region: RegionId,
-    /// Faces of the shell.
-    faces: Vec<FaceId>,
-    /// Edges belonging directly to a wire shell.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    wire_edges: Vec<EdgeId>,
-    /// Vertices belonging directly to a shell and not bounding an edge.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    free_vertices: Vec<VertexId>,
+    /// Faces, wire edges, and free vertices owned by the shell.
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<ShellMember>"))]
+    members: ShellMembers,
 }
 
 impl Shell {
@@ -216,15 +299,15 @@ impl Shell {
         wire_edges: Vec<EdgeId>,
         free_vertices: Vec<VertexId>,
     ) -> Result<Self, &'static str> {
-        if faces.is_empty() && wire_edges.is_empty() && free_vertices.is_empty() {
-            return Err("shell faces, wire_edges, and free_vertices must not all be empty");
-        }
-        Ok(Self {
-            id,
-            region,
+        let members = ShellMembers {
             faces,
             wire_edges,
             free_vertices,
+        };
+        Ok(Self {
+            id,
+            region,
+            members: ShellMembers::try_from(Vec::<ShellMember>::from(members))?,
         })
     }
 
@@ -233,9 +316,11 @@ impl Shell {
         Self {
             id,
             region,
-            faces: vec![face],
-            wire_edges: Vec::new(),
-            free_vertices: Vec::new(),
+            members: ShellMembers {
+                faces: vec![face],
+                wire_edges: Vec::new(),
+                free_vertices: Vec::new(),
+            },
         }
     }
 
@@ -244,9 +329,11 @@ impl Shell {
         Self {
             id,
             region,
-            faces: Vec::new(),
-            wire_edges: vec![edge],
-            free_vertices: Vec::new(),
+            members: ShellMembers {
+                faces: Vec::new(),
+                wire_edges: vec![edge],
+                free_vertices: Vec::new(),
+            },
         }
     }
 
@@ -255,25 +342,27 @@ impl Shell {
         Self {
             id,
             region,
-            faces: Vec::new(),
-            wire_edges: Vec::new(),
-            free_vertices: vec![vertex],
+            members: ShellMembers {
+                faces: Vec::new(),
+                wire_edges: Vec::new(),
+                free_vertices: vec![vertex],
+            },
         }
     }
 
     /// Faces of the shell.
     pub fn faces(&self) -> &[FaceId] {
-        &self.faces
+        &self.members.faces
     }
 
     /// Edges belonging directly to the shell.
     pub fn wire_edges(&self) -> &[EdgeId] {
-        &self.wire_edges
+        &self.members.wire_edges
     }
 
     /// Vertices belonging directly to the shell.
     pub fn free_vertices(&self) -> &[VertexId] {
-        &self.free_vertices
+        &self.members.free_vertices
     }
 
     /// Edits topology members and preserves the shell when admission fails.
@@ -281,9 +370,9 @@ impl Shell {
         &mut self,
         edit: impl FnOnce(&mut Vec<FaceId>, &mut Vec<EdgeId>, &mut Vec<VertexId>) -> R,
     ) -> Result<R, &'static str> {
-        let mut faces = self.faces.clone();
-        let mut wire_edges = self.wire_edges.clone();
-        let mut free_vertices = self.free_vertices.clone();
+        let mut faces = self.members.faces.clone();
+        let mut wire_edges = self.members.wire_edges.clone();
+        let mut free_vertices = self.members.free_vertices.clone();
         let result = edit(&mut faces, &mut wire_edges, &mut free_vertices);
         *self = Self::new(
             self.id.clone(),
@@ -297,42 +386,17 @@ impl Shell {
 
     /// Appends a face to the shell.
     pub fn add_face(&mut self, face: FaceId) {
-        self.faces.push(face);
+        self.members.faces.push(face);
     }
 
     /// Appends a wire edge to the shell.
     pub fn add_wire_edge(&mut self, edge: EdgeId) {
-        self.wire_edges.push(edge);
+        self.members.wire_edges.push(edge);
     }
 
     /// Appends a free vertex to the shell.
     pub fn add_free_vertex(&mut self, vertex: VertexId) {
-        self.free_vertices.push(vertex);
-    }
-}
-
-impl<'de> Deserialize<'de> for Shell {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        #[derive(Deserialize)]
-        #[serde(deny_unknown_fields)]
-        struct ShellWire {
-            id: ShellId,
-            region: RegionId,
-            faces: Vec<FaceId>,
-            #[serde(default)]
-            wire_edges: Vec<EdgeId>,
-            #[serde(default)]
-            free_vertices: Vec<VertexId>,
-        }
-        let wire = ShellWire::deserialize(deserializer)?;
-        Self::new(
-            wire.id,
-            wire.region,
-            wire.faces,
-            wire.wire_edges,
-            wire.free_vertices,
-        )
-        .map_err(serde::de::Error::custom)
+        self.members.free_vertices.push(vertex);
     }
 }
 
