@@ -5,11 +5,13 @@
       "attributes": {
         "offset": "76"
       },
-      "compressed_size": 55,
       "compression": "none",
       "name": "ActDatums",
       "role": "psb-geometry",
-      "uncompressed_size": 55
+      "size": {
+        "form": "exact",
+        "size": 55
+      }
     }
   ],
   "identity": {

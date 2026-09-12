@@ -6,55 +6,65 @@
         "cards": "1",
         "line_endings": "lf:1"
       },
-      "compressed_size": 81,
       "compression": "none",
       "name": "start",
       "role": "section",
-      "uncompressed_size": 81
+      "size": {
+        "form": "exact",
+        "size": 81
+      }
     },
     {
       "attributes": {
         "cards": "2",
         "line_endings": "lf:2"
       },
-      "compressed_size": 162,
       "compression": "none",
       "name": "global",
       "role": "section",
-      "uncompressed_size": 162
+      "size": {
+        "form": "exact",
+        "size": 162
+      }
     },
     {
       "attributes": {
         "cards": "16",
         "line_endings": "lf:16"
       },
-      "compressed_size": 1296,
       "compression": "none",
       "name": "directory-entry",
       "role": "section",
-      "uncompressed_size": 1296
+      "size": {
+        "form": "exact",
+        "size": 1296
+      }
     },
     {
       "attributes": {
         "cards": "8",
         "line_endings": "lf:8"
       },
-      "compressed_size": 648,
       "compression": "none",
       "name": "parameter-data",
       "role": "section",
-      "uncompressed_size": 648
+      "size": {
+        "form": "exact",
+        "size": 648
+      }
     },
     {
       "attributes": {
         "cards": "1",
         "line_endings": "lf:1"
       },
-      "compressed_size": 81,
       "compression": "none",
       "name": "terminate",
       "role": "section",
-      "uncompressed_size": 81
+      "size": {
+        "form": "exact",
+        "size": 81
+      }
     }
   ],
   "identity": {

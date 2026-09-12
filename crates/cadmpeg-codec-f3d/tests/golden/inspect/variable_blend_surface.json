@@ -3,19 +3,23 @@
   "entries": [
     {
       "attributes": {},
-      "compressed_size": 571,
       "compression": "stored",
       "name": "Manifest.dat",
       "role": "manifest",
-      "uncompressed_size": 571
+      "size": {
+        "form": "exact",
+        "size": 571
+      }
     },
     {
       "attributes": {},
-      "compressed_size": 589,
       "compression": "stored",
       "name": "FusionAssetName[Active]/Manifest.dat",
       "role": "manifest",
-      "uncompressed_size": 589
+      "size": {
+        "form": "exact",
+        "size": 589
+      }
     },
     {
       "attributes": {
@@ -34,11 +38,13 @@
         "sha256": "f44347f3c66b49d9f535bf80e061b7f2eab4ac8ae4bc1ea81be54a41e3e2c9ac",
         "solved_record_len": "4285"
       },
-      "compressed_size": 4298,
       "compression": "stored",
       "name": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
       "role": "brep-smbh",
-      "uncompressed_size": 4298
+      "size": {
+        "form": "exact",
+        "size": 4298
+      }
     }
   ],
   "identity": {

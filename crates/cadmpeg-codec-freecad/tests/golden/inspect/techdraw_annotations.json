@@ -8,11 +8,11 @@
         "data_offset": "42",
         "header_offset": "0"
       },
-      "compressed_size": 3384,
       "compression": "deflate",
+      "expanded": 31478,
       "name": "Document.xml",
       "role": "document",
-      "uncompressed_size": 31478
+      "stored": 3384
     },
     {
       "attributes": {
@@ -21,11 +21,11 @@
         "data_offset": "3471",
         "header_offset": "3426"
       },
-      "compressed_size": 771,
       "compression": "deflate",
+      "expanded": 8913,
       "name": "Model.Shape.brp",
       "role": "brep",
-      "uncompressed_size": 8913
+      "stored": 771
     },
     {
       "attributes": {
@@ -34,11 +34,11 @@
         "data_offset": "4288",
         "header_offset": "4242"
       },
-      "compressed_size": 153,
       "compression": "deflate",
+      "expanded": 207,
       "name": "cc0_template.svg",
       "role": "auxiliary",
-      "uncompressed_size": 207
+      "stored": 153
     },
     {
       "attributes": {
@@ -47,11 +47,11 @@
         "data_offset": "4481",
         "header_offset": "4441"
       },
-      "compressed_size": 6,
       "compression": "deflate",
+      "expanded": 52,
       "name": "BoxCorners",
       "role": "auxiliary",
-      "uncompressed_size": 52
+      "stored": 6
     },
     {
       "attributes": {
@@ -60,11 +60,11 @@
         "data_offset": "4546",
         "header_offset": "4487"
       },
-      "compressed_size": 109,
       "compression": "deflate",
+      "expanded": 154,
       "name": "Dimension.SavedGeometry.0.brp",
       "role": "brep",
-      "uncompressed_size": 154
+      "stored": 109
     }
   ],
   "identity": {

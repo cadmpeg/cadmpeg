@@ -5,11 +5,13 @@
       "attributes": {
         "offset": "76"
       },
-      "compressed_size": 124,
       "compression": "none",
       "name": "MdlStatus",
       "role": "metadata",
-      "uncompressed_size": 124
+      "size": {
+        "form": "exact",
+        "size": 124
+      }
     }
   ],
   "identity": {

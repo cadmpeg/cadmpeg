@@ -115,10 +115,13 @@
         "semantic_annotations": [],
         "shells": [
           {
-            "faces": [
-              "nx:s0:face#4"
-            ],
             "id": "nx:s0:shell#3",
+            "members": [
+              {
+                "id": "nx:s0:face#4",
+                "kind": "face"
+              }
+            ],
             "region": "nx:s0:region#12"
           }
         ],
@@ -410,11 +413,13 @@
           "file_offset": "76",
           "region": "HEADER"
         },
-        "compressed_size": 276,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "part-payload",
-        "uncompressed_size": 276
+        "size": {
+          "form": "exact",
+          "size": 276
+        }
       },
       {
         "attributes": {
@@ -439,9 +444,9 @@
           "schema": "SCH_TEST_1_9999"
         },
         "compression": "zlib",
+        "expanded": 480,
         "name": "parasolid#0",
-        "role": "parasolid-stream",
-        "uncompressed_size": 480
+        "role": "parasolid-stream"
       }
     ],
     "identity": {

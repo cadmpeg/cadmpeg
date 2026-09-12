@@ -55,11 +55,13 @@
         "semantic_annotations": [],
         "shells": [
           {
-            "faces": [],
-            "free_vertices": [
-              "nx:derived:point-vertex#0"
-            ],
             "id": "nx:derived:point-shell#0",
+            "members": [
+              {
+                "id": "nx:derived:point-vertex#0",
+                "kind": "free_vertex"
+              }
+            ],
             "region": "nx:derived:point-region#0"
           }
         ],
@@ -327,11 +329,13 @@
           "file_offset": "76",
           "region": "HEADER"
         },
-        "compressed_size": 122,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "part-payload",
-        "uncompressed_size": 122
+        "size": {
+          "form": "exact",
+          "size": 122
+        }
       },
       {
         "attributes": {
@@ -349,9 +353,9 @@
           "schema": "SCH_TEST_1_9999"
         },
         "compression": "zlib",
+        "expanded": 111,
         "name": "parasolid#0",
-        "role": "parasolid-stream",
-        "uncompressed_size": 111
+        "role": "parasolid-stream"
       }
     ],
     "identity": {

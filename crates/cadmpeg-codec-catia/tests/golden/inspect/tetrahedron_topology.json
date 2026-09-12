@@ -8,11 +8,13 @@
         "extent_count": "1",
         "extent_flags": "0x00000000"
       },
-      "compressed_size": 356,
       "compression": "none",
       "name": "MainDataStream",
       "role": "stream",
-      "uncompressed_size": 356
+      "size": {
+        "form": "exact",
+        "size": 356
+      }
     },
     {
       "attributes": {
@@ -21,11 +23,13 @@
         "extent_count": "1",
         "extent_flags": "0x00000000"
       },
-      "compressed_size": 260,
       "compression": "none",
       "name": "SurfacicReps",
       "role": "stream",
-      "uncompressed_size": 260
+      "size": {
+        "form": "exact",
+        "size": 260
+      }
     }
   ],
   "identity": {

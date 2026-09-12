@@ -521,12 +521,21 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [
-            "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7",
-            "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9",
-            "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:11"
-          ],
           "id": "fcstd:model:shell#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:12",
+          "members": [
+            {
+              "id": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:11",
+              "kind": "face"
+            }
+          ],
           "region": "fcstd:model:region#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:13"
         }
       ],

@@ -53,10 +53,13 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [
-            "sat:brep:entity#4"
-          ],
           "id": "sat:brep:entity#3",
+          "members": [
+            {
+              "id": "sat:brep:entity#4",
+              "kind": "face"
+            }
+          ],
           "region": "sat:brep:entity#2"
         }
       ],

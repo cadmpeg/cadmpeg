@@ -16,18 +16,24 @@
         "faces": [],
         "feature_result_topologies": [
           {
-            "bodies": [
-              "nx:feature-history:body-reference#0000000000-0000000000"
-            ],
             "id": "nx:feature-history:result-topology#0000000000-0000000000",
+            "members": [
+              {
+                "id": "nx:feature-history:body-reference#0000000000-0000000000",
+                "kind": "body"
+              }
+            ],
             "native_ref": "nx:feature-history:body-reference#0000000000-0000000000",
             "output_of": "nx:feature-history:feature#0000000000-0000000000"
           },
           {
-            "bodies": [
-              "nx:feature-history:body-reference#0000000001-0000000000"
-            ],
             "id": "nx:feature-history:result-topology#0000000001-0000000000",
+            "members": [
+              {
+                "id": "nx:feature-history:body-reference#0000000001-0000000000",
+                "kind": "body"
+              }
+            ],
             "native_ref": "nx:feature-history:body-reference#0000000001-0000000000",
             "output_of": "nx:feature-history:feature#0000000001-0000000000"
           }
@@ -767,11 +773,13 @@
           "file_offset": "76",
           "region": "HEADER"
         },
-        "compressed_size": 576,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "part-payload",
-        "uncompressed_size": 576
+        "size": {
+          "form": "exact",
+          "size": 576
+        }
       }
     ],
     "identity": {

@@ -8,11 +8,14 @@
         "record_count": "1",
         "size": "36"
       },
-      "compressed_size": 36,
       "compression": "none",
       "name": "table-0x10000014",
       "role": "table",
-      "uncompressed_size": 24
+      "size": {
+        "form": "framed",
+        "framing": 12,
+        "payload": 24
+      }
     },
     {
       "attributes": {
@@ -21,11 +24,14 @@
         "record_count": "1",
         "size": "72"
       },
-      "compressed_size": 72,
       "compression": "none",
       "name": "table-0x10000015",
       "role": "table",
-      "uncompressed_size": 60
+      "size": {
+        "form": "framed",
+        "framing": 12,
+        "payload": 60
+      }
     },
     {
       "attributes": {
@@ -34,11 +40,14 @@
         "record_count": "0",
         "size": "24"
       },
-      "compressed_size": 24,
       "compression": "none",
       "name": "table-0x10000016",
       "role": "table",
-      "uncompressed_size": 12
+      "size": {
+        "form": "framed",
+        "framing": 12,
+        "payload": 12
+      }
     },
     {
       "attributes": {
@@ -47,11 +56,14 @@
         "record_count": "0",
         "size": "24"
       },
-      "compressed_size": 24,
       "compression": "none",
       "name": "table-0x10000025",
       "role": "table",
-      "uncompressed_size": 12
+      "size": {
+        "form": "framed",
+        "framing": 12,
+        "payload": 12
+      }
     },
     {
       "attributes": {
@@ -60,11 +72,14 @@
         "record_count": "0",
         "size": "24"
       },
-      "compressed_size": 24,
       "compression": "none",
       "name": "table-0x10000010",
       "role": "table",
-      "uncompressed_size": 12
+      "size": {
+        "form": "framed",
+        "framing": 12,
+        "payload": 12
+      }
     },
     {
       "attributes": {
@@ -73,11 +88,14 @@
         "record_count": "0",
         "size": "24"
       },
-      "compressed_size": 24,
       "compression": "none",
       "name": "table-0x10000023",
       "role": "table",
-      "uncompressed_size": 12
+      "size": {
+        "form": "framed",
+        "framing": 12,
+        "payload": 12
+      }
     },
     {
       "attributes": {
@@ -86,11 +104,14 @@
         "record_count": "1",
         "size": "211"
       },
-      "compressed_size": 211,
       "compression": "none",
       "name": "table-0x10000011",
       "role": "table",
-      "uncompressed_size": 199
+      "size": {
+        "form": "framed",
+        "framing": 12,
+        "payload": 199
+      }
     },
     {
       "attributes": {
@@ -99,11 +120,14 @@
         "record_count": "0",
         "size": "24"
       },
-      "compressed_size": 24,
       "compression": "none",
       "name": "table-0x10000018",
       "role": "table",
-      "uncompressed_size": 12
+      "size": {
+        "form": "framed",
+        "framing": 12,
+        "payload": 12
+      }
     },
     {
       "attributes": {
@@ -112,11 +136,14 @@
         "record_count": "0",
         "size": "24"
       },
-      "compressed_size": 24,
       "compression": "none",
       "name": "table-0x10000019",
       "role": "table",
-      "uncompressed_size": 12
+      "size": {
+        "form": "framed",
+        "framing": 12,
+        "payload": 12
+      }
     },
     {
       "attributes": {
@@ -125,11 +152,14 @@
         "record_count": "0",
         "size": "24"
       },
-      "compressed_size": 24,
       "compression": "none",
       "name": "table-0x10000020",
       "role": "table",
-      "uncompressed_size": 12
+      "size": {
+        "form": "framed",
+        "framing": 12,
+        "payload": 12
+      }
     },
     {
       "attributes": {
@@ -138,11 +168,14 @@
         "record_count": "0",
         "size": "24"
       },
-      "compressed_size": 24,
       "compression": "none",
       "name": "table-0x10000012",
       "role": "table",
-      "uncompressed_size": 12
+      "size": {
+        "form": "framed",
+        "framing": 12,
+        "payload": 12
+      }
     },
     {
       "attributes": {
@@ -151,11 +184,14 @@
         "record_count": "0",
         "size": "24"
       },
-      "compressed_size": 24,
       "compression": "none",
       "name": "table-0x10000022",
       "role": "table",
-      "uncompressed_size": 12
+      "size": {
+        "form": "framed",
+        "framing": 12,
+        "payload": 12
+      }
     },
     {
       "attributes": {
@@ -164,11 +200,14 @@
         "record_count": "0",
         "size": "24"
       },
-      "compressed_size": 24,
       "compression": "none",
       "name": "table-0x10000021",
       "role": "table",
-      "uncompressed_size": 12
+      "size": {
+        "form": "framed",
+        "framing": 12,
+        "payload": 12
+      }
     },
     {
       "attributes": {
@@ -178,11 +217,14 @@
         "record_count": "1",
         "size": "199"
       },
-      "compressed_size": 199,
       "compression": "none",
       "name": "table-0x10000013",
       "role": "table",
-      "uncompressed_size": 187
+      "size": {
+        "form": "framed",
+        "framing": 12,
+        "payload": 187
+      }
     },
     {
       "attributes": {
@@ -191,11 +233,14 @@
         "record_count": "0",
         "size": "24"
       },
-      "compressed_size": 24,
       "compression": "none",
       "name": "table-0x10000026",
       "role": "table",
-      "uncompressed_size": 12
+      "size": {
+        "form": "framed",
+        "framing": 12,
+        "payload": 12
+      }
     },
     {
       "attributes": {
@@ -204,11 +249,13 @@
         "nil_uuid": "false",
         "total_record_bytes": "175"
       },
-      "compressed_size": 175,
       "compression": "none",
       "name": "class-c3101a1d-f157-11d3-bfe7-0010830122f0",
       "role": "object-class",
-      "uncompressed_size": 175
+      "size": {
+        "form": "exact",
+        "size": 175
+      }
     }
   ],
   "identity": {

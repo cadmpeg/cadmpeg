@@ -447,59 +447,209 @@
         "semantic_annotations": [],
         "shells": [
           {
-            "faces": [
-              "nx:s0:face#300",
-              "nx:s0:face#301",
-              "nx:s0:face#302",
-              "nx:s0:face#303",
-              "nx:s0:face#304",
-              "nx:s0:face#305",
-              "nx:s0:face#306",
-              "nx:s0:face#307",
-              "nx:s0:face#308",
-              "nx:s0:face#309",
-              "nx:s0:face#310",
-              "nx:s0:face#311",
-              "nx:s0:face#312",
-              "nx:s0:face#313",
-              "nx:s0:face#314",
-              "nx:s0:face#315",
-              "nx:s0:face#316",
-              "nx:s0:face#317",
-              "nx:s0:face#318",
-              "nx:s0:face#319",
-              "nx:s0:face#320",
-              "nx:s0:face#321",
-              "nx:s0:face#322",
-              "nx:s0:face#323",
-              "nx:s0:face#324",
-              "nx:s0:face#325",
-              "nx:s0:face#326",
-              "nx:s0:face#327",
-              "nx:s0:face#328",
-              "nx:s0:face#329",
-              "nx:s0:face#330",
-              "nx:s0:face#331",
-              "nx:s0:face#332",
-              "nx:s0:face#333",
-              "nx:s0:face#334",
-              "nx:s0:face#335",
-              "nx:s0:face#336",
-              "nx:s0:face#337",
-              "nx:s0:face#338",
-              "nx:s0:face#339",
-              "nx:s0:face#340",
-              "nx:s0:face#341",
-              "nx:s0:face#342",
-              "nx:s0:face#343",
-              "nx:s0:face#344",
-              "nx:s0:face#345",
-              "nx:s0:face#346",
-              "nx:s0:face#347",
-              "nx:s0:face#348",
-              "nx:s0:face#349"
-            ],
             "id": "nx:s0:shell#3",
+            "members": [
+              {
+                "id": "nx:s0:face#300",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#301",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#302",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#303",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#304",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#305",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#306",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#307",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#308",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#309",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#310",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#311",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#312",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#313",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#314",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#315",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#316",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#317",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#318",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#319",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#320",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#321",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#322",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#323",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#324",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#325",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#326",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#327",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#328",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#329",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#330",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#331",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#332",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#333",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#334",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#335",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#336",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#337",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#338",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#339",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#340",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#341",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#342",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#343",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#344",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#345",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#346",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#347",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#348",
+                "kind": "face"
+              },
+              {
+                "id": "nx:s0:face#349",
+                "kind": "face"
+              }
+            ],
             "region": "nx:s0:region#4"
           }
         ],
@@ -3713,22 +3863,26 @@
           "file_offset": "121",
           "region": "HEADER"
         },
-        "compressed_size": 3060,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "part-payload",
-        "uncompressed_size": 3060
+        "size": {
+          "form": "exact",
+          "size": 3060
+        }
       },
       {
         "attributes": {
           "file_offset": "3181",
           "region": "HEADER"
         },
-        "compressed_size": 237,
         "compression": "none",
         "name": "/Root/FastLoad/RMFastLoad",
         "role": "active-body-index",
-        "uncompressed_size": 237
+        "size": {
+          "form": "exact",
+          "size": 237
+        }
       },
       {
         "attributes": {
@@ -3753,9 +3907,9 @@
           "schema": "SCH_TEST_1_9999"
         },
         "compression": "zlib",
+        "expanded": 6634,
         "name": "parasolid#0",
-        "role": "parasolid-stream",
-        "uncompressed_size": 6634
+        "role": "parasolid-stream"
       },
       {
         "attributes": {
@@ -3780,9 +3934,9 @@
           "schema": "SCH_TEST_1_9999"
         },
         "compression": "zlib",
+        "expanded": 6634,
         "name": "parasolid#1",
-        "role": "parasolid-stream",
-        "uncompressed_size": 6634
+        "role": "parasolid-stream"
       }
     ],
     "identity": {

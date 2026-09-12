@@ -84,11 +84,13 @@
         "semantic_annotations": [],
         "shells": [
           {
-            "faces": [],
-            "free_vertices": [
-              "nx:derived:point-vertex#0"
-            ],
             "id": "nx:derived:point-shell#0",
+            "members": [
+              {
+                "id": "nx:derived:point-vertex#0",
+                "kind": "free_vertex"
+              }
+            ],
             "region": "nx:derived:point-region#0"
           }
         ],
@@ -421,33 +423,39 @@
           "file_offset": "159",
           "region": "HEADER"
         },
-        "compressed_size": 221,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "part-payload",
-        "uncompressed_size": 221
+        "size": {
+          "form": "exact",
+          "size": 221
+        }
       },
       {
         "attributes": {
           "file_offset": "380",
           "region": "HEADER"
         },
-        "compressed_size": 10,
         "compression": "none",
         "name": "/Root/materialsTif/unmap$1",
         "role": "material-texture",
-        "uncompressed_size": 10
+        "size": {
+          "form": "exact",
+          "size": 10
+        }
       },
       {
         "attributes": {
           "file_offset": "390",
           "region": "HEADER"
         },
-        "compressed_size": 483,
         "compression": "none",
         "name": "/Root/qafmetadata",
         "role": "asset-catalog",
-        "uncompressed_size": 483
+        "size": {
+          "form": "exact",
+          "size": 483
+        }
       },
       {
         "attributes": {
@@ -472,9 +480,9 @@
           "schema": "SCH_TEST_1_9999"
         },
         "compression": "zlib",
+        "expanded": 383,
         "name": "parasolid#0",
-        "role": "parasolid-stream",
-        "uncompressed_size": 383
+        "role": "parasolid-stream"
       }
     ],
     "identity": {

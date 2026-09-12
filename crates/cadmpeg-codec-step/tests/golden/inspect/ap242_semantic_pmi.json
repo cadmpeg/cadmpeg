@@ -5,7 +5,10 @@
       "attributes": {},
       "compression": "none",
       "name": "HEADER",
-      "role": "metadata"
+      "role": "metadata",
+      "size": {
+        "form": "unreported"
+      }
     },
     {
       "attributes": {
@@ -14,7 +17,10 @@
       },
       "compression": "none",
       "name": "DATA[0]",
-      "role": "entity-records"
+      "role": "entity-records",
+      "size": {
+        "form": "unreported"
+      }
     }
   ],
   "identity": {

@@ -5,11 +5,13 @@
       "attributes": {
         "offset": "76"
       },
-      "compressed_size": 80,
       "compression": "none",
       "name": "VisibGeom",
       "role": "psb-geometry",
-      "uncompressed_size": 80
+      "size": {
+        "form": "exact",
+        "size": 80
+      }
     }
   ],
   "identity": {

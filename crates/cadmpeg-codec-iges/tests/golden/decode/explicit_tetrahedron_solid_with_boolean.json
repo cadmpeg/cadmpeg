@@ -657,27 +657,56 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [
-            "iges:model:face#D55:D53:D45",
-            "iges:model:face#D55:D53:D47",
-            "iges:model:face#D55:D53:D49",
-            "iges:model:face#D55:D53:D51"
-          ],
           "id": "iges:model:shell#D55:D53",
+          "members": [
+            {
+              "id": "iges:model:face#D55:D53:D45",
+              "kind": "face"
+            },
+            {
+              "id": "iges:model:face#D55:D53:D47",
+              "kind": "face"
+            },
+            {
+              "id": "iges:model:face#D55:D53:D49",
+              "kind": "face"
+            },
+            {
+              "id": "iges:model:face#D55:D53:D51",
+              "kind": "face"
+            }
+          ],
           "region": "iges:model:region#D55"
         },
         {
-          "faces": [],
           "id": "iges:model:shell#free-geometry",
-          "region": "iges:model:region#free-geometry",
-          "wire_edges": [
-            "iges:model:edge#D21",
-            "iges:model:edge#D23",
-            "iges:model:edge#D25",
-            "iges:model:edge#D27",
-            "iges:model:edge#D29",
-            "iges:model:edge#D31"
-          ]
+          "members": [
+            {
+              "id": "iges:model:edge#D21",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "iges:model:edge#D23",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "iges:model:edge#D25",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "iges:model:edge#D27",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "iges:model:edge#D29",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "iges:model:edge#D31",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "iges:model:region#free-geometry"
         }
       ],
       "sketch_constraints": [],

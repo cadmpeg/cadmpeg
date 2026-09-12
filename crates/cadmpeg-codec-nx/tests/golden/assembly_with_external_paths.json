@@ -160,11 +160,13 @@
           "file_offset": "87",
           "region": "HEADER"
         },
-        "compressed_size": 42,
         "compression": "none",
         "name": "/Root/UG_PART/ExternalReferences",
         "role": "external-references",
-        "uncompressed_size": 42
+        "size": {
+          "form": "exact",
+          "size": 42
+        }
       }
     ],
     "identity": {

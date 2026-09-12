@@ -2453,247 +2453,316 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [],
           "id": "fcstd:model:shell#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:12",
-          "region": "fcstd:model:region#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:12",
-          "wire_edges": [
-            "fcstd:model:edge#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:11"
-          ]
+          "members": [
+            {
+              "id": "fcstd:model:edge#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:11",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:12"
         },
         {
-          "faces": [],
           "id": "fcstd:model:shell#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:16",
-          "region": "fcstd:model:region#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:16",
-          "wire_edges": [
-            "fcstd:model:edge#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:15"
-          ]
+          "members": [
+            {
+              "id": "fcstd:model:edge#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:15",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:16"
         },
         {
-          "faces": [],
           "id": "fcstd:model:shell#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:20",
-          "region": "fcstd:model:region#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:20",
-          "wire_edges": [
-            "fcstd:model:edge#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:19"
-          ]
+          "members": [
+            {
+              "id": "fcstd:model:edge#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:19",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:20"
         },
         {
-          "faces": [],
           "id": "fcstd:model:shell#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:26",
-          "region": "fcstd:model:region#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:26",
-          "wire_edges": [
-            "fcstd:model:edge#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:23",
-            "fcstd:model:edge#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:25"
-          ]
+          "members": [
+            {
+              "id": "fcstd:model:edge#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:23",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "fcstd:model:edge#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:25",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:26"
         },
         {
-          "faces": [],
           "id": "fcstd:model:shell#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:29",
-          "region": "fcstd:model:region#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:29",
-          "wire_edges": [
-            "fcstd:model:edge#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:28"
-          ]
+          "members": [
+            {
+              "id": "fcstd:model:edge#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:28",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:29"
         },
         {
-          "faces": [],
           "id": "fcstd:model:shell#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:32",
-          "region": "fcstd:model:region#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:32",
-          "wire_edges": [
-            "fcstd:model:edge#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:31"
-          ]
+          "members": [
+            {
+              "id": "fcstd:model:edge#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:31",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:32"
         },
         {
-          "faces": [],
           "id": "fcstd:model:shell#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:4",
-          "region": "fcstd:model:region#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:4",
-          "wire_edges": [
-            "fcstd:model:edge#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:3"
-          ]
+          "members": [
+            {
+              "id": "fcstd:model:edge#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:3",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:4"
         },
         {
-          "faces": [],
           "id": "fcstd:model:shell#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:8",
-          "region": "fcstd:model:region#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:8",
-          "wire_edges": [
-            "fcstd:model:edge#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:7"
-          ]
+          "members": [
+            {
+              "id": "fcstd:model:edge#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:7",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:8"
         },
         {
-          "faces": [],
           "id": "fcstd:model:shell#GeometricRelations:Shape:GeometricRelations.Shape.brp:12",
-          "region": "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:12",
-          "wire_edges": [
-            "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:11"
-          ]
+          "members": [
+            {
+              "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:11",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:12"
         },
         {
-          "faces": [],
           "id": "fcstd:model:shell#GeometricRelations:Shape:GeometricRelations.Shape.brp:16",
-          "region": "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:16",
-          "wire_edges": [
-            "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:15"
-          ]
+          "members": [
+            {
+              "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:15",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:16"
         },
         {
-          "faces": [],
           "id": "fcstd:model:shell#GeometricRelations:Shape:GeometricRelations.Shape.brp:20",
-          "region": "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:20",
-          "wire_edges": [
-            "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:19"
-          ]
+          "members": [
+            {
+              "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:19",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:20"
         },
         {
-          "faces": [],
           "id": "fcstd:model:shell#GeometricRelations:Shape:GeometricRelations.Shape.brp:24",
-          "region": "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:24",
-          "wire_edges": [
-            "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:23"
-          ]
+          "members": [
+            {
+              "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:23",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:24"
         },
         {
-          "faces": [],
           "id": "fcstd:model:shell#GeometricRelations:Shape:GeometricRelations.Shape.brp:28",
-          "region": "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:28",
-          "wire_edges": [
-            "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:27"
-          ]
+          "members": [
+            {
+              "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:27",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:28"
         },
         {
-          "faces": [],
           "id": "fcstd:model:shell#GeometricRelations:Shape:GeometricRelations.Shape.brp:32",
-          "region": "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:32",
-          "wire_edges": [
-            "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:31"
-          ]
+          "members": [
+            {
+              "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:31",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:32"
         },
         {
-          "faces": [],
           "id": "fcstd:model:shell#GeometricRelations:Shape:GeometricRelations.Shape.brp:38",
-          "region": "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:38",
-          "wire_edges": [
-            "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:35",
-            "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:37"
-          ]
+          "members": [
+            {
+              "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:35",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:37",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:38"
         },
         {
-          "faces": [],
           "id": "fcstd:model:shell#GeometricRelations:Shape:GeometricRelations.Shape.brp:4",
-          "region": "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:4",
-          "wire_edges": [
-            "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:3"
-          ]
+          "members": [
+            {
+              "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:3",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:4"
         },
         {
-          "faces": [],
           "id": "fcstd:model:shell#GeometricRelations:Shape:GeometricRelations.Shape.brp:44",
-          "region": "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:44",
-          "wire_edges": [
-            "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:41",
-            "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:43"
-          ]
+          "members": [
+            {
+              "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:41",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:43",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:44"
         },
         {
-          "faces": [],
           "id": "fcstd:model:shell#GeometricRelations:Shape:GeometricRelations.Shape.brp:48",
-          "region": "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:48",
-          "wire_edges": [
-            "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:47"
-          ]
+          "members": [
+            {
+              "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:47",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:48"
         },
         {
-          "faces": [],
           "id": "fcstd:model:shell#GeometricRelations:Shape:GeometricRelations.Shape.brp:51",
-          "region": "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:51",
-          "wire_edges": [
-            "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:50"
-          ]
+          "members": [
+            {
+              "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:50",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:51"
         },
         {
-          "faces": [],
           "id": "fcstd:model:shell#GeometricRelations:Shape:GeometricRelations.Shape.brp:54",
-          "region": "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:54",
-          "wire_edges": [
-            "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:53"
-          ]
+          "members": [
+            {
+              "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:53",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:54"
         },
         {
-          "faces": [],
           "id": "fcstd:model:shell#GeometricRelations:Shape:GeometricRelations.Shape.brp:8",
-          "region": "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:8",
-          "wire_edges": [
-            "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:7"
-          ]
+          "members": [
+            {
+              "id": "fcstd:model:edge#GeometricRelations:Shape:GeometricRelations.Shape.brp:7",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#GeometricRelations:Shape:GeometricRelations.Shape.brp:8"
         },
         {
-          "faces": [],
           "id": "fcstd:model:shell#InactiveRelation:Shape:InactiveRelation.Shape.brp:4",
-          "region": "fcstd:model:region#InactiveRelation:Shape:InactiveRelation.Shape.brp:4",
-          "wire_edges": [
-            "fcstd:model:edge#InactiveRelation:Shape:InactiveRelation.Shape.brp:3"
-          ]
+          "members": [
+            {
+              "id": "fcstd:model:edge#InactiveRelation:Shape:InactiveRelation.Shape.brp:3",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#InactiveRelation:Shape:InactiveRelation.Shape.brp:4"
         },
         {
-          "faces": [],
           "id": "fcstd:model:shell#InternalAlignmentRelations:Shape:InternalAlignmentRelations.Shape.brp:3",
-          "region": "fcstd:model:region#InternalAlignmentRelations:Shape:InternalAlignmentRelations.Shape.brp:3",
-          "wire_edges": [
-            "fcstd:model:edge#InternalAlignmentRelations:Shape:InternalAlignmentRelations.Shape.brp:2"
-          ]
+          "members": [
+            {
+              "id": "fcstd:model:edge#InternalAlignmentRelations:Shape:InternalAlignmentRelations.Shape.brp:2",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#InternalAlignmentRelations:Shape:InternalAlignmentRelations.Shape.brp:3"
         },
         {
-          "faces": [],
           "id": "fcstd:model:shell#OpticalRelation:Shape:OpticalRelation.Shape.brp:12",
-          "region": "fcstd:model:region#OpticalRelation:Shape:OpticalRelation.Shape.brp:12",
-          "wire_edges": [
-            "fcstd:model:edge#OpticalRelation:Shape:OpticalRelation.Shape.brp:11"
-          ]
+          "members": [
+            {
+              "id": "fcstd:model:edge#OpticalRelation:Shape:OpticalRelation.Shape.brp:11",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#OpticalRelation:Shape:OpticalRelation.Shape.brp:12"
         },
         {
-          "faces": [],
           "id": "fcstd:model:shell#OpticalRelation:Shape:OpticalRelation.Shape.brp:4",
-          "region": "fcstd:model:region#OpticalRelation:Shape:OpticalRelation.Shape.brp:4",
-          "wire_edges": [
-            "fcstd:model:edge#OpticalRelation:Shape:OpticalRelation.Shape.brp:3"
-          ]
+          "members": [
+            {
+              "id": "fcstd:model:edge#OpticalRelation:Shape:OpticalRelation.Shape.brp:3",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#OpticalRelation:Shape:OpticalRelation.Shape.brp:4"
         },
         {
-          "faces": [],
           "id": "fcstd:model:shell#OpticalRelation:Shape:OpticalRelation.Shape.brp:8",
-          "region": "fcstd:model:region#OpticalRelation:Shape:OpticalRelation.Shape.brp:8",
-          "wire_edges": [
-            "fcstd:model:edge#OpticalRelation:Shape:OpticalRelation.Shape.brp:7"
-          ]
+          "members": [
+            {
+              "id": "fcstd:model:edge#OpticalRelation:Shape:OpticalRelation.Shape.brp:7",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#OpticalRelation:Shape:OpticalRelation.Shape.brp:8"
         },
         {
-          "faces": [],
           "id": "fcstd:model:shell#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:4",
-          "region": "fcstd:model:region#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:4",
-          "wire_edges": [
-            "fcstd:model:edge#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:3"
-          ]
+          "members": [
+            {
+              "id": "fcstd:model:edge#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:3",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:4"
         },
         {
-          "faces": [],
           "id": "fcstd:model:shell#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:12",
-          "region": "fcstd:model:region#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:12",
-          "wire_edges": [
-            "fcstd:model:edge#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:11"
-          ]
+          "members": [
+            {
+              "id": "fcstd:model:edge#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:11",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:12"
         },
         {
-          "faces": [],
           "id": "fcstd:model:shell#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:4",
-          "region": "fcstd:model:region#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:4",
-          "wire_edges": [
-            "fcstd:model:edge#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:3"
-          ]
+          "members": [
+            {
+              "id": "fcstd:model:edge#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:3",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:4"
         },
         {
-          "faces": [],
           "id": "fcstd:model:shell#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:8",
-          "region": "fcstd:model:region#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:8",
-          "wire_edges": [
-            "fcstd:model:edge#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:7"
-          ]
+          "members": [
+            {
+              "id": "fcstd:model:edge#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:7",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:8"
         }
       ],
       "sketch_constraints": [

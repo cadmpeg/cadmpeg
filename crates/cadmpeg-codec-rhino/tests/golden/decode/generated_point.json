@@ -73,11 +73,13 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [],
-          "free_vertices": [
-            "rhino:object:vertex#d000213c-3fed-dfd4-5d93-120ab2084742"
-          ],
           "id": "rhino:object:shell#d000213c-3fed-dfd4-5d93-120ab2084742",
+          "members": [
+            {
+              "id": "rhino:object:vertex#d000213c-3fed-dfd4-5d93-120ab2084742",
+              "kind": "free_vertex"
+            }
+          ],
           "region": "rhino:object:region#d000213c-3fed-dfd4-5d93-120ab2084742"
         }
       ],

@@ -58,9 +58,6 @@
           "VECTOR": 2
         }
       },
-      "fidelity": {
-        "status": "not_provided"
-      },
       "identity": {
         "payload": "native",
         "target": "step:ap242-e3"
@@ -99,7 +96,12 @@
         }
       ],
       "notes": [],
-      "write_path": "synthesized"
+      "write_path": {
+        "fidelity": {
+          "status": "not_provided"
+        },
+        "path": "synthesized"
+      }
     }
   },
   "explicit_default": {
@@ -161,9 +163,6 @@
           "VECTOR": 2
         }
       },
-      "fidelity": {
-        "status": "not_provided"
-      },
       "identity": {
         "payload": "native",
         "target": "step:ap214"
@@ -202,7 +201,12 @@
         }
       ],
       "notes": [],
-      "write_path": "synthesized"
+      "write_path": {
+        "fidelity": {
+          "status": "not_provided"
+        },
+        "path": "synthesized"
+      }
     }
   },
   "inherit": {

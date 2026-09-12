@@ -10,11 +10,11 @@
         "sha256": "b14980ca72583708979026bffe19b28dc3a81d36dbb1c0de0dcc45254c8c2e33",
         "type_id": "0x00000020"
       },
-      "compressed_size": 267,
       "compression": "deflate",
+      "expanded": 792,
       "name": "Contents/Config-0-Partition",
       "role": "block",
-      "uncompressed_size": 792
+      "stored": 267
     }
   ],
   "identity": {

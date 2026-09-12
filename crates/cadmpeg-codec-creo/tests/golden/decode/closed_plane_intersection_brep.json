@@ -411,15 +411,33 @@
       ],
       "feature_result_topologies": [
         {
-          "edges": [
-            "curve#10",
-            "curve#11",
-            "curve#12",
-            "curve#13",
-            "curve#14",
-            "curve#15"
-          ],
           "id": "creo:model:feature-result-topology#4",
+          "members": [
+            {
+              "id": "curve#10",
+              "kind": "edge"
+            },
+            {
+              "id": "curve#11",
+              "kind": "edge"
+            },
+            {
+              "id": "curve#12",
+              "kind": "edge"
+            },
+            {
+              "id": "curve#13",
+              "kind": "edge"
+            },
+            {
+              "id": "curve#14",
+              "kind": "edge"
+            },
+            {
+              "id": "curve#15",
+              "kind": "edge"
+            }
+          ],
           "output_of": "creo:model:feature#4"
         }
       ],
@@ -858,13 +876,25 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [
-            "creo:visibgeom:face#1",
-            "creo:visibgeom:face#2",
-            "creo:visibgeom:face#3",
-            "creo:visibgeom:face#4"
-          ],
           "id": "creo:visibgeom:shell#1",
+          "members": [
+            {
+              "id": "creo:visibgeom:face#1",
+              "kind": "face"
+            },
+            {
+              "id": "creo:visibgeom:face#2",
+              "kind": "face"
+            },
+            {
+              "id": "creo:visibgeom:face#3",
+              "kind": "face"
+            },
+            {
+              "id": "creo:visibgeom:face#4",
+              "kind": "face"
+            }
+          ],
           "region": "creo:visibgeom:region#1"
         }
       ],

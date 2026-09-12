@@ -8,11 +8,14 @@
         "record_count": "0",
         "size": "24"
       },
-      "compressed_size": 24,
       "compression": "none",
       "name": "table-0x10000014",
       "role": "table",
-      "uncompressed_size": 12
+      "size": {
+        "form": "framed",
+        "framing": 12,
+        "payload": 12
+      }
     },
     {
       "attributes": {
@@ -21,11 +24,14 @@
         "record_count": "1",
         "size": "72"
       },
-      "compressed_size": 72,
       "compression": "none",
       "name": "table-0x10000015",
       "role": "table",
-      "uncompressed_size": 60
+      "size": {
+        "form": "framed",
+        "framing": 12,
+        "payload": 60
+      }
     },
     {
       "attributes": {
@@ -37,11 +43,14 @@
         "record_count": "6",
         "size": "1901"
       },
-      "compressed_size": 1901,
       "compression": "none",
       "name": "table-0x10000013",
       "role": "table",
-      "uncompressed_size": 1889
+      "size": {
+        "form": "framed",
+        "framing": 12,
+        "payload": 1889
+      }
     },
     {
       "attributes": {
@@ -50,11 +59,13 @@
         "nil_uuid": "false",
         "total_record_bytes": "345"
       },
-      "compressed_size": 345,
       "compression": "none",
       "name": "class-2488f347-f8fa-11d3-bfec-0010830122f0",
       "role": "object-class",
-      "uncompressed_size": 345
+      "size": {
+        "form": "exact",
+        "size": 345
+      }
     },
     {
       "attributes": {
@@ -63,11 +74,13 @@
         "nil_uuid": "false",
         "total_record_bytes": "181"
       },
-      "compressed_size": 181,
       "compression": "none",
       "name": "class-4ed7d4db-e947-11d3-bfe5-0010830122f0",
       "role": "object-class",
-      "uncompressed_size": 181
+      "size": {
+        "form": "exact",
+        "size": 181
+      }
     },
     {
       "attributes": {
@@ -76,11 +89,13 @@
         "nil_uuid": "false",
         "total_record_bytes": "636"
       },
-      "compressed_size": 636,
       "compression": "none",
       "name": "class-4ed7d4e0-e947-11d3-bfe5-0010830122f0",
       "role": "object-class",
-      "uncompressed_size": 636
+      "size": {
+        "form": "exact",
+        "size": 636
+      }
     },
     {
       "attributes": {
@@ -89,11 +104,13 @@
         "nil_uuid": "false",
         "total_record_bytes": "221"
       },
-      "compressed_size": 221,
       "compression": "none",
       "name": "class-4ed7d4e6-e947-11d3-bfe5-0010830122f0",
       "role": "object-class",
-      "uncompressed_size": 221
+      "size": {
+        "form": "exact",
+        "size": 221
+      }
     },
     {
       "attributes": {
@@ -102,11 +119,13 @@
         "nil_uuid": "false",
         "total_record_bytes": "137"
       },
-      "compressed_size": 137,
       "compression": "none",
       "name": "class-c3101a1d-f157-11d3-bfe7-0010830122f0",
       "role": "object-class",
-      "uncompressed_size": 137
+      "size": {
+        "form": "exact",
+        "size": 137
+      }
     },
     {
       "attributes": {
@@ -115,11 +134,13 @@
         "nil_uuid": "false",
         "total_record_bytes": "357"
       },
-      "compressed_size": 357,
       "compression": "none",
       "name": "class-cf33be2a-09b4-11d4-bffb-0010830122f0",
       "role": "object-class",
-      "uncompressed_size": 357
+      "size": {
+        "form": "exact",
+        "size": 357
+      }
     }
   ],
   "identity": {

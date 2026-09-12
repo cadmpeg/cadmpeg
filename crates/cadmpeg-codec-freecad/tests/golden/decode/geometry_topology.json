@@ -12986,179 +12986,338 @@
       "semantic_annotations": [],
       "shells": [
         {
-          "faces": [
-            "fcstd:model:face#Compound:Shape:Compound.Shape.brp:14"
-          ],
           "id": "fcstd:model:shell#Compound:Shape:Compound.Shape.brp:15",
+          "members": [
+            {
+              "id": "fcstd:model:face#Compound:Shape:Compound.Shape.brp:14",
+              "kind": "face"
+            }
+          ],
           "region": "fcstd:model:region#Compound:Shape:Compound.Shape.brp:16"
         },
         {
-          "faces": [
-            "fcstd:model:face#Compound:Shape:Compound.Shape.brp:7"
-          ],
           "id": "fcstd:model:shell#Compound:Shape:Compound.Shape.brp:8",
+          "members": [
+            {
+              "id": "fcstd:model:face#Compound:Shape:Compound.Shape.brp:7",
+              "kind": "face"
+            }
+          ],
           "region": "fcstd:model:region#Compound:Shape:Compound.Shape.brp:9"
         },
         {
-          "faces": [],
           "id": "fcstd:model:shell#CurveCarriers:Shape:CurveCarriers.Shape.brp:10",
-          "region": "fcstd:model:region#CurveCarriers:Shape:CurveCarriers.Shape.brp:10",
-          "wire_edges": [
-            "fcstd:model:edge#CurveCarriers:Shape:CurveCarriers.Shape.brp:10"
-          ]
-        },
-        {
-          "faces": [],
-          "id": "fcstd:model:shell#CurveCarriers:Shape:CurveCarriers.Shape.brp:13",
-          "region": "fcstd:model:region#CurveCarriers:Shape:CurveCarriers.Shape.brp:13",
-          "wire_edges": [
-            "fcstd:model:edge#CurveCarriers:Shape:CurveCarriers.Shape.brp:13"
-          ]
-        },
-        {
-          "faces": [],
-          "id": "fcstd:model:shell#CurveCarriers:Shape:CurveCarriers.Shape.brp:3",
-          "region": "fcstd:model:region#CurveCarriers:Shape:CurveCarriers.Shape.brp:3",
-          "wire_edges": [
-            "fcstd:model:edge#CurveCarriers:Shape:CurveCarriers.Shape.brp:3"
-          ]
-        },
-        {
-          "faces": [],
-          "id": "fcstd:model:shell#CurveCarriers:Shape:CurveCarriers.Shape.brp:5",
-          "region": "fcstd:model:region#CurveCarriers:Shape:CurveCarriers.Shape.brp:5",
-          "wire_edges": [
-            "fcstd:model:edge#CurveCarriers:Shape:CurveCarriers.Shape.brp:5"
-          ]
-        },
-        {
-          "faces": [],
-          "id": "fcstd:model:shell#CurveCarriers:Shape:CurveCarriers.Shape.brp:7",
-          "region": "fcstd:model:region#CurveCarriers:Shape:CurveCarriers.Shape.brp:7",
-          "wire_edges": [
-            "fcstd:model:edge#CurveCarriers:Shape:CurveCarriers.Shape.brp:7"
-          ]
-        },
-        {
-          "faces": [
-            "fcstd:model:face#Degenerate:Shape:Degenerate.Shape.brp:7",
-            "fcstd:model:face#Degenerate:Shape:Degenerate.Shape.brp:9"
+          "members": [
+            {
+              "id": "fcstd:model:edge#CurveCarriers:Shape:CurveCarriers.Shape.brp:10",
+              "kind": "wire_edge"
+            }
           ],
+          "region": "fcstd:model:region#CurveCarriers:Shape:CurveCarriers.Shape.brp:10"
+        },
+        {
+          "id": "fcstd:model:shell#CurveCarriers:Shape:CurveCarriers.Shape.brp:13",
+          "members": [
+            {
+              "id": "fcstd:model:edge#CurveCarriers:Shape:CurveCarriers.Shape.brp:13",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#CurveCarriers:Shape:CurveCarriers.Shape.brp:13"
+        },
+        {
+          "id": "fcstd:model:shell#CurveCarriers:Shape:CurveCarriers.Shape.brp:3",
+          "members": [
+            {
+              "id": "fcstd:model:edge#CurveCarriers:Shape:CurveCarriers.Shape.brp:3",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#CurveCarriers:Shape:CurveCarriers.Shape.brp:3"
+        },
+        {
+          "id": "fcstd:model:shell#CurveCarriers:Shape:CurveCarriers.Shape.brp:5",
+          "members": [
+            {
+              "id": "fcstd:model:edge#CurveCarriers:Shape:CurveCarriers.Shape.brp:5",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#CurveCarriers:Shape:CurveCarriers.Shape.brp:5"
+        },
+        {
+          "id": "fcstd:model:shell#CurveCarriers:Shape:CurveCarriers.Shape.brp:7",
+          "members": [
+            {
+              "id": "fcstd:model:edge#CurveCarriers:Shape:CurveCarriers.Shape.brp:7",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#CurveCarriers:Shape:CurveCarriers.Shape.brp:7"
+        },
+        {
           "id": "fcstd:model:shell#Degenerate:Shape:Degenerate.Shape.brp:10",
+          "members": [
+            {
+              "id": "fcstd:model:face#Degenerate:Shape:Degenerate.Shape.brp:7",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Degenerate:Shape:Degenerate.Shape.brp:9",
+              "kind": "face"
+            }
+          ],
           "region": "fcstd:model:region#Degenerate:Shape:Degenerate.Shape.brp:11"
         },
         {
-          "faces": [
-            "fcstd:model:face#FreeformSurface:Shape:FreeformSurface.Shape.brp:10"
-          ],
           "id": "fcstd:model:shell#FreeformSurface:Shape:FreeformSurface.Shape.brp:10",
+          "members": [
+            {
+              "id": "fcstd:model:face#FreeformSurface:Shape:FreeformSurface.Shape.brp:10",
+              "kind": "face"
+            }
+          ],
           "region": "fcstd:model:region#FreeformSurface:Shape:FreeformSurface.Shape.brp:10"
         },
         {
-          "faces": [
-            "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:10",
-            "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:20",
-            "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:24",
-            "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:28",
-            "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:30",
-            "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:32"
-          ],
           "id": "fcstd:model:shell#MultiShell:Shape:MultiShell.Shape.brp:33",
+          "members": [
+            {
+              "id": "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:10",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:20",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:24",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:28",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:30",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:32",
+              "kind": "face"
+            }
+          ],
           "region": "fcstd:model:region#MultiShell:Shape:MultiShell.Shape.brp:33"
         },
         {
-          "faces": [
-            "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:43",
-            "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:53",
-            "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:57",
-            "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:61",
-            "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:63",
-            "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:65"
-          ],
           "id": "fcstd:model:shell#MultiShell:Shape:MultiShell.Shape.brp:66",
+          "members": [
+            {
+              "id": "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:43",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:53",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:57",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:61",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:63",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#MultiShell:Shape:MultiShell.Shape.brp:65",
+              "kind": "face"
+            }
+          ],
           "region": "fcstd:model:region#MultiShell:Shape:MultiShell.Shape.brp:66"
         },
         {
-          "faces": [
-            "fcstd:model:face#Revolved:Shape:Revolved.Shape.brp:7",
-            "fcstd:model:face#Revolved:Shape:Revolved.Shape.brp:12",
-            "fcstd:model:face#Revolved:Shape:Revolved.Shape.brp:17",
-            "fcstd:model:face#Revolved:Shape:Revolved.Shape.brp:20",
-            "fcstd:model:face#Revolved:Shape:Revolved.Shape.brp:22",
-            "fcstd:model:face#Revolved:Shape:Revolved.Shape.brp:22%40eee53fba37791917"
-          ],
           "id": "fcstd:model:shell#Revolved:Shape:Revolved.Shape.brp:23",
+          "members": [
+            {
+              "id": "fcstd:model:face#Revolved:Shape:Revolved.Shape.brp:7",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Revolved:Shape:Revolved.Shape.brp:12",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Revolved:Shape:Revolved.Shape.brp:17",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Revolved:Shape:Revolved.Shape.brp:20",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Revolved:Shape:Revolved.Shape.brp:22",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Revolved:Shape:Revolved.Shape.brp:22%40eee53fba37791917",
+              "kind": "face"
+            }
+          ],
           "region": "fcstd:model:region#Revolved:Shape:Revolved.Shape.brp:24"
         },
         {
-          "faces": [
-            "fcstd:model:face#Seam:Shape:Seam.Shape.brp:7",
-            "fcstd:model:face#Seam:Shape:Seam.Shape.brp:9",
-            "fcstd:model:face#Seam:Shape:Seam.Shape.brp:11"
-          ],
           "id": "fcstd:model:shell#Seam:Shape:Seam.Shape.brp:12",
+          "members": [
+            {
+              "id": "fcstd:model:face#Seam:Shape:Seam.Shape.brp:7",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Seam:Shape:Seam.Shape.brp:9",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Seam:Shape:Seam.Shape.brp:11",
+              "kind": "face"
+            }
+          ],
           "region": "fcstd:model:region#Seam:Shape:Seam.Shape.brp:13"
         },
         {
-          "faces": [
-            "fcstd:model:face#Sheet:Shape:Sheet.Shape.brp:10"
-          ],
           "id": "fcstd:model:shell#Sheet:Shape:Sheet.Shape.brp:10",
+          "members": [
+            {
+              "id": "fcstd:model:face#Sheet:Shape:Sheet.Shape.brp:10",
+              "kind": "face"
+            }
+          ],
           "region": "fcstd:model:region#Sheet:Shape:Sheet.Shape.brp:10"
         },
         {
-          "faces": [
-            "fcstd:model:face#Solid:Shape:Solid.Shape.brp:10",
-            "fcstd:model:face#Solid:Shape:Solid.Shape.brp:20",
-            "fcstd:model:face#Solid:Shape:Solid.Shape.brp:24",
-            "fcstd:model:face#Solid:Shape:Solid.Shape.brp:28",
-            "fcstd:model:face#Solid:Shape:Solid.Shape.brp:30",
-            "fcstd:model:face#Solid:Shape:Solid.Shape.brp:32"
-          ],
           "id": "fcstd:model:shell#Solid:Shape:Solid.Shape.brp:33",
+          "members": [
+            {
+              "id": "fcstd:model:face#Solid:Shape:Solid.Shape.brp:10",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Solid:Shape:Solid.Shape.brp:20",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Solid:Shape:Solid.Shape.brp:24",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Solid:Shape:Solid.Shape.brp:28",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Solid:Shape:Solid.Shape.brp:30",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Solid:Shape:Solid.Shape.brp:32",
+              "kind": "face"
+            }
+          ],
           "region": "fcstd:model:region#Solid:Shape:Solid.Shape.brp:34"
         },
         {
-          "faces": [
-            "fcstd:model:face#Swept:Shape:Swept.Shape.brp:7",
-            "fcstd:model:face#Swept:Shape:Swept.Shape.brp:9",
-            "fcstd:model:face#Swept:Shape:Swept.Shape.brp:11"
-          ],
           "id": "fcstd:model:shell#Swept:Shape:Swept.Shape.brp:12",
+          "members": [
+            {
+              "id": "fcstd:model:face#Swept:Shape:Swept.Shape.brp:7",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Swept:Shape:Swept.Shape.brp:9",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Swept:Shape:Swept.Shape.brp:11",
+              "kind": "face"
+            }
+          ],
           "region": "fcstd:model:region#Swept:Shape:Swept.Shape.brp:13"
         },
         {
-          "faces": [
-            "fcstd:model:face#Void:Shape:Void.Shape.brp:10",
-            "fcstd:model:face#Void:Shape:Void.Shape.brp:17",
-            "fcstd:model:face#Void:Shape:Void.Shape.brp:22",
-            "fcstd:model:face#Void:Shape:Void.Shape.brp:27",
-            "fcstd:model:face#Void:Shape:Void.Shape.brp:30",
-            "fcstd:model:face#Void:Shape:Void.Shape.brp:32"
-          ],
           "id": "fcstd:model:shell#Void:Shape:Void.Shape.brp:33",
-          "region": "fcstd:model:region#Void:Shape:Void.Shape.brp:67"
-        },
-        {
-          "faces": [
-            "fcstd:model:face#Void:Shape:Void.Shape.brp:43",
-            "fcstd:model:face#Void:Shape:Void.Shape.brp:50",
-            "fcstd:model:face#Void:Shape:Void.Shape.brp:55",
-            "fcstd:model:face#Void:Shape:Void.Shape.brp:60",
-            "fcstd:model:face#Void:Shape:Void.Shape.brp:63",
-            "fcstd:model:face#Void:Shape:Void.Shape.brp:65"
+          "members": [
+            {
+              "id": "fcstd:model:face#Void:Shape:Void.Shape.brp:10",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Void:Shape:Void.Shape.brp:17",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Void:Shape:Void.Shape.brp:22",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Void:Shape:Void.Shape.brp:27",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Void:Shape:Void.Shape.brp:30",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Void:Shape:Void.Shape.brp:32",
+              "kind": "face"
+            }
           ],
-          "id": "fcstd:model:shell#Void:Shape:Void.Shape.brp:66",
           "region": "fcstd:model:region#Void:Shape:Void.Shape.brp:67"
         },
         {
-          "faces": [],
+          "id": "fcstd:model:shell#Void:Shape:Void.Shape.brp:66",
+          "members": [
+            {
+              "id": "fcstd:model:face#Void:Shape:Void.Shape.brp:43",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Void:Shape:Void.Shape.brp:50",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Void:Shape:Void.Shape.brp:55",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Void:Shape:Void.Shape.brp:60",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Void:Shape:Void.Shape.brp:63",
+              "kind": "face"
+            },
+            {
+              "id": "fcstd:model:face#Void:Shape:Void.Shape.brp:65",
+              "kind": "face"
+            }
+          ],
+          "region": "fcstd:model:region#Void:Shape:Void.Shape.brp:67"
+        },
+        {
           "id": "fcstd:model:shell#Wire:Shape:Wire.Shape.brp:6",
-          "region": "fcstd:model:region#Wire:Shape:Wire.Shape.brp:6",
-          "wire_edges": [
-            "fcstd:model:edge#Wire:Shape:Wire.Shape.brp:3",
-            "fcstd:model:edge#Wire:Shape:Wire.Shape.brp:5"
-          ]
+          "members": [
+            {
+              "id": "fcstd:model:edge#Wire:Shape:Wire.Shape.brp:3",
+              "kind": "wire_edge"
+            },
+            {
+              "id": "fcstd:model:edge#Wire:Shape:Wire.Shape.brp:5",
+              "kind": "wire_edge"
+            }
+          ],
+          "region": "fcstd:model:region#Wire:Shape:Wire.Shape.brp:6"
         }
       ],
       "sketch_constraints": [],

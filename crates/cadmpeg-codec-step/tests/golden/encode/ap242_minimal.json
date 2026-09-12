@@ -25,9 +25,6 @@
           "UNCERTAINTY_MEASURE_WITH_UNIT": 1
         }
       },
-      "fidelity": {
-        "status": "not_provided"
-      },
       "identity": {
         "payload": "native",
         "target": "step:ap242-e3"
@@ -56,7 +53,12 @@
         }
       ],
       "notes": [],
-      "write_path": "synthesized"
+      "write_path": {
+        "fidelity": {
+          "status": "not_provided"
+        },
+        "path": "synthesized"
+      }
     }
   },
   "explicit_default": {
@@ -84,9 +86,6 @@
           "SOLID_ANGLE_UNIT": 1,
           "UNCERTAINTY_MEASURE_WITH_UNIT": 1
         }
-      },
-      "fidelity": {
-        "status": "not_provided"
       },
       "identity": {
         "payload": "native",
@@ -116,7 +115,12 @@
         }
       ],
       "notes": [],
-      "write_path": "synthesized"
+      "write_path": {
+        "fidelity": {
+          "status": "not_provided"
+        },
+        "path": "synthesized"
+      }
     }
   },
   "inherit": {
@@ -145,9 +149,6 @@
           "UNCERTAINTY_MEASURE_WITH_UNIT": 1
         }
       },
-      "fidelity": {
-        "status": "not_provided"
-      },
       "identity": {
         "payload": "native",
         "target": "step:ap242-e2"
@@ -165,7 +166,12 @@
         }
       ],
       "notes": [],
-      "write_path": "synthesized"
+      "write_path": {
+        "fidelity": {
+          "status": "not_provided"
+        },
+        "path": "synthesized"
+      }
     }
   }
 }

@@ -5,7 +5,10 @@
       "attributes": {},
       "compression": "none",
       "name": "HEADER",
-      "role": "metadata"
+      "role": "metadata",
+      "size": {
+        "form": "unreported"
+      }
     },
     {
       "attributes": {
@@ -13,7 +16,10 @@
       },
       "compression": "none",
       "name": "ANCHOR",
-      "role": "in-file-anchors"
+      "role": "in-file-anchors",
+      "size": {
+        "form": "unreported"
+      }
     },
     {
       "attributes": {
@@ -22,7 +28,10 @@
       },
       "compression": "none",
       "name": "REFERENCE",
-      "role": "external-references"
+      "role": "external-references",
+      "size": {
+        "form": "unreported"
+      }
     },
     {
       "attributes": {
@@ -31,7 +40,10 @@
       },
       "compression": "none",
       "name": "DATA[0]",
-      "role": "entity-records"
+      "role": "entity-records",
+      "size": {
+        "form": "unreported"
+      }
     },
     {
       "attributes": {
@@ -40,15 +52,20 @@
       },
       "compression": "none",
       "name": "DATA[1]",
-      "role": "entity-records"
+      "role": "entity-records",
+      "size": {
+        "form": "unreported"
+      }
     },
     {
       "attributes": {},
-      "compressed_size": 143,
       "compression": "none",
       "name": "SIGNATURE",
       "role": "signature",
-      "uncompressed_size": 143
+      "size": {
+        "form": "exact",
+        "size": 143
+      }
     }
   ],
   "identity": {

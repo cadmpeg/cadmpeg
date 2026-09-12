@@ -10,11 +10,11 @@
         "sha256": "3660d0ac9ce4b3ae64f1237e1010509cb1f03acd6c0a30c6e0f67332bd763b71",
         "type_id": "0x00000020"
       },
-      "compressed_size": 186,
       "compression": "deflate",
+      "expanded": 544,
       "name": "Contents/Config-0-Partition",
       "role": "block",
-      "uncompressed_size": 544
+      "stored": 186
     },
     {
       "attributes": {
@@ -23,11 +23,11 @@
         "sha256": "912bd84c61291bcf4159fd5b0d906f0efc0fc8e6905d9ce2c026ae99300f11ba",
         "type_id": "0x00000043"
       },
-      "compressed_size": 210,
       "compression": "deflate",
+      "expanded": 441,
       "name": "SWObjects",
       "role": "block",
-      "uncompressed_size": 441
+      "stored": 210
     },
     {
       "attributes": {
@@ -36,11 +36,11 @@
         "sha256": "ad953ff8d8d6ad383961a12b1afadfebcac37fe6e2ded3779ae646f3bfcbc64a",
         "type_id": "0x00000044"
       },
-      "compressed_size": 59,
       "compression": "deflate",
+      "expanded": 64,
       "name": "Units",
       "role": "block",
-      "uncompressed_size": 64
+      "stored": 59
     }
   ],
   "identity": {

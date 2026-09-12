@@ -898,11 +898,13 @@
           "file_offset": "80",
           "region": "HEADER"
         },
-        "compressed_size": 237,
         "compression": "none",
         "name": "/Root/FastLoad/RMFastLoad",
         "role": "active-body-index",
-        "uncompressed_size": 237
+        "size": {
+          "form": "exact",
+          "size": 237
+        }
       }
     ],
     "identity": {

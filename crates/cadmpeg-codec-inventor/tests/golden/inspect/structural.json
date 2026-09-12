@@ -14,11 +14,13 @@
         "directory_id": "2",
         "start_sector": "4294967294"
       },
-      "compressed_size": 0,
       "compression": "stored",
       "name": "RSeStorage/RSeSegInfo",
       "role": "rse-segment-registry",
-      "uncompressed_size": 0
+      "size": {
+        "form": "exact",
+        "size": 0
+      }
     }
   ],
   "identity": {

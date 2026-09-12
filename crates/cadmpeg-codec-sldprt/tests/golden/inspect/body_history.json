@@ -10,11 +10,11 @@
         "sha256": "3660d0ac9ce4b3ae64f1237e1010509cb1f03acd6c0a30c6e0f67332bd763b71",
         "type_id": "0x00000020"
       },
-      "compressed_size": 186,
       "compression": "deflate",
+      "expanded": 544,
       "name": "Contents/Config-0-Partition",
       "role": "block",
-      "uncompressed_size": 544
+      "stored": 186
     },
     {
       "attributes": {
@@ -23,11 +23,11 @@
         "sha256": "4f2278d1a8c2cd5a42065f86e466b4a600aaf680986a287dcb8c58fc1c793173",
         "type_id": "0x00000042"
       },
-      "compressed_size": 179,
       "compression": "deflate",
+      "expanded": 267,
       "name": "Contents/Keywords",
       "role": "block",
-      "uncompressed_size": 267
+      "stored": 179
     }
   ],
   "identity": {

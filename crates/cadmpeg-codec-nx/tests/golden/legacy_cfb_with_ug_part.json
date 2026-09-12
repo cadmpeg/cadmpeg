@@ -163,11 +163,13 @@
           "file_offset": "0",
           "region": "HEADER"
         },
-        "compressed_size": 5120,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "part-payload",
-        "uncompressed_size": 5120
+        "size": {
+          "form": "exact",
+          "size": 5120
+        }
       },
       {
         "attributes": {
@@ -190,11 +192,13 @@
           "records.shell": "0",
           "records.vertex": "0"
         },
-        "compressed_size": 5111,
         "compression": "stored",
         "name": "parasolid#0",
         "role": "parasolid-stream",
-        "uncompressed_size": 5111
+        "size": {
+          "form": "exact",
+          "size": 5111
+        }
       }
     ],
     "identity": {

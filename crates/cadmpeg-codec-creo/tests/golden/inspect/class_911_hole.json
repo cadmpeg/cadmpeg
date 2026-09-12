@@ -5,31 +5,37 @@
       "attributes": {
         "offset": "76"
       },
-      "compressed_size": 48,
       "compression": "none",
       "name": "VisibGeom",
       "role": "psb-geometry",
-      "uncompressed_size": 48
+      "size": {
+        "form": "exact",
+        "size": 48
+      }
     },
     {
       "attributes": {
         "offset": "124"
       },
-      "compressed_size": 28,
       "compression": "none",
       "name": "AllFeatur",
       "role": "model-data",
-      "uncompressed_size": 28
+      "size": {
+        "form": "exact",
+        "size": 28
+      }
     },
     {
       "attributes": {
         "offset": "152"
       },
-      "compressed_size": 21,
       "compression": "none",
       "name": "MdlStatus",
       "role": "metadata",
-      "uncompressed_size": 21
+      "size": {
+        "form": "exact",
+        "size": 21
+      }
     }
   ],
   "identity": {
