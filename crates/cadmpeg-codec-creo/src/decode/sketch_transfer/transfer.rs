@@ -104,7 +104,7 @@ pub(in super::super) fn transfer_sketches(
                 ),
             )
             .map_err(cadmpeg_core::CodecError::malformed)?,
-            None => cadmpeg_ir::sketches::SketchPlacement::Unresolved,
+            None => cadmpeg_ir::sketches::SketchPlacement::Unresolved {},
         };
         let Some(sketch_id) = model_sketch_id(scan, definition) else {
             continue;

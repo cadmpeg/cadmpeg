@@ -67,7 +67,7 @@ fn sketch() -> Sketch {
         name: None,
         configuration: None,
         visible: None,
-        placement: SketchPlacement::Unresolved,
+        placement: SketchPlacement::Unresolved {},
         profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![vec![SketchEntityUse {
             entity,
             reversed: false,

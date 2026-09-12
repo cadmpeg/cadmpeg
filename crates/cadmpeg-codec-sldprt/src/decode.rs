@@ -223,7 +223,7 @@ fn sketch_constraint_has_complete_neutral_semantics(
 
     match definition {
         Constraint::Native { .. } => false,
-        Constraint::Disabled
+        Constraint::Disabled {}
         | Constraint::Coincident { .. }
         | Constraint::Polygon { .. }
         | Constraint::SplineGroup { .. }

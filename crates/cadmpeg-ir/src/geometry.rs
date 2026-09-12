@@ -693,7 +693,8 @@ pub enum ProceduralSurfaceDefinition {
 #[serde(
     remote = "ProceduralSurfaceDefinition",
     tag = "kind",
-    rename_all = "snake_case"
+    rename_all = "snake_case",
+    deny_unknown_fields
 )]
 enum ProceduralSurfaceDefinitionWire {
     Exact(surface_payloads::ExactSurfacePayload),
@@ -6573,7 +6574,8 @@ pub enum ProceduralCurveDefinition {
 #[serde(
     remote = "ProceduralCurveDefinition",
     tag = "kind",
-    rename_all = "snake_case"
+    rename_all = "snake_case",
+    deny_unknown_fields
 )]
 enum ProceduralCurveDefinitionWire {
     Exact {

@@ -1577,7 +1577,7 @@ fn circle_remains_a_closed_extrusion_profile() {
         name: None,
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved,
+        placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved {},
         profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![vec![SketchEntityUse {
             entity: entity_id.clone(),
             reversed: false,

@@ -1745,7 +1745,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
             );
         }
         let (entities, parameter) = match constraint.definition.kind() {
-            Definition::Disabled => (Vec::new(), None),
+            Definition::Disabled {} => (Vec::new(), None),
             Definition::Polygon { polygon } => (polygon.entities().to_vec(), None),
             Definition::Coincident { entities }
             | Definition::SplineGroup { entities }

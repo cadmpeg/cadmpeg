@@ -154,7 +154,7 @@ pub struct Sketch {
 #[serde(deny_unknown_fields)]
 pub enum SketchPlacement {
     /// Local geometry is decoded but its model-space frame is unresolved.
-    Unresolved,
+    Unresolved {},
     /// Complete model-space sketch frame.
     Resolved {
         /// Checked origin and nonzero perpendicular axes.
@@ -229,7 +229,7 @@ impl SketchPlacement {
     /// Return the complete frame when placement is resolved.
     pub fn resolved(self) -> Option<(Point3, Vector3, Vector3)> {
         match self {
-            Self::Unresolved => None,
+            Self::Unresolved {} => None,
             Self::Resolved { frame } => Some((frame.origin, frame.normal, frame.u_axis)),
         }
     }
@@ -1434,7 +1434,6 @@ pub struct SketchConstraint {
     /// Owning sketch.
     pub sketch: SketchId,
     /// Constraint semantics.
-    #[serde(deserialize_with = "deserialize_sketch_constraint_definition")]
     pub definition: SketchConstraintDefinition,
     /// User-visible constraint name, when assigned.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1466,37 +1465,6 @@ pub struct SketchConstraint {
     /// Source-native relation record when decoded from one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_ref: Option<String>,
-}
-
-fn deserialize_sketch_constraint_definition<'de, D>(
-    deserializer: D,
-) -> Result<SketchConstraintDefinition, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let mut value = serde_json::Value::deserialize(deserializer)?;
-    if let Some(object) = value.as_object_mut() {
-        let axis = match object.get("kind").and_then(serde_json::Value::as_str) {
-            Some("horizontal_loci" | "horizontal_points") => Some("v"),
-            Some("vertical_loci" | "vertical_points") => Some("u"),
-            _ => None,
-        };
-        if let Some(axis) = axis {
-            object.insert(
-                "kind".into(),
-                serde_json::Value::String("same_coordinate".into()),
-            );
-            let mut relation = serde_json::Map::new();
-            for key in ["first", "second"] {
-                if let Some(value) = object.remove(key) {
-                    relation.insert(key.into(), value);
-                }
-            }
-            relation.insert("axis".into(), serde_json::Value::String(axis.into()));
-            object.insert("relation".into(), serde_json::Value::Object(relation));
-        }
-    }
-    serde_json::from_value(value).map_err(serde::de::Error::custom)
 }
 
 /// A geometric locus on a sketch entity.
@@ -2341,7 +2309,7 @@ impl TryFrom<SketchConstraintDefinitionInput> for SketchConstraintDefinition {
             Kind::Native {
                 entities, operands, ..
             } => !entities.is_empty() || !operands.is_empty(),
-            Kind::Disabled => true,
+            Kind::Disabled {} => true,
             Kind::Polygon { .. } => true,
             Kind::RectangularPattern { .. } => true,
             Kind::CircularPattern { .. } => true,
@@ -2393,7 +2361,7 @@ impl TryFrom<SketchConstraintDefinitionInput> for SketchConstraintDefinition {
 #[serde(deny_unknown_fields)]
 pub enum SketchConstraintDefinitionInput {
     /// Persisted no-op relation slot.
-    Disabled,
+    Disabled {},
     /// Two entity loci coincide.
     Coincident {
         /// Coincident entity loci.

@@ -58,7 +58,7 @@ fn sketch_coordinate_pairs_are_retained_as_native_entities_without_roles() {
     assert_eq!(ir.model.sketches[0].id, sketch);
     assert!(matches!(
         ir.model.sketches[0].placement,
-        cadmpeg_ir::sketches::SketchPlacement::Unresolved
+        cadmpeg_ir::sketches::SketchPlacement::Unresolved {}
     ));
     assert_eq!(ir.model.sketch_entities.len(), 1);
     assert_eq!(
@@ -120,7 +120,7 @@ fn sketch_fixed_points_are_retained_as_native_entities_without_roles() {
     assert_eq!(ir.model.sketches[0].id, sketch);
     assert!(matches!(
         ir.model.sketches[0].placement,
-        cadmpeg_ir::sketches::SketchPlacement::Unresolved
+        cadmpeg_ir::sketches::SketchPlacement::Unresolved {}
     ));
     assert_eq!(ir.model.sketch_entities.len(), 1);
     assert_eq!(

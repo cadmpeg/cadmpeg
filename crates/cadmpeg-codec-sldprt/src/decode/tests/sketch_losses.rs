@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 #[test]
 fn sketch_constraint_completeness_distinguishes_neutral_and_native_semantics() {
     assert!(sketch_constraint_has_complete_neutral_semantics(
-        &SketchConstraintDefinitionInput::Disabled
+        &SketchConstraintDefinitionInput::Disabled {}
     ));
     assert!(!sketch_constraint_has_complete_neutral_semantics(
         &SketchConstraintDefinitionInput::Native {

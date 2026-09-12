@@ -670,7 +670,7 @@ fn transfer_sketch(
         name: None,
         configuration: None,
         visible: None,
-        placement: SketchPlacement::Unresolved,
+        placement: SketchPlacement::Unresolved {},
         profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: Some(object.id.clone()),
     });

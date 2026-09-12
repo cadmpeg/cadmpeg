@@ -220,7 +220,7 @@ fn connected_profile_vertices_include_open_chain_terminals() {
         name: None,
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved,
+        placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved {},
         profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![vec![
             SketchEntityUse {
                 entity: entity_id(1),

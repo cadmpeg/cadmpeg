@@ -170,7 +170,7 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
     let entity = SketchEntityId::mint("synthetic:test:entity#0").unwrap();
     let parameter = ParameterId::mint("synthetic:test:parameter#0").expect("identity grammar");
     let definitions = vec![
-        SketchConstraintDefinitionInput::Disabled,
+        SketchConstraintDefinitionInput::Disabled {},
         SketchConstraintDefinitionInput::CoincidentLoci {
             loci: vec![
                 SketchLocus::Start(entity.clone()),
@@ -889,56 +889,6 @@ fn internal_alignment_index_stays_with_bspline_variants() {
 }
 
 #[test]
-fn same_coordinate_accepts_legacy_relation_tags() {
-    use crate::sketches::{
-        SketchConstraint, SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchEntityId,
-        SketchLocus,
-    };
-
-    let first = SketchLocus::Entity(SketchEntityId::mint("test:test:sketch-entity#first").unwrap());
-    let second =
-        SketchLocus::Entity(SketchEntityId::mint("test:test:sketch-entity#second").unwrap());
-    for (kind, axis) in [
-        ("horizontal_loci", SketchCoordinateAxis::V),
-        ("horizontal_points", SketchCoordinateAxis::V),
-        ("vertical_loci", SketchCoordinateAxis::U),
-        ("vertical_points", SketchCoordinateAxis::U),
-    ] {
-        let constraint = serde_json::from_value::<SketchConstraint>(serde_json::json!({
-            "id": "test:test:sketch-constraint#axis",
-            "sketch": "test:test:sketch#axis",
-            "definition": {
-                "kind": kind,
-                "first": first,
-                "second": second,
-            },
-        }))
-        .unwrap();
-        assert_eq!(
-            constraint.definition.kind(),
-            &SketchConstraintDefinitionInput::SameCoordinate {
-                relation: crate::sketches::SketchSameCoordinate::try_new(
-                    first.clone(),
-                    second.clone(),
-                    axis
-                )
-                .unwrap()
-            }
-        );
-        let wire = serde_json::to_value(constraint).unwrap();
-        assert_eq!(wire["definition"]["kind"], "same_coordinate");
-        assert_eq!(
-            wire["definition"]["relation"]["axis"],
-            if axis == SketchCoordinateAxis::U {
-                "u"
-            } else {
-                "v"
-            }
-        );
-    }
-}
-
-#[test]
 fn a_solver_scalar_slot_is_its_key_and_carries_no_class_key() {
     use crate::sketches::SketchConstraintDefinitionInput;
     let angle = SketchConstraintDefinitionInput::AngleDifference {
@@ -1316,12 +1266,12 @@ fn planar_placement_admits_nonunit_perpendicular_axes_at_both_boundaries() {
     }
     let unresolved = serde_json::json!({"kind": "unresolved"});
     assert_eq!(
-        serde_json::to_value(SketchPlacement::Unresolved).unwrap(),
+        serde_json::to_value(SketchPlacement::Unresolved {}).unwrap(),
         unresolved
     );
     assert_eq!(
         serde_json::from_value::<SketchPlacement>(unresolved).unwrap(),
-        SketchPlacement::Unresolved
+        SketchPlacement::Unresolved {}
     );
 }
 
@@ -1618,7 +1568,7 @@ fn constraint_admission_rejects_local_arity_and_distinctness_on_every_route() {
             operands: vec![],
         },
     ];
-    let mut admitted = SketchConstraintDefinition::try_from(Kind::Disabled).unwrap();
+    let mut admitted = SketchConstraintDefinition::try_from(Kind::Disabled {}).unwrap();
     let original = admitted.clone();
     for kind in invalid {
         let wire = serde_json::to_value(&kind).unwrap();
