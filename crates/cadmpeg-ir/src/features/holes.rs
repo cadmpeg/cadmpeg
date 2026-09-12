@@ -471,7 +471,7 @@ impl TryFrom<HoleKindWire> for HoleKind {
 /// Profile geometry families accepted as hole-location generators.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "HoleProfileFilterWire", into = "HoleProfileFilterWire")]
+#[serde(rename_all = "snake_case")]
 pub enum HoleProfileFilter {
     /// Points generate holes.
     Points,
@@ -487,51 +487,6 @@ pub enum HoleProfileFilter {
     CirclesAndArcs,
     /// All profile families generate holes.
     All,
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-struct HoleProfileFilterWire {
-    points: bool,
-    circles: bool,
-    arcs: bool,
-}
-
-impl TryFrom<HoleProfileFilterWire> for HoleProfileFilter {
-    type Error = &'static str;
-
-    fn try_from(value: HoleProfileFilterWire) -> Result<Self, Self::Error> {
-        match (value.points, value.circles, value.arcs) {
-            (true, false, false) => Ok(Self::Points),
-            (false, true, false) => Ok(Self::Circles),
-            (true, true, false) => Ok(Self::PointsAndCircles),
-            (false, false, true) => Ok(Self::Arcs),
-            (true, false, true) => Ok(Self::PointsAndArcs),
-            (false, true, true) => Ok(Self::CirclesAndArcs),
-            (true, true, true) => Ok(Self::All),
-            (false, false, false) => Err("hole profile filter requires points, circles, or arcs"),
-        }
-    }
-}
-
-impl From<HoleProfileFilter> for HoleProfileFilterWire {
-    fn from(value: HoleProfileFilter) -> Self {
-        let (points, circles, arcs) = match value {
-            HoleProfileFilter::Points => (true, false, false),
-            HoleProfileFilter::Circles => (false, true, false),
-            HoleProfileFilter::PointsAndCircles => (true, true, false),
-            HoleProfileFilter::Arcs => (false, false, true),
-            HoleProfileFilter::PointsAndArcs => (true, false, true),
-            HoleProfileFilter::CirclesAndArcs => (false, true, true),
-            HoleProfileFilter::All => (true, true, true),
-        };
-        Self {
-            points,
-            circles,
-            arcs,
-        }
-    }
 }
 
 /// Blind-end construction of a drilled hole.

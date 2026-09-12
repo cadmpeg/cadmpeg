@@ -672,22 +672,24 @@ fn blind_and_coil_lengths_reject_zero_without_losing_signed_wire_values() {
 fn hole_profile_filters_admit_exactly_the_nonempty_family_sets() {
     use crate::features::HoleProfileFilter;
     let filters = [
-        HoleProfileFilter::Points,
-        HoleProfileFilter::Circles,
-        HoleProfileFilter::PointsAndCircles,
-        HoleProfileFilter::Arcs,
-        HoleProfileFilter::PointsAndArcs,
-        HoleProfileFilter::CirclesAndArcs,
-        HoleProfileFilter::All,
+        (HoleProfileFilter::Points, "points"),
+        (HoleProfileFilter::Circles, "circles"),
+        (HoleProfileFilter::PointsAndCircles, "points_and_circles"),
+        (HoleProfileFilter::Arcs, "arcs"),
+        (HoleProfileFilter::PointsAndArcs, "points_and_arcs"),
+        (HoleProfileFilter::CirclesAndArcs, "circles_and_arcs"),
+        (HoleProfileFilter::All, "all"),
     ];
-    for (bits, filter) in (1..=7).zip(filters) {
-        let wire = serde_json::json!({"points": bits & 1 != 0, "circles": bits & 2 != 0, "arcs": bits & 4 != 0});
+    for (filter, name) in filters {
+        let wire = serde_json::json!(name);
         assert_eq!(serde_json::to_value(filter).unwrap(), wire);
         assert_eq!(
             serde_json::from_value::<HoleProfileFilter>(wire).unwrap(),
             filter
         );
     }
+    // The empty family set has no name, so the wire cannot state it.
+    assert!(serde_json::from_value::<HoleProfileFilter>(serde_json::json!("none")).is_err());
     assert!(serde_json::from_value::<HoleProfileFilter>(
         serde_json::json!({"points":false,"circles":false,"arcs":false})
     )
