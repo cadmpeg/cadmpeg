@@ -727,7 +727,7 @@ fn marker_backed_sketch_preserves_geometry_when_placement_is_unresolved() {
     );
 
     assert_eq!(sketches.len(), 1);
-    assert_eq!(sketches[0].placement, SketchPlacement::Unresolved);
+    assert_eq!(sketches[0].placement, SketchPlacement::Unresolved {});
     assert!(matches!(entities.as_slice(), [entity] if matches!(
         entity.geometry.definition(), SketchGeometryDefinition::Point { position }
         if *position == Point2::new(1.0, 2.0)

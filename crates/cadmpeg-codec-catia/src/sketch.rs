@@ -1127,7 +1127,7 @@ mod tests {
             name: None,
             configuration: None,
             visible: None,
-            placement: SketchPlacement::Unresolved,
+            placement: SketchPlacement::Unresolved {},
             profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
             native_ref: Some("sketch-object".to_string()),
         });
@@ -1238,7 +1238,7 @@ mod tests {
             name: None,
             configuration: None,
             visible: None,
-            placement: SketchPlacement::Unresolved,
+            placement: SketchPlacement::Unresolved {},
             profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
             native_ref: Some("sketch-object".to_string()),
         });

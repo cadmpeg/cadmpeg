@@ -804,7 +804,7 @@ fn loft_multi_member_planar_entity_path_preserves_order_and_requires_complete_pr
         name: None,
         configuration: None,
         visible: None,
-        placement: SketchPlacement::Unresolved,
+        placement: SketchPlacement::Unresolved {},
         profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: None,
     }];
@@ -962,7 +962,7 @@ fn entity_selection_profile_requires_unique_profile_membership() {
         name: None,
         configuration: None,
         visible: None,
-        placement: SketchPlacement::Unresolved,
+        placement: SketchPlacement::Unresolved {},
         profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![
             vec![SketchEntityUse {
                 entity: unselected,
@@ -1042,7 +1042,7 @@ fn entity_selection_profile_retains_an_open_curve_as_ordered_entities() {
         name: None,
         configuration: None,
         visible: None,
-        placement: SketchPlacement::Unresolved,
+        placement: SketchPlacement::Unresolved {},
         profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: None,
     }];
@@ -1113,7 +1113,7 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
         name: None,
         configuration: None,
         visible: None,
-        placement: SketchPlacement::Unresolved,
+        placement: SketchPlacement::Unresolved {},
         profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![
             vec![SketchEntityUse {
                 entity: first_entity.clone(),

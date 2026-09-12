@@ -2566,7 +2566,7 @@ fn neutral_constraint(
     let entity = |index| loci.get(index).map(locus_entity).cloned();
     let pair = || Some((entity(0)?, entity(1)?));
     Some(match kind {
-        0 => SketchConstraintDefinitionInput::Disabled,
+        0 => SketchConstraintDefinitionInput::Disabled {},
         1 => SketchConstraintDefinitionInput::CoincidentLoci {
             loci: loci.to_vec(),
         },

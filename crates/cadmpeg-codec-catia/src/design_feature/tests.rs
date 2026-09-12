@@ -1245,7 +1245,7 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
     assert!(ir.model.sketches[0].profiles.is_empty());
     assert_eq!(
         ir.model.sketches[0].placement,
-        cadmpeg_ir::sketches::SketchPlacement::Unresolved
+        cadmpeg_ir::sketches::SketchPlacement::Unresolved {}
     );
     assert_eq!(
         ir.model.parameters[0].owner,

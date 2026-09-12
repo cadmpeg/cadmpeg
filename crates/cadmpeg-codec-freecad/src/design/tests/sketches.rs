@@ -493,7 +493,7 @@ fn distinguishes_missing_malformed_and_explicit_constraint_types() {
         .expect("explicit disabled constraint");
     assert!(matches!(
         result.ir().model.sketch_constraints[0].definition.kind(),
-        cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Disabled
+        cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Disabled {}
     ));
     assert_valid_document(result.ir());
 }
@@ -815,7 +815,7 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
     ));
     assert!(matches!(
         constraint(9).definition.kind(),
-        cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Disabled
+        cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Disabled {}
     ));
     assert!(matches!(
         constraint(10).definition.kind(),

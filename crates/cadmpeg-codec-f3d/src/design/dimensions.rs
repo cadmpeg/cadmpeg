@@ -2310,7 +2310,7 @@ pub(crate) fn constraint_parameters(
                 .flatten()
                 .collect()
         }
-        Definition::Disabled
+        Definition::Disabled {}
         | Definition::Coincident { .. }
         | Definition::ProjectedCopy { .. }
         | Definition::Polygon { .. }

@@ -154,7 +154,7 @@ fn axis_endpoint_with_offset_neighbor_reports_boundary_rejection() {
         name: None,
         configuration: None,
         visible: None,
-        placement: SketchPlacement::Unresolved,
+        placement: SketchPlacement::Unresolved {},
         profiles: SketchProfiles::try_from(vec![uses]).expect("profile"),
         native_ref: None,
     });

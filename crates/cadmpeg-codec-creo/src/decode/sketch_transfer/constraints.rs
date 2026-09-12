@@ -184,7 +184,7 @@ pub(in super::super) fn reconcile_constraint_entity_references(
         | SketchConstraintDefinitionInput::Text { elements, .. } => {
             elements.iter().all(locus_emitted)
         }
-        SketchConstraintDefinitionInput::Disabled => true,
+        SketchConstraintDefinitionInput::Disabled {} => true,
         _ => true,
     }
 }
@@ -254,7 +254,7 @@ pub(in super::super) fn reconcile_constraint_parameter_reference(
         | SketchConstraintDefinitionInput::Equal { .. }
         | SketchConstraintDefinitionInput::EqualDistance { .. }
         | SketchConstraintDefinitionInput::Fixed { .. } => true,
-        SketchConstraintDefinitionInput::Disabled
+        SketchConstraintDefinitionInput::Disabled {}
         | SketchConstraintDefinitionInput::PointOnObject { .. }
         | SketchConstraintDefinitionInput::AtIntersection { .. }
         | SketchConstraintDefinitionInput::ArcAngle { .. }

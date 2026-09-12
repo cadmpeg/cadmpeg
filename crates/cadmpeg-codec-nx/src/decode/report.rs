@@ -582,7 +582,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                         .is_none_or(|sketch| {
                             matches!(
                                 sketch.placement,
-                                cadmpeg_ir::sketches::SketchPlacement::Unresolved
+                                cadmpeg_ir::sketches::SketchPlacement::Unresolved {}
                             )
                         })
                 }) =>

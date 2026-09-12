@@ -1011,7 +1011,7 @@ pub(crate) fn project_marker_backed_sketches(
                                         Err(_) => continue,
                                     }
                                 }
-                                None => cadmpeg_ir::sketches::SketchPlacement::Unresolved,
+                                None => cadmpeg_ir::sketches::SketchPlacement::Unresolved {},
                             },
                             profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
                             native_ref: Some(lane.id.clone()),
@@ -1070,7 +1070,7 @@ pub(crate) fn project_marker_backed_sketches(
                             Err(_) => continue,
                         }
                     }
-                    None => cadmpeg_ir::sketches::SketchPlacement::Unresolved,
+                    None => cadmpeg_ir::sketches::SketchPlacement::Unresolved {},
                 },
                 profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
                 native_ref: Some(lane.id.clone()),
@@ -3194,7 +3194,7 @@ mod detached_legacy_sketch_tests {
             sketches[0].profiles.as_slice(),
             Vec::<Vec<SketchEntityUse>>::new()
         );
-        assert_eq!(sketches[0].placement, SketchPlacement::Unresolved);
+        assert_eq!(sketches[0].placement, SketchPlacement::Unresolved {});
         assert!(sketch_entities.is_empty());
         assert!(matches!(
             features[0].evaluation.definition(),

@@ -2992,7 +2992,7 @@ mod relation_geometry_tests {
             name: None,
             configuration: None,
             visible: None,
-            placement: SketchPlacement::Unresolved,
+            placement: SketchPlacement::Unresolved {},
             profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
             native_ref: Some("lane#test".into()),
         }];

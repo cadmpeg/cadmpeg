@@ -427,7 +427,7 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
         .expect("neutral unplaced sketch");
     assert_eq!(
         sketch.placement,
-        cadmpeg_ir::sketches::SketchPlacement::Unresolved
+        cadmpeg_ir::sketches::SketchPlacement::Unresolved {}
     );
     assert_eq!(
         result

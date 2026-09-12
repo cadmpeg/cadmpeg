@@ -84,7 +84,7 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         name: None,
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved,
+        placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved {},
         profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![vec![
             SketchEntityUse {
                 entity: spline_id.clone(),
@@ -1042,7 +1042,7 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
         name: None,
         configuration: None,
         visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved,
+        placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved {},
         profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: Some("creo:featdefs:sketch#822".to_string()),
     });
