@@ -18,7 +18,7 @@ fn b5_frame_walk_ignores_markers_inside_payloads() {
     }
     append_b5_record(&mut bytes, 0x06, 1, &payload);
     bytes.extend_from_slice(&b5_closed_triangle_stream());
-    let graph = crate::families::b5::graph::parse(&bytes).expect("length-closed B5 graph");
+    let graph = crate::families::b5::graph::parse(&bytes, &mut None).expect("length-closed B5 graph");
     assert_eq!(graph.faces.len(), 1);
     assert_eq!(graph.loops.len(), 1);
     assert_eq!(graph.vertices.raw_points().len(), 3);
@@ -47,7 +47,7 @@ fn b5_analytic_line_pcurve_resolves_to_clamped_linear_form() {
         &b5_transverse_isoparametric_line_pcurve_payload(100, -4.0, [1.0, 7.0]),
     );
     append_b5_record(&mut bytes, 0x5e, 603, &[]);
-    let graph = crate::families::b5::graph::parse(&bytes).expect("length-closed B5 graph");
+    let graph = crate::families::b5::graph::parse(&bytes, &mut None).expect("length-closed B5 graph");
     let pcurve = graph.pcurves.get(&600).expect("analytic line pcurve");
     assert_eq!(pcurve.degree, 1);
     assert_eq!(pcurve.distinct_knots, vec![-0.5, 1.5]);
@@ -89,7 +89,7 @@ fn b5_circle_pcurve_rejects_nonfinite_derived_poles() {
     }
     append_b5_record(&mut bytes, 0x19, 600, &payload);
 
-    let graph = crate::families::b5::graph::parse(&bytes).expect("length-closed B5 graph");
+    let graph = crate::families::b5::graph::parse(&bytes, &mut None).expect("length-closed B5 graph");
     assert!(!graph.pcurves.contains_key(&600));
 }
 
@@ -103,7 +103,7 @@ fn b5_line_pcurve_rejects_nonfinite_derived_poles() {
         &b5_analytic_line_pcurve_payload(0, [f64::MAX, 0.0], [f64::MAX, 0.0], [1.0, 2.0]),
     );
 
-    let graph = crate::families::b5::graph::parse(&bytes).expect("length-closed B5 graph");
+    let graph = crate::families::b5::graph::parse(&bytes, &mut None).expect("length-closed B5 graph");
     assert!(!graph.pcurves.contains_key(&600));
 }
 
@@ -120,7 +120,7 @@ fn b5_pcurve_lift_rejects_nonfinite_world_endpoints() {
         &b5_isoparametric_line_pcurve_payload(100, f64::MAX, [0.0, 1.0]),
     );
 
-    let graph = crate::families::b5::graph::parse(&bytes).expect("length-closed B5 graph");
+    let graph = crate::families::b5::graph::parse(&bytes, &mut None).expect("length-closed B5 graph");
     assert!(graph.pcurves[&600].lifted_endpoints.is_none());
 }
 
@@ -212,7 +212,7 @@ fn b5_object_graph_resolves_face_loop_pcurve_and_edge_members() {
         }
     }
 
-    let graph = crate::families::b5::graph::parse(&bytes).expect("B5 object topology");
+    let graph = crate::families::b5::graph::parse(&bytes, &mut None).expect("B5 object topology");
     assert_eq!(graph.faces[0].surface, 100);
     assert_eq!(graph.faces[0].loops, vec![400]);
     assert_eq!(

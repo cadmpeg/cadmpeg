@@ -421,7 +421,7 @@ fn native_identity_locus_binds_only_one_coordinate_row_within_tolerance() {
 #[test]
 fn reverse_angular_interval_becomes_an_increasing_nurbs_domain() {
     let range = ordered_range([0.0, -std::f64::consts::PI]);
-    let arc = rational_pcurve_arc([0.0, 0.0], 2.0, range).expect("reverse semicircle");
+    let arc = rational_pcurve_arc([0.0, 0.0], 2.0, range, &mut None).expect("reverse semicircle");
     let PcurveGeometry::Nurbs { nurbs } = &arc else {
         panic!("expected rational NURBS arc");
     };
@@ -580,7 +580,7 @@ fn standard_freeform_face_uses_exact_e5_surface_wrapper_identity() {
         forward: true,
     }];
 
-    let associated = associate_standard_freeform_e5_surfaces(&records, &stream);
+    let associated = associate_standard_freeform_e5_surfaces(&records, &stream, &mut None);
     assert!(matches!(
         associated.get(&7),
         Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_)))
@@ -742,7 +742,7 @@ fn standard_plane_line_inverts_to_exact_parameter_line() {
         Point3::new(5.0, 8.0, 3.0),
         None,
         None,
-    )
+     &mut None,)
     .expect("plane line pcurve");
     assert_eq!(range, [0.0, 1.0]);
     assert_eq!(
@@ -841,7 +841,7 @@ fn standard_emission_reverses_only_face_pcurve_use_range() {
             &[None],
             &[None],
             &[],
-        )
+         &mut None,)
         .expect("valid source object identity");
 
         let [loop_] = ir.model.loops.as_slice() else {
@@ -902,7 +902,7 @@ fn standard_plane_circle_pcurve_preserves_contained_carrier() {
     let start = Point3::new(radius, 0.0, 0.0);
     let end = Point3::new(0.0, radius, 0.0);
     let (geometry, range) =
-        standard_pcurve_geometry(&surface, &support, start, end, None, Some(&carrier))
+        standard_pcurve_geometry(&surface, &support, start, end, None, Some(&carrier), &mut None)
             .expect("contained plane circle pcurve");
     let mapped = range.map(|parameter| {
         let uv = pcurve_uv(&geometry, parameter).expect("plane circle pcurve endpoint");
@@ -941,7 +941,7 @@ fn standard_plane_full_circle_pcurve_preserves_closed_carrier() {
         .expect("valid CircleCurve fixture"),
     ));
     let (geometry, range) =
-        standard_pcurve_geometry(&surface, &support, start, start, None, Some(&carrier))
+        standard_pcurve_geometry(&surface, &support, start, start, None, Some(&carrier), &mut None)
             .expect("closed contained plane circle pcurve");
     assert_eq!(range, [0.0, std::f64::consts::TAU]);
     let PcurveGeometry::Nurbs { nurbs } = &geometry else {
@@ -986,10 +986,10 @@ fn spherical_section_endpoint_pair_survives_topology_admission_without_pcurve() 
     let start = Point3::new(section_radius, 2.0, 0.0);
     let end = Point3::new(0.0, 2.0, section_radius);
 
-    assert!(standard_pcurve_geometry(&surface, &support, start, end, None, None).is_none());
+    assert!(standard_pcurve_geometry(&surface, &support, start, end, None, None, &mut None).is_none());
     assert!(standard_endpoint_pair_supports_topology(
         &surface, &support, start, end, None
-    ));
+    , &mut None));
 }
 
 #[test]
@@ -1032,7 +1032,7 @@ fn standard_full_circle_edge_uses_vertex_seam_and_radian_domain() {
         [0, 0],
         None,
         None,
-    )
+     &mut None,)
     .expect("valid source object identity");
     assert_eq!(range, Some([0.0, std::f64::consts::TAU]));
     let curve = curve.expect("closed circle support identifies a curve");
@@ -1087,7 +1087,7 @@ fn standard_plane_circle_pcurve_rejects_carrier_outside_face_plane() {
         Point3::new(0.0, -1.0, 0.0),
         None,
         Some(&carrier),
-    )
+     &mut None,)
     .is_none());
 }
 
@@ -1125,7 +1125,7 @@ fn standard_plane_circle_pcurve_rejects_tilted_carrier() {
         Point3::new(0.0, -radius, 0.0),
         None,
         Some(&carrier),
-    )
+     &mut None,)
     .is_none());
 }
 
@@ -1157,7 +1157,7 @@ fn solved_planar_spline_line_inverts_to_exact_parameter_line() {
         .expect("valid LineCurve fixture"),
     ));
     let (geometry, range) =
-        standard_pcurve_geometry(&surface, &support, start, end, None, Some(&carrier))
+        standard_pcurve_geometry(&surface, &support, start, end, None, Some(&carrier), &mut None)
             .expect("solved spline line pcurve");
 
     assert_eq!(range, [0.0, 1.0]);
@@ -1193,7 +1193,7 @@ fn standard_pcurve_rejects_endpoints_outside_the_face_carrier() {
         Point3::new(1.0, 2.0, 0.0),
         None,
         None,
-    )
+     &mut None,)
     .is_none());
 }
 
@@ -1226,7 +1226,7 @@ fn standard_cone_apex_uses_the_other_endpoint_angular_gauge() {
             Point3::new(0.0, radius, height),
             None,
             None,
-        )
+         &mut None,)
         .expect("cone generator through the apex");
         assert_eq!(range, [0.0, 1.0]);
         assert_eq!(
@@ -1273,7 +1273,7 @@ fn standard_cone_latitude_inverts_to_isoparametric_line() {
         Point3::new(0.0, radius, 2.0),
         None,
         None,
-    )
+     &mut None,)
     .expect("cone latitude pcurve");
     assert_eq!(range, [0.0, 1.0]);
     assert_eq!(
@@ -1315,7 +1315,7 @@ fn standard_cylinder_witness_selects_complementary_arc() {
         Point3::new(0.0, 2.0, 3.0),
         Some(Point3::new(-2.0, 0.0, 3.0)),
         None,
-    )
+     &mut None,)
     .expect("witnessed cylinder section");
     assert_eq!(
         geometry,
@@ -1356,7 +1356,7 @@ fn standard_cylinder_endpoint_witness_preserves_geometric_arc() {
         Point3::new(0.0, -2.0, 3.0),
         Some(Point3::new(-1.0, 0.0, 4.0)),
         None,
-    )
+     &mut None,)
     .expect("endpoint-aligned witness does not reject the arc");
     assert_eq!(
         geometry,
@@ -1398,7 +1398,7 @@ fn standard_torus_witness_selects_complementary_latitude_arc() {
         Point3::new(0.0, 7.0, 0.0),
         Some(Point3::new(-7.0, 0.0, 0.0)),
         None,
-    )
+     &mut None,)
     .expect("witnessed torus latitude");
     let PcurveGeometry::Line(line_pcurve) = geometry else {
         panic!("expected torus chart line");
@@ -1450,7 +1450,7 @@ fn standard_torus_witness_selects_complementary_meridian_arc() {
     let end = Point3::new(5.0, 0.0, 2.0);
     let witness = Point3::new(5.0, 0.0, -2.0);
     let (geometry, _) =
-        standard_pcurve_geometry(&surface, &support, start, end, Some(witness), None)
+        standard_pcurve_geometry(&surface, &support, start, end, Some(witness), None, &mut None)
             .expect("witnessed torus meridian");
     let PcurveGeometry::Line(line_pcurve) = geometry else {
         panic!("expected torus meridian chart line");
@@ -1513,7 +1513,7 @@ fn standard_sphere_latitude_inverts_to_isoparametric_line() {
         Point3::new(0.0, ring, height),
         None,
         None,
-    )
+     &mut None,)
     .expect("sphere latitude pcurve");
     let PcurveGeometry::Line(line_pcurve) = geometry else {
         panic!("expected line pcurve");

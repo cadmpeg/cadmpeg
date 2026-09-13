@@ -476,7 +476,9 @@ fn zero_entity_face_roster_logical_end(data: &[u8], record: usize) -> Option<usi
         .then_some(end)
 }
 
-fn zero_entity_records_in_range(data: &[u8], range: Range<usize>) -> Vec<ZeroEntityRecord> {
+fn zero_entity_records_in_range(
+    data: &[u8], range: Range<usize>,
+) -> Vec<ZeroEntityRecord> {
     if data.get(range.clone()).is_none() {
         return Vec::new();
     }
@@ -541,11 +543,15 @@ fn zero_entity_records(data: &[u8]) -> Vec<ZeroEntityRecord> {
     zero_entity_records_in_range(data, 0..data.len())
 }
 
-fn zero_entity_nurbs_logical_end(data: &[u8], record: usize) -> Option<usize> {
+fn zero_entity_nurbs_logical_end(
+    data: &[u8], record: usize,
+) -> Option<usize> {
     Some(zero_entity_nurbs_layout(data, record)?.end)
 }
 
-fn zero_entity_nurbs_layout(data: &[u8], record: usize) -> Option<ZeroEntityNurbsLayout> {
+fn zero_entity_nurbs_layout(
+    data: &[u8], record: usize,
+) -> Option<ZeroEntityNurbsLayout> {
     let tag = [
         *data.get(record.checked_add(a9_03::TAG_HI)?)?,
         *data.get(record.checked_add(a9_03::TAG_LO_LENGTH_DRIVER)?)?,
@@ -654,7 +660,9 @@ fn zero_entity_nurbs_knot_lane(
 
 /// Inventory every complete framed record in the one-based global namespace.
 #[must_use]
-pub fn zero_entity_record_inventory(data: &[u8]) -> Vec<ZeroEntityRecordIdentity> {
+pub fn zero_entity_record_inventory(
+    data: &[u8],
+) -> Vec<ZeroEntityRecordIdentity> {
     zero_entity_record_inventory_in_range(data, 0..data.len())
 }
 
@@ -749,7 +757,7 @@ pub(crate) fn zero_entity_ownership_roots_in_range(
 /// the decoder walks framed records.
 #[cfg(test)]
 pub fn zero_entity_surfaces(data: &[u8]) -> Vec<ZeroEntitySurface> {
-    zero_entity_surfaces_in_range(data, 0..data.len())
+    zero_entity_surfaces_in_range(data, 0..data.len(), &mut None)
 }
 
 /// Decode surface carriers whose records stay inside `range`.
@@ -757,11 +765,12 @@ pub fn zero_entity_surfaces(data: &[u8]) -> Vec<ZeroEntitySurface> {
 pub(crate) fn zero_entity_surfaces_in_range(
     data: &[u8],
     range: Range<usize>,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Vec<ZeroEntitySurface> {
     zero_entity_records_in_range(data, range)
         .into_iter()
         .filter_map(|record| {
-            zero_entity_surface_at(data, record.pos).map(|geometry| ZeroEntitySurface {
+            zero_entity_surface_at(data, record.pos, refusal).map(|geometry| ZeroEntitySurface {
                 pos: record.pos,
                 geometry,
             })
@@ -773,7 +782,7 @@ pub(crate) fn zero_entity_surfaces_in_range(
 #[cfg(test)]
 #[must_use]
 pub fn zero_entity_support_runs(data: &[u8]) -> Vec<ZeroEntitySupportRun> {
-    zero_entity_support_runs_in_range(data, 0..data.len())
+    zero_entity_support_runs_in_range(data, 0..data.len(), &mut None)
 }
 
 /// Decode support runs whose complete record population stays inside `range`.
@@ -781,13 +790,14 @@ pub fn zero_entity_support_runs(data: &[u8]) -> Vec<ZeroEntitySupportRun> {
 pub(crate) fn zero_entity_support_runs_in_range(
     data: &[u8],
     range: Range<usize>,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Vec<ZeroEntitySupportRun> {
     let records = zero_entity_records_in_range(data, range);
     let mut runs = Vec::new();
     let mut index = 0usize;
     while index + 1 < records.len() {
         let carrier_record = records[index];
-        let Some(carrier_geometry) = zero_entity_surface_at(data, carrier_record.pos) else {
+        let Some(carrier_geometry) = zero_entity_surface_at(data, carrier_record.pos, refusal) else {
             index += 1;
             continue;
         };
@@ -802,10 +812,10 @@ pub(crate) fn zero_entity_support_runs_in_range(
             .is_some_and(|record| record.tag[0] == 0x21)
         {
             let record = records[next];
-            if let Some(support) = zero_entity_support_occurrence(data, record) {
+            if let Some(support) = zero_entity_support_occurrence(data, record, refusal) {
                 let mut support = support;
                 if let Some((curve, parameters)) = support.pcurve.as_ref().and_then(|pcurve| {
-                    zero_entity_model_curve(&carrier_geometry, pcurve, support.uv_endpoints?)
+                    zero_entity_model_curve(&carrier_geometry, pcurve, support.uv_endpoints?, refusal)
                 }) {
                     support.model_curve = Some(curve);
                     support.model_parameters = Some(parameters);
@@ -1144,6 +1154,7 @@ fn zero_entity_loops_from_records(
 fn zero_entity_support_occurrence(
     data: &[u8],
     record: ZeroEntityRecord,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<ZeroEntitySupportOccurrence> {
     if data.get(record.pos + 12) != Some(&0x10) {
         return None;
@@ -1180,7 +1191,7 @@ fn zero_entity_support_occurrence(
     } else {
         None
     };
-    let pcurve = zero_entity_support_pcurve(data, record);
+    let pcurve = zero_entity_support_pcurve(data, record, refusal);
     if matches!(
         record.tag,
         [
@@ -1206,7 +1217,11 @@ fn zero_entity_support_occurrence(
     })
 }
 
-fn zero_entity_support_pcurve(data: &[u8], record: ZeroEntityRecord) -> Option<PcurveGeometry> {
+fn zero_entity_support_pcurve(
+    data: &[u8],
+    record: ZeroEntityRecord,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+) -> Option<PcurveGeometry> {
     let (
         knot_offsets,
         multiplicity_start,
@@ -1338,7 +1353,7 @@ fn zero_entity_support_pcurve(data: &[u8], record: ZeroEntityRecord) -> Option<P
         None
     };
     Some(PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::from_lanes(degree, knots, control_points, weights, false).ok()?,
+        nurbs: crate::nurbs::note_refusal(PcurveNurbs::from_lanes(degree, knots, control_points, weights, false), refusal)?,
     })
 }
 
@@ -1349,6 +1364,7 @@ fn zero_entity_support_pcurve(data: &[u8], record: ZeroEntityRecord) -> Option<P
 pub(crate) fn zero_entity_neutral_pcurve(
     surface: &SurfaceGeometry,
     pcurve: &PcurveGeometry,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<PcurveGeometry> {
     let (u_scale, v_scale) = match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
@@ -1383,14 +1399,13 @@ pub(crate) fn zero_entity_neutral_pcurve(
         })
         .collect::<Option<Vec<_>>>()?;
     Some(PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::from_lanes(
+        nurbs: crate::nurbs::note_refusal(PcurveNurbs::from_lanes(
             nurbs.degree(),
             nurbs.knots().to_vec(),
             control_points,
             nurbs.weights(),
             nurbs.periodic(),
-        )
-        .ok()?,
+        ), refusal)?,
     })
 }
 
@@ -1398,6 +1413,7 @@ fn zero_entity_model_curve(
     surface: &SurfaceGeometry,
     pcurve: &PcurveGeometry,
     uv_endpoints: [[f64; 2]; 2],
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<(CurveGeometry, [f64; 2])> {
     let PcurveGeometry::Nurbs { nurbs } = pcurve else {
         return None;
@@ -1438,7 +1454,7 @@ fn zero_entity_model_curve(
             ];
             Some((
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                    NurbsCurve::from_lanes(
+                    crate::nurbs::note_refusal(NurbsCurve::from_lanes(
                         nurbs.degree(),
                         nurbs.knots().to_vec(),
                         nurbs
@@ -1454,8 +1470,7 @@ fn zero_entity_model_curve(
                             .collect(),
                         nurbs.weights(),
                         false,
-                    )
-                    .ok()?,
+                    ), refusal)?,
                 )),
                 parameters,
             ))
@@ -1634,7 +1649,7 @@ fn zero_entity_model_curve(
         {
             Some((
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                    crate::nurbs::nurbs_surface_isocurve(surface, constant_coordinate(0)?, true)?,
+                    crate::nurbs::nurbs_surface_isocurve(surface, constant_coordinate(0)?, true, refusal)?,
                 )),
                 uv_endpoints.map(|uv| uv[1]),
             ))
@@ -1644,7 +1659,7 @@ fn zero_entity_model_curve(
         {
             Some((
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                    crate::nurbs::nurbs_surface_isocurve(surface, constant_coordinate(1)?, false)?,
+                    crate::nurbs::nurbs_surface_isocurve(surface, constant_coordinate(1)?, false, refusal)?,
                 )),
                 uv_endpoints.map(|uv| uv[0]),
             ))
@@ -2009,7 +2024,10 @@ fn tagged_u32(data: &[u8], at: usize) -> Option<u32> {
     (data.get(at) == Some(&0x10)).then(|| View::u32_le_at(data, at + 1))?
 }
 
-pub(crate) fn zero_entity_surface_at(data: &[u8], record: usize) -> Option<SurfaceGeometry> {
+pub(crate) fn zero_entity_surface_at(
+    data: &[u8], record: usize,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+) -> Option<SurfaceGeometry> {
     let tag = [
         *data.get(record + a9_03::TAG_HI)?,
         *data.get(record + a9_03::TAG_LO_LENGTH_DRIVER)?,
@@ -2025,7 +2043,7 @@ pub(crate) fn zero_entity_surface_at(data: &[u8], record: usize) -> Option<Surfa
         [0x28, 0x8a] => zero_entity_cylinder(payload),
         [0x29, 0xb8] => zero_entity_cone(payload),
         [0x2b, 0xc8] => zero_entity_torus(payload),
-        [0x34, 0xc8 | 0x5e] => zero_entity_nurbs_surface(data, record),
+        [0x34, 0xc8 | 0x5e] => zero_entity_nurbs_surface(data, record, refusal),
         _ => None,
     }
 }
@@ -2047,7 +2065,11 @@ fn zero_entity_nurbs_shape(tag: [u8; 2]) -> Option<(usize, usize, usize)> {
 
 /// Decode the inline zero-entity non-rational NURBS carrier. Its pole grid
 /// extends past the nominal framed record at a tag-specific fixed offset.
-fn zero_entity_nurbs_surface(data: &[u8], record: usize) -> Option<SurfaceGeometry> {
+fn zero_entity_nurbs_surface(
+    data: &[u8],
+    record: usize,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+) -> Option<SurfaceGeometry> {
     let layout = zero_entity_nurbs_layout(data, record)?;
     let pole_count =
         crate::nurbs_surface_control_count(layout.u_count as usize, layout.v_count as usize)?;
@@ -2059,7 +2081,7 @@ fn zero_entity_nurbs_surface(data: &[u8], record: usize) -> Option<SurfaceGeomet
         )?);
     }
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-        NurbsSurface::from_lanes(
+        crate::nurbs::note_refusal(NurbsSurface::from_lanes(
             layout.u_degree,
             layout.v_degree,
             expand_knots(&layout.u_distinct, &layout.u_mults)?,
@@ -2072,8 +2094,7 @@ fn zero_entity_nurbs_surface(data: &[u8], record: usize) -> Option<SurfaceGeomet
             false,
             false,
             false,
-        )
-        .ok()?,
+        ), refusal)?,
     )))
 }
 
@@ -2259,7 +2280,7 @@ mod tests {
             assert_eq!(layout.u_distinct, u_knots);
             assert_eq!(layout.v_distinct, v_knots);
             assert!(matches!(
-                zero_entity_surface_at(&bytes, 0),
+                zero_entity_surface_at(&bytes, 0, &mut None),
                 Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_)))
             ));
         }
@@ -2453,7 +2474,7 @@ mod tests {
                 panic!("one support record")
             };
             let support =
-                zero_entity_support_occurrence(&bytes, *record).expect("complete support pcurve");
+                zero_entity_support_occurrence(&bytes, *record, &mut None).expect("complete support pcurve");
             assert_eq!(support.uv_endpoints, Some([[0.0, 0.0], [1.0, 0.0]]));
             let Some(PcurveGeometry::Nurbs { nurbs }) = support.pcurve else {
                 panic!("NURBS support pcurve")
@@ -2478,7 +2499,7 @@ mod tests {
             let [record] = malformed_records.as_slice() else {
                 panic!("one malformed support record")
             };
-            assert!(zero_entity_support_occurrence(&malformed, *record).is_none());
+            assert!(zero_entity_support_occurrence(&malformed, *record, &mut None).is_none());
         }
     }
 
@@ -2490,7 +2511,7 @@ mod tests {
         let [record] = records.as_slice() else {
             panic!("one support record")
         };
-        assert!(zero_entity_support_occurrence(&bytes, *record).is_none());
+        assert!(zero_entity_support_occurrence(&bytes, *record, &mut None).is_none());
     }
 
     #[test]
@@ -2593,7 +2614,7 @@ mod tests {
                 .collect(),
         );
         let (curve, parameters) =
-            zero_entity_model_curve(&surface, &pcurve, endpoints).expect("cone latitude");
+            zero_entity_model_curve(&surface, &pcurve, endpoints, &mut None).expect("cone latitude");
         for index in 0..2 {
             let curve_point = curve_point(&curve, parameters[index]).expect("circle point");
             let surface_point =
@@ -2665,7 +2686,7 @@ mod tests {
             .expect("valid CylinderSurface fixture"),
         ));
         assert_eq!(
-            zero_entity_neutral_pcurve(&cylinder, &pcurve),
+            zero_entity_neutral_pcurve(&cylinder, &pcurve, &mut None),
             Some(test_pcurve(vec![
                 Point2::new(1.0, 3.0),
                 Point2::new(2.0, 5.0),
@@ -2683,7 +2704,7 @@ mod tests {
             )
             .expect("valid ConeSurface fixture"),
         ));
-        let Some(PcurveGeometry::Nurbs { nurbs }) = zero_entity_neutral_pcurve(&cone, &pcurve)
+        let Some(PcurveGeometry::Nurbs { nurbs }) = zero_entity_neutral_pcurve(&cone, &pcurve, &mut None)
         else {
             panic!("neutral cone pcurve")
         };
@@ -2700,7 +2721,7 @@ mod tests {
             )
             .expect("valid TorusSurface fixture"),
         ));
-        let Some(PcurveGeometry::Nurbs { nurbs }) = zero_entity_neutral_pcurve(&torus, &pcurve)
+        let Some(PcurveGeometry::Nurbs { nurbs }) = zero_entity_neutral_pcurve(&torus, &pcurve, &mut None)
         else {
             panic!("neutral torus pcurve")
         };
@@ -3117,7 +3138,7 @@ mod tests {
         let mut stream = zero_entity_face_support_stream();
         let support = zero_entity_records(&stream)[1];
         stream[support.pos + 13..support.pos + 17].copy_from_slice(&0u32.to_le_bytes());
-        assert!(zero_entity_support_occurrence(&stream, support).is_none());
+        assert!(zero_entity_support_occurrence(&stream, support, &mut None).is_none());
     }
 
     #[test]

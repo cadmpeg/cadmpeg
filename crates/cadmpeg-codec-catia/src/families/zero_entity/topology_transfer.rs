@@ -75,6 +75,7 @@ pub(crate) fn transfer_closed_face_topology(
     support_curve_ids: &HashMap<u32, CurveId>,
     ownership_root: Option<&ZeroEntityOwnershipRoot>,
     topology_budget: &WorkBudget<'_>,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<ZeroEntityTopologyCounts> {
     if support_runs.is_empty() || support_runs.iter().any(|run| run.face.is_none()) {
         return None;
@@ -151,7 +152,7 @@ pub(crate) fn transfer_closed_face_topology(
                 let pcurve = match support.pcurve.as_ref() {
                     Some(pcurve) => {
                         let geometry =
-                            super::records::zero_entity_neutral_pcurve(surface_geometry, pcurve)?;
+                            super::records::zero_entity_neutral_pcurve(surface_geometry, pcurve, refusal)?;
                         let parameter_range = pcurve_parameter_range(&geometry)?;
                         Some(OccurrencePcurve {
                             id: PcurveId::mint(format!(
@@ -225,7 +226,7 @@ pub(crate) fn transfer_closed_face_topology(
                     )
                 {
                     let reversed_geometry =
-                        crate::nurbs::reverse_curve_geometry(&curve_geometry, parameter_range);
+                        crate::nurbs::reverse_curve_geometry(&curve_geometry, parameter_range, refusal);
                     let curve = ir
                         .model
                         .curves
@@ -1046,7 +1047,7 @@ mod tests {
             &curve_ids,
             None,
             &topology_budget,
-        )
+         &mut None,)
         .expect("complete topology without native ownership root");
         assert_eq!(no_root_counts.faces, 2);
         assert_eq!(no_root_ir.model.bodies[0].kind, BodyKind::Solid);
@@ -1073,7 +1074,7 @@ mod tests {
             &curve_ids,
             Some(&root),
             &topology_budget,
-        )
+         &mut None,)
         .expect("complete topology");
         assert_eq!(counts.faces, 2);
         assert_eq!(counts.edges, 3);
@@ -1168,7 +1169,7 @@ mod tests {
             &curve_ids,
             None,
             &budget,
-        )
+         &mut None,)
         .expect("topology remains transferable");
 
         assert_eq!(counts.edges, 3);

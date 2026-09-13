@@ -1226,12 +1226,13 @@ pub fn consolidated_native_edge_graph(data: &[u8]) -> Option<ConsolidatedNativeE
 #[cfg(test)]
 pub fn resolve_consolidated_edge_blocks(data: &[u8]) -> Vec<ResolvedConsolidatedEdgeBlock> {
     let records = consolidated_records(data);
-    resolve_consolidated_edge_blocks_from_records(data, &records)
+    resolve_consolidated_edge_blocks_from_records(data, &records, &mut None)
 }
 
 pub(crate) fn resolve_consolidated_edge_blocks_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Vec<ResolvedConsolidatedEdgeBlock> {
     let points = object_stream_vertices_from_records(data, records);
     let embedded = b2_embedded_cylinders_from_records(data, records);
@@ -1241,7 +1242,7 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
     let spheres = b2_spheres_from_records(data, records);
     let tori = b2_tori_from_records(data, records);
     let planes = b2_plane_carriers_from_records(data, records);
-    let surfaces = a5_surfaces_from_records(data, records);
+    let surfaces = a5_surfaces_from_records(data, records, refusal);
     let carriers = ConsolidatedCarriers {
         cylinders: &standalone,
         embedded_cylinders: &embedded,
@@ -1721,7 +1722,9 @@ fn pcurve_endpoints_match_vertices(
 /// A/B or B5/A8 record. Marker-like bytes inside record payloads are not
 /// vertices.
 #[must_use]
-pub(crate) fn object_stream_vertices(data: &[u8]) -> Vec<Point3> {
+pub(crate) fn object_stream_vertices(
+    data: &[u8],
+) -> Vec<Point3> {
     let records = consolidated_records(data);
     object_stream_vertices_from_records(data, &records)
 }

@@ -555,6 +555,7 @@ impl A5FreeformCurve {
 pub(crate) fn rolling_ball_limit_curve(
     jet: &A5FreeformCurve,
     second_limit: bool,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<NurbsCurve> {
     let offset = usize::from(second_limit) * 3;
     let positions = jet
@@ -592,7 +593,7 @@ pub(crate) fn rolling_ball_limit_curve(
         &first,
         &second,
     )?;
-    NurbsCurve::from_lanes(
+    crate::nurbs::note_refusal(NurbsCurve::from_lanes(
         A5FreeformCurve::DEGREE,
         knots,
         control_points
@@ -601,8 +602,7 @@ pub(crate) fn rolling_ball_limit_curve(
             .collect(),
         None,
         false,
-    )
-    .ok()
+    ), refusal)
 }
 
 /// One position and unit reference direction in an `a5/a6/a7 03 39` jet.
@@ -655,20 +655,25 @@ pub struct A5NurbsCurve {
 #[cfg(test)]
 pub fn a5_nurbs_curves(data: &[u8]) -> Vec<A5NurbsCurve> {
     let records = consolidated_records(data);
-    a5_nurbs_curves_from_records(data, &records)
+    a5_nurbs_curves_from_records(data, &records, &mut None)
 }
 
 pub(crate) fn a5_nurbs_curves_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Vec<A5NurbsCurve> {
     a_family_frames_from_records(records, 0x16)
         .into_iter()
-        .filter_map(|frame| parse_a5_nurbs_curve(data, frame))
+        .filter_map(|frame| parse_a5_nurbs_curve(data, frame, refusal))
         .collect()
 }
 
-fn parse_a5_nurbs_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5NurbsCurve> {
+fn parse_a5_nurbs_curve(
+    data: &[u8],
+    frame: ConsolidatedFrame,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+) -> Option<A5NurbsCurve> {
     let mut at = frame.payload;
     let degree = compact_int(data, &mut at)?;
     let knot_count = usize::try_from(compact_int(data, &mut at)?).ok()?;
@@ -737,7 +742,7 @@ fn parse_a5_nurbs_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5Nurbs
     Some(A5NurbsCurve {
         pos: frame.pos,
         header_token: frame.header_token,
-        geometry: NurbsCurve::from_lanes(degree, knots, control_points, None, false).ok()?,
+        geometry: crate::nurbs::note_refusal(NurbsCurve::from_lanes(degree, knots, control_points, None, false), refusal)?,
     })
 }
 
@@ -1266,10 +1271,15 @@ fn parse_object_stream_pcurve(
 /// Decode common-form object-stream NURBS surfaces.  Every variable-length
 /// field is bounded by the record's `payload_len`, so signature collisions do
 /// not become carriers.
-pub fn a8_surfaces(data: &[u8]) -> Vec<FreeformSurface> {
+pub fn a8_surfaces(
+    data: &[u8],
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+) -> Vec<FreeformSurface> {
     a8_frames(data, 0x34)
         .into_iter()
-        .filter_map(|frame| a8_surface_from_parsed(data, parse_a8_surface_header(data, frame)?))
+        .filter_map(|frame| {
+            a8_surface_from_parsed(data, parse_a8_surface_header(data, frame)?, refusal)
+        })
         .collect()
 }
 
@@ -1277,11 +1287,20 @@ pub fn a8_surfaces(data: &[u8]) -> Vec<FreeformSurface> {
 /// parameter records whose pole grids occupy a uniquely bounded external
 /// allocation.
 #[must_use]
-pub fn resolved_a8_surfaces(data: &[u8]) -> Vec<FreeformSurface> {
+pub fn resolved_a8_surfaces(
+    data: &[u8],
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+) -> Vec<FreeformSurface> {
     a8_frames(data, 0x34)
         .into_iter()
         .filter_map(|frame| {
-            resolved_a8_surface_from_object_frame(data, frame.pos, frame.end, frame.object_id)
+            resolved_a8_surface_from_object_frame(
+                data,
+                frame.pos,
+                frame.end,
+                frame.object_id,
+                refusal,
+            )
         })
         .collect()
 }
@@ -1314,12 +1333,13 @@ pub(crate) fn resolved_a8_surface_from_object_frame(
     start: usize,
     end: usize,
     object_id: u32,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<FreeformSurface> {
     let parsed = parse_selected_a8_surface_header(data, start, end, object_id)?;
     if parsed.header.pole_storage == PoleStorage::Elided {
-        a8_surface_from_external_grid(data, &parsed.header)
+        a8_surface_from_external_grid(data, &parsed.header, refusal)
     } else {
-        a8_surface_from_parsed(data, parsed)
+        a8_surface_from_parsed(data, parsed, refusal)
     }
 }
 
@@ -1331,6 +1351,7 @@ pub(crate) fn resolved_a8_surface_from_object_frame(
 pub fn a8_surface_from_external_grid(
     data: &[u8],
     header: &A8SurfaceHeader,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<FreeformSurface> {
     let candidates = a8_external_grid_candidates(data, header);
     let [ExternalGridCandidate {
@@ -1345,7 +1366,7 @@ pub fn a8_surface_from_external_grid(
     Some(FreeformSurface {
         pos: header.pos,
         identity: Some(header.object_id),
-        geometry: NurbsSurface::from_lanes(
+        geometry: crate::nurbs::note_refusal(NurbsSurface::from_lanes(
             header.u_degree,
             header.v_degree,
             header.u_knots.expanded()?,
@@ -1361,8 +1382,7 @@ pub fn a8_surface_from_external_grid(
             false,
             false,
             false,
-        )
-        .ok()?,
+        ), refusal)?,
     })
 }
 
@@ -1485,22 +1505,30 @@ fn a8_external_grid_candidates(
 
 /// Decode consolidated `a5 03 34` NURBS surface carriers.  This family uses
 /// implicit clamped multiplicities instead of the explicit `a8` vectors.
-pub fn a5_surfaces(data: &[u8]) -> Vec<FreeformSurface> {
+pub fn a5_surfaces(
+    data: &[u8],
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+) -> Vec<FreeformSurface> {
     let records = consolidated_records(data);
-    a5_surfaces_from_records(data, &records)
+    a5_surfaces_from_records(data, &records, refusal)
 }
 
 pub(crate) fn a5_surfaces_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Vec<FreeformSurface> {
     a_family_frames_from_records(records, 0x34)
         .into_iter()
-        .filter_map(|frame| a5_surface(data, frame))
+        .filter_map(|frame| a5_surface(data, frame, refusal))
         .collect()
 }
 
-fn a5_surface(data: &[u8], frame: ConsolidatedFrame) -> Option<FreeformSurface> {
+fn a5_surface(
+    data: &[u8],
+    frame: ConsolidatedFrame,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+) -> Option<FreeformSurface> {
     let ConsolidatedFrame {
         pos, payload, end, ..
     } = frame;
@@ -1555,7 +1583,7 @@ fn a5_surface(data: &[u8], frame: ConsolidatedFrame) -> Option<FreeformSurface> 
     Some(FreeformSurface {
         pos,
         identity: None,
-        geometry: NurbsSurface::from_lanes(
+        geometry: crate::nurbs::note_refusal(NurbsSurface::from_lanes(
             u_degree,
             v_degree,
             u_knots,
@@ -1568,8 +1596,7 @@ fn a5_surface(data: &[u8], frame: ConsolidatedFrame) -> Option<FreeformSurface> 
             false,
             false,
             false,
-        )
-        .ok()?,
+        ), refusal)?,
     })
 }
 
@@ -1666,7 +1693,11 @@ fn parse_a8_surface_header(data: &[u8], frame: A8Frame) -> Option<ParsedA8Surfac
     })
 }
 
-fn a8_surface_from_parsed(data: &[u8], parsed: ParsedA8SurfaceHeader) -> Option<FreeformSurface> {
+fn a8_surface_from_parsed(
+    data: &[u8],
+    parsed: ParsedA8SurfaceHeader,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+) -> Option<FreeformSurface> {
     let ParsedA8SurfaceHeader {
         header,
         mut pole_start,
@@ -1718,7 +1749,7 @@ fn a8_surface_from_parsed(data: &[u8], parsed: ParsedA8SurfaceHeader) -> Option<
     Some(FreeformSurface {
         pos,
         identity: Some(object_id),
-        geometry: NurbsSurface::from_lanes(
+        geometry: crate::nurbs::note_refusal(NurbsSurface::from_lanes(
             u_degree,
             v_degree,
             u_knots.expanded()?,
@@ -1733,8 +1764,7 @@ fn a8_surface_from_parsed(data: &[u8], parsed: ParsedA8SurfaceHeader) -> Option<
             false,
             false,
             false,
-        )
-        .ok()?,
+        ), refusal)?,
     })
 }
 

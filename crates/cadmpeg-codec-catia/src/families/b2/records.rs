@@ -1989,20 +1989,25 @@ fn parse_b2_spatial_circle(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Sp
 #[cfg(test)]
 pub fn b2_nurbs_curves(data: &[u8]) -> Vec<B2NurbsCurve> {
     let records = consolidated_records(data);
-    b2_nurbs_curves_from_records(data, &records)
+    b2_nurbs_curves_from_records(data, &records, &mut None)
 }
 
 pub(crate) fn b2_nurbs_curves_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Vec<B2NurbsCurve> {
     b_family_frames_from_records(records, 0x16)
         .into_iter()
-        .filter_map(|frame| parse_b2_nurbs_curve(data, frame))
+        .filter_map(|frame| parse_b2_nurbs_curve(data, frame, refusal))
         .collect()
 }
 
-fn parse_b2_nurbs_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<B2NurbsCurve> {
+fn parse_b2_nurbs_curve(
+    data: &[u8],
+    frame: ConsolidatedFrame,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+) -> Option<B2NurbsCurve> {
     let mut at = frame.payload;
     let degree = compact_int(data, &mut at)?;
     let control_count = usize::try_from(degree.checked_add(1)?).ok()?;
@@ -2066,8 +2071,7 @@ fn parse_b2_nurbs_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Nurbs
     Some(B2NurbsCurve {
         pos: frame.pos,
         header_token: frame.header_token,
-        geometry: NurbsCurve::from_lanes(degree, knots, control_points, Some(weights), false)
-            .ok()?,
+        geometry: crate::nurbs::note_refusal(NurbsCurve::from_lanes(degree, knots, control_points, Some(weights), false), refusal)?,
     })
 }
 

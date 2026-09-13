@@ -175,6 +175,7 @@ pub(super) fn neutral_surface(
     graph: &B5Graph,
     surface_id: u32,
     payload: &UnknownId,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> SurfacePlan {
     let carrier = match surface_carrier(surface) {
         B5SurfaceCarrier::Analytic(geometry) => {
@@ -185,7 +186,7 @@ pub(super) fn neutral_surface(
         }
         B5SurfaceCarrier::Procedural(carrier) => carrier,
     };
-    if let Some(extrusion) = super::resolved_extrusion_surface(graph, surface_id) {
+    if let Some(extrusion) = super::resolved_extrusion_surface(graph, surface_id, refusal) {
         return SurfacePlan {
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                 record: Some(payload.clone()),
@@ -224,6 +225,7 @@ pub(super) fn neutral_surface(
             axis_direction,
             angular_scale,
             bounds,
+            refusal,
         )
         .map_or_else(
             || {
@@ -250,10 +252,11 @@ pub(super) fn revolution_surface(
     axis_direction: [f64; 3],
     angular_scale: f64,
     bounds: [[f64; 2]; 2],
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<(NurbsSurface, RevolutionPlan)> {
     let profile = profile?;
     let [parameter_interval, native_angular_interval] = bounds;
-    let directrix = profile_nurbs(profile, parameter_interval)?;
+    let directrix = profile_nurbs(profile, parameter_interval, refusal)?;
     if angular_scale <= 0.0 {
         return None;
     }
@@ -267,6 +270,7 @@ pub(super) fn revolution_surface(
         axis_direction,
         angular_interval,
         native_angular_interval,
+        refusal,
     )?;
     Some((
         surface,
@@ -281,7 +285,11 @@ pub(super) fn revolution_surface(
     ))
 }
 
-pub(super) fn profile_nurbs(profile: &B5Profile, interval: [f64; 2]) -> Option<NurbsCurve> {
+pub(super) fn profile_nurbs(
+    profile: &B5Profile,
+    interval: [f64; 2],
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+) -> Option<NurbsCurve> {
     (profile
         .parameter_range()
         .into_iter()
@@ -291,7 +299,7 @@ pub(super) fn profile_nurbs(profile: &B5Profile, interval: [f64; 2]) -> Option<N
     match profile {
         B5Profile::Line {
             point, direction, ..
-        } => NurbsCurve::from_lanes(
+        } => crate::nurbs::note_refusal(NurbsCurve::from_lanes(
             1,
             vec![interval[0], interval[0], interval[1], interval[1]],
             interval
@@ -299,15 +307,14 @@ pub(super) fn profile_nurbs(profile: &B5Profile, interval: [f64; 2]) -> Option<N
                 .to_vec(),
             None,
             false,
-        )
-        .ok(),
+        ), refusal),
         B5Profile::Arc {
             center,
             direction_x,
             direction_y,
             radius,
             ..
-        } => rational_arc(*center, *direction_x, *direction_y, *radius, interval),
+        } => rational_arc(*center, *direction_x, *direction_y, *radius, interval, refusal),
     }
 }
 
@@ -317,6 +324,7 @@ pub(super) fn rational_arc(
     direction_y: [f64; 3],
     radius: f64,
     interval: [f64; 2],
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<NurbsCurve> {
     let angles = [interval[0] / radius, interval[1] / radius];
     let span_count = ((angles[1] - angles[0]).abs() / std::f64::consts::FRAC_PI_2).ceil();
@@ -366,7 +374,7 @@ pub(super) fn rational_arc(
         weights.push(1.0);
         append_quadratic_span_knots(&mut knots, interval, span, span_count);
     }
-    NurbsCurve::from_lanes(2, knots, control_points, Some(weights), false).ok()
+    crate::nurbs::note_refusal(NurbsCurve::from_lanes(2, knots, control_points, Some(weights), false), refusal)
 }
 
 pub(super) fn revolve_nurbs(
@@ -375,6 +383,7 @@ pub(super) fn revolve_nurbs(
     axis_direction: [f64; 3],
     angular_interval: [f64; 2],
     native_interval: [f64; 2],
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<NurbsSurface> {
     let span_count =
         ((angular_interval[1] - angular_interval[0]).abs() / std::f64::consts::FRAC_PI_2).ceil();
@@ -439,7 +448,7 @@ pub(super) fn revolve_nurbs(
         }
     }
     let row_len = angular_count;
-    NurbsSurface::from_lanes(
+    crate::nurbs::note_refusal(NurbsSurface::from_lanes(
         profile.degree(),
         2,
         profile.knots().to_vec(),
@@ -449,8 +458,7 @@ pub(super) fn revolve_nurbs(
         false,
         false,
         false,
-    )
-    .ok()
+    ), refusal)
 }
 
 pub(super) fn append_quadratic_span_knots(

@@ -7895,7 +7895,9 @@ fn zero_entity_endpoint_locus_candidates(
         .collect()
 }
 
-fn zero_entity_edge_strides(bytes: &[u8], range: Range<usize>) -> Vec<CatiaZeroEntityEdgeStride> {
+fn zero_entity_edge_strides(
+    bytes: &[u8], range: Range<usize>,
+) -> Vec<CatiaZeroEntityEdgeStride> {
     crate::families::zero_entity::records::zero_entity_edge_strides_in_range(bytes, range)
         .into_iter()
         .enumerate()
@@ -7985,7 +7987,9 @@ fn zero_entity_vertex_incidences(
         .collect()
 }
 
-fn zero_entity_records(bytes: &[u8], range: Range<usize>) -> Vec<CatiaZeroEntityRecord> {
+fn zero_entity_records(
+    bytes: &[u8], range: Range<usize>,
+) -> Vec<CatiaZeroEntityRecord> {
     crate::families::zero_entity::records::zero_entity_record_inventory_in_range(bytes, range)
         .into_iter()
         .map(|record| CatiaZeroEntityRecord {
@@ -8240,6 +8244,7 @@ fn consolidated_edge_runs(
     records: &[ConsolidatedRecord],
     pcurves: &[CatiaConsolidatedPcurve],
     nodes: &[CatiaConsolidatedEdgeNode],
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Vec<CatiaConsolidatedEdgeRun> {
     let pcurve_ids = pcurves
         .iter()
@@ -8248,7 +8253,7 @@ fn consolidated_edge_runs(
     let resolved =
         crate::families::consolidated::records::resolve_consolidated_edge_blocks_from_records(
             bytes, records,
-        )
+         refusal,)
         .into_iter()
         .map(|block| (block.block.pcurves[0].pos, block))
         .collect::<HashMap<_, _>>();
@@ -8758,18 +8763,26 @@ impl CatiaNative {
     pub(crate) fn decode_with_record_ranges(bytes: &[u8], ranges: &[Range<usize>]) -> Self {
         let consolidated_records =
             crate::wire::records::consolidated_records_in_ranges(bytes, ranges.iter().cloned());
-        Self::decode_with_records(bytes, &consolidated_records)
+        Self::decode_with_records(bytes, &consolidated_records, &mut None)
     }
 
     /// Decode CATIA-native records from descriptor-scoped logical sources.
     #[must_use]
-    pub(crate) fn decode_with_record_sources(bytes: &[u8], sources: &[Vec<Range<usize>>]) -> Self {
+    pub(crate) fn decode_with_record_sources(
+        bytes: &[u8],
+        sources: &[Vec<Range<usize>>],
+        refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    ) -> Self {
         let consolidated_records =
             crate::wire::records::consolidated_records_in_sources(bytes, sources.iter().cloned());
-        Self::decode_with_records(bytes, &consolidated_records)
+        Self::decode_with_records(bytes, &consolidated_records, refusal)
     }
 
-    fn decode_with_records(bytes: &[u8], consolidated_records: &[ConsolidatedRecord]) -> Self {
+    fn decode_with_records(
+        bytes: &[u8],
+        consolidated_records: &[ConsolidatedRecord],
+        refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    ) -> Self {
         let outer_directory = container::parse_outer_stream_directory(bytes);
         let outer_container_declarations =
             outer_directory.as_ref().map_or_else(Vec::new, |outer| {
@@ -9075,7 +9088,7 @@ impl CatiaNative {
             crate::families::zero_entity::records::zero_entity_support_runs_in_range(
                 bytes,
                 zero_entity_range.clone(),
-            );
+             refusal,);
         let parsed_zero_entity_endpoint_pairs =
             crate::families::zero_entity::topology::zero_entity_endpoint_pair_candidates(
                 &parsed_zero_entity_support_runs,
@@ -9099,6 +9112,7 @@ impl CatiaNative {
             consolidated_records,
             &consolidated_pcurves,
             &consolidated_edge_nodes,
+            refusal,
         );
         let consolidated_vertex_identities =
             consolidated_vertex_identities(&consolidated_edge_nodes);

@@ -53,6 +53,21 @@ fn schema_configuration_row_chain_coverage(native: &CatiaNative) -> (usize, usiz
 /// return a model wins, a `None` falls through to the next applicable route, and
 /// exhausting the table yields the metadata-only fallback.
 pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
+    let mut lane_refusal = None;
+    let decoded = decode_stating_lane_refusals(ctx, root, &mut lane_refusal);
+    // A carrier record of the right kind whose lanes the IR carrier refuses is
+    // the codec's error, not a record the reader may drop in silence.
+    match lane_refusal {
+        Some(error) => Err(error.into()),
+        None => decoded,
+    }
+}
+
+fn decode_stating_lane_refusals(
+    ctx: &DecodeContext<'_>,
+    root: View<'_>,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+) -> Result<Decoded, CodecError> {
     let scan = container::scan_bytes(root.window());
     let matched = crate::dialect::classify(&scan);
 
@@ -74,6 +89,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecE
                     out.annotations,
                     out.unknowns,
                     route.standard_face_population,
+                    refusal,
                 );
             }
         }
@@ -90,6 +106,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecE
         annotations,
         unknowns,
         false,
+        refusal,
     )
 }
 
@@ -152,6 +169,7 @@ fn finish_decode(
     mut annotations: Annotations,
     unknowns: Vec<UnknownRecord>,
     standard_face_population: bool,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Result<Decoded, CodecError> {
     // Retained unknown records are source entities even when a route transfers
     // no neutral model entity (for example, an unrecognized storage variant).
@@ -165,7 +183,7 @@ fn finish_decode(
         "admit CATIA route entities",
     )?;
     let consolidated_record_sources = container::consolidated_record_sources(scan);
-    let native = CatiaNative::decode_with_record_sources(&scan.data, &consolidated_record_sources);
+    let native = CatiaNative::decode_with_record_sources(&scan.data, &consolidated_record_sources, refusal);
     let modeling_graph_scope = modeling_graph_scope(
         !scan.outer_container_declarations.is_empty(),
         &native.object_graphs,

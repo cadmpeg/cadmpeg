@@ -73,10 +73,12 @@ pub(crate) fn try_decode_e5(
     _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Option<FamilyOutput> {
+    let mut lane_refusal = None;
+    let refusal = &mut lane_refusal;
     let stream_range = container::e5_record_stream(&scan.data)?;
     let stream = &scan.data[stream_range];
     let circles = crate::families::e5::records::e5_circles(stream);
-    let mut surfaces = crate::families::e5::records::e5_surfaces(stream);
+    let mut surfaces = crate::families::e5::records::e5_surfaces(stream, refusal);
     let rolling_ball_jets = crate::families::e5::records::e5_rolling_ball_jets(stream);
     let topology = crate::families::e5::graph::parse_topology(stream);
     let vertex_count = topology.as_ref().map_or_else(
@@ -96,7 +98,7 @@ pub(crate) fn try_decode_e5(
         } else {
             topology
                 .as_ref()
-                .and_then(|topology| derive_e5_vertices(topology, &surfaces))
+                .and_then(|topology| derive_e5_vertices(topology, &surfaces, refusal))
                 .unwrap_or_default()
         }
     };
@@ -238,7 +240,7 @@ pub(crate) fn try_decode_e5(
             &mut topology_annotations,
             topology,
             &surfaces,
-        ) && neutral_model_is_admissible(&mut topology_ir, &unknowns)
+         refusal,) && neutral_model_is_admissible(&mut topology_ir, &unknowns)
     });
     if topology_transferred {
         ir = topology_ir;
@@ -261,6 +263,11 @@ pub(crate) fn try_decode_e5(
             "E5 carriers were decoded, but the reference graph could not be transferred with a closed surface/pcurve/vertex binding.",
         )]
     };
+    if let Some(error) = lane_refusal {
+        losses.push(CatiaLossCode::GeometryAnalyticPayloadInvalid.note(format!(
+            "An E5 carrier record states lanes the IR carrier refuses: {error}"
+        )));
+    }
     insert_unresolved_carrier_loss(&ir, &mut losses);
     link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations).ok()?;
     let annotations = annotations.build();
@@ -281,6 +288,7 @@ pub(crate) fn try_decode_e5(
 fn derive_e5_vertices(
     topology: &crate::families::e5::graph::E5Topology,
     surfaces: &[crate::families::e5::records::E5Surface],
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<Vec<Point3>> {
     let surface_for_ref: HashMap<u32, &crate::families::e5::records::E5Surface> = surfaces
         .iter()
@@ -301,7 +309,7 @@ fn derive_e5_vertices(
                     | crate::families::e5::graph::E5Pcurve::Nurbs { surface, .. } => *surface,
                 };
                 let surface = surface_for_ref.get(&surface_ref)?;
-                let (_, range, endpoints) = e5_pcurve_on_surface(pcurve, surface)?;
+                let (_, range, endpoints) = e5_pcurve_on_surface(pcurve, surface, refusal)?;
                 let reversed = e5_stored_pcurve_reversed(topology, edge_ref, pcurve_ref, range)?;
                 let endpoints = if reversed {
                     [endpoints[1], endpoints[0]]
@@ -1012,6 +1020,7 @@ pub(crate) fn transfer_e5_topology(
     annotations: &mut AnnotationBuilder,
     topology: &crate::families::e5::graph::E5Topology,
     decoded_surfaces: &[crate::families::e5::records::E5Surface],
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> bool {
     if topology.vertex_refs.len() != ir.model.vertices.len()
         || topology.vertex_refs.len() != ir.model.points.len()
@@ -1057,7 +1066,7 @@ pub(crate) fn transfer_e5_topology(
         .map(|(reference, point)| (*reference, point.position))
         .collect();
 
-    let Some(boundary) = plan_e5_boundary(topology, &surface_for_ref, &point_for_ref) else {
+    let Some(boundary) = plan_e5_boundary(topology, &surface_for_ref, &point_for_ref, refusal) else {
         return false;
     };
     let E5BoundaryPlan {
@@ -1135,6 +1144,7 @@ fn plan_e5_boundary(
     topology: &crate::families::e5::graph::E5Topology,
     surface_for_ref: &HashMap<u32, (SurfaceId, &crate::families::e5::records::E5Surface)>,
     point_for_ref: &HashMap<u32, Point3>,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<E5BoundaryPlan> {
     let mut pcurve_plan = BTreeMap::<u32, (PcurveGeometry, [f64; 2])>::new();
     let mut pcurve_use_reversed = BTreeMap::<(u32, usize), bool>::new();
@@ -1163,7 +1173,7 @@ fn plan_e5_boundary(
                     return None;
                 };
                 let Some((geometry, range, endpoints)) =
-                    e5_pcurve_on_surface(pcurve, decoded_surface)
+                    e5_pcurve_on_surface(pcurve, decoded_surface, refusal)
                 else {
                     return None;
                 };
@@ -1198,7 +1208,8 @@ fn plan_e5_boundary(
                     return None;
                 }
                 let oriented_pcurve = if reversed {
-                    let Some(reversed) = crate::nurbs::reverse_pcurve_geometry(&geometry, range)
+                    let Some(reversed) =
+                        crate::nurbs::reverse_pcurve_geometry(&geometry, range, refusal)
                     else {
                         return None;
                     };
@@ -1213,10 +1224,11 @@ fn plan_e5_boundary(
                     range,
                     endpoints,
                     decoded_surface.uv_scale,
+                    refusal,
                 ) {
                     if reversed {
                         let Some(reversed_curve) =
-                            crate::nurbs::reverse_curve_geometry(&curve, curve_range)
+                            crate::nurbs::reverse_curve_geometry(&curve, curve_range, refusal)
                         else {
                             return None;
                         };
@@ -1298,7 +1310,8 @@ fn plan_e5_boundary(
             let Some((surface_id, decoded_surface)) = surface_for_ref.get(&surface_ref) else {
                 continue;
             };
-            let Some((geometry, range, endpoints)) = e5_pcurve_on_surface(pcurve, decoded_surface)
+            let Some((geometry, range, endpoints)) =
+                e5_pcurve_on_surface(pcurve, decoded_surface, refusal)
             else {
                 // A known intersection pcurve that cannot be normalized must
                 // reject the topology route; omitting one side would claim a
@@ -1326,19 +1339,22 @@ fn plan_e5_boundary(
                 range,
                 endpoints,
                 decoded_surface.uv_scale,
+                refusal,
             ) else {
                 continue;
             };
             if reversed {
                 let Some(reversed_curve) =
-                    crate::nurbs::reverse_curve_geometry(&curve, curve_range)
+                    crate::nurbs::reverse_curve_geometry(&curve, curve_range, refusal)
                 else {
                     continue;
                 };
                 (curve, curve_range) = reversed_curve;
             }
             let pcurve = if reversed {
-                let Some(reversed) = crate::nurbs::reverse_pcurve_geometry(&geometry, range) else {
+                let Some(reversed) =
+                    crate::nurbs::reverse_pcurve_geometry(&geometry, range, refusal)
+                else {
                     continue;
                 };
                 reversed
@@ -2033,6 +2049,7 @@ pub(crate) fn parameter_ranges_reversed(
 pub(crate) fn e5_pcurve_on_surface(
     pcurve: &crate::families::e5::graph::E5Pcurve,
     decoded_surface: &crate::families::e5::records::E5Surface,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<(PcurveGeometry, [f64; 2], [Point3; 2])> {
     let finite_point2 = |point: Point2| [point.u, point.v].into_iter().all(f64::is_finite);
     let finite_point3 = |point: Point3| [point.x, point.y, point.z].into_iter().all(f64::is_finite);
@@ -2087,7 +2104,7 @@ pub(crate) fn e5_pcurve_on_surface(
             if !angular_range.into_iter().all(f64::is_finite) {
                 return None;
             }
-            let geometry = rational_pcurve_arc(*center, *radius, angular_range)?;
+            let geometry = rational_pcurve_arc(*center, *radius, angular_range, refusal)?;
             let PcurveGeometry::Nurbs { mut nurbs } = geometry else {
                 return None;
             };
@@ -2167,6 +2184,7 @@ pub(crate) fn e5_pcurve_on_surface(
                 &points,
                 &first_derivatives,
                 &second_derivatives,
+                refusal,
             )?;
             let PcurveGeometry::Nurbs { nurbs } = &geometry else {
                 return None;
@@ -2212,7 +2230,7 @@ pub(crate) fn e5_pcurve_on_surface(
                 return None;
             }
             let geometry = PcurveGeometry::Nurbs {
-                nurbs: PcurveNurbs::from_lanes(*degree, knots, control_points, None, false).ok()?,
+                nurbs: crate::nurbs::note_refusal(PcurveNurbs::from_lanes(*degree, knots, control_points, None, false), refusal)?,
             };
             let uv = range.map(|parameter| cadmpeg_ir::eval::pcurve_uv(&geometry, parameter));
             let uv = uv[0].zip(uv[1])?;
@@ -2235,6 +2253,7 @@ pub(crate) fn e5_boundary_curve(
     range: [f64; 2],
     endpoints: [Point3; 2],
     uv_scale: [f64; 2],
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<(CurveGeometry, [f64; 2])> {
     let finite_point2 = |point: Point2| [point.u, point.v].into_iter().all(f64::is_finite);
     let finite_point = |point: Point3| [point.x, point.y, point.z].into_iter().all(f64::is_finite);
@@ -2319,14 +2338,13 @@ pub(crate) fn e5_boundary_curve(
         }
         return Some((
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::from_lanes(
+                crate::nurbs::note_refusal(NurbsCurve::from_lanes(
                     nurbs.degree(),
                     nurbs.knots().to_vec(),
                     control_points,
                     nurbs.weights(),
                     nurbs.periodic(),
-                )
-                .ok()?,
+                ), refusal)?,
             )),
             range,
         ));
@@ -2365,14 +2383,13 @@ pub(crate) fn e5_boundary_curve(
         }
         return Some((
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::from_lanes(
+                crate::nurbs::note_refusal(NurbsCurve::from_lanes(
                     nurbs.degree(),
                     nurbs.knots().to_vec(),
                     control_points,
                     nurbs.weights(),
                     nurbs.periodic(),
-                )
-                .ok()?,
+                ), refusal)?,
             )),
             range,
         ));
@@ -3189,7 +3206,7 @@ mod route_tests {
                 range: [0.0, 1.0],
             },
             &surface,
-        )
+         &mut None,)
         .expect("reflected plane pcurve");
         assert_eq!(
             endpoints,
@@ -3218,7 +3235,7 @@ mod route_tests {
             range,
             endpoints,
             uv_scale,
-        )
+         &mut None,)
         .expect("reflected plane boundary");
         assert!(
             matches!(curve, CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve))
@@ -3398,7 +3415,7 @@ mod route_tests {
             (401, Point3::new(0.0, 0.0, 0.0)),
         ]);
 
-        assert!(plan_e5_boundary(&topology, &surfaces, &points).is_none());
+        assert!(plan_e5_boundary(&topology, &surfaces, &points, &mut None).is_none());
     }
 
     #[test]
@@ -3462,7 +3479,7 @@ mod route_tests {
             (401, Point3::new(0.0004, 0.0, 0.0)),
         ]);
 
-        let plan = plan_e5_boundary(&topology, &surfaces, &points).expect("boundary plan");
+        let plan = plan_e5_boundary(&topology, &surfaces, &points, &mut None).expect("boundary plan");
         assert!(plan.intersection_plan.is_empty());
         assert!(plan.edge_curve_plan.is_empty());
     }
@@ -3576,7 +3593,7 @@ mod route_tests {
             (401, Point3::new(1.0, 0.0, 0.0)),
         ]);
 
-        let plan = plan_e5_boundary(&topology, &surfaces, &points).expect("boundary plan");
+        let plan = plan_e5_boundary(&topology, &surfaces, &points, &mut None).expect("boundary plan");
         assert!(plan.intersection_plan.is_empty());
         assert!(!plan.surface_curve_plan.contains_key(&200));
         assert!(!plan.edge_curve_plan.contains_key(&200));
@@ -3684,7 +3701,7 @@ mod route_tests {
             &mut annotations,
             &topology,
             &[surface],
-        ));
+         &mut None,));
         assert_eq!(
             ir.model.coedges[0].pcurves[0]
                 .parameter_range
@@ -3785,7 +3802,7 @@ mod route_tests {
     #[test]
     fn rational_arc_preserves_angular_parameterization() {
         let arc =
-            rational_pcurve_arc([2.0, -3.0], 4.0, [0.0, std::f64::consts::PI]).expect("semicircle");
+            rational_pcurve_arc([2.0, -3.0], 4.0, [0.0, std::f64::consts::PI], &mut None).expect("semicircle");
         for (parameter, expected) in [
             (0.0, [6.0, -3.0]),
             (std::f64::consts::FRAC_PI_2, [2.0, 1.0]),
@@ -3799,7 +3816,7 @@ mod route_tests {
 
     #[test]
     fn rational_arc_rejects_unbounded_subdivision_counts() {
-        assert!(rational_pcurve_arc([0.0, 0.0], 1.0, [0.0, 1.0e300]).is_none());
+        assert!(rational_pcurve_arc([0.0, 0.0], 1.0, [0.0, 1.0e300], &mut None).is_none());
     }
 
     #[test]
@@ -3833,7 +3850,7 @@ mod route_tests {
             [0.0, std::f64::consts::FRAC_PI_2],
             [Point3::new(2.0, 0.0, 3.0), Point3::new(0.0, 2.0, 3.0)],
             [1.0, 1.0],
-        )
+         &mut None,)
         .expect("cylinder boundary circle");
         assert!(
             matches!(curve, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
@@ -3881,7 +3898,7 @@ mod route_tests {
             [0.0, std::f64::consts::FRAC_PI_2],
             [Point3::new(2.0, 0.0, 3.0), Point3::new(0.0, 2.0, 3.0)],
             [1.0, 1.0],
-        )
+         &mut None,)
         .expect("near-isoparametric cylinder boundary circle");
         assert!(
             matches!(curve, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) if { circle_curve.radius() == 2.0 })
@@ -3925,7 +3942,7 @@ mod route_tests {
                 Point3::new(2.0 * 1.0f64.cos(), 2.0 * 1.0f64.sin(), 3.0),
             ],
             [1.0, 1.0],
-        )
+         &mut None,)
         .expect("cylinder boundary circle");
         assert!(
             matches!(curve, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) if { circle_curve.radius() == 2.0 })
@@ -3957,7 +3974,7 @@ mod route_tests {
             [0.0, direction],
             [Point3::new(0.0, 0.0, 0.0), tiny_endpoint],
             [1.0, 1.0],
-        )
+         &mut None,)
         .expect("finite nonzero plane line");
         assert!(matches!(
             curve,
@@ -3996,7 +4013,7 @@ mod route_tests {
             [1.0, 2.0],
             [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             [1.0, 1.0],
-        )
+         &mut None,)
         .is_none());
     }
 
@@ -4029,7 +4046,7 @@ mod route_tests {
             [0.0, 1.0],
             [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             [1.0, 1.0],
-        )
+         &mut None,)
         .is_none());
     }
 
@@ -4061,7 +4078,7 @@ mod route_tests {
             [0.0, tiny],
             [Point3::new(0.0, 0.0, 0.0), Point3::new(tiny, 0.0, 0.0)],
             [1.0, 1.0],
-        )
+         &mut None,)
         .expect("subnormal line chord");
         assert_eq!(range, [0.0, tiny]);
         assert!(
@@ -4091,7 +4108,7 @@ mod route_tests {
             range: [0.0, std::f64::consts::PI],
             tail: [0.0, 0.0],
         };
-        let pcurve = rational_pcurve_arc([4.0, 5.0], 2.0, [0.0, std::f64::consts::FRAC_PI_2])
+        let pcurve = rational_pcurve_arc([4.0, 5.0], 2.0, [0.0, std::f64::consts::FRAC_PI_2], &mut None)
             .expect("plane pcurve");
         let (curve, range) = e5_boundary_curve(
             &surface,
@@ -4100,7 +4117,7 @@ mod route_tests {
             [0.0, std::f64::consts::FRAC_PI_2],
             [Point3::new(7.0, 7.0, 3.0), Point3::new(5.0, 9.0, 3.0)],
             [1.0, 1.0],
-        )
+         &mut None,)
         .expect("plane boundary circle");
         assert_eq!(range, [0.0, std::f64::consts::FRAC_PI_2]);
         assert!(
@@ -4124,7 +4141,7 @@ mod route_tests {
             [0.0, std::f64::consts::FRAC_PI_2],
             [Point3::new(-5.0, -3.0, 3.0), Point3::new(-3.0, -5.0, 3.0)],
             [-1.0, -1.0],
-        )
+         &mut None,)
         .expect("reflected plane boundary circle");
         assert_eq!(range, [0.0, std::f64::consts::FRAC_PI_2]);
         assert!(
@@ -4165,7 +4182,7 @@ mod route_tests {
             [0.0, 1.0],
         );
         let pcurve =
-            quintic_jet_pcurve(5, &[0.0, 1.0], &points, &first, &second).expect("quintic pcurve");
+            quintic_jet_pcurve(5, &[0.0, 1.0], &points, &first, &second, &mut None).expect("quintic pcurve");
         let (curve, range) = e5_boundary_curve(
             &surface,
             &native,
@@ -4173,7 +4190,7 @@ mod route_tests {
             [0.0, 1.0],
             [Point3::new(1.0, 2.0, 3.0), Point3::new(2.0, 4.0, 3.0)],
             [1.0, 1.0],
-        )
+         &mut None,)
         .expect("plane jet curve");
         assert_eq!(range, [0.0, 1.0]);
         let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = curve else {
@@ -4225,7 +4242,7 @@ mod route_tests {
                 Point3::new(f64::MAX, 1.0, 0.0)
             ],
             [1.0, 1.0],
-        )
+         &mut None,)
         .is_none());
     }
 
@@ -4344,7 +4361,7 @@ mod route_tests {
             [0.0, 1.0],
         );
         let (geometry, range, endpoints) =
-            e5_pcurve_on_surface(&pcurve, &surface).expect("normalized cylinder jet");
+            e5_pcurve_on_surface(&pcurve, &surface, &mut None).expect("normalized cylinder jet");
         assert_eq!(range, [0.0, 1.0]);
         let PcurveGeometry::Nurbs { nurbs } = geometry else {
             panic!("expected NURBS pcurve");
@@ -4399,7 +4416,7 @@ mod route_tests {
         };
 
         let (geometry, range, endpoints) =
-            e5_pcurve_on_surface(&pcurve, &surface).expect("NURBS pcurve on surface");
+            e5_pcurve_on_surface(&pcurve, &surface, &mut None).expect("NURBS pcurve on surface");
         assert_eq!(range, [0.0, 1.0]);
         assert!(matches!(
             geometry,
@@ -4447,7 +4464,7 @@ mod route_tests {
         );
 
         let (geometry, range, endpoints) =
-            e5_pcurve_on_surface(&pcurve, &surface).expect("normalized cone jet");
+            e5_pcurve_on_surface(&pcurve, &surface, &mut None).expect("normalized cone jet");
         assert_eq!(range, [0.0, 1.0]);
         let PcurveGeometry::Nurbs { nurbs } = geometry else {
             panic!("expected NURBS pcurve");
@@ -4509,7 +4526,7 @@ mod route_tests {
             direction: [1.0, 0.0],
             range: [0.0, 1.0],
         };
-        assert!(e5_pcurve_on_surface(&pcurve, &surface).is_none());
+        assert!(e5_pcurve_on_surface(&pcurve, &surface, &mut None).is_none());
     }
 
     #[test]
@@ -4535,7 +4552,7 @@ mod route_tests {
             range: [0.0, 1.0],
             tail: [0.0, 0.0],
         };
-        assert!(e5_pcurve_on_surface(&pcurve, &surface).is_none());
+        assert!(e5_pcurve_on_surface(&pcurve, &surface, &mut None).is_none());
     }
 
     #[test]
@@ -4562,7 +4579,7 @@ mod route_tests {
             vec![[0.0, 0.0], [0.0, 0.0]],
             [0.0, 1.0],
         );
-        assert!(e5_pcurve_on_surface(&pcurve, &surface).is_none());
+        assert!(e5_pcurve_on_surface(&pcurve, &surface, &mut None).is_none());
     }
 
     #[test]
@@ -4584,7 +4601,7 @@ mod route_tests {
             tail: [0.0, 0.0],
         };
         let pcurve =
-            rational_pcurve_arc([f64::MAX, 0.0], 1.0, [0.0, 1.0]).expect("finite native circle");
+            rational_pcurve_arc([f64::MAX, 0.0], 1.0, [0.0, 1.0], &mut None).expect("finite native circle");
         assert!(e5_boundary_curve(
             &surface,
             &native,
@@ -4595,7 +4612,7 @@ mod route_tests {
                 Point3::new(f64::MAX, 1.0, 0.0)
             ],
             [1.0, 1.0],
-        )
+         &mut None,)
         .is_none());
     }
 
@@ -4625,7 +4642,7 @@ mod route_tests {
             tail: [0.0, 0.0],
         };
         let (geometry, range, endpoints) =
-            e5_pcurve_on_surface(&pcurve, &surface).expect("normalized torus circle");
+            e5_pcurve_on_surface(&pcurve, &surface, &mut None).expect("normalized torus circle");
         assert_eq!(range, [0.0, std::f64::consts::FRAC_PI_2]);
         let PcurveGeometry::Nurbs { nurbs } = geometry else {
             panic!("expected rational NURBS pcurve");

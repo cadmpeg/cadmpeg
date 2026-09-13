@@ -27,7 +27,7 @@ impl CatiaNative {
     #[must_use]
     pub(crate) fn decode(bytes: &[u8]) -> Self {
         let consolidated_records = crate::wire::records::consolidated_records(bytes);
-        Self::decode_with_records(bytes, &consolidated_records)
+        Self::decode_with_records(bytes, &consolidated_records, &mut None)
     }
 
     /// Load the typed CATIA namespace from generic native arenas.
