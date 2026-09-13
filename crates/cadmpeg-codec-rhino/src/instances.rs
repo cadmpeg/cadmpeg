@@ -1191,9 +1191,15 @@ pub(crate) fn parse_reference(
             "instance transform is singular",
         ));
     }
+    let Some(transform) = Transform::affine([rows[0], rows[1], rows[2]]) else {
+        return Err(FramingError::structural(
+            reader.position(),
+            "instance transform states rows the carrier refuses",
+        ));
+    };
     Ok(InstanceReference {
         definition_id,
-        transform: Transform::affine([rows[0], rows[1], rows[2]]).expect("affine transform"),
+        transform,
     })
 }
 
