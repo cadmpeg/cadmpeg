@@ -16,15 +16,20 @@ use serde_json::{Map, Value};
 /// The key inserted into every swept shape.
 pub const UNKNOWN_KEY: &str = "zz_bogus";
 
-/// The values the key is probed with. A node refuses only when it refuses all
-/// four: a free-form map typed by its value kind accepts one spelling and
-/// refuses the others, and one probe value alone cannot see that.
-fn probe_values() -> [Value; 4] {
+/// The values the key is probed with, one per JSON value kind. A node refuses
+/// only when it refuses all seven: a free-form map typed by its value kind
+/// accepts one spelling and refuses the others, and one probe value alone
+/// cannot see that. A map whose values are arrays, for one, is visible only to
+/// the `[]` probe.
+fn probe_values() -> [Value; 7] {
     [
         Value::Null,
         Value::from(1),
+        Value::from(1.5),
         Value::from("zz"),
         Value::Bool(true),
+        Value::Object(Map::new()),
+        Value::Array(Vec::new()),
     ]
 }
 

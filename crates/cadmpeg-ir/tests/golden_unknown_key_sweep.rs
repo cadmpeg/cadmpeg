@@ -97,9 +97,10 @@ fn every_golden_shape_refuses_an_unknown_key() {
 /// Each is a free-form map whose keys are source names, so it declares no key
 /// set for a deny to bind. Every owner declares `deny_unknown_fields`, and that
 /// deny is live one level up; the map itself is the node the source fills.
-/// Probing four value kinds is what makes them visible: a
-/// `BTreeMap<String, String>` refuses `true` and accepts `"zz"`, so the earlier
-/// single-value probe read eight of these as refusing.
+/// Probing every JSON value kind is what makes them visible: a
+/// `BTreeMap<String, String>` refuses `true` and accepts `"zz"`, and a map
+/// whose values are arrays accepts `[]` alone, so a narrower probe list reads
+/// such a node as refusing.
 ///
 /// * `/model/appearance_bindings/#/channels` - `AppearanceBinding::channels`,
 ///   `BTreeMap<String, String>` of source channel names;
@@ -107,8 +108,11 @@ fn every_golden_shape_refuses_an_unknown_key() {
 ///   `BTreeMap<String, f64>` of source renderer properties;
 /// * `/model/configurations/#/properties` - `DesignConfiguration::properties`,
 ///   configuration-local named values;
-/// * `/model/drawings/#/parameters` - `DrawingView::parameters`, retained view
+/// * `/model/drawings/#/parameters` - `Drawing::parameters`, retained drawing
 ///   parameters by source name;
+/// * `/model/drawings/#/relationships` - `Drawing::relationships`,
+///   `BTreeMap<String, Vec<ReferenceSelection>>`, the source's relationship
+///   roles by name, each holding the references that role states;
 /// * `/model/features/#/definition/parameters` -
 ///   `FeatureOperation::Native::parameters`, the native operation's own fields;
 /// * `/model/features/#/source_properties` - `Feature::source_properties`,
@@ -136,6 +140,7 @@ const FREE_FORM_SHAPES: &[&str] = &[
     "/model/appearances/#/properties",
     "/model/configurations/#/properties",
     "/model/drawings/#/parameters",
+    "/model/drawings/#/relationships",
     "/model/features/#/definition/parameters",
     "/model/features/#/source_properties",
     "/model/parameters/#/properties",
