@@ -602,7 +602,7 @@ pub(super) fn project(
                     Err(error) => {
                         losses.push(entity_loss(
                             entry,
-                            &format!("linear offset carrier is inconsistent: {error}"),
+                            format!("linear offset carrier is inconsistent: {error}"),
                         ));
                         continue;
                     }
@@ -796,7 +796,7 @@ pub(super) fn project(
                     Err(error) => {
                         losses.push(entity_loss(
                             entry,
-                            &format!("offset-function carrier is inconsistent: {error}"),
+                            format!("offset-function carrier is inconsistent: {error}"),
                         ));
                         continue;
                     }

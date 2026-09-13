@@ -3765,7 +3765,7 @@ fn parametric_helix_definition(
 
 /// The draft angles an extrude states, one per native taper property.
 ///
-/// A FreeCAD extrude carries every taper property whether or not it drafts, so
+/// A `FreeCAD` extrude carries every taper property whether or not it drafts, so
 /// every field here is read once, before the extent shape is decided.
 struct ExtrudeDrafts {
     /// `TaperAngle`: the draft of the first (or only, or symmetric) side.
@@ -3778,7 +3778,7 @@ struct ExtrudeDrafts {
 
 /// The draft angle the extrude states under `key`, in canonical radians.
 ///
-/// FreeCAD writes every taper property unconditionally and spells "no draft"
+/// `FreeCAD` writes every taper property unconditionally and spells "no draft"
 /// with the native sentinel `0`, so a stated zero decodes to absence. A stated
 /// non-zero angle is degrees; `SlopeAngle` admits it after the conversion to
 /// radians and refuses a value that is not finite or whose magnitude is not

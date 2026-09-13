@@ -17,11 +17,10 @@ pub(crate) mod operands;
 use operands::{
     body_selection_is_incomplete, edge_selection_is_incomplete, extrude_extent_is_incomplete,
     extrude_start_is_incomplete, face_selection_is_incomplete, hole_feature_is_incomplete,
-    loft_section_is_incomplete, path_ref_is_incomplete,
-    planar_profile_dependency_is_incomplete, planar_profile_ref_is_incomplete,
-    profile_dependency_is_incomplete, profile_ref_is_incomplete, revolve_feature_is_incomplete,
-    rib_feature_is_incomplete, sweep_mode_is_incomplete, sweep_orientation_is_incomplete,
-    termination_dependency_is_incomplete,
+    loft_section_is_incomplete, path_ref_is_incomplete, planar_profile_dependency_is_incomplete,
+    planar_profile_ref_is_incomplete, profile_dependency_is_incomplete, profile_ref_is_incomplete,
+    revolve_feature_is_incomplete, rib_feature_is_incomplete, sweep_mode_is_incomplete,
+    sweep_orientation_is_incomplete, termination_dependency_is_incomplete,
 };
 
 /// Orthonormal-frame handedness acceptance for datum CS completeness.
