@@ -53,20 +53,17 @@ fn schema_configuration_row_chain_coverage(native: &CatiaNative) -> (usize, usiz
 /// return a model wins, a `None` falls through to the next applicable route, and
 /// exhausting the table yields the metadata-only fallback.
 pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
-    let mut lane_refusal = None;
-    let decoded = decode_stating_lane_refusals(ctx, root, &mut lane_refusal);
-    // A carrier record of the right kind whose lanes the IR carrier refuses is
-    // the codec's error, not a record the reader may drop in silence.
-    match lane_refusal {
-        Some(error) => Err(error.into()),
-        None => decoded,
-    }
+    // The sink outlives every route exit: a route that answers `None` after a
+    // refusal has already stated the refusal here, so the fall-through to the
+    // next route and to the metadata fallback is reported, not silent.
+    let mut refusal = crate::nurbs::LaneRefusals::new();
+    decode_stating_lane_refusals(ctx, root, &mut refusal)
 }
 
 fn decode_stating_lane_refusals(
     ctx: &DecodeContext<'_>,
     root: View<'_>,
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Decoded, CodecError> {
     let scan = container::scan_bytes(root.window());
     let matched = crate::dialect::classify(&scan);
@@ -79,7 +76,7 @@ fn decode_stating_lane_refusals(
 
     for route in families::ROUTES {
         if (route.applicable)(scan.variant) {
-            if let Some(out) = (route.decode)(ctx, &scan) {
+            if let Some(out) = (route.decode)(ctx, &scan, refusal) {
                 return finish_decode(
                     ctx,
                     &scan,
@@ -169,7 +166,7 @@ fn finish_decode(
     mut annotations: Annotations,
     unknowns: Vec<UnknownRecord>,
     standard_face_population: bool,
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Decoded, CodecError> {
     // Retained unknown records are source entities even when a route transfers
     // no neutral model entity (for example, an unrecognized storage variant).
@@ -3527,6 +3524,10 @@ fn finish_decode(
             appearance_transfer.transferred_packets,
         )));
     }
+    // Every refusal any route or the native decode stated, whichever route the
+    // codec finished on. The sink was created by `decode` and owns them across
+    // every route exit, so a fall-through after a refusal is reported here.
+    report.losses.extend(refusal.take_notes());
     native.store_owned(ir.native.namespace_mut("catia"))?;
     ctx.admit_entities(
         ir.model.entity_count() as u64,

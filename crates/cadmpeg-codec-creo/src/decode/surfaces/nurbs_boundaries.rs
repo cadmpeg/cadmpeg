@@ -25,7 +25,7 @@ pub(in super::super) struct NurbsSurfaceBoundary {
 
 pub(in super::super) fn nurbs_surface_boundaries(
     nurbs: &NurbsSurface,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<[NurbsSurfaceBoundary; 4]> {
     let u_count = usize::try_from(nurbs.u_count()).ok()?;
     let v_count = usize::try_from(nurbs.v_count()).ok()?;
@@ -84,7 +84,7 @@ pub(in super::super) fn nurbs_surface_boundaries(
             ) {
                 Ok(curve) => curve,
                 Err(error) => {
-                    *refusal = Some(error);
+                    refusal.note("creo NURBS surface boundary curve record", &error);
                     return None;
                 }
             };
@@ -119,7 +119,7 @@ pub(in super::super) fn point_tolerance<'a>(
 pub(in super::super) fn nurbs_plane_boundary_curve(
     nurbs: &NurbsSurface,
     plane: PlaneEquation,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<CurveGeometry> {
     let boundaries = nurbs_surface_boundaries(nurbs, refusal)?;
     let normal = normalize(plane.normal)?;
@@ -356,7 +356,7 @@ pub(in super::super) fn generator_separates_control_nets(
 pub(in super::super) fn shared_extrusion_generator_curve(
     first: &NurbsSurface,
     second: &NurbsSurface,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<CurveGeometry> {
     let first_boundaries = nurbs_surface_boundaries(first, refusal)?;
     let second_boundaries = nurbs_surface_boundaries(second, refusal)?;
@@ -489,7 +489,7 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve(
         ctx: &DecodeContext<'_>,
         nurbs: &NurbsSurface,
         plane: PlaneEquation,
-        refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+        refusal: &mut crate::lane_refusal::LaneRefusals,
     ) -> Option<Result<CurveGeometry, CodecError>> {
         let boundaries = nurbs_surface_boundaries(nurbs, refusal)?;
         (nurbs.u_degree() == 3
@@ -636,16 +636,16 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve(
         ) {
             Ok(curve) => curve,
             Err(error) => {
-                *refusal = Some(error);
+                refusal.note("creo cubic-extrusion plane generator curve", &error);
                 return None;
             }
         };
         Some(Ok(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve))))
     }
-    let mut refusal = None;
+    let mut refusal = crate::lane_refusal::LaneRefusals::new();
     let recognized = recognize(ctx, nurbs, plane, &mut refusal).transpose();
-    match refusal {
-        Some(error) => Err(error.into()),
+    match refusal.take_error() {
+        Some(error) => Err(error),
         None => recognized,
     }
 }

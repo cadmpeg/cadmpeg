@@ -209,7 +209,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
         let Some(second_geometry) = geometry(second.id) else {
             continue;
         };
-        let mut refusal = None;
+        let mut refusal = crate::lane_refusal::LaneRefusals::new();
         let refusal = &mut refusal;
         let resolved = match (first.kind, second.kind, first_geometry, second_geometry) {
             (
@@ -261,8 +261,8 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
                 .map(|geometry| (geometry, NurbsBoundaryKind::SharedExtrusionGenerator)),
             _ => None,
         };
-        if let Some(error) = refusal.take() {
-            return Err(error.into());
+        if let Some(error) = refusal.take_error() {
+            return Err(error);
         }
         let Some((geometry, kind)) = resolved else {
             continue;

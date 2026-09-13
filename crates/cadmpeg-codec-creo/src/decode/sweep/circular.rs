@@ -109,7 +109,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 PcurveId::mint(format!("{prefix}:pcurve:{side}:cap")).expect("identity grammar"),
                 transform.offset,
                 {
-                    let mut refusal = None;
+                    let mut refusal = crate::lane_refusal::LaneRefusals::new();
                     let cap = circular_pcurve(
                         section_center,
                         radius,
@@ -117,8 +117,8 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                         std::f64::consts::TAU,
                         &mut refusal,
                     );
-                    if let Some(error) = refusal {
-                        return Err(error.into());
+                    if let Some(error) = refusal.take_error() {
+                        return Err(error);
                     }
                     cap.ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("extrusion pcurve geometry is invalid")

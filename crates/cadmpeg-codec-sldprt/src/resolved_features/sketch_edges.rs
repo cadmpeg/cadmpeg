@@ -109,7 +109,7 @@ pub(super) fn project_edge(
     points: &HashMap<&cadmpeg_ir::ids::PointId, Point3>,
     curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
     frame: SketchPlaneFrame,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<SketchGeometry> {
     let SketchPlaneFrame {
         origin,
@@ -244,7 +244,10 @@ pub(super) fn project_edge(
             ) {
                 Ok(nurbs) => Some(SketchGeometry::nurbs(nurbs)),
                 Err(error) => {
-                    *refusal = Some(error);
+                    refusal.note(
+                        format_args!("sldprt projected sketch edge {}", edge.id),
+                        &error,
+                    );
                     None
                 }
             }

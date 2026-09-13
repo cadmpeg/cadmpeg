@@ -163,7 +163,7 @@ fn project_brep(
                         "sldprt:model:sketch-entity#{block_offset}:{stream_ordinal}:{face_ordinal}:{}",
                         edge_entities.len()
                     )) else { continue };
-                    let mut edge_refusal = None;
+                    let mut edge_refusal = crate::lane_refusal::LaneRefusals::new();
                     let projected = project_edge(
                         edge,
                         &vertices,
@@ -176,8 +176,11 @@ fn project_brep(
                         },
                         &mut edge_refusal,
                     );
-                    if let Some(error) = edge_refusal {
-                        return Err(error.into());
+                    let edge_refusals = edge_refusal.take_records();
+                    if !edge_refusals.is_empty() {
+                        return Err(cadmpeg_core::CodecError::malformed(
+                            edge_refusals.join("; "),
+                        ));
                     }
                     let Some(geometry) = projected else {
                         continue;

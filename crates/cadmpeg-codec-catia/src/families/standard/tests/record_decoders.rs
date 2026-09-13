@@ -1156,7 +1156,7 @@ fn standard_freeform_tag_resolves_direct_and_face_carriers() {
         [stream],
         &HashSet::from([100, 501]),
         &HashSet::new(),
-        &mut None,
+        &mut crate::nurbs::LaneRefusals::new(),
     );
     assert!(matches!(
         evidence.surface_geometries.get(&100),
@@ -1177,7 +1177,7 @@ fn standard_freeform_tag_resolves_standalone_a8_carrier() {
         [stream],
         &HashSet::from([100, 501]),
         &HashSet::new(),
-        &mut None,
+        &mut crate::nurbs::LaneRefusals::new(),
     );
     for tag in [100, 501] {
         assert!(matches!(
@@ -1203,7 +1203,7 @@ fn standard_freeform_tag_rejects_conflicting_standalone_a8_carriers() {
         [first],
         &HashSet::from([100]),
         &HashSet::new(),
-        &mut None,
+        &mut crate::nurbs::LaneRefusals::new(),
     );
     assert!(!evidence.surface_geometries.contains_key(&100));
 }
@@ -1218,7 +1218,7 @@ fn standard_freeform_tag_collapses_repeated_standalone_a8_carrier() {
         [stream],
         &HashSet::from([100]),
         &HashSet::new(),
-        &mut None,
+        &mut crate::nurbs::LaneRefusals::new(),
     );
     assert!(matches!(
         evidence.surface_geometries.get(&100),
@@ -1232,7 +1232,7 @@ fn standard_freeform_tag_resolves_standalone_a8_rolling_ball() {
         [a8_freeform_curve_stream()],
         &HashSet::from([0x1234_5678]),
         &HashSet::new(),
-        &mut None,
+        &mut crate::nurbs::LaneRefusals::new(),
     );
     assert!(matches!(
         evidence.procedural_surfaces.get(&0x1234_5678),
@@ -1260,7 +1260,7 @@ fn standard_object_evidence_rejects_cross_stream_edge_owner_conflicts() {
         [first, second],
         &HashSet::new(),
         &HashSet::new(),
-        &mut None,
+        &mut crate::nurbs::LaneRefusals::new(),
     );
     assert!(evidence.edge_owner_faces.is_empty());
 }
@@ -1279,7 +1279,7 @@ fn standard_object_evidence_keeps_face_owner_from_unresolved_surface() {
         [stream],
         &HashSet::new(),
         &HashSet::new(),
-        &mut None,
+        &mut crate::nurbs::LaneRefusals::new(),
     );
 
     assert_eq!(
@@ -1295,7 +1295,7 @@ fn standard_object_evidence_rejects_repeated_topology_namespaces() {
         [stream.clone(), stream],
         &HashSet::new(),
         &HashSet::new(),
-        &mut None,
+        &mut crate::nurbs::LaneRefusals::new(),
     );
 
     assert!(evidence.edge_owner_faces.is_empty());
@@ -1316,7 +1316,7 @@ fn standard_object_evidence_does_not_join_topology_across_runs() {
         [stream],
         &HashSet::new(),
         &HashSet::new(),
-        &mut None,
+        &mut crate::nurbs::LaneRefusals::new(),
     );
     assert!(evidence.edge_owner_faces.is_empty());
 }
@@ -1344,7 +1344,7 @@ fn standard_face_resolves_a_rolling_ball_result_carrier() {
         [stream],
         &HashSet::from([501]),
         &HashSet::new(),
-        &mut None,
+        &mut crate::nurbs::LaneRefusals::new(),
     );
     assert!(!evidence.surface_geometries.contains_key(&501));
     assert!(matches!(

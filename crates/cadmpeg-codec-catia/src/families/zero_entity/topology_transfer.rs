@@ -90,7 +90,7 @@ pub(crate) fn transfer_closed_face_topology(
     annotations: &mut AnnotationBuilder,
     solved: ZeroEntityClosedTopology<'_>,
     topology_budget: &WorkBudget<'_>,
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<ZeroEntityTopologyCounts> {
     let ZeroEntityClosedTopology {
         support_runs,
@@ -1078,7 +1078,7 @@ mod tests {
                 ownership_root: None,
             },
             &topology_budget,
-            &mut None,
+            &mut crate::nurbs::LaneRefusals::new(),
         )
         .expect("complete topology without native ownership root");
         assert_eq!(no_root_counts.faces, 2);
@@ -1108,7 +1108,7 @@ mod tests {
                 ownership_root: Some(&root),
             },
             &topology_budget,
-            &mut None,
+            &mut crate::nurbs::LaneRefusals::new(),
         )
         .expect("complete topology");
         assert_eq!(counts.faces, 2);
@@ -1206,7 +1206,7 @@ mod tests {
                 ownership_root: None,
             },
             &budget,
-            &mut None,
+            &mut crate::nurbs::LaneRefusals::new(),
         )
         .expect("topology remains transferable");
 

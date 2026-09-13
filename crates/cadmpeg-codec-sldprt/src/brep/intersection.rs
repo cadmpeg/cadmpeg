@@ -332,7 +332,7 @@ fn solved_curve(
     chart: &Chart,
     start: [f64; 3],
     end: [f64; 3],
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<(CurveGeometry, Vec<f64>, bool)> {
     let mut parameters = chart_parameters(chart, &chart.points);
     let mut points = chart.points.clone();
@@ -360,7 +360,7 @@ fn solved_curve(
     ) {
         Ok(nurbs) => nurbs,
         Err(error) => {
-            *refusal = Some(error);
+            refusal.note("sldprt intersection chart curve", &error);
             return None;
         }
     };
@@ -454,7 +454,7 @@ pub(super) fn scan_intersection_carriers(
         let Some(candidates) = charts.get(&chart_ref) else {
             continue;
         };
-        let mut chart_refusal = None;
+        let mut chart_refusal = crate::lane_refusal::LaneRefusals::new();
         let chart_refusal = &mut chart_refusal;
         let mut matches = candidates.iter().filter_map(|chart| {
             let first = *chart.points.first()?;
@@ -477,9 +477,12 @@ pub(super) fn scan_intersection_carriers(
         for candidate in matches {
             ambiguous_after.push(candidate);
         }
-        if let Some(error) = chart_refusal.take() {
-            lane_refusals.push(format!("intersection chart for attr {attr}: {error}"));
-        }
+        lane_refusals.extend(
+            chart_refusal
+                .take_records()
+                .into_iter()
+                .map(|record| format!("intersection chart for attr {attr}: {record}")),
+        );
         let Some(mut selected) = selected else {
             continue;
         };

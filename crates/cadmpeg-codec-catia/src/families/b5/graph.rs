@@ -826,7 +826,7 @@ impl B5Loop {
 
 /// Resolve the dominant object-stream topology graph through inline object ids.
 #[must_use]
-pub fn parse(bytes: &[u8], refusal: &mut Option<crate::nurbs::LaneRefusal>) -> Option<B5Graph> {
+pub fn parse(bytes: &[u8], refusal: &mut crate::nurbs::LaneRefusals) -> Option<B5Graph> {
     let mut graphs = topology_runs(bytes, refusal)
         .into_iter()
         .map(|(_, graph)| graph);
@@ -837,7 +837,7 @@ pub fn parse(bytes: &[u8], refusal: &mut Option<crate::nurbs::LaneRefusal>) -> O
 /// Resolve each contiguous object-stream run independently.
 pub(crate) fn topology_runs(
     bytes: &[u8],
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Vec<(Range<usize>, B5Graph)> {
     let root_runs = topology_root_run_ranges(bytes);
     let candidates = if root_runs.is_empty() {
@@ -854,7 +854,7 @@ pub(crate) fn topology_runs(
         .collect()
 }
 
-fn parse_flat(bytes: &[u8], refusal: &mut Option<crate::nurbs::LaneRefusal>) -> Option<B5Graph> {
+fn parse_flat(bytes: &[u8], refusal: &mut crate::nurbs::LaneRefusals) -> Option<B5Graph> {
     let frames = object_stream_frames(bytes);
     let records = records_from_frames(bytes, &frames);
     parse_from_records(bytes, &records, &frames, true, refusal)
@@ -863,7 +863,7 @@ fn parse_flat(bytes: &[u8], refusal: &mut Option<crate::nurbs::LaneRefusal>) -> 
 pub(crate) fn parse_from_frames(
     bytes: &[u8],
     frames: &[ObjectFrame],
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<B5Graph> {
     let records = records_from_frames(bytes, frames);
     parse_from_records(bytes, &records, frames, true, refusal)
@@ -874,7 +874,7 @@ pub(crate) fn parse_from_records(
     records: &[B5Record],
     frames: &[ObjectFrame],
     require_topology: bool,
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<B5Graph> {
     parse_from_records_budgeted(bytes, records, frames, require_topology, None, refusal)
 }
@@ -885,7 +885,7 @@ pub(crate) fn parse_from_records_budgeted(
     frames: &[ObjectFrame],
     require_topology: bool,
     budget: Option<&WorkBudget<'_>>,
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<B5Graph> {
     let by_id: HashMap<u32, &B5Record> = records
         .iter()
@@ -1711,7 +1711,7 @@ pub(crate) fn targeted_surfaces_from_frames(
     bytes: &[u8],
     object_ids: &HashSet<u32>,
     frames: &[ObjectFrame],
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> BTreeMap<u32, B5Surface> {
     let mut resolved = HashMap::<u32, Option<B5Surface>>::new();
     for surface in frames.iter().filter_map(|frame| {
@@ -1796,13 +1796,13 @@ pub(crate) fn targeted_surfaces_from_frames(
 #[cfg(test)]
 pub(crate) fn targeted_geometry_graph(bytes: &[u8]) -> Option<B5Graph> {
     let frames = object_stream_frames(bytes);
-    targeted_geometry_graph_from_frames(bytes, &frames, &mut None)
+    targeted_geometry_graph_from_frames(bytes, &frames, &mut crate::nurbs::LaneRefusals::new())
 }
 
 pub(crate) fn targeted_geometry_graph_from_frames(
     bytes: &[u8],
     frames: &[ObjectFrame],
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<B5Graph> {
     let mut candidates = HashMap::<u32, Option<B5Record>>::new();
     for frame in frames {

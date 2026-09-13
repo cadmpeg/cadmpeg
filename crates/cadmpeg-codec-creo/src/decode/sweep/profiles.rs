@@ -163,7 +163,7 @@ pub(in super::super) fn circular_pcurve(
     radius: f64,
     start_angle: f64,
     end_angle: f64,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<PcurveGeometry> {
     let segment_count = ((end_angle - start_angle).abs() / std::f64::consts::FRAC_PI_2)
         .ceil()
@@ -208,7 +208,7 @@ pub(in super::super) fn circular_pcurve(
     ) {
         Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),
         Err(error) => {
-            *refusal = Some(error);
+            refusal.note("creo circular pcurve record", &error);
             None
         }
     }
@@ -219,7 +219,7 @@ pub(in super::super) fn extrusion_cap_pcurve(
     reversed: bool,
     start: [f64; 2],
     end: [f64; 2],
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<PcurveGeometry> {
     match geometry.definition() {
         SketchGeometryDefinition::Arc {

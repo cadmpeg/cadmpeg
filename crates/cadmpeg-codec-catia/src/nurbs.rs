@@ -60,31 +60,38 @@ fn valid_pcurve_nurbs(nurbs: &PcurveNurbs) -> bool {
         })
 }
 
-/// One carrier record whose lanes the IR carrier refuses, named by the record
-/// the reader was reading.
+/// Sink for carrier records whose lanes the IR carrier refuses.
 ///
 /// The IR carrier states which lanes disagree; the codec states which source
-/// record stated them. Every reader that records a refusal names its record,
-/// so the loss note and the `CodecError` both carry a source location instead
-/// of a bare lane count.
-#[derive(Debug, Clone)]
-pub(crate) struct LaneRefusal {
-    /// Source record the reader was reading: a stream tag, an object id, or a
-    /// byte offset.
-    record: String,
-    /// The IR carrier's refusal.
-    error: cadmpeg_ir::geometry::NurbsError,
+/// record stated them. The sink is created once by the top-level decode and
+/// threaded through every route, so no `return None`, `?` or `.ok()?` between
+/// a refusal and the report can drop it, and N refusals in one document stay N
+/// notes. Every reader that records a refusal names its record, so each note
+/// carries a source location instead of a bare lane count.
+#[derive(Debug, Default)]
+pub(crate) struct LaneRefusals {
+    notes: Vec<cadmpeg_ir::report::LossNote>,
 }
 
-impl std::fmt::Display for LaneRefusal {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "{} states {}", self.record, self.error)
+impl LaneRefusals {
+    /// An empty sink.
+    pub(crate) fn new() -> Self {
+        Self { notes: Vec::new() }
     }
-}
 
-impl From<LaneRefusal> for cadmpeg_core::CodecError {
-    fn from(refusal: LaneRefusal) -> Self {
-        Self::Malformed(refusal.to_string())
+    /// Take every refusal recorded so far, in the order the readers stated
+    /// them, and leave the sink empty.
+    pub(crate) fn take_notes(&mut self) -> Vec<cadmpeg_ir::report::LossNote> {
+        std::mem::take(&mut self.notes)
+    }
+
+    /// Record one refusal against the record that stated it.
+    fn push(&mut self, record: impl std::fmt::Display, error: &cadmpeg_ir::geometry::NurbsError) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::GeometryAnalyticPayloadInvalid.note(format!(
+                "A CATIA carrier record states lanes the IR carrier refuses: {record} states {error}"
+            )),
+        );
     }
 }
 
@@ -93,19 +100,16 @@ impl From<LaneRefusal> for cadmpeg_core::CodecError {
 ///
 /// A record of the right kind whose lanes the IR carrier refuses is not a
 /// record of another kind: the reader answers `None` for the record it is
-/// reading, and the refusal travels, named, to the reader that states it.
+/// reading, and the refusal travels, named, in the sink the caller owns.
 pub(crate) fn note_refusal<T>(
     result: Result<T, cadmpeg_ir::geometry::NurbsError>,
-    refusal: &mut Option<LaneRefusal>,
+    refusal: &mut LaneRefusals,
     record: impl std::fmt::Display,
 ) -> Option<T> {
     match result {
         Ok(value) => Some(value),
         Err(error) => {
-            *refusal = Some(LaneRefusal {
-                record: record.to_string(),
-                error,
-            });
+            refusal.push(record, &error);
             None
         }
     }
@@ -114,7 +118,7 @@ pub(crate) fn note_refusal<T>(
 pub(crate) fn reverse_pcurve_geometry(
     geometry: &PcurveGeometry,
     range: [f64; 2],
-    refusal: &mut Option<LaneRefusal>,
+    refusal: &mut LaneRefusals,
     record: &str,
 ) -> Option<PcurveGeometry> {
     if !range.into_iter().all(f64::is_finite)
@@ -186,7 +190,7 @@ pub(crate) fn reverse_pcurve_geometry(
 pub(crate) fn reverse_curve_geometry(
     geometry: &CurveGeometry,
     range: [f64; 2],
-    refusal: &mut Option<LaneRefusal>,
+    refusal: &mut LaneRefusals,
     record: &str,
 ) -> Option<(CurveGeometry, [f64; 2])> {
     if !range.into_iter().all(f64::is_finite)
@@ -438,7 +442,7 @@ pub(crate) struct CircularHelixCache {
 pub(crate) fn circular_helix_cache(
     construction: &ProceduralCurveDefinition,
     requested_tolerance: f64,
-    refusal: &mut Option<LaneRefusal>,
+    refusal: &mut LaneRefusals,
     record: &str,
 ) -> Option<CircularHelixCache> {
     let ProceduralCurveDefinition::Helix(helix_payload) = construction else {
@@ -681,7 +685,7 @@ pub(crate) fn nurbs_surface_isocurve(
     surface: &NurbsSurface,
     parameter: f64,
     fix_u: bool,
-    refusal: &mut Option<LaneRefusal>,
+    refusal: &mut LaneRefusals,
     record: &str,
 ) -> Option<NurbsCurve> {
     if !parameter.is_finite()
@@ -881,7 +885,7 @@ mod tests {
             .expect("valid LinePcurve fixture"),
         );
         let range = [5.0, 9.0];
-        let reversed = reverse_pcurve_geometry(&geometry, range, &mut None, "test record")
+        let reversed = reverse_pcurve_geometry(&geometry, range, &mut crate::nurbs::LaneRefusals::new(), "test record")
             .expect("reversible line");
         for (parameter, source_parameter) in [(5.0, 9.0), (9.0, 5.0)] {
             let actual = pcurve_uv(&reversed, parameter).expect("reversed evaluation");
@@ -913,7 +917,7 @@ mod tests {
         ));
         for (geometry, range) in [(line, [5.0, 9.0]), (circle, [0.25, 2.0])] {
             let (reversed, reversed_range) =
-                reverse_curve_geometry(&geometry, range, &mut None, "test record")
+                reverse_curve_geometry(&geometry, range, &mut crate::nurbs::LaneRefusals::new(), "test record")
                     .expect("reversible model curve");
             for (parameter, source_parameter) in
                 [(reversed_range[0], range[1]), (reversed_range[1], range[0])]
@@ -941,7 +945,7 @@ mod tests {
         ));
         let range = [0.2, 0.8];
         let (reversed, reversed_range) =
-            reverse_curve_geometry(&geometry, range, &mut None, "test record")
+            reverse_curve_geometry(&geometry, range, &mut crate::nurbs::LaneRefusals::new(), "test record")
                 .expect("reversible NURBS");
         for parameter in [range[0], 0.5, range[1]] {
             let actual = curve_point(&reversed, parameter).expect("reversed NURBS point");
@@ -1014,7 +1018,7 @@ mod tests {
             false,
         )
         .unwrap();
-        let curve = nurbs_surface_isocurve(&surface, tiny * 0.5, true, &mut None, "test record")
+        let curve = nurbs_surface_isocurve(&surface, tiny * 0.5, true, &mut crate::nurbs::LaneRefusals::new(), "test record")
             .expect("tiny rational surface isocurve");
         assert_eq!(
             curve.control_points(),
@@ -1046,7 +1050,7 @@ mod tests {
             ),
             0.5,
             true,
-            &mut None,
+            &mut crate::nurbs::LaneRefusals::new(),
             "test record",
         )
         .is_none());
@@ -1068,7 +1072,7 @@ mod tests {
             .expect("valid HelixCurveConstruction fixture"),
         );
 
-        let cache = circular_helix_cache(&definition, 1.0e-4, &mut None, "test record")
+        let cache = circular_helix_cache(&definition, 1.0e-4, &mut crate::nurbs::LaneRefusals::new(), "test record")
             .expect("valid helix");
         assert_eq!(cache.curve.knots()[1], range[0]);
         assert_eq!(cache.curve.knots()[cache.curve.knots().len() - 2], range[1]);
@@ -1103,21 +1107,21 @@ mod tests {
         assert!(circular_helix_cache(
             &definition(Vector3::new(0.0, radius, 0.0)),
             1.0e-4,
-            &mut None,
+            &mut crate::nurbs::LaneRefusals::new(),
             "test record"
         )
         .is_some());
         assert!(circular_helix_cache(
             &definition(Vector3::new(0.0, 2.0 * radius, 0.0)),
             1.0e-4,
-            &mut None,
+            &mut crate::nurbs::LaneRefusals::new(),
             "test record"
         )
         .is_none());
         assert!(circular_helix_cache(
             &definition(Vector3::new(radius, 0.0, 0.0)),
             1.0e-4,
-            &mut None,
+            &mut crate::nurbs::LaneRefusals::new(),
             "test record"
         )
         .is_none());
@@ -1156,7 +1160,7 @@ mod tests {
             )
             .expect("valid HelixCurveConstruction fixture");
         }
-        assert!(circular_helix_cache(&non_axial_pitch, 1.0e-4, &mut None, "test record").is_none());
+        assert!(circular_helix_cache(&non_axial_pitch, 1.0e-4, &mut crate::nurbs::LaneRefusals::new(), "test record").is_none());
 
         let overflowing_fit = ProceduralCurveDefinition::Helix(
             cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
@@ -1171,7 +1175,7 @@ mod tests {
             .expect("valid HelixCurveConstruction fixture"),
         );
         assert!(
-            circular_helix_cache(&overflowing_fit, f64::MAX, &mut None, "test record").is_none()
+            circular_helix_cache(&overflowing_fit, f64::MAX, &mut crate::nurbs::LaneRefusals::new(), "test record").is_none()
         );
     }
 
@@ -1206,7 +1210,7 @@ mod tests {
         assert!(reverse_pcurve_geometry(
             &pcurve_line,
             [f64::MAX / 2.0, f64::MAX],
-            &mut None,
+            &mut crate::nurbs::LaneRefusals::new(),
             "test record"
         )
         .is_none());
@@ -1219,7 +1223,7 @@ mod tests {
             .unwrap(),
         ));
         assert!(
-            reverse_curve_geometry(&model_line, [0.0, f64::MAX], &mut None, "test record")
+            reverse_curve_geometry(&model_line, [0.0, f64::MAX], &mut crate::nurbs::LaneRefusals::new(), "test record")
                 .is_none()
         );
 
@@ -1234,44 +1238,55 @@ mod tests {
             .unwrap(),
         };
         assert!(
-            reverse_pcurve_geometry(&pcurve_nurbs, [0.0, f64::MAX], &mut None, "test record")
+            reverse_pcurve_geometry(&pcurve_nurbs, [0.0, f64::MAX], &mut crate::nurbs::LaneRefusals::new(), "test record")
                 .is_none()
         );
     }
 
     #[test]
-    fn a_weight_lane_shorter_than_its_pole_lane_is_carried_not_dropped() {
-        let mut refusal = None;
-        let carried = super::note_refusal(
+    fn two_refused_records_state_two_notes_each_naming_its_record() {
+        let mut refusal = LaneRefusals::new();
+        let short_weight_lane = || {
             PcurveNurbs::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
                 Some(vec![1.0]),
                 false,
-            ),
+            )
+        };
+        let first = super::note_refusal(
+            short_weight_lane(),
             &mut refusal,
             "consolidated_a5_03_32 at byte 64",
         );
-        assert!(carried.is_none(), "the refused record states no pcurve");
-        let refusal = refusal.expect("the refusal is carried out of the reader");
-        let text = refusal.to_string();
-        assert!(
-            text.contains("pole(s) against"),
-            "the refusal states both lane counts: {text}"
+        let second = super::note_refusal(
+            short_weight_lane(),
+            &mut refusal,
+            "consolidated_a5_03_32 at byte 128",
         );
+        assert!(first.is_none(), "the refused record states no pcurve");
+        assert!(second.is_none(), "the refused record states no pcurve");
+        let notes = refusal.take_notes();
+        assert_eq!(notes.len(), 2, "one note per refused record: {notes:?}");
+        for (note, record) in notes.iter().zip([
+            "consolidated_a5_03_32 at byte 64",
+            "consolidated_a5_03_32 at byte 128",
+        ]) {
+            assert!(
+                note.message.contains("pole(s) against"),
+                "the note states both lane counts: {}",
+                note.message
+            );
+            assert!(
+                note.message.contains(record),
+                "the note names the record that stated the lanes: {}",
+                note.message
+            );
+        }
         assert!(
-            text.contains("consolidated_a5_03_32 at byte 64"),
-            "the refusal names the record that stated the lanes: {text}"
-        );
-        let reported = cadmpeg_core::CodecError::from(refusal);
-        let cadmpeg_core::CodecError::Malformed(message) = &reported else {
-            panic!("expected a malformed refusal, got {reported:?}");
-        };
-        assert!(message.contains("pole(s) against"), "{message}");
-        assert!(
-            message.contains("consolidated_a5_03_32 at byte 64"),
-            "{message}"
+            refusal.take_notes().is_empty(),
+            "the sink is empty once its notes are taken"
         );
     }
 }

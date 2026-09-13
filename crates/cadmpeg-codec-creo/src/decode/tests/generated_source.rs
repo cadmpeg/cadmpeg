@@ -1426,7 +1426,7 @@ fn spline_extrusion_preserves_directrix_basis_and_weights() {
         false,
     )
     .expect("valid directrix");
-    let surface = extruded_nurbs_surface(&directrix, [0.0, 0.0, 4.0], &mut None)
+    let surface = extruded_nurbs_surface(&directrix, [0.0, 0.0, 4.0], &mut crate::lane_refusal::LaneRefusals::new())
         .expect("valid extrusion surface");
 
     assert_eq!((surface.u_degree(), surface.v_degree()), (2, 1));
@@ -1474,7 +1474,7 @@ fn extrusion_arc_pcurve_is_exact_in_both_directions() {
         (0.0, std::f64::consts::PI, Point2::new(2.0, 5.0)),
         (std::f64::consts::PI, 0.0, Point2::new(2.0, 5.0)),
     ] {
-        let pcurve = circular_pcurve([2.0, 2.0], 3.0, start, end, &mut None)
+        let pcurve = circular_pcurve([2.0, 2.0], 3.0, start, end, &mut crate::lane_refusal::LaneRefusals::new())
             .expect("circular pcurve fixture");
         let first = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.0).expect("first endpoint");
         let middle = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.5).expect("arc midpoint");
@@ -1609,7 +1609,7 @@ fn circle_remains_a_closed_extrusion_profile() {
     assert!((area - 9.0 * std::f64::consts::PI).abs() < 1.0e-12);
 
     for reversed in [false, true] {
-        let pcurve = extrusion_cap_pcurve(&circle, reversed, seam, seam, &mut None)
+        let pcurve = extrusion_cap_pcurve(&circle, reversed, seam, seam, &mut crate::lane_refusal::LaneRefusals::new())
             .expect("extrusion cap pcurve fixture");
         let first = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.0).expect("circle seam");
         let middle = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.5).expect("circle midpoint");

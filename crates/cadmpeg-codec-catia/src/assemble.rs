@@ -723,7 +723,7 @@ pub(crate) fn rational_pcurve_arc(
     center: [f64; 2],
     radius: f64,
     range: [f64; 2],
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
+    refusal: &mut crate::nurbs::LaneRefusals,
     record: &str,
 ) -> Option<PcurveGeometry> {
     let span = range[1] - range[0];
@@ -802,7 +802,7 @@ pub(crate) fn quintic_jet_pcurve(
     points: &[[f64; 2]],
     first: &[[f64; 2]],
     second: &[[f64; 2]],
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
+    refusal: &mut crate::nurbs::LaneRefusals,
     record: &str,
 ) -> Option<PcurveGeometry> {
     let (full_knots, controls) =
@@ -844,7 +844,7 @@ mod route_tests {
     #[test]
     fn rational_pcurve_arc_preserves_tiny_nonzero_sweep() {
         let range = [0.0, 1e-200];
-        let pcurve = rational_pcurve_arc([0.0, 0.0], 2.0, range, &mut None, "test record")
+        let pcurve = rational_pcurve_arc([0.0, 0.0], 2.0, range, &mut crate::nurbs::LaneRefusals::new(), "test record")
             .expect("tiny circular arc");
         let PcurveGeometry::Nurbs { nurbs } = pcurve else {
             panic!("rational arc must produce NURBS");
@@ -858,15 +858,15 @@ mod route_tests {
     #[test]
     fn rational_pcurve_arc_rejects_nonfinite_construction() {
         assert!(
-            rational_pcurve_arc([f64::NAN, 0.0], 1.0, [0.0, 1.0], &mut None, "test record")
+            rational_pcurve_arc([f64::NAN, 0.0], 1.0, [0.0, 1.0], &mut crate::nurbs::LaneRefusals::new(), "test record")
                 .is_none()
         );
         assert!(
-            rational_pcurve_arc([0.0, 0.0], f64::MAX, [0.0, 1.0], &mut None, "test record")
+            rational_pcurve_arc([0.0, 0.0], f64::MAX, [0.0, 1.0], &mut crate::nurbs::LaneRefusals::new(), "test record")
                 .is_none()
         );
         assert!(
-            rational_pcurve_arc([0.0, 0.0], 1.0, [1.0, 0.0], &mut None, "test record").is_none()
+            rational_pcurve_arc([0.0, 0.0], 1.0, [1.0, 0.0], &mut crate::nurbs::LaneRefusals::new(), "test record").is_none()
         );
     }
 

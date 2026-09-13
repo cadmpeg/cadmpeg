@@ -60,7 +60,7 @@ pub(in super::super) fn prototype_parameter_array(
 
 pub(in super::super) fn prototype_spline_nurbs(
     record: &crate::surface::SurfacePrototypeRecord,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<NurbsSurface> {
     interpolation_spline_surface(
         &crate::interpolation_grid::InterpolationGrid::try_new(
@@ -378,10 +378,10 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                 ))
             }
             SupportedPrototype::Spline(_) => {
-                let mut refusal = None;
+                let mut refusal = crate::lane_refusal::LaneRefusals::new();
                 let nurbs = prototype_spline_nurbs(record, &mut refusal);
-                if let Some(error) = refusal {
-                    return Err(error.into());
+                if let Some(error) = refusal.take_error() {
+                    return Err(error);
                 }
                 let Some(nurbs) = nurbs else {
                     continue;
@@ -502,10 +502,10 @@ pub(in super::super) fn transfer_positional_spline_replays(
         else {
             continue;
         };
-        let mut refusal = None;
+        let mut refusal = crate::lane_refusal::LaneRefusals::new();
         let nurbs = interpolation_spline_surface(&replay, &mut refusal);
-        if let Some(error) = refusal {
-            return Err(error.into());
+        if let Some(error) = refusal.take_error() {
+            return Err(error);
         }
         let Some(nurbs) = nurbs else {
             continue;
@@ -673,10 +673,10 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
             crate::legacy_geometry::LegacySurfaceGeometry::Spline(spline)
                 if row.kind == crate::surface::SurfaceKind::Spline =>
             {
-                let mut refusal = None;
+                let mut refusal = crate::lane_refusal::LaneRefusals::new();
                 let nurbs = interpolation_spline_surface(spline, &mut refusal);
-                if let Some(error) = refusal {
-                    return Err(error.into());
+                if let Some(error) = refusal.take_error() {
+                    return Err(error);
                 }
                 let Some(nurbs) = nurbs else {
                     continue;

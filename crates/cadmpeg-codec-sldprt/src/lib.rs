@@ -108,6 +108,7 @@ mod feature_schema;
 pub mod fuzz;
 mod history;
 /// Byte-offset constants generated from `docs/layouts/sldprt.toml`.
+pub(crate) mod lane_refusal;
 pub(crate) mod layout;
 #[allow(dead_code)] // Loss catalog is consumed by the writer and hidden facade.
 pub(crate) mod loss;

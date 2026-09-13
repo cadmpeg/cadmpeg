@@ -146,7 +146,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         let Some(profiles) = ordered_extrusion_profiles(profiles) else {
             continue;
         };
-        let mut refusal = None;
+        let mut refusal = crate::lane_refusal::LaneRefusals::new();
         let unprojectable = profiles
             .iter()
             .flat_map(super::profiles::ValidatedProfile::entities)
@@ -171,8 +171,8 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     })
                     .is_none()
             });
-        if let Some(error) = refusal {
-            return Err(error.into());
+        if let Some(error) = refusal.take_error() {
+            return Err(error);
         }
         if unprojectable {
             continue;
@@ -522,7 +522,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     .expect("identity grammar"),
                     transform.offset,
                     {
-                        let mut refusal = None;
+                        let mut refusal = crate::lane_refusal::LaneRefusals::new();
                         let cap = extrusion_cap_pcurve(
                             &sketch_geometry,
                             reversed,
@@ -530,8 +530,8 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             end,
                             &mut refusal,
                         );
-                        if let Some(error) = refusal {
-                            return Err(error.into());
+                        if let Some(error) = refusal.take_error() {
+                            return Err(error);
                         }
                         cap.ok_or_else(|| {
                             cadmpeg_core::CodecError::malformed(
@@ -575,7 +575,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     .expect("identity grammar"),
                     transform.offset,
                     {
-                        let mut refusal = None;
+                        let mut refusal = crate::lane_refusal::LaneRefusals::new();
                         let cap = extrusion_cap_pcurve(
                             &sketch_geometry,
                             reversed,
@@ -583,8 +583,8 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             end,
                             &mut refusal,
                         );
-                        if let Some(error) = refusal {
-                            return Err(error.into());
+                        if let Some(error) = refusal.take_error() {
+                            return Err(error);
                         }
                         cap.ok_or_else(|| {
                             cadmpeg_core::CodecError::malformed(
@@ -623,7 +623,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 let surface_id =
                     SurfaceId::mint(format!("{prefix}:surface:{profile_index}:side:{index}"))
                         .expect("identity grammar");
-                let mut refusal = None;
+                let mut refusal = crate::lane_refusal::LaneRefusals::new();
                 let surface_geometry = extrusion_brep_side_surface(
                     transform,
                     &sketch_geometry,
@@ -633,8 +633,8 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     span,
                     &mut refusal,
                 );
-                if let Some(error) = refusal {
-                    return Err(error.into());
+                if let Some(error) = refusal.take_error() {
+                    return Err(error);
                 }
                 let Some(surface_geometry) = surface_geometry else {
                     break;

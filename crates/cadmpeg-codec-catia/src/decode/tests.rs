@@ -206,3 +206,56 @@ fn container_only_stops_before_geometry() {
     assert_eq!(retained.sha256().len(), 64);
     assert!(retained.data().is_some());
 }
+
+/// A route that refuses a carrier record and then leaves through a `?` between
+/// the refusal and the report still delivers the note: the sink belongs to the
+/// caller, so the router's fall-through to the next route is stated, not
+/// silent.
+#[test]
+fn a_route_that_exits_after_a_refusal_still_delivers_both_notes() {
+    fn refusing_route(refusal: &mut crate::nurbs::LaneRefusals) -> Option<()> {
+        let short_weight_lane = || {
+            cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![
+                    cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                    cadmpeg_ir::math::Point2::new(1.0, 0.0),
+                ],
+                Some(vec![1.0]),
+                false,
+            )
+        };
+        crate::nurbs::note_refusal(
+            short_weight_lane(),
+            refusal,
+            "e5 NURBS surface record at byte 16",
+        );
+        // The second refusal leaves through the `?`, which is the exit that
+        // used to drop the cell.
+        crate::nurbs::note_refusal(
+            short_weight_lane(),
+            refusal,
+            "e5 NURBS pcurve record at byte 96",
+        )?;
+        Some(())
+    }
+
+    let mut refusal = crate::nurbs::LaneRefusals::new();
+    assert!(
+        refusing_route(&mut refusal).is_none(),
+        "the route states no model for the refused stream"
+    );
+    let notes = refusal.take_notes();
+    assert_eq!(notes.len(), 2, "one note per refused record: {notes:?}");
+    for (note, record) in notes.iter().zip([
+        "e5 NURBS surface record at byte 16",
+        "e5 NURBS pcurve record at byte 96",
+    ]) {
+        assert!(
+            note.message.contains(record),
+            "the note names the record that stated the lanes: {}",
+            note.message
+        );
+    }
+}

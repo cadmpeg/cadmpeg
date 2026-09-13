@@ -71,7 +71,7 @@ pub(in super::super) fn revolution_boundary_pcurve(
     surface: &SurfaceGeometry,
     point: [f64; 3],
     axis: &RevolutionAxis,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<PcurveGeometry> {
     let axis_direction = normalize([axis.direction.x, axis.direction.y, axis.direction.z])?;
     let axis_origin = [axis.origin.x, axis.origin.y, axis.origin.z];
@@ -213,7 +213,7 @@ pub(in super::super) fn revolved_brep_surface(
     geometry: &SketchGeometry,
     reversed: bool,
     axis: &RevolutionAxis,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<SurfaceGeometry> {
     if matches!(
         geometry.definition(),
@@ -259,7 +259,7 @@ pub(in super::super) fn revolution_profile_boundary_pcurve(
     axis: &RevolutionAxis,
     section_point: [f64; 2],
     boundary: RevolutionBoundary,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<PcurveGeometry> {
     if matches!(
         segment.geometry(),
@@ -288,7 +288,7 @@ pub(in super::super) fn revolution_face_sense(
     surface: &SurfaceGeometry,
     axis: &RevolutionAxis,
     profile_area: f64,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<Sense> {
     let is_nurbs = matches!(
         segment.geometry(),

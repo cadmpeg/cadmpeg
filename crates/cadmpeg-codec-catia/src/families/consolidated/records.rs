@@ -1226,13 +1226,13 @@ pub fn consolidated_native_edge_graph(data: &[u8]) -> Option<ConsolidatedNativeE
 #[cfg(test)]
 pub fn resolve_consolidated_edge_blocks(data: &[u8]) -> Vec<ResolvedConsolidatedEdgeBlock> {
     let records = consolidated_records(data);
-    resolve_consolidated_edge_blocks_from_records(data, &records, &mut None)
+    resolve_consolidated_edge_blocks_from_records(data, &records, &mut crate::nurbs::LaneRefusals::new())
 }
 
 pub(crate) fn resolve_consolidated_edge_blocks_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Vec<ResolvedConsolidatedEdgeBlock> {
     let points = object_stream_vertices_from_records(data, records);
     let embedded = b2_embedded_cylinders_from_records(data, records);

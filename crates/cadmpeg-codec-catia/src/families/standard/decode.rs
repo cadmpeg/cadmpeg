@@ -1127,7 +1127,7 @@ fn standard_freeform_e5_carrier_ids(data: &[u8]) -> HashMap<u32, u32> {
 pub(crate) fn associate_standard_freeform_e5_surfaces(
     records: &[crate::families::standard::records::StandardSurfaceRecord],
     data: &[u8],
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> HashMap<u32, SurfaceGeometry> {
     let carrier_ids = standard_freeform_e5_carrier_ids(data);
 
@@ -1249,25 +1249,15 @@ fn standard_population_selections(
 pub(crate) fn try_decode_standard(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<FamilyOutput> {
-    let mut lane_refusal = None;
-    let refusal = &mut lane_refusal;
-    let mut decoded = match standard_population_selections(scan) {
+    match standard_population_selections(scan) {
         None => try_decode_standard_population(ctx, scan, None, refusal),
         Some(selections) if selections.len() == 1 => {
             try_decode_standard_population(ctx, scan, selections.first(), refusal)
         }
         Some(selections) => try_decode_standard_populations(ctx, scan, &selections, refusal),
-    };
-    if let (Some(output), Some(error)) = (decoded.as_mut(), lane_refusal) {
-        output
-            .report
-            .losses
-            .push(CatiaLossCode::GeometryAnalyticPayloadInvalid.note(format!(
-                "A standard carrier record states lanes the IR carrier refuses: {error}"
-            )));
     }
-    decoded
 }
 
 fn retain_standard_population_model(model: &mut Model) {
@@ -1387,7 +1377,7 @@ fn try_decode_standard_populations(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     selections: &[StandardPopulationSelection],
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<FamilyOutput> {
     let mut outputs = selections
         .iter()
@@ -1530,7 +1520,7 @@ fn try_decode_standard_population(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     selection: Option<&StandardPopulationSelection>,
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<FamilyOutput> {
     let work_budget = ctx.work_budget(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS as u64);
     let brep = scan.brep.as_ref()?;
@@ -2212,6 +2202,7 @@ fn try_decode_standard_population(
         &scan.data,
         &consolidated_records,
         &scan.surface_alias_tags,
+        refusal,
     )
     .ok()?;
     let owner_binding_budget =
@@ -2700,7 +2691,7 @@ pub(crate) fn standard_object_evidence(
     tags: &HashSet<u32>,
     edge_tags: &HashSet<u32>,
     consolidated_records: &[ConsolidatedRecord],
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> StandardObjectEvidence {
     let mut evidence = standard_object_evidence_from_streams(
         container::logical_record_streams(scan),
@@ -2721,7 +2712,7 @@ fn merge_standard_limit_curves_from_records(
     curves: &mut Vec<NurbsCurve>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) {
     for jet in crate::families::a5a8::records::a5_freeform_curves_from_records(data, records) {
         for second_limit in [false, true] {
@@ -2743,7 +2734,7 @@ pub(crate) fn standard_object_evidence_from_streams(
     streams: impl IntoIterator<Item = Vec<u8>>,
     tags: &HashSet<u32>,
     edge_tags: &HashSet<u32>,
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> StandardObjectEvidence {
     let mut surface_candidates = HashMap::<u32, Option<StandardSurfaceEvidence>>::new();
     let mut support_candidates =
@@ -3048,7 +3039,7 @@ pub(crate) fn standard_object_evidence_from_streams(
 fn standard_surface_evidence(
     graph: &crate::families::b5::graph::B5Graph,
     surface_id: u32,
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<StandardSurfaceEvidence> {
     let geometry =
         crate::families::b5::transfer::resolved_surface_geometry(graph, surface_id, refusal);
@@ -3799,7 +3790,7 @@ fn attach_standard_topology(
     work_budget: &WorkBudget<'_>,
     diagnostics: &mut StandardTopologyDiagnostics,
     bound_limit_curve_count: &mut usize,
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<(), StandardTopologyFailure> {
     let face_count = ir.model.faces.len();
     let Some(edge_count) = (if edge_table_form == EdgeTableForm::FbbOnly {
@@ -5165,7 +5156,7 @@ fn emit_standard_topology(
     native_edge_supports: &[Option<StandardEdgeSupport>],
     limit_curve_bindings: &[Option<StandardLimitCurveBinding>],
     limit_curves: &[NurbsCurve],
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut edge_reversed = Vec::with_capacity(supports.len());
     for (edge_index, (support, logical_vertices)) in supports.iter().zip(edge_vertices).enumerate()
@@ -7067,7 +7058,7 @@ fn bind_standard_a5_owner_surfaces(
     records: &[ConsolidatedRecord],
     face_bounds: &[Option<crate::families::standard::records::StandardFaceBounds>],
     budget: &WorkBudget<'_>,
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let carriers = crate::families::a5a8::records::a5_surfaces_from_records(data, records, refusal);
     let owners = crate::families::b2::records::b2_owner_packets_from_records(data, records);
@@ -7198,7 +7189,7 @@ pub(super) fn standard_endpoint_pair_supports_topology(
     start: Point3,
     end: Point3,
     witness: Option<Point3>,
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> bool {
     let endpoint_is_supported = |point| match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_)) => {
@@ -7237,7 +7228,7 @@ pub(crate) fn standard_pcurve_geometry(
     end: Point3,
     witness: Option<Point3>,
     edge_curve: Option<&CurveGeometry>,
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<(PcurveGeometry, [f64; 2])> {
     if matches!(
         edge_curve,
@@ -8094,7 +8085,7 @@ fn standard_oriented_native_support_pcurves(
     native: &StandardEdgeSupport,
     points: &[Point],
     endpoint_pair: [usize; 2],
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<[PcurveGeometry; 2]> {
     let Some(native_pair) =
         standard_native_support_endpoint_pair(native, points, &endpoint_pair, Some(endpoint_pair))
@@ -8131,7 +8122,7 @@ pub(crate) fn build_standard_edge_curve(
     points: [usize; 2],
     native_support: Option<&StandardEdgeSupport>,
     limit_curve: Option<(&NurbsCurve, [f64; 2])>,
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<(Option<CurveId>, Option<[f64; 2]>), cadmpeg_core::CodecError> {
     let (mut geometry, mut param_range) = match &support.geometry {
         crate::families::standard::records::StandardCurveGeometry::Line => {
@@ -9170,7 +9161,7 @@ pub(crate) fn standard_circle_param_range(
     ref_direction: Vector3,
     start: Point3,
     end: Point3,
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<[f64; 2]> {
     let mut ranges = support.faces.iter().filter_map(|face| {
         let surface = face_surface(ir, bindings, surface_indices, *face)?;

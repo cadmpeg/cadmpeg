@@ -28,10 +28,16 @@ pub(crate) struct FamilyOutput {
 /// One entry in the ordered decode route table.
 ///
 /// `applicable` gates the route on the identified container [`Variant`].
-/// `decode` returns `None` when the stream does not yield a transferable model.
+/// `decode` returns `None` when the stream does not yield a transferable model;
+/// any carrier refusal it read is already in the caller's lane-refusal sink, so
+/// the fall-through to the next route does not lose it.
 pub(crate) struct Route {
     pub(crate) applicable: fn(Variant) -> bool,
-    pub(crate) decode: fn(&DecodeContext<'_>, &ContainerScan) -> Option<FamilyOutput>,
+    pub(crate) decode: fn(
+        &DecodeContext<'_>,
+        &ContainerScan,
+        &mut crate::nurbs::LaneRefusals,
+    ) -> Option<FamilyOutput>,
     /// The route emits the standard FBB face population.
     pub(crate) standard_face_population: bool,
 }

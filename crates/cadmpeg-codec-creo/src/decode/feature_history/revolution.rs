@@ -301,10 +301,10 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             else {
                 continue;
             };
-            let mut refusal = None;
+            let mut refusal = crate::lane_refusal::LaneRefusals::new();
             let surface = revolved_nurbs_surface(directrix, &axis, &mut refusal);
-            if let Some(error) = refusal {
-                return Err(error.into());
+            if let Some(error) = refusal.take_error() {
+                return Err(error);
             }
             let Some(surface) = surface else {
                 continue;

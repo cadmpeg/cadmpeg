@@ -221,7 +221,7 @@ fn transfer_closed_wire_loops(
     support_runs: &[crate::families::zero_entity::records::ZeroEntitySupportRun],
     support_curve_ids: &HashMap<u32, CurveId>,
     ownership_root: Option<&crate::families::zero_entity::records::ZeroEntityOwnershipRoot>,
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<WireTransferCounts, cadmpeg_core::CodecError> {
     let mut counts = WireTransferCounts::default();
     let root_owns_support_runs = ownership_root.is_some_and(|root| {
@@ -657,9 +657,8 @@ fn transfer_closed_wire_loops(
 pub(crate) fn try_decode_zero_entity(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<FamilyOutput> {
-    let mut lane_refusal = None;
-    let refusal = &mut lane_refusal;
     let preamble = container::outer_preamble_range(&scan.data)?;
     let surfaces = crate::families::zero_entity::records::zero_entity_surfaces_in_range(
         &scan.data,
@@ -985,15 +984,7 @@ pub(crate) fn try_decode_zero_entity(
         report: DecodeBody {
             transfer: cadmpeg_ir::report::DecodeTransfer::full(true),
             coverage,
-            losses: {
-                let mut losses = vec![topology_loss.note(topology_message)];
-                if let Some(error) = lane_refusal {
-                    losses.push(CatiaLossCode::GeometryAnalyticPayloadInvalid.note(format!(
-                        "A zero-entity carrier record states lanes the IR carrier refuses: {error}"
-                    )));
-                }
-                losses
-            },
+            losses: vec![topology_loss.note(topology_message)],
             notes: Vec::new(),
             transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
         },
@@ -1127,7 +1118,7 @@ mod tests {
             &support_runs,
             &support_curve_ids,
             None,
-            &mut None,
+            &mut crate::nurbs::LaneRefusals::new(),
         )
         .expect("valid exactness fields");
 
@@ -1249,7 +1240,7 @@ mod tests {
             &support_runs,
             &support_curve_ids,
             Some(&ownership_root),
-            &mut None,
+            &mut crate::nurbs::LaneRefusals::new(),
         )
         .expect("valid exactness fields");
 
@@ -1395,7 +1386,7 @@ mod tests {
             &support_runs,
             &support_curve_ids,
             None,
-            &mut None,
+            &mut crate::nurbs::LaneRefusals::new(),
         )
         .expect("valid exactness fields");
 
@@ -1493,7 +1484,7 @@ mod tests {
             &support_runs,
             &support_curve_ids,
             None,
-            &mut None,
+            &mut crate::nurbs::LaneRefusals::new(),
         )
         .expect("valid exactness fields");
 
@@ -1588,7 +1579,7 @@ mod tests {
             &support_runs,
             &HashMap::new(),
             None,
-            &mut None,
+            &mut crate::nurbs::LaneRefusals::new(),
         )
         .expect("valid exactness fields");
 

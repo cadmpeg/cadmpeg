@@ -104,7 +104,7 @@ fn indexed_resolver_matches_the_one_shot_resolver_identity() {
     let one_shot = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes);
     let indexed =
         crate::families::consolidated::records::resolve_consolidated_edge_blocks_from_records(
-            &bytes, &records, &mut None,
+            &bytes, &records, &mut crate::nurbs::LaneRefusals::new(),
         );
     assert_eq!(signature(&indexed), signature(&one_shot));
 }
