@@ -29,14 +29,14 @@ fn historical_body_overlap_spans_direct_and_paired_member_selections() {
         members: crate::features::BodyMembers::try_from_rows(vec![
             crate::features::BodyMember::new(
                 HistoricalBodyId::mint("test:body:2").expect("valid identity"),
-                "tool-a".into(),
-            )
-            .expect("valid historical body selection row"),
+                crate::products::NonBlankString::new("tool-a")
+                    .expect("valid historical body selection row"),
+            ),
             crate::features::BodyMember::new(
                 HistoricalBodyId::mint("test:body:4").expect("valid identity"),
-                "tool-b".into(),
-            )
-            .expect("valid historical body selection row"),
+                crate::products::NonBlankString::new("tool-b")
+                    .expect("valid historical body selection row"),
+            ),
         ])
         .expect("valid historical body selection rows"),
     };
@@ -45,9 +45,9 @@ fn historical_body_overlap_spans_direct_and_paired_member_selections() {
         members: crate::features::BodyMembers::try_from_rows(vec![
             crate::features::BodyMember::new(
                 HistoricalBodyId::mint("test:body:5").expect("valid identity"),
-                "tool".into(),
-            )
-            .expect("valid historical body selection row"),
+                crate::products::NonBlankString::new("tool")
+                    .expect("valid historical body selection row"),
+            ),
         ])
         .expect("valid historical body selection rows"),
     };

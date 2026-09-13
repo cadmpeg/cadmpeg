@@ -1156,8 +1156,8 @@ pub(crate) fn bind_feature_body_selections(
                                 let repeated = historical_tool_rows
                                     .iter()
                                     .any(|row: &BodyMember<_>| row.body() == &body);
-                                let row = BodyMember::new(body, native);
-                                let (false, Ok(row)) = (repeated, row) else {
+                                let row = body_member(body, native);
+                                let (false, Some(row)) = (repeated, row) else {
                                     historical_tool_rows.clear();
                                     direct_tool_rows.clear();
                                     break;
@@ -1179,8 +1179,8 @@ pub(crate) fn bind_feature_body_selections(
                             let repeated = direct_tool_rows
                                 .iter()
                                 .any(|row: &BodyMember<_>| row.body() == &body);
-                            let row = BodyMember::new(body, native);
-                            let (false, Ok(row)) = (repeated, row) else {
+                            let row = body_member(body, native);
+                            let (false, Some(row)) = (repeated, row) else {
                                 historical_tool_rows.clear();
                                 direct_tool_rows.clear();
                                 break;
@@ -1230,16 +1230,16 @@ pub(crate) fn bind_feature_body_selections(
                                 if tool_slots.len() != native_tools.len() {
                                     return;
                                 }
-                                let Ok(rows) = tool_slots
+                                let Some(rows) = tool_slots
                                     .into_iter()
                                     .zip(native_tools)
                                     .map(|(slot, native)| {
-                                        BodyMember::new(
+                                        body_member(
                                             crate::ids::history_input_body_id(&prefix, slot),
                                             native,
                                         )
                                     })
-                                    .collect::<Result<Vec<_>, _>>()
+                                    .collect::<Option<Vec<_>>>()
                                 else {
                                     return;
                                 };
@@ -1268,16 +1268,16 @@ pub(crate) fn bind_feature_body_selections(
                                     if tool_slots.len() != native_tools.len() {
                                         return;
                                     }
-                                    let Ok(rows) = tool_slots
+                                    let Some(rows) = tool_slots
                                         .into_iter()
                                         .zip(native_tools)
                                         .map(|(slot, native)| {
-                                            BodyMember::new(
+                                            body_member(
                                                 crate::ids::history_input_body_id(&prefix, slot),
                                                 native,
                                             )
                                         })
-                                        .collect::<Result<Vec<_>, _>>()
+                                        .collect::<Option<Vec<_>>>()
                                     else {
                                         return;
                                     };
@@ -1915,7 +1915,7 @@ fn bind_direct_body_recipe_body_selection(
         if rows.iter().any(|row: &BodyMember<_>| row.body() == &body) {
             return;
         }
-        let Ok(row) = BodyMember::new(body, native.clone()) else {
+        let Some(row) = body_member(body, native.clone()) else {
             return;
         };
         rows.push(row);
@@ -4985,6 +4985,18 @@ fn select_legacy_extrude_face_candidate(
         return None;
     };
     Some(LegacyFaceResolution::Active(face.clone()))
+}
+
+/// One body/native selection row, minting the non-blank native member at the
+/// boundary where the F3D record states it.
+///
+/// `None` when the record states a blank native member: a row the IR carrier
+/// does not hold.
+fn body_member<B>(body: B, native: String) -> Option<cadmpeg_ir::features::BodyMember<B>> {
+    Some(cadmpeg_ir::features::BodyMember::new(
+        body,
+        cadmpeg_ir::products::NonBlankString::new(native)?,
+    ))
 }
 
 fn historical_brep_source(state_id: &str) -> Option<&str> {

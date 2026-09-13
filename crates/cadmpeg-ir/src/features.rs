@@ -5918,16 +5918,16 @@ impl InsertedBodies {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct BodyMember<B> {
     body: B,
-    native: String,
+    native: crate::products::NonBlankString,
 }
 
 impl<B> BodyMember<B> {
     /// Construct one body/native selection row.
-    pub fn new(body: B, native: String) -> Result<Self, BodySelectionError> {
-        if native.trim().is_empty() {
-            return Err(BodySelectionError::BlankNativeMember);
-        }
-        Ok(Self { body, native })
+    ///
+    /// The native member is non-blank by type; the caller mints it at the
+    /// boundary where the source states it.
+    pub const fn new(body: B, native: crate::products::NonBlankString) -> Self {
+        Self { body, native }
     }
 
     /// Body identity in this row.
@@ -5939,13 +5939,13 @@ impl<B> BodyMember<B> {
     /// Native selection member in this row.
     #[must_use]
     pub fn native(&self) -> &str {
-        &self.native
+        self.native.as_str()
     }
 
     /// Consume the row and return its body identity and native member.
     #[must_use]
     pub fn into_parts(self) -> (B, String) {
-        (self.body, self.native)
+        (self.body, self.native.into_string())
     }
 }
 
@@ -5964,7 +5964,10 @@ where
             native: String,
         }
         let wire = Wire::deserialize(deserializer)?;
-        Self::new(wire.body, wire.native).map_err(serde::de::Error::custom)
+        let native = crate::products::NonBlankString::new(wire.native).ok_or_else(|| {
+            serde::de::Error::custom(BodySelectionError::BlankNativeMember.to_string())
+        })?;
+        Ok(Self::new(wire.body, native))
     }
 }
 

@@ -165,6 +165,12 @@ impl NonBlankString {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// Consumes the value and returns the source string.
+    #[must_use]
+    pub fn into_string(self) -> String {
+        self.0
+    }
 }
 
 /// Builds a [`NonBlankString`] from a format literal whose first character is
