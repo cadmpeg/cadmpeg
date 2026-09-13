@@ -255,12 +255,14 @@ fn resolve_pcurve_uses<'a>(
         resolved.push((geometry, range));
         mapped.push((start, end));
     }
-    Ok((evaluation::distance(mapped[0].0, expected_start) <= tolerance
-        && evaluation::distance(mapped[mapped.len() - 1].1, expected_end) <= tolerance
-        && mapped
-            .windows(2)
-            .all(|pair| evaluation::distance(pair[0].1, pair[1].0) <= tolerance))
-    .then_some(resolved))
+    Ok(
+        (evaluation::distance(mapped[0].0, expected_start) <= tolerance
+            && evaluation::distance(mapped[mapped.len() - 1].1, expected_end) <= tolerance
+            && mapped
+                .windows(2)
+                .all(|pair| evaluation::distance(pair[0].1, pair[1].0) <= tolerance))
+        .then_some(resolved),
+    )
 }
 
 pub(super) fn project(

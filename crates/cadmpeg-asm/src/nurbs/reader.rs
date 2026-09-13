@@ -529,9 +529,7 @@ mod string_width_tests {
     #[test]
     fn read_poles_state_rows_and_refuse_an_unusable_weight() {
         let mut poles = ReadPoles3::with_capacity(2, true);
-        assert!(poles
-            .push(Point3::new(0.0, 0.0, 0.0), 1.0)
-            .is_some());
+        assert!(poles.push(Point3::new(0.0, 0.0, 0.0), 1.0).is_some());
         assert!(poles.push(Point3::new(1.0, 0.0, 0.0), 0.0).is_none());
         let ReadPoles3::Rational(rows) = poles else {
             panic!("a rational read states weighted rows");

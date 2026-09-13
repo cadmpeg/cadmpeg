@@ -1980,31 +1980,27 @@ pub(in super::super) fn transfer_native_brep(
                                     .iter()
                                     .filter(|candidate| candidate.id == edge_id),
                             )?;
-                            let (geometry, tag) =
-                                planar_curve_pcurve(&surface.geometry, &curve.geometry, refusal_cell)
-                                    .map(|geometry| (geometry, "projected_planar_pcurve"))
-                                    .or_else(|| {
-                                        surface_of_revolution_parallel_pcurve(
-                                            &surface.geometry,
-                                            &curve.geometry,
-                                        )
-                                        .map(|geometry| {
-                                            (geometry, "projected_parallel_conic_pcurve")
-                                        })
-                                    })
-                                    .or_else(|| {
-                                        meridian_circle_pcurve(&surface.geometry, &curve.geometry)
-                                            .map(|geometry| (geometry, "projected_meridian_pcurve"))
-                                    })
-                                    .or_else(|| {
-                                        ruled_generator_line_pcurve(
-                                            &surface.geometry,
-                                            &curve.geometry,
-                                        )
-                                        .map(|geometry| {
-                                            (geometry, "projected_ruled_generator_pcurve")
-                                        })
-                                    })?;
+                            let (geometry, tag) = planar_curve_pcurve(
+                                &surface.geometry,
+                                &curve.geometry,
+                                refusal_cell,
+                            )
+                            .map(|geometry| (geometry, "projected_planar_pcurve"))
+                            .or_else(|| {
+                                surface_of_revolution_parallel_pcurve(
+                                    &surface.geometry,
+                                    &curve.geometry,
+                                )
+                                .map(|geometry| (geometry, "projected_parallel_conic_pcurve"))
+                            })
+                            .or_else(|| {
+                                meridian_circle_pcurve(&surface.geometry, &curve.geometry)
+                                    .map(|geometry| (geometry, "projected_meridian_pcurve"))
+                            })
+                            .or_else(|| {
+                                ruled_generator_line_pcurve(&surface.geometry, &curve.geometry)
+                                    .map(|geometry| (geometry, "projected_ruled_generator_pcurve"))
+                            })?;
                             Some((
                                 geometry,
                                 edge.param_range(),

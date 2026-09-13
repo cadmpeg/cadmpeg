@@ -5995,9 +5995,15 @@ mod tests {
                 ],
             ]),
         };
-        let (geometry, range, source) =
-            super::intersection_support_pcurve(&support_data, &chart, 10, &surface, endpoints, &mut None)
-                .expect("support parameterization");
+        let (geometry, range, source) = super::intersection_support_pcurve(
+            &support_data,
+            &chart,
+            10,
+            &surface,
+            endpoints,
+            &mut None,
+        )
+        .expect("support parameterization");
         let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = geometry else {
             panic!("expected solved UV NURBS");
         };
@@ -6016,19 +6022,19 @@ mod tests {
             supports: [10, 10],
             ..support_data.clone()
         };
-        assert!(
-            super::intersection_support_pcurve(&ambiguous, &chart, 10, &surface, endpoints, &mut None)
-                .is_none()
-        );
+        assert!(super::intersection_support_pcurve(
+            &ambiguous, &chart, 10, &surface, endpoints, &mut None
+        )
+        .is_none());
 
         let malformed = super::super::intersection::IntersectionSupportData {
             support_uv: Some([Vec::new(), Vec::new()]),
             ..support_data
         };
-        assert!(
-            super::intersection_support_pcurve(&malformed, &chart, 10, &surface, endpoints, &mut None)
-                .is_none()
-        );
+        assert!(super::intersection_support_pcurve(
+            &malformed, &chart, 10, &surface, endpoints, &mut None
+        )
+        .is_none());
     }
 
     #[test]
@@ -6054,9 +6060,15 @@ mod tests {
             support_uv: None,
         };
 
-        let (geometry, _, source) =
-            super::intersection_support_pcurve(&support_data, &chart, 10, &surface, endpoints, &mut None)
-                .expect("analytic support inversion");
+        let (geometry, _, source) = super::intersection_support_pcurve(
+            &support_data,
+            &chart,
+            10,
+            &surface,
+            endpoints,
+            &mut None,
+        )
+        .expect("analytic support inversion");
         let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = geometry else {
             panic!("expected solved UV NURBS");
         };
@@ -6080,8 +6092,9 @@ mod tests {
             &chart,
             10,
             &surface,
-            endpoints
-        , &mut None)
+            endpoints,
+            &mut None
+        )
         .is_none());
     }
 
@@ -6109,9 +6122,15 @@ mod tests {
             support_uv: None,
         };
 
-        let (geometry, _, _) =
-            super::intersection_support_pcurve(&support_data, &chart, 10, &surface, endpoints, &mut None)
-                .expect("torus support inversion");
+        let (geometry, _, _) = super::intersection_support_pcurve(
+            &support_data,
+            &chart,
+            10,
+            &surface,
+            endpoints,
+            &mut None,
+        )
+        .expect("torus support inversion");
         let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = geometry else {
             panic!("expected solved UV NURBS");
         };
@@ -6155,9 +6174,15 @@ mod tests {
             support_uv: None,
         };
 
-        let (geometry, _, source) =
-            super::intersection_support_pcurve(&support_data, &chart, 10, &surface, endpoints, &mut None)
-                .expect("NURBS support inversion");
+        let (geometry, _, source) = super::intersection_support_pcurve(
+            &support_data,
+            &chart,
+            10,
+            &surface,
+            endpoints,
+            &mut None,
+        )
+        .expect("NURBS support inversion");
         let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = geometry else {
             panic!("expected solved UV NURBS");
         };
@@ -6623,12 +6648,12 @@ mod tests {
             ],
             Some(vec![1.0, 2.0, 1.0]),
         );
-        let geometry = match super::nurbs_isocurve_pcurve(&surface, &curve)
-            .expect("isocurve lanes pair") {
-            super::InverseResolution::Unique(geometry) => geometry,
-            super::InverseResolution::NoMatch => panic!("interior isocurve did not match"),
-            super::InverseResolution::Ambiguous => panic!("interior isocurve was ambiguous"),
-        };
+        let geometry =
+            match super::nurbs_isocurve_pcurve(&surface, &curve).expect("isocurve lanes pair") {
+                super::InverseResolution::Unique(geometry) => geometry,
+                super::InverseResolution::NoMatch => panic!("interior isocurve did not match"),
+                super::InverseResolution::Ambiguous => panic!("interior isocurve was ambiguous"),
+            };
         let cadmpeg_ir::geometry::PcurveGeometry::Line(line_pcurve) = geometry else {
             panic!("expected isoparametric line pcurve");
         };
@@ -6680,8 +6705,8 @@ mod tests {
         assert!(origin.v.abs() < 1e-12);
         assert!(direction.u.abs() < 1e-12);
         assert!((direction.v - 1.0).abs() < 1e-12);
-        let clamped =
-            super::clamp_nurbs_curve_to_domain(&curve, [0.0, 1.0], &mut None).expect("clamped segment");
+        let clamped = super::clamp_nurbs_curve_to_domain(&curve, [0.0, 1.0], &mut None)
+            .expect("clamped segment");
         let expected = cadmpeg_ir::eval::nurbs_surface_isocurve(
             &surface,
             cadmpeg_ir::geometry::SurfaceParameterAxis::U,
@@ -6870,7 +6895,7 @@ mod tests {
         );
         assert!(matches!(
             super::derive_nurbs_edge_pcurve(&surface, &curve, [0.0, 1.0])
-            .expect("isocurve lanes pair"),
+                .expect("isocurve lanes pair"),
             super::NurbsPcurveResolution::OffSurface
         ));
     }

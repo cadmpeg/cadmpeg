@@ -7895,9 +7895,7 @@ fn zero_entity_endpoint_locus_candidates(
         .collect()
 }
 
-fn zero_entity_edge_strides(
-    bytes: &[u8], range: Range<usize>,
-) -> Vec<CatiaZeroEntityEdgeStride> {
+fn zero_entity_edge_strides(bytes: &[u8], range: Range<usize>) -> Vec<CatiaZeroEntityEdgeStride> {
     crate::families::zero_entity::records::zero_entity_edge_strides_in_range(bytes, range)
         .into_iter()
         .enumerate()
@@ -7987,9 +7985,7 @@ fn zero_entity_vertex_incidences(
         .collect()
 }
 
-fn zero_entity_records(
-    bytes: &[u8], range: Range<usize>,
-) -> Vec<CatiaZeroEntityRecord> {
+fn zero_entity_records(bytes: &[u8], range: Range<usize>) -> Vec<CatiaZeroEntityRecord> {
     crate::families::zero_entity::records::zero_entity_record_inventory_in_range(bytes, range)
         .into_iter()
         .map(|record| CatiaZeroEntityRecord {
@@ -8252,8 +8248,8 @@ fn consolidated_edge_runs(
         .collect::<HashMap<_, _>>();
     let resolved =
         crate::families::consolidated::records::resolve_consolidated_edge_blocks_from_records(
-            bytes, records,
-         refusal,)
+            bytes, records, refusal,
+        )
         .into_iter()
         .map(|block| (block.block.pcurves[0].pos, block))
         .collect::<HashMap<_, _>>();
@@ -9088,7 +9084,8 @@ impl CatiaNative {
             crate::families::zero_entity::records::zero_entity_support_runs_in_range(
                 bytes,
                 zero_entity_range.clone(),
-             refusal,);
+                refusal,
+            );
         let parsed_zero_entity_endpoint_pairs =
             crate::families::zero_entity::topology::zero_entity_endpoint_pair_candidates(
                 &parsed_zero_entity_support_runs,

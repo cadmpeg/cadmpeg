@@ -154,19 +154,31 @@ fn construction_rejects_invalid_knots_and_non_finite_poles() {
     }
 }
 
-fn curve_weights(curve: &NurbsCurve, weights: Vec<f64>) -> Result<NurbsPoles3, crate::geometry::NurbsError> {
+fn curve_weights(
+    curve: &NurbsCurve,
+    weights: Vec<f64>,
+) -> Result<NurbsPoles3, crate::geometry::NurbsError> {
     NurbsPoles3::from_lanes(curve.control_points(), Some(weights))
 }
 
-fn surface_weights(surface: &NurbsSurface, weights: Vec<Vec<f64>>) -> Result<NurbsPoleGrid, crate::geometry::NurbsError> {
+fn surface_weights(
+    surface: &NurbsSurface,
+    weights: Vec<Vec<f64>>,
+) -> Result<NurbsPoleGrid, crate::geometry::NurbsError> {
     NurbsPoleGrid::from_lanes(surface.control_grid(), Some(weights))
 }
 
-fn pcurve_weights(pcurve: &PcurveNurbs, weights: Vec<f64>) -> Result<PcurveNurbsPoles, crate::geometry::NurbsError> {
+fn pcurve_weights(
+    pcurve: &PcurveNurbs,
+    weights: Vec<f64>,
+) -> Result<PcurveNurbsPoles, crate::geometry::NurbsError> {
     PcurveNurbsPoles::from_lanes(pcurve.control_points(), Some(weights))
 }
 
-fn polar_weights(polar: &PolarPcurveNurbs, weights: Vec<f64>) -> Result<PolarNurbsPoles, crate::geometry::NurbsError> {
+fn polar_weights(
+    polar: &PolarPcurveNurbs,
+    weights: Vec<f64>,
+) -> Result<PolarNurbsPoles, crate::geometry::NurbsError> {
     PolarNurbsPoles::from_lanes(polar.poles(), Some(weights))
 }
 

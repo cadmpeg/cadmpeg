@@ -32,6 +32,7 @@ use super::{report_untransferred_streams, Counts, Scan};
 use crate::decode::ids::IdScope;
 use crate::framing::node_kind::NodeKind;
 use crate::geometry;
+use crate::loss::NxLossCode;
 use crate::topology::{Graph, Node};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::dialect::DialectLayers;
@@ -49,7 +50,6 @@ use cadmpeg_ir::ids::{
     ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::Point3;
-use crate::loss::NxLossCode;
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::{Body, BodyKind, Point, Region, Shell, Vertex};
 use cadmpeg_ir::unknown::UnknownRecord;

@@ -2071,7 +2071,10 @@ fn parse_b2_nurbs_curve(
     Some(B2NurbsCurve {
         pos: frame.pos,
         header_token: frame.header_token,
-        geometry: crate::nurbs::note_refusal(NurbsCurve::from_lanes(degree, knots, control_points, Some(weights), false), refusal)?,
+        geometry: crate::nurbs::note_refusal(
+            NurbsCurve::from_lanes(degree, knots, control_points, Some(weights), false),
+            refusal,
+        )?,
     })
 }
 

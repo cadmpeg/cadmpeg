@@ -708,10 +708,12 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             let mut refusal = None;
             let Some(surface) = extruded_nurbs_surface(&directrix, sweep, &mut refusal) else {
                 if let Some(error) = refusal {
-                    losses.push(crate::loss::CreoLossCode::SectionSplineUnresolved.note(format!(
+                    losses.push(
+                        crate::loss::CreoLossCode::SectionSplineUnresolved.note(format!(
                         "Extruded section spline at offset {} states no surface carrier: {error}",
                         spline.offset
-                    )));
+                    )),
+                    );
                 }
                 continue;
             };

@@ -64,13 +64,13 @@ pub(in super::super) fn prototype_spline_nurbs(
 ) -> Option<NurbsSurface> {
     interpolation_spline_surface(
         &crate::interpolation_grid::InterpolationGrid::try_new(
-        prototype_vector_array(record, "i_points")?,
-        prototype_parameter_array(record, "u_params")?,
-        prototype_parameter_array(record, "v_params")?,
-        prototype_vector_array(record, "end_u_tangts")?,
-        prototype_vector_array(record, "end_v_tangts")?,
-        <[[f64; 3]; 4]>::try_from(prototype_vector_array(record, "end_uv_deriv")?).ok()?,
-    )?,
+            prototype_vector_array(record, "i_points")?,
+            prototype_parameter_array(record, "u_params")?,
+            prototype_parameter_array(record, "v_params")?,
+            prototype_vector_array(record, "end_u_tangts")?,
+            prototype_vector_array(record, "end_v_tangts")?,
+            <[[f64; 3]; 4]>::try_from(prototype_vector_array(record, "end_uv_deriv")?).ok()?,
+        )?,
         refusal,
     )
 }

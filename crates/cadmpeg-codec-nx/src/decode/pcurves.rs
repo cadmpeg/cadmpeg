@@ -37,9 +37,10 @@ use cadmpeg_ir::eval::{
     pcurve_tangent, pcurve_uv, surface_second_partials,
 };
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsError, NurbsSurface, PcurveGeometry, PcurveNurbs, PolarPcurveNurbs,
-    ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
-    SurfaceGeometry, SurfaceParameterAxis, TolerantIntersectionParameterization,
+    Curve, CurveGeometry, NurbsCurve, NurbsError, NurbsSurface, PcurveGeometry, PcurveNurbs,
+    PolarPcurveNurbs, ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, SurfaceGeometry, SurfaceParameterAxis,
+    TolerantIntersectionParameterization,
 };
 use cadmpeg_ir::ids::{
     CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, ProceduralCurveId, SurfaceId, VertexId,
@@ -944,13 +945,21 @@ fn reverse_pcurve_over_range_inner(
                 cadmpeg_ir::geometry::TrimmedPcurve::try_new(
                     *parameter_range,
                     same_sense,
-                    Box::new(reverse_pcurve_over_range_inner(basis, [start, end], refusal)?),
+                    Box::new(reverse_pcurve_over_range_inner(
+                        basis,
+                        [start, end],
+                        refusal,
+                    )?),
                 )
                 .ok()?,
             ))
         }
         PcurveGeometry::Transformed { basis, transform } => Some(PcurveGeometry::Transformed {
-            basis: Box::new(reverse_pcurve_over_range_inner(basis, [start, end], refusal)?),
+            basis: Box::new(reverse_pcurve_over_range_inner(
+                basis,
+                [start, end],
+                refusal,
+            )?),
             transform: *transform,
         }),
         PcurveGeometry::Offset(offset_pcurve) => {
@@ -959,7 +968,11 @@ fn reverse_pcurve_over_range_inner(
             Some(PcurveGeometry::Offset(
                 cadmpeg_ir::geometry::OffsetPcurve::try_new(
                     -distance,
-                    Box::new(reverse_pcurve_over_range_inner(basis, [start, end], refusal)?),
+                    Box::new(reverse_pcurve_over_range_inner(
+                        basis,
+                        [start, end],
+                        refusal,
+                    )?),
                 )
                 .ok()?,
             ))

@@ -61,7 +61,7 @@ fn an_ellipse_arc_has_exact_rational_quadratic_points() {
         2.0,
         [0.0, std::f64::consts::FRAC_PI_2],
     )
-        .expect("arc lanes pair")
+    .expect("arc lanes pair")
     .expect("valid ellipse arc");
     assert_eq!(curve.degree(), 2);
     assert_eq!(curve.control_points().len(), 3);
@@ -99,7 +99,7 @@ fn a_parabola_arc_has_exact_quadratic_points() {
         2.0,
         [-1.0, 3.0],
     )
-        .expect("arc lanes pair")
+    .expect("arc lanes pair")
     .expect("valid parabola arc");
     let control_points = curve.control_points();
     for (parameter, expected) in [

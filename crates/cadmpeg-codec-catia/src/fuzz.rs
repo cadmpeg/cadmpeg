@@ -11,10 +11,7 @@ pub fn container_directory(data: &[u8]) {
 }
 
 /// Exercise `b5 03` object-stream graph parsing.
-pub fn b5_parse(
-    data: &[u8],
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
-) {
+pub fn b5_parse(data: &[u8], refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>) {
     let _probe = crate::families::b5::graph::parse(data, refusal);
 }
 
@@ -34,18 +31,12 @@ pub fn geometry_surface_prefixes(data: &[u8]) {
 }
 
 /// Exercise A5 freeform surface extraction.
-pub fn geometry_a5_surfaces(
-    data: &[u8],
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
-) {
+pub fn geometry_a5_surfaces(data: &[u8], refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>) {
     let _probe = crate::families::a5a8::records::a5_surfaces(data, refusal);
 }
 
 /// Exercise A8 NURBS surface extraction.
-pub fn geometry_a8_surfaces(
-    data: &[u8],
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
-) {
+pub fn geometry_a8_surfaces(data: &[u8], refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>) {
     let _probe = crate::families::a5a8::records::a8_surfaces(data, refusal);
 }
 
@@ -74,8 +65,6 @@ pub fn catalog(data: &[u8]) {
 }
 
 /// Exercise zero-entity record inventory parsing.
-pub fn zero_entity(
-    data: &[u8],
-) {
+pub fn zero_entity(data: &[u8]) {
     let _probe = crate::families::zero_entity::records::zero_entity_record_inventory(data);
 }

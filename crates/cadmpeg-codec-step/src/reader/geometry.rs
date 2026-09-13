@@ -4317,10 +4317,9 @@ fn nurbs_curve(
     ) {
         Ok(curve) => Some(curve),
         Err(error) => {
-            losses.push(
-                StepLossCode::DecodeWarning
-                    .note(format!("B_SPLINE_CURVE #{id} is not a curve carrier: {error}")),
-            );
+            losses.push(StepLossCode::DecodeWarning.note(format!(
+                "B_SPLINE_CURVE #{id} is not a curve carrier: {error}"
+            )));
             None
         }
     }

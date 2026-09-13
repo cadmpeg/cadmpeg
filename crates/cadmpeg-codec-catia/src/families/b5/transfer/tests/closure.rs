@@ -46,7 +46,8 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone())),
         [10.0, 20.0],
         [0.0, 10.0],
-     &mut None,)
+        &mut None,
+    )
     .expect("equal-span NURBS translation") else {
         unreachable!();
     };
@@ -75,7 +76,8 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone())),
             [10.0, 20.0],
             [12.0, 18.0],
-         &mut None,),
+            &mut None,
+        ),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             nurbs.clone()
         )))
@@ -84,7 +86,8 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
         [10.0, 20.0],
         [0.0, 2.0],
-     &mut None,)
+        &mut None,
+    )
     .expect("positive affine NURBS mapping") else {
         unreachable!();
     };
@@ -100,7 +103,8 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
             )),
             [10.0, 20.0],
             [0.0, 2.0],
-         &mut None,),
+            &mut None,
+        ),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::from_lanes(
                 1,
@@ -409,7 +413,8 @@ fn incomplete_graph_excludes_a_face_whose_members_have_no_vertex_loci() {
         graph,
         &UnknownId::mint("catia:test:unknown#catia:test-payload".to_string())
             .expect("identity grammar"),
-     &mut None,));
+        &mut None,
+    ));
     assert_eq!(
         ir.model
             .faces
@@ -559,7 +564,8 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
         graph,
         &UnknownId::mint("catia:test:unknown#catia:test-payload".to_string())
             .expect("identity grammar"),
-     &mut None,));
+        &mut None,
+    ));
     assert_eq!(ir.model.pcurves.len(), 3);
     assert_eq!(ir.model.coedges.len(), 3);
     assert_eq!(
@@ -846,7 +852,8 @@ fn exact_revolution_builders_reject_unbounded_subdivision_counts() {
         [0.0, 1.0, 0.0],
         1.0e-300,
         [0.0, 1.0],
-     &mut None,)
+        &mut None,
+    )
     .is_none());
     let profile = NurbsCurve::from_lanes(
         1,
@@ -862,7 +869,8 @@ fn exact_revolution_builders_reject_unbounded_subdivision_counts() {
         [0.0, 0.0, 1.0],
         [0.0, 1.0e300],
         [0.0, 1.0],
-     &mut None,)
+        &mut None,
+    )
     .is_none());
     let mut wide_knots = vec![0.0; 123];
     wide_knots.extend([1.0, 1.0]);
@@ -880,7 +888,8 @@ fn exact_revolution_builders_reject_unbounded_subdivision_counts() {
         [0.0, 0.0, 1.0],
         [0.0, 4096.0 * std::f64::consts::FRAC_PI_2],
         [0.0, 1.0],
-     &mut None,)
+        &mut None,
+    )
     .is_none());
 }
 

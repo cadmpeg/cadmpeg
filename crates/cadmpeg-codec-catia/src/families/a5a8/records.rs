@@ -593,16 +593,19 @@ pub(crate) fn rolling_ball_limit_curve(
         &first,
         &second,
     )?;
-    crate::nurbs::note_refusal(NurbsCurve::from_lanes(
-        A5FreeformCurve::DEGREE,
-        knots,
-        control_points
-            .into_iter()
-            .map(|point| Point3::new(point[0], point[1], point[2]))
-            .collect(),
-        None,
-        false,
-    ), refusal)
+    crate::nurbs::note_refusal(
+        NurbsCurve::from_lanes(
+            A5FreeformCurve::DEGREE,
+            knots,
+            control_points
+                .into_iter()
+                .map(|point| Point3::new(point[0], point[1], point[2]))
+                .collect(),
+            None,
+            false,
+        ),
+        refusal,
+    )
 }
 
 /// One position and unit reference direction in an `a5/a6/a7 03 39` jet.
@@ -742,7 +745,10 @@ fn parse_a5_nurbs_curve(
     Some(A5NurbsCurve {
         pos: frame.pos,
         header_token: frame.header_token,
-        geometry: crate::nurbs::note_refusal(NurbsCurve::from_lanes(degree, knots, control_points, None, false), refusal)?,
+        geometry: crate::nurbs::note_refusal(
+            NurbsCurve::from_lanes(degree, knots, control_points, None, false),
+            refusal,
+        )?,
     })
 }
 
@@ -1366,23 +1372,26 @@ pub fn a8_surface_from_external_grid(
     Some(FreeformSurface {
         pos: header.pos,
         identity: Some(header.object_id),
-        geometry: crate::nurbs::note_refusal(NurbsSurface::from_lanes(
-            header.u_degree,
-            header.v_degree,
-            header.u_knots.expanded()?,
-            header.v_knots.expanded()?,
-            control_points
-                .clone()
-                .chunks(row_len)
-                .map(<[_]>::to_vec)
-                .collect(),
-            weights
-                .clone()
-                .map(|values| values.chunks(row_len).map(<[_]>::to_vec).collect()),
-            false,
-            false,
-            false,
-        ), refusal)?,
+        geometry: crate::nurbs::note_refusal(
+            NurbsSurface::from_lanes(
+                header.u_degree,
+                header.v_degree,
+                header.u_knots.expanded()?,
+                header.v_knots.expanded()?,
+                control_points
+                    .clone()
+                    .chunks(row_len)
+                    .map(<[_]>::to_vec)
+                    .collect(),
+                weights
+                    .clone()
+                    .map(|values| values.chunks(row_len).map(<[_]>::to_vec).collect()),
+                false,
+                false,
+                false,
+            ),
+            refusal,
+        )?,
     })
 }
 
@@ -1583,20 +1592,23 @@ fn a5_surface(
     Some(FreeformSurface {
         pos,
         identity: None,
-        geometry: crate::nurbs::note_refusal(NurbsSurface::from_lanes(
-            u_degree,
-            v_degree,
-            u_knots,
-            v_knots,
-            control_points
-                .chunks(v_count as usize)
-                .map(<[_]>::to_vec)
-                .collect(),
-            weights.map(|values| values.chunks(v_count as usize).map(<[_]>::to_vec).collect()),
-            false,
-            false,
-            false,
-        ), refusal)?,
+        geometry: crate::nurbs::note_refusal(
+            NurbsSurface::from_lanes(
+                u_degree,
+                v_degree,
+                u_knots,
+                v_knots,
+                control_points
+                    .chunks(v_count as usize)
+                    .map(<[_]>::to_vec)
+                    .collect(),
+                weights.map(|values| values.chunks(v_count as usize).map(<[_]>::to_vec).collect()),
+                false,
+                false,
+                false,
+            ),
+            refusal,
+        )?,
     })
 }
 
@@ -1749,22 +1761,25 @@ fn a8_surface_from_parsed(
     Some(FreeformSurface {
         pos,
         identity: Some(object_id),
-        geometry: crate::nurbs::note_refusal(NurbsSurface::from_lanes(
-            u_degree,
-            v_degree,
-            u_knots.expanded()?,
-            v_knots.expanded()?,
-            control_points
-                .chunks(v_count as usize)
-                .map(<[_]>::to_vec)
-                .collect(),
-            rational
-                .then_some(weights)
-                .map(|values| values.chunks(v_count as usize).map(<[_]>::to_vec).collect()),
-            false,
-            false,
-            false,
-        ), refusal)?,
+        geometry: crate::nurbs::note_refusal(
+            NurbsSurface::from_lanes(
+                u_degree,
+                v_degree,
+                u_knots.expanded()?,
+                v_knots.expanded()?,
+                control_points
+                    .chunks(v_count as usize)
+                    .map(<[_]>::to_vec)
+                    .collect(),
+                rational
+                    .then_some(weights)
+                    .map(|values| values.chunks(v_count as usize).map(<[_]>::to_vec).collect()),
+                false,
+                false,
+                false,
+            ),
+            refusal,
+        )?,
     })
 }
 

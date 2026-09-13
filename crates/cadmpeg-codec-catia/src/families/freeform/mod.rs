@@ -1382,13 +1382,11 @@ pub(crate) fn append_freeform_surface_pools(
 
     for jet in crate::families::a5a8::records::a5_freeform_curves_from_records(data, records) {
         for second_limit in [false, true] {
-            let Some(curve) =
-                crate::families::a5a8::records::rolling_ball_limit_curve(
-                    &jet,
-                    second_limit,
-                    &mut refusal,
-                )
-            else {
+            let Some(curve) = crate::families::a5a8::records::rolling_ball_limit_curve(
+                &jet,
+                second_limit,
+                &mut refusal,
+            ) else {
                 continue;
             };
             let side = usize::from(second_limit);
@@ -2068,7 +2066,8 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
             let partner_pcurve = consolidated_jet_pcurve(
                 &resolved.block.pcurves[partner],
                 &ConsolidatedCarrierChart::Identity,
-             refusal,)?;
+                refusal,
+            )?;
             let candidates: Vec<_> = freeform_surfaces
                 .iter()
                 .enumerate()
@@ -2130,7 +2129,8 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                         Some(pcurve) => crate::nurbs::reverse_pcurve_geometry(
                             &pcurve.geometry,
                             resolved.block.parameters.range,
-                         refusal,)
+                            refusal,
+                        )
                         .map(Some),
                         None => Some(None),
                     })
@@ -2224,13 +2224,17 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                                 // to a non-planar or unresolved partner.
                                 return Some((identity, None));
                             };
-                            let mut pcurve =
-                                consolidated_jet_pcurve(&resolved.block.pcurves[partner], &chart, refusal)?;
+                            let mut pcurve = consolidated_jet_pcurve(
+                                &resolved.block.pcurves[partner],
+                                &chart,
+                                refusal,
+                            )?;
                             if reversed {
                                 pcurve = crate::nurbs::reverse_pcurve_geometry(
                                     &pcurve,
                                     resolved.block.parameters.range,
-                                 refusal,)?;
+                                    refusal,
+                                )?;
                             }
                             pcurve
                         }
@@ -2307,7 +2311,8 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                                 geometry = crate::nurbs::reverse_pcurve_geometry(
                                     &geometry,
                                     resolved.block.parameters.range,
-                                 refusal,)?;
+                                    refusal,
+                                )?;
                             }
                             // A pcurve binds to a face only when it lifts onto
                             // the edge through that face's carrier. Without the
@@ -2950,8 +2955,12 @@ mod tests {
             object_id: 902,
             payload: vec![0x82, 0x18, 100, 0, 0x18, 0xe7, 0x03, 0x03],
         };
-        assert!(parse_from_records(&[], std::slice::from_ref(&record), &[], false, &mut None).is_some());
-        assert!(parse_from_records(&[], &[record.clone(), record], &[], false, &mut None).is_none());
+        assert!(
+            parse_from_records(&[], std::slice::from_ref(&record), &[], false, &mut None).is_some()
+        );
+        assert!(
+            parse_from_records(&[], &[record.clone(), record], &[], false, &mut None).is_none()
+        );
     }
 
     #[test]
@@ -3463,7 +3472,8 @@ mod tests {
             &[],
             &[],
             &HashMap::new(),
-         &mut None,)
+            &mut None,
+        )
         .expect("valid source object identity");
         assert_eq!(attached.standard_edges, 1);
         assert_eq!(attached.partner_face_pcurve_pairs, 0);
@@ -3530,7 +3540,8 @@ mod tests {
             &[],
             &[],
             &HashMap::new(),
-         &mut None,)
+            &mut None,
+        )
         .expect("valid source object identity");
 
         assert_eq!(counts.standard_edges, 0);
@@ -3589,7 +3600,8 @@ mod tests {
             &[],
             &[],
             &HashMap::from([(0x5678, Some(0x1234))]),
-         &mut None,)
+            &mut None,
+        )
         .expect("valid source object identity");
 
         assert_eq!(counts.standard_edges, 0);
@@ -3751,7 +3763,8 @@ mod tests {
             &[],
             &[],
             &HashMap::new(),
-         &mut None,)
+            &mut None,
+        )
         .expect("valid source object identity");
         assert_eq!(attached.standard_edges, 1);
         assert_eq!(ir.model.edges[0].param_range(), Some([0.0, 1.0]));
