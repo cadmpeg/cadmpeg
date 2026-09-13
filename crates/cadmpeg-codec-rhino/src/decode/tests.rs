@@ -1056,7 +1056,7 @@ fn extrusion_cap_staging_preserves_pcurve_rejection_details() {
         (
             vec![0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 4.0],
             Some(vec![0.0; 5]),
-            "weights",
+            "weight 0 at index 0",
         ),
     ] {
         let mut extrusion = cap_extrusion([true, false]);
