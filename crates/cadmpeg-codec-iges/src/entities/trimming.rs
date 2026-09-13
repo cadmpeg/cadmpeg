@@ -1795,8 +1795,13 @@ pub(super) fn project(
         } else {
             BoundarySurfaceKind::Bounded
         };
-        let (surface_sequence, boundary_sequences, has_explicit_outer, mut valid) = if surface_kind
-            == BoundarySurfaceKind::Trimmed
+        let (
+            surface_sequence,
+            boundary_sequences,
+            has_explicit_outer,
+            explicit_outer_sequence,
+            mut valid,
+        ) = if surface_kind == BoundarySurfaceKind::Trimmed
         {
             let Some(surface) = pointer(record, 1) else {
                 losses.push(entity_loss(
@@ -1824,6 +1829,9 @@ pub(super) fn project(
                 continue;
             };
             let mut sequences = Vec::with_capacity(inner_count + usize::from(has_explicit_outer));
+            // The outer boundary is stated in its own PTO field, so it travels
+            // as its own value and is never recovered from a list position.
+            let mut explicit_outer_sequence = None;
             if has_explicit_outer {
                 let Some(outer) = pointer(record, 4) else {
                     losses.push(entity_loss(
@@ -1843,6 +1851,7 @@ pub(super) fn project(
                     continue;
                 }
                 sequences.push(outer);
+                explicit_outer_sequence = Some(outer);
             } else if !matches!(
                 record.value(4),
                 None | Some(TokenValue::Omitted | TokenValue::Integer(0))
@@ -1876,7 +1885,13 @@ pub(super) fn project(
                 }
                 sequences.push(sequence);
             }
-            (surface, sequences, has_explicit_outer, valid)
+            (
+                surface,
+                sequences,
+                has_explicit_outer,
+                explicit_outer_sequence,
+                valid,
+            )
         } else {
             let Some(representation) = record.integer(1).filter(|value| matches!(value, 0 | 1))
             else {
@@ -1944,7 +1959,7 @@ pub(super) fn project(
                     break;
                 }
             }
-            (surface, sequences, false, valid)
+            (surface, sequences, false, None, valid)
         };
         if !valid {
             continue;
@@ -1986,6 +2001,7 @@ pub(super) fn project(
         let mut implicit_boundary_curves = Vec::new();
         let mut implicit_boundary_pcurves = Vec::new();
         let mut loop_ids = Vec::new();
+        let mut explicit_outer_loop: Option<cadmpeg_ir::ids::LoopId> = None;
         let mut linear_boundary_candidates = Vec::with_capacity(boundary_sequences.len());
         let mut face_tolerance = 0.0_f64;
         for (boundary_index, sequence) in boundary_sequences.iter().copied().enumerate() {
@@ -2329,6 +2345,9 @@ pub(super) fn project(
                 face: face_id.clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
             });
+            if explicit_outer_sequence == Some(sequence) {
+                explicit_outer_loop = Some(loop_id.clone());
+            }
             loop_ids.push(loop_id);
         }
         if !valid {
@@ -2415,16 +2434,14 @@ pub(super) fn project(
             shell: shell_id.clone(),
             surface: face_surface_id,
             sense: Sense::Forward,
-            loops: if surface_kind == BoundarySurfaceKind::Trimmed {
-                // A trimmed surface classifies its boundary, and states the
-                // outer loop first when it states one at all.
-                let mut ids = loop_ids;
-                let outer = has_explicit_outer
-                    .then(|| (!ids.is_empty()).then(|| ids.remove(0)))
-                    .flatten();
-                cadmpeg_ir::topology::FaceLoops::classified(outer, ids)
-            } else {
-                cadmpeg_ir::topology::FaceLoops::from(loop_ids)
+            loops: match explicit_outer_loop {
+                // A trimmed surface states its outer boundary in its own PTO
+                // field. Without that field the face states no classification.
+                Some(outer) => cadmpeg_ir::topology::FaceLoops::classified(
+                    outer.clone(),
+                    loop_ids.into_iter().filter(|id| *id != outer).collect(),
+                ),
+                None => cadmpeg_ir::topology::FaceLoops::unspecified(loop_ids),
             },
             name: None,
             color: None,

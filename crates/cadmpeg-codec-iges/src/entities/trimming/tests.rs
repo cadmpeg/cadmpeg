@@ -551,6 +551,13 @@ fn decode_classifies_explicit_outer_and_inner_trimmed_surface_loops() {
             cadmpeg_ir::topology::LoopBoundaryRole::Inner,
         ]
     );
+    // The PTO field names the outer boundary, so the face states it in the
+    // `outer` key and the remaining loops are inner.
+    let cadmpeg_ir::topology::FaceLoops::Classified { outer, inner } = &face.loops else {
+        panic!("an explicit outer boundary states a classified face");
+    };
+    assert_eq!(Some(outer), face.loops.iter().next());
+    assert_eq!(inner.len(), 1);
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -582,6 +589,12 @@ fn decode_preserves_parameter_domain_as_implicit_outer_boundary() {
                 )
             });
         assert!(face.loops.is_empty());
+        // A parameter-domain outer boundary is no classification: the face
+        // states an empty loop list, not a classified face with no outer.
+        assert!(matches!(
+            face.loops,
+            cadmpeg_ir::topology::FaceLoops::Unspecified { .. }
+        ));
         assert!(
             result.report().losses.is_empty(),
             "parameters={parameters} losses={:#?}",
@@ -629,7 +642,7 @@ fn decode_retains_inner_boundaries_after_an_omitted_outer_pointer() {
         .model
         .loops
         .iter()
-        .find(|loop_| Some(&loop_.id) == face.loops.first())
+        .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
         .unwrap();
     assert_eq!(
         loop_.boundary_role_in(&result.ir().model.faces),
@@ -906,7 +919,7 @@ fn decode_uses_model_curve_when_type_142_prefers_it() {
         .model
         .loops
         .iter()
-        .find(|loop_| Some(&loop_.id) == face.loops.first())
+        .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
         .expect("outer loop");
     assert!(outer_loop.coedges().iter().all(|id| result
         .ir()
@@ -1188,7 +1201,7 @@ fn decode_builds_a_parametrically_bounded_sheet() {
         .model
         .loops
         .iter()
-        .find(|loop_| Some(&loop_.id) == face.loops.first())
+        .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
         .unwrap();
     let coedge = result
         .ir()
@@ -1236,7 +1249,7 @@ fn decode_builds_an_ordered_multi_segment_bounded_sheet() {
         .model
         .loops
         .iter()
-        .find(|loop_| Some(&loop_.id) == face.loops.first())
+        .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
         .unwrap();
     assert_eq!(loop_.coedges().len(), 4);
     let senses = loop_
@@ -1299,7 +1312,7 @@ fn decode_accepts_a_bounded_sheet_join_within_global_resolution() {
         .model
         .loops
         .iter()
-        .find(|loop_| Some(&loop_.id) == face.loops.first())
+        .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
         .expect("bounded loop");
     assert_eq!(loop_.coedges().len(), 4);
     assert_eq!(
@@ -1470,7 +1483,7 @@ fn decode_builds_a_valid_face_local_trimmed_sheet() {
         .model
         .loops
         .iter()
-        .find(|loop_| Some(&loop_.id) == face.loops.first())
+        .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
         .unwrap();
     assert_eq!(
         loop_.boundary_role_in(&result.ir().model.faces),
@@ -1520,7 +1533,7 @@ fn decode_builds_a_trimmed_sheet_from_a_native_circle_pcurve() {
         .model
         .loops
         .iter()
-        .find(|loop_| Some(&loop_.id) == face.loops.first())
+        .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
         .unwrap();
     let coedge = result
         .ir()
@@ -1588,7 +1601,7 @@ fn decode_maps_a_line_generatrix_pcurve_to_the_neutral_distance_parameter() {
         .model
         .loops
         .iter()
-        .find(|loop_| Some(&loop_.id) == face.loops.first())
+        .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
         .unwrap();
     let coedge = result
         .ir()
@@ -1644,7 +1657,7 @@ fn decode_unscales_procedural_pcurve_coordinates_before_neutral_mapping() {
         .model
         .loops
         .iter()
-        .find(|loop_| Some(&loop_.id) == face.loops.first())
+        .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
         .unwrap();
     let coedge = result
         .ir()
@@ -1712,7 +1725,7 @@ fn decode_builds_a_model_curve_only_trimmed_sheet() {
         .model
         .loops
         .iter()
-        .find(|loop_| Some(&loop_.id) == face.loops.first())
+        .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
         .unwrap();
     let coedge = result
         .ir()

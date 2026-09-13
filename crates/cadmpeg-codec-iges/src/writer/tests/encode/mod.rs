@@ -1035,7 +1035,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         shell: shell_id.clone(),
         surface: surface_id,
         sense: Sense::Forward,
-        loops: cadmpeg_ir::topology::FaceLoops::classified(Some(loop_id), Vec::new()),
+        loops: cadmpeg_ir::topology::FaceLoops::classified(loop_id, Vec::new()),
         name: None,
         color: None,
         tolerance: None,
@@ -1811,7 +1811,8 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
         .find(|face| face.id == target_face_id)
         .unwrap()
         .loops
-        .first()
+        .iter()
+        .next()
         .expect("a decoded face states a loop")
         .clone();
     let moved_loop_id = decoded
@@ -1822,7 +1823,8 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
         .find(|face| face.id == moved_face_id)
         .unwrap()
         .loops
-        .first()
+        .iter()
+        .next()
         .expect("a decoded face states a loop")
         .clone();
 
@@ -1834,7 +1836,7 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
         .find(|face| face.id == target_face_id)
         .unwrap()
         .loops = cadmpeg_ir::topology::FaceLoops::classified(
-        Some(outer_loop_id.clone()),
+        outer_loop_id.clone(),
         vec![moved_loop_id.clone()],
     );
     decoded
