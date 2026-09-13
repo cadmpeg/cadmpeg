@@ -242,7 +242,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 } else {
                     Sense::Forward
                 },
-                loops: vec![cap_loop].into(),
+                loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![cap_loop]),
                 name: None,
                 color: None,
                 tolerance: None,
@@ -313,7 +313,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             shell: shell_id.clone(),
             surface: side_surface,
             sense: Sense::Forward,
-            loops: side_loops.into(),
+            loops: cadmpeg_ir::topology::FaceLoops::unspecified(side_loops),
             name: None,
             color: None,
             tolerance: None,

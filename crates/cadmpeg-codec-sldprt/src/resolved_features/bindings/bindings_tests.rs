@@ -245,7 +245,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
         surface: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
         sense: Sense::Forward,
-        loops: Vec::new().into(),
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
         name: None,
         color: None,
         tolerance: None,

@@ -603,7 +603,13 @@ pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
             pcurves: Vec::new(),
         },
     });
-    ir.model.faces[0].loops.push(inner);
+    let face_loops = ir.model.faces[0]
+        .loops
+        .iter()
+        .cloned()
+        .chain(std::iter::once(inner))
+        .collect();
+    ir.model.faces[0].loops = cadmpeg_ir::topology::FaceLoops::unspecified(face_loops);
     let output = export(&ir);
     let (exchange, diagnostics) = crate::parse::parse(output.as_bytes()).unwrap();
     assert!(diagnostics.is_empty());
@@ -662,7 +668,8 @@ pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
         .expect("decoded face");
     assert_eq!(
         face.loops
-            .first()
+            .iter()
+            .next()
             .expect("a decoded face states a loop")
             .as_str(),
         ids::data(kind!("loop"), format!("{outer_loop}-face-{face_step}")).as_str()
@@ -774,7 +781,7 @@ fn duplicate_face_outer_bound_witnesses_reject_topology_in_any_order() {
 fn failed_face_bounds_do_not_duplicate_the_shared_surface() {
     let mut ir = unit_cube();
     ir.model.faces[0].surface = ir.model.faces[1].surface.clone();
-    ir.model.faces[0].loops.clear();
+    ir.model.faces[0].loops = cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new());
     let output = export(&ir);
     // Five face-owned surfaces remain after sharing, and the displaced carrier
     // is retained once as standalone construction geometry.

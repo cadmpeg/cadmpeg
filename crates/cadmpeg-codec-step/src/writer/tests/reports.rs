@@ -96,7 +96,7 @@ fn edgeless_doc() -> CadIr {
         shell: ShellId::mint("test:model:shell#sh0").expect("identity grammar"),
         surface: SurfaceId::mint("test:model:surface#s0").expect("identity grammar"),
         sense: Sense::Forward,
-        loops: vec![LoopId::mint("test:model:loop#lp0").expect("identity grammar")].into(),
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![LoopId::mint("test:model:loop#lp0").expect("identity grammar")]),
         name: None,
         color: None,
         tolerance: None,
@@ -852,7 +852,8 @@ fn writer_reports_reduced_tessellation_metadata_and_body_links() {
 #[test]
 fn writer_reports_each_enclosing_topology_reduction_and_strict_mode_rejects() {
     let mut outer_face = unit_cube();
-    outer_face.model.faces[0].loops.clear();
+    outer_face.model.faces[0].loops =
+        cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new());
     let report = write_step(
         &outer_face,
         &mut Vec::new(),
@@ -867,9 +868,16 @@ fn writer_reports_each_enclosing_topology_reduction_and_strict_mode_rejects() {
     }));
 
     let mut inner_loop = unit_cube();
-    inner_loop.model.faces[0].loops.push(
-        cadmpeg_ir::ids::LoopId::mint("step:data:loop#missing-inner").expect("identity grammar"),
-    );
+    let face_loops = inner_loop.model.faces[0]
+        .loops
+        .iter()
+        .cloned()
+        .chain(std::iter::once(
+            cadmpeg_ir::ids::LoopId::mint("step:data:loop#missing-inner")
+                .expect("identity grammar"),
+        ))
+        .collect();
+    inner_loop.model.faces[0].loops = cadmpeg_ir::topology::FaceLoops::unspecified(face_loops);
     let report = write_step(
         &inner_loop,
         &mut Vec::new(),

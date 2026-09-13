@@ -3940,7 +3940,7 @@ pub(crate) fn emit_faces(
                 .expect("identity grammar"),
                 surface: SurfaceId::mint(id(format, surface)).expect("identity grammar"),
                 sense,
-                loops: loops.into(),
+                loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops),
                 name: attribute_name(r),
                 color: attribute_color(r),
                 tolerance: None,

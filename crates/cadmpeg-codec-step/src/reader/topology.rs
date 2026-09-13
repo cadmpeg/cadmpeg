@@ -1298,7 +1298,7 @@ fn build_geometric_set(
                     shell: shell_id.clone(),
                     surface,
                     sense: Sense::Forward,
-                    loops: Vec::new().into(),
+                    loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
                     name: None,
                     color: None,
                     tolerance: None,
@@ -2628,15 +2628,16 @@ fn build_one(
                 loop_ids.push((is_outer_bound, lid));
                 typed.extend([bound_step, loop_step]);
             }
-            loop_ids.sort_by_key(|(outer, _)| !outer);
-            let outer = loop_ids
-                .iter()
-                .find(|(is_outer, _)| *is_outer)
-                .map(|(_, id)| id.clone());
-            let inner = loop_ids
-                .into_iter()
-                .filter_map(|(is_outer, id)| (!is_outer).then_some(id))
-                .collect();
+            // A face with more than one FACE_OUTER_BOUND is refused above, so
+            // at most one bound carries the outer role here. A face with no
+            // outer bound states no classification.
+            let (outer_bounds, inner_bounds): (Vec<_>, Vec<_>) =
+                loop_ids.into_iter().partition(|(is_outer, _)| *is_outer);
+            let inner: Vec<_> = inner_bounds.into_iter().map(|(_, id)| id).collect();
+            let face_loops = match outer_bounds.into_iter().next() {
+                Some((_, outer)) => cadmpeg_ir::topology::FaceLoops::classified(outer, inner),
+                None => cadmpeg_ir::topology::FaceLoops::unspecified(inner),
+            };
             let face_forward = face_same_sense == shell_forward;
             faces.push(Face {
                 id: fid.clone(),
@@ -2647,7 +2648,7 @@ fn build_one(
                 } else {
                     Sense::Reversed
                 },
-                loops: cadmpeg_ir::topology::FaceLoops::classified(outer, inner),
+                loops: face_loops,
                 name,
                 color: None,
                 tolerance: None,

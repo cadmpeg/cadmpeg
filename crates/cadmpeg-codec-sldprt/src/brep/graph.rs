@@ -171,22 +171,22 @@ impl Brep {
             face.surface = qualify(face.surface.as_str())
                 .try_into()
                 .expect("qualified identity");
-            let qualified: Vec<_> = face
-                .loops
-                .iter()
-                .map(|id| qualify(id.as_str()).try_into().expect("qualified identity"))
-                .collect();
+            let qualify_loop = |id: &cadmpeg_ir::ids::LoopId| -> cadmpeg_ir::ids::LoopId {
+                qualify(id.as_str())
+                    .try_into()
+                    .expect("qualified identity")
+            };
             face.loops = match &face.loops {
-                cadmpeg_ir::topology::FaceLoops::Unspecified { .. } => {
-                    cadmpeg_ir::topology::FaceLoops::unspecified(qualified)
+                cadmpeg_ir::topology::FaceLoops::Unspecified { loops } => {
+                    cadmpeg_ir::topology::FaceLoops::unspecified(
+                        loops.iter().map(qualify_loop).collect(),
+                    )
                 }
-                cadmpeg_ir::topology::FaceLoops::Classified { outer: None, .. } => {
-                    cadmpeg_ir::topology::FaceLoops::classified(None, qualified)
-                }
-                cadmpeg_ir::topology::FaceLoops::Classified { outer: Some(_), .. } => {
-                    let mut qualified = qualified;
-                    let outer = qualified.remove(0);
-                    cadmpeg_ir::topology::FaceLoops::classified(Some(outer), qualified)
+                cadmpeg_ir::topology::FaceLoops::Classified { outer, inner } => {
+                    cadmpeg_ir::topology::FaceLoops::classified(
+                        qualify_loop(outer),
+                        inner.iter().map(qualify_loop).collect(),
+                    )
                 }
             };
         }
@@ -2028,7 +2028,7 @@ fn decode_graph(
             .expect("identity grammar"),
             surface: SurfaceId::mint(id_surf(f.bridge_attr)).expect("identity grammar"),
             sense: surface_sense(f.sense, surface_orientation_reversed),
-            loops: loops.into(),
+            loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops),
             name: None,
             color: t
                 .bridges()
@@ -5236,9 +5236,10 @@ fn synthesize_cylinder_seams(
         if face.loops.len() != 2 {
             continue;
         }
+        let mut members = face.loops.iter();
         let (Some(a), Some(b)) = (
-            face.loops.get(0).and_then(|id| loops.get(id)),
-            face.loops.get(1).and_then(|id| loops.get(id)),
+            members.next().and_then(|id| loops.get(id)),
+            members.next().and_then(|id| loops.get(id)),
         ) else {
             continue;
         };
@@ -5390,7 +5391,7 @@ fn synthesize_cylinder_seams(
             );
         }
         if let Some(face) = out.faces.iter_mut().find(|face| face.id == face_id) {
-            face.loops = vec![loop_a].into();
+            face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(vec![loop_a]);
         }
         removed.insert(loop_b);
     }
@@ -5569,7 +5570,7 @@ fn synthesize_sphere_seams(
         if face.loops.len() != 1 {
             continue;
         }
-        let Some(lp) = face.loops.first().and_then(|id| loops.get(id)) else {
+        let Some(lp) = face.loops.iter().next().and_then(|id| loops.get(id)) else {
             continue;
         };
         if lp.coedges().len() != 3 {
@@ -6348,8 +6349,10 @@ mod tests {
             surface: SurfaceId::mint(format!("test:model:entity#surface-{id}"))
                 .expect("identity grammar"),
             sense: Sense::Forward,
-            loops: vec![LoopId::mint(format!("test:model:entity#{lp}")).expect("identity grammar")]
-                .into(),
+            loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![LoopId::mint(format!(
+                "test:model:entity#{lp}"
+            ))
+            .expect("identity grammar")]),
             name: None,
             color: None,
             tolerance: None,
@@ -7044,7 +7047,7 @@ mod tests {
                     .expect("identity grammar"),
                 surface: surface_id,
                 sense: Sense::Forward,
-                loops: vec![loop_id.clone()].into(),
+                loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![loop_id.clone()]),
                 name: None,
                 color: None,
                 tolerance: None,

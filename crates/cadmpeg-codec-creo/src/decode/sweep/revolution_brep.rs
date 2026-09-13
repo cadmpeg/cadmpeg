@@ -307,7 +307,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 shell: shell_id.clone(),
                 surface: surface_id,
                 sense: face_sense,
-                loops: loops.into(),
+                loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops),
                 name: None,
                 color: None,
                 tolerance: None,

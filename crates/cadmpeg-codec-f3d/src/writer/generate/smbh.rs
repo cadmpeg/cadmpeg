@@ -879,7 +879,8 @@ fn encode_face_topology_smbh(
         }
         let first_loop = face
             .loops
-            .first()
+            .iter()
+            .next()
             .ok_or_else(|| CodecError::malformed("face states no loop"))?;
         let loop_position = model
             .loops
@@ -980,7 +981,7 @@ fn encode_face_topology_smbh(
                     face.id, loop_.id
                 ))
             })?;
-        let next_loop = if let Some(next_id) = face.loops.get(ordinal + 1) {
+        let next_loop = if let Some(next_id) = face.loops.iter().nth(ordinal + 1) {
             let position = model
                 .loops
                 .iter()

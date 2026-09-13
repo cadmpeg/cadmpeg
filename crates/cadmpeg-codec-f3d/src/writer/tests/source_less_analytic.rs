@@ -1553,7 +1553,7 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
         shell,
         surface: surface.clone(),
         sense: Sense::Forward,
-        loops: loops.to_vec().into(),
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops.to_vec()),
         name: None,
         color: None,
         tolerance: None,

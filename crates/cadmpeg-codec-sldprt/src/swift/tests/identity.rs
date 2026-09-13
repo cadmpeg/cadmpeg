@@ -198,7 +198,7 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
         shell: ShellId::mint("sldprt:brep:shell#1").expect("identity grammar"),
         surface: SurfaceId::mint("sldprt:brep:surf#22").expect("identity grammar"),
         sense: Sense::Forward,
-        loops: Vec::new().into(),
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
         name: None,
         color: None,
         tolerance: None,

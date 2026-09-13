@@ -355,7 +355,7 @@ fn add_face(
         shell: ShellId::mint("synthetic:test:shell#shell").expect("identity grammar"),
         surface: surface_id,
         sense: Sense::Forward,
-        loops: vec![loop_id].into(),
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![loop_id]),
         name: None,
         color: None,
         tolerance: None,
@@ -560,7 +560,7 @@ fn add_cylindrical_patch_face(
         shell: ShellId::mint("synthetic:test:shell#shell").expect("identity grammar"),
         surface: surface_id,
         sense: Sense::Forward,
-        loops: vec![loop_id].into(),
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![loop_id]),
         name: None,
         color: None,
         tolerance: None,
@@ -871,8 +871,7 @@ fn bounded_planar_trim_selects_between_coincident_supports() {
         .iter_mut()
         .find(|face| face.id == first)
         .unwrap()
-        .loops
-        .clear();
+        .loops = cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new());
     model.tessellations[0].body = None;
     model.tessellations[0].faces.clear();
     assert!(assign_unique_surface_owners(&mut model).unwrap().is_empty());

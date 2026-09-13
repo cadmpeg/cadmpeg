@@ -536,7 +536,13 @@ fn generated_source_less_face_preserves_multiple_loop_chain() {
             cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new()).expect("valid loop ring"),
         ),
     });
-    source_less.model.faces[0].loops.push(loop_id);
+    let face_loops = source_less.model.faces[0]
+        .loops
+        .iter()
+        .cloned()
+        .chain(std::iter::once(loop_id))
+        .collect();
+    source_less.model.faces[0].loops = cadmpeg_ir::topology::FaceLoops::unspecified(face_loops);
 
     let mut encoded = Vec::new();
     F3dCodec
