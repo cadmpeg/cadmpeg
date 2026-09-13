@@ -611,6 +611,216 @@ fn every_hand_written_deserialize_states_its_coverage() {
     }
 }
 
+/// Absence is spelled one way on every field a document can be read into.
+///
+/// A field carrying `skip_serializing_if = "Option::is_none"` is written by
+/// omission. When its type is also read, the reader must refuse an explicit
+/// `null` at that key, or one `None` has two spellings on the wire. The guard
+/// is a `deserialize_with` — `cadmpeg_core::absent_key::present`, or a
+/// field-local shim that ends in it.
+///
+/// The duty follows the reader: a type carries it when it derives
+/// `Deserialize` and reads its own keys. A type that derives none, and one
+/// that derives it with `try_from` or `from`, both read a document through a
+/// separate wire type; this census reaches that wire type on its own, and the
+/// serialize-side attributes left on the outer type name no reader.
+///
+/// The source is parsed, not grepped, by the walker the hand-impl census uses,
+/// so an attribute list wrapped over several lines, a field in an inline
+/// module, or an optional field of an enum variant is read just the same.
+/// Offenders are named by `file:line`.
+#[test]
+fn every_read_optional_field_refuses_a_null_spelling() {
+    let (readable, offenders) = optional_absence_census();
+    assert!(
+        readable > 0,
+        "the optional-field census read no types that derive or implement Deserialize"
+    );
+    assert!(
+        offenders.is_empty(),
+        "{} optional field(s) skip on `None` and state no deserialize_with, so `null` and an absent key reach the same value:\n{}",
+        offenders.len(),
+        offenders.join("\n")
+    );
+}
+
+/// The count of readable types visited, and every `file:line` where one of
+/// their fields skips on `None` without a `deserialize_with`.
+fn optional_absence_census() -> (usize, Vec<String>) {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("the repository root sits two levels above the crate manifest")
+        .to_path_buf();
+    let mut readable = 0_usize;
+    let mut offenders = Vec::new();
+    for source in ["crates/cadmpeg-ir/src", "crates/cadmpeg-core/src"] {
+        let mut files = Vec::new();
+        collect_rust_sources(&root.join(source), &mut files);
+        files.sort();
+        for file in files {
+            let relative = file
+                .strip_prefix(&root)
+                .expect("a collected source sits under the repository root")
+                .to_string_lossy()
+                .replace('\\', "/");
+            if is_test_path(&relative) {
+                continue;
+            }
+            let text = std::fs::read_to_string(&file).expect("read source");
+            let parsed = syn::parse_file(&text)
+                .map_err(|error| format!("{relative} does not parse: {error}"))
+                .expect("every source file in the wire crates parses");
+            collect_optional_fields(&parsed.items, &relative, &mut readable, &mut offenders);
+        }
+    }
+    (readable, offenders)
+}
+
+/// Visits every struct and enum among `items`, recursing into inline modules,
+/// and records the unguarded optional fields of the readable ones.
+fn collect_optional_fields(
+    items: &[syn::Item],
+    relative: &str,
+    readable: &mut usize,
+    offenders: &mut Vec<String>,
+) {
+    for item in items {
+        match item {
+            syn::Item::Struct(declaration) => {
+                if !reads_its_own_keys(&declaration.attrs) {
+                    continue;
+                }
+                *readable += 1;
+                record_unguarded_fields(&declaration.fields, relative, offenders);
+            }
+            syn::Item::Enum(declaration) => {
+                if !reads_its_own_keys(&declaration.attrs) {
+                    continue;
+                }
+                *readable += 1;
+                for variant in &declaration.variants {
+                    record_unguarded_fields(&variant.fields, relative, offenders);
+                }
+            }
+            syn::Item::Mod(module) => {
+                if is_test_module(module) {
+                    continue;
+                }
+                if let Some((_, nested)) = &module.content {
+                    collect_optional_fields(nested, relative, readable, offenders);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Consumes whatever follows a nested-meta path: an `= value`, a
+/// parenthesized list, or nothing.
+fn skip_meta_value(meta: &syn::meta::ParseNestedMeta<'_>) -> syn::Result<()> {
+    if meta.input.peek(syn::Token![=]) {
+        let _literal: syn::Lit = meta.value()?.parse()?;
+    } else if meta.input.peek(syn::token::Paren) {
+        let content;
+        syn::parenthesized!(content in meta.input);
+        let _rest: proc_macro2::TokenStream = content.parse()?;
+    }
+    Ok(())
+}
+
+/// Whether a document reaches this type's own field attributes: it derives
+/// `Deserialize`, and its container attributes route no `try_from` or `from`
+/// conversion through another type.
+fn reads_its_own_keys(attrs: &[syn::Attribute]) -> bool {
+    attrs.iter().any(derive_list_names_deserialize) && !attrs.iter().any(routes_through_a_wire)
+}
+
+/// Whether this container-level `serde` attribute states `try_from` or `from`,
+/// which makes another type the reader.
+fn routes_through_a_wire(attribute: &syn::Attribute) -> bool {
+    if !attribute.path().is_ident("serde") {
+        return false;
+    }
+    let mut routed = false;
+    attribute
+        .parse_nested_meta(|meta| {
+            if meta.path.is_ident("try_from") || meta.path.is_ident("from") {
+                routed = true;
+            }
+            skip_meta_value(&meta)?;
+            Ok(())
+        })
+        .expect("every container serde attribute in the wire crates parses as a nested meta list");
+    routed
+}
+
+/// Whether this attribute is a `derive` (or a `cfg_attr` carrying one) whose
+/// list names `Deserialize`.
+fn derive_list_names_deserialize(attribute: &syn::Attribute) -> bool {
+    if !attribute.path().is_ident("derive") && !attribute.path().is_ident("cfg_attr") {
+        return false;
+    }
+    let Ok(list) = attribute.meta.require_list() else {
+        return false;
+    };
+    let mut flat = Vec::new();
+    flatten_tokens(&list.tokens, &mut flat);
+    flat.iter().any(|token| token == "Deserialize")
+}
+
+/// Records every field of `fields` that skips on `None` and states no
+/// `deserialize_with`.
+fn record_unguarded_fields(fields: &syn::Fields, relative: &str, offenders: &mut Vec<String>) {
+    for field in fields {
+        let (skips, guarded) = absence_spelling(field);
+        if !skips || guarded {
+            continue;
+        }
+        let span = field
+            .ident
+            .as_ref()
+            .map_or_else(|| syn::spanned::Spanned::span(&field.ty), syn::Ident::span);
+        let name = field
+            .ident
+            .as_ref()
+            .map_or_else(|| "<tuple field>".to_owned(), syn::Ident::to_string);
+        offenders.push(format!("{relative}:{} {name}", span.start().line));
+    }
+}
+
+/// Whether this field skips serialization on `None`, and whether it states a
+/// `deserialize_with` (or a `with`) that can refuse an explicit `null`.
+fn absence_spelling(field: &syn::Field) -> (bool, bool) {
+    let mut skips = false;
+    let mut guarded = false;
+    for attribute in &field.attrs {
+        if !attribute.path().is_ident("serde") {
+            continue;
+        }
+        attribute
+            .parse_nested_meta(|meta| {
+                let named_skip = meta.path.is_ident("skip_serializing_if");
+                if meta.path.is_ident("deserialize_with") || meta.path.is_ident("with") {
+                    guarded = true;
+                }
+                if meta.input.peek(syn::Token![=]) {
+                    let literal: syn::Lit = meta.value()?.parse()?;
+                    if named_skip
+                        && matches!(&literal, syn::Lit::Str(text) if text.value() == "Option::is_none")
+                    {
+                        skips = true;
+                    }
+                } else {
+                    skip_meta_value(&meta)?;
+                }
+                Ok(())
+            })
+            .expect("every serde attribute in the wire crates parses as a nested meta list");
+    }
+    (skips, guarded)
+}
+
 /// Every hand-written `Deserialize` impl in the three wire crates, outside
 /// test modules and test files, as (crate-relative path, type name).
 ///
