@@ -7,12 +7,12 @@
 use crate::decode::feature_completeness::operands::{
     body_selection_is_incomplete, edge_selection_is_incomplete, extrude_extent_is_incomplete,
     extrude_start_is_incomplete, face_selection_is_incomplete, hole_feature_is_incomplete,
-    loft_section_is_incomplete, path_ref_is_incomplete,
-    pattern_feature_is_incomplete, pattern_is_incomplete, pattern_occurrence_count,
-    planar_profile_dependency_is_incomplete, planar_profile_ref_is_incomplete,
-    profile_dependency_is_incomplete, profile_ref_is_incomplete, revolve_feature_is_incomplete,
-    rib_feature_is_incomplete, sweep_mode_is_incomplete, sweep_orientation_is_incomplete,
-    termination_dependency_is_incomplete, termination_is_incomplete,
+    loft_section_is_incomplete, path_ref_is_incomplete, pattern_feature_is_incomplete,
+    pattern_is_incomplete, pattern_occurrence_count, planar_profile_dependency_is_incomplete,
+    planar_profile_ref_is_incomplete, profile_dependency_is_incomplete, profile_ref_is_incomplete,
+    revolve_feature_is_incomplete, rib_feature_is_incomplete, sweep_mode_is_incomplete,
+    sweep_orientation_is_incomplete, termination_dependency_is_incomplete,
+    termination_is_incomplete,
 };
 use crate::decode::feature_completeness::{
     datum_coordinate_system_is_incomplete, projected_curve_direction_is_incomplete,
