@@ -93,6 +93,42 @@ impl LaneRefusals {
             )),
         );
     }
+
+    /// Record a refused source-stated parameter range against the record that
+    /// stated it.
+    fn push_range(&mut self, record: impl std::fmt::Display, range: [f64; 2]) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::GeometryParameterRangeInvalid.note(format!(
+                "A CATIA record states a parameter range the reader refuses: \
+                 {record} states [{}, {}]",
+                range[0], range[1]
+            )),
+        );
+    }
+}
+
+/// Whether a source-stated parameter range is readable, and a named refusal in
+/// the sink when it is not.
+///
+/// The range is a value the record states, so a non-finite bound, a bound pair
+/// that does not increase, or a width that overflows is a refused record, not a
+/// record of another kind. `strict` states whether the two bounds must differ.
+fn readable_range(
+    range: [f64; 2],
+    strict: bool,
+    refusal: &mut LaneRefusals,
+    record: &str,
+) -> bool {
+    let ordered = if strict {
+        range[0] < range[1]
+    } else {
+        range[0] <= range[1]
+    };
+    if range.into_iter().all(f64::is_finite) && ordered && (range[1] - range[0]).is_finite() {
+        return true;
+    }
+    refusal.push_range(record, range);
+    false
 }
 
 /// Record a carrier refusal against the record that stated it, and answer
@@ -115,16 +151,19 @@ pub(crate) fn note_refusal<T>(
     }
 }
 
+/// Reverse a supported pcurve over an increasing source-stated range.
+///
+/// The range is the only value here the source states directly, so it is the
+/// only one whose refusal reaches the sink. Every other `return None` re-reads
+/// a coordinate an IR carrier already refined, and the trailing `_ => None` is
+/// a pcurve kind this reverser does not carry.
 pub(crate) fn reverse_pcurve_geometry(
     geometry: &PcurveGeometry,
     range: [f64; 2],
     refusal: &mut LaneRefusals,
     record: &str,
 ) -> Option<PcurveGeometry> {
-    if !range.into_iter().all(f64::is_finite)
-        || range[0] >= range[1]
-        || !(range[1] - range[0]).is_finite()
-    {
+    if !readable_range(range, true, refusal, record) {
         return None;
     }
     match geometry {
@@ -187,16 +226,18 @@ pub(crate) fn reverse_pcurve_geometry(
 }
 
 /// Reverse a supported model-space curve over an increasing native range.
+///
+/// As in [`reverse_pcurve_geometry`], the range is the one source-stated value
+/// and the one refusal that reaches the sink; the remaining `return None`
+/// exits re-read refined carrier coordinates, and `_ => None` is a curve kind
+/// this reverser does not carry.
 pub(crate) fn reverse_curve_geometry(
     geometry: &CurveGeometry,
     range: [f64; 2],
     refusal: &mut LaneRefusals,
     record: &str,
 ) -> Option<(CurveGeometry, [f64; 2])> {
-    if !range.into_iter().all(f64::is_finite)
-        || range[0] > range[1]
-        || !(range[1] - range[0]).is_finite()
-    {
+    if !readable_range(range, false, refusal, record) {
         return None;
     }
     match geometry {
@@ -439,6 +480,11 @@ pub(crate) struct CircularHelixCache {
 }
 
 /// Fit a circular helix with a bounded angle-parameterized polyline cache.
+///
+/// Every `return None` here states that the construction is not an exact
+/// circular helix this cache covers, not that the record is refused: the curve
+/// still transfers, without a solved cache. Only the lane refusal from
+/// `NurbsCurve::from_lanes` reaches the sink.
 pub(crate) fn circular_helix_cache(
     construction: &ProceduralCurveDefinition,
     requested_tolerance: f64,
@@ -681,6 +727,12 @@ fn quintic_jet_bspline_nd<const N: usize>(
 
 /// Contract one parameter of a tensor-product NURBS surface into its exact
 /// rational isocurve.
+/// Evaluate one isoparametric curve of a NURBS surface.
+///
+/// The surface is a refined IR carrier and the parameter is the caller's, so
+/// every `return None` states that the isocurve is not computable for this
+/// input, not that a record is refused; nothing reaches the sink but the lane
+/// refusal from the carrier constructor.
 pub(crate) fn nurbs_surface_isocurve(
     surface: &NurbsSurface,
     parameter: f64,
@@ -1327,6 +1379,62 @@ mod tests {
         assert!(
             refusal.take_notes().is_empty(),
             "the sink is empty once its notes are taken"
+        );
+    }
+
+    #[test]
+    fn a_reversed_parameter_range_states_a_named_refusal() {
+        let geometry = PcurveGeometry::Line(
+            cadmpeg_ir::geometry::LinePcurve::try_new(
+                Point2::new(2.0, -1.0),
+                Point2::new(3.0, 4.0),
+            )
+            .expect("valid LinePcurve fixture"),
+        );
+        let mut refusal = LaneRefusals::new();
+        assert_eq!(
+            reverse_pcurve_geometry(&geometry, [9.0, 5.0], &mut refusal, "e5 pcurve at byte 64"),
+            None,
+            "a range that does not increase is refused"
+        );
+        let notes = refusal.take_notes();
+        assert_eq!(notes.len(), 1, "one note per refused record: {notes:?}");
+        assert!(
+            notes[0].message.contains("e5 pcurve at byte 64"),
+            "the note names the record that stated the range: {}",
+            notes[0].message
+        );
+        assert!(
+            notes[0].message.contains("[9, 5]"),
+            "the note states the refused range: {}",
+            notes[0].message
+        );
+
+        let mut refusal = LaneRefusals::new();
+        assert_eq!(
+            reverse_curve_geometry(
+                &CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                    cadmpeg_ir::geometry::LineCurve::try_new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(1.0, 0.0, 0.0)
+                            .unit()
+                            .expect("nonzero fixture direction"),
+                    )
+                    .expect("valid LineCurve fixture"),
+                )),
+                [f64::NAN, 1.0],
+                &mut refusal,
+                "e5 curve at byte 128",
+            ),
+            None,
+            "a non-finite range bound is refused"
+        );
+        let notes = refusal.take_notes();
+        assert_eq!(notes.len(), 1, "one note per refused record: {notes:?}");
+        assert!(
+            notes[0].message.contains("e5 curve at byte 128"),
+            "the note names the record that stated the range: {}",
+            notes[0].message
         );
     }
 }
