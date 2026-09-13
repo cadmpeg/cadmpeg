@@ -13,8 +13,13 @@ fn source() -> CurveId {
 
 fn subset(range: [f64; 2]) -> ProceduralCurveDefinition {
     ProceduralCurveDefinition::Subset(
-        crate::geometry::curve_payloads::SubsetCurveConstruction::try_new(source(), range, false, None)
-            .unwrap(),
+        crate::geometry::curve_payloads::SubsetCurveConstruction::try_new(
+            source(),
+            range,
+            false,
+            None,
+        )
+        .unwrap(),
     )
 }
 

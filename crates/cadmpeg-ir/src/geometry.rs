@@ -2021,7 +2021,8 @@ impl TryFrom<HelixCurveConstructionWire> for HelixCurveConstruction {
             wire.pitch,
             wire.apex_factor,
             wire.axis,
-        wire.cache,)
+            wire.cache,
+        )
     }
 }
 

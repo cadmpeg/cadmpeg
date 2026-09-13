@@ -7,6 +7,12 @@
 //! in `cadmpeg-ir` skips them. This sweep decodes the charter fixtures instead
 //! and runs the same walk over the live document, which reaches the sketch,
 //! annotation, assembly, and product shapes no other codec's goldens carry.
+//!
+//! This sweep reads `FREE_FORM_SHAPES` as an allowlist only. The over-listing
+//! check — that every listed entry is reached by something — lives in
+//! `every_golden_shape_refuses_an_unknown_key` in `cadmpeg-ir`, which reaches
+//! every entry by a committed golden or by a minimal hand-written document, so
+//! a bogus entry fails there.
 
 use std::collections::BTreeSet;
 use std::io::Cursor;

@@ -113,12 +113,7 @@ impl LaneRefusals {
 /// The range is a value the record states, so a non-finite bound, a bound pair
 /// that does not increase, or a width that overflows is a refused record, not a
 /// record of another kind. `strict` states whether the two bounds must differ.
-fn readable_range(
-    range: [f64; 2],
-    strict: bool,
-    refusal: &mut LaneRefusals,
-    record: &str,
-) -> bool {
+fn readable_range(range: [f64; 2], strict: bool, refusal: &mut LaneRefusals, record: &str) -> bool {
     let ordered = if strict {
         range[0] < range[1]
     } else {
@@ -450,7 +445,8 @@ pub(crate) fn reverse_helix_definition(
                 pitch,
                 apex_factor,
                 axis,
-            None,)
+                None,
+            )
             .ok()?,
         ),
         range,
@@ -1033,7 +1029,8 @@ mod tests {
                 Vector3::new(0.0, 0.0, 3.0),
                 0.4,
                 Vector3::new(0.0, 0.0, 1.0),
-            None,)
+                None,
+            )
             .expect("valid HelixCurveConstruction fixture"),
         );
         let (reversed, reversed_range) =
@@ -1139,7 +1136,8 @@ mod tests {
                 Vector3::new(0.0, 0.0, 1.0),
                 0.0,
                 Vector3::new(0.0, 0.0, 1.0),
-            None,)
+                None,
+            )
             .expect("valid HelixCurveConstruction fixture"),
         );
 
@@ -1175,7 +1173,8 @@ mod tests {
                     Vector3::new(0.0, 0.0, 1.0),
                     0.0,
                     Vector3::new(0.0, 0.0, 1.0),
-                None,)
+                    None,
+                )
                 .expect("valid HelixCurveConstruction fixture"),
             )
         };
@@ -1214,7 +1213,8 @@ mod tests {
                 Vector3::new(0.0, 0.0, 1.0),
                 0.0,
                 Vector3::new(0.0, 0.0, 1.0),
-            None,)
+                None,
+            )
             .expect("valid HelixCurveConstruction fixture"),
         );
         let mut non_axial_pitch = definition.clone();
@@ -1233,7 +1233,8 @@ mod tests {
                 Vector3::new(1.0, 0.0, 0.0),
                 apex_factor,
                 axis,
-            None,)
+                None,
+            )
             .expect("valid HelixCurveConstruction fixture");
         }
         assert!(circular_helix_cache(
@@ -1253,7 +1254,8 @@ mod tests {
                 Vector3::new(0.0, 0.0, 0.0),
                 0.0,
                 Vector3::new(0.0, 0.0, 1.0),
-            None,)
+                None,
+            )
             .expect("valid HelixCurveConstruction fixture"),
         );
         assert!(circular_helix_cache(

@@ -2249,7 +2249,8 @@ mod tests {
                 Vector3::new(10.0, 11.0, 12.0),
                 0.25,
                 Vector3::new(0.0, 0.0, 1.0),
-            None,)
+                None,
+            )
             .unwrap(),
         );
         curve_definition

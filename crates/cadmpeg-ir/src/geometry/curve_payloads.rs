@@ -631,7 +631,12 @@ impl TwoSidedOffsetCurveConstruction {
 impl TryFrom<TwoSidedOffsetCurveConstructionWire> for TwoSidedOffsetCurveConstruction {
     type Error = ProceduralGeometryError;
     fn try_from(wire: TwoSidedOffsetCurveConstructionWire) -> Result<Self, Self::Error> {
-        Self::try_new(wire.context, wire.discontinuity_flag, wire.offsets, wire.cache)
+        Self::try_new(
+            wire.context,
+            wire.discontinuity_flag,
+            wire.offsets,
+            wire.cache,
+        )
     }
 }
 
