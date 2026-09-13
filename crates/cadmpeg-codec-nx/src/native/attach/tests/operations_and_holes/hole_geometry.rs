@@ -193,13 +193,12 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
             surface,
             sense: Sense::Reversed,
-            loops: vec![
+            loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![
                 LoopId::mint(format!("test:model:entity#loop-{ordinal}-0"))
                     .expect("identity grammar"),
                 LoopId::mint(format!("test:model:entity#loop-{ordinal}-1"))
                     .expect("identity grammar"),
-            ]
-            .into(),
+            ]),
             name: None,
             color: None,
             tolerance: None,
@@ -577,11 +576,10 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         shell: ShellId::mint("test:model:entity#unowned-shell").expect("identity grammar"),
         surface: SurfaceId::mint("test:model:entity#surface-0").expect("identity grammar"),
         sense: Sense::Reversed,
-        loops: vec![
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![
             LoopId::mint("test:model:entity#unowned-loop-a").expect("identity grammar"),
             LoopId::mint("test:model:entity#unowned-loop-b").expect("identity grammar"),
-        ]
-        .into(),
+        ]),
         name: None,
         color: None,
         tolerance: None,
@@ -744,7 +742,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                 shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
                 surface,
                 sense: Sense::Reversed,
-                loops: loops.to_vec().into(),
+                loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops.to_vec()),
                 name: None,
                 color: None,
                 tolerance: None,
@@ -847,11 +845,10 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         shell: ShellId::mint("test:model:entity#unrelated-shell").expect("identity grammar"),
         surface: SurfaceId::mint("test:model:entity#unrelated-cone").expect("identity grammar"),
         sense: Sense::Reversed,
-        loops: vec![
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![
             LoopId::mint("test:model:entity#unrelated-a").expect("identity grammar"),
             LoopId::mint("test:model:entity#unrelated-b").expect("identity grammar"),
-        ]
-        .into(),
+        ]),
         name: None,
         color: None,
         tolerance: None,

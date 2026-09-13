@@ -154,6 +154,7 @@ pub(crate) fn try_decode_geometry(
     let mut body_node_ids = BTreeMap::new();
     let mut parsed = crate::native::ParsedStreams::parse(scan);
     let mut carrier_refusals: Vec<LossNote> = Vec::new();
+    let mut topology_losses: Vec<LossNote> = Vec::new();
     let rmfastload_ids = scan
         .container
         .rmfastload_object_id_table()
@@ -1028,6 +1029,7 @@ pub(crate) fn try_decode_geometry(
             &transfer_budget,
             &adaptive_geometry_budget,
             &completion_geometry_budget,
+            &mut topology_losses,
         )?;
         // Topology completion adds incidence and pcurve carriers, but does
         // not change surface or model-curve geometry. Keep its successful
@@ -1243,6 +1245,7 @@ pub(crate) fn try_decode_geometry(
         notes,
     );
     report.losses.extend(carrier_refusals);
+    report.losses.extend(topology_losses);
     report_untransferred_streams(scan, &mut report, crate::native::TypedNative::Available);
     Ok(Some((ir, report, annotations, unknowns)))
 }

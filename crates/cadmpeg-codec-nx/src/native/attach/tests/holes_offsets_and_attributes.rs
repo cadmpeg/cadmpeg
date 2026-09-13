@@ -169,7 +169,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
         shell: ShellId::mint("test:model:entity#blind-shell").expect("identity grammar"),
         surface: cylinder_surface,
         sense: Sense::Reversed,
-        loops: vec![entry_loop, cylinder_cap_loop].into(),
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![entry_loop, cylinder_cap_loop]),
         name: None,
         color: None,
         tolerance: None,
@@ -179,7 +179,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
         shell: ShellId::mint("test:model:entity#blind-shell").expect("identity grammar"),
         surface: cap_surface,
         sense: Sense::Forward,
-        loops: vec![cap_face_loop].into(),
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![cap_face_loop]),
         name: None,
         color: None,
         tolerance: None,
@@ -308,10 +308,10 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
         shell: ShellId::mint("test:model:entity#blind-shell").expect("identity grammar"),
         surface: SurfaceId::mint("test:model:entity#blind-cap-surface").expect("identity grammar"),
         sense: Sense::Forward,
-        loops: vec![
-            LoopId::mint("test:model:entity#blind-cap-face-loop").expect("identity grammar")
-        ]
-        .into(),
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![LoopId::mint(
+            "test:model:entity#blind-cap-face-loop"
+        )
+        .expect("identity grammar")]),
         name: None,
         color: None,
         tolerance: None,
@@ -440,7 +440,7 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
             shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
             surface,
             sense,
-            loops: loops.into(),
+            loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops),
             name: None,
             color: None,
             tolerance: None,

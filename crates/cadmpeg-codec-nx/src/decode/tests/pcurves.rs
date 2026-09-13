@@ -1228,7 +1228,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             shell: ShellId::mint("test:model:entity#nx:test:shell").expect("identity grammar"),
             surface: surfaces[index].clone(),
             sense: Sense::Forward,
-            loops: vec![loops[index].clone()].into(),
+            loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![loops[index].clone()]),
             name: None,
             color: None,
             tolerance: Some(

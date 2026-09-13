@@ -44,6 +44,16 @@ use std::collections::{BTreeMap, BTreeSet};
 
 const EPS_EMIT_CANONICAL_TRIM_RANGE_E6: f64 = 1.0e-6;
 
+/// A face whose non-loop fields are decoded, held until its loops resolve so
+/// the face is constructed once with its complete boundary.
+struct PendingFace {
+    id: FaceId,
+    shell: ShellId,
+    surface: SurfaceId,
+    sense: cadmpeg_ir::topology::Sense,
+    tolerance: Option<cadmpeg_ir::scalar::PositiveReal>,
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn emit_topology(
     ir: &mut CadIr,
@@ -64,6 +74,7 @@ pub(super) fn emit_topology(
     completion_transfer_budget: &TransferBudget<'_>,
     adaptive_geometry_budget: &GeometryWorkBudget<'_>,
     completion_geometry_budget: &GeometryWorkBudget<'_>,
+    topology_losses: &mut Vec<cadmpeg_ir::report::LossNote>,
 ) -> Result<EndpointWitnesses, CodecError> {
     let scope = IdScope::stream(stream_index);
     let body_shape_shells = graph.body_shape_shells();
@@ -498,6 +509,7 @@ pub(super) fn emit_topology(
         .filter_map(|edge| Some((edge.id.clone(), edge.curve().clone()?)))
         .collect();
     let mut faces = BTreeMap::new();
+    let mut pending_faces: Vec<PendingFace> = Vec::new();
     for node in graph
         .of_kind(NodeKind::Face)
         .filter(|node| valid_face_xmts.contains(&node.xmt))
@@ -526,14 +538,11 @@ pub(super) fn emit_topology(
                 .derived(&id, "tolerance")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
         }
-        ir.model.faces.push(Face {
+        pending_faces.push(PendingFace {
             id: id.clone(),
             shell: shell.clone(),
             surface,
             sense: fields.sense,
-            loops: Vec::new().into(),
-            name: None,
-            color: None,
             tolerance: decoded_tolerance(fields.tolerance),
         });
         faces.insert(node.xmt, id);
@@ -845,11 +854,19 @@ pub(super) fn emit_topology(
                 .push(id);
         }
     }
+    let mut face_loops: BTreeMap<FaceId, Vec<LoopId>> = BTreeMap::new();
     for (loop_xmt, (id, face)) in loop_specs {
         let Some(ring) = loop_coedges
             .remove(&loop_xmt)
             .and_then(|coedges| LoopRing::new(coedges, Vec::new()).ok())
         else {
+            // The ring did not resolve, so the loop states no boundary and is
+            // omitted from its face. That is a stated loss, not a silent one.
+            topology_losses.push(crate::loss::NxLossCode::TopologyLoopRingUnresolved.note(
+                format!(
+                    "parasolid#{stream_index} LOOP {loop_xmt} of {face} states no resolvable coedge ring: loop {id} is omitted from its face"
+                ),
+            ));
             continue;
         };
         ir.model.loops.push(Loop {
@@ -857,14 +874,20 @@ pub(super) fn emit_topology(
             face: face.clone(),
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
         });
-        if let Some(parent) = ir
-            .model
-            .faces
-            .iter_mut()
-            .find(|candidate| candidate.id == face)
-        {
-            parent.loops.push(id);
-        }
+        face_loops.entry(face).or_default().push(id);
+    }
+    for pending in pending_faces {
+        let loops = face_loops.remove(&pending.id).unwrap_or_default();
+        ir.model.faces.push(Face {
+            id: pending.id,
+            shell: pending.shell,
+            surface: pending.surface,
+            sense: pending.sense,
+            loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops),
+            name: None,
+            color: None,
+            tolerance: pending.tolerance,
+        });
     }
     attach_tolerant_edge_intersections_with_budget(
         ir,
