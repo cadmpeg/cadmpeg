@@ -15,9 +15,55 @@ use std::cell::Cell;
 use std::fmt::Display;
 
 use serde::ser::{
-    Serialize, SerializeMap, SerializeSeq, SerializeStruct, SerializeStructVariant, SerializeTuple,
-    SerializeTupleStruct, SerializeTupleVariant, Serializer,
+    Error as _, Serialize, SerializeMap, SerializeSeq, SerializeStruct, SerializeStructVariant,
+    SerializeTuple, SerializeTupleStruct, SerializeTupleVariant, Serializer,
 };
+
+/// Canonical JSON could not be written.
+#[derive(Debug, thiserror::Error)]
+pub enum CanonicalJsonError {
+    /// A float on the value is not finite, so canonical JSON cannot state it.
+    #[error("canonical JSON holds no non-finite float: {value}")]
+    NonFinite {
+        /// The refused float.
+        value: f64,
+    },
+    /// The value does not serialize as canonical JSON.
+    #[error("canonical JSON serialization: {0}")]
+    Serialize(serde_json::Error),
+}
+
+/// Writes `value` as canonical pretty JSON, refusing a non-finite float.
+///
+/// The bytes are the ones `serde_json::to_writer_pretty` produces. The float
+/// refusal is the adapter's, not `serde_json`'s: `serde_json` writes a
+/// non-finite float as `null`.
+///
+/// The guard is consulted on both arms. A `Serialize` implementation that
+/// catches the adapter's refusal and completes would otherwise outrun it and
+/// produce canonical JSON for a value the adapter had already refused.
+pub(crate) fn write_canonical_json<W: std::io::Write, T: Serialize + ?Sized>(
+    writer: W,
+    value: &T,
+) -> Result<(), CanonicalJsonError> {
+    let guard = FiniteGuard::new();
+    let mut json = serde_json::Serializer::pretty(writer);
+    let outcome = value.serialize(FiniteSerializer::new(&mut json, &guard));
+    if let Some(value) = guard.refused() {
+        return Err(CanonicalJsonError::NonFinite { value });
+    }
+    outcome.map_err(CanonicalJsonError::Serialize)
+}
+
+/// Renders `value` as canonical pretty JSON text, refusing a non-finite float.
+pub(crate) fn to_canonical_json_string<T: Serialize + ?Sized>(
+    value: &T,
+) -> Result<String, CanonicalJsonError> {
+    let mut bytes = Vec::new();
+    write_canonical_json(&mut bytes, value)?;
+    String::from_utf8(bytes)
+        .map_err(|error| CanonicalJsonError::Serialize(serde_json::Error::custom(error)))
+}
 
 /// Records the float that a [`FiniteSerializer`] walk refused.
 #[derive(Debug, Default)]

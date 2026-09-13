@@ -560,3 +560,23 @@ fn parent_only_wire_preserves_regeneration_without_tree_membership() {
         .to_string();
     assert!(error.contains("states no regeneration parent"), "{error}");
 }
+
+#[test]
+fn a_document_holding_a_non_finite_coordinate_has_no_canonical_json() {
+    let finite = unit_cube();
+    let text = finite.to_canonical_json().expect("a finite document writes");
+    assert!(text.contains("\"x\": 0.0") || text.contains("\"x\": 1.0"));
+
+    let mut non_finite = unit_cube();
+    non_finite.model.points[0].position = Point3::new(f64::NAN, 0.0, 0.0);
+    assert!(matches!(
+        non_finite.to_canonical_json(),
+        Err(crate::hash::finite_json::CanonicalJsonError::NonFinite { .. })
+    ));
+
+    non_finite.model.points[0].position = Point3::new(1.0, 0.0, 0.0);
+    let text = non_finite
+        .to_canonical_json()
+        .expect("a finite document writes");
+    assert!(!text.contains("\"x\": null"));
+}

@@ -11,9 +11,9 @@ use crate::document::{CadIr, SortedModel, SourceMeta};
 use crate::native::{arena_from, Native, NativeConvertError, NativeRecord};
 use crate::units::{CanonicalUnitsWire, Tolerances};
 
-mod finite_json;
+pub mod finite_json;
 
-use finite_json::{FiniteGuard, FiniteSerializer};
+use finite_json::{write_canonical_json, CanonicalJsonError};
 
 /// Returns the lowercase hexadecimal SHA-256 digest of `bytes`.
 pub fn sha256_hex(bytes: &[u8]) -> String {
@@ -36,45 +36,20 @@ pub fn canonical_json_sha256<T: Serialize>(value: &T) -> Result<String, DigestEr
     Ok(encode_hex(&hasher.finalize()))
 }
 
-/// Writes `value` as canonical pretty JSON, refusing a non-finite float.
-///
-/// The bytes are the ones `serde_json::to_writer_pretty` produces. The float
-/// refusal is the adapter's, not `serde_json`'s: `serde_json` writes a
-/// non-finite float as `null`.
-fn write_canonical_json<W: std::io::Write, T: Serialize + ?Sized>(
-    writer: W,
-    value: &T,
-) -> Result<(), DigestError> {
-    let guard = FiniteGuard::new();
-    let mut json = serde_json::Serializer::pretty(writer);
-    match value.serialize(FiniteSerializer::new(&mut json, &guard)) {
-        Ok(()) => Ok(()),
-        Err(error) => match guard.refused() {
-            Some(value) => Err(DigestError::NonFinite { value }),
-            None => Err(DigestError::Serialize(error)),
-        },
-    }
-}
-
 /// A digest could not be computed.
 ///
 /// The IR carries raw `f64` in places. `serde_json` writes a non-finite one as
-/// `null`, so the digest serializes through an adapter that refuses it instead:
-/// see [`NonFinite`](DigestError::NonFinite).
+/// `null`, so the digest serializes through the same adapter the document write
+/// route uses, which refuses it instead: see
+/// [`CanonicalJsonError`](finite_json::CanonicalJsonError).
 #[derive(Debug, thiserror::Error)]
 pub enum DigestError {
     /// A record the unknown arena cannot state.
     #[error(transparent)]
     Record(#[from] NativeConvertError),
-    /// The document does not serialize as canonical JSON.
-    #[error("canonical JSON serialization: {0}")]
-    Serialize(serde_json::Error),
-    /// A float on the document is not finite, so canonical JSON cannot state it.
-    #[error("canonical JSON holds no non-finite float: {value}")]
-    NonFinite {
-        /// The refused float.
-        value: f64,
-    },
+    /// The document has no canonical JSON.
+    #[error(transparent)]
+    CanonicalJson(#[from] CanonicalJsonError),
     /// The digest sink refused a byte.
     #[error("digest sink: {0}")]
     Write(std::io::Error),
@@ -196,7 +171,7 @@ fn document_local_sha256_with_source_and_charge<E: From<DigestError>>(
     if let Some(error) = writer.get_mut().error.take() {
         return Err(error);
     }
-    serialized.map_err(E::from)?;
+    serialized.map_err(|error| E::from(DigestError::from(error)))?;
     if let Err(error) = writer.flush() {
         if let Some(charged) = writer.get_mut().error.take() {
             return Err(charged);
@@ -339,6 +314,7 @@ fn encode_hex(digest: &[u8]) -> String {
 mod tests {
     #![allow(clippy::unwrap_used)]
 
+    use super::finite_json::CanonicalJsonError;
     use super::{
         canonical_json_sha256, document_local_sha256, document_local_sha256_with_charge,
         sha256_hex, DigestError, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE,
@@ -359,7 +335,9 @@ mod tests {
     #[test]
     fn a_non_finite_float_has_no_digest() {
         for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-            let Err(DigestError::NonFinite { value: refused }) = canonical_json_sha256(&value)
+            let Err(DigestError::CanonicalJson(CanonicalJsonError::NonFinite {
+                value: refused,
+            })) = canonical_json_sha256(&value)
             else {
                 panic!("a non-finite float must have no canonical JSON");
             };
@@ -375,7 +353,7 @@ mod tests {
         let nested = vec![Some(vec![(1.0f64, f64::NAN)])];
         assert!(matches!(
             canonical_json_sha256(&nested),
-            Err(DigestError::NonFinite { .. })
+            Err(DigestError::CanonicalJson(CanonicalJsonError::NonFinite { .. }))
         ));
     }
 
