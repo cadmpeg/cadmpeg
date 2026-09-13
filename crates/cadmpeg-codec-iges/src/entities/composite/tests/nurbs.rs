@@ -14,7 +14,7 @@ fn degree_elevation_preserves_nonzero_declared_interval_endpoints() {
     )
     .expect("valid line");
 
-    assert!(elevate_nurbs_to_degree(&mut curve, interval, 3, None).expect("elevation lanes pair"));
+    elevate_nurbs_to_degree(&mut curve, interval, 3, None).expect("elevation lanes pair");
     assert_eq!(curve.knots().first(), Some(&interval[0]));
     assert_eq!(curve.knots().last(), Some(&interval[1]));
     assert_eq!(&curve.knots()[..4], &[interval[0]; 4]);
@@ -130,4 +130,45 @@ fn bounded_analytic_carrier_uses_admitted_source_endpoint_witnesses() {
             .expect("carrier lanes pair")
             .is_none()
     );
+}
+
+/// A child whose knot vector is not clamped to its declared interval states
+/// that cause. The concatenation reports the boundary multiplicity, not an
+/// endpoint join it never tested.
+#[test]
+fn a_child_that_does_not_elevate_states_its_own_cause() {
+    // Child A: degree 1 with non-clamped knots.
+    let first = NurbsCurve::from_lanes(
+        1,
+        vec![0.0, 0.5, 1.0, 1.5],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
+        None,
+        false,
+    )
+    .expect("valid child");
+    // Child B: degree 2, clamped, starting at child A's last control point.
+    let second = NurbsCurve::from_lanes(
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![
+            Point3::new(3.0, 0.0, 0.0),
+            Point3::new(4.0, 0.0, 0.0),
+            Point3::new(5.0, 0.0, 0.0),
+        ],
+        None,
+        false,
+    )
+    .expect("valid child");
+
+    let error = concatenate_nurbs(
+        vec![(first, [0.0, 1.5], ()), (second, [0.0, 1.0], ())],
+        Some(0.001),
+    )
+    .expect_err("a child that does not raise to the composite degree states why");
+    let text = error.to_string();
+    assert!(
+        text.contains("boundary knot") || text.contains("does not span its declared interval"),
+        "the error names the elevation cause: {text}"
+    );
+    assert!(!text.contains("join"), "{text}");
 }

@@ -120,7 +120,7 @@ fn bounded_nurbs(
     curve_id: &CurveId,
     ctx: Option<&DecodeContext<'_>>,
     index: &CompositeIndex,
-) -> Result<Option<(NurbsCurve, [f64; 2])>, cadmpeg_ir::geometry::NurbsError> {
+) -> Result<Option<(NurbsCurve, [f64; 2])>, super::composite::CompositeCurveError> {
     super::composite::bounded_nurbs_for_curve(ir, curve_id, ctx, Some(index))
 }
 

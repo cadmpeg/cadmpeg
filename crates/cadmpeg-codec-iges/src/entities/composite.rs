@@ -677,24 +677,149 @@ fn trim_nurbs_lanes(curve: &NurbsCurve, interval: [f64; 2]) -> Option<TrimmedLan
     Some((control_points, weights, trimmed_knots))
 }
 
+/// Why a child curve could not be raised to the composite's degree.
+///
+/// Every refusal in `elevate_nurbs_to_degree` names its own cause, so the
+/// caller reports what the source stated instead of attributing the failure
+/// to an endpoint join that was never tested.
+#[derive(Debug, thiserror::Error)]
+pub(super) enum DegreeElevationError {
+    /// The child's own degree is not a usable count.
+    #[error("the child degree {degree} is not a usable count")]
+    SourceDegree {
+        /// Degree the child stated.
+        degree: u32,
+    },
+    /// The composite degree is above the supported bound.
+    #[error("the composite degree {degree} is above the supported bound {bound}")]
+    TargetDegree {
+        /// Degree the composite stated.
+        degree: u32,
+        /// Highest degree this reader raises a child to.
+        bound: usize,
+    },
+    /// The composite degree is below the child's own degree.
+    #[error("the composite degree {target} is below the child degree {child}")]
+    TargetBelowSource {
+        /// Degree the composite stated.
+        target: usize,
+        /// Degree the child stated.
+        child: usize,
+    },
+    /// The child's knot vector is periodic, non-finite, out of order, or does
+    /// not span its declared interval.
+    #[error("the child knot vector does not span its declared interval [{start}, {end}]")]
+    UnclampedKnots {
+        /// Interval start the child declared.
+        start: f64,
+        /// Interval end the child declared.
+        end: f64,
+    },
+    /// A boundary knot is not clamped to degree + 1 copies.
+    #[error(
+        "the child states {multiplicity} cop(ies) of the boundary knot {knot}, not {expected}"
+    )]
+    BoundaryMultiplicity {
+        /// The boundary knot value.
+        knot: f64,
+        /// Copies the child stated.
+        multiplicity: usize,
+        /// Copies a clamped child states.
+        expected: usize,
+    },
+    /// An internal knot repeats more often than the degree admits.
+    #[error("the child states {multiplicity} cop(ies) of the internal knot {knot}, above {bound}")]
+    InternalMultiplicity {
+        /// The internal knot value.
+        knot: f64,
+        /// Copies the child stated.
+        multiplicity: usize,
+        /// Highest copy count the degree admits.
+        bound: usize,
+    },
+    /// The child's poles and weights do not state a usable homogeneous net.
+    #[error("the child states no usable homogeneous control net")]
+    HomogeneousControlNet,
+    /// Knot insertion did not produce a refined net.
+    #[error("inserting the internal knot {knot} states no refined control net")]
+    KnotInsertion {
+        /// The knot being inserted.
+        knot: f64,
+    },
+    /// The refined knot vector and control net do not agree.
+    #[error("the refined knot vector and control net do not agree")]
+    RefinedKnotVector,
+    /// One Bezier span states no control net.
+    #[error("Bezier span {span} states no control net")]
+    SpanControlNet {
+        /// Index of the span in the refined net.
+        span: usize,
+    },
+    /// One Bezier span could not be raised to the composite degree.
+    #[error("Bezier span {span} does not raise to degree {degree}")]
+    SpanElevation {
+        /// Index of the span in the refined net.
+        span: usize,
+        /// The composite degree.
+        degree: usize,
+    },
+    /// An elevated span states no Euclidean control net.
+    #[error("elevated Bezier span {span} states no Euclidean control net")]
+    SpanEuclideanNet {
+        /// Index of the span in the refined net.
+        span: usize,
+    },
+    /// A checked allocation for the elevated knots was refused.
+    #[error("{0}")]
+    Allocation(cadmpeg_core::CodecError),
+    /// The elevated Bezier spans do not join.
+    #[error("the elevated Bezier spans do not join")]
+    SpansDoNotJoin,
+}
+
+/// Why a composite curve states no joined carrier.
+#[derive(Debug, thiserror::Error)]
+pub(super) enum CompositeCurveError {
+    /// A carrier the IR refuses.
+    #[error(transparent)]
+    Carrier(#[from] cadmpeg_ir::geometry::NurbsError),
+    /// A child that does not raise to the composite degree.
+    #[error("{0}")]
+    Elevation(#[from] DegreeElevationError),
+}
+
 fn elevate_nurbs_to_degree(
     curve: &mut NurbsCurve,
     interval: [f64; 2],
     target_degree: u32,
     join_tolerance: Option<f64>,
-) -> Result<bool, NurbsError> {
+) -> Result<(), CompositeCurveError> {
     let Ok(source_degree) = usize::try_from(curve.degree()) else {
-        return Ok(false);
+        return Err(DegreeElevationError::SourceDegree {
+            degree: curve.degree(),
+        }
+        .into());
     };
+    let stated_target = target_degree;
     let target_degree = match usize::try_from(target_degree) {
         Ok(target_degree) if target_degree <= MAX_COMPOSITE_DEGREE => target_degree,
-        _ => return Ok(false),
+        _ => {
+            return Err(DegreeElevationError::TargetDegree {
+                degree: stated_target,
+                bound: MAX_COMPOSITE_DEGREE,
+            }
+            .into())
+        }
     };
     if target_degree < source_degree {
-        return Ok(false);
+        return Err(DegreeElevationError::TargetBelowSource {
+            target: target_degree,
+            child: source_degree,
+        }
+        .into());
     }
     if target_degree == source_degree {
-        return Ok(true);
+        return Ok(());
     }
     if curve.periodic()
         || curve.knots().first() != Some(&interval[0])
@@ -705,14 +830,24 @@ fn elevate_nurbs_to_degree(
         || curve.knots().iter().any(|knot| !knot.is_finite())
         || !knots_nondecreasing(curve.knots())
     {
-        return Ok(false);
+        return Err(DegreeElevationError::UnclampedKnots {
+            start: interval[0],
+            end: interval[1],
+        }
+        .into());
     }
     let boundary_multiplicity =
         |value: f64| curve.knots().iter().filter(|knot| **knot == value).count();
-    if boundary_multiplicity(interval[0]) != source_degree + 1
-        || boundary_multiplicity(interval[1]) != source_degree + 1
-    {
-        return Ok(false);
+    for knot in interval {
+        let multiplicity = boundary_multiplicity(knot);
+        if multiplicity != source_degree + 1 {
+            return Err(DegreeElevationError::BoundaryMultiplicity {
+                knot,
+                multiplicity,
+                expected: source_degree + 1,
+            }
+            .into());
+        }
     }
     let mut homogeneous = homogeneous_control_points(curve).and_then(|points| {
         points
@@ -731,38 +866,43 @@ fn elevate_nurbs_to_degree(
     for value in internal_values {
         let multiplicity = knots.iter().filter(|knot| **knot == value).count();
         if multiplicity > source_degree + 1 {
-            return Ok(false);
+            return Err(DegreeElevationError::InternalMultiplicity {
+                knot: value,
+                multiplicity,
+                bound: source_degree + 1,
+            }
+            .into());
         }
         for _ in multiplicity..source_degree {
             let Some(points) = homogeneous.take() else {
-                return Ok(false);
+                return Err(DegreeElevationError::HomogeneousControlNet.into());
             };
             let Some((new_points, new_knots)) =
                 insert_homogeneous_knot(&points, &knots, source_degree, value)
             else {
-                return Ok(false);
+                return Err(DegreeElevationError::KnotInsertion { knot: value }.into());
             };
             homogeneous = Some(new_points);
             knots = new_knots;
         }
     }
     let Some(homogeneous) = homogeneous else {
-        return Ok(false);
+        return Err(DegreeElevationError::HomogeneousControlNet.into());
     };
     let Some(refined_count) = homogeneous.len().checked_sub(1) else {
-        return Ok(false);
+        return Err(DegreeElevationError::RefinedKnotVector.into());
     };
     let Some(refined_knot_count) = refined_count
         .checked_add(source_degree)
         .and_then(|value| value.checked_add(2))
     else {
-        return Ok(false);
+        return Err(DegreeElevationError::RefinedKnotVector.into());
     };
     if knots.len() != refined_knot_count
         || knots.first() != Some(&interval[0])
         || knots.last() != Some(&interval[1])
     {
-        return Ok(false);
+        return Err(DegreeElevationError::RefinedKnotVector.into());
     }
     let rational = curve.weights().is_some();
     let mut pieces = Vec::new();
@@ -773,28 +913,31 @@ fn elevate_nurbs_to_degree(
             continue;
         }
         let Some(source_points) = homogeneous.get(span - source_degree..=span) else {
-            return Ok(false);
+            return Err(DegreeElevationError::SpanControlNet { span }.into());
         };
         let Some(elevated) =
             elevate_bezier_homogeneous(source_points, source_degree, target_degree)
         else {
-            return Ok(false);
+            return Err(DegreeElevationError::SpanElevation {
+                span,
+                degree: target_degree,
+            }
+            .into());
         };
         let Some((control_points, weights)) = euclidean_control_points(elevated, rational) else {
-            return Ok(false);
+            return Err(DegreeElevationError::SpanEuclideanNet { span }.into());
         };
         let Some(target_knot_count) = target_degree.checked_add(1) else {
-            return Ok(false);
+            return Err(DegreeElevationError::TargetDegree {
+                degree: stated_target,
+                bound: MAX_COMPOSITE_DEGREE,
+            }
+            .into());
         };
-        let Ok(mut piece_knots) =
-            alloc_filled(target_knot_count, start, "iges composite elevated knots")
-        else {
-            return Ok(false);
-        };
-        let Ok(end_knots) = alloc_filled(target_knot_count, end, "iges composite elevated knots")
-        else {
-            return Ok(false);
-        };
+        let mut piece_knots = alloc_filled(target_knot_count, start, "iges composite elevated knots")
+            .map_err(DegreeElevationError::Allocation)?;
+        let end_knots = alloc_filled(target_knot_count, end, "iges composite elevated knots")
+            .map_err(DegreeElevationError::Allocation)?;
         piece_knots.extend(end_knots);
         let piece = NurbsCurve::from_lanes(
             target_degree as u32,
@@ -806,7 +949,7 @@ fn elevate_nurbs_to_degree(
         pieces.push((piece, [start, end], ()));
     }
     let Some(concatenated) = concatenate_nurbs(pieces, join_tolerance)? else {
-        return Ok(false);
+        return Err(DegreeElevationError::SpansDoNotJoin.into());
     };
     let elevated_degree = concatenated.nurbs.degree();
     let mut elevated_knots: Vec<f64> = concatenated
@@ -828,13 +971,13 @@ fn elevate_nurbs_to_degree(
         false,
     )?;
     *curve = elevated;
-    Ok(true)
+    Ok(())
 }
 
 fn concatenate_nurbs<T>(
     children: Vec<(NurbsCurve, [f64; 2], T)>,
     join_tolerance: Option<f64>,
-) -> Result<Option<ConcatenatedNurbs<T>>, NurbsError> {
+) -> Result<Option<ConcatenatedNurbs<T>>, CompositeCurveError> {
     let mut children = children.into_iter();
     let Some(mut first) = children.next() else {
         return Ok(None);
@@ -845,10 +988,11 @@ fn concatenate_nurbs<T>(
         .map(|(curve, _, _)| curve.degree())
         .fold(first.0.degree(), u32::max);
     for (curve, interval, _) in std::iter::once(&mut first).chain(children.as_mut_slice()) {
-        if curve.degree() < degree
-            && !elevate_nurbs_to_degree(curve, *interval, degree, join_tolerance)?
-        {
-            return Ok(None);
+        if curve.degree() < degree {
+            // A child that does not raise to the composite degree states why.
+            // The endpoint-join check below is reached only when every child
+            // carries the composite degree.
+            elevate_nurbs_to_degree(curve, *interval, degree, join_tolerance)?;
         }
     }
     if std::iter::once(&first)
@@ -1024,7 +1168,7 @@ fn bounded_nurbs_for_id(
     join_tolerance: Option<f64>,
     ctx: Option<&DecodeContext<'_>>,
     index: Option<&CompositeIndex>,
-) -> Result<Option<(NurbsCurve, [f64; 2])>, NurbsError> {
+) -> Result<Option<(NurbsCurve, [f64; 2])>, CompositeCurveError> {
     let Ok(_nested) = ctx
         .map(|ctx| ctx.enter_nested("iges_composite_flatten"))
         .transpose()
@@ -1195,7 +1339,7 @@ fn bounded_nurbs(
     curve_id: &CurveId,
     join_tolerance: f64,
     ctx: Option<&DecodeContext<'_>>,
-) -> Result<Option<(NurbsCurve, [f64; 2])>, NurbsError> {
+) -> Result<Option<(NurbsCurve, [f64; 2])>, CompositeCurveError> {
     bounded_nurbs_for_id(ir, curve_id, 0, Some(join_tolerance), ctx, Some(index))
 }
 
@@ -1204,7 +1348,7 @@ pub(super) fn bounded_nurbs_for_curve(
     curve_id: &CurveId,
     ctx: Option<&DecodeContext<'_>>,
     index: Option<&CompositeIndex>,
-) -> Result<Option<(NurbsCurve, [f64; 2])>, NurbsError> {
+) -> Result<Option<(NurbsCurve, [f64; 2])>, CompositeCurveError> {
     bounded_nurbs_for_id(ir, curve_id, 0, None, ctx, index)
 }
 
@@ -1223,7 +1367,7 @@ pub(super) fn bounded_nurbs_for_curve_with_tolerance(
     tolerance: Option<f64>,
     ctx: Option<&DecodeContext<'_>>,
     index: Option<&CompositeIndex>,
-) -> Result<Option<(NurbsCurve, [f64; 2])>, NurbsError> {
+) -> Result<Option<(NurbsCurve, [f64; 2])>, CompositeCurveError> {
     bounded_nurbs_for_id(
         ir,
         curve_id,
@@ -1737,7 +1881,17 @@ fn project_with_type_130_policy(
                     entry,
                     &curve_ids,
                     join_tolerance,
-                    &format!("the joined children state no curve carrier: {error}"),
+                    // The error names its own cause: a carrier the IR
+                    // refuses, or a child that does not raise to the
+                    // composite degree.
+                    &match error {
+                        CompositeCurveError::Carrier(error) => {
+                            format!("the joined children state no curve carrier: {error}")
+                        }
+                        CompositeCurveError::Elevation(error) => {
+                            format!("a child does not raise to the composite degree: {error}")
+                        }
+                    },
                     sequences,
                 );
                 losses.push(loss);

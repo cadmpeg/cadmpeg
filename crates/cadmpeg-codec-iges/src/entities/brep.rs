@@ -222,7 +222,7 @@ fn resolve_pcurve_uses<'a>(
     tolerance: f64,
     ctx: Option<&DecodeContext<'_>>,
     model_index: &mut Option<cadmpeg_ir::index::ModelIndex<'a>>,
-) -> Result<Option<ResolvedPcurveUses>, cadmpeg_ir::geometry::NurbsError> {
+) -> Result<Option<ResolvedPcurveUses>, super::composite::CompositeCurveError> {
     if uses.is_empty() {
         return Ok(Some(Vec::new()));
     }
