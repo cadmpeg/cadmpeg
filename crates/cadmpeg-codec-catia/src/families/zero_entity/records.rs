@@ -1741,20 +1741,22 @@ fn zero_entity_model_curve_construction(
     Some(ProceduralCurveDefinition::Helix(
         cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
             [start.u, end.u],
-            Point3::new(
-                origin.x + start.v * half_angle.cos() * axis.x,
-                origin.y + start.v * half_angle.cos() * axis.y,
-                origin.z + start.v * half_angle.cos() * axis.z,
-            ),
-            major,
-            minor,
-            cadmpeg_ir::math::Vector3::new(
-                std::f64::consts::TAU * slope * half_angle.cos() * axis.x,
-                std::f64::consts::TAU * slope * half_angle.cos() * axis.y,
-                std::f64::consts::TAU * slope * half_angle.cos() * axis.z,
-            ),
+            cadmpeg_ir::geometry::HelixFrame {
+                center: Point3::new(
+                    origin.x + start.v * half_angle.cos() * axis.x,
+                    origin.y + start.v * half_angle.cos() * axis.y,
+                    origin.z + start.v * half_angle.cos() * axis.z,
+                ),
+                major: major,
+                minor: minor,
+                pitch: cadmpeg_ir::math::Vector3::new(
+                    std::f64::consts::TAU * slope * half_angle.cos() * axis.x,
+                    std::f64::consts::TAU * slope * half_angle.cos() * axis.y,
+                    std::f64::consts::TAU * slope * half_angle.cos() * axis.z,
+                ),
+                axis: *axis,
+            },
             std::f64::consts::TAU * slope * half_angle.sin() / start_radius,
-            *axis,
             None,
         )
         .ok()?,

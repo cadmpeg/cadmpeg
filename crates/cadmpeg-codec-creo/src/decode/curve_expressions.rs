@@ -98,28 +98,30 @@ pub(crate) fn curve_expression_helix_definition(
     Some(ProceduralCurveDefinition::Helix(
         cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
             [0.0, helix.revolutions.get() * std::f64::consts::TAU],
-            Point3::new(
-                origin.x + axis.x * helix.z_start,
-                origin.y + axis.y * helix.z_start,
-                origin.z + axis.z * helix.z_start,
-            ),
-            Vector3::new(
-                major_direction.x * helix.radius.get(),
-                major_direction.y * helix.radius.get(),
-                major_direction.z * helix.radius.get(),
-            ),
-            Vector3::new(
-                minor_direction.x * helix.radius.get(),
-                minor_direction.y * helix.radius.get(),
-                minor_direction.z * helix.radius.get(),
-            ),
-            Vector3::new(
-                axis.x * helix.height / helix.revolutions.get(),
-                axis.y * helix.height / helix.revolutions.get(),
-                axis.z * helix.height / helix.revolutions.get(),
-            ),
+            cadmpeg_ir::geometry::HelixFrame {
+                center: Point3::new(
+                    origin.x + axis.x * helix.z_start,
+                    origin.y + axis.y * helix.z_start,
+                    origin.z + axis.z * helix.z_start,
+                ),
+                major: Vector3::new(
+                    major_direction.x * helix.radius.get(),
+                    major_direction.y * helix.radius.get(),
+                    major_direction.z * helix.radius.get(),
+                ),
+                minor: Vector3::new(
+                    minor_direction.x * helix.radius.get(),
+                    minor_direction.y * helix.radius.get(),
+                    minor_direction.z * helix.radius.get(),
+                ),
+                pitch: Vector3::new(
+                    axis.x * helix.height / helix.revolutions.get(),
+                    axis.y * helix.height / helix.revolutions.get(),
+                    axis.z * helix.height / helix.revolutions.get(),
+                ),
+                axis: axis,
+            },
             0.0,
-            axis,
             None,
         )
         .ok()?,

@@ -439,12 +439,14 @@ pub(crate) fn reverse_helix_definition(
         ProceduralCurveDefinition::Helix(
             cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
                 *angle_range,
-                center,
-                major,
-                minor,
-                pitch,
+                cadmpeg_ir::geometry::HelixFrame {
+                    center: center,
+                    major: major,
+                    minor: minor,
+                    pitch: pitch,
+                    axis: axis,
+                },
                 apex_factor,
-                axis,
                 None,
             )
             .ok()?,
@@ -1023,12 +1025,14 @@ mod tests {
         let definition = ProceduralCurveDefinition::Helix(
             cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
                 range,
-                Point3::new(1.0, -2.0, 3.0),
-                Vector3::new(2.0, 0.0, 0.0),
-                Vector3::new(0.0, 2.0, 0.0),
-                Vector3::new(0.0, 0.0, 3.0),
+                cadmpeg_ir::geometry::HelixFrame {
+                    center: Point3::new(1.0, -2.0, 3.0),
+                    major: Vector3::new(2.0, 0.0, 0.0),
+                    minor: Vector3::new(0.0, 2.0, 0.0),
+                    pitch: Vector3::new(0.0, 0.0, 3.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                },
                 0.4,
-                Vector3::new(0.0, 0.0, 1.0),
                 None,
             )
             .expect("valid HelixCurveConstruction fixture"),
@@ -1130,12 +1134,14 @@ mod tests {
         let definition = ProceduralCurveDefinition::Helix(
             cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
                 range,
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                Vector3::new(0.0, 1.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
+                cadmpeg_ir::geometry::HelixFrame {
+                    center: Point3::new(0.0, 0.0, 0.0),
+                    major: Vector3::new(1.0, 0.0, 0.0),
+                    minor: Vector3::new(0.0, 1.0, 0.0),
+                    pitch: Vector3::new(0.0, 0.0, 1.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                },
                 0.0,
-                Vector3::new(0.0, 0.0, 1.0),
                 None,
             )
             .expect("valid HelixCurveConstruction fixture"),
@@ -1167,12 +1173,14 @@ mod tests {
             ProceduralCurveDefinition::Helix(
                 cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
                     [0.0, 1.0],
-                    Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(radius, 0.0, 0.0),
-                    minor,
-                    Vector3::new(0.0, 0.0, 1.0),
+                    cadmpeg_ir::geometry::HelixFrame {
+                        center: Point3::new(0.0, 0.0, 0.0),
+                        major: Vector3::new(radius, 0.0, 0.0),
+                        minor: minor,
+                        pitch: Vector3::new(0.0, 0.0, 1.0),
+                        axis: Vector3::new(0.0, 0.0, 1.0),
+                    },
                     0.0,
-                    Vector3::new(0.0, 0.0, 1.0),
                     None,
                 )
                 .expect("valid HelixCurveConstruction fixture"),
@@ -1207,12 +1215,14 @@ mod tests {
         let definition = ProceduralCurveDefinition::Helix(
             cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
                 [0.0, 1.0],
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                Vector3::new(0.0, 1.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
+                cadmpeg_ir::geometry::HelixFrame {
+                    center: Point3::new(0.0, 0.0, 0.0),
+                    major: Vector3::new(1.0, 0.0, 0.0),
+                    minor: Vector3::new(0.0, 1.0, 0.0),
+                    pitch: Vector3::new(0.0, 0.0, 1.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                },
                 0.0,
-                Vector3::new(0.0, 0.0, 1.0),
                 None,
             )
             .expect("valid HelixCurveConstruction fixture"),
@@ -1227,12 +1237,14 @@ mod tests {
             let axis = *helix_payload.axis();
             *helix_payload = cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
                 angle_range,
-                center,
-                major,
-                minor,
-                Vector3::new(1.0, 0.0, 0.0),
+                cadmpeg_ir::geometry::HelixFrame {
+                    center: center,
+                    major: major,
+                    minor: minor,
+                    pitch: Vector3::new(1.0, 0.0, 0.0),
+                    axis: axis,
+                },
                 apex_factor,
-                axis,
                 None,
             )
             .expect("valid HelixCurveConstruction fixture");
@@ -1248,12 +1260,14 @@ mod tests {
         let overflowing_fit = ProceduralCurveDefinition::Helix(
             cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
                 [0.0, 1.0],
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(f64::MAX, 0.0, 0.0),
-                Vector3::new(0.0, f64::MAX, 0.0),
-                Vector3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::geometry::HelixFrame {
+                    center: Point3::new(0.0, 0.0, 0.0),
+                    major: Vector3::new(f64::MAX, 0.0, 0.0),
+                    minor: Vector3::new(0.0, f64::MAX, 0.0),
+                    pitch: Vector3::new(0.0, 0.0, 0.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                },
                 0.0,
-                Vector3::new(0.0, 0.0, 1.0),
                 None,
             )
             .expect("valid HelixCurveConstruction fixture"),

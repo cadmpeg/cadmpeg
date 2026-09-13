@@ -140,12 +140,14 @@ fn decode_retains_generated_helix_construction() {
     edited.model.procedural_curves[0].replace_definition(ProceduralCurveDefinition::Helix(
         cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
             [-1.0, 7.0],
-            Point3::new(12.0, 23.0, 34.0),
-            cadmpeg_ir::math::Vector3::new(30.0, 0.0, 0.0),
-            cadmpeg_ir::math::Vector3::new(0.0, -30.0, 0.0),
-            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 55.0),
+            cadmpeg_ir::geometry::HelixFrame {
+                center: Point3::new(12.0, 23.0, 34.0),
+                major: cadmpeg_ir::math::Vector3::new(30.0, 0.0, 0.0),
+                minor: cadmpeg_ir::math::Vector3::new(0.0, -30.0, 0.0),
+                pitch: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 55.0),
+                axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            },
             0.5,
-            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
             None,
         )
         .unwrap(),

@@ -591,9 +591,9 @@ impl CompoundCurveConstruction {
             return Err("compound curve parameters must be finite");
         }
         Ok(Self {
-            cache,
             parameters,
             components,
+            cache,
         })
     }
 
@@ -1781,17 +1781,38 @@ struct HelixPathConstructionWire {
     axis: Vector3,
 }
 
+/// The positioned frame a helix construction states.
+///
+/// The two helix constructions state the same five values, so they take them
+/// as one argument and each admits them against its own contract.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HelixFrame {
+    /// Helix centre in model space.
+    pub center: Point3,
+    /// Major radial vector.
+    pub major: Vector3,
+    /// Minor radial vector.
+    pub minor: Vector3,
+    /// Pitch vector along the axis.
+    pub pitch: Vector3,
+    /// Helix axis direction.
+    pub axis: Vector3,
+}
+
 impl HelixPathConstruction {
     /// Admit parameters that satisfy the helix payload contract.
     pub fn try_new(
         angle_range: [f64; 2],
-        center: Point3,
-        major: Vector3,
-        minor: Vector3,
-        pitch: Vector3,
+        frame: HelixFrame,
         apex_factor: f64,
-        axis: Vector3,
     ) -> Result<Self, &'static str> {
+        let HelixFrame {
+            center,
+            major,
+            minor,
+            pitch,
+            axis,
+        } = frame;
         let major_length = (major.x.powi(2) + major.y.powi(2) + major.z.powi(2)).sqrt();
         let minor_length = (minor.x.powi(2) + minor.y.powi(2) + minor.z.powi(2)).sqrt();
         if !(major_length > 0.0
@@ -1872,12 +1893,14 @@ impl TryFrom<HelixPathConstructionWire> for HelixPathConstruction {
     fn try_from(wire: HelixPathConstructionWire) -> Result<Self, Self::Error> {
         Self::try_new(
             wire.angle_range,
-            wire.center,
-            wire.major,
-            wire.minor,
-            wire.pitch,
+            HelixFrame {
+                center: wire.center,
+                major: wire.major,
+                minor: wire.minor,
+                pitch: wire.pitch,
+                axis: wire.axis,
+            },
             wire.apex_factor,
-            wire.axis,
         )
     }
 }
@@ -1922,14 +1945,17 @@ impl HelixCurveConstruction {
     /// Admit parameters that satisfy the helix payload contract.
     pub fn try_new(
         angle_range: [f64; 2],
-        center: Point3,
-        major: Vector3,
-        minor: Vector3,
-        pitch: Vector3,
+        frame: HelixFrame,
         apex_factor: f64,
-        axis: Vector3,
         cache: Option<LegacyCache>,
     ) -> Result<Self, &'static str> {
+        let HelixFrame {
+            center,
+            major,
+            minor,
+            pitch,
+            axis,
+        } = frame;
         if angle_range[0] > angle_range[1] {
             return Err("helix curve angle_range must be ordered");
         }
@@ -1957,7 +1983,6 @@ impl HelixCurveConstruction {
             .ok_or("HelixCurveConstruction.apex_factor must be finite")?;
         let axis = FiniteVector3::new(axis).ok_or("HelixCurveConstruction.axis must be finite")?;
         Ok(Self {
-            cache,
             angle_range,
             center,
             major,
@@ -1965,6 +1990,7 @@ impl HelixCurveConstruction {
             pitch,
             apex_factor,
             axis,
+            cache,
         })
     }
     /// Return the angle range.
@@ -2015,12 +2041,14 @@ impl TryFrom<HelixCurveConstructionWire> for HelixCurveConstruction {
     fn try_from(wire: HelixCurveConstructionWire) -> Result<Self, Self::Error> {
         Self::try_new(
             wire.angle_range,
-            wire.center,
-            wire.major,
-            wire.minor,
-            wire.pitch,
+            HelixFrame {
+                center: wire.center,
+                major: wire.major,
+                minor: wire.minor,
+                pitch: wire.pitch,
+                axis: wire.axis,
+            },
             wire.apex_factor,
-            wire.axis,
             wire.cache,
         )
     }
@@ -2041,16 +2069,18 @@ impl HelixCurveConstruction {
             |value: Vector3| Vector3::new(value.x * scale, value.y * scale, value.z * scale);
         let candidate = Self::try_new(
             self.angle_range.get(),
-            Point3::new(
-                self.center.x * scale,
-                self.center.y * scale,
-                self.center.z * scale,
-            ),
-            vector(self.major.get()),
-            vector(self.minor.get()),
-            vector(self.pitch.get()),
+            HelixFrame {
+                center: Point3::new(
+                    self.center.x * scale,
+                    self.center.y * scale,
+                    self.center.z * scale,
+                ),
+                major: vector(self.major.get()),
+                minor: vector(self.minor.get()),
+                pitch: vector(self.pitch.get()),
+                axis: self.axis.get(),
+            },
             self.apex_factor.get(),
-            self.axis.get(),
             // The rebuilt construction is minted fresh; the solved-cache
             // contract this construction states travels with it.
             self.cache,

@@ -2243,12 +2243,14 @@ mod tests {
         let mut curve_definition = cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(
             cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
                 [0.0, 1.0],
-                Point3::new(1.0, 2.0, 3.0),
-                Vector3::new(4.0, 5.0, 6.0),
-                Vector3::new(-5.0, 4.0, 6.0),
-                Vector3::new(10.0, 11.0, 12.0),
+                cadmpeg_ir::geometry::HelixFrame {
+                    center: Point3::new(1.0, 2.0, 3.0),
+                    major: Vector3::new(4.0, 5.0, 6.0),
+                    minor: Vector3::new(-5.0, 4.0, 6.0),
+                    pitch: Vector3::new(10.0, 11.0, 12.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                },
                 0.25,
-                Vector3::new(0.0, 0.0, 1.0),
                 None,
             )
             .unwrap(),

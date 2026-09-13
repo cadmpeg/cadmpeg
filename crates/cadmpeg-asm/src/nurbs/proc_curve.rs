@@ -539,12 +539,14 @@ impl HelixDefinition {
         Ok(cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(
             cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
                 self.angle_range,
-                self.center,
-                self.major,
-                self.minor,
-                self.pitch,
+                cadmpeg_ir::geometry::HelixFrame {
+                    center: self.center,
+                    major: self.major,
+                    minor: self.minor,
+                    pitch: self.pitch,
+                    axis: self.axis,
+                },
                 self.apex_factor,
-                self.axis,
                 None,
             )?,
         ))

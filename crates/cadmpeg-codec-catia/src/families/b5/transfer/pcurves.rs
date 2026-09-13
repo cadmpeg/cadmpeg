@@ -659,15 +659,17 @@ pub(super) fn cylinder_helix(
     let definition = ProceduralCurveDefinition::Helix(
         cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
             [0.0, sweep],
-            point3(add(*origin, scale(*axis, endpoints[0][1]))),
-            vector(scale(radial, *radius)),
-            vector(scale(tangent, radius * delta_angle.signum())),
-            vector(scale(
-                *axis,
-                delta_height / sweep * 2.0 * std::f64::consts::PI,
-            )),
+            cadmpeg_ir::geometry::HelixFrame {
+                center: point3(add(*origin, scale(*axis, endpoints[0][1]))),
+                major: vector(scale(radial, *radius)),
+                minor: vector(scale(tangent, radius * delta_angle.signum())),
+                pitch: vector(scale(
+                    *axis,
+                    delta_height / sweep * 2.0 * std::f64::consts::PI,
+                )),
+                axis: vector(*axis),
+            },
             0.0,
-            vector(*axis),
             None,
         )
         .ok()?,
