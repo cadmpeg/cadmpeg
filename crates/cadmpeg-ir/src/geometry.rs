@@ -4840,7 +4840,7 @@ pub struct ScaledCompoundLoftConstruction {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum LawFormula {
-    /// Native `null_law` with no variables.
+    /// The native null law, with no variables.
     Null {},
     /// Named formula and its ordered recursive variables.
     Named {
@@ -4852,15 +4852,6 @@ pub enum LawFormula {
 }
 
 impl LawFormula {
-    /// Native formula name, including `null_law` for the null variant.
-    #[must_use]
-    pub fn name(&self) -> &str {
-        match self {
-            Self::Null {} => "null_law",
-            Self::Named { name, .. } => name.as_str(),
-        }
-    }
-
     /// Ordered recursive variables; empty for the null variant.
     #[must_use]
     pub fn variables(&self) -> &[LawExpression] {
@@ -4931,7 +4922,7 @@ pub enum LawSurfaceTail {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum LawExpression {
-    /// Zero-payload `null_law` sentinel.
+    /// Zero-payload spelling of the native null law.
     Null {},
     /// Serializer-preserved textual law expression.
     Text {

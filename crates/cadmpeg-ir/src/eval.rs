@@ -5471,8 +5471,11 @@ fn sweep_rail_basis(formula: &LawFormula) -> Option<[Vector3; 3]> {
         }
         LawFormula::Named { .. } => {}
     }
-    let name = formula
-        .name()
+    let LawFormula::Named { name, variables } = formula else {
+        return None;
+    };
+    let name = name
+        .as_str()
         .chars()
         .filter(|character| !character.is_whitespace())
         .collect::<String>();
@@ -5486,7 +5489,7 @@ fn sweep_rail_basis(formula: &LawFormula) -> Option<[Vector3; 3]> {
         vectors,
         scale,
         flags,
-    }] = formula.variables()
+    }] = variables.as_slice()
     else {
         return None;
     };

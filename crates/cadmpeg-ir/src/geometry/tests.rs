@@ -511,15 +511,17 @@ fn a_law_formula_names_its_variant_with_a_tag() {
     .to_string();
     assert!(error.contains("variables"), "{error}");
 
-    // The IR names no native sentinel: `null_law` is the `null` variant, and
-    // the name field carries whatever the decoder hands it.
-    let sentinel = serde_json::from_value::<crate::geometry::LawFormula>(serde_json::json!({
+    // The IR names no native sentinel. A named law whose name happens to be
+    // the native null token is an ordinary named law; the IR has no opinion
+    // about the text, and the decoder maps the native token to Null before the
+    // IR sees it.
+    let named = serde_json::from_value::<crate::geometry::LawFormula>(serde_json::json!({
         "kind": "named",
-        "name": "null_law",
+        "name": "a_named_law",
         "variables": []
     }))
     .unwrap();
-    assert_eq!(sentinel.name(), "null_law");
+    assert!(named.variables().is_empty());
 }
 
 #[test]
