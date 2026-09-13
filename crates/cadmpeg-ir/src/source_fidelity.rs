@@ -447,16 +447,36 @@ mod tests {
     }
 
     /// The sidecar is an IR document and takes the one finite write route.
+    ///
+    /// No type reachable from a `DecodeSidecar` carries an `f64` today, so the
+    /// sidecar itself cannot be built holding a non-finite float. What the test
+    /// can state is both halves that make the claim: the sidecar's text is what
+    /// an independent writer produces for the same value, and the route the
+    /// method delegates to refuses a non-finite float in a struct field.
     #[test]
     fn the_sidecar_writes_through_the_finite_route() {
         let sidecar = DecodeSidecar::bind(b"cad-ir", report(), SourceFidelity::default());
-        let canonical: Result<String, crate::hash::finite_json::CanonicalJsonError> =
-            sidecar.to_canonical_json();
         assert_eq!(
-            canonical.expect("the sidecar writes"),
-            crate::hash::finite_json::to_canonical_json_string(&sidecar)
-                .expect("the one finite route writes the same text")
+            sidecar.to_canonical_json().expect("the sidecar writes"),
+            serde_json::to_string_pretty(&sidecar).expect("an independent writer writes it too")
         );
+
+        #[derive(serde::Serialize)]
+        struct FloatBearing {
+            value: f64,
+        }
+
+        let refused = crate::hash::finite_json::to_canonical_json_string(&FloatBearing {
+            value: f64::NAN,
+        });
+        assert!(
+            refused.is_err(),
+            "the route the sidecar delegates to refuses a non-finite float"
+        );
+        assert!(crate::hash::finite_json::to_canonical_json_string(&FloatBearing {
+            value: 1.0
+        })
+        .is_ok());
     }
 
     #[test]

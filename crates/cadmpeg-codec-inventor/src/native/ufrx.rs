@@ -543,14 +543,14 @@ enum ExternalReferenceIdentity {
 }
 
 impl ExternalReferenceRecord {
-    pub(crate) fn document(&self) -> cadmpeg_ir::products::ExternalDocumentReference {
-        use cadmpeg_ir::products::ExternalDocumentReference;
+    pub(crate) fn document(&self) -> cadmpeg_ir::products::ExternalDocument {
+        use cadmpeg_ir::products::ExternalDocument;
         match &self.identity {
             ExternalReferenceIdentity::Path { path, .. } => {
-                ExternalDocumentReference::Path { path: path.clone() }
+                ExternalDocument::Path { path: path.clone() }
             }
             ExternalReferenceIdentity::DocumentId(document_id) => {
-                ExternalDocumentReference::DocumentId {
+                ExternalDocument::DocumentId {
                     document_id: document_id.clone(),
                 }
             }

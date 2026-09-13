@@ -3801,8 +3801,10 @@ fn parametric_helix_definition(
 
 /// The draft angles an extrude states, one per native taper property.
 ///
-/// A `FreeCAD` extrude carries every taper property whether or not it drafts, so
-/// every field here is read once, before the extent shape is decided.
+/// `taper` and `taper_reverse` are read for every extrude. `taper_second` is
+/// read only when the extent is two-sided, because `TaperAngle2` belongs to the
+/// second side and a one-sided or midplane extent states no second side; on
+/// those the field is `None` without the property being parsed.
 struct ExtrudeDrafts {
     /// `TaperAngle`: the draft of the first (or only, or symmetric) side.
     taper: Option<cadmpeg_ir::scalar::SlopeAngle>,

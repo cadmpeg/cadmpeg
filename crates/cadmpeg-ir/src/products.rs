@@ -100,7 +100,7 @@ pub enum PrototypeReference {
     /// Prototype belongs to another document, loaded or not.
     External {
         /// Persisted external-document reference and unresolved state.
-        document: ExternalDocumentReference,
+        document: ExternalDocument,
         /// Persisted object identity within that document.
         #[serde(
             default,
@@ -319,8 +319,6 @@ impl ExternalDocument {
     }
 }
 
-/// First-class external document reference without implicit loading.
-pub type ExternalDocumentReference = ExternalDocument;
 
 /// Copy-on-change ownership behavior of a link.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1166,7 +1164,7 @@ pub enum OperandContainer {
     /// Object in an external document.
     External {
         /// External document that owns the object.
-        external_document: ExternalDocumentReference,
+        external_document: ExternalDocument,
     },
 }
 
@@ -1209,7 +1207,7 @@ impl JointOperand {
 
     /// Constructs an operand owned by an external document.
     pub fn external(
-        document: ExternalDocumentReference,
+        document: ExternalDocument,
         object: impl Into<String>,
         subelements: Vec<String>,
     ) -> Self {

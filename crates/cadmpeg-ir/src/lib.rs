@@ -109,7 +109,7 @@ pub use presentation::{
 pub use presentation::{PresentationItem, PresentationLayer};
 pub use products::{
     AssemblyGraph, AssemblyGraphError, AssemblyJoint, CopyOnChange, CopyOnChangePolicy,
-    ExternalDocument, ExternalDocumentReference, JointConnector, JointId, JointLimits,
+    ExternalDocument, JointConnector, JointId, JointLimits,
     JointOperand, JointOperands, LinkMember, LinkState, NonBlankString, Occurrence,
     OperandContainer, PairedJointKind, ProductDefinition, ProductDefinitionKind,
     PrototypeReference,
