@@ -1189,7 +1189,18 @@ impl<'a> DecodeContext<'a> {
         let association = self.source_association(identity);
         let feature_id =
             FeatureId::mint(format!("rhino:hatch:feature#{key}")).expect("identity grammar");
-        let transform = hatch_plane_transform(&hatch.plane, scale);
+        let transform = match hatch_plane_transform(
+            &hatch.plane,
+            scale,
+            &format!("rhino hatch record #{key}"),
+        ) {
+            Ok(transform) => transform,
+            Err(error) => {
+                self.scan_warning(source_order, &format!("hatch placement failed: {error}"));
+                self.mark_failed(source_order);
+                return;
+            }
+        };
         for hatch_loop in &mut hatch.loops {
             if let Err(error) = transform_decoded_curve(&mut hatch_loop.curve, transform) {
                 self.scan_warning(
@@ -5233,17 +5244,37 @@ fn compose_body_transform(
     Ok(())
 }
 
-fn hatch_plane_transform(plane: &crate::settings::Plane, scale: f64) -> Transform {
+/// The hatch plane's placement, scaled into millimetres.
+///
+/// Both the plane axes and `scale` come off the document, so a scale that
+/// drives a coefficient non-finite is a source the transform carrier refuses,
+/// not an impossible state. `record` names the hatch the plane came from.
+fn hatch_plane_transform(
+    plane: &crate::settings::Plane,
+    scale: f64,
+    record: &str,
+) -> Result<Transform, cadmpeg_core::CodecError> {
     let origin = plane.origin.0;
     let x = plane.xaxis.0;
     let y = plane.yaxis.0;
     let z = plane.zaxis.0;
-    Transform::affine([
+    let rows = [
         [x[0] * scale, y[0] * scale, z[0] * scale, origin[0] * scale],
         [x[1] * scale, y[1] * scale, z[1] * scale, origin[1] * scale],
         [x[2] * scale, y[2] * scale, z[2] * scale, origin[2] * scale],
-    ])
-    .expect("affine transform")
+    ];
+    Transform::affine(rows).ok_or_else(|| {
+        let offending = rows
+            .iter()
+            .flatten()
+            .copied()
+            .find(|value| !value.is_finite())
+            .unwrap_or(f64::NAN);
+        cadmpeg_core::CodecError::malformed(format!(
+            "{record}: the hatch plane scaled by {scale} states the non-finite \
+             transform coefficient {offending}"
+        ))
+    })
 }
 
 fn transform_decoded_curve(
