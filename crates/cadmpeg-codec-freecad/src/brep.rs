@@ -6104,7 +6104,9 @@ pub(crate) mod tests {
             }),
         };
         let cadmpeg_ir::geometry::PcurveGeometry::Offset(offset_pcurve) =
-            crate::topology_transfer::pcurve_geometry(&source).expect("valid recursive pcurve")
+            crate::topology_transfer::pcurve_geometry(&source)
+                .expect("recursive pcurve lanes pair")
+                .expect("valid recursive pcurve")
         else {
             panic!("expected offset pcurve");
         };

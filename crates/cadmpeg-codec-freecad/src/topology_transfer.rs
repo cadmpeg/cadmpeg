@@ -301,7 +301,18 @@ impl<'a> Builder<'a> {
                     .surfaces
                     .get(surface - 1)
                     .map(surface_parameter_affine);
-                let Some(primary_geometry) = pcurve_geometry(&self.tables.curve2ds[primary - 1])
+                let primary_read = match pcurve_geometry(&self.tables.curve2ds[primary - 1]) {
+                    Ok(geometry) => geometry,
+                    Err(error) => {
+                        self.losses
+                            .push(FreecadLossCode::PcurveNotTransferred.note(format!(
+                                "payload {} curve2ds index {primary} could not enter neutral geometry: {error}",
+                                self.payload.id
+                            )));
+                        continue;
+                    }
+                };
+                let Some(primary_geometry) = primary_read
                     .map(|geometry| transformed_pcurve_geometry(geometry, parameter_affine))
                 else {
                     self.losses
@@ -324,10 +335,19 @@ impl<'a> Builder<'a> {
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 });
                 if let Some(secondary) = secondary {
-                    let Some(secondary_geometry) =
-                        pcurve_geometry(&self.tables.curve2ds[secondary - 1]).map(|geometry| {
-                            transformed_pcurve_geometry(geometry, parameter_affine)
-                        })
+                    let secondary_read =
+                        match pcurve_geometry(&self.tables.curve2ds[secondary - 1]) {
+                            Ok(geometry) => geometry,
+                            Err(error) => {
+                                self.losses.push(FreecadLossCode::PcurveNotTransferred.note(format!(
+                                    "payload {} curve2ds index {secondary} could not enter neutral geometry: {error}", self.payload.id
+                                )));
+                                continue;
+                            }
+                        };
+                    let Some(secondary_geometry) = secondary_read.map(|geometry| {
+                        transformed_pcurve_geometry(geometry, parameter_affine)
+                    })
                     else {
                         self.losses.push(FreecadLossCode::PcurveNotTransferred.note(format!(
                             "payload {} curve2ds index {secondary} could not enter neutral geometry", self.payload.id
@@ -1450,7 +1470,18 @@ impl<'a> Builder<'a> {
             }
             _ => return Ok(None),
         };
-        let Some(geometry) = pcurve_geometry(&self.tables.curve2ds[curve_index - 1]) else {
+        let read = match pcurve_geometry(&self.tables.curve2ds[curve_index - 1]) {
+            Ok(geometry) => geometry,
+            Err(error) => {
+                self.losses
+                    .push(FreecadLossCode::PcurveNotTransferred.note(format!(
+                        "payload {} curve2ds index {curve_index} could not enter neutral geometry: {error}",
+                        self.payload.id
+                    )));
+                return Ok(None);
+            }
+        };
+        let Some(geometry) = read else {
             self.losses
                 .push(FreecadLossCode::PcurveNotTransferred.note(format!(
                     "payload {} curve2ds index {curve_index} could not enter neutral geometry",
@@ -1594,93 +1625,97 @@ fn positive_tolerance(value: f64) -> Option<cadmpeg_ir::scalar::PositiveReal> {
     cadmpeg_ir::scalar::PositiveReal::new(value)
 }
 
-pub(crate) fn pcurve_geometry(curve: &TextCurve2d) -> Option<PcurveGeometry> {
-    Some(match curve {
-        TextCurve2d::Line { origin, direction } => PcurveGeometry::Line(
-            cadmpeg_ir::geometry::LinePcurve::try_new(*origin, *direction).ok()?,
-        ),
+/// Read a 2D curve record into neutral geometry. `Ok(None)` states a record
+/// the neutral model cannot carry; `Err` states a B-spline record whose lanes
+/// the carrier refuses.
+pub(crate) fn pcurve_geometry(
+    curve: &TextCurve2d,
+) -> Result<Option<PcurveGeometry>, cadmpeg_ir::geometry::NurbsError> {
+    Ok(match curve {
+        TextCurve2d::Line { origin, direction } => {
+            cadmpeg_ir::geometry::LinePcurve::try_new(*origin, *direction)
+                .ok()
+                .map(PcurveGeometry::Line)
+        }
         TextCurve2d::Circle {
             center,
             x_axis,
             y_axis,
             radius,
-        } => PcurveGeometry::Circle(
-            cadmpeg_ir::geometry::CirclePcurve::try_new(*center, *x_axis, *y_axis, *radius).ok()?,
-        ),
+        } => cadmpeg_ir::geometry::CirclePcurve::try_new(*center, *x_axis, *y_axis, *radius)
+            .ok()
+            .map(PcurveGeometry::Circle),
         TextCurve2d::Ellipse {
             center,
             x_axis,
             y_axis,
             major_radius,
             minor_radius,
-        } => PcurveGeometry::Ellipse(
-            cadmpeg_ir::geometry::EllipsePcurve::try_new(
-                *center,
-                *x_axis,
-                *y_axis,
-                *major_radius,
-                *minor_radius,
-            )
-            .ok()?,
-        ),
+        } => cadmpeg_ir::geometry::EllipsePcurve::try_new(
+            *center,
+            *x_axis,
+            *y_axis,
+            *major_radius,
+            *minor_radius,
+        )
+        .ok()
+        .map(PcurveGeometry::Ellipse),
         TextCurve2d::Parabola {
             vertex,
             x_axis,
             y_axis,
             focal_distance,
-        } => PcurveGeometry::Parabola(
-            cadmpeg_ir::geometry::ParabolaPcurve::try_new(
-                *vertex,
-                *x_axis,
-                *y_axis,
-                *focal_distance,
-            )
-            .ok()?,
-        ),
+        } => cadmpeg_ir::geometry::ParabolaPcurve::try_new(
+            *vertex,
+            *x_axis,
+            *y_axis,
+            *focal_distance,
+        )
+        .ok()
+        .map(PcurveGeometry::Parabola),
         TextCurve2d::Hyperbola {
             center,
             x_axis,
             y_axis,
             major_radius,
             minor_radius,
-        } => PcurveGeometry::Hyperbola(
-            cadmpeg_ir::geometry::HyperbolaPcurve::try_new(
-                *center,
-                *x_axis,
-                *y_axis,
-                *major_radius,
-                *minor_radius,
-            )
-            .ok()?,
-        ),
-        TextCurve2d::Nurbs(nurbs) => PcurveGeometry::Nurbs {
+        } => cadmpeg_ir::geometry::HyperbolaPcurve::try_new(
+            *center,
+            *x_axis,
+            *y_axis,
+            *major_radius,
+            *minor_radius,
+        )
+        .ok()
+        .map(PcurveGeometry::Hyperbola),
+        TextCurve2d::Nurbs(nurbs) => Some(PcurveGeometry::Nurbs {
             nurbs: PcurveNurbs::from_lanes(
                 nurbs.degree,
                 nurbs.knots.clone(),
                 nurbs.control_points.clone(),
                 nurbs.weights.clone(),
                 nurbs.periodic,
-            )
-            .ok()?,
-        },
+            )?,
+        }),
         TextCurve2d::Trimmed {
             parameter_range,
             basis,
-        } => PcurveGeometry::Trimmed(
-            cadmpeg_ir::geometry::TrimmedPcurve::try_new(
-                *parameter_range,
-                true,
-                Box::new(pcurve_geometry(basis)?),
-            )
-            .ok()?,
-        ),
-        TextCurve2d::Offset { distance, basis } => PcurveGeometry::Offset(
-            cadmpeg_ir::geometry::OffsetPcurve::try_new(
-                *distance,
-                Box::new(pcurve_geometry(basis)?),
-            )
-            .ok()?,
-        ),
+        } => {
+            let Some(basis) = pcurve_geometry(basis)? else {
+                return Ok(None);
+            };
+            cadmpeg_ir::geometry::TrimmedPcurve::try_new(*parameter_range, true, Box::new(basis))
+                .ok()
+                .map(PcurveGeometry::Trimmed)
+        }
+        TextCurve2d::Offset { distance, basis } => {
+            let Some(basis) = pcurve_geometry(basis)? else {
+                return Ok(None);
+            };
+            cadmpeg_ir::geometry::OffsetPcurve::try_new(*distance, Box::new(basis))
+                .ok()
+                .map(PcurveGeometry::Offset)
+        }
     })
 }
 

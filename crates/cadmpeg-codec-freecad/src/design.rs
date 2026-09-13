@@ -1431,9 +1431,14 @@ fn parse_sketch(
                     .map(|attribute| (attribute.name().to_owned(), attribute.value().to_owned()))
                     .collect()
             });
-            let geometry_value = carrier
-                .and_then(|carrier| sketch_nurbs(&native_kind, carrier))
-                .map_or_else(|| sketch_geometry(&native_kind, &attributes), Ok)?;
+            let geometry_value = match carrier
+                .map(|carrier| sketch_nurbs(&native_kind, carrier))
+                .transpose()?
+                .flatten()
+            {
+                Some(nurbs) => nurbs,
+                None => sketch_geometry(&native_kind, &attributes)?,
+            };
             entities.push(
                 SketchEntity::new(
                     SketchEntityId::mint(format!(
@@ -1514,9 +1519,14 @@ fn parse_sketch(
                     .map(|attribute| (attribute.name().to_owned(), attribute.value().to_owned()))
                     .collect()
             });
-            let geometry = carrier
-                .and_then(|carrier| sketch_nurbs(&native_kind, carrier))
-                .map_or_else(|| sketch_geometry(&native_kind, &attributes), Ok)?;
+            let geometry = match carrier
+                .map(|carrier| sketch_nurbs(&native_kind, carrier))
+                .transpose()?
+                .flatten()
+            {
+                Some(nurbs) => nurbs,
+                None => sketch_geometry(&native_kind, &attributes)?,
+            };
             entities.push(
                 SketchEntity::new(
                     SketchEntityId::mint(format!(
@@ -1700,7 +1710,36 @@ fn builtin_reference_usage(properties: &[&PropertyRecord]) -> (bool, bool, bool)
     (horizontal, vertical, root)
 }
 
-fn sketch_nurbs(kind: &str, node: roxmltree::Node<'_, '_>) -> Option<SketchGeometry> {
+/// Lanes of a sketch B-spline record, as the source states them.
+struct SketchNurbsLanes {
+    degree: u32,
+    knots: Vec<f64>,
+    control_points: Vec<Point2>,
+    weights: Option<Vec<f64>>,
+    periodic: bool,
+}
+
+/// Read a sketch B-spline record. `Ok(None)` states the record is not a
+/// B-spline; `Err` states a B-spline record whose lanes the carrier refuses.
+fn sketch_nurbs(
+    kind: &str,
+    node: roxmltree::Node<'_, '_>,
+) -> Result<Option<SketchGeometry>, CodecError> {
+    let Some(lanes) = sketch_nurbs_lanes(kind, node) else {
+        return Ok(None);
+    };
+    Ok(Some(SketchGeometry::nurbs(
+        cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+            lanes.degree,
+            lanes.knots,
+            lanes.control_points,
+            lanes.weights,
+            lanes.periodic,
+        )?,
+    )))
+}
+
+fn sketch_nurbs_lanes(kind: &str, node: roxmltree::Node<'_, '_>) -> Option<SketchNurbsLanes> {
     if !matches!(kind, "Part::GeomBSplineCurve" | "BSplineCurve")
         && !node.has_tag_name("BSplineCurve")
     {
@@ -1785,19 +1824,16 @@ fn sketch_nurbs(kind: &str, node: roxmltree::Node<'_, '_>) -> Option<SketchGeome
         .iter()
         .map(|(_, _, weight)| *weight)
         .collect::<Vec<_>>();
-    Some(SketchGeometry::nurbs(
-        cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
-            degree,
-            full_knots,
-            control_points,
-            weights
-                .iter()
-                .any(|weight| (*weight - 1.0).abs() > f64::EPSILON)
-                .then_some(weights),
-            periodic,
-        )
-        .ok()?,
-    ))
+    Some(SketchNurbsLanes {
+        degree,
+        knots: full_knots,
+        control_points,
+        weights: weights
+            .iter()
+            .any(|weight| (*weight - 1.0).abs() > f64::EPSILON)
+            .then_some(weights),
+        periodic,
+    })
 }
 
 fn sketch_frame(properties: &[&PropertyRecord]) -> Result<(Point3, Vector3, Vector3), CodecError> {
