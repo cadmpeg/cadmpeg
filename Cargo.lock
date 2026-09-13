@@ -398,11 +398,13 @@ dependencies = [
  "base64",
  "cadmpeg-core",
  "cadmpeg-test-support",
+ "proc-macro2",
  "proptest",
  "schemars",
  "serde",
  "serde_json",
  "sha2",
+ "syn 2.0.118",
  "thiserror",
 ]
 

@@ -65,7 +65,7 @@ use self::topology::{
 };
 /// The decoded ASM B-rep graph plus loss accounting. Every field is a fact
 /// of the ASM stream, independent of the format that references the stream.
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Default, Serialize)]
 pub struct AsmBrep {
     /// Bodies.
     pub bodies: Vec<Body>,
@@ -130,6 +130,96 @@ pub struct AsmBrep {
     /// Source locations for emitted B-rep and synthetic child records.
     #[serde(skip)]
     pub annotation_records: Vec<AnnotationRecord>,
+}
+
+/// Flat wire shape of [`AsmBrep`].
+///
+/// The two join maps are serialized flattened beside the key records they
+/// project, so the read names every key of the document object in one struct
+/// and refuses any other. A container that flattens cannot declare
+/// `deny_unknown_fields`; naming the flattened keys here is what lets it.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AsmBrepWire {
+    bodies: Vec<Body>,
+    regions: Vec<Region>,
+    shells: Vec<Shell>,
+    faces: Vec<Face>,
+    loops: Vec<Loop>,
+    coedges: Vec<Coedge>,
+    edges: Vec<Edge>,
+    vertices: Vec<Vertex>,
+    points: Vec<Point>,
+    surfaces: Vec<Surface>,
+    curves: Vec<Curve>,
+    pcurves: Vec<Pcurve>,
+    procedural_surfaces: Vec<(SurfaceId, ProceduralSurface)>,
+    procedural_curves: Vec<(CurveId, ProceduralCurve)>,
+    edge_continuities: Vec<EdgeContinuity>,
+    edge_ownerships: Vec<EdgeOwnership>,
+    vertex_ownerships: Vec<VertexOwnership>,
+    face_sidedness: Vec<FaceSidedness>,
+    face_keys: HashMap<cadmpeg_ir::ids::FaceId, u64>,
+    face_native_keys: Vec<FaceNativeKey>,
+    tolerant_coedge_parameters: Vec<TolerantCoedgeParameters>,
+    tolerant_edge_tails: Vec<TolerantEdgeTail>,
+    tolerant_vertex_tails: Vec<TolerantVertexTail>,
+    mesh_surface_sentinels: Vec<MeshSurfaceSentinel>,
+    transform_hints: Vec<TransformHints>,
+    body_keys: HashMap<cadmpeg_ir::ids::BodyId, u64>,
+    body_native_keys: Vec<BodyNativeKey>,
+    wire_topologies: Vec<WireTopology>,
+    attributes: Vec<SourceAttribute>,
+    unknowns: Vec<UnknownRecord>,
+    stats: Stats,
+}
+
+impl<'de> Deserialize<'de> for AsmBrep {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = AsmBrepWire::deserialize(deserializer)?;
+        if !key_maps::faces::agrees(&wire.face_keys, &wire.face_native_keys) {
+            return Err(serde::de::Error::custom(
+                "face_keys must match face_native_keys",
+            ));
+        }
+        if !key_maps::bodies::agrees(&wire.body_keys, &wire.body_native_keys) {
+            return Err(serde::de::Error::custom(
+                "body_keys must match body_native_keys",
+            ));
+        }
+        Ok(Self {
+            bodies: wire.bodies,
+            regions: wire.regions,
+            shells: wire.shells,
+            faces: wire.faces,
+            loops: wire.loops,
+            coedges: wire.coedges,
+            edges: wire.edges,
+            vertices: wire.vertices,
+            points: wire.points,
+            surfaces: wire.surfaces,
+            curves: wire.curves,
+            pcurves: wire.pcurves,
+            procedural_surfaces: wire.procedural_surfaces,
+            procedural_curves: wire.procedural_curves,
+            edge_continuities: wire.edge_continuities,
+            edge_ownerships: wire.edge_ownerships,
+            vertex_ownerships: wire.vertex_ownerships,
+            face_sidedness: wire.face_sidedness,
+            face_native_keys: wire.face_native_keys,
+            tolerant_coedge_parameters: wire.tolerant_coedge_parameters,
+            tolerant_edge_tails: wire.tolerant_edge_tails,
+            tolerant_vertex_tails: wire.tolerant_vertex_tails,
+            mesh_surface_sentinels: wire.mesh_surface_sentinels,
+            transform_hints: wire.transform_hints,
+            body_native_keys: wire.body_native_keys,
+            wire_topologies: wire.wire_topologies,
+            attributes: wire.attributes,
+            unknowns: wire.unknowns,
+            stats: wire.stats,
+            annotation_records: Vec::new(),
+        })
+    }
 }
 
 impl AsmBrep {

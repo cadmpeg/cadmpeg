@@ -256,12 +256,12 @@ fn collect_goldens(directory: &Path, found: &mut Vec<PathBuf>) {
     }
 }
 
-/// Every hand-written `Deserialize` in the two wire crates, with how it is
+/// Every hand-written `Deserialize` in the three wire crates, with how it is
 /// covered.
 ///
 /// A hand impl never reaches `scripts/check-deny-census.py`, which reads
 /// `derive(Deserialize)` items only, so its coverage is stated here. The test
-/// below greps the source at run time and fails when this table and the source
+/// below parses the source at run time and fails when this table and the source
 /// disagree in either direction, so a new hand impl cannot land uncovered and a
 /// deleted one cannot leave a stale entry.
 ///
@@ -274,6 +274,14 @@ fn collect_goldens(directory: &Path, found: &mut Vec<PathBuf>) {
 /// * `free-form` - the impl reads an open map by design; `FIXTURES` below
 ///   states what refuses instead.
 const HAND_IMPLS: &[(&str, &str, &str)] = &[
+    ("crates/cadmpeg-asm/src/brep/mod.rs", "AsmBrep", "wire"),
+    ("crates/cadmpeg-asm/src/brep/records.rs", "$name", "wire"),
+    (
+        "crates/cadmpeg-asm/src/brep/records.rs",
+        "FaceSidedness",
+        "wire",
+    ),
+    ("crates/cadmpeg-asm/src/brep/stats.rs", "Stats", "wire"),
     ("crates/cadmpeg-core/src/dialect.rs", "DialectId", "keyless"),
     (
         "crates/cadmpeg-core/src/dialect.rs",
@@ -299,11 +307,23 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
         "HoleShape",
         "wire",
     ),
+    (
+        "crates/cadmpeg-ir/src/features/patterns.rs",
+        "PatternKind",
+        "wire",
+    ),
     ("crates/cadmpeg-ir/src/features.rs", "$name", "wire"),
+    ("crates/cadmpeg-ir/src/features.rs", "BodyMember", "wire"),
+    ("crates/cadmpeg-ir/src/features.rs", "BodyMembers", "keyless"),
     (
         "crates/cadmpeg-ir/src/features.rs",
         "ConfigurationEvaluation",
         "wire",
+    ),
+    (
+        "crates/cadmpeg-ir/src/features.rs",
+        "DistinctMembers",
+        "keyless",
     ),
     ("crates/cadmpeg-ir/src/features.rs", "FaceMaker", "keyless"),
     ("crates/cadmpeg-ir/src/features.rs", "Feature", "wire"),
@@ -329,7 +349,17 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
     ),
     (
         "crates/cadmpeg-ir/src/features.rs",
+        "NonEmptyMembers",
+        "keyless",
+    ),
+    (
+        "crates/cadmpeg-ir/src/features.rs",
         "PolygonSideCount",
+        "keyless",
+    ),
+    (
+        "crates/cadmpeg-ir/src/features.rs",
+        "SelectionMembers",
         "keyless",
     ),
     (
@@ -439,22 +469,16 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
         "CodecFormat",
         "keyless",
     ),
-    (
-        "crates/cadmpeg-ir/src/provenance.rs",
-        "Provenance<AnnotationLocation>",
-        "wire",
-    ),
-    (
-        "crates/cadmpeg-ir/src/provenance.rs",
-        "Provenance<SourceLocation>",
-        "wire",
-    ),
+    ("crates/cadmpeg-ir/src/provenance.rs", "Provenance", "wire"),
     ("crates/cadmpeg-ir/src/scalar.rs", "$name", "keyless"),
     (
         "crates/cadmpeg-ir/src/sketches.rs",
         "SpatialSketchNurbsCurve",
         "wire",
     ),
+    ("crates/cadmpeg-ir/src/tessellation.rs", "Strip", "keyless"),
+    ("crates/cadmpeg-ir/src/tessellation.rs", "Strips", "keyless"),
+    ("crates/cadmpeg-ir/src/units.rs", "$name", "keyless"),
 ];
 
 /// The coverage classes a `HAND_IMPLS` entry may state.
@@ -512,8 +536,19 @@ fn every_hand_written_deserialize_states_its_coverage() {
     }
 }
 
-/// Every `impl<'de> Deserialize<'de> for T` in the two wire crates, outside
-/// test modules and test files, as (crate-relative path, type text).
+/// Every hand-written `Deserialize` impl in the three wire crates, outside
+/// test modules and test files, as (crate-relative path, type name).
+///
+/// The source is parsed, not grepped: `syn` reads each file and the walk
+/// visits every `impl` item, including one nested in an inline `mod`, so a
+/// header wrapped over several lines, a generic parameter list, or a
+/// fully-qualified trait path is found just the same. An impl counts when the
+/// trait path ends in `Deserialize` and the impl generics declare the `'de`
+/// lifetime.
+///
+/// A `macro_rules!` body is token text, not items, so its impls are read from
+/// the macro's own token stream under the same trait-and-lifetime rule; the
+/// type name recorded there is the macro's metavariable.
 fn hand_written_impls() -> BTreeSet<(String, String)> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -521,7 +556,11 @@ fn hand_written_impls() -> BTreeSet<(String, String)> {
         .expect("the repository root sits two levels above the crate manifest")
         .to_path_buf();
     let mut found = BTreeSet::new();
-    for source in ["crates/cadmpeg-ir/src", "crates/cadmpeg-core/src"] {
+    for source in [
+        "crates/cadmpeg-ir/src",
+        "crates/cadmpeg-core/src",
+        "crates/cadmpeg-asm/src",
+    ] {
         let mut files = Vec::new();
         collect_rust_sources(&root.join(source), &mut files);
         for file in files {
@@ -533,21 +572,122 @@ fn hand_written_impls() -> BTreeSet<(String, String)> {
             if is_test_path(&relative) {
                 continue;
             }
-            for line in std::fs::read_to_string(&file).expect("read source").lines() {
-                let trimmed = line.trim();
-                for prefix in [
-                    "impl<'de> Deserialize<'de> for ",
-                    "impl<'de> serde::Deserialize<'de> for ",
-                ] {
-                    if let Some(rest) = trimmed.strip_prefix(prefix) {
-                        let name = rest.trim_end_matches('{').trim();
-                        found.insert((relative.clone(), name.to_owned()));
-                    }
-                }
-            }
+            let text = std::fs::read_to_string(&file).expect("read source");
+            let parsed = syn::parse_file(&text)
+                .map_err(|error| format!("{relative} does not parse: {error}"))
+                .expect("every source file in the wire crates parses");
+            collect_hand_impls(&parsed.items, &relative, &mut found);
         }
     }
     found
+}
+
+/// Records every hand-written `Deserialize` impl among `items`, recursing into
+/// inline modules and `macro_rules!` bodies.
+fn collect_hand_impls(items: &[syn::Item], relative: &str, found: &mut BTreeSet<(String, String)>) {
+    for item in items {
+        match item {
+            syn::Item::Impl(implementation) => {
+                if let Some(name) = deserialize_impl_target(implementation) {
+                    found.insert((relative.to_owned(), name));
+                }
+            }
+            syn::Item::Mod(module) => {
+                if is_test_module(module) {
+                    continue;
+                }
+                if let Some((_, nested)) = &module.content {
+                    collect_hand_impls(nested, relative, found);
+                }
+            }
+            syn::Item::Macro(macro_item) => {
+                for name in macro_body_impl_targets(&macro_item.mac.tokens) {
+                    found.insert((relative.to_owned(), name));
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Whether this inline module is a test module.
+fn is_test_module(module: &syn::ItemMod) -> bool {
+    module.attrs.iter().any(|attribute| match &attribute.meta {
+        syn::Meta::List(list) => {
+            list.path.is_ident("cfg") && list.tokens.to_string().contains("test")
+        }
+        syn::Meta::Path(_) | syn::Meta::NameValue(_) => false,
+    })
+}
+
+/// The type a hand-written `Deserialize` impl is written for: the last segment
+/// of its self type, without generic arguments.
+///
+/// `None` when the impl is for another trait, is an inherent impl, or declares
+/// no `'de` lifetime.
+fn deserialize_impl_target(implementation: &syn::ItemImpl) -> Option<String> {
+    let (_, path, _) = implementation.trait_.as_ref()?;
+    if path.segments.last()?.ident != "Deserialize" {
+        return None;
+    }
+    let has_de = implementation.generics.params.iter().any(|parameter| {
+        matches!(parameter, syn::GenericParam::Lifetime(lifetime)
+            if lifetime.lifetime.ident == "de")
+    });
+    if !has_de {
+        return None;
+    }
+    match implementation.self_ty.as_ref() {
+        syn::Type::Path(typed) => Some(typed.path.segments.last()?.ident.to_string()),
+        _ => None,
+    }
+}
+
+/// Every `Deserialize<'de> for …` target named in a `macro_rules!` body.
+///
+/// A macro body is token text, so it is scanned as tokens: the walk flattens
+/// every delimited group and looks for the token run
+/// `Deserialize < 'de > for`, then reads the target that follows. A target
+/// spelled as a metavariable is recorded with its sigil.
+fn macro_body_impl_targets(tokens: &proc_macro2::TokenStream) -> Vec<String> {
+    let mut flat = Vec::new();
+    flatten_tokens(tokens, &mut flat);
+    let header = [
+        "Deserialize".to_owned(),
+        "<".to_owned(),
+        "'".to_owned(),
+        "de".to_owned(),
+        ">".to_owned(),
+        "for".to_owned(),
+    ];
+    let mut targets = Vec::new();
+    for (index, window) in flat.windows(header.len()).enumerate() {
+        if window != header {
+            continue;
+        }
+        let after = index + header.len();
+        let Some(first) = flat.get(after) else {
+            continue;
+        };
+        if first == "$" {
+            if let Some(second) = flat.get(after + 1) {
+                targets.push(format!("${second}"));
+            }
+        } else {
+            targets.push(first.clone());
+        }
+    }
+    targets
+}
+
+/// Appends every token of `tokens` as text, descending into delimited groups.
+fn flatten_tokens(tokens: &proc_macro2::TokenStream, flat: &mut Vec<String>) {
+    for tree in tokens.clone() {
+        match tree {
+            proc_macro2::TokenTree::Group(group) => flatten_tokens(&group.stream(), flat),
+            other => flat.push(other.to_string()),
+        }
+    }
 }
 
 /// Whether this crate-relative path is a test file or sits in a test tree.

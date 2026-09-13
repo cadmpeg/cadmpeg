@@ -80,6 +80,9 @@ regex = "1.13"
 assert_cmd = "2"
 predicates = "3"
 proptest = "1"
+# Parses the wire crates' own source in the hand-written-Deserialize census.
+syn = { version = "2", features = ["full", "parsing"] }
+proc-macro2 = "1"
 tempfile = "3"
 toml = "1"
 encoding_rs = "0.8"
