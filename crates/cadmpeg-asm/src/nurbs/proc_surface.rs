@@ -4264,28 +4264,30 @@ pub(crate) fn helix_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> 
     }
     let path = cadmpeg_ir::geometry::HelixPathConstruction::try_new(
         path_angle_range,
-        Point3::new(
-            center[0] * LEN_TO_MM,
-            center[1] * LEN_TO_MM,
-            center[2] * LEN_TO_MM,
-        ),
-        Vector3::new(
-            major[0] * LEN_TO_MM,
-            major[1] * LEN_TO_MM,
-            major[2] * LEN_TO_MM,
-        ),
-        Vector3::new(
-            minor[0] * LEN_TO_MM,
-            minor[1] * LEN_TO_MM,
-            minor[2] * LEN_TO_MM,
-        ),
-        Vector3::new(
-            pitch[0] * LEN_TO_MM,
-            pitch[1] * LEN_TO_MM,
-            pitch[2] * LEN_TO_MM,
-        ),
+        cadmpeg_ir::geometry::HelixFrame {
+            center: Point3::new(
+                center[0] * LEN_TO_MM,
+                center[1] * LEN_TO_MM,
+                center[2] * LEN_TO_MM,
+            ),
+            major: Vector3::new(
+                major[0] * LEN_TO_MM,
+                major[1] * LEN_TO_MM,
+                major[2] * LEN_TO_MM,
+            ),
+            minor: Vector3::new(
+                minor[0] * LEN_TO_MM,
+                minor[1] * LEN_TO_MM,
+                minor[2] * LEN_TO_MM,
+            ),
+            pitch: Vector3::new(
+                pitch[0] * LEN_TO_MM,
+                pitch[1] * LEN_TO_MM,
+                pitch[2] * LEN_TO_MM,
+            ),
+            axis: axis,
+        },
         apex_factor,
-        axis,
     )
     .ok()?;
     let profile = if let Some(length) = length {

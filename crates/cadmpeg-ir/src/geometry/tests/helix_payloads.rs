@@ -1,6 +1,7 @@
 use super::super::{
-    HelixCircleProfile, HelixCurveConstruction, HelixLineProfile, HelixPathConstruction,
-    HelixSurfaceConstruction, HelixSurfaceProfile, ProceduralCurveDefinition,
+    HelixCircleProfile, HelixCurveConstruction, HelixFrame, HelixLineProfile,
+    HelixPathConstruction, HelixSurfaceConstruction, HelixSurfaceProfile,
+    ProceduralCurveDefinition,
 };
 use crate::math::{Point3, Vector3};
 use serde_json::json;
@@ -8,12 +9,14 @@ use serde_json::json;
 fn curve(radius: f64) -> HelixCurveConstruction {
     HelixCurveConstruction::try_new(
         [0.0, 1.0],
-        Point3::new(0.0, 0.0, 0.0),
-        Vector3::new(radius, 0.0, 0.0),
-        Vector3::new(0.0, radius, 0.0),
-        Vector3::new(0.0, 0.0, 1.0),
+        HelixFrame {
+            center: Point3::new(0.0, 0.0, 0.0),
+            major: Vector3::new(radius, 0.0, 0.0),
+            minor: Vector3::new(0.0, radius, 0.0),
+            pitch: Vector3::new(0.0, 0.0, 1.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+        },
         0.0,
-        Vector3::new(0.0, 0.0, 1.0),
         None,
     )
     .unwrap()
@@ -31,18 +34,29 @@ fn helix_curve_admission_rejects_the_validator_numeric_states() {
     let axis = *valid.axis();
     for range in [[1.0, 0.0], [f64::NAN, 1.0], [0.0, f64::INFINITY]] {
         assert!(HelixCurveConstruction::try_new(
-            range, center, major, minor, pitch, apex, axis, None
+            range,
+            HelixFrame {
+                center: center,
+                major: major,
+                minor: minor,
+                pitch: pitch,
+                axis: axis
+            },
+            apex,
+            None
         )
         .is_err());
     }
     assert!(HelixCurveConstruction::try_new(
         [0.0, 0.0],
-        center,
-        major,
-        minor,
-        pitch,
+        HelixFrame {
+            center: center,
+            major: major,
+            minor: minor,
+            pitch: pitch,
+            axis: axis
+        },
         apex,
-        axis,
         None
     )
     .is_ok());
@@ -51,22 +65,42 @@ fn helix_curve_admission_rejects_the_validator_numeric_states() {
         Vector3::new(f64::EPSILON, 0.0, 0.0),
     ] {
         assert!(HelixCurveConstruction::try_new(
-            range, center, vector, minor, pitch, apex, axis, None
+            range,
+            HelixFrame {
+                center: center,
+                major: vector,
+                minor: minor,
+                pitch: pitch,
+                axis: axis
+            },
+            apex,
+            None
         )
         .is_err());
         assert!(HelixCurveConstruction::try_new(
-            range, center, major, minor, pitch, apex, vector, None
+            range,
+            HelixFrame {
+                center: center,
+                major: major,
+                minor: minor,
+                pitch: pitch,
+                axis: vector
+            },
+            apex,
+            None
         )
         .is_err());
     }
     assert!(HelixCurveConstruction::try_new(
         range,
-        center,
-        major,
-        Vector3::new(0.0, 2.0, 0.0),
-        pitch,
+        HelixFrame {
+            center: center,
+            major: major,
+            minor: Vector3::new(0.0, 2.0, 0.0),
+            pitch: pitch,
+            axis: axis
+        },
         apex,
-        axis,
         None
     )
     .is_err());
@@ -114,28 +148,41 @@ fn helix_surface_and_curve_keep_distinct_radius_tolerances() {
     let minor = Vector3::new(0.0, 1000.0 + RADIUS_DIFFERENCE, 0.0);
     let pitch = Vector3::new(0.0, 0.0, 1.0);
     let axis = Vector3::new(0.0, 0.0, 1.0);
-    assert!(
-        HelixPathConstruction::try_new([0.0, 1.0], center, major, minor, pitch, 0.0, axis).is_ok()
-    );
+    assert!(HelixPathConstruction::try_new(
+        [0.0, 1.0],
+        HelixFrame {
+            center: center,
+            major: major,
+            minor: minor,
+            pitch: pitch,
+            axis: axis
+        },
+        0.0
+    )
+    .is_ok());
     assert!(HelixCurveConstruction::try_new(
         [0.0, 1.0],
-        center,
-        major,
-        minor,
-        pitch,
+        HelixFrame {
+            center: center,
+            major: major,
+            minor: minor,
+            pitch: pitch,
+            axis: axis
+        },
         0.0,
-        axis,
         None
     )
     .is_err());
     assert!(HelixPathConstruction::try_new(
         [0.0, 1.0],
-        center,
-        major,
-        Vector3::new(0.0, 1001.0, 0.0),
-        pitch,
-        0.0,
-        axis
+        HelixFrame {
+            center: center,
+            major: major,
+            minor: Vector3::new(0.0, 1001.0, 0.0),
+            pitch: pitch,
+            axis: axis
+        },
+        0.0
     )
     .is_err());
 }
@@ -144,12 +191,14 @@ fn helix_surface_and_curve_keep_distinct_radius_tolerances() {
 fn helix_surface_preserves_finite_directed_ranges_and_signed_profiles() {
     let path = HelixPathConstruction::try_new(
         [1.0, -1.0],
-        Point3::new(0.0, 0.0, 0.0),
-        Vector3::new(2.0, 0.0, 0.0),
-        Vector3::new(0.0, 2.0, 0.0),
-        Vector3::new(0.0, 0.0, 1.0),
+        HelixFrame {
+            center: Point3::new(0.0, 0.0, 0.0),
+            major: Vector3::new(2.0, 0.0, 0.0),
+            minor: Vector3::new(0.0, 2.0, 0.0),
+            pitch: Vector3::new(0.0, 0.0, 1.0),
+            axis: Vector3::new(0.0, 0.0, 0.0),
+        },
         0.0,
-        Vector3::new(0.0, 0.0, 0.0),
     )
     .unwrap();
     let profile = HelixSurfaceProfile::Circle(HelixCircleProfile::try_new(-1.0, -2.0).unwrap());

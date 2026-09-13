@@ -479,12 +479,14 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         Some(cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(
             cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
                 [0.0, 1.0],
-                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-                cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
-                cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                cadmpeg_ir::geometry::HelixFrame {
+                    center: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    major: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                    minor: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+                    pitch: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                    axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                },
                 1.0,
-                cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
                 None,
             )
             .unwrap(),
