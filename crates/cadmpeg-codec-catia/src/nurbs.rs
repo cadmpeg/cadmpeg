@@ -61,9 +61,28 @@ fn valid_pcurve_nurbs(nurbs: &PcurveNurbs) -> bool {
 }
 
 /// Reverse a line or NURBS pcurve over an unchanged increasing parameter range.
+/// Record a carrier refusal and answer `None`.
+///
+/// A record of the right kind whose lanes the IR carrier refuses is not a
+/// record of another kind: the reader answers `None` for the record it is
+/// reading, and the refusal travels to the reader that states it.
+pub(crate) fn note_refusal<T>(
+    result: Result<T, cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+) -> Option<T> {
+    match result {
+        Ok(value) => Some(value),
+        Err(error) => {
+            *refusal = Some(error);
+            None
+        }
+    }
+}
+
 pub(crate) fn reverse_pcurve_geometry(
     geometry: &PcurveGeometry,
     range: [f64; 2],
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<PcurveGeometry> {
     if !range.into_iter().all(f64::is_finite)
         || range[0] >= range[1]
@@ -113,18 +132,21 @@ pub(crate) fn reverse_pcurve_geometry(
             if reversed_knots.iter().copied().any(|knot| !knot.is_finite()) {
                 return None;
             }
-            Some(PcurveGeometry::Nurbs {
-                nurbs: PcurveNurbs::from_lanes(
-                    nurbs.degree(),
-                    reversed_knots,
-                    nurbs.control_points().iter().rev().copied().collect(),
-                    nurbs
-                        .weights()
-                        .map(|weights| weights.iter().rev().copied().collect()),
-                    nurbs.periodic(),
-                )
-                .ok()?,
-            })
+            match PcurveNurbs::from_lanes(
+                nurbs.degree(),
+                reversed_knots,
+                nurbs.control_points().iter().rev().copied().collect(),
+                nurbs
+                    .weights()
+                    .map(|weights| weights.iter().rev().copied().collect()),
+                nurbs.periodic(),
+            ) {
+                Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),
+                Err(error) => {
+                    *refusal = Some(error);
+                    None
+                }
+            }
         }
         _ => None,
     }
@@ -134,6 +156,7 @@ pub(crate) fn reverse_pcurve_geometry(
 pub(crate) fn reverse_curve_geometry(
     geometry: &CurveGeometry,
     range: [f64; 2],
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<(CurveGeometry, [f64; 2])> {
     if !range.into_iter().all(f64::is_finite)
         || range[0] > range[1]
@@ -229,21 +252,24 @@ pub(crate) fn reverse_curve_geometry(
             if knots.iter().copied().any(|knot| !knot.is_finite()) {
                 return None;
             }
-            Some((
-                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                    NurbsCurve::from_lanes(
-                        nurbs.degree(),
-                        knots,
-                        nurbs.control_points().iter().rev().copied().collect(),
-                        nurbs
-                            .weights()
-                            .map(|weights| weights.iter().rev().copied().collect()),
-                        nurbs.periodic(),
-                    )
-                    .ok()?,
+            match NurbsCurve::from_lanes(
+                nurbs.degree(),
+                knots,
+                nurbs.control_points().iter().rev().copied().collect(),
+                nurbs
+                    .weights()
+                    .map(|weights| weights.iter().rev().copied().collect()),
+                nurbs.periodic(),
+            ) {
+                Ok(curve) => Some((
+                    CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
+                    range,
                 )),
-                range,
-            ))
+                Err(error) => {
+                    *refusal = Some(error);
+                    None
+                }
+            }
         }
         _ => None,
     }
@@ -384,6 +410,7 @@ pub(crate) struct CircularHelixCache {
 pub(crate) fn circular_helix_cache(
     construction: &ProceduralCurveDefinition,
     requested_tolerance: f64,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<CircularHelixCache> {
     let ProceduralCurveDefinition::Helix(helix_payload) = construction else {
         return None;
@@ -492,14 +519,19 @@ pub(crate) fn circular_helix_cache(
     knots.push(angle_range[0]);
     knots.extend(samples.iter().map(|(parameter, _)| *parameter));
     knots.push(angle_range[1]);
-    let curve = NurbsCurve::from_lanes(
+    let curve = match NurbsCurve::from_lanes(
         1,
         knots,
         samples.into_iter().map(|(_, point)| point).collect(),
         None,
         false,
-    )
-    .ok()?;
+    ) {
+        Ok(curve) => curve,
+        Err(error) => {
+            *refusal = Some(error);
+            return None;
+        }
+    };
     if !fit_tolerance.is_finite()
         || !valid_nurbs_curve(&curve)
         || !knots_nondecreasing(curve.knots())
@@ -623,6 +655,7 @@ pub(crate) fn nurbs_surface_isocurve(
     surface: &NurbsSurface,
     parameter: f64,
     fix_u: bool,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<NurbsCurve> {
     if !parameter.is_finite()
         || !surface.u_knots().iter().copied().all(f64::is_finite)
@@ -700,7 +733,7 @@ pub(crate) fn nurbs_surface_isocurve(
     {
         return None;
     }
-    NurbsCurve::from_lanes(
+    match NurbsCurve::from_lanes(
         degree,
         knots,
         control_points,
@@ -710,8 +743,13 @@ pub(crate) fn nurbs_surface_isocurve(
         } else {
             surface.u_periodic()
         },
-    )
-    .ok()
+    ) {
+        Ok(curve) => Some(curve),
+        Err(error) => {
+            *refusal = Some(error);
+            None
+        }
+    }
 }
 
 fn nurbs_basis_values(
@@ -819,7 +857,7 @@ mod tests {
             .expect("valid LinePcurve fixture"),
         );
         let range = [5.0, 9.0];
-        let reversed = reverse_pcurve_geometry(&geometry, range).expect("reversible line");
+        let reversed = reverse_pcurve_geometry(&geometry, range, &mut None).expect("reversible line");
         for (parameter, source_parameter) in [(5.0, 9.0), (9.0, 5.0)] {
             let actual = pcurve_uv(&reversed, parameter).expect("reversed evaluation");
             let expected = pcurve_uv(&geometry, source_parameter).expect("source evaluation");
@@ -850,7 +888,7 @@ mod tests {
         ));
         for (geometry, range) in [(line, [5.0, 9.0]), (circle, [0.25, 2.0])] {
             let (reversed, reversed_range) =
-                reverse_curve_geometry(&geometry, range).expect("reversible model curve");
+                reverse_curve_geometry(&geometry, range, &mut None).expect("reversible model curve");
             for (parameter, source_parameter) in
                 [(reversed_range[0], range[1]), (reversed_range[1], range[0])]
             {
@@ -877,7 +915,7 @@ mod tests {
         ));
         let range = [0.2, 0.8];
         let (reversed, reversed_range) =
-            reverse_curve_geometry(&geometry, range).expect("reversible NURBS");
+            reverse_curve_geometry(&geometry, range, &mut None).expect("reversible NURBS");
         for parameter in [range[0], 0.5, range[1]] {
             let actual = curve_point(&reversed, parameter).expect("reversed NURBS point");
             let expected = curve_point(&geometry, range[0] + range[1] - parameter)
@@ -950,7 +988,7 @@ mod tests {
             false,
         )
         .unwrap();
-        let curve = nurbs_surface_isocurve(&surface, tiny * 0.5, true)
+        let curve = nurbs_surface_isocurve(&surface, tiny * 0.5, true, &mut None)
             .expect("tiny rational surface isocurve");
         assert_eq!(
             curve.control_points(),
@@ -984,7 +1022,7 @@ mod tests {
             ),
             0.5,
             true,
-        )
+         &mut None,)
         .is_none());
     }
 
@@ -1004,7 +1042,7 @@ mod tests {
             .expect("valid HelixCurveConstruction fixture"),
         );
 
-        let cache = circular_helix_cache(&definition, 1.0e-4).expect("valid helix");
+        let cache = circular_helix_cache(&definition, 1.0e-4, &mut None).expect("valid helix");
         assert_eq!(cache.curve.knots()[1], range[0]);
         assert_eq!(cache.curve.knots()[cache.curve.knots().len() - 2], range[1]);
         assert!(cache.fit_tolerance.is_finite());
@@ -1036,14 +1074,14 @@ mod tests {
         };
 
         assert!(
-            circular_helix_cache(&definition(Vector3::new(0.0, radius, 0.0)), 1.0e-4).is_some()
+            circular_helix_cache(&definition(Vector3::new(0.0, radius, 0.0)), 1.0e-4, &mut None).is_some()
         );
         assert!(
-            circular_helix_cache(&definition(Vector3::new(0.0, 2.0 * radius, 0.0)), 1.0e-4)
+            circular_helix_cache(&definition(Vector3::new(0.0, 2.0 * radius, 0.0)), 1.0e-4, &mut None)
                 .is_none()
         );
         assert!(
-            circular_helix_cache(&definition(Vector3::new(radius, 0.0, 0.0)), 1.0e-4).is_none()
+            circular_helix_cache(&definition(Vector3::new(radius, 0.0, 0.0)), 1.0e-4, &mut None).is_none()
         );
     }
 
@@ -1080,7 +1118,7 @@ mod tests {
             )
             .expect("valid HelixCurveConstruction fixture");
         }
-        assert!(circular_helix_cache(&non_axial_pitch, 1.0e-4).is_none());
+        assert!(circular_helix_cache(&non_axial_pitch, 1.0e-4, &mut None).is_none());
 
         let overflowing_fit = ProceduralCurveDefinition::Helix(
             cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
@@ -1094,7 +1132,7 @@ mod tests {
             )
             .expect("valid HelixCurveConstruction fixture"),
         );
-        assert!(circular_helix_cache(&overflowing_fit, f64::MAX).is_none());
+        assert!(circular_helix_cache(&overflowing_fit, f64::MAX, &mut None).is_none());
     }
 
     #[test]
@@ -1125,7 +1163,7 @@ mod tests {
             cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
                 .unwrap(),
         );
-        assert!(reverse_pcurve_geometry(&pcurve_line, [f64::MAX / 2.0, f64::MAX]).is_none());
+        assert!(reverse_pcurve_geometry(&pcurve_line, [f64::MAX / 2.0, f64::MAX], &mut None).is_none());
 
         let model_line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::LineCurve::try_new(
@@ -1134,7 +1172,7 @@ mod tests {
             )
             .unwrap(),
         ));
-        assert!(reverse_curve_geometry(&model_line, [0.0, f64::MAX]).is_none());
+        assert!(reverse_curve_geometry(&model_line, [0.0, f64::MAX], &mut None).is_none());
 
         let pcurve_nurbs = PcurveGeometry::Nurbs {
             nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
@@ -1146,6 +1184,32 @@ mod tests {
             )
             .unwrap(),
         };
-        assert!(reverse_pcurve_geometry(&pcurve_nurbs, [0.0, f64::MAX]).is_none());
+        assert!(reverse_pcurve_geometry(&pcurve_nurbs, [0.0, f64::MAX], &mut None).is_none());
+    }
+
+    #[test]
+    fn a_weight_lane_shorter_than_its_pole_lane_is_carried_not_dropped() {
+        let mut refusal = None;
+        let carried = super::note_refusal(
+            PcurveNurbs::from_lanes(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+                Some(vec![1.0]),
+                false,
+            ),
+            &mut refusal,
+        );
+        assert!(carried.is_none(), "the refused record states no pcurve");
+        let error = refusal.expect("the refusal is carried out of the reader");
+        assert!(
+            error.to_string().contains("pole(s) against"),
+            "the refusal states both lane counts: {error}"
+        );
+        let reported = cadmpeg_core::CodecError::from(error);
+        let cadmpeg_core::CodecError::Malformed(message) = &reported else {
+            panic!("expected a malformed refusal, got {reported:?}");
+        };
+        assert!(message.contains("pole(s) against"));
     }
 }

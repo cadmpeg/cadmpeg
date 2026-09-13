@@ -281,9 +281,9 @@ fn topology_parse_does_not_join_records_across_object_stream_runs() {
     let mut separated = original.clone();
     separated.insert(split, 0xff);
 
-    let merged = parse_flat(&separated).expect("flat scan can join the separated records");
+    let merged = parse_flat(&separated, &mut None).expect("flat scan can join the separated records");
     assert!(merged.complete);
-    assert_ne!(parse(&separated), Some(merged));
+    assert_ne!(parse(&separated, &mut None), Some(merged));
 }
 
 #[test]
@@ -293,7 +293,7 @@ fn topology_runs_retain_only_their_own_vertex_allocations() {
     bytes.push(0xff);
     bytes.extend_from_slice(&first);
 
-    let graphs = topology_runs(&bytes);
+    let graphs = topology_runs(&bytes, &mut None);
     assert_eq!(graphs.len(), 2);
     assert!(graphs
         .iter()
@@ -303,7 +303,7 @@ fn topology_runs_retain_only_their_own_vertex_allocations() {
 #[test]
 fn topology_parse_admits_one_referenced_isolated_geometry_frame() {
     let original = crate::test_support::b5_closed_triangle_stream();
-    let expected = parse(&original).expect("closed source graph");
+    let expected = parse(&original, &mut None).expect("closed source graph");
     let isolated = object_stream_frames(&original)
         .into_iter()
         .find(|frame| is_referenced_geometry_class(frame.family, frame.class))
@@ -314,14 +314,14 @@ fn topology_parse_admits_one_referenced_isolated_geometry_frame() {
     separated.push(0xff);
     separated.extend_from_slice(&isolated_bytes);
 
-    assert_eq!(parse(&separated), Some(expected));
+    assert_eq!(parse(&separated, &mut None), Some(expected));
     assert_eq!(object_stream_populations(&separated).len(), 1);
 }
 
 #[test]
 fn topology_parse_does_not_borrow_geometry_from_another_population() {
     let original = crate::test_support::b5_closed_triangle_stream();
-    let expected = parse(&original).expect("closed source graph");
+    let expected = parse(&original, &mut None).expect("closed source graph");
     let geometry = object_stream_frames(&original)
         .into_iter()
         .find(|frame| is_referenced_geometry_class(frame.family, frame.class))
@@ -333,7 +333,7 @@ fn topology_parse_does_not_borrow_geometry_from_another_population() {
     separated.extend_from_slice(&geometry_bytes);
     crate::test_support::append_b5_record(&mut separated, 0x5e, 900, &[]);
 
-    assert_ne!(parse(&separated), Some(expected));
+    assert_ne!(parse(&separated, &mut None), Some(expected));
     assert_eq!(object_stream_populations(&separated).len(), 2);
 }
 
@@ -379,10 +379,10 @@ fn indexed_frame_parse_matches_one_shot_parse() {
     let frames = object_stream_frames(&bytes);
     let records = records_from_frames(&bytes, &frames);
 
-    assert_eq!(parse(&bytes), parse_from_frames(&bytes, &frames));
+    assert_eq!(parse(&bytes, &mut None), parse_from_frames(&bytes, &frames, &mut None));
     assert_eq!(
-        parse(&bytes),
-        parse_from_records(&bytes, &records, &frames, true)
+        parse(&bytes, &mut None),
+        parse_from_records(&bytes, &records, &frames, true, &mut None)
     );
     assert_eq!(
         typed_face_records(&bytes),
@@ -1397,7 +1397,7 @@ fn edge_record_retains_references_and_each_admitted_terminal_control() {
 
 #[test]
 fn referenced_edge_vertex_references_excludes_unreferenced_allocations() {
-    let mut graph = parse(&crate::test_support::b5_closed_triangle_stream()).expect("B5 graph");
+    let mut graph = parse(&crate::test_support::b5_closed_triangle_stream(), &mut None).expect("B5 graph");
     assert!(graph.complete);
     graph.edges.insert(
         301,
@@ -1438,7 +1438,7 @@ fn duplicate_face_loop_ownership_does_not_close_the_graph() {
     face_payload.push(0x03);
     crate::test_support::append_b5_record(&mut bytes, 0x5f, 902, &face_payload);
 
-    let graph = parse(&bytes).expect("structurally parseable B5 graph");
+    let graph = parse(&bytes, &mut None).expect("structurally parseable B5 graph");
 
     assert_eq!(graph.faces.len(), 2);
     assert_eq!(graph.loops.len(), 1);

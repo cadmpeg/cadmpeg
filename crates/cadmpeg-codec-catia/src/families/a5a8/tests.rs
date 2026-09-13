@@ -17,7 +17,7 @@ use crate::CatiaCodec;
 
 #[test]
 fn a8_surface_parser_reads_common_form_nurbs() {
-    let surfaces = crate::families::a5a8::records::a8_surfaces(&a8_surface_stream());
+    let surfaces = crate::families::a5a8::records::a8_surfaces(&a8_surface_stream(), &mut None);
     assert_eq!(surfaces.len(), 1);
     assert_eq!(surfaces[0].object_id(), Some(0xdeca_fbad));
     let surface = &surfaces[0].geometry;
@@ -37,7 +37,7 @@ fn selected_nested_a8_surface_frame_decodes_without_a_flat_rescan() {
     bytes.extend_from_slice(&inner);
     let inner_end = bytes.len();
 
-    assert!(crate::families::a5a8::records::resolved_a8_surfaces(&bytes).is_empty());
+    assert!(crate::families::a5a8::records::resolved_a8_surfaces(&bytes, &mut None).is_empty());
     let header = crate::families::a5a8::records::a8_surface_header_from_object_frame(
         &bytes,
         inner_start,
@@ -61,7 +61,7 @@ fn selected_nested_a8_surface_frame_decodes_without_a_flat_rescan() {
         inner_start,
         inner_end,
         inner_object_id,
-    )
+     &mut None,)
     .expect("selected nested surface");
     let surface = surface.geometry;
     assert_eq!(surface.poles().into_iter().nth(8).unwrap().x, 8.0);
@@ -71,7 +71,7 @@ fn selected_nested_a8_surface_frame_decodes_without_a_flat_rescan() {
             inner_start,
             inner_end - 1,
             inner_object_id,
-        )
+         &mut None,)
         .is_none()
     );
 }
@@ -79,7 +79,7 @@ fn selected_nested_a8_surface_frame_decodes_without_a_flat_rescan() {
 #[test]
 fn a8_surface_parser_accepts_frame_bounded_knot_and_pole_counts() {
     let surfaces =
-        crate::families::a5a8::records::a8_surfaces(&a8_surface_stream_with_u_count(20_001));
+        crate::families::a5a8::records::a8_surfaces(&a8_surface_stream_with_u_count(20_001), &mut None);
     assert_eq!(surfaces.len(), 1);
     let surface = &surfaces[0].geometry;
     assert_eq!((surface.u_count(), surface.v_count()), (20_002, 3));
@@ -93,7 +93,7 @@ fn a8_surface_parser_rejects_unframed_trailing_bytes() {
     let payload_len = u32::try_from(bytes.len() - 11).unwrap();
     bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
 
-    assert!(crate::families::a5a8::records::a8_surfaces(&bytes).is_empty());
+    assert!(crate::families::a5a8::records::a8_surfaces(&bytes, &mut None).is_empty());
 }
 
 #[test]
@@ -109,13 +109,13 @@ fn a8_surface_parser_accepts_a_closed_nested_b5_run() {
     let payload_len = u32::try_from(bytes.len() - 11).unwrap();
     bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
 
-    assert_eq!(crate::families::a5a8::records::a8_surfaces(&bytes).len(), 1);
+    assert_eq!(crate::families::a5a8::records::a8_surfaces(&bytes, &mut None).len(), 1);
 }
 
 #[test]
 fn a8_surface_parser_accepts_a_valid_tail_after_inline_poles() {
     let bytes = a8_inline_tail_surface_stream();
-    let [surface] = crate::families::a5a8::records::a8_surfaces(&bytes)
+    let [surface] = crate::families::a5a8::records::a8_surfaces(&bytes, &mut None)
         .try_into()
         .expect("one inline-tail surface");
     let surface = surface.geometry;
@@ -129,7 +129,7 @@ fn a8_surface_parser_accepts_a_valid_tail_after_inline_weights() {
     let payload_len = u32::try_from(bytes.len() - 11).unwrap();
     bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
 
-    let [surface] = crate::families::a5a8::records::a8_surfaces(&bytes)
+    let [surface] = crate::families::a5a8::records::a8_surfaces(&bytes, &mut None)
         .try_into()
         .expect("one inline-weight-tail surface");
     let surface = surface.geometry;
@@ -169,7 +169,7 @@ fn a8_surface_parser_accepts_inline_continuation_tail_variants() {
         &alternate_extrapolated,
     ] {
         let bytes = surface_with_tail(tail);
-        let [_surface] = crate::families::a5a8::records::a8_surfaces(&bytes)
+        let [_surface] = crate::families::a5a8::records::a8_surfaces(&bytes, &mut None)
             .try_into()
             .expect("one inline-tail surface");
         let [header] = crate::families::a5a8::records::a8_surface_headers(&bytes)
@@ -195,7 +195,7 @@ fn a8_elided_surface_requires_the_fixed_zero_continuation() {
         header.pole_storage,
         crate::families::a5a8::records::PoleStorage::Inline
     );
-    assert!(crate::families::a5a8::records::resolved_a8_surfaces(&bytes).is_empty());
+    assert!(crate::families::a5a8::records::resolved_a8_surfaces(&bytes, &mut None).is_empty());
 }
 
 #[test]
@@ -203,7 +203,7 @@ fn a8_surface_parser_rejects_a_malformed_tail_after_inline_poles() {
     let mut bytes = a8_inline_tail_surface_stream();
     let tail_start = bytes.len() - 141;
     bytes[tail_start + 68] = 0;
-    assert!(crate::families::a5a8::records::a8_surfaces(&bytes).is_empty());
+    assert!(crate::families::a5a8::records::a8_surfaces(&bytes, &mut None).is_empty());
 }
 
 #[test]
@@ -212,7 +212,7 @@ fn a8_surface_parser_accepts_each_object_frame_flag() {
         let mut bytes = a8_surface_stream();
         bytes[1] = flag;
         assert_eq!(
-            crate::families::a5a8::records::a8_surfaces(&bytes).len(),
+            crate::families::a5a8::records::a8_surfaces(&bytes, &mut None).len(),
             1,
             "flag {flag:#04x}"
         );
@@ -225,7 +225,7 @@ fn a8_surface_parser_accepts_each_object_frame_flag() {
 
     let mut malformed = a8_surface_stream();
     malformed[1] = 0x23;
-    assert!(crate::families::a5a8::records::a8_surfaces(&malformed).is_empty());
+    assert!(crate::families::a5a8::records::a8_surfaces(&malformed, &mut None).is_empty());
 }
 
 #[test]
@@ -239,7 +239,7 @@ fn a8_surface_header_rejects_nonfinite_and_repeated_distinct_knots() {
         let mut bytes = a8_surface_stream();
         bytes[start..start + 8].copy_from_slice(&le_f64(value));
         assert!(
-            crate::families::a5a8::records::a8_surfaces(&bytes).is_empty(),
+            crate::families::a5a8::records::a8_surfaces(&bytes, &mut None).is_empty(),
             "{label} must not produce a resolved surface"
         );
         assert!(
@@ -253,7 +253,7 @@ fn a8_surface_header_rejects_nonfinite_and_repeated_distinct_knots() {
 fn a8_surface_header_survives_an_opaque_pole_representation() {
     let mut bytes = a8_surface_stream();
     bytes[59..67].copy_from_slice(&f64::NAN.to_le_bytes());
-    assert!(crate::families::a5a8::records::a8_surfaces(&bytes).is_empty());
+    assert!(crate::families::a5a8::records::a8_surfaces(&bytes, &mut None).is_empty());
     let headers = crate::families::a5a8::records::a8_surface_headers(&bytes);
     assert_eq!(headers.len(), 1);
     assert_eq!(headers[0].object_id, 0xdeca_fbad);
@@ -280,7 +280,7 @@ fn a8_surface_header_survives_an_opaque_pole_representation() {
 #[test]
 fn a8_surface_header_identifies_an_elided_pole_grid() {
     let bytes = a8_elided_surface_stream();
-    assert!(crate::families::a5a8::records::a8_surfaces(&bytes).is_empty());
+    assert!(crate::families::a5a8::records::a8_surfaces(&bytes, &mut None).is_empty());
     let headers = crate::families::a5a8::records::a8_surface_headers(&bytes);
     assert_eq!(headers.len(), 1);
     assert_eq!(
@@ -313,7 +313,7 @@ fn a8_surface_header_rejects_an_incomplete_elided_program() {
         header.pole_storage,
         crate::families::a5a8::records::PoleStorage::Inline
     );
-    assert!(crate::families::a5a8::records::resolved_a8_surfaces(&bytes).is_empty());
+    assert!(crate::families::a5a8::records::resolved_a8_surfaces(&bytes, &mut None).is_empty());
 }
 
 #[test]
@@ -342,7 +342,7 @@ fn a8_elided_surface_requires_length_closed_nested_children() {
         header.pole_storage,
         crate::families::a5a8::records::PoleStorage::Inline
     );
-    assert!(crate::families::a5a8::records::resolved_a8_surfaces(&bytes).is_empty());
+    assert!(crate::families::a5a8::records::resolved_a8_surfaces(&bytes, &mut None).is_empty());
 }
 
 #[test]
@@ -352,7 +352,7 @@ fn a8_elided_surface_resolves_one_external_pole_grid_gap() {
     let [header] = crate::families::a5a8::records::a8_surface_headers(&bytes)
         .try_into()
         .expect("one elided header");
-    let surface = crate::families::a5a8::records::a8_surface_from_external_grid(&bytes, &header)
+    let surface = crate::families::a5a8::records::a8_surface_from_external_grid(&bytes, &header, &mut None)
         .expect("unique external pole allocation");
     let surface = surface.geometry;
     assert_eq!(surface.poles().len(), 9);
@@ -361,7 +361,7 @@ fn a8_elided_surface_resolves_one_external_pole_grid_gap() {
         Point3::new(8.0, 2.0, 2.0)
     );
 
-    let [resolved] = crate::families::a5a8::records::resolved_a8_surfaces(&bytes)
+    let [resolved] = crate::families::a5a8::records::resolved_a8_surfaces(&bytes, &mut None)
         .try_into()
         .expect("one resolved surface");
     assert_eq!(resolved.object_id(), Some(100));
@@ -392,7 +392,7 @@ fn a8_elided_surface_uses_the_pcurve_support_reference_to_disambiguate_equal_gri
         [100, 101]
     );
     for header in &headers {
-        let surface = crate::families::a5a8::records::a8_surface_from_external_grid(&bytes, header)
+        let surface = crate::families::a5a8::records::a8_surface_from_external_grid(&bytes, header, &mut None)
             .expect("support reference selects one equal-sized grid");
         assert_eq!(surface.object_id(), Some(header.object_id));
     }
@@ -416,7 +416,7 @@ fn a8_elided_surface_accepts_all_child_frame_flags() {
             bytes[successor + 1] = child_flag;
 
             assert_eq!(
-                crate::families::a5a8::records::resolved_a8_surfaces(&bytes).len(),
+                crate::families::a5a8::records::resolved_a8_surfaces(&bytes, &mut None).len(),
                 1,
                 "a8 flag {a8_flag:#04x}, child flag {child_flag:#04x}"
             );
@@ -434,14 +434,14 @@ fn a8_elided_surface_accepts_finite_large_external_poles() {
     let pole_start = frame + 8 + usize::from(bytes[frame + 3]);
     bytes[pole_start..pole_start + 8].copy_from_slice(&le_f64(2e12));
 
-    let [resolved] = crate::families::a5a8::records::resolved_a8_surfaces(&bytes)
+    let [resolved] = crate::families::a5a8::records::resolved_a8_surfaces(&bytes, &mut None)
         .try_into()
         .expect("one resolved surface");
     let surface = resolved.geometry;
     assert_eq!(surface.poles().into_iter().next().unwrap().x, 2e12);
 
     bytes[pole_start..pole_start + 8].copy_from_slice(&le_f64(f64::NAN));
-    assert!(crate::families::a5a8::records::resolved_a8_surfaces(&bytes).is_empty());
+    assert!(crate::families::a5a8::records::resolved_a8_surfaces(&bytes, &mut None).is_empty());
 }
 
 #[test]
@@ -452,7 +452,7 @@ fn a8_elided_surface_requires_a_length_closed_successor_frame() {
         .rposition(|value| value == [0xb5, 0x03, 0x5e])
         .expect("successor frame");
     bytes[successor + 3] = 3;
-    assert!(crate::families::a5a8::records::resolved_a8_surfaces(&bytes).is_empty());
+    assert!(crate::families::a5a8::records::resolved_a8_surfaces(&bytes, &mut None).is_empty());
 }
 
 #[test]
@@ -639,7 +639,7 @@ fn a5_pcurve_parser_accepts_frame_bounded_site_count() {
 
 #[test]
 fn a8_surface_parser_reads_rational_weight_grid() {
-    let surfaces = crate::families::a5a8::records::a8_surfaces(&a8_rational_surface_stream());
+    let surfaces = crate::families::a5a8::records::a8_surfaces(&a8_rational_surface_stream(), &mut None);
     assert_eq!(surfaces[0].geometry.pole_weights(), Some(vec![2.0; 9]));
 }
 
@@ -647,7 +647,7 @@ fn a8_surface_parser_reads_rational_weight_grid() {
 fn surface_parsers_require_finite_nonzero_weights() {
     let mut a5 = a5_rational_surface_stream();
     a5[146..154].copy_from_slice(&le_f64(2e12));
-    let [surface] = crate::families::a5a8::records::a5_surfaces(&a5)
+    let [surface] = crate::families::a5a8::records::a5_surfaces(&a5, &mut None)
         .try_into()
         .expect("one consolidated rational surface");
     let surface = surface.geometry;
@@ -661,11 +661,11 @@ fn surface_parsers_require_finite_nonzero_weights() {
         2e12
     );
     a5[146..154].copy_from_slice(&le_f64(f64::NAN));
-    assert!(crate::families::a5a8::records::a5_surfaces(&a5).is_empty());
+    assert!(crate::families::a5a8::records::a5_surfaces(&a5, &mut None).is_empty());
 
     let mut a8 = a8_rational_surface_stream();
     a8[275..283].copy_from_slice(&le_f64(2e12));
-    let [surface] = crate::families::a5a8::records::a8_surfaces(&a8)
+    let [surface] = crate::families::a5a8::records::a8_surfaces(&a8, &mut None)
         .try_into()
         .expect("one common-form rational surface");
     let surface = surface.geometry;
@@ -679,12 +679,12 @@ fn surface_parsers_require_finite_nonzero_weights() {
         2e12
     );
     a8[275..283].copy_from_slice(&le_f64(f64::NAN));
-    assert!(crate::families::a5a8::records::a8_surfaces(&a8).is_empty());
+    assert!(crate::families::a5a8::records::a8_surfaces(&a8, &mut None).is_empty());
 }
 
 #[test]
 fn a5_surface_parser_reads_consolidated_nurbs() {
-    let surfaces = crate::families::a5a8::records::a5_surfaces(&a5_surface_stream());
+    let surfaces = crate::families::a5a8::records::a5_surfaces(&a5_surface_stream(), &mut None);
     assert_eq!(surfaces.len(), 1);
     assert_eq!(surfaces[0].identity, None);
     assert_eq!(surfaces[0].object_id(), None);
@@ -719,7 +719,7 @@ fn a5_surface_parser_reads_multispan_cubic_nurbs() {
     let payload_len = u32::try_from(bytes.len() - 8).unwrap();
     bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
 
-    let [surface] = crate::families::a5a8::records::a5_surfaces(&bytes)
+    let [surface] = crate::families::a5a8::records::a5_surfaces(&bytes, &mut None)
         .try_into()
         .expect("one multispan cubic surface");
     let surface = surface.geometry;
@@ -736,7 +736,7 @@ fn a5_surface_parser_reads_multispan_cubic_nurbs() {
 fn surface_parsers_accept_finite_large_control_points() {
     let mut a5 = a5_surface_stream();
     a5[47..55].copy_from_slice(&le_f64(2e12));
-    let [surface] = crate::families::a5a8::records::a5_surfaces(&a5)
+    let [surface] = crate::families::a5a8::records::a5_surfaces(&a5, &mut None)
         .try_into()
         .expect("one consolidated surface");
     let surface = surface.geometry;
@@ -744,7 +744,7 @@ fn surface_parsers_accept_finite_large_control_points() {
 
     let mut a8 = a8_surface_stream();
     a8[59..67].copy_from_slice(&le_f64(2e12));
-    let [surface] = crate::families::a5a8::records::a8_surfaces(&a8)
+    let [surface] = crate::families::a5a8::records::a8_surfaces(&a8, &mut None)
         .try_into()
         .expect("one common-form surface");
     let surface = surface.geometry;
@@ -752,28 +752,28 @@ fn surface_parsers_accept_finite_large_control_points() {
 
     a5[47..55].copy_from_slice(&le_f64(f64::NAN));
     a8[59..67].copy_from_slice(&le_f64(f64::NAN));
-    assert!(crate::families::a5a8::records::a5_surfaces(&a5).is_empty());
-    assert!(crate::families::a5a8::records::a8_surfaces(&a8).is_empty());
+    assert!(crate::families::a5a8::records::a5_surfaces(&a5, &mut None).is_empty());
+    assert!(crate::families::a5a8::records::a8_surfaces(&a8, &mut None).is_empty());
 }
 
 #[test]
 fn a5_surface_parser_rejects_nonfinite_and_repeated_distinct_knots() {
     let mut nonfinite_u = a5_surface_stream();
     nonfinite_u[11..19].copy_from_slice(&le_f64(f64::NAN));
-    assert!(crate::families::a5a8::records::a5_surfaces(&nonfinite_u).is_empty());
+    assert!(crate::families::a5a8::records::a5_surfaces(&nonfinite_u, &mut None).is_empty());
 
     let mut repeated_u = a5_surface_stream();
     repeated_u[19..27].copy_from_slice(&le_f64(0.0));
-    assert!(crate::families::a5a8::records::a5_surfaces(&repeated_u).is_empty());
+    assert!(crate::families::a5a8::records::a5_surfaces(&repeated_u, &mut None).is_empty());
 
     let mut nonfinite_v = a5_surface_stream();
     nonfinite_v[30..38].copy_from_slice(&le_f64(f64::NAN));
-    assert!(crate::families::a5a8::records::a5_surfaces(&nonfinite_v).is_empty());
+    assert!(crate::families::a5a8::records::a5_surfaces(&nonfinite_v, &mut None).is_empty());
 }
 
 #[test]
 fn consolidated_surface_parser_reads_width2_frame() {
-    let surfaces = crate::families::a5a8::records::a5_surfaces(&a6_surface_stream());
+    let surfaces = crate::families::a5a8::records::a5_surfaces(&a6_surface_stream(), &mut None);
     assert_eq!(surfaces.len(), 1);
     assert_eq!(
         (
@@ -786,7 +786,7 @@ fn consolidated_surface_parser_reads_width2_frame() {
 
 #[test]
 fn a5_surface_parser_reads_rational_weight_program() {
-    let surfaces = crate::families::a5a8::records::a5_surfaces(&a5_rational_surface_stream());
+    let surfaces = crate::families::a5a8::records::a5_surfaces(&a5_rational_surface_stream(), &mut None);
     assert_eq!(surfaces[0].geometry.pole_weights(), Some(vec![2.0; 4]));
 }
 
@@ -799,7 +799,7 @@ fn a5_surface_parser_rejects_zero_tail_codes_without_underflow() {
             .position(|window| window == [0x05, 0x05, 0x05, 0x05])
             .expect("surface tail");
         malformed[tail + index] = 0;
-        assert!(crate::families::a5a8::records::a5_surfaces(&malformed).is_empty());
+        assert!(crate::families::a5a8::records::a5_surfaces(&malformed, &mut None).is_empty());
     }
 }
 
@@ -808,7 +808,7 @@ fn a5_surface_parser_rejects_untagged_int_bytes_without_underflow() {
     let bytes = [
         0xa5, 0xa5, 0x03, 0x34, 0, 0, 0, 0, 0, 0, 0, 0xa5, 0xb3, 0xa5, 0xa5, 0xb3, 0xb3, 0xa5,
     ];
-    assert!(crate::families::a5a8::records::a5_surfaces(&bytes).is_empty());
+    assert!(crate::families::a5a8::records::a5_surfaces(&bytes, &mut None).is_empty());
 }
 
 #[test]
@@ -820,7 +820,7 @@ fn a5_surface_parser_accepts_each_structured_tail_variant() {
         a5_surface_extrapolated_tail(),
     ] {
         let surfaces =
-            crate::families::a5a8::records::a5_surfaces(&a5_surface_stream_with_tail(&tail));
+            crate::families::a5a8::records::a5_surfaces(&a5_surface_stream_with_tail(&tail), &mut None);
         assert_eq!(surfaces.len(), 1, "tail length {}", tail.len());
     }
 }
@@ -831,7 +831,7 @@ fn a5_surface_parser_rejects_unclosed_or_nonfinite_tail_data() {
     trailing.push(0);
     let payload_len = u32::try_from(trailing.len() - 8).unwrap();
     trailing[3..7].copy_from_slice(&payload_len.to_le_bytes());
-    assert!(crate::families::a5a8::records::a5_surfaces(&trailing).is_empty());
+    assert!(crate::families::a5a8::records::a5_surfaces(&trailing, &mut None).is_empty());
 
     let mut nonfinite = a5_surface_stream();
     let tail = nonfinite
@@ -839,7 +839,7 @@ fn a5_surface_parser_rejects_unclosed_or_nonfinite_tail_data() {
         .position(|window| window == [0x05, 0x05, 0x05, 0x05])
         .expect("surface tail");
     nonfinite[tail + 4..tail + 12].copy_from_slice(&le_f64(f64::NAN));
-    assert!(crate::families::a5a8::records::a5_surfaces(&nonfinite).is_empty());
+    assert!(crate::families::a5a8::records::a5_surfaces(&nonfinite, &mut None).is_empty());
 }
 
 #[test]
@@ -968,7 +968,7 @@ fn rolling_ball_limit_curves_reproduce_stored_endpoint_sites() {
         .try_into()
         .expect("one rolling-ball jet");
     for second_limit in [false, true] {
-        let curve = crate::families::a5a8::records::rolling_ball_limit_curve(&jet, second_limit)
+        let curve = crate::families::a5a8::records::rolling_ball_limit_curve(&jet, second_limit, &mut None)
             .expect("exact limiting curve");
         let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve));
         let expected = [jet.sites.first().unwrap(), jet.sites.last().unwrap()].map(|sample| {
@@ -1158,7 +1158,7 @@ fn indexed_a5_record_decoders_match_one_shot_wrappers() {
     let records = crate::wire::records::consolidated_records(&nurbs);
     assert_eq!(
         crate::families::a5a8::records::a5_nurbs_curves(&nurbs),
-        crate::families::a5a8::records::a5_nurbs_curves_from_records(&nurbs, &records)
+        crate::families::a5a8::records::a5_nurbs_curves_from_records(&nurbs, &records, &mut None)
     );
 }
 
@@ -1298,7 +1298,7 @@ fn decode_geometry_fallback_transfers_an_external_a8_pole_grid() {
 #[test]
 fn decode_float_packed_stream_transfers_an_elided_a8_surface_with_native_topology() {
     let stream = a8_elided_surface_stream_with_native_vertex_chain();
-    let graph = crate::families::b5::graph::parse(&stream).expect("generated A8 topology");
+    let graph = crate::families::b5::graph::parse(&stream, &mut None).expect("generated A8 topology");
     assert!(graph.complete);
     assert_eq!(graph.faces.len(), 1);
     assert_eq!(graph.loops.len(), 1);

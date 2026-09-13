@@ -221,6 +221,7 @@ fn transfer_closed_wire_loops(
     support_runs: &[crate::families::zero_entity::records::ZeroEntitySupportRun],
     support_curve_ids: &HashMap<u32, CurveId>,
     ownership_root: Option<&crate::families::zero_entity::records::ZeroEntityOwnershipRoot>,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Result<WireTransferCounts, cadmpeg_core::CodecError> {
     let mut counts = WireTransferCounts::default();
     let root_owns_support_runs = ownership_root.is_some_and(|root| {
@@ -429,7 +430,7 @@ fn transfer_closed_wire_loops(
                                     )
                                 }),
                                 None => {
-                                    crate::nurbs::reverse_curve_geometry(&geometry, source_range)
+                                    crate::nurbs::reverse_curve_geometry(&geometry, source_range, refusal)
                                         .map(|(geometry, edge_range)| (geometry, edge_range, None))
                                 }
                             }
@@ -654,10 +655,13 @@ pub(crate) fn try_decode_zero_entity(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Option<FamilyOutput> {
+    let mut lane_refusal = None;
+    let refusal = &mut lane_refusal;
     let preamble = container::outer_preamble_range(&scan.data)?;
     let surfaces = crate::families::zero_entity::records::zero_entity_surfaces_in_range(
         &scan.data,
         preamble.clone(),
+        refusal,
     );
     if surfaces.is_empty() {
         return None;
@@ -665,6 +669,7 @@ pub(crate) fn try_decode_zero_entity(
     let support_runs = crate::families::zero_entity::records::zero_entity_support_runs_in_range(
         &scan.data,
         preamble.clone(),
+        refusal,
     );
     let ownership_root = crate::families::zero_entity::records::zero_entity_ownership_root_in_range(
         &scan.data, preamble,
@@ -753,7 +758,7 @@ pub(crate) fn try_decode_zero_entity(
                         crate::families::zero_entity::records::zero_entity_neutral_pcurve(
                             surface_geometry,
                             &pcurve,
-                        )
+                         refusal,)
                     else {
                         continue;
                     };
@@ -849,7 +854,7 @@ pub(crate) fn try_decode_zero_entity(
             &support_curve_ids,
             ownership_root.as_ref(),
             &topology_budget,
-        );
+         refusal,);
         match counts {
             Some(counts) if neutral_model_is_admissible(&mut candidate_ir, &unknowns) => {
                 ir = candidate_ir;
@@ -868,7 +873,7 @@ pub(crate) fn try_decode_zero_entity(
             &support_runs,
             &support_curve_ids,
             ownership_root.as_ref(),
-        )
+         refusal,)
         .ok()?
     };
 
@@ -972,7 +977,15 @@ pub(crate) fn try_decode_zero_entity(
         report: DecodeBody {
             transfer: cadmpeg_ir::report::DecodeTransfer::full(true),
             coverage,
-            losses: vec![topology_loss.note(topology_message)],
+            losses: {
+                let mut losses = vec![topology_loss.note(topology_message)];
+                if let Some(error) = lane_refusal {
+                    losses.push(CatiaLossCode::GeometryAnalyticPayloadInvalid.note(format!(
+                        "A zero-entity carrier record states lanes the IR carrier refuses: {error}"
+                    )));
+                }
+                losses
+            },
             notes: Vec::new(),
             transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
         },
@@ -1106,7 +1119,7 @@ mod tests {
             &support_runs,
             &support_curve_ids,
             None,
-        )
+         &mut None,)
         .expect("valid exactness fields");
 
         assert_eq!(counts.edges, 2);
@@ -1227,7 +1240,7 @@ mod tests {
             &support_runs,
             &support_curve_ids,
             Some(&ownership_root),
-        )
+         &mut None,)
         .expect("valid exactness fields");
 
         assert_eq!(counts.bodies, 1);
@@ -1372,7 +1385,7 @@ mod tests {
             &support_runs,
             &support_curve_ids,
             None,
-        )
+         &mut None,)
         .expect("valid exactness fields");
 
         assert_eq!(counts.loops, 1);
@@ -1469,7 +1482,7 @@ mod tests {
             &support_runs,
             &support_curve_ids,
             None,
-        )
+         &mut None,)
         .expect("valid exactness fields");
 
         assert_eq!(counts.bodies, 1);
@@ -1563,7 +1576,7 @@ mod tests {
             &support_runs,
             &HashMap::new(),
             None,
-        )
+         &mut None,)
         .expect("valid exactness fields");
 
         assert_eq!(counts, WireTransferCounts::default());

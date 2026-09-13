@@ -329,12 +329,15 @@ pub(crate) fn try_decode_freeform_surfaces(
         &scan.data,
         container::consolidated_record_sources(scan),
     );
+    let mut lane_refusal = None;
+    let refusal = &mut lane_refusal;
     let mut b5_graph = crate::families::b5::graph::parse_from_records_budgeted(
         &object_source,
         &selected_object_records,
         &object_frames,
         true,
         Some(&selection_budget),
+        refusal,
     );
     let face_terminal_controls = b5_graph.as_ref().map(|graph| {
         graph.faces.iter().fold([0usize; 3], |mut counts, face| {
@@ -438,11 +441,13 @@ pub(crate) fn try_decode_freeform_surfaces(
     let b2_nurbs_curves = crate::families::b2::records::b2_nurbs_curves_from_records(
         &scan.data,
         &consolidated_records,
+        refusal,
     );
     let b2_nurbs_curve_count = b2_nurbs_curves.len();
     let a5_nurbs_curves = crate::families::a5a8::records::a5_nurbs_curves_from_records(
         &scan.data,
         &consolidated_records,
+        refusal,
     );
     let a5_nurbs_curve_count = a5_nurbs_curves.len();
     let b2_spatial_circles = crate::families::b2::records::b2_spatial_circles_from_records(
@@ -487,6 +492,7 @@ pub(crate) fn try_decode_freeform_surfaces(
             &mut topology_annotations,
             graph,
             &payload_id,
+            refusal,
         ) && neutral_model_is_admissible(&mut topology_ir, &unknowns)
     });
     if topology_transferred {
@@ -830,6 +836,11 @@ pub(crate) fn try_decode_freeform_surfaces(
             typed_vertex_incidence_roster_member_count,
         );
     }
+    if let Some(error) = lane_refusal {
+        losses.push(CatiaLossCode::GeometryAnalyticPayloadInvalid.note(format!(
+            "A freeform carrier record states lanes the IR carrier refuses: {error}"
+        )));
+    }
     Some(FamilyOutput {
         ir,
         report: DecodeBody {
@@ -985,11 +996,15 @@ fn freeform_surface_carriers(
     data: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
 ) -> Result<Vec<FreeformSurfaceCarrier>, cadmpeg_core::CodecError> {
-    let mut surfaces = crate::families::a5a8::records::resolved_a8_surfaces(data)
+    let mut refusal = None;
+    let resolved = crate::families::a5a8::records::resolved_a8_surfaces(data, &mut refusal);
+    let a5 = crate::families::a5a8::records::a5_surfaces_from_records(data, records, &mut refusal);
+    if let Some(error) = refusal {
+        return Err(error.into());
+    }
+    let mut surfaces = resolved
         .into_iter()
-        .chain(crate::families::a5a8::records::a5_surfaces_from_records(
-            data, records,
-        ))
+        .chain(a5)
         .map(|surface| {
             let (source_object, source_tag) = freeform_surface_source(&surface)?;
             Ok::<_, cadmpeg_core::CodecError>(FreeformSurfaceCarrier {
@@ -1206,10 +1221,16 @@ pub(crate) fn append_freeform_surface_pools(
     records: &[crate::wire::records::ConsolidatedRecord],
     surface_alias_tags: &HashMap<u32, Option<u32>>,
 ) -> Result<ConsolidatedCurveBindingCounts, cadmpeg_core::CodecError> {
-    let mut surfaces = crate::families::a5a8::records::resolved_a8_surfaces(data);
+    let mut refusal = None;
+    let mut surfaces = crate::families::a5a8::records::resolved_a8_surfaces(data, &mut refusal);
     surfaces.extend(crate::families::a5a8::records::a5_surfaces_from_records(
-        data, records,
+        data,
+        records,
+        &mut refusal,
     ));
+    if let Some(error) = refusal {
+        return Err(error.into());
+    }
     let mut carrier_ids = Vec::with_capacity(surfaces.len());
     for surface in &surfaces {
         let (source_object, source_tag) = freeform_surface_source(surface)?;
@@ -1362,7 +1383,11 @@ pub(crate) fn append_freeform_surface_pools(
     for jet in crate::families::a5a8::records::a5_freeform_curves_from_records(data, records) {
         for second_limit in [false, true] {
             let Some(curve) =
-                crate::families::a5a8::records::rolling_ball_limit_curve(&jet, second_limit)
+                crate::families::a5a8::records::rolling_ball_limit_curve(
+                    &jet,
+                    second_limit,
+                    &mut refusal,
+                )
             else {
                 continue;
             };
@@ -1469,6 +1494,7 @@ pub(crate) fn append_freeform_surface_pools(
         &surfaces,
         &carrier_ids,
         surface_alias_tags,
+        &mut refusal,
     )
 }
 
@@ -1547,6 +1573,7 @@ impl ConsolidatedCarrierChart<'_> {
 pub(crate) fn consolidated_jet_pcurve(
     pcurve: &crate::wire::records::ConsolidatedPcurve,
     chart: &ConsolidatedCarrierChart<'_>,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<PcurveGeometry> {
     let points = pcurve
         .sites
@@ -1570,6 +1597,7 @@ pub(crate) fn consolidated_jet_pcurve(
         &points,
         &first,
         &second,
+        refusal,
     )
 }
 
@@ -1583,6 +1611,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
     freeform_surfaces: &[crate::families::a5a8::records::FreeformSurface],
     freeform_surface_ids: &[SurfaceId],
     surface_alias_tags: &HashMap<u32, Option<u32>>,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Result<ConsolidatedCurveBindingCounts, cadmpeg_core::CodecError> {
     let standalone = crate::families::b2::records::b2_cylinders_from_records(data, records)
         .into_iter()
@@ -1744,7 +1773,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
 
     let mut pending = VecDeque::from(
         crate::families::consolidated::records::resolve_consolidated_edge_blocks_from_records(
-            data, records,
+            data, records, refusal,
         ),
     );
     while let Some(mut resolved) = pending.pop_front() {
@@ -1778,7 +1807,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                     continue;
                 };
                 let Some(geometry) =
-                    consolidated_jet_pcurve(pcurve, &ConsolidatedCarrierChart::Identity)
+                    consolidated_jet_pcurve(pcurve, &ConsolidatedCarrierChart::Identity, refusal)
                 else {
                     continue;
                 };
@@ -1866,7 +1895,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                     }
                 };
                 let chart = ConsolidatedCarrierChart::Identity;
-                let Some(geometry) = consolidated_jet_pcurve(pcurve, &chart) else {
+                let Some(geometry) = consolidated_jet_pcurve(pcurve, &chart, refusal) else {
                     continue;
                 };
                 sides[side] = IntcurveSupportSide {
@@ -2008,7 +2037,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                 id
             };
 
-            let Some(geometry) = consolidated_jet_pcurve(pcurve, &chart) else {
+            let Some(geometry) = consolidated_jet_pcurve(pcurve, &chart, refusal) else {
                 continue;
             };
             sides[side] = IntcurveSupportSide {
@@ -2039,7 +2068,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
             let partner_pcurve = consolidated_jet_pcurve(
                 &resolved.block.pcurves[partner],
                 &ConsolidatedCarrierChart::Identity,
-            )?;
+             refusal,)?;
             let candidates: Vec<_> = freeform_surfaces
                 .iter()
                 .enumerate()
@@ -2101,7 +2130,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                         Some(pcurve) => crate::nurbs::reverse_pcurve_geometry(
                             &pcurve.geometry,
                             resolved.block.parameters.range,
-                        )
+                         refusal,)
                         .map(Some),
                         None => Some(None),
                     })
@@ -2196,12 +2225,12 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                                 return Some((identity, None));
                             };
                             let mut pcurve =
-                                consolidated_jet_pcurve(&resolved.block.pcurves[partner], &chart)?;
+                                consolidated_jet_pcurve(&resolved.block.pcurves[partner], &chart, refusal)?;
                             if reversed {
                                 pcurve = crate::nurbs::reverse_pcurve_geometry(
                                     &pcurve,
                                     resolved.block.parameters.range,
-                                )?;
+                                 refusal,)?;
                             }
                             pcurve
                         }
@@ -2278,7 +2307,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                                 geometry = crate::nurbs::reverse_pcurve_geometry(
                                     &geometry,
                                     resolved.block.parameters.range,
-                                )?;
+                                 refusal,)?;
                             }
                             // A pcurve binds to a face only when it lifts onto
                             // the edge through that face's carrier. Without the
@@ -2901,7 +2930,7 @@ mod tests {
             902,
             &[0x82, 0x18, 100, 0, 0x18, 0xe7, 0x03, 0x03],
         );
-        let graph = parse(&bytes).expect("one resolved and one unresolved face");
+        let graph = parse(&bytes, &mut None).expect("one resolved and one unresolved face");
         assert_eq!(graph.face_records.len(), 2);
         assert_eq!(graph.faces.len(), 1);
         assert!(graph
@@ -2921,8 +2950,8 @@ mod tests {
             object_id: 902,
             payload: vec![0x82, 0x18, 100, 0, 0x18, 0xe7, 0x03, 0x03],
         };
-        assert!(parse_from_records(&[], std::slice::from_ref(&record), &[], false).is_some());
-        assert!(parse_from_records(&[], &[record.clone(), record], &[], false).is_none());
+        assert!(parse_from_records(&[], std::slice::from_ref(&record), &[], false, &mut None).is_some());
+        assert!(parse_from_records(&[], &[record.clone(), record], &[], false, &mut None).is_none());
     }
 
     #[test]
@@ -3434,7 +3463,7 @@ mod tests {
             &[],
             &[],
             &HashMap::new(),
-        )
+         &mut None,)
         .expect("valid source object identity");
         assert_eq!(attached.standard_edges, 1);
         assert_eq!(attached.partner_face_pcurve_pairs, 0);
@@ -3501,7 +3530,7 @@ mod tests {
             &[],
             &[],
             &HashMap::new(),
-        )
+         &mut None,)
         .expect("valid source object identity");
 
         assert_eq!(counts.standard_edges, 0);
@@ -3560,7 +3589,7 @@ mod tests {
             &[],
             &[],
             &HashMap::from([(0x5678, Some(0x1234))]),
-        )
+         &mut None,)
         .expect("valid source object identity");
 
         assert_eq!(counts.standard_edges, 0);
@@ -3722,7 +3751,7 @@ mod tests {
             &[],
             &[],
             &HashMap::new(),
-        )
+         &mut None,)
         .expect("valid source object identity");
         assert_eq!(attached.standard_edges, 1);
         assert_eq!(ir.model.edges[0].param_range(), Some([0.0, 1.0]));

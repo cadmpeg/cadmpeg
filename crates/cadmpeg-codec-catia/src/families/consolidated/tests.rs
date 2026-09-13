@@ -105,7 +105,7 @@ fn indexed_resolver_matches_the_one_shot_resolver_identity() {
     let indexed =
         crate::families::consolidated::records::resolve_consolidated_edge_blocks_from_records(
             &bytes, &records,
-        );
+         &mut None,);
     assert_eq!(signature(&indexed), signature(&one_shot));
 }
 
