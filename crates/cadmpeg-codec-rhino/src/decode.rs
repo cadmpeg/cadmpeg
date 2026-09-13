@@ -3665,7 +3665,7 @@ fn stage_extrusion_caps(
             } else {
                 Sense::Forward
             },
-            loops: loop_ids.into(),
+            loops: cadmpeg_ir::topology::FaceLoops::unspecified(loop_ids),
             name: None,
             color: association.color,
             tolerance: None,
@@ -4163,6 +4163,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         );
     }
     let mut face_ids = Vec::with_capacity(raw.faces.len());
+    let mut pending_faces = Vec::with_capacity(raw.faces.len());
     for (index, face) in raw.faces.iter().enumerate() {
         let surface = surfaces
             .get(&resolved.faces[index].surface)
@@ -4174,20 +4175,20 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         let id: cadmpeg_ir::ids::FaceId = format!("rhino:object:face#{key}.slot-{index}")
             .try_into()
             .expect("valid identity");
-        staged.draft.model_mut().faces.push(Face {
-            id: id.clone(),
-            shell: format!("rhino:object:shell#{key}.component-{component}")
+        // The face's non-loop fields are held until its loops resolve, so the
+        // face is constructed once with its complete boundary.
+        pending_faces.push((
+            id.clone(),
+            format!("rhino:object:shell#{key}.component-{component}")
                 .try_into()
                 .expect("valid identity"),
             surface,
-            sense: face_sense(face.reversed_surface),
-            loops: Vec::new().into(),
-            name: None,
-            color: face.color.map(color),
-            tolerance: None,
-        });
+            face_sense(face.reversed_surface),
+            face.color.map(color),
+        ));
         face_ids.push(id);
     }
+    let mut face_loop_ids: BTreeMap<usize, Vec<cadmpeg_ir::ids::LoopId>> = BTreeMap::new();
     let mut synthetic_edges = BTreeMap::new();
     for (index, loop_record) in resolved.loops.iter().enumerate() {
         let id: cadmpeg_ir::ids::LoopId = format!("rhino:object:loop#{key}.slot-{index}")
@@ -4258,9 +4259,21 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
                 cadmpeg_ir::topology::LoopRing::new(coedges, Vec::new()).expect("valid loop ring"),
             ),
         });
-        staged.draft.model_mut().faces[loop_record.face]
-            .loops
-            .push(id);
+        face_loop_ids.entry(loop_record.face).or_default().push(id);
+    }
+    for (face_index, (id, shell, surface, sense, color)) in pending_faces.into_iter().enumerate() {
+        staged.draft.model_mut().faces.push(Face {
+            id,
+            shell,
+            surface,
+            sense,
+            loops: cadmpeg_ir::topology::FaceLoops::unspecified(
+                face_loop_ids.remove(&face_index).unwrap_or_default(),
+            ),
+            name: None,
+            color,
+            tolerance: None,
+        });
     }
     let coedge_positions: BTreeMap<cadmpeg_ir::ids::CoedgeId, usize> = staged
         .draft

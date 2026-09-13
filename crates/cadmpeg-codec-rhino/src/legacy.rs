@@ -1715,10 +1715,13 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(face_record.surface)),
             source_object: None,
         });
+        // Each V1 boundary record states its loop and its role together, so
+        // the face's classification is folded from those rows and never
+        // recovered from a position in a parallel array.
         let mut face_loops = Vec::with_capacity(face_record.loops.len());
-        let mut loop_roles = Vec::with_capacity(face_record.loops.len());
+        let mut outer_loop: Option<cadmpeg_ir::ids::LoopId> = None;
+        let mut classified = false;
         for (loop_index, loop_record) in face_record.loops.into_iter().enumerate() {
-            loop_roles.push(loop_record.role);
             let loop_id: cadmpeg_ir::ids::LoopId =
                 format!("rhino:object:loop#{suffix}.face-{face_index}-{loop_index}")
                     .try_into()
@@ -1794,8 +1797,33 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
                 face: face_id.clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
             });
+            match loop_record.role {
+                LoopBoundaryRole::Unspecified => {}
+                LoopBoundaryRole::Outer => {
+                    classified = true;
+                    if outer_loop.replace(loop_id.clone()).is_some() {
+                        return Err(CodecError::Malformed(format!(
+                            "V1 face {face_id} states more than one outer boundary"
+                        )));
+                    }
+                }
+                LoopBoundaryRole::Inner => classified = true,
+            }
             face_loops.push(loop_id);
         }
+        let face_loops = if classified {
+            let Some(outer) = outer_loop else {
+                return Err(CodecError::Malformed(format!(
+                    "V1 face {face_id} classifies its boundaries but states no outer boundary"
+                )));
+            };
+            cadmpeg_ir::topology::FaceLoops::classified(
+                outer.clone(),
+                face_loops.into_iter().filter(|id| *id != outer).collect(),
+            )
+        } else {
+            cadmpeg_ir::topology::FaceLoops::unspecified(face_loops)
+        };
         ir.model.faces.push(Face {
             id: face_id.clone(),
             shell: shell_id.clone(),
@@ -1805,11 +1833,7 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
             } else {
                 Sense::Forward
             },
-            loops: {
-                let mut loops = cadmpeg_ir::topology::FaceLoops::from(face_loops);
-                loops.apply_roles(&loop_roles);
-                loops
-            },
+            loops: face_loops,
             name: None,
             color: None,
             tolerance: None,
