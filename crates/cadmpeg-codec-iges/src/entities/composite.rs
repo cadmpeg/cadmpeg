@@ -786,6 +786,72 @@ pub(super) enum CompositeCurveError {
     /// A child that does not raise to the composite degree.
     #[error("{0}")]
     Elevation(#[from] DegreeElevationError),
+    /// The composite states no child at all.
+    #[error("the composite states no child curve")]
+    EmptyChildList,
+    /// A child states a knot vector with no first or last knot.
+    #[error("child {child} states an empty knot vector")]
+    ChildKnotsEmpty {
+        /// Position of the child in the composite.
+        child: usize,
+    },
+    /// A child's stated interval is not its own knot range.
+    #[error(
+        "child {child} states the interval [{start}, {end}], which is outside its knot range          [{first}, {last}]"
+    )]
+    ChildIntervalOutsideKnots {
+        /// Position of the child in the composite.
+        child: usize,
+        /// Stated interval start.
+        start: f64,
+        /// Stated interval end.
+        end: f64,
+        /// First knot of the child.
+        first: f64,
+        /// Last knot of the child.
+        last: f64,
+    },
+    /// A child's stated interval does not increase.
+    #[error("child {child} states the reversed interval [{start}, {end}]")]
+    ChildIntervalReversed {
+        /// Position of the child in the composite.
+        child: usize,
+        /// Stated interval start.
+        start: f64,
+        /// Stated interval end.
+        end: f64,
+    },
+    /// A child still carries a degree below the composite degree.
+    #[error("child {child} states degree {degree} after elevation to the composite degree {composite}")]
+    ChildDegreeMismatch {
+        /// Position of the child in the composite.
+        child: usize,
+        /// Degree the child states.
+        degree: u32,
+        /// Degree the composite states.
+        composite: u32,
+    },
+    /// A child states a weight the rational lane cannot carry.
+    #[error("a child states the non-positive or non-finite weight {weight}")]
+    ChildWeight {
+        /// The refused weight.
+        weight: f64,
+    },
+    /// The unit weight lane of a polynomial child could not be allocated.
+    #[error("{0}")]
+    ChildWeightAllocation(cadmpeg_core::CodecError),
+    /// A child's end parameter is not finite once shifted onto the composite.
+    #[error("a child states the non-finite end parameter {end}")]
+    ChildEndParameter {
+        /// The refused end parameter.
+        end: f64,
+    },
+    /// The weight scale that joins two children is not usable.
+    #[error("two children join on the non-positive or non-finite weight scale {scale}")]
+    JoinWeightScale {
+        /// The refused scale.
+        scale: f64,
+    },
 }
 
 fn elevate_nurbs_to_degree(
@@ -849,12 +915,9 @@ fn elevate_nurbs_to_degree(
             .into());
         }
     }
-    let mut homogeneous = homogeneous_control_points(curve).and_then(|points| {
-        points
-            .iter()
-            .all(homogeneous_point_is_valid)
-            .then_some(points)
-    });
+    // `homogeneous_control_points` already answers `None` on the first invalid
+    // point, so no second pass over the net can observe one.
+    let mut homogeneous = homogeneous_control_points(curve);
     let mut knots = curve.knots().to_vec();
     let mut internal_values = Vec::new();
     for &knot in &knots {
@@ -981,7 +1044,7 @@ fn concatenate_nurbs<T>(
 ) -> Result<Option<ConcatenatedNurbs<T>>, CompositeCurveError> {
     let mut children = children.into_iter();
     let Some(mut first) = children.next() else {
-        return Ok(None);
+        return Err(CompositeCurveError::EmptyChildList);
     };
     let degree = children
         .as_slice()
@@ -996,22 +1059,44 @@ fn concatenate_nurbs<T>(
             elevate_nurbs_to_degree(curve, *interval, degree, join_tolerance)?;
         }
     }
-    if std::iter::once(&first)
+    for (child, (curve, interval, _)) in std::iter::once(&first)
         .chain(children.as_slice())
-        .any(|(curve, interval, _)| {
-            let Some(first) = curve.knots().first() else {
-                return true;
-            };
-            let Some(last) = curve.knots().last() else {
-                return true;
-            };
-            curve.degree() != degree || interval != &[*first, *last] || interval[0] >= interval[1]
-        })
+        .enumerate()
     {
-        return Ok(None);
+        let (Some(first_knot), Some(last_knot)) = (curve.knots().first(), curve.knots().last())
+        else {
+            return Err(CompositeCurveError::ChildKnotsEmpty { child });
+        };
+        if curve.degree() != degree {
+            return Err(CompositeCurveError::ChildDegreeMismatch {
+                child,
+                degree: curve.degree(),
+                composite: degree,
+            });
+        }
+        if interval[0] >= interval[1] {
+            return Err(CompositeCurveError::ChildIntervalReversed {
+                child,
+                start: interval[0],
+                end: interval[1],
+            });
+        }
+        if interval != &[*first_knot, *last_knot] {
+            return Err(CompositeCurveError::ChildIntervalOutsideKnots {
+                child,
+                start: interval[0],
+                end: interval[1],
+                first: *first_knot,
+                last: *last_knot,
+            });
+        }
     }
     let degree_usize = degree as usize;
-    let prepare_child = |(curve, interval, child): (NurbsCurve, [f64; 2], T), cursor: f64| {
+    // Every refusal below names its own cause; the `Ok(None)` that survives is
+    // the endpoint join, and only the endpoint join.
+    let prepare_child = |(curve, interval, child): (NurbsCurve, [f64; 2], T),
+                         cursor: f64|
+     -> Result<_, CompositeCurveError> {
         let child_start = interval[0];
         let child_end = interval[1];
         let shifted_knots = curve
@@ -1027,19 +1112,20 @@ fn concatenate_nurbs<T>(
                 1.0,
                 "iges composite child weights",
             )
-            .ok()?,
+            .map_err(CompositeCurveError::ChildWeightAllocation)?,
         };
-        if child_weights
+        if let Some(weight) = child_weights
             .iter()
-            .any(|weight| !weight.is_finite() || *weight <= 0.0)
+            .copied()
+            .find(|weight| !weight.is_finite() || *weight <= 0.0)
         {
-            return None;
+            return Err(CompositeCurveError::ChildWeight { weight });
         }
         let end = cursor + (child_end - child_start);
         if !end.is_finite() {
-            return None;
+            return Err(CompositeCurveError::ChildEndParameter { end });
         }
-        Some((
+        Ok((
             shifted_knots,
             child_control_points,
             child_weights,
@@ -1050,19 +1136,14 @@ fn concatenate_nurbs<T>(
             },
         ))
     };
-    let Some((mut knots, mut control_points, mut weights, last)) = prepare_child(first, 0.0) else {
-        return Ok(None);
-    };
+    let (mut knots, mut control_points, mut weights, last) = prepare_child(first, 0.0)?;
     let mut segments = ConcatenatedSegments {
         preceding: Vec::with_capacity(children.len()),
         last,
     };
     for child in children {
-        let Some((shifted_knots, child_control_points, mut child_weights, next)) =
-            prepare_child(child, segments.end())
-        else {
-            return Ok(None);
-        };
+        let (shifted_knots, child_control_points, mut child_weights, next) =
+            prepare_child(child, segments.end())?;
         if !close_with_tolerance(
             control_points[control_points.len() - 1],
             child_control_points[0],
@@ -1072,7 +1153,7 @@ fn concatenate_nurbs<T>(
         }
         let scale = weights[weights.len() - 1] / child_weights[0];
         if !scale.is_finite() || scale <= 0.0 {
-            return Ok(None);
+            return Err(CompositeCurveError::JoinWeightScale { scale });
         }
         for weight in &mut child_weights {
             *weight *= scale;
@@ -1892,6 +1973,7 @@ fn project_with_type_130_policy(
                         CompositeCurveError::Elevation(error) => {
                             format!("a child does not raise to the composite degree: {error}")
                         }
+                        error => error.to_string(),
                     },
                     sequences,
                 );

@@ -1832,3 +1832,41 @@ fn decode_projects_a_large_composite_batch_without_repeated_curve_scans() {
 }
 
 mod attachments;
+
+/// A child whose stated interval does not increase is not an endpoint-join
+/// failure, and the refusal says so.
+#[test]
+fn a_reversed_child_interval_names_itself_not_the_endpoint_join() {
+    let point = Point3::new(1.0, 2.0, 3.0);
+    let first = (
+        test_nurbs(0, vec![0.0, 1.0, 2.0], vec![point, point], None),
+        [0.0, 2.0],
+    );
+    // The second child states the interval [1.0, 0.0] over an ordinary knot
+    // vector: the stated interval, not the knots, runs backwards.
+    let second = (test_nurbs(0, vec![0.0, 1.0], vec![point], None), [1.0, 0.0]);
+    let error =
+        concatenate_nurbs(vec![(first.0, first.1, ()), (second.0, second.1, ())], None)
+            .expect_err("a reversed child interval is refused by name")
+            .to_string();
+    assert!(
+        error.contains("reversed interval"),
+        "the refusal names the reversed interval: {error}"
+    );
+    assert!(
+        !error.contains("endpoints"),
+        "the refusal is not the endpoint join: {error}"
+    );
+}
+
+/// A composite that states no child at all is refused by name.
+#[test]
+fn an_empty_child_list_names_itself() {
+    let error = concatenate_nurbs(Vec::<(NurbsCurve, [f64; 2], ())>::new(), None)
+        .expect_err("an empty child list is refused by name")
+        .to_string();
+    assert!(
+        error.contains("no child curve"),
+        "the refusal names the empty child list: {error}"
+    );
+}
