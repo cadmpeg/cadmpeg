@@ -2132,8 +2132,8 @@ fn project_with_type_130_policy(
                 crate::ids::procedural_curve(&stem),
                 ProceduralCurveDefinition::Compound(
                     cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
-                        boundaries, components,
-                    None,)
+                        boundaries, components, None,
+                    )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 ),
             )

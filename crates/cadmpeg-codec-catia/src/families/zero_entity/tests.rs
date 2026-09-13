@@ -485,7 +485,8 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
                 cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
                 1.0,
                 cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-            None,)
+                None,
+            )
             .unwrap(),
         ));
     let mut invalid_model_construction_namespace = cadmpeg_ir::NativeNamespace::default();

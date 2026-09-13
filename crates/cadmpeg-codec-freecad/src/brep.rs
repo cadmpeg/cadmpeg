@@ -5050,7 +5050,8 @@ pub(crate) fn append_text_curve(
                     basis_id,
                     parameter_range,
                     true,
-                None,)
+                    None,
+                )
                 .and_then(|admitted_payload| {
                     ProceduralCurve::new(
                         ProceduralCurveId::mint(format!("{id}:construction"))
@@ -5311,7 +5312,8 @@ pub(crate) fn append_text_surface(
                     parameter_ranges,
                     None,
                     None,
-                None,)
+                    None,
+                )
                 .and_then(|admitted_payload| {
                     ProceduralSurface::new(
                         ProceduralSurfaceId::mint(format!("{id}:construction"))

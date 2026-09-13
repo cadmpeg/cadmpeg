@@ -199,7 +199,8 @@ fn emit_carrier_surface(
                 ProceduralSurfaceDefinition::Compound(
                     cadmpeg_ir::geometry::surface_payloads::CompoundSurfacePayload::try_new(
                         component_ids,
-                    None,)
+                        None,
+                    )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 )
             }
@@ -1020,16 +1021,17 @@ fn emit_compound_loft_surface(
         }
     };
     Ok(ProceduralSurfaceDefinition::CompoundLoft(
-        cadmpeg_ir::geometry::surface_payloads::CompoundLoftSurfacePayload::try_new(Box::new(
-            cadmpeg_ir::geometry::CompoundLoftConstruction {
+        cadmpeg_ir::geometry::surface_payloads::CompoundLoftSurfacePayload::try_new(
+            Box::new(cadmpeg_ir::geometry::CompoundLoftConstruction {
                 scales: cadmpeg_ir::geometry::CompoundLoftScales::try_from_slots(
                     scales.into_iter().chain([fifth_scale.map(|scale| *scale)]),
                 )
                 .map_err(cadmpeg_core::CodecError::malformed)?,
                 flags: embedded.flags,
                 tail,
-            },
-        ), None)
+            }),
+            None,
+        )
         .map_err(cadmpeg_core::CodecError::malformed)?,
     ))
 }
@@ -1201,7 +1203,8 @@ fn emit_scaled_compound_loft_surface(
                 tail_singularity: embedded.tail_singularity,
                 tail_curve,
             }),
-        None,)
+            None,
+        )
         .map_err(cadmpeg_core::CodecError::malformed)?,
     ))
 }
@@ -1427,8 +1430,8 @@ fn emit_skin_surface(
         map_law_expression(&mut *out, scope, &variable_index.to_string(), variable)
     });
     Ok(ProceduralSurfaceDefinition::Skin(
-        cadmpeg_ir::geometry::surface_payloads::SkinSurfacePayload::try_new(Box::new(
-            cadmpeg_ir::geometry::SkinSurfaceConstruction {
+        cadmpeg_ir::geometry::surface_payloads::SkinSurfacePayload::try_new(
+            Box::new(cadmpeg_ir::geometry::SkinSurfaceConstruction {
                 surface_boolean: embedded.surface_boolean,
                 surface_normal: embedded.surface_normal,
                 surface_direction: embedded.surface_direction,
@@ -1441,8 +1444,9 @@ fn emit_skin_surface(
                 parameter_curve,
                 discontinuities: embedded.discontinuities,
                 discontinuity_flag: embedded.discontinuity_flag,
-            },
-        ), None)
+            }),
+            None,
+        )
         .map_err(cadmpeg_core::CodecError::malformed)?,
     ))
 }
@@ -1540,8 +1544,8 @@ fn emit_net_surface(
         })
     });
     Ok(ProceduralSurfaceDefinition::Net(
-        cadmpeg_ir::geometry::surface_payloads::NetSurfacePayload::try_new(Box::new(
-            cadmpeg_ir::geometry::NetSurfaceConstruction {
+        cadmpeg_ir::geometry::surface_payloads::NetSurfacePayload::try_new(
+            Box::new(cadmpeg_ir::geometry::NetSurfaceConstruction {
                 sections: Box::new(sections),
                 frame_parameters: embedded.frame_parameters,
                 flag: embedded.flag,
@@ -1549,8 +1553,9 @@ fn emit_net_surface(
                 formulas: Box::new(formulas),
                 discontinuities: embedded.discontinuities,
                 discontinuity_flag: embedded.discontinuity_flag,
-            },
-        ), None)
+            }),
+            None,
+        )
         .map_err(cadmpeg_core::CodecError::malformed)?,
     ))
 }
@@ -1907,8 +1912,8 @@ fn emit_g2_blend_surface(
         source_object: None,
     });
     Ok(ProceduralSurfaceDefinition::G2Blend(
-        cadmpeg_ir::geometry::surface_payloads::G2BlendSurfacePayload::try_new(Box::new(
-            cadmpeg_ir::geometry::G2BlendConstruction {
+        cadmpeg_ir::geometry::surface_payloads::G2BlendSurfacePayload::try_new(
+            Box::new(cadmpeg_ir::geometry::G2BlendConstruction {
                 first,
                 singularity: embedded.singularity,
                 first_shape,
@@ -1920,8 +1925,9 @@ fn emit_g2_blend_surface(
                 parameter_ranges: embedded.parameter_ranges,
                 trailing_parameters: embedded.trailing_parameters,
                 discontinuities: embedded.discontinuities,
-            },
-        ), None)
+            }),
+            None,
+        )
         .map_err(cadmpeg_core::CodecError::malformed)?,
     ))
 }
@@ -2523,7 +2529,8 @@ fn emit_carrier_curve(
                                 parameter_range,
                                 offset,
                                 roles,
-                            None,)
+                                None,
+                            )
                             .map_err(|_| "vector-offset fields are not finite and ordered")?,
                         )
                     }
@@ -2541,7 +2548,8 @@ fn emit_carrier_curve(
                                 source_id,
                                 parameter_range,
                                 true,
-                            None,)
+                                None,
+                            )
                             .map_err(|_| "subset-curve range is not finite and ordered")?,
                         )
                     }
@@ -2583,7 +2591,8 @@ fn emit_carrier_curve(
                                 )?,
                                 embedded.discontinuity_flag,
                                 embedded.offsets,
-                            None,)
+                                None,
+                            )
                             .map_err(|_| "two-sided offset fields are not finite and ordered")?,
                         )
                     }
@@ -2820,8 +2829,8 @@ fn emit_carrier_curve(
                             .collect();
                         cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(
                             cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
-                                parameters, components,
-                            None,)?,
+                                parameters, components, None,
+                            )?,
                         )
                     }
                     ProceduralCurveConstruction::Exact => {

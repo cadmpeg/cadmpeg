@@ -668,7 +668,8 @@ pub(super) fn cylinder_helix(
             )),
             0.0,
             vector(*axis),
-        None,)
+            None,
+        )
         .ok()?,
     );
     let cache = crate::nurbs::circular_helix_cache(

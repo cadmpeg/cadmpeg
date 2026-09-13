@@ -1465,8 +1465,11 @@ fn procedural_surface_outside_the_writable_set_is_reported_not_panicked() {
         cadmpeg_ir::geometry::ProceduralSurface::new(
             construction_id,
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Compound(
-                cadmpeg_ir::geometry::surface_payloads::CompoundSurfacePayload::try_new(Vec::new(), None)
-                    .unwrap(),
+                cadmpeg_ir::geometry::surface_payloads::CompoundSurfacePayload::try_new(
+                    Vec::new(),
+                    None,
+                )
+                .unwrap(),
             ),
             None,
         )

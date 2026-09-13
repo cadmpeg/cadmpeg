@@ -545,7 +545,8 @@ impl HelixDefinition {
                 self.pitch,
                 self.apex_factor,
                 self.axis,
-            None,)?,
+                None,
+            )?,
         ))
     }
 }

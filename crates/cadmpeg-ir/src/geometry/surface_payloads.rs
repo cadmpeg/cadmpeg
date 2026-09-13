@@ -801,7 +801,8 @@ impl TryFrom<SubsetSurfaceConstructionWire> for SubsetSurfaceConstruction {
             wire.parameter_ranges,
             wire.u_sense,
             wire.v_sense,
-        wire.cache,)
+            wire.cache,
+        )
     }
 }
 
@@ -1158,10 +1159,7 @@ impl CompoundSurfacePayload {
                 "compound surface parameters and components are inconsistent",
             ));
         }
-        Ok(Self {
-            components,
-            cache,
-        })
+        Ok(Self { components, cache })
     }
     /// Return the components.
     pub fn components(&self) -> &Vec<CompoundComponent<SurfaceId>> {
