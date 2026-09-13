@@ -3061,7 +3061,7 @@ mod tests {
             shell: ShellId::mint("test:model:shell#shell").expect("identity grammar"),
             surface: SurfaceId::mint("test:model:surface#surface").expect("identity grammar"),
             sense: Sense::Forward,
-            loops: Vec::new().into(),
+            loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
             name: None,
             color: None,
             tolerance: None,
@@ -3106,7 +3106,7 @@ mod tests {
             surface: SurfaceId::mint(format!("test:model:surface#{surface}"))
                 .expect("identity grammar"),
             sense: Sense::Forward,
-            loops: Vec::new().into(),
+            loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
             name: None,
             color: None,
             tolerance: None,
@@ -3253,7 +3253,7 @@ mod tests {
             surface: SurfaceId::mint(format!("test:model:surface#{surface}"))
                 .expect("identity grammar"),
             sense: Sense::Forward,
-            loops: Vec::new().into(),
+            loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
             name: None,
             color: None,
             tolerance: None,

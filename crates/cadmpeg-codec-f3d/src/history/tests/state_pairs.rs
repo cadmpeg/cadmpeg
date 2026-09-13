@@ -1227,7 +1227,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         shell: ShellId::mint(id(3)).expect("identity grammar"),
         surface: SurfaceId::mint(id(20)).expect("identity grammar"),
         sense: Sense::Forward,
-        loops: vec![LoopId::mint(id(5)).expect("identity grammar")].into(),
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![LoopId::mint(id(5)).expect("identity grammar")]),
         name: None,
         color: None,
         tolerance: None,

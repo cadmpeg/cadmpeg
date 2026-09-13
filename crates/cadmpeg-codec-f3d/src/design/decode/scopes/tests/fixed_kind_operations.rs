@@ -1045,7 +1045,7 @@ fn fixed_kind_edge_and_revolve_operations(
             shell: cadmpeg_ir::ids::ShellId::mint("test:model:shell#1").expect("identity grammar"),
             surface: surface_id.clone(),
             sense: cadmpeg_ir::topology::Sense::Forward,
-            loops: Vec::new().into(),
+            loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
             name: None,
             color: None,
             tolerance: None,
@@ -1142,7 +1142,7 @@ fn fixed_kind_edge_and_revolve_operations(
             surface: cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#axis-a")
                 .expect("identity grammar"),
             sense: cadmpeg_ir::topology::Sense::Forward,
-            loops: Vec::new().into(),
+            loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
             name: None,
             color: None,
             tolerance: None,
@@ -1154,7 +1154,7 @@ fn fixed_kind_edge_and_revolve_operations(
             surface: cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#axis-b")
                 .expect("identity grammar"),
             sense: cadmpeg_ir::topology::Sense::Forward,
-            loops: Vec::new().into(),
+            loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
             name: None,
             color: None,
             tolerance: None,

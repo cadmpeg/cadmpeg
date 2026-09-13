@@ -738,7 +738,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     } else {
                         Sense::Reversed
                     },
-                    loops: vec![loop_id].into(),
+                    loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![loop_id]),
                     name: None,
                     color: None,
                     tolerance: None,
@@ -754,7 +754,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             } else {
                 Sense::Forward
             },
-            loops: bottom_loops.into(),
+            loops: cadmpeg_ir::topology::FaceLoops::unspecified(bottom_loops),
             name: None,
             color: None,
             tolerance: None,
@@ -768,7 +768,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             } else {
                 Sense::Reversed
             },
-            loops: top_loops.into(),
+            loops: cadmpeg_ir::topology::FaceLoops::unspecified(top_loops),
             name: None,
             color: None,
             tolerance: None,

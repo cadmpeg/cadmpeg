@@ -2562,7 +2562,11 @@ pub(crate) fn brep_body(
             .iter()
             .position(|id| id == &lp.id)
             .ok_or_else(|| CodecError::Malformed("face does not own referenced loop".into()))?;
-        let next_loop = face.loops.get(position + 1).map_or(0, |id| loops[id]);
+        let next_loop = face
+            .loops
+            .iter()
+            .nth(position + 1)
+            .map_or(0, |id| loops[id]);
         tag(&mut out, 0x0f);
         be16(&mut out, loops[&lp.id]);
         be32(&mut out, 0);
@@ -2586,7 +2590,8 @@ pub(crate) fn brep_body(
         out.extend_from_slice(&MAGIC);
         let first = face
             .loops
-            .first()
+            .iter()
+            .next()
             .ok_or_else(|| CodecError::Malformed("face has no loop".into()))?;
         for value in [0, 0, loops[first], 0, surfaces[&face.surface]] {
             be16(&mut out, value);

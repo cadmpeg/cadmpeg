@@ -165,8 +165,10 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
         shell: ShellId::mint("creo:generated:shell#10".to_string()).expect("identity grammar"),
         surface: SurfaceId::mint("creo:visibgeom:surface#7".to_string()).expect("identity grammar"),
         sense: cadmpeg_ir::topology::Sense::Forward,
-        loops: vec![LoopId::mint("creo:generated:loop#7".to_string()).expect("identity grammar")]
-            .into(),
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![LoopId::mint(
+            "creo:generated:loop#7".to_string(),
+        )
+        .expect("identity grammar")]),
         name: None,
         color: None,
         tolerance: None,
@@ -276,7 +278,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
         surface: SurfaceId::mint("test:model:entity#creo:test:surface".to_string())
             .expect("identity grammar"),
         sense: Sense::Forward,
-        loops: vec![loop_id.clone()].into(),
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![loop_id.clone()]),
         name: None,
         color: None,
         tolerance: None,
@@ -323,7 +325,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
         surface: SurfaceId::mint("test:model:entity#creo:test:surface-2".to_string())
             .expect("identity grammar"),
         sense: Sense::Forward,
-        loops: Vec::new().into(),
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
         name: None,
         color: None,
         tolerance: None,

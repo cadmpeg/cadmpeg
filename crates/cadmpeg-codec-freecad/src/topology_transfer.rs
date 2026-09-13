@@ -1016,7 +1016,7 @@ impl<'a> Builder<'a> {
             shell: shell.clone(),
             surface: surface_id,
             sense: sense(face_reversed),
-            loops: loops.into(),
+            loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops),
             name: None,
             color: None,
             tolerance: positive_tolerance(tolerance),

@@ -265,7 +265,7 @@ pub(super) fn sketch_brep(
         shell: shell_id.clone(),
         surface: surface_id,
         sense: Sense::Forward,
-        loops: face_loops.into(),
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(face_loops),
         name: sketch.name.clone(),
         color: None,
         tolerance: None,
