@@ -23,10 +23,10 @@ fn configuration_partitions_require_explicit_source_identity() {
         ordinal,
         active: false,
         source_index,
-        name: id.into(),
+        name: Some(id.to_string()),
         material: None,
         properties: BTreeMap::new(),
-        bodies: cadmpeg_ir::ConfigurationBodies::Unresolved,
+        bodies: None,
         parameter_values: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),
@@ -56,13 +56,13 @@ fn configuration_partitions_require_explicit_source_identity() {
     .unwrap();
 
     assert_eq!(ir.model.configurations[0].source_index, Some(5));
-    assert_eq!(ir.model.configurations[0].bodies, vec![first, second]);
+    assert_eq!(ir.model.configurations[0].bodies.as_deref(), Some([first, second].as_slice()));
     assert_eq!(ir.model.configurations[1].source_index, None);
-    assert!(ir.model.configurations[1].bodies.is_unresolved());
+    assert!(ir.model.configurations[1].bodies.is_none());
     assert_eq!(ir.model.configurations[2].source_index, Some(8));
-    assert!(ir.model.configurations[2].bodies.is_empty());
+    assert!(ir.model.configurations[2].bodies.as_deref().is_some_and(<[_]>::is_empty));
     assert_eq!(ir.model.configurations[3].source_index, Some(7));
-    assert_eq!(ir.model.configurations[3].bodies, vec![third]);
+    assert_eq!(ir.model.configurations[3].bodies.as_deref(), Some([third].as_slice()));
     assert!(ir.model.configurations[3].native_ref.is_none());
 }
 
@@ -79,7 +79,7 @@ fn duplicate_configuration_source_identity_does_not_select_a_partition() {
             name: format!("Configuration {ordinal}").into(),
             material: None,
             properties: BTreeMap::new(),
-            bodies: cadmpeg_ir::ConfigurationBodies::Unresolved,
+            bodies: None,
             parameter_values: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::new(),
@@ -90,10 +90,10 @@ fn duplicate_configuration_source_identity_does_not_select_a_partition() {
 
     assign_configuration_bodies(&mut ir, &[(5, vec![body.clone()])]).unwrap();
 
-    assert!(ir.model.configurations[0].bodies.is_unresolved());
-    assert!(ir.model.configurations[1].bodies.is_unresolved());
+    assert!(ir.model.configurations[0].bodies.is_none());
+    assert!(ir.model.configurations[1].bodies.is_none());
     assert_eq!(ir.model.configurations[2].source_index, Some(5));
-    assert_eq!(ir.model.configurations[2].bodies, vec![body]);
+    assert_eq!(ir.model.configurations[2].bodies.as_deref(), Some([body].as_slice()));
     assert!(ir.model.configurations[2].native_ref.is_none());
 }
 
@@ -121,7 +121,7 @@ fn inferred_partition_does_not_fabricate_active_configuration_identity() {
     let configuration = &ir.model.configurations[0];
     assert!(!configuration.active);
     assert_eq!(configuration.source_index, Some(3));
-    assert_eq!(configuration.bodies, vec![body]);
+    assert_eq!(configuration.bodies.as_deref(), Some([body].as_slice()));
 
     let mut report = super::empty_report(true);
     append_design_losses(&ir, &mut report);
@@ -151,10 +151,10 @@ fn active_configuration_name_binds_partition_without_fabricating_body_membership
         ordinal: 0,
         active: false,
         source_index: None,
-        name: "Default".into(),
+        name: Some("Default".to_string()),
         material: None,
         properties: BTreeMap::new(),
-        bodies: cadmpeg_ir::ConfigurationBodies::Unresolved,
+        bodies: None,
         parameter_values: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),
@@ -166,7 +166,7 @@ fn active_configuration_name_binds_partition_without_fabricating_body_membership
 
     let configuration = &ir.model.configurations[0];
     assert_eq!(configuration.source_index, Some(3));
-    assert!(configuration.bodies.is_unresolved());
+    assert!(configuration.bodies.is_none());
     assert!(configuration.active);
 
     let mut report = super::empty_report(false);
@@ -186,10 +186,10 @@ fn duplicate_configuration_partition_identities_are_reported() {
             ordinal: ir.model.configurations.len() as u32,
             active: false,
             source_index: Some(5),
-            name: id.into(),
+            name: Some(id.to_string()),
             material: None,
             properties: BTreeMap::new(),
-            bodies: cadmpeg_ir::ConfigurationBodies::Resolved(
+            bodies: Some(
                 cadmpeg_ir::features::DistinctMembers::default(),
             ),
             parameter_values: BTreeMap::new(),
@@ -220,10 +220,10 @@ fn incomplete_configuration_names_are_reported() {
             ordinal,
             active: position == 1,
             source_index: Some(position as u32),
-            name: name.into(),
+            name: Some(name.to_string()),
             material: None,
             properties: BTreeMap::new(),
-            bodies: cadmpeg_ir::ConfigurationBodies::Resolved(
+            bodies: Some(
                 cadmpeg_ir::features::DistinctMembers::default(),
             ),
             parameter_values: BTreeMap::new(),
@@ -259,10 +259,10 @@ fn active_configuration_partition_disagreement_is_reported() {
         ordinal: 0,
         active: true,
         source_index: Some(5),
-        name: "Default".into(),
+        name: Some("Default".to_string()),
         material: None,
         properties: BTreeMap::new(),
-        bodies: cadmpeg_ir::ConfigurationBodies::Resolved(
+        bodies: Some(
             cadmpeg_ir::features::DistinctMembers::default(),
         ),
         parameter_values: BTreeMap::new(),
@@ -288,7 +288,7 @@ fn incoherent_configuration_bodies_are_reported() {
         ordinal,
         active: ordinal == 0,
         source_index: Some(ordinal),
-        name: id.into(),
+        name: Some(id.to_string()),
         material: None,
         properties: BTreeMap::new(),
         bodies,
@@ -301,7 +301,7 @@ fn incoherent_configuration_bodies_are_reported() {
         configuration(
             "synthetic:test:id#duplicate",
             0,
-            cadmpeg_ir::ConfigurationBodies::Resolved(
+            Some(
                 (vec![BodyId::mint("test:model:entity#another-missing-body").unwrap()])
                     .try_into()
                     .unwrap(),
@@ -310,7 +310,7 @@ fn incoherent_configuration_bodies_are_reported() {
         configuration(
             "synthetic:test:id#missing",
             1,
-            cadmpeg_ir::ConfigurationBodies::Resolved(
+            Some(
                 (vec![BodyId::mint("test:model:entity#missing-body").expect("identity grammar")])
                     .try_into()
                     .unwrap(),
@@ -319,7 +319,7 @@ fn incoherent_configuration_bodies_are_reported() {
         configuration(
             "synthetic:test:id#unresolved",
             2,
-            cadmpeg_ir::ConfigurationBodies::Unresolved,
+            None,
         ),
     ];
     let mut report = super::empty_report(true);
@@ -354,10 +354,10 @@ fn configuration_values_complete_parameters_without_baseline_values() {
         ordinal: 0,
         active: true,
         source_index: Some(0),
-        name: "Default".into(),
+        name: Some("Default".to_string()),
         material: None,
         properties: BTreeMap::new(),
-        bodies: cadmpeg_ir::ConfigurationBodies::Resolved(
+        bodies: Some(
             cadmpeg_ir::features::DistinctMembers::default(),
         ),
         parameter_values: BTreeMap::from([(
@@ -406,10 +406,10 @@ fn configuration_suppression_and_override_references_are_coherent() {
         ordinal: 0,
         active: true,
         source_index: Some(0),
-        name: "Default".into(),
+        name: Some("Default".to_string()),
         material: None,
         properties: BTreeMap::new(),
-        bodies: cadmpeg_ir::ConfigurationBodies::Resolved(
+        bodies: Some(
             cadmpeg_ir::features::DistinctMembers::default(),
         ),
         parameter_values: BTreeMap::new(),

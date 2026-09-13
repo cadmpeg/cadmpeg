@@ -221,7 +221,11 @@ pub struct DatumReference {
     pub precedence: NonZeroU32,
     /// Identity of a common-datum group within this datum system. References
     /// with the same precedence and group form one simultaneous compartment.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub common_group: Option<u32>,
     /// Source-defined material-condition and translation modifiers.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -365,16 +369,32 @@ pub enum PmiDefinition {
         /// Tolerance-zone magnitude.
         magnitude: PmiMagnitude,
         /// Explicit tolerance-zone unit size.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         defined_unit: Option<PmiValue>,
         /// Explicit area-unit shape for the tolerance zone.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         defined_area_unit: Option<String>,
         /// Second unit for rectangular, cylindrical, or spherical zones.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         defined_area_second_unit: Option<PmiValue>,
         /// Referenced datum-system annotation.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         datum_system: Option<PmiId>,
         /// Source-defined geometric-tolerance modifiers.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -385,19 +405,35 @@ pub enum PmiDefinition {
         /// Dimensional characteristic.
         dimension: DimensionKind,
         /// Nominal value, absent when the source carries none.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         nominal: Option<PmiValue>,
         /// Optional plus/minus or limits-and-fits tolerance.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         tolerance: Option<DimensionTolerance>,
     },
     /// Graphical annotation retained independently of semantic PMI.
     Presentation {
         /// Decoded annotation text.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         text: Option<String>,
         /// Model-space graphical placement.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         placement: Option<Transform>,
         /// Semantic annotations depicted by this presentation.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -413,10 +449,18 @@ pub struct PmiAnnotation {
     /// Stable annotation identity.
     pub id: PmiId,
     /// Display or source name.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub name: Option<String>,
     /// Whether the source explicitly displays this annotation occurrence.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub visible: Option<bool>,
     /// Qualified model objects.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

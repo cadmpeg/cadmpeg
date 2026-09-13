@@ -129,13 +129,25 @@ pub struct Sketch {
     /// Globally unique sketch id.
     pub id: SketchId,
     /// Source display name, when recorded.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub name: Option<String>,
     /// Source configuration key, when scoped.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub configuration: Option<String>,
     /// Source display visibility, when recorded.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub visible: Option<bool>,
     /// Placement of sketch coordinates in model space.
     pub placement: SketchPlacement,
@@ -143,7 +155,11 @@ pub struct Sketch {
     #[serde(default, skip_serializing_if = "SketchProfiles::is_empty")]
     pub profiles: SketchProfiles,
     /// Identifier of the full-fidelity native input lane.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub native_ref: Option<String>,
 }
 
@@ -364,10 +380,18 @@ pub struct SketchEntity {
     #[serde(default)]
     pub construction: bool,
     /// Source-native geometry record represented by this entity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub native_ref: Option<String>,
     /// Source-native curve carrier represented by this entity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub geometry_ref: Option<String>,
     /// Source-native endpoint records in stored entity direction.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -632,7 +656,11 @@ pub enum SketchGeometryDefinition {
         /// Semi-minor radius.
         minor_radius: Length,
         /// Parameter bounds for an arc; absent for a full ellipse.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         bounds: Option<[Angle; 2]>,
     },
     /// Full or bounded hyperbola.
@@ -646,7 +674,11 @@ pub enum SketchGeometryDefinition {
         /// Semi-minor radius.
         minor_radius: Length,
         /// Parameter bounds for a branch; absent for the full curve.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         bounds: Option<[f64; 2]>,
     },
     /// Full or bounded parabola.
@@ -658,7 +690,11 @@ pub enum SketchGeometryDefinition {
         /// Distance from the vertex to the focus.
         focal_length: Length,
         /// Parameter bounds for a branch; absent for the full curve.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         bounds: Option<[f64; 2]>,
     },
     /// NURBS curve in sketch coordinates.
@@ -678,24 +714,44 @@ pub enum SketchGeometryDefinition {
         height: Length,
         /// Horizontal scale relative to the nominal font width, absent when the
         /// source stores none.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         width_factor: Option<f64>,
         /// Text placement in sketch coordinates, absent when the source stores none.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         placement: Option<TextPlacement>,
         /// Horizontal placement about the text anchor, when the source class
         /// carries an alignment enum.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         horizontal_alignment: Option<SketchTextHorizontalAlignment>,
         /// Vertical placement about the text anchor, when the source class
         /// carries an alignment enum.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         vertical_alignment: Option<SketchTextVerticalAlignment>,
     },
     /// Geometry referenced from another object when no solved sketch-space carrier is stored.
     ExternalReference {
         /// External document identity, absent for a reference within the current document.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         document: Option<String>,
         /// Referenced object identity.
         #[serde(deserialize_with = "deserialize_object")]
@@ -731,19 +787,35 @@ pub struct SpatialSketch {
     /// Globally unique spatial-sketch id.
     pub id: SpatialSketchId,
     /// Source display name, when recorded.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub name: Option<String>,
     /// Source configuration key, when scoped.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub configuration: Option<String>,
     /// Source display visibility, when recorded.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub visible: Option<bool>,
     /// Ordered closed profile loops with profile-local planes.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub profiles: Vec<SpatialSketchProfile>,
     /// Identifier of the full-fidelity native input lane.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub native_ref: Option<String>,
 }
 
@@ -875,10 +947,18 @@ pub struct SpatialSketchEntity {
     #[serde(default)]
     pub construction: bool,
     /// Source-native geometry record represented by this entity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub native_ref: Option<String>,
     /// Source-native curve carrier represented by this entity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub geometry_ref: Option<String>,
     /// Source-native endpoint records in stored entity direction.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -951,7 +1031,11 @@ pub struct SpatialSketchConstraint {
     /// Neutral relation semantics.
     pub definition: SpatialSketchConstraintDefinition,
     /// Source-native relation represented by this constraint.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub native_ref: Option<String>,
 }
 
@@ -1082,10 +1166,18 @@ pub enum SpatialSketchConstraintDefinitionInput {
         #[serde(deserialize_with = "deserialize_native_kind")]
         native_kind: NonBlankString,
         /// Source relation state or subtype discriminator, when present.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         native_state: Option<u64>,
         /// Neutral parameter driving the relation, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         parameter: Option<crate::features::ParameterId>,
         /// Full-fidelity source operands in field order.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1199,7 +1291,11 @@ pub enum SpatialSketchConstraintDefinitionInput {
         /// Strictly positive operation-level offset magnitude.
         distance: crate::scalar::Length,
         /// Signed driving offset-distance parameter, when dimensional.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         parameter: Option<OffsetParameter>,
     },
     /// A model-space line is parallel to one fixed model-space direction.
@@ -1436,34 +1532,74 @@ pub struct SketchConstraint {
     /// Constraint semantics.
     pub definition: SketchConstraintDefinition,
     /// User-visible constraint name, when assigned.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub name: Option<String>,
     /// Whether this dimensional relation drives geometry.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub driving: Option<bool>,
     /// Whether the solver currently applies this relation.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub active: Option<bool>,
     /// Whether the relation belongs to virtual sketch space.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub virtual_space: Option<bool>,
     /// Whether the relation is displayed in the sketch UI.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub visible: Option<bool>,
     /// Source orientation bit field, when the relation carries one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub orientation: Option<u32>,
     /// Persisted label offset from the constrained geometry.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub label_distance: Option<SketchLabelValue>,
     /// Persisted position along the dimension label path.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub label_position: Option<SketchLabelValue>,
     /// Application metadata text attached to this relation.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub metadata: Option<String>,
     /// Source-native relation record when decoded from one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub native_ref: Option<String>,
 }
 
@@ -1503,7 +1639,11 @@ pub struct NativeOperandField {
     /// Non-empty source-native field name.
     pub name: NonBlankString,
     /// Source-native role code, when the field carries one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub role: Option<u32>,
 }
 
@@ -1515,14 +1655,26 @@ pub struct SketchNativeOperand {
     /// Non-empty source-native operand family.
     pub native_kind: NonBlankString,
     /// Source-native field and optional role containing this operand.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub field: Option<NativeOperandField>,
     /// Source-native object index; absent when the native operand names no
     /// object (an axis, root point, or external reference slot).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub object_index: Option<u32>,
     /// Resolved source-native operand record.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub native_ref: Option<String>,
 }
 
@@ -1829,9 +1981,17 @@ impl SketchCircularPattern {
 struct SketchPatternDirectionWire {
     direction: [f64; 2],
     spacing: Length,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     distance: Option<SketchPatternDistance>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     count_parameter: Option<ParameterId>,
 }
 
@@ -1872,9 +2032,17 @@ struct SketchRectangularPatternWire {
 struct SketchCircularPatternWire {
     center: SketchEntityId,
     angle: Angle,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     angle_parameter: Option<ParameterId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     count_parameter: Option<ParameterId>,
     seed: Vec<SketchEntityId>,
     instances: Vec<SketchCircularPatternInstance>,
@@ -2465,7 +2633,11 @@ pub enum SketchConstraintDefinitionInput {
         /// oriented source entity's left normal.
         distance: Length,
         /// Signed driving offset-distance parameter, when dimensional.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         parameter: Option<OffsetParameter>,
     },
     /// A regular profile entity copied from a projected reference entity.
@@ -2619,7 +2791,11 @@ pub enum SketchConstraintDefinitionInput {
         /// Non-negative measured distance in model units.
         distance: Length,
         /// Driving distance parameter, when the source supplies one.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         parameter: Option<ParameterId>,
     },
     /// A second locus is displaced from the first by a polar sketch-space
@@ -2633,10 +2809,18 @@ pub enum SketchConstraintDefinitionInput {
         distance: Length,
         /// Direction from the sketch-u axis; absent when the displacement is
         /// zero and therefore has no defined direction.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         angle: Option<Angle>,
         /// Driving distance parameter, when the source supplies one.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         distance_parameter: Option<ParameterId>,
     },
     /// Direct difference between two angle-valued solver scalars.
@@ -2790,7 +2974,11 @@ pub enum SketchConstraintDefinitionInput {
         /// Displayed text.
         text: String,
         /// Font family or source font token, when carried.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         font: Option<String>,
         /// Whether the construction dimension controls text height rather than width.
         is_text_height: bool,
@@ -2801,10 +2989,18 @@ pub enum SketchConstraintDefinitionInput {
         #[serde(deserialize_with = "deserialize_native_kind")]
         native_kind: NonBlankString,
         /// Source-native constraint-state mask, when the format carries one.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         native_state: Option<u64>,
         /// Source-native constraint flags, when distinct from constraint state.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         native_flags: Option<u64>,
         /// Exact source-native scalar properties not represented by common state or flags.
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -2813,7 +3009,11 @@ pub enum SketchConstraintDefinitionInput {
         /// Referenced entities.
         entities: Vec<SketchEntityId>,
         /// Driving or driven parameter attached to the relation.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         parameter: Option<ParameterId>,
         /// Native operands whose neutral loci are unresolved.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]

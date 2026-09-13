@@ -406,7 +406,7 @@ pub fn project_configurations(
                 parameter_overrides: BTreeMap::new(),
                 parameter_values: BTreeMap::new(),
                 feature_states: BTreeMap::new(),
-                bodies: cadmpeg_ir::features::ConfigurationBodies::Unresolved,
+                bodies: None,
                 native_ref: Some(table.id()),
             });
         }
@@ -431,7 +431,7 @@ pub fn project_configurations(
         };
         let mut matches = projected
             .iter_mut()
-            .filter(|configuration| configuration.name == target);
+            .filter(|configuration| configuration.name.as_deref() == Some(target));
         let Some(configuration) = matches.next() else {
             continue;
         };
@@ -621,7 +621,7 @@ mod tests {
         let mut authored = projected
             .iter()
             .filter_map(|configuration| {
-                Some((configuration.name.resolved()?, configuration.ordinal))
+                Some((configuration.name.as_deref()?, configuration.ordinal))
             })
             .collect::<Vec<_>>();
         authored.sort_by_key(|(_, ordinal)| *ordinal);

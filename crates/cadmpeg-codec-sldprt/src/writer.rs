@@ -235,7 +235,7 @@ pub(crate) fn write_semantic_with_records(
         opaque.iter().map(|(_, payload)| payload.as_slice()),
     );
     if let Some(active) = ir.model.configurations.iter().find(|value| value.active) {
-        let active_name = active.name.resolved().ok_or_else(|| {
+        let active_name = active.name.as_deref().ok_or_else(|| {
             CodecError::Malformed("active SLDPRT configuration has no resolved name".into())
         })?;
         if document_envelope.is_none() {
@@ -272,7 +272,7 @@ fn assign_configuration_indices(
     let mut used = HashSet::new();
     let mut names = HashSet::new();
     for configuration in configurations.iter() {
-        let Some(name) = configuration.name.resolved() else {
+        let Some(name) = configuration.name.as_deref() else {
             return Err(CodecError::Malformed(
                 "SLDPRT configuration has no resolved name".into(),
             ));
@@ -300,7 +300,7 @@ fn assign_configuration_indices(
     let mut next = 0;
     for position in positions {
         if configurations[position].source_index.is_none()
-            && configurations[position].bodies.resolved().is_some()
+            && configurations[position].bodies.as_deref().is_some()
         {
             configurations[position].source_index =
                 Some(reserve_configuration_index(&mut used, &mut next)?);
@@ -717,7 +717,7 @@ fn configuration_partitions(
         .flat_map(|configuration| {
             configuration
                 .bodies
-                .resolved()
+                .as_deref()
                 .unwrap_or_default()
                 .iter()
                 .cloned()
@@ -739,7 +739,7 @@ fn configuration_partitions(
     configurations
         .into_iter()
         .filter_map(|configuration| {
-            let bodies = configuration.bodies.resolved()?;
+            let bodies = configuration.bodies.as_deref()?;
             (!bodies.is_empty()).then_some((configuration, bodies))
         })
         .map(|(configuration, bodies)| {
@@ -960,7 +960,7 @@ fn opaque_blocks(
                 }
             }
             if let Some(active) = ir.model.configurations.iter().find(|value| value.active) {
-                let Some(active_name) = active.name.resolved() else {
+                let Some(active_name) = active.name.as_deref() else {
                     return Some(Err(CodecError::Malformed(
                         "active SLDPRT configuration has no resolved name".into(),
                     )));

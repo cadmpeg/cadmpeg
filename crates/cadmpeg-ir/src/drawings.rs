@@ -61,14 +61,22 @@ pub struct Drawing {
     /// Source order among drawing entities.
     pub order: u32,
     /// Whether the source explicitly displays this drawing entity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub visible: Option<bool>,
     /// Ordered relationships grouped by exact source-property role.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub relationships: BTreeMap<String, Vec<crate::references::ReferenceSelection>>,
     /// Page template drawing identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub template: Option<DrawingId>,
     /// View origin on its page.
     #[serde(default, skip_serializing_if = "Option::is_none")]

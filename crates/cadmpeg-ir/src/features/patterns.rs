@@ -364,26 +364,42 @@ pub enum PatternTransform<C = CompositePattern> {
     /// source identified one.
     Unresolved {
         /// Identified pattern form, when the source established one.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         form: Option<PatternForm>,
     },
     /// Repeats seeds evenly along a straight direction.
     Linear {
         /// Repetition direction, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         direction: Option<Vector3>,
         /// Distance between consecutive instances.
         spacing: Length,
         /// Total number of instances, including the original.
         count: u32,
         /// Optional complete second translation direction.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         second: Option<LinearPatternDirection>,
     },
     /// Repeats seeds at explicitly located distances along a straight direction.
     LinearOffsets {
         /// Repetition direction, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         direction: Option<Vector3>,
         /// Cumulative distances from the original instance, beginning with zero.
         offsets: Vec<Length>,
@@ -411,7 +427,11 @@ pub enum PatternTransform<C = CompositePattern> {
     /// Repeats seeds at fixed arc-length spacing along a curve.
     CurveDriven {
         /// Pattern path, when its native reference is available.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         path: Option<PathRef>,
         /// Arc-length spacing between consecutive instances.
         spacing: Length,

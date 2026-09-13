@@ -174,7 +174,7 @@ fn offset_plane_frame_translates_its_reference_frame() {
         tree_parent: None,
         source_id: Some(FeatureSource::try_from(source).expect("test feature source id")),
         ordinal: source.parse().expect("required invariant"),
-        name: id.into(),
+        name: id.to_string(),
         kind: String::new(),
         input_class: None,
         suppressed: false,

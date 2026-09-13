@@ -5857,10 +5857,13 @@ mod tests {
         assert_eq!(result.ir().model.configurations.len(), 2);
         assert_eq!(result.ir().model.configurations[0].ordinal, 0);
         assert_eq!(result.ir().model.configurations[0].source_index, Some(0));
-        assert_eq!(result.ir().model.configurations[0].name, "Model");
+        assert_eq!(
+            result.ir().model.configurations[0].name.as_deref(),
+            Some("Model")
+        );
         assert!(result.ir().model.configurations[0].active);
         assert_eq!(
-            result.ir().model.configurations[0].bodies.resolved(),
+            result.ir().model.configurations[0].bodies.as_deref(),
             Some(
                 result
                     .ir()
@@ -5873,9 +5876,12 @@ mod tests {
             )
         );
         assert_eq!(result.ir().model.configurations[1].ordinal, 1);
-        assert_eq!(result.ir().model.configurations[1].name, "Exploded");
+        assert_eq!(
+            result.ir().model.configurations[1].name.as_deref(),
+            Some("Exploded")
+        );
         assert!(!result.ir().model.configurations[1].active);
-        assert!(result.ir().model.configurations[1].bodies.is_unresolved());
+        assert!(result.ir().model.configurations[1].bodies.is_none());
         let uses = result
             .ir()
             .native
@@ -5929,7 +5935,7 @@ mod tests {
                     .configurations
                     .iter()
                     .all(|configuration| !configuration.active
-                        && configuration.bodies.is_unresolved())
+                        && configuration.bodies.is_none())
             );
         }
     }

@@ -91,7 +91,11 @@ pub struct Finding {
     /// Human-readable explanation.
     pub message: String,
     /// The entity id the finding is about, when applicable.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub entity: Option<String>,
 }
 

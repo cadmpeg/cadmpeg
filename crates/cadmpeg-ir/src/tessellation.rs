@@ -683,13 +683,25 @@ impl ChannelAddressing {
 #[serde(deny_unknown_fields)]
 struct TessellationWire {
     id: TessellationId,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     body: Option<BodyId>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     faces: Vec<FaceId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     chordal_deflection: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     source_object: Option<SourceObjectAssociation>,
     mesh: TessellationMesh,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -745,7 +757,11 @@ pub struct Tessellation {
 #[serde(deny_unknown_fields)]
 pub struct TessellationTriangleGroup {
     /// Source group identity, when the source stores one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub source_id: Option<String>,
     /// Strictly increasing triangle ordinals belonging to this group.
     pub triangles: Vec<u32>,
@@ -757,7 +773,11 @@ pub struct TessellationTriangleGroup {
 #[serde(deny_unknown_fields)]
 pub struct TessellationTextureAssignment {
     /// Source texture-resource identity, when the source stores one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub source_id: Option<String>,
     /// Assigned texture asset.
     pub texture: AssetId,

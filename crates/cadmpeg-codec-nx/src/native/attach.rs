@@ -29,7 +29,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{
     features::{
         BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ChamferSpec,
-        ConfigurationBodies, ConfigurationFeatureState, ConfigurationId, CurveProjectionDirection,
+        ConfigurationFeatureState, ConfigurationId, CurveProjectionDirection,
         CurveProjectionDirectionState, DesignConfiguration, DesignParameter, DistinctMembers,
         EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection, Feature, FeatureContent,
         FeatureDefinition, FeatureId, FeatureOperation, FeatureResultTopology,
@@ -296,7 +296,7 @@ pub(crate) fn attach(
                 .iter()
                 .find(|relation| relation.configuration == configuration.id);
             let bodies = if active_attribute_use.is_some() {
-                ConfigurationBodies::Resolved(
+                Some(
                     (ir.model
                         .bodies
                         .iter()
@@ -306,7 +306,7 @@ pub(crate) fn attach(
                     .map_err(|error: &str| CodecError::Malformed(error.to_owned()))?,
                 )
             } else {
-                ConfigurationBodies::Unresolved
+                None
             };
             annotations
                 .note(id.as_str(), &annotation_stream, configuration.source_offset)
@@ -328,7 +328,7 @@ pub(crate) fn attach(
             annotations
                 .derived(id.as_str(), "native_ref")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
-            if bodies.resolved().is_some_and(|bodies| !bodies.is_empty()) {
+            if bodies.as_deref().is_some_and(|bodies: &[_]| !bodies.is_empty()) {
                 annotations
                     .derived(id.as_str(), "bodies")
                     .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -956,7 +956,7 @@ fn attach_active_configuration_parameter_values(
         return Ok(());
     };
     let configuration = &ir.model.configurations[configuration_index];
-    if configuration.bodies.is_unresolved()
+    if configuration.bodies.is_none()
         || !configuration.parameter_values.is_empty()
         || ir.model.parameters.is_empty()
     {
@@ -1036,7 +1036,7 @@ fn attach_active_configuration_feature_states(
     };
     let Some(configuration_bodies) = ir.model.configurations[configuration_index]
         .bodies
-        .resolved()
+        .as_deref()
         .map(<[BodyId]>::to_vec)
     else {
         return Ok(());

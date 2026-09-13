@@ -354,7 +354,11 @@ pub struct OffsetCurveConstruction {
     /// Exclusive plane-normal or explicit-direction carrier.
     side: OffsetSide,
     /// Retained parameter range, with its distance law when variable.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     range: Option<CurveOffsetRange>,
 }
 
@@ -369,7 +373,11 @@ struct OffsetCurveConstructionWire {
     /// Exclusive plane-normal or explicit-direction carrier.
     side: OffsetSide,
     /// Retained parameter range, with its distance law when variable.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     range: Option<CurveOffsetRange>,
 }
 
@@ -731,7 +739,11 @@ pub struct SubsetCurveConstruction {
     #[serde(default = "default_true")]
     sense: bool,
     /// Solved-cache fit contract this construction states itself.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     cache: Option<LegacyCache>,
 }
 

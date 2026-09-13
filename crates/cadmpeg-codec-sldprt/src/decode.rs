@@ -400,7 +400,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
         .model
         .configurations
         .iter()
-        .filter(|configuration| configuration.name.resolved().is_none_or(str::is_empty))
+        .filter(|configuration| configuration.name.as_deref().is_none_or(str::is_empty))
         .count();
     let mut configuration_name_counts = BTreeMap::new();
     let mut configuration_ordinal_counts = BTreeMap::new();
@@ -413,7 +413,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
         .model
         .configurations
         .iter()
-        .filter_map(|configuration| configuration.name.resolved())
+        .filter_map(|configuration| configuration.name.as_deref())
         .filter(|name| !name.is_empty())
     {
         *configuration_name_counts.entry(name).or_insert(0usize) += 1;
@@ -450,7 +450,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
             let mut bodies = std::collections::HashSet::new();
             configuration
                 .bodies
-                .resolved()
+                .as_deref()
                 .unwrap_or_default()
                 .iter()
                 .any(|body| !bodies.insert(body) || !model_body_ids.contains(body))
@@ -460,7 +460,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
         .model
         .configurations
         .iter()
-        .filter(|configuration| configuration.bodies.is_unresolved())
+        .filter(|configuration| configuration.bodies.is_none())
         .count();
     if unresolved_configuration_bodies > 0 || incoherent_configuration_bodies > 0 {
         report.losses.push(SldprtLossCode::ConfigIncoherentBodyRefs.note(format!(
@@ -3754,7 +3754,7 @@ fn mark_active_configuration(ir: &mut CadIr) {
             .configurations
             .iter()
             .enumerate()
-            .filter(|(_, configuration)| configuration.name.resolved() == Some(name.as_str()))
+            .filter(|(_, configuration)| configuration.name.as_deref() == Some(name.as_str()))
             .map(|(position, _)| position)
             .collect::<Vec<_>>();
         (matches.len() == 1).then(|| matches[0])
@@ -4156,7 +4156,7 @@ fn assign_configuration_bodies(
             continue;
         };
         if source_counts.get(&source_index) == Some(&1) {
-            configuration.bodies = cadmpeg_ir::ConfigurationBodies::Resolved(
+            configuration.bodies = Some(
                 (partition_map.remove(&source_index).unwrap_or_default())
                     .try_into()
                     .map_err(|error: &str| CodecError::Malformed(error.to_owned()))?,
@@ -4165,7 +4165,7 @@ fn assign_configuration_bodies(
     }
     if let Some((active_index, position)) = bind_active_configuration_partition(ir) {
         if let Some(bodies) = partition_map.remove(&active_index) {
-            ir.model.configurations[position].bodies = cadmpeg_ir::ConfigurationBodies::Resolved(
+            ir.model.configurations[position].bodies = Some(
                 (bodies)
                     .try_into()
                     .map_err(|error: &str| CodecError::Malformed(error.to_owned()))?,
@@ -4193,7 +4193,7 @@ fn assign_configuration_bodies(
                 name: format!("Config-{source_index}").into(),
                 material: None,
                 properties: std::collections::BTreeMap::new(),
-                bodies: cadmpeg_ir::ConfigurationBodies::Resolved(
+                bodies: Some(
                     (bodies)
                         .try_into()
                         .map_err(|error: &str| CodecError::Malformed(error.to_owned()))?,
@@ -4230,7 +4230,7 @@ fn bind_active_configuration_partition(ir: &mut CadIr) -> Option<(u32, usize)> {
         .enumerate()
         .filter(|(_, configuration)| {
             configuration.source_index.is_none()
-                && configuration.name.resolved() == Some(active_name.as_str())
+                && configuration.name.as_deref() == Some(active_name.as_str())
         })
         .map(|(position, _)| position)
         .collect::<Vec<_>>();

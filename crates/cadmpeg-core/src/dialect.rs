@@ -301,7 +301,11 @@ pub struct DialectMatch {
     /// `None` when the layer occurs once or has no report-local identity. This
     /// is not source-declared evidence and therefore does not belong in
     /// [`Self::declared`].
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::absent_key::present"
+    )]
     instance: Option<String>,
     /// How this layer was admitted.
     admission: Admission,

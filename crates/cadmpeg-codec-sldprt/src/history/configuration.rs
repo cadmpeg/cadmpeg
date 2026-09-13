@@ -5,7 +5,7 @@ use crate::records::FeatureHistory;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::{
     features::{
-        ConfigurationBodies, ConfigurationEvaluation, DatumPlaneReference, DesignConfiguration,
+        ConfigurationEvaluation, DatumPlaneReference, DesignConfiguration,
         FaceSelection, FeatureDefinition, FeatureId, FeatureOperation, LinearTermination,
         ParameterValue,
     },
@@ -374,7 +374,7 @@ pub(crate) fn bind_configuration_topology_selections(
     {
         let body_membership_resolved = matches!(
             ir.model.configurations[configuration_index].bodies,
-            ConfigurationBodies::Resolved(_)
+            Some(_)
         );
         let scoped_lanes = &lanes[lane_index..=lane_index];
         let mut features = {
@@ -1156,7 +1156,7 @@ pub(crate) fn configuration_surface_carriers(
     configuration_index: usize,
 ) -> Vec<cadmpeg_ir::geometry::Surface> {
     let configuration = &ir.model.configurations[configuration_index];
-    let Some(body_ids) = configuration.bodies.resolved() else {
+    let Some(body_ids) = configuration.bodies.as_deref() else {
         // An unresolved body membership record does not establish an empty
         // configuration. The neutral model is the only established geometry
         // carrier available until the source partition is resolved.

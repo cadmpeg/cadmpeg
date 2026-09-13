@@ -20,7 +20,11 @@ pub struct SubdSurface {
     /// Control cage with admitted local topology and payloads.
     pub cage: SubdCage,
     /// Native source-object identity and effective display metadata.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub source_object: Option<SourceObjectAssociation>,
 }
 
@@ -571,7 +575,11 @@ pub struct SubdVertex {
     /// Subdivision vertex tag.
     pub tag: SubdVertexTag,
     /// Optional secondary-grip topology owned by this vertex.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     secondary_grips: Option<SubdVertexGripLayout>,
 }
 
@@ -816,7 +824,11 @@ pub struct SubdEdge {
     /// Subdivision edge tag.
     pub tag: SubdEdgeTag,
     /// Parametric knot interval, when the source cage exposes one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     knot_interval: Option<f64>,
     /// Sector coefficients at the two endpoints.
     sector_coefficients: [f64; 2],

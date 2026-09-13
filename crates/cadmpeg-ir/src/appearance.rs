@@ -18,29 +18,61 @@ pub struct Appearance {
     /// Stable arena id.
     pub id: AppearanceId,
     /// Display/preset name stored in the source, when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub name: Option<String>,
     /// Asset GUID stored in the Protein record.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub asset_guid: Option<String>,
     /// External library holding the preset named by `name`: a GUID for a shipped
     /// library, a path for a user library.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub library_id: Option<String>,
     /// Visual asset GUID stored in the source, when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub visual_guid: Option<String>,
     /// Physical-material token stored in the source, when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub physical_token: Option<String>,
     /// Source schema family, such as `GenericSchema` or `PrismOpaqueSchema`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub schema: Option<String>,
     /// Source material classification, when stored in the asset catalog.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub category: Option<String>,
     /// Resolved diffuse/albedo color.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub base_color: Option<Color>,
     /// Additional byte-decoded shader scalars keyed by schema property name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -66,12 +98,20 @@ pub struct TextureRef {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub paths: Vec<String>,
     /// External asset-library URN, when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub urn: Option<String>,
     /// Two-dimensional texture-coordinate mapping.
     pub mapping: TextureMap2d,
     /// Bump/normal interpretation for a bump texture.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub bump: Option<BumpMap>,
 }
 
@@ -162,14 +202,26 @@ pub struct AppearanceBinding {
     /// Referenced appearance asset.
     pub appearance: AppearanceId,
     /// Fusion design-entity id, such as `0_985`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub source_entity_id: Option<String>,
     /// Design `MetaStream` object type, such as `Body`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub object_type: Option<String>,
     /// Whether this presentation binding is visible; `None` means that the
     /// source does not provide an explicit binding-level visibility value.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub visible: Option<bool>,
     /// ACT change-version channel GUIDs for this assigned entity.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]

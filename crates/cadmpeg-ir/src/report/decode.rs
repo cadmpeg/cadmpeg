@@ -263,7 +263,11 @@ pub enum TransferOutcome {
         /// Resulting native retained-record identity.
         target: String,
         /// Informational note about retention or semantic projection.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         note: Option<String>,
     },
     /// Transferred with an explicit approximation.
@@ -271,13 +275,21 @@ pub enum TransferOutcome {
         /// Resulting neutral or native identity.
         target: String,
         /// Concise reason for the approximation.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         note: Option<String>,
     },
     /// Deliberately not transferred.
     Omitted {
         /// Concise reason for the omission.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         note: Option<String>,
     },
 }

@@ -42,7 +42,11 @@ pub enum LegacyExtensionFlags {
         /// Required flag following the true extension gate.
         secondary: bool,
         /// Optional flag admitted by the later legacy layout.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         tertiary: Option<bool>,
     },
 }
@@ -59,7 +63,11 @@ pub enum OffsetExtension {
         /// Conditional flag sequence in its positional wire form.
         flags: LegacyExtensionFlags,
         /// Solved-cache fit contract this layout states itself.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         cache: Option<LegacyCache>,
     },
     /// Revision-gated fields with the required four-boolean carrier run.
@@ -124,7 +132,11 @@ pub enum SolvedSurfaceGeometry {
     /// not established, so nothing about it is byte-exact or derived.
     Unknown {
         /// Link to the preserved raw record, when the decoder kept the bytes.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         record: Option<UnknownId>,
     },
 }
@@ -140,7 +152,11 @@ pub enum SurfaceGeometry {
         /// Construction that produces this carrier.
         construction: ProceduralSurfaceId,
         /// Solved carrier geometry retained from the source cache.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         #[cfg_attr(feature = "schema", schemars(skip))]
         cache: Option<SolvedSurfaceGeometry>,
     },
@@ -189,7 +205,11 @@ pub struct Surface {
     /// Surface shape.
     pub geometry: SurfaceGeometry,
     /// Native source-object identity and effective display metadata.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub source_object: Option<SourceObjectAssociation>,
 }
 
@@ -233,7 +253,11 @@ pub enum SolvedCurveGeometry {
     /// Native curve carrier whose shape is not decoded.
     Unknown {
         /// Retained native record containing the curve carrier.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         record: Option<UnknownId>,
     },
 }
@@ -249,7 +273,11 @@ pub enum CurveGeometry {
         /// Construction that produces this carrier.
         construction: ProceduralCurveId,
         /// Solved carrier geometry retained from the source cache.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         #[cfg_attr(feature = "schema", schemars(skip))]
         cache: Option<SolvedCurveGeometry>,
     },
@@ -406,7 +434,11 @@ pub struct Curve {
     /// Curve shape.
     pub geometry: CurveGeometry,
     /// Native source-object identity and effective display metadata.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub source_object: Option<SourceObjectAssociation>,
 }
 
@@ -464,7 +496,11 @@ pub enum ExactSpline {
         /// Native ASM extension integer following the ranges.
         extension: i64,
         /// Solved-cache fit contract this layout states itself.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         cache: Option<LegacyCache>,
     },
     /// Revision-gated layout with optional interval bounds and shared form.
@@ -497,7 +533,11 @@ pub struct CompoundCurveConstruction {
     parameters: Vec<f64>,
     components: Vec<CompoundComponent<CurveId>>,
     /// Solved-cache fit contract this construction states itself.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     cache: Option<LegacyCache>,
 }
 
@@ -507,7 +547,11 @@ pub struct CompoundCurveConstruction {
 struct CompoundCurveConstructionWire {
     parameters: Vec<f64>,
     components: Vec<CompoundComponent<CurveId>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     cache: Option<LegacyCache>,
 }
 
@@ -943,7 +987,11 @@ pub enum CacheContract<F> {
     /// Legacy layout, which states its own solved-cache tolerance.
     Legacy {
         /// Solved-cache fit contract, absent when the record stated none.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         cache: Option<LegacyCache>,
     },
     /// Revision-gated layout, which states the tolerance in its cache form.
@@ -1836,7 +1884,11 @@ pub struct HelixCurveConstruction {
     apex_factor: FiniteReal,
     axis: FiniteVector3,
     /// Solved-cache fit contract this construction states itself.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     cache: Option<LegacyCache>,
 }
 
@@ -3185,7 +3237,11 @@ pub struct LoftSubdataRow {
     /// Ordered per-column scalar pairs; empty for subdata type 211.
     pub columns: Vec<[f64; 2]>,
     /// Trailing scalar pair stored by the revision-gated row encoding.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub extra: Option<[f64; 2]>,
 }
 
@@ -3340,7 +3396,11 @@ pub struct ClassicLoftProfileData {
     /// Required support surface.
     pub surface: SurfaceId,
     /// Nullable parameter curve on the support.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub pcurve: Option<PcurveGeometry>,
     /// First native constraint flag.
     pub first_flag: bool,
@@ -3349,7 +3409,11 @@ pub struct ClassicLoftProfileData {
     /// Native constraint table.
     pub subdata: LoftSubdata,
     /// Optional direction selected by the second native flag.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub direction: Option<Vector3>,
 }
 
@@ -3365,41 +3429,73 @@ pub enum LoftMemberForm {
         type_code: i64,
         /// Constraint support surface, absent for the native `null_surface`
         /// sentinel.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         surface: Option<SurfaceId>,
         /// Optional U/V bound fields following the support surface in the
         /// revision-gated encoding.
         #[serde(default)]
         support_bounds: [Option<f64>; 4],
         /// UV curve on the support, absent for `nullbs`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         pcurve: Option<PcurveGeometry>,
         /// First native constraint flag.
         first_flag: bool,
         /// ASM extension integer when the stream version carries it.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         asm_extension: Option<i64>,
         /// Native constraint table.
         subdata: LoftSubdata,
         /// Optional direction selected by the second native flag.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         direction: Option<Vector3>,
     },
     /// Revision-gated type-zero form with two nullable UV curve slots.
     PcurvePair {
         /// First UV curve slot, absent for `nullbs`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         pcurve: Option<PcurveGeometry>,
         /// Second UV curve slot, absent for `nullbs`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         secondary_pcurve: Option<PcurveGeometry>,
         /// ASM extension integer when the stream version carries it.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         asm_extension: Option<i64>,
         /// Native constraint table.
         subdata: LoftSubdata,
         /// Optional direction selected by the second native flag.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         direction: Option<Vector3>,
     },
 }
@@ -3459,7 +3555,11 @@ pub struct LoftPathCurve {
     #[serde(rename = "curve")]
     pub id: CurveId,
     /// Optional parameter endpoints following the curve in a revision-gated encoding.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub endpoints: Option<[Option<f64>; 2]>,
 }
 
@@ -3480,7 +3580,11 @@ pub struct LoftProfileMember {
 #[serde(deny_unknown_fields)]
 pub struct LoftPath {
     /// Primary path curve and its optional endpoints, absent for `null_curve`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub path: Option<LoftPathCurve>,
     /// Ordered auxiliary BS3 curves.
     pub auxiliaries: Vec<CurveId>,
@@ -3575,7 +3679,11 @@ pub enum G2BlendFirstShape {
     /// Full singularity with an optional BS3 support surface.
     Full {
         /// Exact BS3 support and fit tolerance, when serialized.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         support: Option<G2BlendFullSupport>,
     },
     /// Non-singular nine-scalar frame and tertiary pcurve.
@@ -3585,10 +3693,18 @@ pub enum G2BlendFirstShape {
         /// Native fit tolerance.
         tolerance: FitTolerance,
         /// Optional intervening native token.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         extension: Option<LoftBridgeToken>,
         /// Tertiary BS2 pcurve, absent for `nullbs`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         pcurve: Option<PcurveGeometry>,
     },
 }
@@ -3675,21 +3791,41 @@ pub struct RollingBallSide<S = SurfaceId, C = CurveId, P = PcurveGeometry> {
     /// Geometry role selected by the support-side discriminator.
     pub support_kind: VariableBlendSupportKind,
     /// Primary support surface and bounds, absent for `null_surface`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub surface: Option<RollingBallSupportSurface<S>>,
     /// Side curve and bounds, absent for `null_curve`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub curve: Option<RollingBallSupportCurve<C>>,
     /// Primary BS2 pcurve, absent for `nullbs`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub pcurve: Option<P>,
     /// Native model-space side location.
     pub location: Point3,
     /// ASM secondary BS2 pcurve, absent for `nullbs`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub secondary_pcurve: Option<P>,
     /// Native extension integer and nullable tertiary pcurve.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub extension: Option<RollingBallSideExtension<P>>,
 }
 
@@ -3705,17 +3841,29 @@ pub struct RollingBallThirdSide {
     /// Third side curve.
     pub curve: CurveId,
     /// Primary BS2 pcurve, absent for `nullbs`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub pcurve: Option<PcurveGeometry>,
     /// Native side vector.
     pub direction: Vector3,
     /// ASM secondary BS2 pcurve, absent for `nullbs`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub secondary_pcurve: Option<PcurveGeometry>,
     /// Native ASM integer following the secondary pcurve.
     pub extension: i64,
     /// ASM tertiary BS2 pcurve, absent for `nullbs`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub tertiary_pcurve: Option<PcurveGeometry>,
     /// Final ASM flag.
     pub flag: bool,
@@ -3819,7 +3967,11 @@ pub struct RollingBallConstruction {
     #[serde(default)]
     pub tail_flag: bool,
     /// Third side present only for `sss_blend_spl_sur`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub third: Option<Box<RollingBallThirdSide>>,
     /// Three ASM integers preceding the subtype close.
     #[serde(default)]
@@ -4133,7 +4285,11 @@ pub enum VariableBlendCrossSection {
     /// Rounded chamfer with an optional independent rounding-radius law.
     RoundedChamfer {
         /// Rounding-radius law; absent when the clause stores `no_radius`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         radius: Option<Box<VariableBlendValue>>,
     },
     /// Curvature-continuous round with two ordered shape parameters.
@@ -4231,7 +4387,11 @@ pub struct VariableBlendConstruction {
     /// Cross-section clause following the complete radius-law sequence.
     /// Absence denotes an elided default circular section; an explicit
     /// circular clause remains distinct.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub cross_section: Option<VariableBlendCrossSection>,
     /// Support-side parameter interval `(T0, T1)`; both bounds present in
     /// every instance.
@@ -4257,7 +4417,11 @@ pub struct VariableBlendConstruction {
     /// Three ASM integers following the tail Boolean.
     pub tail_extensions: [i64; 3],
     /// Secondary curve and its bounds, absent for `null_curve`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub secondary_curve: Option<RollingBallSupportCurve>,
     /// Blend convexity.
     pub convexity: VariableBlendConvexity,
@@ -4266,10 +4430,18 @@ pub struct VariableBlendConstruction {
     /// Native optional post-shape interval endpoints.
     pub post_range: [Option<f64>; 2],
     /// Native post-shape BS3 curve, absent for `nullbs`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub post_curve: Option<CurveId>,
     /// Native post-shape BS2 pcurve, absent for `nullbs`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub post_pcurve: Option<PcurveGeometry>,
 }
 
@@ -4520,7 +4692,11 @@ pub enum VertexBlendBoundaryGeometry {
         #[serde(default)]
         support_bounds: [Option<f64>; 4],
         /// Native BS2 pcurve, absent for `nullbs`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         pcurve: Option<PcurveGeometry>,
         /// Native sense flag, a logical on the wire.
         sense: bool,
@@ -4549,7 +4725,11 @@ pub enum VertexBlendBoundaryGeometry {
 pub struct VertexBlendConstruction {
     /// Positive serializer-revision integer selecting the revision-gated
     /// layout; absent from the pre-revision layout.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub revision: Option<i64>,
     /// Ordered boundary records.
     pub boundaries: Vec<VertexBlendBoundary>,
@@ -4643,7 +4823,11 @@ pub enum CompoundLoftTail {
         /// First flag.
         first_flag: bool,
         /// First optional scale block.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         first_scale: Option<Box<CompoundLoftScale>>,
         /// Second flag.
         second_flag: bool,
@@ -4772,7 +4956,11 @@ pub enum ScaledCompoundLoftBranch {
     /// Extended branch ending in a direction vector.
     ExtendedVector {
         /// Optional first scale block.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         first_scale: Option<Box<CompoundLoftScale>>,
         /// Required second scale block.
         second_scale: Box<CompoundLoftScale>,
@@ -4784,7 +4972,11 @@ pub enum ScaledCompoundLoftBranch {
     /// Extended branch ending in a singularity and curve.
     ExtendedCurve {
         /// Optional scale block.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         scale: Option<Box<CompoundLoftScale>>,
         /// Native branch flag.
         flag: bool,
@@ -4868,7 +5060,11 @@ impl LawFormula {
 #[serde(deny_unknown_fields)]
 pub struct LawSurfaceConstruction {
     /// Legacy U and V parameter intervals; absent from modern layouts.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub parameter_ranges: Option<[[f64; 2]; 2]>,
     /// Primary recursive surface law.
     pub primary: LawFormula,
@@ -5327,7 +5523,11 @@ pub struct SupportPcurve {
     /// UV curve carried by the support side.
     pub geometry: PcurveGeometry,
     /// Directed pcurve interval corresponding to the solved interval.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub parameter_range: Option<DirectedParameterRange>,
 }
 
@@ -5410,10 +5610,18 @@ impl<'de> Deserialize<'de> for DirectedParameterRange {
 #[serde(deny_unknown_fields)]
 pub struct IntcurveSupportSide {
     /// Supporting surface, absent for the native `null_surface` sentinel.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub surface: Option<SurfaceId>,
     /// UV curve on `surface`, absent for the native `nullbs` sentinel.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub pcurve: Option<SupportPcurve>,
 }
 
@@ -5819,7 +6027,11 @@ pub enum SpringLayout {
         /// Native boolean following the discontinuity arrays.
         discontinuity_flag: bool,
         /// Solved-cache fit contract this layout states itself.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         cache: Option<LegacyCache>,
     },
     /// Cache-first layout, which carries no inline replacement ranges or
@@ -5947,7 +6159,11 @@ pub struct ParametricSurfaceCurveFlags {
     /// Support-slot selector.
     pub flag: bool,
     /// Optional later-revision terminating flag.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub second_flag: Option<bool>,
 }
 
@@ -6028,7 +6244,11 @@ pub enum SurfaceCurveFamily {
         /// Shared support context.
         context: IntcurveSupportContext,
         /// Cache-first fields, when this is not the prefix-first layout.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         tail: Option<SurfaceCurveCacheFirst<bool>>,
     },
     /// Curve constrained to a support surface.
@@ -6036,7 +6256,11 @@ pub enum SurfaceCurveFamily {
         /// Shared support context.
         context: IntcurveSupportContext,
         /// Cache-first fields, when this is not the prefix-first layout.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         tail: Option<SurfaceCurveCacheFirst<bool>>,
     },
     /// Parametric curve on a support surface.
@@ -6044,7 +6268,11 @@ pub enum SurfaceCurveFamily {
         /// Shared support context.
         context: IntcurveSupportContext,
         /// Cache-first fields with the parametric-only second flag.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         tail: Option<SurfaceCurveCacheFirst<ParametricSurfaceCurveFlags>>,
     },
     /// Skin curve on a support surface.
@@ -6052,7 +6280,11 @@ pub enum SurfaceCurveFamily {
         /// Shared support context.
         context: IntcurveSupportContext,
         /// Cache-first fields, when this is not the prefix-first layout.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         tail: Option<SurfaceCurveCacheFirst<bool>>,
     },
 }
@@ -6238,7 +6470,11 @@ pub enum OffsetSide {
         /// Nonzero offset direction.
         direction: Vector3,
         /// Support surface within which the offset is measured.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         support: Option<SurfaceId>,
     },
 }
@@ -6588,7 +6824,11 @@ pub(crate) struct ProceduralSurfaceRow {
     /// Neutral construction definition.
     pub(crate) definition: ProceduralSurfaceDefinition,
     /// Four optional U/V parameter bounds following the record's subtype scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub(crate) record_bounds: Option<[Option<f64>; 4]>,
 }
 

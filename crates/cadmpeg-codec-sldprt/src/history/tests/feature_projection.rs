@@ -36,11 +36,11 @@ fn configuration_dependencies_participate_in_the_shared_regeneration_order() {
             ordinal: 0,
             active: true,
             source_index: None,
-            name: "configuration".into(),
+            name: Some("configuration".to_string()),
             material: None,
             properties: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
-            bodies: cadmpeg_ir::features::ConfigurationBodies::Unresolved,
+            bodies: None,
             parameter_values: BTreeMap::new(),
             feature_states: BTreeMap::from([(
                 consumer.clone(),

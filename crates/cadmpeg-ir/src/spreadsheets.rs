@@ -130,7 +130,11 @@ struct SpreadsheetWire {
     row_heights: Vec<SpreadsheetDimensionWire>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     merged_ranges: Vec<SpreadsheetRange>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     native_ref: Option<String>,
 }
 

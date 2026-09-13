@@ -212,7 +212,11 @@ pub enum HoleConstruction {
         /// Structural entry treatment.
         kind: HoleKind,
         /// Standard sizing and thread construction, when specified.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         specification: Option<Box<HoleSpecification>>,
     },
     /// SLDPRT native thread geometry carried without a named standard specification.
@@ -222,7 +226,11 @@ pub enum HoleConstruction {
         /// Axial length over which the thread is cut.
         thread_depth: PositiveLength,
         /// Thread pitch, when carried independently of a nominal designation.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         pitch: Option<PositiveLength>,
         /// Included angle of the conical drill point.
         drill_point_angle: InteriorAngle,
@@ -327,7 +335,11 @@ enum PartialCountersinkDimension {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum HoleKindWire {
     Unresolved {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         form: Option<HoleForm>,
     },
     PartialCounterbore {
@@ -359,7 +371,11 @@ enum HoleKindWire {
     },
     Counterdrill {
         diameter: PositiveLength,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         entry_diameter: Option<PositiveLength>,
         depth: PositiveLength,
         angle: InteriorAngle,
@@ -559,10 +575,18 @@ pub enum HoleSpecification {
         #[serde(deserialize_with = "deserialize_local_standard")]
         standard: NonBlankString,
         /// Nominal size designation within the standard.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         designation: Option<String>,
         /// Clearance-hole fit class.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         fit: Option<String>,
         /// Whether exact standard geometry is modeled.
         modeled: bool,
@@ -573,7 +597,11 @@ pub enum HoleSpecification {
         /// Standard depth rule retained from the source record.
         depth: HoleThreadDepth,
         /// Additional radial clearance used for modeled geometry.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         clearance: Option<Length>,
     },
     /// Internally threaded-hole sizing and thread geometry.
@@ -582,27 +610,47 @@ pub enum HoleSpecification {
         #[serde(deserialize_with = "deserialize_local_standard")]
         standard: NonBlankString,
         /// Nominal size designation within the standard.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         designation: Option<String>,
         /// Tolerance or thread class.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         class: Option<String>,
         /// Whether exact helical thread geometry is modeled.
         modeled: bool,
         /// Whether cosmetic thread presentation is requested.
         cosmetic: bool,
         /// Thread pitch in canonical millimeters.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         pitch: Option<PositiveLength>,
         /// Nominal major thread diameter.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         major_diameter: Option<PositiveLength>,
         /// Thread handedness.
         hand: ThreadHand,
         /// Axial thread-depth construction.
         depth: HoleThreadDepth,
         /// Additional radial thread clearance used for modeled geometry.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         clearance: Option<Length>,
     },
 }

@@ -29,7 +29,11 @@ pub enum RadiusSpec {
     /// The law is not dimensioned; `form` names it when the source identified one.
     Unresolved {
         /// Identified law form, when the source established one.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         form: Option<RadiusForm>,
     },
     /// Same radius along the whole edge chain.
@@ -73,7 +77,11 @@ pub struct FilletGroup {
     /// Radius assignment along the edges.
     pub radius: RadiusSpec,
     /// Dimensionless tangency weight, when specified.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub tangency_weight: Option<FiniteReal>,
 }
 
@@ -271,7 +279,11 @@ pub enum ChamferSpec {
     /// The chamfer is not dimensioned; `form` names it when the source identified one.
     Unresolved {
         /// Identified chamfer form, when the source established one.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         form: Option<ChamferForm>,
     },
     /// Equal setback distance on both faces meeting the edge.

@@ -519,7 +519,7 @@ fn semantic_writer_applies_history_root_ordinals() {
         feature.ordinal = u64::from(feature.name.as_deref() == Some("First"));
     }
     for configuration in &mut decoded.ir_mut().model.configurations {
-        configuration.ordinal = u32::from(configuration.name == "A");
+        configuration.ordinal = u32::from(configuration.name.as_deref() == Some("A"));
     }
 
     let mut encoded = Vec::new();

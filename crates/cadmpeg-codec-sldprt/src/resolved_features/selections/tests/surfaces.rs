@@ -1451,7 +1451,7 @@ fn face_reference_plane_owns_its_counted_surface_path() {
         tree_parent: None,
         source_id: FeatureSource::from_value(source),
         ordinal: source,
-        name: id.into(),
+        name: id.to_string(),
         kind: "Feature".into(),
         input_class: Some(input_class.into()),
         suppressed: false,

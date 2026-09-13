@@ -60,7 +60,11 @@ pub struct SemanticAnnotation {
     #[serde(deserialize_with = "deserialize_value")]
     pub value: Option<crate::scalar::FiniteReal>,
     /// Persisted formatting expression or visible dimension format.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub format: Option<String>,
     /// Persisted model- or page-space annotation position.
     #[serde(default, skip_serializing_if = "Option::is_none")]

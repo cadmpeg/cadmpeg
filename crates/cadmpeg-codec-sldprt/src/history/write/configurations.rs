@@ -446,7 +446,7 @@ pub(crate) fn sync_neutral_configurations(
     }
     let mut lane_configuration_remaps = HashMap::<String, String>::new();
     for configuration in configurations {
-        let Some(configuration_name) = configuration.name.resolved() else {
+        let Some(configuration_name) = configuration.name.as_deref() else {
             continue;
         };
         let existing = native

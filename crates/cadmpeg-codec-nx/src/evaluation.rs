@@ -230,7 +230,7 @@ fn active_configuration_is_admitted(ir: &CadIr, saved: &BTreeSet<BodyId>) -> boo
     let Some(configuration) = active.next() else {
         return false;
     };
-    let Some(configuration_bodies) = configuration.bodies.resolved() else {
+    let Some(configuration_bodies) = configuration.bodies.as_deref() else {
         return false;
     };
     active.next().is_none()

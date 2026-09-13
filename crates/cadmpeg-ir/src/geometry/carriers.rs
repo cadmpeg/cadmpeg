@@ -4161,11 +4161,23 @@ impl PcurveInlineForm {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PcurveGeneralForm {
     /// Source wrapper reversal, when stored independently of an ASM tail.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub wrapper_reversed: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     parameter_range: Option<[f64; 2]>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     fit_tolerance: Option<FitTolerance>,
 }
 

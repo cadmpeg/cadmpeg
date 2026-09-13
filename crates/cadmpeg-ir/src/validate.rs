@@ -225,11 +225,11 @@ mod tests {
             ordinal: 0,
             active: true,
             source_index: None,
-            name: "Default".into(),
+            name: Some("Default".to_string()),
             material: None,
             properties: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
-            bodies: crate::features::ConfigurationBodies::Resolved(
+            bodies: Some(
                 crate::features::DistinctMembers::default(),
             ),
             parameter_values: BTreeMap::new(),

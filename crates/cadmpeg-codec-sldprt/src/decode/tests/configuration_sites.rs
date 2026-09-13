@@ -76,14 +76,17 @@ fn decode_assigns_selected_partition_bodies_to_configuration() {
     assert_eq!(decoded.ir().model.configurations.len(), 1);
     assert!(decoded.ir().model.configurations[0].active);
     assert_eq!(
-        decoded.ir().model.configurations[0].bodies,
-        decoded
-            .ir()
-            .model
-            .bodies
-            .iter()
-            .map(|body| body.id.clone())
-            .collect::<Vec<_>>()
+        decoded.ir().model.configurations[0].bodies.as_deref(),
+        Some(
+            decoded
+                .ir()
+                .model
+                .bodies
+                .iter()
+                .map(|body| body.id.clone())
+                .collect::<Vec<_>>()
+                .as_slice()
+        )
     );
     let mut written = Vec::new();
     crate::test_support::plan_inherited_write(
@@ -96,14 +99,17 @@ fn decode_assigns_selected_partition_bodies_to_configuration() {
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
     assert_eq!(
-        round_trip.ir().model.configurations[0].bodies,
-        round_trip
-            .ir()
-            .model
-            .bodies
-            .iter()
-            .map(|body| body.id.clone())
-            .collect::<Vec<_>>()
+        round_trip.ir().model.configurations[0].bodies.as_deref(),
+        Some(
+            round_trip
+                .ir()
+                .model
+                .bodies
+                .iter()
+                .map(|body| body.id.clone())
+                .collect::<Vec<_>>()
+                .as_slice()
+        )
     );
 }
 
@@ -127,16 +133,19 @@ fn decode_synthesizes_sparse_partition_configuration() {
     assert_eq!(configuration.ordinal, 0);
     assert_eq!(configuration.source_index, Some(3));
     assert!(configuration.active);
-    assert_eq!(configuration.name, "Config-3");
+    assert_eq!(configuration.name.as_deref(), Some("Config-3"));
     assert_eq!(
-        configuration.bodies,
-        decoded
-            .ir()
-            .model
-            .bodies
-            .iter()
-            .map(|body| body.id.clone())
-            .collect::<Vec<_>>()
+        configuration.bodies.as_deref(),
+        Some(
+            decoded
+                .ir()
+                .model
+                .bodies
+                .iter()
+                .map(|body| body.id.clone())
+                .collect::<Vec<_>>()
+                .as_slice()
+        )
     );
 
     let (mut edited, _, fidelity) = decoded.into_parts();
@@ -290,18 +299,18 @@ fn decode_uses_the_namespaced_manifest_site_without_source_indices() {
         .model
         .configurations
         .iter()
-        .find(|configuration| configuration.name.resolved() == Some("Second"))
+        .find(|configuration| configuration.name.as_deref() == Some("Second"))
         .expect("manifest configuration is projected");
 
     assert!(second.active);
     assert_eq!(second.source_index, Some(1));
-    assert!(!second.bodies.is_empty());
+    assert!(second.bodies.as_deref().is_some_and(|bodies| !bodies.is_empty()));
     assert!(result
         .ir()
         .model
         .configurations
         .iter()
-        .filter(|configuration| configuration.name.resolved() == Some("First"))
+        .filter(|configuration| configuration.name.as_deref() == Some("First"))
         .all(|configuration| !configuration.active));
     assert_eq!(
         result.ir().source.as_ref().unwrap().attributes["sw_configuration_name"],

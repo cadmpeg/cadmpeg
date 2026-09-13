@@ -67,7 +67,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         .model
         .configurations
         .iter()
-        .filter_map(|configuration| Some((configuration.name.resolved()?, configuration.ordinal)))
+        .filter_map(|configuration| Some((configuration.name.as_deref()?, configuration.ordinal)))
         .collect::<Vec<_>>();
     authored.sort_by_key(|(_, ordinal)| *ordinal);
     assert_eq!(authored, [("Small", 0), ("Medium", 1), ("Large", 2)]);
@@ -76,7 +76,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         .model
         .configurations
         .iter()
-        .find(|configuration| configuration.name == "Medium")
+        .find(|configuration| configuration.name.as_deref() == Some("Medium"))
         .expect("active medium configuration");
     assert!(medium.active);
     assert_eq!(medium.properties["parameter:width"], "25 mm");
@@ -136,7 +136,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         .model
         .configurations
         .iter_mut()
-        .find(|configuration| configuration.name == "Medium")
+        .find(|configuration| configuration.name.as_deref() == Some("Medium"))
         .expect("active medium configuration")
         .active = false;
     let error = F3dCodec

@@ -124,10 +124,10 @@ fn encoder_writes_source_less_neutral_configurations() {
         ordinal: 0,
         active: true,
         source_index: None,
-        name: "Metric".into(),
+        name: Some("Metric".to_string()),
         material: Some("Steel".into()),
         properties: BTreeMap::from([("Finish".into(), "Ground".into())]),
-        bodies: cadmpeg_ir::ConfigurationBodies::Resolved(
+        bodies: Some(
             (vec![ir.model.bodies[0].id.clone()]).try_into().unwrap(),
         ),
         parameter_values: BTreeMap::new(),
@@ -141,10 +141,10 @@ fn encoder_writes_source_less_neutral_configurations() {
         ordinal: 1,
         active: false,
         source_index: None,
-        name: "Empty".into(),
+        name: Some("Empty".to_string()),
         material: None,
         properties: BTreeMap::new(),
-        bodies: cadmpeg_ir::ConfigurationBodies::Resolved(
+        bodies: Some(
             cadmpeg_ir::features::DistinctMembers::default(),
         ),
         parameter_values: BTreeMap::new(),
@@ -177,7 +177,7 @@ fn encoder_writes_source_less_neutral_configurations() {
             .model
             .configurations
             .iter()
-            .filter_map(|configuration| configuration.name.resolved())
+            .filter_map(|configuration| configuration.name.as_deref())
             .collect::<Vec<_>>(),
         vec!["Metric", "Empty"]
     );
@@ -196,21 +196,24 @@ fn encoder_writes_source_less_neutral_configurations() {
         .iter()
         .all(|configuration| !configuration.properties.contains_key("SourceIndex")));
     let configuration = &decoded.ir().model.configurations[0];
-    assert_eq!(configuration.name, "Metric");
+    assert_eq!(configuration.name.as_deref(), Some("Metric"));
     assert_eq!(configuration.material.as_deref(), Some("Steel"));
     assert_eq!(configuration.properties["Finish"], "Ground");
     assert!(configuration.active);
     assert_eq!(
-        configuration.bodies,
-        decoded
-            .ir()
-            .model
-            .bodies
-            .iter()
-            .map(|body| body.id.clone())
-            .collect::<Vec<_>>()
+        configuration.bodies.as_deref(),
+        Some(
+            decoded
+                .ir()
+                .model
+                .bodies
+                .iter()
+                .map(|body| body.id.clone())
+                .collect::<Vec<_>>()
+                .as_slice()
+        )
     );
-    assert!(decoded.ir().model.configurations[1].bodies.is_empty());
+    assert!(decoded.ir().model.configurations[1].bodies.as_deref().is_some_and(<[_]>::is_empty));
 
     let (mut inactive, _, fidelity) = decoded.into_parts();
     inactive
@@ -340,7 +343,7 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
             name: format!("Config {index}").into(),
             material: None,
             properties: BTreeMap::new(),
-            bodies: cadmpeg_ir::ConfigurationBodies::Resolved(
+            bodies: Some(
                 (vec![body.clone()]).try_into().unwrap(),
             ),
             parameter_values: BTreeMap::new(),
@@ -376,8 +379,8 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir().model.bodies.len(), 2);
-    assert_eq!(decoded.ir().model.configurations[0].bodies.len(), 1);
-    assert_eq!(decoded.ir().model.configurations[1].bodies.len(), 1);
+    assert_eq!(decoded.ir().model.configurations[0].bodies.as_deref().map_or(0, <[_]>::len), 1);
+    assert_eq!(decoded.ir().model.configurations[1].bodies.as_deref().map_or(0, <[_]>::len), 1);
     assert!(decoded.ir().model.configurations[1].active);
     assert_ne!(
         decoded.ir().model.configurations[0].bodies,
@@ -553,7 +556,7 @@ fn semantic_writer_rejects_duplicate_configuration_source_indices() {
     duplicate.ordinal += 1;
     duplicate
         .name
-        .resolved_mut()
+        .as_mut()
         .expect("resolved configuration name")
         .push_str(" Duplicate");
     duplicate.native_ref = None;
@@ -584,7 +587,7 @@ fn semantic_writer_rejects_empty_and_duplicate_configuration_names() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.configurations[0]
         .name
-        .resolved_mut()
+        .as_mut()
         .expect("resolved configuration name")
         .clear();
     let error = crate::test_support::plan_inherited_write(
@@ -595,7 +598,7 @@ fn semantic_writer_rejects_empty_and_duplicate_configuration_names() {
     .unwrap_err();
     assert!(error.to_string().contains("empty name"), "{error}");
 
-    decoded.ir_mut().model.configurations[0].name = "Default".into();
+    decoded.ir_mut().model.configurations[0].name = Some("Default".to_string());
     let mut duplicate = decoded.ir().model.configurations[0].clone();
     duplicate.id =
         cadmpeg_ir::features::ConfigurationId::mint(format!("{}-duplicate", duplicate.id))
@@ -1541,7 +1544,7 @@ fn semantic_writer_applies_neutral_configuration_edits() {
     {
         let mut ir_edit = decoded.ir_mut();
         let configuration = &mut ir_edit.model.configurations[0];
-        configuration.name = "Machined".into();
+        configuration.name = Some("Machined".to_string());
         configuration.material = Some("Aluminum".into());
         configuration
             .properties
@@ -1563,7 +1566,7 @@ fn semantic_writer_applies_neutral_configuration_edits() {
     assert_eq!(configuration.name, "Machined");
     assert_eq!(configuration.material.as_deref(), Some("Aluminum"));
     assert_eq!(configuration.properties["Finish"], "Anodized");
-    assert_eq!(regenerated.ir().model.configurations[0].name, "Machined");
+    assert_eq!(regenerated.ir().model.configurations[0].name.as_deref(), Some("Machined"));
 }
 
 #[test]
@@ -1575,9 +1578,9 @@ fn semantic_writer_rejects_conflicting_configuration_edits() {
         )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    decoded.ir_mut().model.configurations[0].name = "Neutral".into();
+    decoded.ir_mut().model.configurations[0].name = Some("Neutral".to_string());
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
-        native.feature_histories[0].configurations[0].name = "Native".into();
+        native.feature_histories[0].configurations[0].name = "Native".to_string();
     });
 
     let error = crate::test_support::plan_inherited_write(
