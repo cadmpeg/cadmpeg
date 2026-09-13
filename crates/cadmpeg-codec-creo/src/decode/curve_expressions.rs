@@ -119,7 +119,7 @@ pub(crate) fn curve_expression_helix_definition(
                     axis.y * helix.height / helix.revolutions.get(),
                     axis.z * helix.height / helix.revolutions.get(),
                 ),
-                axis: axis,
+                axis,
             },
             0.0,
             None,
