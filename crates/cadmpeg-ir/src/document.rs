@@ -26,6 +26,7 @@ use crate::geometry::{
     Curve, CurveGeometry, Pcurve, ProceduralCurve, ProceduralCurveRow, ProceduralSurface,
     ProceduralSurfaceRow, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
+use crate::hash::finite_json::CanonicalJsonError;
 use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use crate::native::Native;
 use crate::presentation::{PresentationDocument, ViewPresentation};
@@ -1256,10 +1257,17 @@ impl CadIr {
     /// Serialize a finalized, identity-sorted view as pretty JSON.
     ///
     /// Clones and [`finalize`](Self::finalize)s so callers need not pre-sort.
-    pub fn to_canonical_json(&self) -> Result<String, serde_json::Error> {
+    ///
+    /// The text is written through the same finite adapter the digest uses, so
+    /// a non-finite float is refused rather than written as `null`.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a document holding a non-finite float.
+    pub fn to_canonical_json(&self) -> Result<String, CanonicalJsonError> {
         let mut canonical = self.clone();
         canonical.finalize();
-        serde_json::to_string_pretty(&canonical)
+        crate::hash::finite_json::to_canonical_json_string(&canonical)
     }
 
     /// Parse JSON and reject any unsupported `ir_version`.
