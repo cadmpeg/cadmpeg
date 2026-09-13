@@ -273,13 +273,20 @@ pub(in super::super) fn transfer_saved_spline_curves(
                 _ => None,
             })
         {
-            let Some(nurbs) = saved_spline_nurbs(spline) else {
-                losses.push(
-                    crate::loss::CreoLossCode::SectionSplineUnresolved.note(format!(
-                        "Saved section spline at offset {} cannot form a NURBS curve.",
-                        spline.offset
-                    )),
-                );
+            let mut refusal = None;
+            let Some(nurbs) = saved_spline_nurbs(spline, &mut refusal) else {
+                losses.push(crate::loss::CreoLossCode::SectionSplineUnresolved.note(
+                    match &refusal {
+                        Some(error) => format!(
+                            "Saved section spline at offset {} cannot form a NURBS curve: {error}",
+                            spline.offset
+                        ),
+                        None => format!(
+                            "Saved section spline at offset {} cannot form a NURBS curve.",
+                            spline.offset
+                        ),
+                    },
+                ));
                 continue;
             };
             let suffix = spline.entity_id.map_or_else(
@@ -332,6 +339,7 @@ pub(in super::super) fn transfer_saved_spline_curves(
 pub(in super::super) fn revolved_nurbs_surface(
     directrix: &NurbsCurve,
     axis: &RevolutionAxis,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<NurbsSurface> {
     let axis_direction = normalize([axis.direction.x, axis.direction.y, axis.direction.z])?;
     let axis_origin = [axis.origin.x, axis.origin.y, axis.origin.z];
@@ -390,7 +398,7 @@ pub(in super::super) fn revolved_nurbs_surface(
             weights.push(directrix_weight * angular_weight);
         }
     }
-    NurbsSurface::from_lanes(
+    match NurbsSurface::from_lanes(
         directrix.degree(),
         2,
         directrix.knots().to_vec(),
@@ -413,8 +421,13 @@ pub(in super::super) fn revolved_nurbs_surface(
         false,
         false,
         false,
-    )
-    .ok()
+    ) {
+        Ok(surface) => Some(surface),
+        Err(error) => {
+            *refusal = Some(error);
+            None
+        }
+    }
 }
 
 pub(in super::super) struct RevolvedSectionCircle {
@@ -670,13 +683,20 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             .normal()
             .map(|value| value * (span.upper - span.lower));
         for (native_surface_id, internal_id, spline) in splines {
-            let Some(section_curve) = saved_spline_nurbs(spline) else {
-                losses.push(
-                    crate::loss::CreoLossCode::SectionSplineUnresolved.note(format!(
-                        "Saved section spline at offset {} cannot form a NURBS curve.",
-                        spline.offset
-                    )),
-                );
+            let mut refusal = None;
+            let Some(section_curve) = saved_spline_nurbs(spline, &mut refusal) else {
+                losses.push(crate::loss::CreoLossCode::SectionSplineUnresolved.note(
+                    match &refusal {
+                        Some(error) => format!(
+                            "Saved section spline at offset {} cannot form a NURBS curve: {error}",
+                            spline.offset
+                        ),
+                        None => format!(
+                            "Saved section spline at offset {} cannot form a NURBS curve.",
+                            spline.offset
+                        ),
+                    },
+                ));
                 continue;
             };
             let Some(placed) = placed_section_nurbs(transform, &section_curve) else {
@@ -685,7 +705,14 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             let Some(directrix) = translated_nurbs_curve(&placed, lower_translation) else {
                 continue;
             };
-            let Some(surface) = extruded_nurbs_surface(&directrix, sweep) else {
+            let mut refusal = None;
+            let Some(surface) = extruded_nurbs_surface(&directrix, sweep, &mut refusal) else {
+                if let Some(error) = refusal {
+                    losses.push(crate::loss::CreoLossCode::SectionSplineUnresolved.note(format!(
+                        "Extruded section spline at offset {} states no surface carrier: {error}",
+                        spline.offset
+                    )));
+                }
                 continue;
             };
             let suffix = internal_id.to_string();

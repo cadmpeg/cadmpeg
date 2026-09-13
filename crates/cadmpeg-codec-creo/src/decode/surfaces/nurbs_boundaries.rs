@@ -25,6 +25,7 @@ pub(in super::super) struct NurbsSurfaceBoundary {
 
 pub(in super::super) fn nurbs_surface_boundaries(
     nurbs: &NurbsSurface,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<[NurbsSurfaceBoundary; 4]> {
     let u_count = usize::try_from(nurbs.u_count()).ok()?;
     let v_count = usize::try_from(nurbs.v_count()).ok()?;
@@ -69,20 +70,26 @@ pub(in super::super) fn nurbs_surface_boundaries(
                     nurbs.u_periodic(),
                 )
             };
+            let curve = match NurbsCurve::from_lanes(
+                degree,
+                knots,
+                control_indices.iter().map(|index| poles[*index]).collect(),
+                pole_weights.as_ref().map(|weights| {
+                    control_indices
+                        .iter()
+                        .map(|index| weights[*index])
+                        .collect()
+                }),
+                periodic,
+            ) {
+                Ok(curve) => curve,
+                Err(error) => {
+                    *refusal = Some(error);
+                    return None;
+                }
+            };
             Some(NurbsSurfaceBoundary {
-                curve: NurbsCurve::from_lanes(
-                    degree,
-                    knots,
-                    control_indices.iter().map(|index| poles[*index]).collect(),
-                    pole_weights.as_ref().map(|weights| {
-                        control_indices
-                            .iter()
-                            .map(|index| weights[*index])
-                            .collect()
-                    }),
-                    periodic,
-                )
-                .ok()?,
+                curve,
                 control_indices,
                 transverse_periodic,
             })
@@ -112,8 +119,9 @@ pub(in super::super) fn point_tolerance<'a>(
 pub(in super::super) fn nurbs_plane_boundary_curve(
     nurbs: &NurbsSurface,
     plane: PlaneEquation,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<CurveGeometry> {
-    let boundaries = nurbs_surface_boundaries(nurbs)?;
+    let boundaries = nurbs_surface_boundaries(nurbs, refusal)?;
     let normal = normalize(plane.normal)?;
     let poles = nurbs.poles();
     let tolerance = point_tolerance(poles.iter())?
@@ -348,9 +356,10 @@ pub(in super::super) fn generator_separates_control_nets(
 pub(in super::super) fn shared_extrusion_generator_curve(
     first: &NurbsSurface,
     second: &NurbsSurface,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<CurveGeometry> {
-    let first_boundaries = nurbs_surface_boundaries(first)?;
-    let second_boundaries = nurbs_surface_boundaries(second)?;
+    let first_boundaries = nurbs_surface_boundaries(first, refusal)?;
+    let second_boundaries = nurbs_surface_boundaries(second, refusal)?;
     let first_poles = first.poles();
     let second_poles = second.poles();
     let tolerance = point_tolerance(first_poles.iter().chain(second_poles.iter()))?;
@@ -480,8 +489,9 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve(
         ctx: &DecodeContext<'_>,
         nurbs: &NurbsSurface,
         plane: PlaneEquation,
+        refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
     ) -> Option<Result<CurveGeometry, CodecError>> {
-        let boundaries = nurbs_surface_boundaries(nurbs)?;
+        let boundaries = nurbs_surface_boundaries(nurbs, refusal)?;
         (nurbs.u_degree() == 3
             && nurbs.v_degree() == 1
             && nurbs.u_count() == 4
@@ -617,15 +627,25 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve(
         let first = evaluated(0);
         let second = evaluated(1);
         let curve = &boundaries[0].curve;
-        let curve = NurbsCurve::from_lanes(
+        let curve = match NurbsCurve::from_lanes(
             curve.degree(),
             curve.knots().to_vec(),
             vec![first.0, second.0],
             nurbs.pole_weights().map(|_| vec![first.1, second.1]),
             curve.periodic(),
-        )
-        .ok()?;
+        ) {
+            Ok(curve) => curve,
+            Err(error) => {
+                *refusal = Some(error);
+                return None;
+            }
+        };
         Some(Ok(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve))))
     }
-    recognize(ctx, nurbs, plane).transpose()
+    let mut refusal = None;
+    let recognized = recognize(ctx, nurbs, plane, &mut refusal).transpose();
+    match refusal {
+        Some(error) => Err(error.into()),
+        None => recognized,
+    }
 }

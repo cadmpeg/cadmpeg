@@ -159,7 +159,7 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
     for reversed in [false, true] {
         let start = if reversed { [0.0, 1.0] } else { [1.0, 0.0] };
         let end = if reversed { [1.0, 0.0] } else { [0.0, 1.0] };
-        let pcurve = extrusion_cap_pcurve(&spline, reversed, start, end).unwrap();
+        let pcurve = extrusion_cap_pcurve(&spline, reversed, start, end, &mut None).unwrap();
         let PcurveGeometry::Nurbs { nurbs } = &pcurve else {
             panic!("spline cap pcurve is not NURBS");
         };
@@ -209,6 +209,7 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
             lower: -2.0,
             upper: 3.0,
         },
+        &mut None,
     )
     .expect("spline side surface");
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(side)) = side else {

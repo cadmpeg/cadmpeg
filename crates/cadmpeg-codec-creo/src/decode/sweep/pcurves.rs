@@ -71,6 +71,7 @@ pub(in super::super) fn revolution_boundary_pcurve(
     surface: &SurfaceGeometry,
     point: [f64; 3],
     axis: &RevolutionAxis,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<PcurveGeometry> {
     let axis_direction = normalize([axis.direction.x, axis.direction.y, axis.direction.z])?;
     let axis_origin = [axis.origin.x, axis.origin.y, axis.origin.z];
@@ -111,7 +112,13 @@ pub(in super::super) fn revolution_boundary_pcurve(
             } else {
                 std::f64::consts::TAU
             };
-            Some(circular_pcurve(center, radius, start, start + direction)?)
+            Some(circular_pcurve(
+                center,
+                radius,
+                start,
+                start + direction,
+                refusal,
+            )?)
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             let origin = cylinder_surface.origin();
@@ -206,6 +213,7 @@ pub(in super::super) fn revolved_brep_surface(
     geometry: &SketchGeometry,
     reversed: bool,
     axis: &RevolutionAxis,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<SurfaceGeometry> {
     if matches!(
         geometry.definition(),
@@ -213,7 +221,7 @@ pub(in super::super) fn revolved_brep_surface(
     ) {
         let directrix = oriented_sketch_nurbs_curve(geometry, reversed)?;
         return Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-            revolved_nurbs_surface(&placed_section_nurbs(transform, &directrix)?, axis)?,
+            revolved_nurbs_surface(&placed_section_nurbs(transform, &directrix)?, axis, refusal)?,
         )));
     }
     revolved_section_surface(transform, geometry, axis)
@@ -251,6 +259,7 @@ pub(in super::super) fn revolution_profile_boundary_pcurve(
     axis: &RevolutionAxis,
     section_point: [f64; 2],
     boundary: RevolutionBoundary,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<PcurveGeometry> {
     if matches!(
         segment.geometry(),
@@ -269,6 +278,7 @@ pub(in super::super) fn revolution_profile_boundary_pcurve(
         surface,
         section_point_in_model(transform, section_point),
         axis,
+        refusal,
     )
 }
 
@@ -278,6 +288,7 @@ pub(in super::super) fn revolution_face_sense(
     surface: &SurfaceGeometry,
     axis: &RevolutionAxis,
     profile_area: f64,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<Sense> {
     let is_nurbs = matches!(
         segment.geometry(),
@@ -338,7 +349,7 @@ pub(in super::super) fn revolution_face_sense(
         let parameter = lower + (upper - lower) * 0.5;
         line_pcurve([parameter, 0.0], [parameter, std::f64::consts::TAU])?
     } else {
-        revolution_boundary_pcurve(surface, model_point, axis)?
+        revolution_boundary_pcurve(surface, model_point, axis, refusal)?
     };
     let uv = cadmpeg_ir::eval::pcurve_uv(&pcurve, pcurve_parameter)?;
     let before_u = cadmpeg_ir::eval::surface_point(surface, uv.u - u_epsilon, uv.v)?;

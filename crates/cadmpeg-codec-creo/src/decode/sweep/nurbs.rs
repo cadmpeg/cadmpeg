@@ -217,6 +217,7 @@ pub(in super::super) fn interpolation_curve_data(
 
 pub(in super::super) fn saved_spline_nurbs(
     spline: &crate::feature::FeatureSavedSpline,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<NurbsCurve> {
     (usize::try_from(spline.declared_point_count?).ok()? == spline.interpolation_points.len())
         .then_some(())?;
@@ -228,13 +229,20 @@ pub(in super::super) fn saved_spline_nurbs(
         .into_iter()
         .map(|point| Point3::new(point[0], point[1], point[2]))
         .collect();
-    NurbsCurve::from_lanes(3, knots, control_points, None, false).ok()
+    match NurbsCurve::from_lanes(3, knots, control_points, None, false) {
+        Ok(curve) => Some(curve),
+        Err(error) => {
+            *refusal = Some(error);
+            None
+        }
+    }
 }
 
 pub(in super::super) fn saved_spline_sketch_geometry(
     spline: &crate::feature::FeatureSavedSpline,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<SketchGeometry> {
-    let nurbs = saved_spline_nurbs(spline)?;
+    let nurbs = saved_spline_nurbs(spline, refusal)?;
     if !nurbs
         .control_points()
         .iter()
@@ -242,24 +250,28 @@ pub(in super::super) fn saved_spline_sketch_geometry(
     {
         return None;
     }
-    Some(SketchGeometry::nurbs(
-        cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
-            nurbs.degree(),
-            nurbs.knots().to_vec(),
-            nurbs
-                .control_points()
-                .iter()
-                .map(|point| cadmpeg_ir::math::Point2::new(point.x, point.y))
-                .collect(),
-            nurbs.weights(),
-            nurbs.periodic(),
-        )
-        .ok()?,
-    ))
+    match cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+        nurbs.degree(),
+        nurbs.knots().to_vec(),
+        nurbs
+            .control_points()
+            .iter()
+            .map(|point| cadmpeg_ir::math::Point2::new(point.x, point.y))
+            .collect(),
+        nurbs.weights(),
+        nurbs.periodic(),
+    ) {
+        Ok(pcurve) => Some(SketchGeometry::nurbs(pcurve)),
+        Err(error) => {
+            *refusal = Some(error);
+            None
+        }
+    }
 }
 
 pub(in super::super) fn interpolation_spline_surface(
     grid: &crate::interpolation_grid::InterpolationGrid,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<NurbsSurface> {
     let points = grid.points();
     let u_parameters = grid.u_parameters();
@@ -342,7 +354,7 @@ pub(in super::super) fn interpolation_spline_surface(
         );
     }
 
-    NurbsSurface::from_lanes(
+    match NurbsSurface::from_lanes(
         3,
         3,
         u_knots?,
@@ -355,8 +367,13 @@ pub(in super::super) fn interpolation_spline_surface(
         false,
         false,
         false,
-    )
-    .ok()
+    ) {
+        Ok(surface) => Some(surface),
+        Err(error) => {
+            *refusal = Some(error);
+            None
+        }
+    }
 }
 
 pub(in super::super) fn placed_section_nurbs(
@@ -393,6 +410,7 @@ pub(in super::super) fn translated_nurbs_curve(
 pub(in super::super) fn extruded_nurbs_surface(
     directrix: &NurbsCurve,
     sweep: [f64; 3],
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<NurbsSurface> {
     let mut control_points = Vec::with_capacity(directrix.control_points().len() * 2);
     let mut weights = directrix
@@ -409,7 +427,7 @@ pub(in super::super) fn extruded_nurbs_surface(
             target.extend([source[index], source[index]]);
         }
     }
-    NurbsSurface::from_lanes(
+    match NurbsSurface::from_lanes(
         directrix.degree(),
         1,
         directrix.knots().to_vec(),
@@ -419,8 +437,13 @@ pub(in super::super) fn extruded_nurbs_surface(
         false,
         directrix.periodic(),
         false,
-    )
-    .ok()
+    ) {
+        Ok(surface) => Some(surface),
+        Err(error) => {
+            *refusal = Some(error);
+            None
+        }
+    }
 }
 
 pub(in super::super) fn sketch_nurbs_curve(geometry: &SketchGeometry) -> Option<NurbsCurve> {
@@ -459,22 +482,26 @@ pub(in super::super) fn oriented_sketch_nurbs_curve(
 pub(in super::super) fn sketch_nurbs_pcurve(
     geometry: &SketchGeometry,
     reversed: bool,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<PcurveGeometry> {
     let nurbs = oriented_sketch_nurbs_curve(geometry, reversed)?;
-    Some(PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
-            nurbs.degree(),
-            nurbs.knots().to_vec(),
-            nurbs
-                .control_points()
-                .iter()
-                .map(|point| Point2::new(point.x, point.y))
-                .collect(),
-            nurbs.weights(),
-            nurbs.periodic(),
-        )
-        .ok()?,
-    })
+    match cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+        nurbs.degree(),
+        nurbs.knots().to_vec(),
+        nurbs
+            .control_points()
+            .iter()
+            .map(|point| Point2::new(point.x, point.y))
+            .collect(),
+        nurbs.weights(),
+        nurbs.periodic(),
+    ) {
+        Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),
+        Err(error) => {
+            *refusal = Some(error);
+            None
+        }
+    }
 }
 
 pub(in super::super) fn extrusion_brep_side_surface(
@@ -484,6 +511,7 @@ pub(in super::super) fn extrusion_brep_side_surface(
     start: [f64; 2],
     end: [f64; 2],
     span: ExtrusionSpan,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<SurfaceGeometry> {
     if matches!(
         geometry.definition(),
@@ -497,7 +525,7 @@ pub(in super::super) fn extrusion_brep_side_surface(
         let placed = placed_section_nurbs(transform, &directrix)?;
         let translated = translated_nurbs_curve(&placed, lower_translation)?;
         return Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-            extruded_nurbs_surface(&translated, sweep)?,
+            extruded_nurbs_surface(&translated, sweep, refusal)?,
         )));
     }
     let section_geometry = match geometry.definition() {
@@ -556,6 +584,7 @@ pub(in super::super) fn placed_tabulated_cylinder_directrix(
     replay: &crate::surface::TabulatedCylinderCurveReplay,
     parameters: &crate::surface::SurfaceParameterRecord,
     chart_origin: Option<[f64; 3]>,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<(NurbsCurve, [f64; 3])> {
     #[derive(Clone, Copy)]
     enum FrameLayout {
@@ -783,22 +812,27 @@ pub(in super::super) fn placed_tabulated_cylinder_directrix(
     } else {
         second[*sweep_axis] - first[*sweep_axis]
     };
-    (sweep[*sweep_axis].is_finite() && sweep[*sweep_axis] != 0.0).then_some((
-        NurbsCurve::from_lanes(
-            3,
-            vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
-            control_points,
-            None,
-            false,
-        )
-        .ok()?,
-        sweep,
-    ))
+    if !sweep[*sweep_axis].is_finite() || sweep[*sweep_axis] == 0.0 {
+        return None;
+    }
+    match NurbsCurve::from_lanes(
+        3,
+        vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+        control_points,
+        None,
+        false,
+    ) {
+        Ok(curve) => Some((curve, sweep)),
+        Err(error) => {
+            *refusal = Some(error);
+            None
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{signed_unit_chart, translated_nurbs_curve};
+    use super::{extruded_nurbs_surface, signed_unit_chart, translated_nurbs_curve};
     use cadmpeg_ir::geometry::NurbsCurve;
     use cadmpeg_ir::math::Point3;
 
@@ -831,5 +865,32 @@ mod tests {
             assert_eq!(super::bspline_basis(0, 3, 0.5, knots, 4), None);
             assert_eq!(super::bspline_basis_derivative(0, 3, 0.5, knots, 4), None);
         }
+    }
+
+    #[test]
+    fn a_refused_extruded_carrier_states_its_reason() {
+        let directrix = NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![
+                Point3::new(f64::MAX, 0.0, 0.0),
+                Point3::new(f64::MAX, 1.0, 0.0),
+            ],
+            None,
+            false,
+        )
+        .expect("valid directrix");
+        let mut refusal = None;
+        let surface = extruded_nurbs_surface(&directrix, [f64::MAX, 0.0, 0.0], &mut refusal);
+        assert!(surface.is_none(), "the refused ruling states no surface");
+        let error = refusal.expect("the refusal is carried out of the extrusion");
+        let reported = cadmpeg_core::CodecError::from(error);
+        let cadmpeg_core::CodecError::Malformed(message) = &reported else {
+            panic!("expected a malformed refusal, got {reported:?}");
+        };
+        assert!(
+            !message.is_empty(),
+            "the refusal carries the carrier's own text"
+        );
     }
 }

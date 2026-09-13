@@ -301,7 +301,12 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             else {
                 continue;
             };
-            let Some(surface) = revolved_nurbs_surface(directrix, &axis) else {
+            let mut refusal = None;
+            let surface = revolved_nurbs_surface(directrix, &axis, &mut refusal);
+            if let Some(error) = refusal {
+                return Err(error.into());
+            }
+            let Some(surface) = surface else {
                 continue;
             };
             let native_surface = definition

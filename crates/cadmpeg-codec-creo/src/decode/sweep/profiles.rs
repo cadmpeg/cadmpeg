@@ -163,6 +163,7 @@ pub(in super::super) fn circular_pcurve(
     radius: f64,
     start_angle: f64,
     end_angle: f64,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<PcurveGeometry> {
     let segment_count = ((end_angle - start_angle).abs() / std::f64::consts::FRAC_PI_2)
         .ceil()
@@ -198,9 +199,19 @@ pub(in super::super) fn circular_pcurve(
         knots.extend([boundary as f64 / segment_count as f64; 2]);
     }
     knots.extend([1.0; 3]);
-    cadmpeg_ir::geometry::PcurveNurbs::from_lanes(2, knots, control_points, Some(weights), false)
-        .ok()
-        .map(|nurbs| PcurveGeometry::Nurbs { nurbs })
+    match cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+        2,
+        knots,
+        control_points,
+        Some(weights),
+        false,
+    ) {
+        Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),
+        Err(error) => {
+            *refusal = Some(error);
+            None
+        }
+    }
 }
 
 pub(in super::super) fn extrusion_cap_pcurve(
@@ -208,6 +219,7 @@ pub(in super::super) fn extrusion_cap_pcurve(
     reversed: bool,
     start: [f64; 2],
     end: [f64; 2],
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<PcurveGeometry> {
     match geometry.definition() {
         SketchGeometryDefinition::Arc {
@@ -221,13 +233,25 @@ pub(in super::super) fn extrusion_cap_pcurve(
             } else {
                 [start_angle.get(), end_angle.get()]
             };
-            circular_pcurve([center.u, center.v], radius.get(), start_angle, end_angle)
+            circular_pcurve(
+                [center.u, center.v],
+                radius.get(),
+                start_angle,
+                end_angle,
+                refusal,
+            )
         }
         SketchGeometryDefinition::Circle { center, radius } => {
             let [start_angle, end_angle] = oriented_full_turn_angles(reversed);
-            circular_pcurve([center.u, center.v], radius.get(), start_angle, end_angle)
+            circular_pcurve(
+                [center.u, center.v],
+                radius.get(),
+                start_angle,
+                end_angle,
+                refusal,
+            )
         }
-        SketchGeometryDefinition::Nurbs { .. } => sketch_nurbs_pcurve(geometry, reversed),
+        SketchGeometryDefinition::Nurbs { .. } => sketch_nurbs_pcurve(geometry, reversed, refusal),
         _ => line_pcurve(start, end),
     }
 }
