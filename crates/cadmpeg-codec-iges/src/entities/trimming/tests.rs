@@ -644,10 +644,17 @@ fn decode_retains_inner_boundaries_after_an_omitted_outer_pointer() {
         .iter()
         .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
         .unwrap();
+    // The face states no outer boundary, so it states no classification: the
+    // parameter domain supplies the exterior, and the procedural surface
+    // below is where that fact lives.
     assert_eq!(
         loop_.boundary_role_in(&result.ir().model.faces),
-        cadmpeg_ir::topology::LoopBoundaryRole::Inner
+        cadmpeg_ir::topology::LoopBoundaryRole::Unspecified
     );
+    assert!(matches!(
+        face.loops,
+        cadmpeg_ir::topology::FaceLoops::Unspecified { .. }
+    ));
     assert_eq!(
         face.surface.as_str(),
         "iges:model:surface#D15:implicit-outer"

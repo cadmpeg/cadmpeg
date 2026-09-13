@@ -362,7 +362,7 @@ pub(super) fn pcurve_geometry(
     tolerance: Option<f64>,
     ctx: Option<&DecodeContext<'_>>,
     composite_index: Option<&CompositeIndex>,
-) -> Result<Option<(PcurveGeometry, [f64; 2])>, cadmpeg_ir::geometry::NurbsError> {
+) -> Result<Option<(PcurveGeometry, [f64; 2])>, super::composite::CompositeCurveError> {
     let curve_id = crate::ids::curve(&crate::ids::Stem::directory(sequence));
     let Some((nurbs, range)) =
         bounded_nurbs_for_curve_with_tolerance(ir, &curve_id, tolerance, ctx, composite_index)?
