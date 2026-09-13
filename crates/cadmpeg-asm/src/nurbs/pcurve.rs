@@ -9,8 +9,9 @@ use crate::nurbs::reader::{
 use crate::nurbs::toks::{self, Cur};
 use crate::sab::Token;
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::geometry::PcurveNurbs;
+use cadmpeg_ir::geometry::{PcurveNurbs, PcurveNurbsPoles, WeightedPole2};
 use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::scalar::PositiveReal;
 
 /// Writable value offsets for one 2D pcurve cache.
 pub struct PcurvePatchLayout {
@@ -124,8 +125,10 @@ pub(crate) fn decode_pcurve_block_with_end(
     }
     let (knots, n_poles, _knot_layout) =
         read_knots(b, &mut pos, n_uniq as usize, degree, int_width)?;
-    let mut control_points = Vec::with_capacity(n_poles);
-    let mut weights = rational.then(|| Vec::with_capacity(n_poles));
+    // The record states a pole and its weight together, so the reader states
+    // rows: there is no pole lane and no weight lane for a reader to pair.
+    let mut points = Vec::with_capacity(n_poles);
+    let mut weighted = Vec::with_capacity(n_poles);
     for _ in 0..n_poles {
         if *b.get(pos)? != 0x06 {
             return None;
@@ -137,24 +140,28 @@ pub(crate) fn decode_pcurve_block_with_end(
         }
         let v = View::f64_le_at(b, pos + 1)?;
         pos += 9;
-        control_points.push(Point2::new(u, v));
-        if let Some(weights) = weights.as_mut() {
+        let point = Point2::new(u, v);
+        if rational {
             if *b.get(pos)? != 0x06 {
                 return None;
             }
-            weights.push(View::f64_le_at(b, pos + 1)?);
+            let weight = View::f64_le_at(b, pos + 1)?;
             pos += 9;
+            weighted.push(WeightedPole2 {
+                point,
+                weight: PositiveReal::new(weight)?,
+            });
+        } else {
+            points.push(point);
         }
     }
+    let poles = if rational {
+        PcurveNurbsPoles::Rational { points: weighted }
+    } else {
+        PcurveNurbsPoles::Polynomial { points }
+    };
     Some((
-        PcurveNurbs::from_lanes(
-            degree as u32,
-            knots,
-            control_points,
-            weights,
-            is_periodic(closure),
-        )
-        .ok()?,
+        PcurveNurbs::new(degree as u32, knots, poles, is_periodic(closure)).ok()?,
         pos,
     ))
 }
@@ -197,25 +204,28 @@ pub(crate) fn pcurve_block_with_end(
         return None;
     }
     let (knots, n_poles) = toks::take_knot_table(&mut cur, n_uniq as usize, degree)?;
-    let mut control_points = Vec::new();
-    let mut weights = rational.then(Vec::new);
+    let mut points = Vec::new();
+    let mut weighted = Vec::new();
     for _ in 0..n_poles {
         let u = cur.take_f64()?;
         let v = cur.take_f64()?;
-        control_points.push(Point2::new(u, v));
-        if let Some(weights) = weights.as_mut() {
-            weights.push(cur.take_f64()?);
+        let point = Point2::new(u, v);
+        if rational {
+            weighted.push(WeightedPole2 {
+                point,
+                weight: PositiveReal::new(cur.take_f64()?)?,
+            });
+        } else {
+            points.push(point);
         }
     }
+    let poles = if rational {
+        PcurveNurbsPoles::Rational { points: weighted }
+    } else {
+        PcurveNurbsPoles::Polynomial { points }
+    };
     Some((
-        PcurveNurbs::from_lanes(
-            degree as u32,
-            knots,
-            control_points,
-            weights,
-            is_periodic(closure),
-        )
-        .ok()?,
+        PcurveNurbs::new(degree as u32, knots, poles, is_periodic(closure)).ok()?,
         cur.pos(),
     ))
 }

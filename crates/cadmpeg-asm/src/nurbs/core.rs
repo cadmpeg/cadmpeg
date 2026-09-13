@@ -11,6 +11,7 @@ use crate::kernel_header::RefWidth;
 use crate::nurbs::reader::{
     construction_marker_positions, is_periodic, marker_at, marker_positions,
     owned_marker_positions, read_control_points, read_knots, take_tagged_int, BsplineMarker,
+    ReadPoles3,
     KnotLayout, INT_WIDTHS, LEN_TO_MM,
 };
 use crate::nurbs::subtypes::{decode_cache_resolving_refs, SubtypeTables};
@@ -21,32 +22,26 @@ use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface};
 use cadmpeg_ir::math::Point3;
 
 use crate::nurbs::toks::take_knot_table as knots;
-use cadmpeg_core::decode::alloc_filled;
 
 /// Read `count` control points in the marker-selected form, scaling positions to
 /// millimetres. Token-space counterpart of [`read_control_points`].
-fn control_points(
-    cur: &mut Cur<'_>,
-    count: usize,
-    marker: BsplineMarker,
-) -> Option<(Vec<Point3>, Option<Vec<f64>>)> {
-    let mut points = Vec::new();
-    let mut weights = marker.rational().then(Vec::new);
+fn control_points(cur: &mut Cur<'_>, count: usize, marker: BsplineMarker) -> Option<ReadPoles3> {
+    let mut poles = ReadPoles3::with_capacity(count, marker.rational());
     for _ in 0..count {
         let mut comps = [0.0f64; 4];
         for comp in comps.iter_mut().take(marker.cp_dims()) {
             *comp = cur.take_f64()?;
         }
-        points.push(Point3::new(
-            comps[0] * LEN_TO_MM,
-            comps[1] * LEN_TO_MM,
-            comps[2] * LEN_TO_MM,
-        ));
-        if let Some(w) = weights.as_mut() {
-            w.push(comps[3]);
-        }
+        poles.push(
+            Point3::new(
+                comps[0] * LEN_TO_MM,
+                comps[1] * LEN_TO_MM,
+                comps[2] * LEN_TO_MM,
+            ),
+            comps[3],
+        )?;
     }
-    Some((points, weights))
+    Some(poles)
 }
 
 /// Decode a surface `nubs`/`nurbs` block at token `marker_pos`, returning the
@@ -84,38 +79,14 @@ pub(crate) fn surface_block(toks: &[Token], marker_pos: usize) -> Option<(NurbsS
 
     // Grid is stored v-major (v outer, u inner); transpose to the IR's u-major
     // order where index `u * v_count + v` is pole `(u, v)`.
-    let (flat, flat_w) = control_points(&mut cur, n_poles_u * n_poles_v, marker)?;
-    let pole_count = n_poles_u * n_poles_v;
-    let mut grid = alloc_filled(pole_count, Point3::new(0.0, 0.0, 0.0), "asm_nurbs_poles").ok()?;
-    let mut weights = match &flat_w {
-        Some(_) => Some(alloc_filled(pole_count, 0.0f64, "asm_nurbs_weights").ok()?),
-        None => None,
-    };
-    for v in 0..n_poles_v {
-        for u in 0..n_poles_u {
-            let file_idx = v * n_poles_u + u;
-            let ir_idx = u * n_poles_v + v;
-            grid[ir_idx] = flat[file_idx];
-            if let (Some(w), Some(fw)) = (weights.as_mut(), flat_w.as_ref()) {
-                w[ir_idx] = fw[file_idx];
-            }
-        }
-    }
-
-    let surface = NurbsSurface::from_lanes(
+    let poles = control_points(&mut cur, n_poles_u * n_poles_v, marker)?;
+    let grid = poles.into_transposed_grid(n_poles_u, n_poles_v)?;
+    let surface = NurbsSurface::new(
         degree_u as u32,
         degree_v as u32,
         u_knots,
         v_knots,
-        grid.chunks(n_poles_v as u32 as usize)
-            .map(<[_]>::to_vec)
-            .collect(),
-        weights.map(|values| {
-            values
-                .chunks(n_poles_v as u32 as usize)
-                .map(<[_]>::to_vec)
-                .collect()
-        }),
+        grid,
         false,
         is_periodic(enums[0]),
         is_periodic(enums[1]),
@@ -141,13 +112,12 @@ pub(crate) fn curve_block(toks: &[Token], marker_pos: usize) -> Option<(NurbsCur
         return None;
     }
     let (knot_vector, n_poles) = knots(&mut cur, n_uniq as usize, degree)?;
-    let (points, weights) = control_points(&mut cur, n_poles, marker)?;
+    let poles = control_points(&mut cur, n_poles, marker)?;
 
-    let curve = NurbsCurve::from_lanes(
+    let curve = NurbsCurve::new(
         degree as u32,
         knot_vector,
-        points,
-        weights,
+        poles.into_lane(),
         is_periodic(closure),
     )
     .ok()?;
@@ -334,40 +304,14 @@ pub(crate) fn decode_surface_block(
     // Grid is stored v-major (v outer, u inner); transpose to the IR's u-major
     // order where index `u * v_count + v` is pole `(u, v)`.
     let control_start = pos;
-    let (flat, flat_w) = read_control_points(b, &mut pos, n_poles_u * n_poles_v, marker)?;
-    let pole_count = n_poles_u * n_poles_v;
-    let mut control_points =
-        alloc_filled(pole_count, Point3::new(0.0, 0.0, 0.0), "asm_nurbs_poles").ok()?;
-    let mut weights = match &flat_w {
-        Some(_) => Some(alloc_filled(pole_count, 0.0f64, "asm_nurbs_weights").ok()?),
-        None => None,
-    };
-    for v in 0..n_poles_v {
-        for u in 0..n_poles_u {
-            let file_idx = v * n_poles_u + u;
-            let ir_idx = u * n_poles_v + v;
-            control_points[ir_idx] = flat[file_idx];
-            if let (Some(w), Some(fw)) = (weights.as_mut(), flat_w.as_ref()) {
-                w[ir_idx] = fw[file_idx];
-            }
-        }
-    }
-
-    let surface = NurbsSurface::from_lanes(
+    let poles = read_control_points(b, &mut pos, n_poles_u * n_poles_v, marker)?;
+    let grid = poles.into_transposed_grid(n_poles_u, n_poles_v)?;
+    let surface = NurbsSurface::new(
         degree_u as u32,
         degree_v as u32,
         u_knots,
         v_knots,
-        control_points
-            .chunks(n_poles_v as u32 as usize)
-            .map(<[_]>::to_vec)
-            .collect(),
-        weights.map(|values| {
-            values
-                .chunks(n_poles_v as u32 as usize)
-                .map(<[_]>::to_vec)
-                .collect()
-        }),
+        grid,
         false,
         is_periodic(enums[0]),
         is_periodic(enums[1]),
@@ -458,16 +402,9 @@ pub(crate) fn decode_curve_block(
     let (knots, n_poles, knot_layout) =
         read_knots(b, &mut pos, n_uniq as usize, degree, int_width)?;
     let control_start = pos;
-    let (control_points, weights) = read_control_points(b, &mut pos, n_poles, marker)?;
+    let poles = read_control_points(b, &mut pos, n_poles, marker)?;
 
-    let curve = NurbsCurve::from_lanes(
-        degree as u32,
-        knots,
-        control_points,
-        weights,
-        is_periodic(closure),
-    )
-    .ok()?;
+    let curve = NurbsCurve::new(degree as u32, knots, poles.into_lane(), is_periodic(closure)).ok()?;
     Some(CurvePatchLayout {
         curve,
         control_start,

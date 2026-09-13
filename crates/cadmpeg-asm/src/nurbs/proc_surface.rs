@@ -1649,24 +1649,29 @@ pub(crate) fn ellipse_to_nurbs(
             (center[2] + mj * major[2] + mn * minor[2]) * LEN_TO_MM,
         )
     };
-    let w = std::f64::consts::FRAC_1_SQRT_2;
-    NurbsCurve::from_lanes(
+    // The rational quadratic circle states each pole with its own weight, so
+    // the carrier reads rows and there is no pole lane and weight lane to pair.
+    let corner = cadmpeg_ir::scalar::NonZeroReal::new(std::f64::consts::FRAC_1_SQRT_2)?;
+    let full = cadmpeg_ir::scalar::NonZeroReal::new(1.0)?;
+    let pole = |point, weight| cadmpeg_ir::geometry::WeightedPole3 { point, weight };
+    NurbsCurve::new(
         2,
         vec![
             0.0, 0.0, 0.0, 0.25, 0.25, 0.5, 0.5, 0.75, 0.75, 1.0, 1.0, 1.0,
         ],
-        vec![
-            at(1.0, 0.0),
-            at(1.0, 1.0),
-            at(0.0, 1.0),
-            at(-1.0, 1.0),
-            at(-1.0, 0.0),
-            at(-1.0, -1.0),
-            at(0.0, -1.0),
-            at(1.0, -1.0),
-            at(1.0, 0.0),
-        ],
-        Some(vec![1.0, w, 1.0, w, 1.0, w, 1.0, w, 1.0]),
+        cadmpeg_ir::geometry::NurbsPoles3::Rational {
+            points: vec![
+                pole(at(1.0, 0.0), full),
+                pole(at(1.0, 1.0), corner),
+                pole(at(0.0, 1.0), full),
+                pole(at(-1.0, 1.0), corner),
+                pole(at(-1.0, 0.0), full),
+                pole(at(-1.0, -1.0), corner),
+                pole(at(0.0, -1.0), full),
+                pole(at(1.0, -1.0), corner),
+                pole(at(1.0, 0.0), full),
+            ],
+        },
         false,
     )
     .ok()
