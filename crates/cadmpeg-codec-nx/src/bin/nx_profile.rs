@@ -701,7 +701,9 @@ fn neutral_rederivation_evidence(ir: &CadIr) -> (VerificationStatus, Option<Rede
     }
 }
 
-fn canonical_sha256(ir: &CadIr) -> Result<Sha256Hex, serde_json::Error> {
+fn canonical_sha256(
+    ir: &CadIr,
+) -> Result<Sha256Hex, cadmpeg_ir::hash::finite_json::CanonicalJsonError> {
     struct Sha256Writer(Sha256);
 
     impl Write for Sha256Writer {
@@ -716,7 +718,12 @@ fn canonical_sha256(ir: &CadIr) -> Result<Sha256Hex, serde_json::Error> {
     }
 
     let mut writer = Sha256Writer(Sha256::new());
-    serde_json::to_writer_pretty(&mut writer, ir)?;
+    // A CADIR document is written through the one finite route, so a
+    // non-finite float is refused rather than digested as `null`.
+    let canonical = cadmpeg_ir::hash::finite_json::to_canonical_json_string(ir)?;
+    std::io::Write::write_all(&mut writer, canonical.as_bytes())
+        .map_err(|error| serde::ser::Error::custom(error))
+        .map_err(cadmpeg_ir::hash::finite_json::CanonicalJsonError::Serialize)?;
     Ok(Sha256Hex::from_digest(writer.0.finalize().into()))
 }
 

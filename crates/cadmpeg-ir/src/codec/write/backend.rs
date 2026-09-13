@@ -425,11 +425,42 @@ impl EncoderBackend for CadirEncoder {
     const TARGET: DialectFree = DialectFree;
 
     fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
-        let mut bytes = serde_json::to_vec_pretty(input.ir)
-            .map_err(|error| CodecError::Malformed(error.to_string()))?;
+        let mut bytes = crate::hash::finite_json::to_canonical_json_string(input.ir)
+            .map_err(|error| CodecError::Malformed(error.to_string()))?
+            .into_bytes();
         bytes.push(b'\n');
         // CADIR is the neutral document itself: there is no container to
         // replay or patch, so this encoder has one path and states it.
         Ok(ExportBody::synthesized(bytes, input.ir))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CadirEncoder, EncodeInput, EncoderBackend};
+
+    /// The CADIR encoder writes through the finite adapter: a document
+    /// holding a non-finite float is refused, not written with `null` in its
+    /// place.
+    #[test]
+    fn the_cadir_encoder_refuses_a_non_finite_document() {
+        let mut ir = crate::document::CadIr::empty();
+        ir.model.points.push(crate::topology::Point {
+            id: crate::ids::PointId::mint("test:model:point#0").expect("identity grammar"),
+            position: crate::math::Point3::new(f64::NAN, 0.0, 0.0),
+            source_object: None,
+        });
+        let Err(error) = CadirEncoder.plan_resolved(EncodeInput::new(&ir, None), ()) else {
+            panic!("a non-finite float has no canonical JSON");
+        };
+        let error = error.to_string();
+        assert!(error.contains("non-finite"), "{error}");
+
+        ir.model.points[0].position = crate::math::Point3::new(1.0, 0.0, 0.0);
+        let body = CadirEncoder
+            .plan_resolved(EncodeInput::new(&ir, None), ())
+            .expect("a finite document writes");
+        let text = String::from_utf8(body.bytes).expect("CADIR is UTF-8");
+        assert!(!text.contains("null"), "{text}");
     }
 }

@@ -222,7 +222,9 @@ pub(super) fn command_body_json(
     command: &'static str,
     body: CommandReportBody<'_>,
 ) -> Result<String> {
-    Ok(serde_json::to_string_pretty(&body.command_report(command))?)
+    Ok(cadmpeg_ir::hash::finite_json::to_canonical_json_string(
+        &body.command_report(command),
+    )?)
 }
 
 fn generator() -> String {
@@ -350,10 +352,9 @@ pub(crate) fn command_report_json<P: ReportBody>(
     command: &'static str,
     payload: P,
 ) -> Result<String> {
-    Ok(serde_json::to_string_pretty(&CommandReport::new(
-        command,
-        Payload::Ok(payload),
-    ))?)
+    Ok(cadmpeg_ir::hash::finite_json::to_canonical_json_string(
+        &CommandReport::new(command, Payload::Ok(payload)),
+    )?)
 }
 
 pub(crate) fn refused_command_report_json<P: ReportBody>(
@@ -361,10 +362,9 @@ pub(crate) fn refused_command_report_json<P: ReportBody>(
     payload: P,
     refusal: &ConversionRefusal,
 ) -> Result<String> {
-    Ok(serde_json::to_string_pretty(&CommandReport::new(
-        command,
-        Payload::Refused(payload, refusal),
-    ))?)
+    Ok(cadmpeg_ir::hash::finite_json::to_canonical_json_string(
+        &CommandReport::new(command, Payload::Refused(payload, refusal)),
+    )?)
 }
 
 pub(super) fn write_json_report<P: ReportBody>(
@@ -398,7 +398,7 @@ fn write_serialized_report(
     let Some(output) = output else {
         return Ok(());
     };
-    let mut bytes = serde_json::to_vec_pretty(report)?;
+    let mut bytes = cadmpeg_ir::hash::finite_json::to_canonical_json_string(report)?.into_bytes();
     bytes.push(b'\n');
     output.write(input, &bytes)?;
     eprintln!("wrote report {}", output.path.display());
