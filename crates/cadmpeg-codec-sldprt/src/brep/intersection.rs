@@ -332,6 +332,7 @@ fn solved_curve(
     chart: &Chart,
     start: [f64; 3],
     end: [f64; 3],
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<(CurveGeometry, Vec<f64>, bool)> {
     let mut parameters = chart_parameters(chart, &chart.points);
     let mut points = chart.points.clone();
@@ -347,7 +348,7 @@ fn solved_curve(
         return None;
     };
     let knots = degree_one_knots(&parameters);
-    let nurbs = NurbsCurve::from_lanes(
+    let nurbs = match NurbsCurve::from_lanes(
         1,
         knots,
         points
@@ -356,8 +357,13 @@ fn solved_curve(
             .collect(),
         None,
         false,
-    )
-    .ok()?;
+    ) {
+        Ok(nurbs) => nurbs,
+        Err(error) => {
+            *refusal = Some(error);
+            return None;
+        }
+    };
     Some((
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
         parameters,
@@ -422,7 +428,10 @@ fn nearest_term(
 /// select the unique candidate with the least endpoint displacement. An absent
 /// or inconsistent optional UV record does not invalidate the model-space
 /// curve; only a unique complete width-4 record supplies solved pcurves.
-pub(super) fn scan_intersection_carriers(bytes: &[u8]) -> HashMap<u16, IntersectionCarrier> {
+pub(super) fn scan_intersection_carriers(
+    bytes: &[u8],
+    lane_refusals: &mut Vec<String>,
+) -> HashMap<u16, IntersectionCarrier> {
     let charts = chart_records(bytes);
     let terms = term_records(bytes);
     let uvs = uv_records(bytes);
@@ -445,13 +454,15 @@ pub(super) fn scan_intersection_carriers(bytes: &[u8]) -> HashMap<u16, Intersect
         let Some(candidates) = charts.get(&chart_ref) else {
             continue;
         };
+        let mut chart_refusal = None;
+        let chart_refusal = &mut chart_refusal;
         let mut matches = candidates.iter().filter_map(|chart| {
             let first = *chart.points.first()?;
             let last = *chart.points.last()?;
             let (start, start_distance) = nearest_term(&terms, start_ref, first)?;
             let (end, end_distance) = nearest_term(&terms, end_ref, last)?;
             let endpoint_displacement = start_distance + end_distance;
-            let (geometry, parameters, reversed) = solved_curve(chart, start, end)?;
+            let (geometry, parameters, reversed) = solved_curve(chart, start, end, chart_refusal)?;
             let fit_tolerance_mm = chart.chordal_error * LEN_TO_MM;
             fit_tolerance_mm.is_finite().then_some(SolvedChart {
                 geometry,
@@ -461,11 +472,19 @@ pub(super) fn scan_intersection_carriers(bytes: &[u8]) -> HashMap<u16, Intersect
                 endpoint_displacement,
             })
         });
-        let Some(mut selected) = matches.next() else {
+        let selected = matches.next();
+        let mut ambiguous_after = Vec::new();
+        for candidate in matches {
+            ambiguous_after.push(candidate);
+        }
+        if let Some(error) = chart_refusal.take() {
+            lane_refusals.push(format!("intersection chart for attr {attr}: {error}"));
+        }
+        let Some(mut selected) = selected else {
             continue;
         };
         let mut ambiguous = false;
-        for candidate in matches {
+        for candidate in ambiguous_after {
             match candidate
                 .endpoint_displacement
                 .total_cmp(&selected.endpoint_displacement)
@@ -633,7 +652,7 @@ mod tests {
         assert_eq!(chart.points.len(), 9);
         assert!(uv.width == UvWidth::Two);
         assert_eq!(uv.values.len(), chart.points.len() * 2);
-        assert!(scan_intersection_carriers(&bytes).contains_key(&9));
+        assert!(scan_intersection_carriers(&bytes, &mut Vec::new()).contains_key(&9));
     }
 
     #[test]
@@ -651,7 +670,7 @@ mod tests {
         bytes.extend(term(5, POINTS[0]));
         bytes.extend(term(6, POINTS[2]));
         bytes.extend(record);
-        let carriers = scan_intersection_carriers(&bytes);
+        let carriers = scan_intersection_carriers(&bytes, &mut Vec::new());
         let carrier = carriers
             .get(&9)
             .expect("width-two support leaves the curve available");
@@ -660,7 +679,7 @@ mod tests {
 
     #[test]
     fn consistent_composite_yields_polyline() {
-        let carriers = scan_intersection_carriers(&stream());
+        let carriers = scan_intersection_carriers(&stream(), &mut Vec::new());
         let carrier = carriers.get(&9).expect("composite decoded");
         let Some(SolvedCurveGeometry::Nurbs(curve)) = carrier.carrier.geometry.solved() else {
             panic!("expected a NURBS polyline");
@@ -696,7 +715,7 @@ mod tests {
         bytes.extend(term(6, POINTS[2]));
         bytes.extend(uv(7, POINTS.len()));
 
-        let carrier = scan_intersection_carriers(&bytes)
+        let carrier = scan_intersection_carriers(&bytes, &mut Vec::new())
             .remove(&9)
             .expect("intersection-data entity decoded");
         assert_eq!(carrier.carrier.offset, 0);
@@ -716,7 +735,7 @@ mod tests {
         bytes.extend(term(6, POINTS[2]));
         bytes.extend(uv(7, POINTS.len()));
 
-        let carriers = scan_intersection_carriers(&bytes);
+        let carriers = scan_intersection_carriers(&bytes, &mut Vec::new());
         let carrier = carriers.get(&9).expect("decreasing chart decoded");
         let Some(SolvedCurveGeometry::Nurbs(curve)) = carrier.carrier.geometry.solved() else {
             panic!("expected a NURBS polyline");
@@ -744,7 +763,7 @@ mod tests {
         bytes.extend(term(5, POINTS[0]));
         bytes.extend(term(6, POINTS[2]));
         bytes.extend(uv(7, POINTS.len() + 1));
-        let carriers = scan_intersection_carriers(&bytes);
+        let carriers = scan_intersection_carriers(&bytes, &mut Vec::new());
         let carrier = carriers.get(&9).expect("seam-row carrier decoded");
         assert!(carrier.support_data.support_uv.is_none());
     }
@@ -757,7 +776,7 @@ mod tests {
         bytes.extend(term(5, POINTS[0]));
         bytes.extend(term(6, end));
         bytes.extend(uv(7, POINTS.len()));
-        let carriers = scan_intersection_carriers(&bytes);
+        let carriers = scan_intersection_carriers(&bytes, &mut Vec::new());
         let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = &carriers
             .get(&9)
             .expect("composite decoded")
@@ -782,7 +801,7 @@ mod tests {
         bytes.extend(term(5, POINTS[0]));
         bytes.extend(term(6, POINTS[2]));
         bytes.extend(uv(7, POINTS.len()));
-        assert!(scan_intersection_carriers(&bytes).is_empty());
+        assert!(scan_intersection_carriers(&bytes, &mut Vec::new()).is_empty());
     }
 
     #[test]
@@ -803,7 +822,7 @@ mod tests {
             term.extend_from_slice(&value.to_be_bytes());
         }
         bytes.extend(term);
-        let carriers = scan_intersection_carriers(&bytes);
+        let carriers = scan_intersection_carriers(&bytes, &mut Vec::new());
         let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = &carriers
             .get(&9)
             .expect("ring composite decoded")
@@ -823,7 +842,7 @@ mod tests {
         bytes.extend(term(5, POINTS[0]));
         bytes.extend(term(6, POINTS[2]));
         bytes.extend(uv(7, POINTS.len() + 2));
-        let carriers = scan_intersection_carriers(&bytes);
+        let carriers = scan_intersection_carriers(&bytes, &mut Vec::new());
         assert!(carriers.contains_key(&9));
         assert!(carriers[&9].support_data.support_uv.is_none());
     }
@@ -840,7 +859,7 @@ mod tests {
         bytes.extend(term(6, POINTS[2]));
         bytes.extend(uv(7, POINTS.len()));
 
-        let carriers = scan_intersection_carriers(&bytes);
+        let carriers = scan_intersection_carriers(&bytes, &mut Vec::new());
         let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = &carriers
             .get(&9)
             .expect("extended chart decoded")
@@ -877,6 +896,6 @@ mod tests {
         bytes.extend(term(5, POINTS[0]));
         bytes.extend(term(6, end));
         bytes.extend(uv(7, 2));
-        assert!(scan_intersection_carriers(&bytes).is_empty());
+        assert!(scan_intersection_carriers(&bytes, &mut Vec::new()).is_empty());
     }
 }

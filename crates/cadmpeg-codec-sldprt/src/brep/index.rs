@@ -144,15 +144,17 @@ pub(crate) fn scan_carriers(body: &[u8]) -> CarrierIndex {
     for carrier in spline::scan_surface_carriers(body, &mut lane_refusals).into_values() {
         out.insert(Carrier::Surface(carrier));
     }
-    out.lane_refusals = lane_refusals;
     for carrier in subset::scan(body, &out) {
         out.insert(Carrier::Curve(carrier));
     }
     out.sweeps = sweep::scan_sweep_carriers(body);
     (out.blends, out.blend_support_pairs) = blend::scan(body);
     out.offsets = offset::scan(body);
-    for intersection in intersection::scan_intersection_carriers(body).into_values() {
+    for intersection in
+        intersection::scan_intersection_carriers(body, &mut lane_refusals).into_values()
+    {
         out.insert_intersection(intersection);
     }
+    out.lane_refusals = lane_refusals;
     out
 }

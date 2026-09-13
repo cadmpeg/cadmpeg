@@ -97,6 +97,7 @@ pub(super) fn project_edge(
     origin: Point3,
     u_axis: Vector3,
     v_axis: Vector3,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<SketchGeometry> {
     let start = project_point(
         *points.get(vertices.get(&edge.start)?)?,
@@ -213,20 +214,23 @@ pub(super) fn project_edge(
             )
         }
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))) => {
-            Some(SketchGeometry::nurbs(
-                cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
-                    nurbs.degree(),
-                    nurbs.knots().to_vec(),
-                    nurbs
-                        .control_points()
-                        .iter()
-                        .map(|point| project_point(*point, origin, u_axis, v_axis))
-                        .collect(),
-                    nurbs.weights(),
-                    nurbs.periodic(),
-                )
-                .ok()?,
-            ))
+            match cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+                nurbs.degree(),
+                nurbs.knots().to_vec(),
+                nurbs
+                    .control_points()
+                    .iter()
+                    .map(|point| project_point(*point, origin, u_axis, v_axis))
+                    .collect(),
+                nurbs.weights(),
+                nurbs.periodic(),
+            ) {
+                Ok(nurbs) => Some(SketchGeometry::nurbs(nurbs)),
+                Err(error) => {
+                    *refusal = Some(error);
+                    None
+                }
+            }
         }
         None if edge.start == edge.end => Some(
             SketchGeometry::try_from(SketchGeometryDefinition::Point { position: start }).ok()?,

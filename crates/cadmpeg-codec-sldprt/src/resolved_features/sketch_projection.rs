@@ -57,7 +57,7 @@ pub(crate) fn sketches(
                 &mut sketches,
                 &mut entities,
                 &mut constraints,
-            );
+            )?;
         }
     }
     Ok(ProjectedSketches {
@@ -81,7 +81,7 @@ fn project_brep(
     sketches: &mut Vec<Sketch>,
     entities: &mut Vec<SketchEntity>,
     constraints: &mut Vec<SketchConstraint>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let surfaces = brep
         .surfaces
         .iter()
@@ -163,9 +163,21 @@ fn project_brep(
                         "sldprt:model:sketch-entity#{block_offset}:{stream_ordinal}:{face_ordinal}:{}",
                         edge_entities.len()
                     )) else { continue };
-                    let Some(geometry) =
-                        project_edge(edge, &vertices, &points, &curves, *origin, *u_axis, v_axis)
-                    else {
+                    let mut edge_refusal = None;
+                    let projected = project_edge(
+                        edge,
+                        &vertices,
+                        &points,
+                        &curves,
+                        *origin,
+                        *u_axis,
+                        v_axis,
+                        &mut edge_refusal,
+                    );
+                    if let Some(error) = edge_refusal {
+                        return Err(error.into());
+                    }
+                    let Some(geometry) = projected else {
                         continue;
                     };
                     let Some(start_point) = vertices.get(&edge.start) else {
@@ -283,6 +295,7 @@ fn project_brep(
             native_ref: Some(native_ref.to_string()),
         });
     }
+    Ok(())
 }
 
 fn orient_closed_profile_by_topology(profile: &mut [SketchEntityUse], entities: &[SketchEntity]) {
