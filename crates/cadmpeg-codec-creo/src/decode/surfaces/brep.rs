@@ -1924,6 +1924,8 @@ pub(in super::super) fn transfer_native_brep(
                         Exactness::Derived,
                     );
                     let native_candidates = native_pcurves.get(&(half_edge.curve_id, *face_id));
+                    let mut refusal = None;
+                    let refusal_cell = &mut refusal;
                     let pcurve_geometry = native_candidates
                         .and_then(|candidates| {
                             let incidence = incidence.get(half_edge)?;
@@ -1979,7 +1981,7 @@ pub(in super::super) fn transfer_native_brep(
                                     .filter(|candidate| candidate.id == edge_id),
                             )?;
                             let (geometry, tag) =
-                                planar_curve_pcurve(&surface.geometry, &curve.geometry)
+                                planar_curve_pcurve(&surface.geometry, &curve.geometry, refusal_cell)
                                     .map(|geometry| (geometry, "projected_planar_pcurve"))
                                     .or_else(|| {
                                         surface_of_revolution_parallel_pcurve(
@@ -2010,6 +2012,9 @@ pub(in super::super) fn transfer_native_brep(
                                 tag,
                             ))
                         });
+                    if let Some(error) = refusal {
+                        return Err(error.into());
+                    }
                     let pcurves = pcurve_geometry
                         .and_then(|(geometry, parameter_range, offset, tag)| {
                             let metadata = cadmpeg_ir::geometry::PcurveMetadata::try_general(

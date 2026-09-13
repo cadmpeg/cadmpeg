@@ -209,6 +209,8 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
         let Some(second_geometry) = geometry(second.id) else {
             continue;
         };
+        let mut refusal = None;
+        let refusal = &mut refusal;
         let resolved = match (first.kind, second.kind, first_geometry, second_geometry) {
             (
                 crate::surface::SurfaceKind::Extrusion(_),
@@ -222,7 +224,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
                     origin: [origin.x, origin.y, origin.z],
                     normal: [normal.x, normal.y, normal.z],
                 };
-                if let Some(geometry) = nurbs_plane_boundary_curve(nurbs, plane) {
+                if let Some(geometry) = nurbs_plane_boundary_curve(nurbs, plane, refusal) {
                     Some((geometry, NurbsBoundaryKind::ExtrusionPlane))
                 } else {
                     cubic_extrusion_plane_generator_curve(ctx, nurbs, plane)?.map(|geometry| {
@@ -242,7 +244,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
                     origin: [origin.x, origin.y, origin.z],
                     normal: [normal.x, normal.y, normal.z],
                 };
-                if let Some(geometry) = nurbs_plane_boundary_curve(nurbs, plane) {
+                if let Some(geometry) = nurbs_plane_boundary_curve(nurbs, plane, refusal) {
                     Some((geometry, NurbsBoundaryKind::ExtrusionPlane))
                 } else {
                     cubic_extrusion_plane_generator_curve(ctx, nurbs, plane)?.map(|geometry| {
@@ -255,10 +257,13 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
                 crate::surface::SurfaceKind::Extrusion(_),
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(first)),
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(second)),
-            ) => shared_extrusion_generator_curve(first, second)
+            ) => shared_extrusion_generator_curve(first, second, refusal)
                 .map(|geometry| (geometry, NurbsBoundaryKind::SharedExtrusionGenerator)),
             _ => None,
         };
+        if let Some(error) = refusal.take() {
+            return Err(error.into());
+        }
         let Some((geometry, kind)) = resolved else {
             continue;
         };

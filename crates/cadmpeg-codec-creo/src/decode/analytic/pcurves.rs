@@ -1734,6 +1734,7 @@ pub fn unique_oriented_native_pcurve(
 pub fn planar_curve_pcurve(
     surface: &SurfaceGeometry,
     geometry: &CurveGeometry,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<PcurveGeometry> {
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = surface else {
         return None;
@@ -1905,16 +1906,19 @@ pub fn planar_curve_pcurve(
                 .iter()
                 .map(|point| project_point([point.x, point.y, point.z], tolerance))
                 .collect::<Option<Vec<_>>>()?;
-            Some(PcurveGeometry::Nurbs {
-                nurbs: PcurveNurbs::from_lanes(
-                    nurbs.degree(),
-                    nurbs.knots().to_vec(),
-                    control_points,
-                    nurbs.weights(),
-                    nurbs.periodic(),
-                )
-                .ok()?,
-            })
+            match PcurveNurbs::from_lanes(
+                nurbs.degree(),
+                nurbs.knots().to_vec(),
+                control_points,
+                nurbs.weights(),
+                nurbs.periodic(),
+            ) {
+                Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),
+                Err(error) => {
+                    *refusal = Some(error);
+                    None
+                }
+            }
         }
         _ => None,
     }

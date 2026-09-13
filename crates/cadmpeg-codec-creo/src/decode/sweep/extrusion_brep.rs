@@ -146,7 +146,8 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         let Some(profiles) = ordered_extrusion_profiles(profiles) else {
             continue;
         };
-        if profiles
+        let mut refusal = None;
+        let unprojectable = profiles
             .iter()
             .flat_map(super::profiles::ValidatedProfile::entities)
             .any(|entity| {
@@ -165,11 +166,15 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             start,
                             end,
                             span,
+                            &mut refusal,
                         )
                     })
                     .is_none()
-            })
-        {
+            });
+        if let Some(error) = refusal {
+            return Err(error.into());
+        }
+        if unprojectable {
             continue;
         }
         let forward_caps = profiles[0].area() > 0.0;
@@ -516,13 +521,24 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     ))
                     .expect("identity grammar"),
                     transform.offset,
-                    extrusion_cap_pcurve(&sketch_geometry, reversed, start, end).ok_or_else(
-                        || {
+                    {
+                        let mut refusal = None;
+                        let cap = extrusion_cap_pcurve(
+                            &sketch_geometry,
+                            reversed,
+                            start,
+                            end,
+                            &mut refusal,
+                        );
+                        if let Some(error) = refusal {
+                            return Err(error.into());
+                        }
+                        cap.ok_or_else(|| {
                             cadmpeg_core::CodecError::malformed(
                                 "extrusion pcurve geometry is invalid",
                             )
-                        },
-                    )?,
+                        })?
+                    },
                 )?;
                 ir.model.coedges.push(Coedge {
                     id,
@@ -558,13 +574,24 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     ))
                     .expect("identity grammar"),
                     transform.offset,
-                    extrusion_cap_pcurve(&sketch_geometry, reversed, start, end).ok_or_else(
-                        || {
+                    {
+                        let mut refusal = None;
+                        let cap = extrusion_cap_pcurve(
+                            &sketch_geometry,
+                            reversed,
+                            start,
+                            end,
+                            &mut refusal,
+                        );
+                        if let Some(error) = refusal {
+                            return Err(error.into());
+                        }
+                        cap.ok_or_else(|| {
                             cadmpeg_core::CodecError::malformed(
                                 "extrusion pcurve geometry is invalid",
                             )
-                        },
-                    )?,
+                        })?
+                    },
                 )?;
                 ir.model.coedges.push(Coedge {
                     id,
@@ -596,14 +623,20 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 let surface_id =
                     SurfaceId::mint(format!("{prefix}:surface:{profile_index}:side:{index}"))
                         .expect("identity grammar");
-                let Some(surface_geometry) = extrusion_brep_side_surface(
+                let mut refusal = None;
+                let surface_geometry = extrusion_brep_side_surface(
                     transform,
                     &sketch_geometry,
                     profile[index].reversed(),
                     start,
                     profile[index].end(),
                     span,
-                ) else {
+                    &mut refusal,
+                );
+                if let Some(error) = refusal {
+                    return Err(error.into());
+                }
+                let Some(surface_geometry) = surface_geometry else {
                     break;
                 };
                 ir.model.surfaces.push(Surface {

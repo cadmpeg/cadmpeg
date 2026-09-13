@@ -668,7 +668,12 @@ pub(super) fn transfer_section_entities(
         crate::feature::FeatureSavedEntity::Spline(spline) => Some(spline),
         _ => None,
     }) {
-        let Some(geometry) = saved_spline_sketch_geometry(spline) else {
+        let mut refusal = None;
+        let geometry = saved_spline_sketch_geometry(spline, &mut refusal);
+        if let Some(error) = refusal {
+            return Err(error.into());
+        }
+        let Some(geometry) = geometry else {
             continue;
         };
         let unique_internal_id = spline.entity_id.filter(|id| unique_saved_ids.contains(id));

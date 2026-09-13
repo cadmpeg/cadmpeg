@@ -60,15 +60,19 @@ pub(in super::super) fn prototype_parameter_array(
 
 pub(in super::super) fn prototype_spline_nurbs(
     record: &crate::surface::SurfacePrototypeRecord,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<NurbsSurface> {
-    interpolation_spline_surface(&crate::interpolation_grid::InterpolationGrid::try_new(
+    interpolation_spline_surface(
+        &crate::interpolation_grid::InterpolationGrid::try_new(
         prototype_vector_array(record, "i_points")?,
         prototype_parameter_array(record, "u_params")?,
         prototype_parameter_array(record, "v_params")?,
         prototype_vector_array(record, "end_u_tangts")?,
         prototype_vector_array(record, "end_v_tangts")?,
         <[[f64; 3]; 4]>::try_from(prototype_vector_array(record, "end_uv_deriv")?).ok()?,
-    )?)
+    )?,
+        refusal,
+    )
 }
 
 pub(in super::super) fn prototype_local_frame(
@@ -374,7 +378,12 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                 ))
             }
             SupportedPrototype::Spline(_) => {
-                let Some(nurbs) = prototype_spline_nurbs(record) else {
+                let mut refusal = None;
+                let nurbs = prototype_spline_nurbs(record, &mut refusal);
+                if let Some(error) = refusal {
+                    return Err(error.into());
+                }
+                let Some(nurbs) = nurbs else {
                     continue;
                 };
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
@@ -493,7 +502,12 @@ pub(in super::super) fn transfer_positional_spline_replays(
         else {
             continue;
         };
-        let Some(nurbs) = interpolation_spline_surface(&replay) else {
+        let mut refusal = None;
+        let nurbs = interpolation_spline_surface(&replay, &mut refusal);
+        if let Some(error) = refusal {
+            return Err(error.into());
+        }
+        let Some(nurbs) = nurbs else {
             continue;
         };
         let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
@@ -659,7 +673,12 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
             crate::legacy_geometry::LegacySurfaceGeometry::Spline(spline)
                 if row.kind == crate::surface::SurfaceKind::Spline =>
             {
-                let Some(nurbs) = interpolation_spline_surface(spline) else {
+                let mut refusal = None;
+                let nurbs = interpolation_spline_surface(spline, &mut refusal);
+                if let Some(error) = refusal {
+                    return Err(error.into());
+                }
+                let Some(nurbs) = nurbs else {
                     continue;
                 };
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))

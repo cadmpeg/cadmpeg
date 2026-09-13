@@ -490,12 +490,21 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
         };
         let chart_origin = unique_tabulated_cylinder_prototype(scan, replay)
             .and_then(crate::surface::SurfacePrototypeRecord::tabulated_cylinder_chart_origin);
-        let Some((directrix, sweep)) =
-            placed_tabulated_cylinder_directrix(replay, parameters, chart_origin)
-        else {
+        let mut refusal = None;
+        let directrix =
+            placed_tabulated_cylinder_directrix(replay, parameters, chart_origin, &mut refusal);
+        if let Some(error) = refusal {
+            return Err(error.into());
+        }
+        let Some((directrix, sweep)) = directrix else {
             continue;
         };
-        let Some(surface) = extruded_nurbs_surface(&directrix, sweep) else {
+        let mut refusal = None;
+        let surface = extruded_nurbs_surface(&directrix, sweep, &mut refusal);
+        if let Some(error) = refusal {
+            return Err(error.into());
+        }
+        let Some(surface) = surface else {
             continue;
         };
         let curve_id = CurveId::mint(format!(
