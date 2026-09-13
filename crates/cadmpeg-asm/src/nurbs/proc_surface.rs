@@ -4285,7 +4285,7 @@ pub(crate) fn helix_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> 
                 pitch[1] * LEN_TO_MM,
                 pitch[2] * LEN_TO_MM,
             ),
-            axis: axis,
+            axis,
         },
         apex_factor,
     )

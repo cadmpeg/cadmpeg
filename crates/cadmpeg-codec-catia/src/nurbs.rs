@@ -440,11 +440,11 @@ pub(crate) fn reverse_helix_definition(
             cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
                 *angle_range,
                 cadmpeg_ir::geometry::HelixFrame {
-                    center: center,
-                    major: major,
-                    minor: minor,
-                    pitch: pitch,
-                    axis: axis,
+                    center,
+                    major,
+                    minor,
+                    pitch,
+                    axis,
                 },
                 apex_factor,
                 None,
@@ -1176,7 +1176,7 @@ mod tests {
                     cadmpeg_ir::geometry::HelixFrame {
                         center: Point3::new(0.0, 0.0, 0.0),
                         major: Vector3::new(radius, 0.0, 0.0),
-                        minor: minor,
+                        minor,
                         pitch: Vector3::new(0.0, 0.0, 1.0),
                         axis: Vector3::new(0.0, 0.0, 1.0),
                     },
@@ -1238,11 +1238,11 @@ mod tests {
             *helix_payload = cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
                 angle_range,
                 cadmpeg_ir::geometry::HelixFrame {
-                    center: center,
-                    major: major,
-                    minor: minor,
+                    center,
+                    major,
+                    minor,
                     pitch: Vector3::new(1.0, 0.0, 0.0),
-                    axis: axis,
+                    axis,
                 },
                 apex_factor,
                 None,

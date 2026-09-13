@@ -36,11 +36,11 @@ fn helix_curve_admission_rejects_the_validator_numeric_states() {
         assert!(HelixCurveConstruction::try_new(
             range,
             HelixFrame {
-                center: center,
-                major: major,
-                minor: minor,
-                pitch: pitch,
-                axis: axis
+                center,
+                major,
+                minor,
+                pitch,
+                axis
             },
             apex,
             None
@@ -50,11 +50,11 @@ fn helix_curve_admission_rejects_the_validator_numeric_states() {
     assert!(HelixCurveConstruction::try_new(
         [0.0, 0.0],
         HelixFrame {
-            center: center,
-            major: major,
-            minor: minor,
-            pitch: pitch,
-            axis: axis
+            center,
+            major,
+            minor,
+            pitch,
+            axis
         },
         apex,
         None
@@ -67,11 +67,11 @@ fn helix_curve_admission_rejects_the_validator_numeric_states() {
         assert!(HelixCurveConstruction::try_new(
             range,
             HelixFrame {
-                center: center,
+                center,
                 major: vector,
-                minor: minor,
-                pitch: pitch,
-                axis: axis
+                minor,
+                pitch,
+                axis
             },
             apex,
             None
@@ -80,10 +80,10 @@ fn helix_curve_admission_rejects_the_validator_numeric_states() {
         assert!(HelixCurveConstruction::try_new(
             range,
             HelixFrame {
-                center: center,
-                major: major,
-                minor: minor,
-                pitch: pitch,
+                center,
+                major,
+                minor,
+                pitch,
                 axis: vector
             },
             apex,
@@ -94,11 +94,11 @@ fn helix_curve_admission_rejects_the_validator_numeric_states() {
     assert!(HelixCurveConstruction::try_new(
         range,
         HelixFrame {
-            center: center,
-            major: major,
+            center,
+            major,
             minor: Vector3::new(0.0, 2.0, 0.0),
-            pitch: pitch,
-            axis: axis
+            pitch,
+            axis
         },
         apex,
         None
@@ -151,11 +151,11 @@ fn helix_surface_and_curve_keep_distinct_radius_tolerances() {
     assert!(HelixPathConstruction::try_new(
         [0.0, 1.0],
         HelixFrame {
-            center: center,
-            major: major,
-            minor: minor,
-            pitch: pitch,
-            axis: axis
+            center,
+            major,
+            minor,
+            pitch,
+            axis
         },
         0.0
     )
@@ -163,11 +163,11 @@ fn helix_surface_and_curve_keep_distinct_radius_tolerances() {
     assert!(HelixCurveConstruction::try_new(
         [0.0, 1.0],
         HelixFrame {
-            center: center,
-            major: major,
-            minor: minor,
-            pitch: pitch,
-            axis: axis
+            center,
+            major,
+            minor,
+            pitch,
+            axis
         },
         0.0,
         None
@@ -176,11 +176,11 @@ fn helix_surface_and_curve_keep_distinct_radius_tolerances() {
     assert!(HelixPathConstruction::try_new(
         [0.0, 1.0],
         HelixFrame {
-            center: center,
-            major: major,
+            center,
+            major,
             minor: Vector3::new(0.0, 1001.0, 0.0),
-            pitch: pitch,
-            axis: axis
+            pitch,
+            axis
         },
         0.0
     )

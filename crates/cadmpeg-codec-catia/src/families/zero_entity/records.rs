@@ -1747,8 +1747,8 @@ fn zero_entity_model_curve_construction(
                     origin.y + start.v * half_angle.cos() * axis.y,
                     origin.z + start.v * half_angle.cos() * axis.z,
                 ),
-                major: major,
-                minor: minor,
+                major,
+                minor,
                 pitch: cadmpeg_ir::math::Vector3::new(
                     std::f64::consts::TAU * slope * half_angle.cos() * axis.x,
                     std::f64::consts::TAU * slope * half_angle.cos() * axis.y,
