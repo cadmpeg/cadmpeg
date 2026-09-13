@@ -407,7 +407,6 @@ pub struct Face {
     pub sense: Sense,
     /// Boundary loops. Classification lives here so a loop cannot disagree
     /// with face membership.
-    #[cfg_attr(feature = "schema", schemars(with = "FaceLoopsWire"))]
     pub loops: FaceLoops,
     /// Optional display name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -422,9 +421,9 @@ pub struct Face {
 }
 
 impl Face {
-    /// Explicit outer loop, or the first loop when the source did not classify.
+    /// The explicit outer loop, absent when the source did not classify.
     #[must_use]
-    pub fn outer(&self) -> Option<&LoopId> {
+    pub const fn outer(&self) -> Option<&LoopId> {
         self.loops.outer()
     }
 
@@ -442,23 +441,19 @@ impl Face {
 
 /// Face loop ids with at most one outer loop.
 ///
-/// `Unspecified` keeps source order when the source did not classify outer
-/// versus inner. The wire is one tagged object, so a loop has no role of its
-/// own to disagree with the face's classification and the round trip is stable
-/// by construction.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(from = "FaceLoopsWire", into = "FaceLoopsWire")]
-pub struct FaceLoops {
-    ids: Vec<LoopId>,
-    classification: FaceLoopClassification,
-}
-
-/// The wire form of a face's boundary loops.
+/// The wire is one tagged object, so a loop has no role of its own to disagree
+/// with the face's classification and the round trip is stable by
+/// construction. `Unspecified` keeps source order when the source did not
+/// classify outer versus inner; `Classified` names the outer loop once, and it
+/// is absent when the surface domain is the exterior.
+///
+/// `loops` is a `Vec`, not a non-empty list: a closed surface with no boundary
+/// is a face with no loop, and nx, sat, step and freecad all produce one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "classification", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
-pub enum FaceLoopsWire {
+pub enum FaceLoops {
     /// The source did not classify outer versus inner; loops keep source order.
     Unspecified {
         /// Boundary loops in source order.
@@ -474,142 +469,115 @@ pub enum FaceLoopsWire {
     },
 }
 
-impl From<FaceLoopsWire> for FaceLoops {
-    fn from(wire: FaceLoopsWire) -> Self {
-        match wire {
-            FaceLoopsWire::Unspecified { loops } => Self::unspecified(loops),
-            FaceLoopsWire::Classified { outer, inner } => Self::classified(outer, inner),
-        }
-    }
-}
-
-impl From<FaceLoops> for FaceLoopsWire {
-    fn from(loops: FaceLoops) -> Self {
-        match loops.classification {
-            FaceLoopClassification::Unspecified => Self::Unspecified { loops: loops.ids },
-            FaceLoopClassification::Classified { outer } => {
-                let mut ids = loops.ids;
-                let outer = outer.map(|index| ids.remove(index));
-                Self::Classified { outer, inner: ids }
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum FaceLoopClassification {
-    Unspecified,
-    Classified { outer: Option<usize> },
-}
-
-impl Default for FaceLoops {
-    fn default() -> Self {
-        Self::unspecified(Vec::new())
-    }
-}
-
 impl FaceLoops {
     /// Source order with no outer/inner classification.
     #[must_use]
-    pub fn unspecified(ids: Vec<LoopId>) -> Self {
-        Self {
-            ids,
-            classification: FaceLoopClassification::Unspecified,
-        }
+    pub const fn unspecified(ids: Vec<LoopId>) -> Self {
+        Self::Unspecified { loops: ids }
     }
 
     /// Classified loops. `outer` is omitted when the surface domain is the
     /// exterior. Loop order is outer (when present) then inner.
     #[must_use]
-    pub fn classified(outer: Option<LoopId>, inner: Vec<LoopId>) -> Self {
-        let mut ids = Vec::with_capacity(outer.is_some() as usize + inner.len());
-        let outer_index = outer.as_ref().map(|_| 0);
-        if let Some(outer) = outer {
-            ids.push(outer);
-        }
-        ids.extend(inner);
-        Self {
-            ids,
-            classification: FaceLoopClassification::Classified { outer: outer_index },
-        }
+    pub const fn classified(outer: Option<LoopId>, inner: Vec<LoopId>) -> Self {
+        Self::Classified { outer, inner }
     }
 
-    /// Explicit outer loop, or the first loop when unclassified.
+    /// The explicit outer loop.
+    ///
+    /// Absent on an unclassified face: a face the source did not classify
+    /// states no outer loop, and position in the list is not a classification.
     #[must_use]
-    pub fn outer(&self) -> Option<&LoopId> {
-        match self.classification {
-            FaceLoopClassification::Unspecified => self.ids.first(),
-            FaceLoopClassification::Classified { outer } => {
-                outer.and_then(|index| self.ids.get(index))
-            }
+    pub const fn outer(&self) -> Option<&LoopId> {
+        match self {
+            Self::Unspecified { .. } | Self::Classified { outer: None, .. } => None,
+            Self::Classified {
+                outer: Some(outer), ..
+            } => Some(outer),
         }
     }
 
-    /// Inner loops, excluding the outer when one is present.
+    /// The inner loops.
+    ///
+    /// Empty on an unclassified face, for the same reason [`Self::outer`] is
+    /// absent there.
     pub fn inner(&self) -> impl Iterator<Item = &LoopId> + '_ {
-        let outer = match self.classification {
-            FaceLoopClassification::Unspecified => (!self.ids.is_empty()).then_some(0),
-            FaceLoopClassification::Classified { outer } => outer,
-        };
-        self.ids.iter().enumerate().filter_map(
-            move |(index, id)| {
-                if Some(index) == outer {
-                    None
-                } else {
-                    Some(id)
-                }
-            },
-        )
+        match self {
+            Self::Unspecified { .. } => [].iter(),
+            Self::Classified { inner, .. } => inner.iter(),
+        }
     }
 
-    /// Ordered loop ids.
+    /// Ordered loop ids: outer first when the face states one.
+    pub fn iter(&self) -> impl Iterator<Item = &LoopId> + '_ {
+        match self {
+            Self::Unspecified { loops } => Box::new(loops.iter()) as Box<dyn Iterator<Item = _>>,
+            Self::Classified { outer, inner } => Box::new(outer.iter().chain(inner.iter())),
+        }
+    }
+
+    /// Drop every loop and return to unspecified.
+    pub fn clear(&mut self) {
+        *self = Self::unspecified(Vec::new());
+    }
+
+    /// Whether `id` is a loop of this face.
     #[must_use]
-    pub fn as_slice(&self) -> &[LoopId] {
-        &self.ids
+    pub fn contains(&self, id: &LoopId) -> bool {
+        self.iter().any(|member| member == id)
+    }
+
+    /// The loop at `index` in source order.
+    #[must_use]
+    pub fn get(&self, index: usize) -> Option<&LoopId> {
+        self.iter().nth(index)
+    }
+
+    /// The first loop in source order.
+    ///
+    /// Source order, not classification: an unclassified face states no outer
+    /// loop, and [`Self::outer`] is the only accessor that names one.
+    #[must_use]
+    pub fn first(&self) -> Option<&LoopId> {
+        self.iter().next()
+    }
+
+    /// Ordered loop ids as an owned list.
+    #[must_use]
+    pub fn to_vec(&self) -> Vec<LoopId> {
+        self.iter().cloned().collect()
     }
 
     /// Number of loops.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.ids.len()
+        match self {
+            Self::Unspecified { loops } => loops.len(),
+            Self::Classified { outer, inner } => usize::from(outer.is_some()) + inner.len(),
+        }
     }
 
     /// Whether the face has no loops.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.ids.is_empty()
+        self.len() == 0
     }
 
     /// Append a loop. A classified face treats the new loop as inner.
     pub fn push(&mut self, id: LoopId) {
-        self.ids.push(id);
-    }
-
-    /// Drop every loop and return to unspecified.
-    pub fn clear(&mut self) {
-        self.ids.clear();
-        self.classification = FaceLoopClassification::Unspecified;
-    }
-
-    /// Whether the source left outer/inner unclassified.
-    #[must_use]
-    pub fn is_unspecified(&self) -> bool {
-        matches!(self.classification, FaceLoopClassification::Unspecified)
-    }
-
-    /// Mark loops as classified. `outer` must be a member, or `None` when every
-    /// loop is inner.
-    pub fn classify_outer(&mut self, outer: Option<&LoopId>) {
-        let outer = outer.and_then(|id| self.ids.iter().position(|member| member == id));
-        self.classification = FaceLoopClassification::Classified { outer };
+        match self {
+            Self::Unspecified { loops } => loops.push(id),
+            Self::Classified { inner, .. } => inner.push(id),
+        }
     }
 
     /// Apply per-loop roles in id order. Unspecified-only leaves the face
     /// unclassified. More than one outer keeps the first.
     pub fn apply_roles(&mut self, roles: &[LoopBoundaryRole]) {
+        let ids = self.to_vec();
         let mut outer = None;
         let mut classified = false;
-        for (index, role) in roles.iter().copied().enumerate().take(self.ids.len()) {
+        for (index, role) in roles.iter().copied().enumerate().take(ids.len()) {
             match role {
                 LoopBoundaryRole::Unspecified => {}
                 LoopBoundaryRole::Outer => {
@@ -621,23 +589,28 @@ impl FaceLoops {
                 LoopBoundaryRole::Inner => classified = true,
             }
         }
-        if classified {
-            self.classification = FaceLoopClassification::Classified { outer };
+        if !classified {
+            return;
         }
+        let mut ids = ids;
+        let outer = outer.map(|index| ids.remove(index));
+        *self = Self::Classified { outer, inner: ids };
     }
 
     /// Role of `id` when it is a member of this face.
     #[must_use]
     pub fn role(&self, id: &LoopId) -> LoopBoundaryRole {
-        let Some(index) = self.iter().position(|member| member == id) else {
-            return LoopBoundaryRole::Unspecified;
-        };
-        match self.classification {
-            FaceLoopClassification::Unspecified => LoopBoundaryRole::Unspecified,
-            FaceLoopClassification::Classified { outer: Some(outer) } if outer == index => {
-                LoopBoundaryRole::Outer
+        match self {
+            Self::Unspecified { .. } => LoopBoundaryRole::Unspecified,
+            Self::Classified { outer, inner } => {
+                if outer.as_ref().is_some_and(|outer| outer == id) {
+                    LoopBoundaryRole::Outer
+                } else if inner.iter().any(|member| member == id) {
+                    LoopBoundaryRole::Inner
+                } else {
+                    LoopBoundaryRole::Unspecified
+                }
             }
-            FaceLoopClassification::Classified { .. } => LoopBoundaryRole::Inner,
         }
     }
 }
@@ -648,38 +621,24 @@ impl From<Vec<LoopId>> for FaceLoops {
     }
 }
 
-impl std::ops::Deref for FaceLoops {
-    type Target = [LoopId];
-
-    fn deref(&self) -> &[LoopId] {
-        &self.ids
-    }
-}
-
-impl std::ops::DerefMut for FaceLoops {
-    fn deref_mut(&mut self) -> &mut [LoopId] {
-        &mut self.ids
-    }
-}
-
 impl PartialEq<Vec<LoopId>> for FaceLoops {
     fn eq(&self, other: &Vec<LoopId>) -> bool {
-        self.ids == *other
+        self.iter().eq(other.iter())
     }
 }
 
 impl PartialEq<FaceLoops> for Vec<LoopId> {
     fn eq(&self, other: &FaceLoops) -> bool {
-        *self == other.ids
+        other.iter().eq(self.iter())
     }
 }
 
 impl<'a> IntoIterator for &'a FaceLoops {
     type Item = &'a LoopId;
-    type IntoIter = std::slice::Iter<'a, LoopId>;
+    type IntoIter = Box<dyn Iterator<Item = &'a LoopId> + 'a>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.ids.iter()
+        Box::new(self.iter())
     }
 }
 
@@ -1388,8 +1347,8 @@ mod tests {
     }
 
     use super::{
-        coedge_ring_neighbors, AnchoredVertexUse, Coedge, CoedgeUseCurve, Face, Loop, LoopBoundary,
-        LoopBoundaryRole, LoopRing,
+        coedge_ring_neighbors, AnchoredVertexUse, Coedge, CoedgeUseCurve, Face, FaceLoops, Loop,
+        LoopBoundary, LoopBoundaryRole, LoopId, LoopRing,
     };
 
     #[test]
@@ -1638,8 +1597,9 @@ mod tests {
     fn a_classified_face_states_its_outer_loop_once() {
         let mut model = crate::examples::unit_cube().model;
         let face = &mut model.faces[0];
-        let outer = face.loops.as_slice()[0].clone();
-        face.loops.classify_outer(Some(&outer));
+        let outer = face.loops.first().expect("a cube face states a loop").clone();
+        let inner = face.loops.iter().filter(|id| **id != outer).cloned().collect();
+        face.loops = FaceLoops::classified(Some(outer.clone()), inner);
         let wire = serde_json::to_value(&*face).unwrap();
         assert_eq!(
             wire["loops"]["classification"],
@@ -1659,7 +1619,7 @@ mod tests {
     fn an_unclassified_face_states_its_loops_in_source_order() {
         let model = crate::examples::unit_cube().model;
         let face = &model.faces[0];
-        assert!(face.loops.is_unspecified());
+        assert!(matches!(face.loops, FaceLoops::Unspecified { .. }));
         let wire = serde_json::to_value(face).unwrap();
         assert_eq!(
             wire["loops"]["classification"],
@@ -1674,7 +1634,47 @@ mod tests {
             face.loops.len()
         );
         let restored: Face = serde_json::from_value(wire).unwrap();
-        assert!(restored.loops.is_unspecified());
+        assert!(matches!(restored.loops, FaceLoops::Unspecified { .. }));
+    }
+
+    #[test]
+    fn a_face_states_either_a_classification_or_a_loop_order() {
+        for wire in [
+            serde_json::json!({"classification": "classified", "outer": "test:model:loop#0", "inner": []}),
+            serde_json::json!({"classification": "unspecified", "loops": ["test:model:loop#0"]}),
+        ] {
+            let loops: FaceLoops = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(&loops).unwrap(), wire);
+        }
+        // Mixing the two arms' keys names no shape.
+        assert!(serde_json::from_value::<FaceLoops>(serde_json::json!({
+            "classification": "classified",
+            "outer": "test:model:loop#0",
+            "loops": ["test:model:loop#0"]
+        }))
+        .is_err());
+        // A face with no boundary has a spelling: nx, sat, step and freecad
+        // each produce one, so `loops` is a plain list.
+        let none: FaceLoops =
+            serde_json::from_value(serde_json::json!({"classification": "unspecified",
+                "loops": []}))
+                .unwrap();
+        assert!(none.is_empty());
+    }
+
+    #[test]
+    fn an_unclassified_face_states_no_outer_loop() {
+        let unclassified = FaceLoops::unspecified(vec![
+            LoopId::mint("test:model:loop#0").expect("identity"),
+            LoopId::mint("test:model:loop#1").expect("identity"),
+        ]);
+        assert_eq!(unclassified.outer(), None);
+        assert_eq!(unclassified.inner().count(), 0);
+        assert_eq!(unclassified.len(), 2);
+        assert_eq!(
+            unclassified.role(&LoopId::mint("test:model:loop#0").expect("identity")),
+            LoopBoundaryRole::Unspecified
+        );
     }
 
     #[test]

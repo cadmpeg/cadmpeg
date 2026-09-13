@@ -563,10 +563,10 @@ pub(crate) fn transfer_closed_face_topology(
             surface: surface_ids_by_position[&run.carrier_pos].clone(),
             sense: outer_sense,
             loops: {
-                let mut loops = cadmpeg_ir::topology::FaceLoops::from(loop_ids.clone());
-                let outer = loops.first().cloned();
-                loops.classify_outer(outer.as_ref());
-                loops
+                // The source states the outer boundary first.
+                let mut ids = loop_ids.clone();
+                let outer = (!ids.is_empty()).then(|| ids.remove(0));
+                cadmpeg_ir::topology::FaceLoops::classified(outer, ids)
             },
             name: None,
             color: None,

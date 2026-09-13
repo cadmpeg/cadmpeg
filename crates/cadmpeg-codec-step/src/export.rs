@@ -2075,7 +2075,7 @@ impl<'a> Builder<'a> {
                     face.loops
                         .iter()
                         .any(|loop_id| face.loop_role(loop_id) == LoopBoundaryRole::Outer)
-                        || face.loops.first().is_some_and(|loop_id| {
+                        || face.loops.iter().next().is_some_and(|loop_id| {
                             !face.loops.iter().any(|candidate| {
                                 face.loop_role(candidate) == LoopBoundaryRole::Outer
                             }) && self.loops.contains_key(loop_id.as_str())
@@ -2115,7 +2115,8 @@ impl<'a> Builder<'a> {
                 return None;
             }
         }
-        let loop_ids: Vec<String> = face.loops.iter().map(|l| l.as_str().to_owned()).collect();
+        let face_loops = face.loops.to_vec();
+        let loop_ids: Vec<String> = face_loops.iter().map(|l| l.as_str().to_owned()).collect();
         let same_sense = matches!(face.sense, Sense::Forward);
 
         let Some(surf_ref) = self.emit_surface(&surface_id) else {
@@ -2125,7 +2126,7 @@ impl<'a> Builder<'a> {
 
         let mut bound_refs = Vec::new();
         for (i, lid) in loop_ids.iter().enumerate() {
-            let loop_id = &face.loops[i];
+            let loop_id = &face_loops[i];
             if let Some(loop_ref) = self.emit_loop(lid) {
                 let kind = if face.loop_role(loop_id) == LoopBoundaryRole::Outer
                     || (i == 0

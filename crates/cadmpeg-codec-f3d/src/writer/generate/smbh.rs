@@ -877,14 +877,17 @@ fn encode_face_topology_smbh(
                 "source-less F3D face generation requires every face to own a loop".into(),
             ));
         }
+        let first_loop = face
+            .loops
+            .first()
+            .ok_or_else(|| CodecError::malformed("face states no loop"))?;
         let loop_position = model
             .loops
             .iter()
-            .position(|loop_| loop_.id == face.loops[0])
+            .position(|loop_| &loop_.id == first_loop)
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(
-                    "face references missing loop {}",
-                    face.loops[0]
+                    "face references missing loop {first_loop}"
                 ))
             })?;
         let surface_position = model
@@ -979,10 +982,7 @@ fn encode_face_topology_smbh(
                     face.id, loop_.id
                 ))
             })?;
-        let next_loop = if ordinal + 1 == face.loops.len() {
-            -1
-        } else {
-            let next_id = &face.loops[ordinal + 1];
+        let next_loop = if let Some(next_id) = face.loops.get(ordinal + 1) {
             let position = model
                 .loops
                 .iter()
@@ -991,6 +991,8 @@ fn encode_face_topology_smbh(
                     CodecError::malformed(format_args!("face references missing loop {next_id}"))
                 })?;
             native_record_index(loop_start, position)?
+        } else {
+            -1
         };
         native_ref(&mut records, next_loop);
         native_ref(

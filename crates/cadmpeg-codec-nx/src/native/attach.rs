@@ -7400,7 +7400,8 @@ fn cylindrical_face_witnesses(
             origin.y - axial_offset * axis.y,
             origin.z - axial_offset * axis.z,
         );
-        let [first_loop, second_loop] = face.loops.as_slice() else {
+        let face_loops = face.loops.to_vec();
+        let [first_loop, second_loop] = face_loops.as_slice() else {
             return None;
         };
         let mut stations = Vec::with_capacity(2);
@@ -7729,7 +7730,8 @@ fn blind_bore_cylinders(ir: &CadIr, body_faces: &[&Face]) -> Option<Vec<BlindBor
         let cylinder_loop = &cylinder.loop_ids[station_ordinal];
         let cylinder_edges = loop_edge_ids(cylinder_loop, &coedges_by_loop)?;
         for face in body_faces {
-            let [cap_loop] = face.loops.as_slice() else {
+            let face_loops = face.loops.to_vec();
+            let [cap_loop] = face_loops.as_slice() else {
                 continue;
             };
             if loop_edge_ids(cap_loop, &coedges_by_loop) != Some(cylinder_edges.clone()) {
