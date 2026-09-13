@@ -3412,7 +3412,7 @@ mod tests {
                     .expect("identity grammar"),
                 surface: support_id.clone(),
                 sense: Sense::Forward,
-                loops: vec![loop_id.clone()].into(),
+                loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![loop_id.clone()]),
                 name: None,
                 color: None,
                 tolerance: None,

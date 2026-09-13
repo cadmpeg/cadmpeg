@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Geometry-backed boundary-role derivation shared by closed topology routes.
 
-use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+use cadmpeg_ir::ids::LoopId;
 use cadmpeg_ir::math::{Point2, Point3};
-use cadmpeg_ir::topology::LoopBoundaryRole;
+use cadmpeg_ir::topology::FaceLoops;
 
 const EPS_PLANE_AXES_ORTHO: f64 = 1.0e-8;
 const EPS_PLANAR_COORDINATE: f64 = 1.0e-10;
@@ -136,24 +136,20 @@ fn polygon_boundaries_intersect(
 
 /// Classify complete planar boundary polygons by strict containment.
 ///
-/// A single boundary is the outer boundary by the face invariant. Multiple
-/// boundaries are classified only when one unique largest non-degenerate
-/// polygon strictly contains every other polygon. This deliberately declines
-/// disjoint, touching, nested-hole, malformed, and non-planar arrangements.
-pub(crate) fn classify_planar_boundary_roles(
+/// Each row pairs a loop id with the closed polygon of that boundary, so the
+/// classification and the loop list are one value and cannot disagree in
+/// length or order. A single boundary is the outer boundary by the face
+/// invariant. Multiple boundaries are classified only when one unique largest
+/// non-degenerate polygon strictly contains every other polygon. This
+/// deliberately declines disjoint, touching, nested-hole, malformed, and
+/// non-planar arrangements.
+pub(crate) fn classify_planar_boundaries(
     surface: &SurfaceGeometry,
-    boundaries: &[Vec<Point3>],
-) -> Vec<LoopBoundaryRole> {
-    let unspecified = || {
-        alloc_filled(
-            boundaries.len(),
-            LoopBoundaryRole::Unspecified,
-            "catia planar boundary roles",
-        )
-        .unwrap_or_default()
-    };
-    if boundaries.len() == 1 {
-        return vec![LoopBoundaryRole::Outer];
+    rows: &[(LoopId, Vec<Point3>)],
+) -> FaceLoops {
+    let unspecified = || FaceLoops::unspecified(rows.iter().map(|(id, _)| id.clone()).collect());
+    if let [(single, _)] = rows {
+        return FaceLoops::classified(single.clone(), Vec::new());
     }
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = surface else {
         return unspecified();
@@ -173,9 +169,9 @@ pub(crate) fn classify_planar_boundary_roles(
     let Some(v_axis) = normal.cross(u_axis).unit() else {
         return unspecified();
     };
-    let polygons = boundaries
+    let polygons = rows
         .iter()
-        .map(|boundary| {
+        .map(|(_, boundary)| {
             (boundary.len() >= 3).then(|| {
                 boundary
                     .iter()
@@ -258,24 +254,26 @@ pub(crate) fn classify_planar_boundary_roles(
     }) {
         return unspecified();
     }
-    let Ok(mut roles) = alloc_filled(
-        boundaries.len(),
-        LoopBoundaryRole::Inner,
-        "catia planar boundary roles",
-    ) else {
+    let Some((outer_id, _)) = rows.get(outer) else {
         return unspecified();
     };
-    roles[outer] = LoopBoundaryRole::Outer;
-    roles
+    let inner = rows
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| *index != outer)
+        .map(|(_, (id, _))| id.clone())
+        .collect();
+    FaceLoops::classified(outer_id.clone(), inner)
 }
 
 #[cfg(test)]
 mod tests {
     use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+    use cadmpeg_ir::ids::LoopId;
     use cadmpeg_ir::math::{Point3, Vector3};
-    use cadmpeg_ir::topology::LoopBoundaryRole;
+    use cadmpeg_ir::topology::FaceLoops;
 
-    use super::classify_planar_boundary_roles;
+    use super::classify_planar_boundaries;
 
     fn plane() -> SurfaceGeometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -286,6 +284,10 @@ mod tests {
             )
             .expect("valid PlaneSurface fixture"),
         ))
+    }
+
+    fn loop_id(index: usize) -> LoopId {
+        LoopId::mint(format!("catia:test:loop#{index}")).expect("identity grammar")
     }
 
     fn square(min_u: f64, min_v: f64, max_u: f64, max_v: f64) -> Vec<Point3> {
@@ -300,68 +302,75 @@ mod tests {
         .collect()
     }
 
+    fn rows(boundaries: Vec<Vec<Point3>>) -> Vec<(LoopId, Vec<Point3>)> {
+        boundaries
+            .into_iter()
+            .enumerate()
+            .map(|(index, boundary)| (loop_id(index), boundary))
+            .collect()
+    }
+
     #[test]
     fn one_boundary_is_outer() {
         assert_eq!(
-            classify_planar_boundary_roles(&plane(), &[square(0.0, 0.0, 1.0, 1.0)]),
-            vec![LoopBoundaryRole::Outer]
+            classify_planar_boundaries(&plane(), &rows(vec![square(0.0, 0.0, 1.0, 1.0)])),
+            FaceLoops::classified(loop_id(0), Vec::new())
         );
     }
 
     #[test]
     fn containment_classifies_outer_and_hole_independent_of_order() {
         assert_eq!(
-            classify_planar_boundary_roles(
+            classify_planar_boundaries(
                 &plane(),
-                &[square(1.0, 1.0, 3.0, 3.0), square(0.0, 0.0, 5.0, 5.0)]
+                &rows(vec![
+                    square(1.0, 1.0, 3.0, 3.0),
+                    square(0.0, 0.0, 5.0, 5.0)
+                ])
             ),
-            vec![LoopBoundaryRole::Inner, LoopBoundaryRole::Outer]
+            FaceLoops::classified(loop_id(1), vec![loop_id(0)])
         );
     }
 
     #[test]
     fn disjoint_boundaries_remain_unspecified() {
         assert_eq!(
-            classify_planar_boundary_roles(
+            classify_planar_boundaries(
                 &plane(),
-                &[square(0.0, 0.0, 1.0, 1.0), square(3.0, 0.0, 4.0, 1.0)]
+                &rows(vec![
+                    square(0.0, 0.0, 1.0, 1.0),
+                    square(3.0, 0.0, 4.0, 1.0)
+                ])
             ),
-            vec![LoopBoundaryRole::Unspecified, LoopBoundaryRole::Unspecified]
+            FaceLoops::unspecified(vec![loop_id(0), loop_id(1)])
         );
     }
 
     #[test]
     fn overlapping_or_nested_holes_remain_unspecified() {
         let outer = square(0.0, 0.0, 10.0, 10.0);
+        let unspecified = FaceLoops::unspecified(vec![loop_id(0), loop_id(1), loop_id(2)]);
         assert_eq!(
-            classify_planar_boundary_roles(
+            classify_planar_boundaries(
                 &plane(),
-                &[
+                &rows(vec![
                     outer.clone(),
                     square(1.0, 1.0, 5.0, 5.0),
                     square(4.0, 4.0, 8.0, 8.0)
-                ]
+                ])
             ),
-            vec![
-                LoopBoundaryRole::Unspecified,
-                LoopBoundaryRole::Unspecified,
-                LoopBoundaryRole::Unspecified
-            ]
+            unspecified
         );
         assert_eq!(
-            classify_planar_boundary_roles(
+            classify_planar_boundaries(
                 &plane(),
-                &[
+                &rows(vec![
                     outer,
                     square(1.0, 1.0, 9.0, 9.0),
                     square(2.0, 2.0, 3.0, 3.0)
-                ]
+                ])
             ),
-            vec![
-                LoopBoundaryRole::Unspecified,
-                LoopBoundaryRole::Unspecified,
-                LoopBoundaryRole::Unspecified
-            ]
+            unspecified
         );
     }
 }
