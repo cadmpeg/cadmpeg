@@ -3062,19 +3062,34 @@ fn looser_tolerance(left: f64, right: f64) -> f64 {
     }
 }
 
+/// The largest absolute coordinate the point set states, or `None` when it
+/// states none.
+///
+/// This is the model's own coordinate scale, not a bound on it: a
+/// sub-millimetre model states a sub-millimetre scale, and an empty point set
+/// states no scale at all.
+fn coordinate_scale(points: impl IntoIterator<Item = cadmpeg_ir::math::Point3>) -> Option<f64> {
+    points
+        .into_iter()
+        .flat_map(|point| [point.x.abs(), point.y.abs(), point.z.abs()])
+        .filter(|magnitude| magnitude.is_finite())
+        .fold(None, |largest, magnitude| match largest {
+            Some(known) if known >= magnitude => Some(known),
+            _ => Some(magnitude),
+        })
+}
+
 fn inverse_coordinate_tolerance(points: impl IntoIterator<Item = cadmpeg_ir::math::Point3>) -> f64 {
-    let scale = points.into_iter().fold(1.0_f64, |scale, point| {
-        scale
-            .max(point.x.abs())
-            .max(point.y.abs())
-            .max(point.z.abs())
-    });
     // The absolute inverse-projection tolerance against the coordinate-scaled
-    // relative one.
-    looser_tolerance(
-        INVERSE_ABSOLUTE_TOLERANCE_MM,
-        scale * INVERSE_RELATIVE_TOLERANCE,
-    )
+    // relative one. A point set that states no coordinate scale states only the
+    // absolute bound.
+    match coordinate_scale(points) {
+        Some(scale) => looser_tolerance(
+            INVERSE_ABSOLUTE_TOLERANCE_MM,
+            scale * INVERSE_RELATIVE_TOLERANCE,
+        ),
+        None => INVERSE_ABSOLUTE_TOLERANCE_MM,
+    }
 }
 
 fn golden_section_minimum<F>(mut left: f64, mut right: f64, objective: &mut F) -> Option<(f64, f64)>
