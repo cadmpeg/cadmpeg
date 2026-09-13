@@ -1375,3 +1375,26 @@ Co 1001000 +2 1 +2 3 *
         report.findings
     );
 }
+
+#[test]
+fn refuses_a_pcurve_weight_lane_shorter_than_its_pole_lane() {
+    let record = TextCurve2d::Nurbs(crate::brep::NurbsCurve2d {
+        degree: 1,
+        knots: vec![0.0, 0.0, 1.0, 1.0],
+        control_points: vec![
+            cadmpeg_ir::math::Point2::new(0.0, 0.0),
+            cadmpeg_ir::math::Point2::new(1.0, 0.0),
+        ],
+        weights: Some(vec![1.0]),
+        periodic: false,
+    });
+    let error = pcurve_geometry(&record).expect_err("a short weight lane is refused");
+    let reported = cadmpeg_core::CodecError::from(error);
+    let cadmpeg_core::CodecError::Malformed(message) = &reported else {
+        panic!("expected a malformed refusal, got {reported:?}");
+    };
+    assert!(
+        message.contains("pole(s) against"),
+        "refusal states both lane counts: {message}"
+    );
+}
