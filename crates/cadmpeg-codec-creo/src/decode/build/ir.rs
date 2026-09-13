@@ -408,11 +408,20 @@ fn transfer_display_tessellations(
                             .collect()
                     }),
                     &strip.strip_lengths,
-                )?,
+                )
+                .map_err(|error| {
+                    CodecError::malformed(format_args!(
+                        "SolidPrimdata display triangle strip at byte {}: {error}",
+                        strip.offset
+                    ))
+                })?,
                 Vec::new(),
             )
             .map_err(|error| {
-                CodecError::malformed(format_args!("invalid display tessellation: {error}"))
+                CodecError::malformed(format_args!(
+                    "SolidPrimdata display triangle strip at byte {}: {error}",
+                    strip.offset
+                ))
             })?,
         );
     }
