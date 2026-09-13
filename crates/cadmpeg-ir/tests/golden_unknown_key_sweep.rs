@@ -37,6 +37,7 @@ fn every_golden_shape_refuses_an_unknown_key() {
     assert!(!goldens.is_empty(), "the sweep found no goldens to walk");
     let mut accepting = BTreeSet::new();
     let mut shapes_swept = 0_usize;
+    let mut fallbacks = 0_usize;
     let mut document_roots = 0_usize;
     let mut swept_documents = 0_usize;
     let mut elided_documents = 0_usize;
@@ -55,10 +56,11 @@ fn every_golden_shape_refuses_an_unknown_key() {
         for (pointer, ir) in roots {
             document_roots += 1;
             match accepting_shapes(ir) {
-                Ok((shapes, count)) => {
+                Ok(sweep) => {
                     swept_documents += 1;
-                    shapes_swept += count;
-                    accepting.extend(shapes);
+                    shapes_swept += sweep.swept;
+                    fallbacks += sweep.fallbacks;
+                    accepting.extend(sweep.accepting);
                 }
                 Err(error) => {
                     assert!(
@@ -80,6 +82,7 @@ fn every_golden_shape_refuses_an_unknown_key() {
         swept_documents > 0 && shapes_swept > 0,
         "the sweep walked {swept_documents} documents and {shapes_swept} shapes"
     );
+    println!("swept {shapes_swept} shapes, {fallbacks} of them in the full document");
     let unexpected = accepting
         .iter()
         .filter(|shape| !is_free_form(shape))
@@ -97,10 +100,10 @@ fn every_golden_shape_refuses_an_unknown_key() {
     // by neither is over-listing, and over-listing hides an entry that has
     // stopped being free-form.
     for (name, document) in hand_written_documents() {
-        let (shapes, swept) = accepting_shapes(&document)
+        let sweep = accepting_shapes(&document)
             .unwrap_or_else(|error| panic!("the {name} document reads back as a CadIr: {error}"));
-        assert!(swept > 0, "the {name} document states a shape to sweep");
-        accepting.extend(shapes);
+        assert!(sweep.swept > 0, "the {name} document states a shape to sweep");
+        accepting.extend(sweep.accepting);
     }
     let unreached = FREE_FORM_SHAPES
         .iter()
