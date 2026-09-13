@@ -29,7 +29,8 @@ fn e5_circle_parser_reads_framed_carrier() {
         }
         other => panic!("expected circle, got {other:?}"),
     }
-    let surfaces = crate::families::e5::records::e5_surfaces(&stream, &mut crate::nurbs::LaneRefusals::new());
+    let surfaces =
+        crate::families::e5::records::e5_surfaces(&stream, &mut crate::nurbs::LaneRefusals::new());
     assert!(
         matches!(surfaces[0].geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) if { cylinder_surface.radius() == 2.5 })
     );
@@ -37,12 +38,20 @@ fn e5_circle_parser_reads_framed_carrier() {
     let mut small = e5_circle_stream();
     small[86..94].copy_from_slice(&f64::from_bits(1).to_le_bytes());
     assert_eq!(crate::families::e5::records::e5_circles(&small).len(), 1);
-    assert!(crate::families::e5::records::e5_surfaces(&small, &mut crate::nurbs::LaneRefusals::new()).is_empty());
+    assert!(crate::families::e5::records::e5_surfaces(
+        &small,
+        &mut crate::nurbs::LaneRefusals::new()
+    )
+    .is_empty());
 
     let mut zero = e5_circle_stream();
     zero[86..94].copy_from_slice(&0.0_f64.to_le_bytes());
     assert!(crate::families::e5::records::e5_circles(&zero).is_empty());
-    assert!(crate::families::e5::records::e5_surfaces(&zero, &mut crate::nurbs::LaneRefusals::new()).is_empty());
+    assert!(crate::families::e5::records::e5_surfaces(
+        &zero,
+        &mut crate::nurbs::LaneRefusals::new()
+    )
+    .is_empty());
 }
 
 #[test]
@@ -272,7 +281,10 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
 
 #[test]
 fn e5_surface_parser_reads_framed_torus() {
-    let surfaces = crate::families::e5::records::e5_surfaces(&e5_torus_stream(), &mut crate::nurbs::LaneRefusals::new());
+    let surfaces = crate::families::e5::records::e5_surfaces(
+        &e5_torus_stream(),
+        &mut crate::nurbs::LaneRefusals::new(),
+    );
     assert_eq!(surfaces.len(), 1);
     match &surfaces[0].geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
@@ -306,7 +318,11 @@ fn e5_surface_parser_reads_framed_torus() {
     let mut tiny = e5_torus_stream();
     tiny[110..118].copy_from_slice(&f64::from_bits(1).to_le_bytes());
     tiny[118..126].copy_from_slice(&f64::from_bits(1).to_le_bytes());
-    assert!(crate::families::e5::records::e5_surfaces(&tiny, &mut crate::nurbs::LaneRefusals::new()).is_empty());
+    assert!(crate::families::e5::records::e5_surfaces(
+        &tiny,
+        &mut crate::nurbs::LaneRefusals::new()
+    )
+    .is_empty());
 }
 
 #[test]

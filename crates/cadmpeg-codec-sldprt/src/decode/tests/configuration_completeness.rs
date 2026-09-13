@@ -163,9 +163,7 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
             name: format!("Configuration {ordinal}").into(),
             material: None,
             properties: BTreeMap::new(),
-            bodies: Some(
-                cadmpeg_ir::features::DistinctMembers::default(),
-            ),
+            bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
             parameter_values: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::from([(
@@ -323,9 +321,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
         name: Some("Configuration".to_string()),
         material: None,
         properties: BTreeMap::new(),
-        bodies: Some(
-            cadmpeg_ir::features::DistinctMembers::default(),
-        ),
+        bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
         parameter_values: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::from([
@@ -489,9 +485,7 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
         name: Some("Configuration".to_string()),
         material: None,
         properties: BTreeMap::new(),
-        bodies: Some(
-            cadmpeg_ir::features::DistinctMembers::default(),
-        ),
+        bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
         parameter_values: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),
@@ -572,9 +566,7 @@ fn active_configuration_snapshots_final_neutral_design_state() {
             name: format!("Configuration {ordinal}").into(),
             material: None,
             properties: BTreeMap::new(),
-            bodies: Some(
-                cadmpeg_ir::features::DistinctMembers::default(),
-            ),
+            bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
             parameter_values: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::new(),
@@ -671,9 +663,7 @@ fn resolved_configuration_snapshots_inherit_only_independent_parameter_values() 
         name: Some(id.to_string()),
         material: None,
         properties: BTreeMap::new(),
-        bodies: Some(
-            cadmpeg_ir::features::DistinctMembers::default(),
-        ),
+        bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
         parameter_values,
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),

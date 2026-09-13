@@ -1444,8 +1444,13 @@ fn tabulated_cylinder_frame_places_a_unique_cubic_chart() {
         body_offset: 0,
     };
 
-    let (curve, sweep) = placed_tabulated_cylinder_directrix(&replay, &parameters, None, &mut crate::lane_refusal::LaneRefusals::new())
-        .expect("placement");
+    let (curve, sweep) = placed_tabulated_cylinder_directrix(
+        &replay,
+        &parameters,
+        None,
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect("placement");
     assert_eq!(curve.control_points()[0], Point3::new(-13.0, -20.0, 5.0));
     assert_eq!(curve.control_points()[3], Point3::new(-10.0, -22.0, 5.0));
     assert_eq!(sweep, [0.0, 0.0, 5.0]);
@@ -1462,17 +1467,25 @@ fn tabulated_cylinder_frame_places_a_unique_cubic_chart() {
             .expect("finite frame fixture"),
         },
     );
-    let (curve, sweep) =
-        placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame, None, &mut crate::lane_refusal::LaneRefusals::new())
-            .expect("broad signed-DICT placement");
+    let (curve, sweep) = placed_tabulated_cylinder_directrix(
+        &replay,
+        &broad_signed_frame,
+        None,
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect("broad signed-DICT placement");
     assert_eq!(curve.control_points()[0], Point3::new(1.0, 2.0, 5.0));
     assert_eq!(curve.control_points()[3], Point3::new(4.0, 4.0, 5.0));
     assert_eq!(sweep, [0.0, 0.0, 5.0]);
 
     broad_signed_frame.scalar_frames.clear();
-    let (curve, sweep) =
-        placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame, None, &mut crate::lane_refusal::LaneRefusals::new())
-            .expect("complete frame supplies its signed sweep");
+    let (curve, sweep) = placed_tabulated_cylinder_directrix(
+        &replay,
+        &broad_signed_frame,
+        None,
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect("complete frame supplies its signed sweep");
     assert_eq!(curve.control_points()[0], Point3::new(1.0, 2.0, 5.0));
     assert_eq!(curve.control_points()[3], Point3::new(4.0, 4.0, 5.0));
     assert_eq!(sweep, [0.0, 0.0, 5.0]);
@@ -1487,10 +1500,13 @@ fn tabulated_cylinder_frame_places_a_unique_cubic_chart() {
             .expect("finite frame fixture"),
         },
     );
-    assert!(
-        placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame, None, &mut crate::lane_refusal::LaneRefusals::new())
-            .is_none()
-    );
+    assert!(placed_tabulated_cylinder_directrix(
+        &replay,
+        &broad_signed_frame,
+        None,
+        &mut crate::lane_refusal::LaneRefusals::new()
+    )
+    .is_none());
 
     broad_signed_frame.carrier = crate::surface::SurfaceParameterCarrier::Resolved(
         crate::surface::InlineSurfaceCarrier::Tabulated {
@@ -1504,8 +1520,13 @@ fn tabulated_cylinder_frame_places_a_unique_cubic_chart() {
     );
     replay.control_points[1] = Some([10.0, -5.0]);
     assert!(
-        placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame, None, &mut crate::lane_refusal::LaneRefusals::new())
-            .is_none(),
+        placed_tabulated_cylinder_directrix(
+            &replay,
+            &broad_signed_frame,
+            None,
+            &mut crate::lane_refusal::LaneRefusals::new()
+        )
+        .is_none(),
         "the offset layout requires its prototype chart origin"
     );
     let (curve, sweep) = placed_tabulated_cylinder_directrix(
@@ -1531,9 +1552,13 @@ fn tabulated_cylinder_frame_places_a_unique_cubic_chart() {
         },
     );
     replay.control_points[1] = Some([2.0, 2.5]);
-    let (curve, sweep) =
-        placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame, None, &mut crate::lane_refusal::LaneRefusals::new())
-            .expect("scalar encodings do not change the coordinate chart");
+    let (curve, sweep) = placed_tabulated_cylinder_directrix(
+        &replay,
+        &broad_signed_frame,
+        None,
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect("scalar encodings do not change the coordinate chart");
     assert_eq!(curve.control_points()[0], Point3::new(1.0, 2.0, 5.0));
     assert_eq!(curve.control_points()[3], Point3::new(4.0, 4.0, 5.0));
     assert_eq!(sweep, [0.0, 0.0, 5.0]);
@@ -1548,10 +1573,13 @@ fn tabulated_cylinder_frame_places_a_unique_cubic_chart() {
             .expect("finite frame fixture"),
         },
     );
-    assert!(
-        placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame, None, &mut crate::lane_refusal::LaneRefusals::new())
-            .is_none()
-    );
+    assert!(placed_tabulated_cylinder_directrix(
+        &replay,
+        &broad_signed_frame,
+        None,
+        &mut crate::lane_refusal::LaneRefusals::new()
+    )
+    .is_none());
 
     replay.control_points = [
         Some([1.0, 2.0]),
@@ -1579,10 +1607,13 @@ fn tabulated_cylinder_frame_places_a_unique_cubic_chart() {
     assert_eq!(curve.control_points()[0], Point3::new(-11.25, 2.0, 5.0));
     assert_eq!(curve.control_points()[3], Point3::new(-8.25, 4.0, 5.0));
     assert_eq!(sweep, [0.0, 0.0, 5.0]);
-    assert!(
-        placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame, None, &mut crate::lane_refusal::LaneRefusals::new())
-            .is_none()
-    );
+    assert!(placed_tabulated_cylinder_directrix(
+        &replay,
+        &broad_signed_frame,
+        None,
+        &mut crate::lane_refusal::LaneRefusals::new()
+    )
+    .is_none());
 }
 
 #[test]
@@ -1684,8 +1715,13 @@ fn zero_offset_2d_tabulated_frame_retains_the_stored_span() {
         offset: 0,
         body_offset: 0,
     };
-    let (curve, sweep) = placed_tabulated_cylinder_directrix(&replay, &parameters, None, &mut crate::lane_refusal::LaneRefusals::new())
-        .expect("zero-offset directrix placement");
+    let (curve, sweep) = placed_tabulated_cylinder_directrix(
+        &replay,
+        &parameters,
+        None,
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect("zero-offset directrix placement");
     assert_eq!(
         curve.control_points()[0],
         Point3::new(-2.603_530_729_189_511_6, 6.634_758_301_120_719, 4.78)

@@ -885,8 +885,13 @@ mod tests {
             .expect("valid LinePcurve fixture"),
         );
         let range = [5.0, 9.0];
-        let reversed = reverse_pcurve_geometry(&geometry, range, &mut crate::nurbs::LaneRefusals::new(), "test record")
-            .expect("reversible line");
+        let reversed = reverse_pcurve_geometry(
+            &geometry,
+            range,
+            &mut crate::nurbs::LaneRefusals::new(),
+            "test record",
+        )
+        .expect("reversible line");
         for (parameter, source_parameter) in [(5.0, 9.0), (9.0, 5.0)] {
             let actual = pcurve_uv(&reversed, parameter).expect("reversed evaluation");
             let expected = pcurve_uv(&geometry, source_parameter).expect("source evaluation");
@@ -916,9 +921,13 @@ mod tests {
             .expect("valid CircleCurve fixture"),
         ));
         for (geometry, range) in [(line, [5.0, 9.0]), (circle, [0.25, 2.0])] {
-            let (reversed, reversed_range) =
-                reverse_curve_geometry(&geometry, range, &mut crate::nurbs::LaneRefusals::new(), "test record")
-                    .expect("reversible model curve");
+            let (reversed, reversed_range) = reverse_curve_geometry(
+                &geometry,
+                range,
+                &mut crate::nurbs::LaneRefusals::new(),
+                "test record",
+            )
+            .expect("reversible model curve");
             for (parameter, source_parameter) in
                 [(reversed_range[0], range[1]), (reversed_range[1], range[0])]
             {
@@ -944,9 +953,13 @@ mod tests {
             .unwrap(),
         ));
         let range = [0.2, 0.8];
-        let (reversed, reversed_range) =
-            reverse_curve_geometry(&geometry, range, &mut crate::nurbs::LaneRefusals::new(), "test record")
-                .expect("reversible NURBS");
+        let (reversed, reversed_range) = reverse_curve_geometry(
+            &geometry,
+            range,
+            &mut crate::nurbs::LaneRefusals::new(),
+            "test record",
+        )
+        .expect("reversible NURBS");
         for parameter in [range[0], 0.5, range[1]] {
             let actual = curve_point(&reversed, parameter).expect("reversed NURBS point");
             let expected = curve_point(&geometry, range[0] + range[1] - parameter)
@@ -1018,8 +1031,14 @@ mod tests {
             false,
         )
         .unwrap();
-        let curve = nurbs_surface_isocurve(&surface, tiny * 0.5, true, &mut crate::nurbs::LaneRefusals::new(), "test record")
-            .expect("tiny rational surface isocurve");
+        let curve = nurbs_surface_isocurve(
+            &surface,
+            tiny * 0.5,
+            true,
+            &mut crate::nurbs::LaneRefusals::new(),
+            "test record",
+        )
+        .expect("tiny rational surface isocurve");
         assert_eq!(
             curve.control_points(),
             [Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)]
@@ -1072,8 +1091,13 @@ mod tests {
             .expect("valid HelixCurveConstruction fixture"),
         );
 
-        let cache = circular_helix_cache(&definition, 1.0e-4, &mut crate::nurbs::LaneRefusals::new(), "test record")
-            .expect("valid helix");
+        let cache = circular_helix_cache(
+            &definition,
+            1.0e-4,
+            &mut crate::nurbs::LaneRefusals::new(),
+            "test record",
+        )
+        .expect("valid helix");
         assert_eq!(cache.curve.knots()[1], range[0]);
         assert_eq!(cache.curve.knots()[cache.curve.knots().len() - 2], range[1]);
         assert!(cache.fit_tolerance.is_finite());
@@ -1160,7 +1184,13 @@ mod tests {
             )
             .expect("valid HelixCurveConstruction fixture");
         }
-        assert!(circular_helix_cache(&non_axial_pitch, 1.0e-4, &mut crate::nurbs::LaneRefusals::new(), "test record").is_none());
+        assert!(circular_helix_cache(
+            &non_axial_pitch,
+            1.0e-4,
+            &mut crate::nurbs::LaneRefusals::new(),
+            "test record"
+        )
+        .is_none());
 
         let overflowing_fit = ProceduralCurveDefinition::Helix(
             cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
@@ -1174,9 +1204,13 @@ mod tests {
             )
             .expect("valid HelixCurveConstruction fixture"),
         );
-        assert!(
-            circular_helix_cache(&overflowing_fit, f64::MAX, &mut crate::nurbs::LaneRefusals::new(), "test record").is_none()
-        );
+        assert!(circular_helix_cache(
+            &overflowing_fit,
+            f64::MAX,
+            &mut crate::nurbs::LaneRefusals::new(),
+            "test record"
+        )
+        .is_none());
     }
 
     #[test]
@@ -1222,10 +1256,13 @@ mod tests {
             )
             .unwrap(),
         ));
-        assert!(
-            reverse_curve_geometry(&model_line, [0.0, f64::MAX], &mut crate::nurbs::LaneRefusals::new(), "test record")
-                .is_none()
-        );
+        assert!(reverse_curve_geometry(
+            &model_line,
+            [0.0, f64::MAX],
+            &mut crate::nurbs::LaneRefusals::new(),
+            "test record"
+        )
+        .is_none());
 
         let pcurve_nurbs = PcurveGeometry::Nurbs {
             nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
@@ -1237,10 +1274,13 @@ mod tests {
             )
             .unwrap(),
         };
-        assert!(
-            reverse_pcurve_geometry(&pcurve_nurbs, [0.0, f64::MAX], &mut crate::nurbs::LaneRefusals::new(), "test record")
-                .is_none()
-        );
+        assert!(reverse_pcurve_geometry(
+            &pcurve_nurbs,
+            [0.0, f64::MAX],
+            &mut crate::nurbs::LaneRefusals::new(),
+            "test record"
+        )
+        .is_none());
     }
 
     #[test]

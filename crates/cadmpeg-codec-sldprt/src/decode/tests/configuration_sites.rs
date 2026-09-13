@@ -304,7 +304,10 @@ fn decode_uses_the_namespaced_manifest_site_without_source_indices() {
 
     assert!(second.active);
     assert_eq!(second.source_index, Some(1));
-    assert!(second.bodies.as_deref().is_some_and(|bodies| !bodies.is_empty()));
+    assert!(second
+        .bodies
+        .as_deref()
+        .is_some_and(|bodies| !bodies.is_empty()));
     assert!(result
         .ir()
         .model

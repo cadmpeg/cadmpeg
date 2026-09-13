@@ -127,7 +127,10 @@ fn saved_line_joins_through_order_table() {
         BTreeSet::from([42])
     );
     assert_eq!(
-        materialized_saved_section_external_ids(&definition, &mut crate::lane_refusal::LaneRefusals::new()),
+        materialized_saved_section_external_ids(
+            &definition,
+            &mut crate::lane_refusal::LaneRefusals::new()
+        ),
         BTreeSet::from([42])
     );
     let mut coordinate_definition = definition.clone();
@@ -197,7 +200,11 @@ fn saved_line_joins_through_order_table() {
         section_entity_external_ids(&incomplete),
         BTreeSet::from([42])
     );
-    assert!(materialized_saved_section_external_ids(&incomplete, &mut crate::lane_refusal::LaneRefusals::new()).is_empty());
+    assert!(materialized_saved_section_external_ids(
+        &incomplete,
+        &mut crate::lane_refusal::LaneRefusals::new()
+    )
+    .is_empty());
     let (native_entity, offset) = unresolved_saved_section_entity(
         &incomplete,
         &SketchId::mint("creo:model:sketch#5").expect("valid test fixture"),

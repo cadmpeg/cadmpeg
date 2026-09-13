@@ -299,7 +299,9 @@ fn analytic_isocurves_accept_finite_nonzero_scales() {
         angular_scale: scale,
         chart_origin: 0.0,
     };
-    let geometry = lifted_curve_geometry(&pcurve, &cylinder, &mut crate::nurbs::LaneRefusals::new()).expect("cylinder latitude");
+    let geometry =
+        lifted_curve_geometry(&pcurve, &cylinder, &mut crate::nurbs::LaneRefusals::new())
+            .expect("cylinder latitude");
     let edge_start = cylinder_point(
         [0.0; 3],
         [1.0, 0.0, 0.0],
@@ -598,7 +600,9 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
         class_21_suffix_scalar: None,
         lifted_endpoints: None,
     };
-    let geometry = lifted_curve_geometry(&pcurve, &cylinder, &mut crate::nurbs::LaneRefusals::new()).expect("cylinder latitude");
+    let geometry =
+        lifted_curve_geometry(&pcurve, &cylinder, &mut crate::nurbs::LaneRefusals::new())
+            .expect("cylinder latitude");
     let edge_start = cylinder_point(
         [0.0; 3],
         [1.0, 0.0, 0.0],
@@ -631,8 +635,12 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
         control_points: vec![[0.0, 3.0], [2.0 * tiny_sweep, 3.0]],
         ..pcurve.clone()
     };
-    let tiny_geometry =
-        lifted_curve_geometry(&tiny_pcurve, &cylinder, &mut crate::nurbs::LaneRefusals::new()).expect("tiny cylinder latitude");
+    let tiny_geometry = lifted_curve_geometry(
+        &tiny_pcurve,
+        &cylinder,
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .expect("tiny cylinder latitude");
     let tiny_end = cylinder_point(
         [0.0; 3],
         [1.0, 0.0, 0.0],
@@ -682,7 +690,8 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
         ..pcurve
     };
     let turnback_geometry =
-        lifted_curve_geometry(&turnback, &cylinder, &mut crate::nurbs::LaneRefusals::new()).expect("turnback latitude locus");
+        lifted_curve_geometry(&turnback, &cylinder, &mut crate::nurbs::LaneRefusals::new())
+            .expect("turnback latitude locus");
     let turnback_end = cylinder_point(
         [0.0; 3],
         [1.0, 0.0, 0.0],
@@ -719,7 +728,8 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
         ..reversed_pcurve
     };
     let cone_geometry =
-        lifted_curve_geometry(&cone_pcurve, &cone, &mut crate::nurbs::LaneRefusals::new()).expect("signed cone latitude");
+        lifted_curve_geometry(&cone_pcurve, &cone, &mut crate::nurbs::LaneRefusals::new())
+            .expect("signed cone latitude");
     let cone_point = |angle: f64| {
         [
             -4.0 * half_angle.sin() * angle.cos(),
@@ -1016,7 +1026,8 @@ fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
     assert!(loop_chain_closes(&graph.loops[&3], graph.vertices.edges()));
     let senses = graph.loops[&3].edge_senses();
     assert!(orient_loop_members(&graph, BTreeMap::from([(3, senses)])).is_some());
-    let plan = build_plan(&graph, &payload, &mut crate::nurbs::LaneRefusals::new()).expect("complete owned graph");
+    let plan = build_plan(&graph, &payload, &mut crate::nurbs::LaneRefusals::new())
+        .expect("complete owned graph");
 
     assert_eq!(
         plan.pcurve_plan.get(&4),
@@ -1338,9 +1349,14 @@ fn tensor_surface_contraction_preserves_exact_isocurve() {
         false,
     )
     .expect("valid tensor surface");
-    let curve =
-        crate::nurbs::nurbs_surface_isocurve(&surface, 0.25, true, &mut crate::nurbs::LaneRefusals::new(), "test record")
-            .expect("u isocurve");
+    let curve = crate::nurbs::nurbs_surface_isocurve(
+        &surface,
+        0.25,
+        true,
+        &mut crate::nurbs::LaneRefusals::new(),
+        "test record",
+    )
+    .expect("u isocurve");
     assert_eq!(curve.degree(), 1);
     assert_eq!(curve.knots(), surface.v_knots());
     assert_eq!(curve.control_points()[0], Point3::new(0.5, 0.0, 0.0));

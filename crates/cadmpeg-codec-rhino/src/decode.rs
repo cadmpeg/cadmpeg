@@ -1189,18 +1189,16 @@ impl<'a> DecodeContext<'a> {
         let association = self.source_association(identity);
         let feature_id =
             FeatureId::mint(format!("rhino:hatch:feature#{key}")).expect("identity grammar");
-        let transform = match hatch_plane_transform(
-            &hatch.plane,
-            scale,
-            &format!("rhino hatch record #{key}"),
-        ) {
-            Ok(transform) => transform,
-            Err(error) => {
-                self.scan_warning(source_order, &format!("hatch placement failed: {error}"));
-                self.mark_failed(source_order);
-                return;
-            }
-        };
+        let transform =
+            match hatch_plane_transform(&hatch.plane, scale, &format!("rhino hatch record #{key}"))
+            {
+                Ok(transform) => transform,
+                Err(error) => {
+                    self.scan_warning(source_order, &format!("hatch placement failed: {error}"));
+                    self.mark_failed(source_order);
+                    return;
+                }
+            };
         for hatch_loop in &mut hatch.loops {
             if let Err(error) = transform_decoded_curve(&mut hatch_loop.curve, transform) {
                 self.scan_warning(

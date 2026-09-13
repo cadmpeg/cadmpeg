@@ -549,11 +549,9 @@ impl ExternalReferenceRecord {
             ExternalReferenceIdentity::Path { path, .. } => {
                 ExternalDocument::Path { path: path.clone() }
             }
-            ExternalReferenceIdentity::DocumentId(document_id) => {
-                ExternalDocument::DocumentId {
-                    document_id: document_id.clone(),
-                }
-            }
+            ExternalReferenceIdentity::DocumentId(document_id) => ExternalDocument::DocumentId {
+                document_id: document_id.clone(),
+            },
         }
     }
 }

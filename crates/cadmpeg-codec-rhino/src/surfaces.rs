@@ -188,7 +188,10 @@ impl DecodedProceduralSurface {
                 let second = commit_child(1, "second", second)?;
                 ProceduralSurfaceDefinition::Sum(
                     cadmpeg_ir::geometry::surface_payloads::SumSurfaceConstruction::try_new(
-                        first, second, basepoint, cadmpeg_ir::geometry::CacheContract::from_form(None),
+                        first,
+                        second,
+                        basepoint,
+                        cadmpeg_ir::geometry::CacheContract::from_form(None),
                     )
                     .map_err(reject_payload)?,
                 )

@@ -1083,8 +1083,8 @@ fn container_only_retains_typed_saved_toggle_payload() {
 fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::features::{
-        BooleanOp, ConfigurationId, DesignConfiguration, Feature,
-        FeatureDefinition, FeatureId, FeatureOperation, UnresolvedFamily,
+        BooleanOp, ConfigurationId, DesignConfiguration, Feature, FeatureDefinition, FeatureId,
+        FeatureOperation, UnresolvedFamily,
     };
 
     let mut ir = CadIr::empty();

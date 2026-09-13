@@ -419,8 +419,14 @@ fn native_identity_locus_binds_only_one_coordinate_row_within_tolerance() {
 #[test]
 fn reverse_angular_interval_becomes_an_increasing_nurbs_domain() {
     let range = ordered_range([0.0, -std::f64::consts::PI]);
-    let arc = rational_pcurve_arc([0.0, 0.0], 2.0, range, &mut crate::nurbs::LaneRefusals::new(), "test record")
-        .expect("reverse semicircle");
+    let arc = rational_pcurve_arc(
+        [0.0, 0.0],
+        2.0,
+        range,
+        &mut crate::nurbs::LaneRefusals::new(),
+        "test record",
+    )
+    .expect("reverse semicircle");
     let PcurveGeometry::Nurbs { nurbs } = &arc else {
         panic!("expected rational NURBS arc");
     };
@@ -579,7 +585,11 @@ fn standard_freeform_face_uses_exact_e5_surface_wrapper_identity() {
         forward: true,
     }];
 
-    let associated = associate_standard_freeform_e5_surfaces(&records, &stream, &mut crate::nurbs::LaneRefusals::new());
+    let associated = associate_standard_freeform_e5_surfaces(
+        &records,
+        &stream,
+        &mut crate::nurbs::LaneRefusals::new(),
+    );
     assert!(matches!(
         associated.get(&7),
         Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_)))
@@ -1001,11 +1011,23 @@ fn spherical_section_endpoint_pair_survives_topology_admission_without_pcurve() 
     let start = Point3::new(section_radius, 2.0, 0.0);
     let end = Point3::new(0.0, 2.0, section_radius);
 
-    assert!(
-        standard_pcurve_geometry(&surface, &support, start, end, None, None, &mut crate::nurbs::LaneRefusals::new()).is_none()
-    );
+    assert!(standard_pcurve_geometry(
+        &surface,
+        &support,
+        start,
+        end,
+        None,
+        None,
+        &mut crate::nurbs::LaneRefusals::new()
+    )
+    .is_none());
     assert!(standard_endpoint_pair_supports_topology(
-        &surface, &support, start, end, None, &mut crate::nurbs::LaneRefusals::new()
+        &surface,
+        &support,
+        start,
+        end,
+        None,
+        &mut crate::nurbs::LaneRefusals::new()
     ));
 }
 

@@ -62,7 +62,12 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
         .expect("valid LineCurve fixture"),
     ));
     assert_eq!(
-        curve_on_parameter_range(line, [10.0, 20.0], [0.0, 10.0], &mut crate::nurbs::LaneRefusals::new()),
+        curve_on_parameter_range(
+            line,
+            [10.0, 20.0],
+            [0.0, 10.0],
+            &mut crate::nurbs::LaneRefusals::new()
+        ),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::LineCurve::try_new(
                 Point3::new(20.0, 0.0, 0.0),

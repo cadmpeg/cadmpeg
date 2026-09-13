@@ -6,13 +6,12 @@ use cadmpeg_ir::features::FeatureOperation;
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::features::{
-    BodyRetentionMode, BodyTrimSide, ChamferGroup, ChamferSpec,
-    ConfigurationFeatureState, ConfigurationId, CurveProjectionDirection,
-    CurveProjectionDirectionState, DesignConfiguration, EdgeSelection, ExtrudeDirection,
-    ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection, Feature, FilletGroup, HoleKind,
-    HolePlacement, LinearTermination, PathRef, PatternKind, PlanarProfileRef, ProfileRef,
-    RadiusSpec, RevolveConstruction, RibConstruction, RibDraft, SurfaceExtension, SweepMode,
-    SweepSection, ThickenSide, TrimRegion,
+    BodyRetentionMode, BodyTrimSide, ChamferGroup, ChamferSpec, ConfigurationFeatureState,
+    ConfigurationId, CurveProjectionDirection, CurveProjectionDirectionState, DesignConfiguration,
+    EdgeSelection, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection,
+    Feature, FilletGroup, HoleKind, HolePlacement, LinearTermination, PathRef, PatternKind,
+    PlanarProfileRef, ProfileRef, RadiusSpec, RevolveConstruction, RibConstruction, RibDraft,
+    SurfaceExtension, SweepMode, SweepSection, ThickenSide, TrimRegion,
 };
 use cadmpeg_ir::ids::{CurveId, FaceId};
 use cadmpeg_ir::math::{Point3, Vector3};

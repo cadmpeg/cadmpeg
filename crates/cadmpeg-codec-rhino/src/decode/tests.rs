@@ -66,9 +66,12 @@ fn hatch_plane_places_and_scales_plane_space_loops_once() {
         equation: [0.0, 0.0, 1.0, -30.0],
     };
     let mut curve = decoded_nurbs(line_nurbs(0.0, 2.0, false));
-    transform_decoded_curve(&mut curve, hatch_plane_transform(&plane, 10.0, "rhino hatch record #test")
-        .expect("a finite plane states a transform"))
-        .expect("required invariant");
+    transform_decoded_curve(
+        &mut curve,
+        hatch_plane_transform(&plane, 10.0, "rhino hatch record #test")
+            .expect("a finite plane states a transform"),
+    )
+    .expect("required invariant");
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = curve.reported_geometry() else {
         panic!("hatch loop must remain NURBS");
     };

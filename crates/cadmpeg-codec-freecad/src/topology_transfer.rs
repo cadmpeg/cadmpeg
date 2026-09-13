@@ -353,9 +353,9 @@ impl<'a> Builder<'a> {
                             continue;
                         }
                     };
-                    let Some(secondary_geometry) = secondary_read
-                        .and_then(|geometry| transformed_pcurve_geometry(geometry, parameter_affine))
-                    else {
+                    let Some(secondary_geometry) = secondary_read.and_then(|geometry| {
+                        transformed_pcurve_geometry(geometry, parameter_affine)
+                    }) else {
                         self.losses.push(FreecadLossCode::PcurveNotTransferred.note(format!(
                             "payload {} curve2ds index {secondary} could not enter neutral geometry", self.payload.id
                         )));

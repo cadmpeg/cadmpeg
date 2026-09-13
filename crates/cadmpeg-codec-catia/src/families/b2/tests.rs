@@ -1238,7 +1238,10 @@ fn b2_offset_support_parser_reads_carrier_distance_and_domain() {
 #[test]
 fn offset_support_binding_scales_each_nurbs_parameter_domain() {
     let tiny = 1e-200_f64;
-    let mut carriers = crate::families::a5a8::records::a5_surfaces(&a5_surface_stream(), &mut crate::nurbs::LaneRefusals::new());
+    let mut carriers = crate::families::a5a8::records::a5_surfaces(
+        &a5_surface_stream(),
+        &mut crate::nurbs::LaneRefusals::new(),
+    );
     let surface = &mut carriers[0].geometry;
     surface
         .edit_u_knots(|knots| {
@@ -1656,7 +1659,10 @@ fn offset_support_binding_rejects_nonincreasing_domains() {
         distance: 2.0,
         domain: [0.0, 0.0, 1.0, 1.0],
     };
-    let carriers = crate::families::a5a8::records::a5_surfaces(&a5_surface_stream(), &mut crate::nurbs::LaneRefusals::new());
+    let carriers = crate::families::a5a8::records::a5_surfaces(
+        &a5_surface_stream(),
+        &mut crate::nurbs::LaneRefusals::new(),
+    );
     assert_eq!(
         crate::families::b2::records::offset_support_carriers(&[offset.clone()], &carriers),
         [Some(0)]

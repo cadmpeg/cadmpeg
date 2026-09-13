@@ -1686,7 +1686,10 @@ fn semantic_writer_removes_deleted_history_records() {
         Some("Keep")
     );
     assert_eq!(regenerated.ir().model.configurations.len(), 1);
-    assert_eq!(regenerated.ir().model.configurations[0].name.as_deref(), Some("Keep"));
+    assert_eq!(
+        regenerated.ir().model.configurations[0].name.as_deref(),
+        Some("Keep")
+    );
 }
 
 #[test]

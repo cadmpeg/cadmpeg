@@ -10,12 +10,11 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::Face;
 use cadmpeg_ir::{
     features::{
-        AngularTermination, BooleanOp, ChamferSpec, ConfigurationId,
-        CosmeticThreadExtent, DatumPlaneReference, DesignConfiguration, DesignParameter,
-        EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition, FeatureId,
-        FeatureSourceContent, FeatureTreeNodeRole, HoleBottom, HoleKind, LinearTermination,
-        ParameterId, ParameterValue, PathRef, ProfileRef, RevolveExtent, RibConstruction,
-        SplitFaceTool,
+        AngularTermination, BooleanOp, ChamferSpec, ConfigurationId, CosmeticThreadExtent,
+        DatumPlaneReference, DesignConfiguration, DesignParameter, EdgeSelection, ExtrudeExtent,
+        ExtrudeSide, FaceSelection, FeatureDefinition, FeatureId, FeatureSourceContent,
+        FeatureTreeNodeRole, HoleBottom, HoleKind, LinearTermination, ParameterId, ParameterValue,
+        PathRef, ProfileRef, RevolveExtent, RibConstruction, SplitFaceTool,
     },
     scalar::Length,
 };

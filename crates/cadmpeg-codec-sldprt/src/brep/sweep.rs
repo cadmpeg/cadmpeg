@@ -475,7 +475,8 @@ mod tests {
             )
             .unwrap(),
         ));
-        let curve = profile_nurbs(&geometry, &mut crate::lane_refusal::LaneRefusals::new()).expect("ellipse NURBS");
+        let curve = profile_nurbs(&geometry, &mut crate::lane_refusal::LaneRefusals::new())
+            .expect("ellipse NURBS");
 
         assert_eq!(curve.degree(), 2);
         assert_eq!(curve.control_points().len(), 9);
@@ -505,7 +506,8 @@ mod tests {
             )
             .unwrap(),
         ));
-        let curve = profile_nurbs(&geometry, &mut crate::lane_refusal::LaneRefusals::new()).expect("circle NURBS");
+        let curve = profile_nurbs(&geometry, &mut crate::lane_refusal::LaneRefusals::new())
+            .expect("circle NURBS");
 
         for parameter in [0.0, 0.7, FRAC_PI_2, 3.4, 5.9] {
             let point = eval_curve(&curve, parameter);
@@ -634,8 +636,14 @@ mod tests {
             false,
         )
         .expect("valid line profile");
-        let surface = swept_nurbs(&profile, Vector3::new(0.0, 1.0, 0.0), -2.0, 3.0, &mut crate::lane_refusal::LaneRefusals::new())
-            .expect("swept surface");
+        let surface = swept_nurbs(
+            &profile,
+            Vector3::new(0.0, 1.0, 0.0),
+            -2.0,
+            3.0,
+            &mut crate::lane_refusal::LaneRefusals::new(),
+        )
+        .expect("swept surface");
         let p = eval_surface(&surface, 0.5, 1.5);
         assert!((p.x - 0.5).abs() < 1.0e-12);
         assert!((p.y - 1.5).abs() < 1.0e-12);
@@ -673,7 +681,11 @@ mod tests {
         assert!(first.is_none(), "the refused ruling states no surface");
         assert!(second.is_none(), "the refused ruling states no surface");
         let records = refusal.take_records();
-        assert_eq!(records.len(), 2, "one record per refused ruling: {records:?}");
+        assert_eq!(
+            records.len(),
+            2,
+            "one record per refused ruling: {records:?}"
+        );
         for record in &records {
             assert!(
                 record.starts_with("sldprt swept ruled surface patch: "),

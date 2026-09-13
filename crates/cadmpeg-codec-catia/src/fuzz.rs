@@ -32,12 +32,14 @@ pub fn geometry_surface_prefixes(data: &[u8]) {
 
 /// Exercise A5 freeform surface extraction.
 pub fn geometry_a5_surfaces(data: &[u8]) {
-    let _probe = crate::families::a5a8::records::a5_surfaces(data, &mut crate::nurbs::LaneRefusals::new());
+    let _probe =
+        crate::families::a5a8::records::a5_surfaces(data, &mut crate::nurbs::LaneRefusals::new());
 }
 
 /// Exercise A8 NURBS surface extraction.
 pub fn geometry_a8_surfaces(data: &[u8]) {
-    let _probe = crate::families::a5a8::records::a8_surfaces(data, &mut crate::nurbs::LaneRefusals::new());
+    let _probe =
+        crate::families::a5a8::records::a8_surfaces(data, &mut crate::nurbs::LaneRefusals::new());
 }
 
 /// Exercise standard-nested and FBB topology parsing.

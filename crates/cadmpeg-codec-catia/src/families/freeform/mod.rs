@@ -2950,7 +2950,8 @@ mod tests {
             902,
             &[0x82, 0x18, 100, 0, 0x18, 0xe7, 0x03, 0x03],
         );
-        let graph = parse(&bytes, &mut crate::nurbs::LaneRefusals::new()).expect("one resolved and one unresolved face");
+        let graph = parse(&bytes, &mut crate::nurbs::LaneRefusals::new())
+            .expect("one resolved and one unresolved face");
         assert_eq!(graph.face_records.len(), 2);
         assert_eq!(graph.faces.len(), 1);
         assert!(graph
@@ -2970,12 +2971,22 @@ mod tests {
             object_id: 902,
             payload: vec![0x82, 0x18, 100, 0, 0x18, 0xe7, 0x03, 0x03],
         };
-        assert!(
-            parse_from_records(&[], std::slice::from_ref(&record), &[], false, &mut crate::nurbs::LaneRefusals::new()).is_some()
-        );
-        assert!(
-            parse_from_records(&[], &[record.clone(), record], &[], false, &mut crate::nurbs::LaneRefusals::new()).is_none()
-        );
+        assert!(parse_from_records(
+            &[],
+            std::slice::from_ref(&record),
+            &[],
+            false,
+            &mut crate::nurbs::LaneRefusals::new()
+        )
+        .is_some());
+        assert!(parse_from_records(
+            &[],
+            &[record.clone(), record],
+            &[],
+            false,
+            &mut crate::nurbs::LaneRefusals::new()
+        )
+        .is_none());
     }
 
     #[test]
@@ -3157,7 +3168,8 @@ mod tests {
 
         let records = crate::wire::records::consolidated_records(&bytes);
         let carriers =
-            freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new()).expect("valid source object identity");
+            freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new())
+                .expect("valid source object identity");
         assert_eq!(carriers.len(), 2);
         assert!(carriers[0].source_tag.starts_with("b2_03_28:"));
         assert!(carriers[1].source_tag.starts_with("b2_03_60:"));
@@ -3980,7 +3992,8 @@ mod tests {
         let bytes = crate::test_support::b2_sphere_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let carriers =
-            freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new()).expect("valid freeform carriers");
+            freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new())
+                .expect("valid freeform carriers");
         assert!(matches!(carriers.as_slice(), [carrier]
                 if matches!(carrier.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))
                 if {
@@ -3999,7 +4012,8 @@ mod tests {
         let bytes = crate::test_support::b2_torus_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let carriers =
-            freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new()).expect("valid freeform carriers");
+            freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new())
+                .expect("valid freeform carriers");
         assert!(matches!(carriers.as_slice(), [carrier]
                 if matches!(carrier.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
                 if {
@@ -4019,7 +4033,8 @@ mod tests {
         let bytes = crate::test_support::b2_range_origin_cylinder_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let carriers =
-            freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new()).expect("valid freeform carriers");
+            freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new())
+                .expect("valid freeform carriers");
         assert!(matches!(carriers.as_slice(), [carrier]
                 if matches!(carrier.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
                 if {

@@ -5314,28 +5314,26 @@ fn cartesian_transformation_operator(
     )
     .ok()?;
     let [axis_x, axis_y, axis_z] = base_axis_3d(axis1, axis2, axis3)?;
-    Some(
-        Transform::affine([
-            [
-                axis_x.x * scale,
-                axis_y.x * scale,
-                axis_z.x * scale,
-                origin.x,
-            ],
-            [
-                axis_x.y * scale,
-                axis_y.y * scale,
-                axis_z.y * scale,
-                origin.y,
-            ],
-            [
-                axis_x.z * scale,
-                axis_y.z * scale,
-                axis_z.z * scale,
-                origin.z,
-            ],
-        ])?,
-    )
+    Transform::affine([
+        [
+            axis_x.x * scale,
+            axis_y.x * scale,
+            axis_z.x * scale,
+            origin.x,
+        ],
+        [
+            axis_x.y * scale,
+            axis_y.y * scale,
+            axis_z.y * scale,
+            origin.y,
+        ],
+        [
+            axis_x.z * scale,
+            axis_y.z * scale,
+            axis_z.z * scale,
+            origin.z,
+        ],
+    ])
 }
 
 fn cartesian_transformation_operator_2d(
@@ -5368,12 +5366,10 @@ fn cartesian_transformation_operator_2d(
     if !scale.is_finite() || scale <= 0.0 {
         return None;
     }
-    Some(
-        Transform2::affine([
-            [axis1.u * scale, axis2.u * scale, origin.u],
-            [axis1.v * scale, axis2.v * scale, origin.v],
-        ])?,
-    )
+    Transform2::affine([
+        [axis1.u * scale, axis2.u * scale, origin.u],
+        [axis1.v * scale, axis2.v * scale, origin.v],
+    ])
 }
 
 fn base_axis_2d(axis1: Option<Point2>, axis2: Option<Point2>) -> Option<(Point2, Point2)> {

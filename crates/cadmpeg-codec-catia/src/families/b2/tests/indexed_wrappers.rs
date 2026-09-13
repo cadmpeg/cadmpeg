@@ -233,10 +233,14 @@ fn indexed_native_record_decoders_match_one_shot_wrappers() {
             .into_iter()
             .map(|record| record.pos)
             .collect(),
-        crate::families::b2::records::b2_nurbs_curves_from_records(&bytes, &records, &mut crate::nurbs::LaneRefusals::new())
-            .into_iter()
-            .map(|record| record.pos)
-            .collect(),
+        crate::families::b2::records::b2_nurbs_curves_from_records(
+            &bytes,
+            &records,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .into_iter()
+        .map(|record| record.pos)
+        .collect(),
     );
 
     let bytes = b2_construction_use_stream();

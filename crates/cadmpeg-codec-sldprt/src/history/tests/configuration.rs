@@ -1701,8 +1701,8 @@ fn configuration_frame_alias_binds_without_body_membership() {
     use cadmpeg_ir::topology::{Face, Sense};
     use cadmpeg_ir::{
         features::{
-            DatumPlaneReference, FaceSelection, Feature as NeutralFeature,
-            FeatureDefinition, FeatureId, FeatureOperation,
+            DatumPlaneReference, FaceSelection, Feature as NeutralFeature, FeatureDefinition,
+            FeatureId, FeatureOperation,
         },
         scalar::Length,
     };

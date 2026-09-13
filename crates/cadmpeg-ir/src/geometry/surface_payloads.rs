@@ -1075,12 +1075,7 @@ impl SumSurfaceConstruction {
 impl TryFrom<SumSurfaceConstructionWire> for SumSurfaceConstruction {
     type Error = ProceduralGeometryError;
     fn try_from(wire: SumSurfaceConstructionWire) -> Result<Self, Self::Error> {
-        Self::try_new(
-            wire.first,
-            wire.second,
-            wire.basepoint,
-            wire.cache,
-        )
+        Self::try_new(wire.first, wire.second, wire.basepoint, wire.cache)
     }
 }
 
@@ -2442,7 +2437,6 @@ impl TryFrom<BlendSurfacePayloadWire> for BlendSurfacePayload {
             wire.cross_section,
             wire.cache,
         )
-
     }
 }
 

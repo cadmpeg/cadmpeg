@@ -229,9 +229,7 @@ mod tests {
             material: None,
             properties: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
-            bodies: Some(
-                crate::features::DistinctMembers::default(),
-            ),
+            bodies: Some(crate::features::DistinctMembers::default()),
             parameter_values: BTreeMap::new(),
             feature_states: BTreeMap::from([(
                 feature_id,

@@ -5928,15 +5928,12 @@ mod tests {
                 .arena_as::<super::Configuration>("configurations")
                 .expect("required invariant");
             assert!(native[0].is_default);
-            assert!(
-                result
-                    .ir()
-                    .model
-                    .configurations
-                    .iter()
-                    .all(|configuration| !configuration.active
-                        && configuration.bodies.is_none())
-            );
+            assert!(result
+                .ir()
+                .model
+                .configurations
+                .iter()
+                .all(|configuration| !configuration.active && configuration.bodies.is_none()));
         }
     }
     mod material_and_external_records;

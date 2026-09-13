@@ -8759,7 +8759,11 @@ impl CatiaNative {
     pub(crate) fn decode_with_record_ranges(bytes: &[u8], ranges: &[Range<usize>]) -> Self {
         let consolidated_records =
             crate::wire::records::consolidated_records_in_ranges(bytes, ranges.iter().cloned());
-        Self::decode_with_records(bytes, &consolidated_records, &mut crate::nurbs::LaneRefusals::new())
+        Self::decode_with_records(
+            bytes,
+            &consolidated_records,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
     }
 
     /// Decode CATIA-native records from descriptor-scoped logical sources.

@@ -822,7 +822,9 @@ pub(super) enum CompositeCurveError {
         end: f64,
     },
     /// A child still carries a degree below the composite degree.
-    #[error("child {child} states degree {degree} after elevation to the composite degree {composite}")]
+    #[error(
+        "child {child} states degree {degree} after elevation to the composite degree {composite}"
+    )]
     ChildDegreeMismatch {
         /// Position of the child in the composite.
         child: usize,

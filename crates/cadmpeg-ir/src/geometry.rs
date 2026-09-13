@@ -2560,7 +2560,6 @@ impl TryFrom<TSplineSurfaceConstructionWire> for TSplineSurfaceConstruction {
             wire.discontinuity_flag,
             wire.cache,
         )
-
     }
 }
 

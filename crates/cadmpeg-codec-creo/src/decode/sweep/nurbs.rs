@@ -886,7 +886,11 @@ mod tests {
         assert!(first.is_none(), "the refused ruling states no surface");
         assert!(second.is_none(), "the refused ruling states no surface");
         let records = refusal.take_records();
-        assert_eq!(records.len(), 2, "one record per refused ruling: {records:?}");
+        assert_eq!(
+            records.len(),
+            2,
+            "one record per refused ruling: {records:?}"
+        );
         for record in &records {
             assert!(
                 record.starts_with("creo extruded NURBS surface record: "),

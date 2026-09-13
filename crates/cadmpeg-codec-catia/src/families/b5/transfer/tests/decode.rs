@@ -24,7 +24,8 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
         ],
     );
     append_b5_record(&mut stream, 0x5d, 901, &[0x81, 0x81, 0x04]);
-    crate::families::b5::graph::parse(&stream, &mut crate::nurbs::LaneRefusals::new()).expect("generated B5 topology");
+    crate::families::b5::graph::parse(&stream, &mut crate::nurbs::LaneRefusals::new())
+        .expect("generated B5 topology");
     let file = object_main_catpart(&stream);
     assert_eq!(
         crate::container::scan_bytes(file.clone()).variant,
@@ -133,8 +134,8 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
 #[test]
 fn decode_float_packed_stream_transfers_a_complete_native_vertex_chain() {
     let stream = b5_closed_triangle_stream_with_native_vertex_chain();
-    let graph =
-        crate::families::b5::graph::parse(&stream, &mut crate::nurbs::LaneRefusals::new()).expect("generated B5 topology");
+    let graph = crate::families::b5::graph::parse(&stream, &mut crate::nurbs::LaneRefusals::new())
+        .expect("generated B5 topology");
     assert!(graph.complete);
     assert_eq!(graph.vertex_incidence_links.len(), 3);
     assert_eq!(graph.parameter_incidences.len(), 3);
@@ -197,7 +198,8 @@ fn decode_float_packed_stream_transfers_topology_under_decimal_object_ids() {
         ],
     );
     append_b5_record(&mut stream, 0x5d, 901, &[0x81, 0x81, 0x04]);
-    crate::families::b5::graph::parse(&stream, &mut crate::nurbs::LaneRefusals::new()).expect("generated B5 topology");
+    crate::families::b5::graph::parse(&stream, &mut crate::nurbs::LaneRefusals::new())
+        .expect("generated B5 topology");
 
     let result = CatiaCodec
         .decode(
