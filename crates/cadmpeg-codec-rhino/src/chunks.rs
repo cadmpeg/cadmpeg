@@ -264,9 +264,7 @@ impl<'a> BoundedReader<'a> {
 
     /// Skips exactly `count` bytes.
     pub(crate) fn skip(&mut self, count: usize) -> Result<(), FramingError> {
-        self.need(count)?;
-        self.view.skip(count).expect("length checked");
-        Ok(())
+        self.take(count).map(|_| ())
     }
 
     /// Skips the unread suffix of this bounded payload.
@@ -280,54 +278,6 @@ impl<'a> BoundedReader<'a> {
         let count = self.remaining();
         self.skip(count)?;
         Ok(count)
-    }
-
-    /// Reads a byte.
-    pub(crate) fn u8(&mut self) -> Result<u8, FramingError> {
-        self.need(1)?;
-        Ok(self.view.u8().expect("length checked"))
-    }
-
-    /// Reads a little-endian unsigned 32-bit value.
-    pub(crate) fn u32(&mut self) -> Result<u32, FramingError> {
-        self.need(4)?;
-        Ok(self.view.u32_le().expect("length checked"))
-    }
-
-    /// Reads a little-endian signed 32-bit value.
-    pub(crate) fn i32(&mut self) -> Result<i32, FramingError> {
-        self.need(4)?;
-        Ok(self.view.i32_le().expect("length checked"))
-    }
-
-    /// Reads a little-endian unsigned 64-bit value.
-    pub(crate) fn u64(&mut self) -> Result<u64, FramingError> {
-        self.need(8)?;
-        Ok(self.view.u64_le().expect("length checked"))
-    }
-
-    /// Reads a little-endian signed 64-bit value.
-    pub(crate) fn i64(&mut self) -> Result<i64, FramingError> {
-        self.need(8)?;
-        Ok(self.view.i64_le().expect("length checked"))
-    }
-
-    /// Reads a little-endian signed 16-bit value.
-    pub(crate) fn i16(&mut self) -> Result<i16, FramingError> {
-        self.need(2)?;
-        Ok(self.view.i16_le().expect("length checked"))
-    }
-
-    /// Reads a little-endian unsigned 16-bit value.
-    pub(crate) fn u16(&mut self) -> Result<u16, FramingError> {
-        self.need(2)?;
-        Ok(self.view.u16_le().expect("length checked"))
-    }
-
-    /// Reads a little-endian IEEE-754 binary64 value.
-    pub(crate) fn f64(&mut self) -> Result<f64, FramingError> {
-        self.need(8)?;
-        Ok(self.view.f64_le().expect("length checked"))
     }
 
     /// Reads an archive boolean encoded as one byte.
@@ -358,40 +308,75 @@ impl<'a> BoundedReader<'a> {
         Ok(value != 0)
     }
 
-    /// Reads a little-endian IEEE-754 binary32 value.
-    pub(crate) fn f32(&mut self) -> Result<f32, FramingError> {
-        self.need(4)?;
-        Ok(self.view.f32_le().expect("length checked"))
-    }
-
     /// Returns a bounded slice and advances the cursor.
+    ///
+    /// The read is the bound: the slice it answers is `count` bytes long, so
+    /// no caller restates the length it already asked for.
     pub(crate) fn take(&mut self, count: usize) -> Result<&'a [u8], FramingError> {
-        self.need(count)?;
-        Ok(self.view.take(count).expect("length checked"))
+        let offset = self.view.position();
+        match self.view.take(count) {
+            Some(bytes) => Ok(bytes),
+            None => Err(self.short_read(offset, count)),
+        }
     }
 
     /// Reads a fixed-width byte array.
     pub(crate) fn array<const N: usize>(&mut self) -> Result<[u8; N], FramingError> {
-        self.need(N)?;
-        Ok(self.view.array().expect("array length checked"))
+        let offset = self.view.position();
+        match self.view.array() {
+            Some(bytes) => Ok(bytes),
+            None => Err(self.short_read(offset, N)),
+        }
     }
 
-    fn need(&self, count: usize) -> Result<(), FramingError> {
-        let offset = self.view.position();
-        let end = offset
-            .checked_add(count)
-            .ok_or(FramingError::Overflow { offset })?;
-        if end > self.view.end() {
-            Err(FramingError::OutOfBounds {
+    /// The framing failure for a read of `count` bytes at `offset` that does
+    /// not fit this reader's bound.
+    fn short_read(&self, offset: usize, count: usize) -> FramingError {
+        match offset.checked_add(count) {
+            Some(end) => FramingError::OutOfBounds {
                 offset,
                 end,
                 bound: self.view.end(),
-            })
-        } else {
-            Ok(())
+            },
+            None => FramingError::Overflow { offset },
         }
     }
 }
+
+/// The fixed-width little-endian readers, each answering the value its bound
+/// proved.
+macro_rules! bounded_readers {
+    ($(($name:ident, $probe:ident, $ty:ty, $size:literal)),* $(,)?) => {
+        impl BoundedReader<'_> {
+            $(
+                #[doc = concat!(
+                    "Reads a little-endian `",
+                    stringify!($ty),
+                    "` from the bounded payload."
+                )]
+                pub(crate) fn $name(&mut self) -> Result<$ty, FramingError> {
+                    let offset = self.view.position();
+                    match self.view.$probe() {
+                        Some(value) => Ok(value),
+                        None => Err(self.short_read(offset, $size)),
+                    }
+                }
+            )*
+        }
+    };
+}
+
+bounded_readers!(
+    (u8, u8, u8, 1),
+    (i16, i16_le, i16, 2),
+    (u16, u16_le, u16, 2),
+    (i32, i32_le, i32, 4),
+    (u32, u32_le, u32, 4),
+    (i64, i64_le, i64, 8),
+    (u64, u64_le, u64, 8),
+    (f32, f32_le, f32, 4),
+    (f64, f64_le, f64, 8),
+);
 
 /// Checks an untrusted signed count before converting it or allocating.
 pub(crate) fn checked_count_bytes(

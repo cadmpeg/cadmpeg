@@ -225,9 +225,7 @@ pub(crate) struct DefinitionDiagnostic {
 }
 
 fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
-    Ok(Uuid::from_wire(
-        reader.take(16)?.try_into().expect("length checked"),
-    ))
+    Ok(Uuid::from_wire(reader.array()?))
 }
 
 fn finish(reader: &mut BoundedReader<'_>, _label: &str) -> Result<(), FramingError> {

@@ -755,13 +755,11 @@ pub(crate) fn utf16(reader: &mut BoundedReader<'_>) -> Result<String, FramingErr
 }
 
 fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
-    Ok(Uuid::from_wire(
-        reader.take(16)?.try_into().expect("length checked"),
-    ))
+    Ok(Uuid::from_wire(reader.array()?))
 }
 
 fn color(reader: &mut BoundedReader<'_>) -> Result<[u8; 4], FramingError> {
-    Ok(reader.take(4)?.try_into().expect("length checked"))
+    reader.array()
 }
 
 fn parse_layer_extensions(
@@ -2349,34 +2347,26 @@ pub(crate) fn parse_setting(
             Ok(())
         }
         CURRENT_MATERIAL => {
-            if record.body().len() < 8 {
+            let mut body = BoundedReader::new(data, record.body().start, record.body().end)?;
+            let (Ok(value), Ok(source)) = (body.i32(), body.i32()) else {
                 return Err(FramingError::Structural {
                     offset: record.range.start,
                     message: "current material must be a long eight-byte index/source pair"
                         .to_string(),
                 });
-            }
-            let material_index =
-                View::i32_le_at(data, record.body().start).expect("length checked");
-            settings.current_material = Some(SettingSelection {
-                value: material_index,
-                source: View::i32_le_at(data, record.body().start + 4).expect("length checked"),
-            });
+            };
+            settings.current_material = Some(SettingSelection { value, source });
             Ok(())
         }
         CURRENT_COLOR => {
-            if record.body().len() < 8 {
+            let mut body = BoundedReader::new(data, record.body().start, record.body().end)?;
+            let (Ok(value), Ok(source)) = (body.array::<4>(), body.i32()) else {
                 return Err(FramingError::Structural {
                     offset: record.range.start,
                     message: "current color must be a long color/source pair".to_string(),
                 });
-            }
-            settings.current_color = Some(SettingSelection {
-                value: data[record.body().start..record.body().start + 4]
-                    .try_into()
-                    .expect("length checked"),
-                source: View::i32_le_at(data, record.body().start + 4).expect("length checked"),
-            });
+            };
+            settings.current_color = Some(SettingSelection { value, source });
             Ok(())
         }
         CURRENT_WIRE_DENSITY => {
