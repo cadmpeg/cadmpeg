@@ -58,7 +58,12 @@ cadmpeg-codec-iges = { path = "crates/cadmpeg-codec-iges", version = "0.6.0" }
 cadmpeg-codec-step = { path = "crates/cadmpeg-codec-step", version = "0.6.0" }
 cadmpeg-codec-sat = { path = "crates/cadmpeg-codec-sat", version = "0.6.0" }
 
-serde = { version = "1", features = ["derive"] }
+# 1.0.229 is the floor, not a preference: serde_derive gained the
+# collected_deny_unknown_fields epilogue there, which is what makes
+# deny_unknown_fields refuse beside a flattened field. Seventeen wire
+# types in cadmpeg-ir and cadmpeg-core depend on that refusal, and an
+# older 1.x makes every one of them an inert deny with no compile error.
+serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip", "raw_value"] }
 serde-value = "0.7"
 schemars = "1.2"
