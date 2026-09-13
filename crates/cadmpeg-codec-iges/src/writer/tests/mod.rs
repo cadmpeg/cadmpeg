@@ -52,7 +52,8 @@ fn rejects_mixed_unclassified_bounded_surface_representation() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let model_only_loop_id = decoded.ir().model.faces[0]
         .loops
-        .first()
+        .iter()
+        .next()
         .expect("a decoded face states a loop")
         .clone();
     {
@@ -835,7 +836,7 @@ fn face_loop_order_places_the_explicit_outer_loop_first() {
         surface: SurfaceId::mint("test:model:surface#surface").expect("valid identity"),
         sense: Sense::Forward,
         loops: cadmpeg_ir::topology::FaceLoops::classified(
-            Some(outer_id.clone()),
+            outer_id.clone(),
             vec![inner_id.clone()],
         ),
         name: None,

@@ -51,7 +51,7 @@ fn bounded_plane_builds_a_sheet_face_in_v4_and_v5() {
             .model
             .loops
             .iter()
-            .find(|loop_| Some(&loop_.id) == face.loops.first())
+            .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
             .unwrap();
         assert_eq!(
             loop_.boundary_role_in(&result.ir().model.faces),

@@ -1747,11 +1747,13 @@ fn plane_face_draft(
         shell: shell_id.clone(),
         surface: crate::ids::surface(&crate::ids::Stem::directory(surface_sequence)),
         sense: Sense::Forward,
-        loops: {
-            // The source states the outer boundary first.
-            let mut ids = loop_ids;
-            let outer = (!ids.is_empty()).then(|| ids.remove(0));
-            cadmpeg_ir::topology::FaceLoops::classified(outer, ids)
+        loops: match loop_ids.split_first() {
+            // The bounded plane states its bounding curve as the outer
+            // boundary, first and in its own field.
+            Some((outer, inner)) => {
+                cadmpeg_ir::topology::FaceLoops::classified(outer.clone(), inner.to_vec())
+            }
+            None => cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
         },
         name: None,
         color: None,

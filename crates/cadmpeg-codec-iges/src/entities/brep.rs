@@ -1158,7 +1158,7 @@ pub(super) fn project(
                     loops: match face_definition.loops {
                         FaceLoopPointers::OuterFirst { outer, inner } => {
                             cadmpeg_ir::topology::FaceLoops::classified(
-                                Some(loop_id_for(outer)),
+                                loop_id_for(outer),
                                 inner.into_iter().map(loop_id_for).collect(),
                             )
                         }
