@@ -105,7 +105,7 @@ pub(crate) fn transfer(
                 || payload.property.clone(),
                 |property| property.owner.clone(),
             );
-        let source_object = cadmpeg_ir::products::NonEmptyString::new(source_object)
+        let source_object = cadmpeg_ir::products::NonBlankString::new(source_object)
             .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?;
         let mut builder = Builder::new(payload, tables, source_object)?;
         builder.emit_pcurves(ir)?;
@@ -204,7 +204,7 @@ struct Builder<'a> {
     body_scope: Transform,
     root_discriminator: Option<usize>,
     current_body: Option<BodyId>,
-    source_object: cadmpeg_ir::products::NonEmptyString,
+    source_object: cadmpeg_ir::products::NonBlankString,
     source_indices: HashMap<(TextShapeKind, SourceOccurrenceKey), usize>,
     occurrences: Vec<TopologyOccurrence>,
     losses: Vec<LossNote>,
@@ -214,7 +214,7 @@ impl<'a> Builder<'a> {
     fn new(
         payload: &'a ShapePayloadRecord,
         tables: Tables<'a>,
-        source_object: cadmpeg_ir::products::NonEmptyString,
+        source_object: cadmpeg_ir::products::NonBlankString,
     ) -> Result<Self, CodecError> {
         let source_indices = source_topology_indices(tables)?;
         Ok(Self {

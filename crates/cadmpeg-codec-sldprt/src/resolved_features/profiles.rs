@@ -1071,7 +1071,7 @@ pub(crate) fn project_marker_backed_sketches(
             let inferred_points = std::cell::OnceCell::new();
             let mut projected = Vec::new();
             for marker in markers.iter().copied() {
-                let native_kind = cadmpeg_ir::nonempty_literal!(
+                let native_kind = cadmpeg_ir::nonblank_literal!(
                     "sldprt:marker-geometry:{}",
                     marker.kind().native_code()
                 );

@@ -2040,7 +2040,7 @@ fn targets(
     let mut seen = BTreeSet::new();
     let mut targets = Vec::new();
     for source_id in ids.into_iter().filter(|id| seen.insert(id.clone())) {
-        let source_id = cadmpeg_ir::products::NonEmptyString::new(source_id)?;
+        let source_id = cadmpeg_ir::products::NonBlankString::new(source_id)?;
         let Some(feature) = feature_index.get(source_id.as_str()) else {
             targets.push(PmiTarget::ShapeAspect { source_id });
             continue;

@@ -649,7 +649,9 @@ fn generated_skin_surface_decodes_recursive_spline_law() {
     ));
     assert_eq!(construction.direction.z, 1.0);
     assert_eq!(construction.trailing_parameter, 0.75);
-    assert_eq!(construction.formula.name(), "skin-law");
+    assert!(
+        matches!(&construction.formula, cadmpeg_ir::geometry::LawFormula::Named { name, .. } if name.as_str() == "skin-law")
+    );
     assert!(matches!(
         construction.formula.variables(),
         [LawExpression::Spline {
@@ -713,14 +715,14 @@ fn generated_law_surfaces_decode_and_round_trip_modern_and_legacy_layouts() {
             construction.parameter_ranges,
             legacy_ranges.then_some([[-1.0, 2.0], [-3.0, 4.0]])
         );
-        assert_eq!(construction.primary.name(), "primary-law");
+        assert!(matches!(&construction.primary, cadmpeg_ir::geometry::LawFormula::Named { name, .. } if name.as_str() == "primary-law"));
         assert!(matches!(
             construction.primary.variables(),
             [LawExpression::Algebraic { operator, operands }]
                 if operator == "SET" && operands.len() == 1
         ));
         assert_eq!(construction.additional.len(), 1);
-        assert_eq!(construction.additional[0].name(), "aux-law");
+        assert!(matches!(&construction.additional[0], cadmpeg_ir::geometry::LawFormula::Named { name, .. } if name.as_str() == "aux-law"));
         assert!(matches!(
             construction.additional[0].variables(),
             [LawExpression::Algebraic { operator, operands }]

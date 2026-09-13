@@ -1298,7 +1298,7 @@ pub(super) fn source_object(
 ) -> Result<SourceObjectAssociation, cadmpeg_core::CodecError> {
     Ok(SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Iges,
-        object_id: cadmpeg_ir::products::NonEmptyString::new(
+        object_id: cadmpeg_ir::products::NonBlankString::new(
             SourceObjectId::new(entry.sequence).text(),
         )
         .ok_or_else(|| cadmpeg_core::CodecError::malformed("source object_id must not be empty"))?,

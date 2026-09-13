@@ -9,7 +9,7 @@ fn cacheless_law_differential_applies_algebraic_product_rule() {
         operands: vec![
             LawExpression::Double { value: 2.0 },
             LawExpression::Text {
-                value: crate::nonempty_literal!("X"),
+                value: crate::nonblank_literal!("X"),
             },
         ],
     };
@@ -25,7 +25,7 @@ fn cacheless_law_differential_applies_elementary_functions_and_composition() {
         operands: vec![
             LawExpression::Double { value: 2.0 },
             LawExpression::Text {
-                value: crate::nonempty_literal!("X"),
+                value: crate::nonblank_literal!("X"),
             },
         ],
     };
@@ -43,7 +43,7 @@ fn cacheless_law_differential_applies_elementary_functions_and_composition() {
             LawExpression::Algebraic {
                 operator: "COS".into(),
                 operands: vec![LawExpression::Text {
-                    value: crate::nonempty_literal!("X"),
+                    value: crate::nonblank_literal!("X"),
                 }],
             },
             inner,
@@ -60,7 +60,7 @@ fn cacheless_law_differential_rejects_undefined_domains() {
     let absolute = LawExpression::Algebraic {
         operator: "ABS".into(),
         operands: vec![LawExpression::Text {
-            value: crate::nonempty_literal!("X"),
+            value: crate::nonblank_literal!("X"),
         }],
     };
     assert!(scalar_sweep_law_differential(&absolute, 0.0).is_none());
@@ -68,7 +68,7 @@ fn cacheless_law_differential_rejects_undefined_domains() {
     let inverse = LawExpression::Algebraic {
         operator: "ARCSIN".into(),
         operands: vec![LawExpression::Text {
-            value: crate::nonempty_literal!("X"),
+            value: crate::nonblank_literal!("X"),
         }],
     };
     assert!(scalar_sweep_law_differential(&inverse, 1.0).is_none());
@@ -146,7 +146,7 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
                         Vector3::new(0.0, 0.0, 1.0),
                     ],
                     first_law: Box::new(LawExpression::Text {
-                        value: crate::nonempty_literal!("2.0*X"),
+                        value: crate::nonblank_literal!("2.0*X"),
                     }),
                     first_mode: 0,
                     first_range: [0.0, 1.0],
@@ -157,11 +157,11 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
                     path_parameter: 0.0,
                     second_law_flag: true,
                     second_law: Box::new(LawExpression::Text {
-                        value: crate::nonempty_literal!("VEC(2,1,1)"),
+                        value: crate::nonblank_literal!("VEC(2,1,1)"),
                     }),
                     formula_mode: 0,
                     formula: LawFormula::Named {
-                        name: crate::nonempty_literal!(
+                        name: crate::nonblank_literal!(
                             "ROTATE(DOMAIN(VEC(1,0,0),0,1),TRANS1)"
                         ),
                         variables: vec![LawExpression::TransformVec {
@@ -247,7 +247,7 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
         );
         if let SweepSurfaceLayout::LawDriven { first_law, .. } = &mut native.layout {
             **first_law = LawExpression::Text {
-                value: crate::nonempty_literal!("unsupported-law"),
+                value: crate::nonblank_literal!("unsupported-law"),
             };
         } else {
             unreachable!()

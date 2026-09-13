@@ -35,10 +35,10 @@ fn thread_scope_decodes_standard_size_and_face_group() {
     let expected = DesignThreadConstruction {
         form: DesignThreadForm::Standard,
         designation_offset: 38,
-        designation: cadmpeg_ir::NonEmptyString::new("M30x3.5").unwrap(),
+        designation: cadmpeg_ir::NonBlankString::new("M30x3.5").unwrap(),
         nominal_size: crate::records::feature::DesignThreadNominalSize::try_from("30.0".to_owned())
             .expect("nominal size"),
-        profile: cadmpeg_ir::NonEmptyString::new("ISO Metric profile").unwrap(),
+        profile: cadmpeg_ir::NonBlankString::new("ISO Metric profile").unwrap(),
         pitch: crate::records::feature::DesignPositiveScalar::new(0.35).unwrap(),
         face_group_record_indices: vec![988],
         diameters: crate::records::feature::DesignThreadDiameters::new(2.97345, 2.5732, 2.7568)
@@ -130,10 +130,10 @@ fn thread_scope_decodes_class_334_legacy_standard_tail() {
     let expected = DesignThreadConstruction {
         form: DesignThreadForm::StandardLegacy,
         designation_offset: 38,
-        designation: cadmpeg_ir::NonEmptyString::new("M7x1").unwrap(),
+        designation: cadmpeg_ir::NonBlankString::new("M7x1").unwrap(),
         nominal_size: crate::records::feature::DesignThreadNominalSize::try_from("7.0".to_owned())
             .expect("nominal size"),
-        profile: cadmpeg_ir::NonEmptyString::new("ISO Metric profile").unwrap(),
+        profile: cadmpeg_ir::NonBlankString::new("ISO Metric profile").unwrap(),
         pitch: crate::records::feature::DesignPositiveScalar::new(0.1).unwrap(),
         face_group_record_indices: vec![988],
         diameters: crate::records::feature::DesignThreadDiameters::new(0.71472, 0.60355, 0.64255)
@@ -222,10 +222,10 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
     let expected = DesignThreadConstruction {
         form: DesignThreadForm::Compact(None),
         designation_offset: 38,
-        designation: cadmpeg_ir::NonEmptyString::new("M3.5x0.6").unwrap(),
+        designation: cadmpeg_ir::NonBlankString::new("M3.5x0.6").unwrap(),
         nominal_size: crate::records::feature::DesignThreadNominalSize::try_from("3.5".to_owned())
             .expect("nominal size"),
-        profile: cadmpeg_ir::NonEmptyString::new("GB Metric profile").unwrap(),
+        profile: cadmpeg_ir::NonBlankString::new("GB Metric profile").unwrap(),
         pitch: crate::records::feature::DesignPositiveScalar::new(0.06).unwrap(),
         face_group_record_indices: vec![988],
         diameters: crate::records::feature::DesignThreadDiameters::new(0.35995, 0.293, 0.3166)
@@ -330,12 +330,12 @@ fn thread_scope_decodes_class_414_legacy_compact_tail() {
     let expected = DesignThreadConstruction {
         form: DesignThreadForm::CompactLegacy,
         designation_offset: 38,
-        designation: cadmpeg_ir::NonEmptyString::new("M190x8").unwrap(),
+        designation: cadmpeg_ir::NonBlankString::new("M190x8").unwrap(),
         nominal_size: crate::records::feature::DesignThreadNominalSize::try_from(
             "190.0".to_owned(),
         )
         .expect("nominal size"),
-        profile: cadmpeg_ir::NonEmptyString::new("ISO Metric profile").unwrap(),
+        profile: cadmpeg_ir::NonBlankString::new("ISO Metric profile").unwrap(),
         pitch: crate::records::feature::DesignPositiveScalar::new(0.8).unwrap(),
         face_group_record_indices: vec![988],
         diameters: crate::records::feature::DesignThreadDiameters::new(

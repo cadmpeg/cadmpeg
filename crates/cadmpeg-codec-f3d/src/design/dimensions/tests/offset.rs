@@ -442,10 +442,10 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
     let mut operands = sources
         .iter()
         .map(|entity| SketchNativeOperand {
-            native_kind: cadmpeg_ir::products::NonEmptyString::new("curve")
+            native_kind: cadmpeg_ir::products::NonBlankString::new("curve")
                 .expect("source operand kind is nonempty"),
             field: Some(cadmpeg_ir::sketches::NativeOperandField {
-                name: cadmpeg_ir::products::NonEmptyString::new("locus")
+                name: cadmpeg_ir::products::NonBlankString::new("locus")
                     .expect("source field name is nonempty"),
                 role: Some(1),
             }),
@@ -454,10 +454,10 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
         })
         .chain(results.iter().map(|entity| {
             SketchNativeOperand {
-                native_kind: cadmpeg_ir::products::NonEmptyString::new("curve")
+                native_kind: cadmpeg_ir::products::NonBlankString::new("curve")
                     .expect("source operand kind is nonempty"),
                 field: Some(cadmpeg_ir::sketches::NativeOperandField {
-                    name: cadmpeg_ir::products::NonEmptyString::new("locus")
+                    name: cadmpeg_ir::products::NonBlankString::new("locus")
                         .expect("source field name is nonempty"),
                     role: Some(0),
                 }),
@@ -467,10 +467,10 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
         }))
         .collect::<Vec<_>>();
     operands.push(SketchNativeOperand {
-        native_kind: cadmpeg_ir::products::NonEmptyString::new("record")
+        native_kind: cadmpeg_ir::products::NonBlankString::new("record")
             .expect("source operand kind is nonempty"),
         field: Some(cadmpeg_ir::sketches::NativeOperandField {
-            name: cadmpeg_ir::products::NonEmptyString::new("owner")
+            name: cadmpeg_ir::products::NonBlankString::new("owner")
                 .expect("source field name is nonempty"),
             role: Some(0),
         }),
@@ -479,10 +479,10 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
     });
     operands.extend(sources.iter().zip(&results).flat_map(|(source, result)| {
         [source, result].map(|entity| SketchNativeOperand {
-            native_kind: cadmpeg_ir::products::NonEmptyString::new("curve")
+            native_kind: cadmpeg_ir::products::NonBlankString::new("curve")
                 .expect("source operand kind is nonempty"),
             field: Some(cadmpeg_ir::sketches::NativeOperandField {
-                name: cadmpeg_ir::products::NonEmptyString::new("return")
+                name: cadmpeg_ir::products::NonBlankString::new("return")
                     .expect("source field name is nonempty"),
                 role: None,
             }),
@@ -575,7 +575,7 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
     )
     .is_none());
     let mut wrong_operand_kind = operands.clone();
-    wrong_operand_kind[0].native_kind = cadmpeg_ir::products::NonEmptyString::new("point").unwrap();
+    wrong_operand_kind[0].native_kind = cadmpeg_ir::products::NonBlankString::new("point").unwrap();
     assert!(spatial_counted_offset_dimension_definition(
         "Linear Dimension-1",
         Some(0x20),

@@ -666,7 +666,7 @@ pub struct Expression {
     /// Directory entry containing the OM section.
     pub source_entry: String,
     /// Self-contained expression table selected by the nearest preceding table marker.
-    pub source_table: cadmpeg_ir::NonEmptyString,
+    pub source_table: cadmpeg_ir::NonBlankString,
     /// Absolute file offset of the expression text.
     pub source_offset: u64,
 }
@@ -754,7 +754,7 @@ impl TryFrom<ExpressionWire> for Expression {
             expression: wire.expression,
             value: wire.value.map(FiniteValue::try_from).transpose()?,
             source_entry: wire.source_entry,
-            source_table: cadmpeg_ir::NonEmptyString::new(wire.source_table)
+            source_table: cadmpeg_ir::NonBlankString::new(wire.source_table)
                 .ok_or("source_table must not be empty")?,
             source_offset: wire.source_offset,
         })
@@ -4055,7 +4055,7 @@ pub fn expressions(container: &Container) -> Vec<Expression> {
             let value = expression
                 .constant_value()
                 .and_then(|value| FiniteValue::try_from(value).ok());
-            let Some(source_table) = cadmpeg_ir::NonEmptyString::new(format!(
+            let Some(source_table) = cadmpeg_ir::NonBlankString::new(format!(
                 "nx:om-entry-{entry_index}:expression-table#{table_offset}"
             )) else {
                 continue;
@@ -4215,7 +4215,7 @@ mod tests {
                 crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
             }),
             source_entry: "part".into(),
-            source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+            source_table: cadmpeg_ir::NonBlankString::new("nx:test:expression-table#table")
                 .unwrap(),
             source_offset: 0,
         };
@@ -4254,7 +4254,7 @@ mod tests {
                 crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
             }),
             source_entry: "part".into(),
-            source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+            source_table: cadmpeg_ir::NonBlankString::new("nx:test:expression-table#table")
                 .unwrap(),
             source_offset: 0,
         };
@@ -4294,7 +4294,7 @@ mod tests {
                 crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
             }),
             source_entry: "part".into(),
-            source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+            source_table: cadmpeg_ir::NonBlankString::new("nx:test:expression-table#table")
                 .unwrap(),
             source_offset: 0,
         };
@@ -4334,7 +4334,7 @@ mod tests {
                     crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
                 }),
                 source_entry: "part".into(),
-                source_table: cadmpeg_ir::NonEmptyString::new(table).unwrap(),
+                source_table: cadmpeg_ir::NonBlankString::new(table).unwrap(),
                 source_offset: 0,
             }
         };
@@ -4399,7 +4399,7 @@ mod tests {
                     crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
                 }),
                 source_entry: "part".into(),
-                source_table: cadmpeg_ir::NonEmptyString::new(table).unwrap(),
+                source_table: cadmpeg_ir::NonBlankString::new(table).unwrap(),
                 source_offset: 0,
             }
         };
@@ -4493,7 +4493,7 @@ mod tests {
                     crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
                 }),
                 source_entry: "part".into(),
-                source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+                source_table: cadmpeg_ir::NonBlankString::new("nx:test:expression-table#table")
                     .unwrap(),
                 source_offset: 0,
             }
@@ -4570,7 +4570,7 @@ mod tests {
                 crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
             }),
             source_entry: "/Root/UG_PART/UG_PART".into(),
-            source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+            source_table: cadmpeg_ir::NonBlankString::new("nx:test:expression-table#table")
                 .unwrap(),
             source_offset: u64::from(key),
         };
@@ -4608,7 +4608,7 @@ mod tests {
             expression: text.into(),
             value: None,
             source_entry: "/Root/UG_PART/UG_PART".into(),
-            source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+            source_table: cadmpeg_ir::NonBlankString::new("nx:test:expression-table#table")
                 .unwrap(),
             source_offset: u64::from(key),
         };
@@ -4646,7 +4646,7 @@ mod tests {
                         crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
                     }),
                     source_entry: "/Root/UG_PART/UG_PART".into(),
-                    source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+                    source_table: cadmpeg_ir::NonBlankString::new("nx:test:expression-table#table")
                         .unwrap(),
                     source_offset: u64::from(key),
                 }
@@ -4730,7 +4730,7 @@ mod tests {
                 expression: text.into(),
                 value: None,
                 source_entry: "/Root/UG_PART/UG_PART".into(),
-                source_table: cadmpeg_ir::NonEmptyString::new(table).unwrap(),
+                source_table: cadmpeg_ir::NonBlankString::new(table).unwrap(),
                 source_offset,
             };
         let expressions = [
@@ -4853,7 +4853,7 @@ mod tests {
             expression: text.to_string(),
             value: None,
             source_entry: "part".to_string(),
-            source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+            source_table: cadmpeg_ir::NonBlankString::new("nx:test:expression-table#table")
                 .unwrap(),
             source_offset,
         };
@@ -4904,7 +4904,7 @@ mod tests {
             expression: text.to_string(),
             value: None,
             source_entry: "part".to_string(),
-            source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+            source_table: cadmpeg_ir::NonBlankString::new("nx:test:expression-table#table")
                 .unwrap(),
             source_offset,
         };
@@ -5001,7 +5001,7 @@ mod tests {
             expression: "5".to_string(),
             value: Some(crate::native::om::finite_value::FiniteValue::try_from(5.0).unwrap()),
             source_entry: "part".to_string(),
-            source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+            source_table: cadmpeg_ir::NonBlankString::new("nx:test:expression-table#table")
                 .unwrap(),
             source_offset: 20,
         };
@@ -5036,7 +5036,7 @@ mod tests {
             expression: "5".to_string(),
             value: Some(crate::native::om::finite_value::FiniteValue::try_from(5.0).unwrap()),
             source_entry: "part".to_string(),
-            source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+            source_table: cadmpeg_ir::NonBlankString::new("nx:test:expression-table#table")
                 .unwrap(),
             source_offset: 10,
         };
@@ -5087,7 +5087,7 @@ mod tests {
             expression: "5".to_string(),
             value: Some(crate::native::om::finite_value::FiniteValue::try_from(5.0).unwrap()),
             source_entry: "part".to_string(),
-            source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+            source_table: cadmpeg_ir::NonBlankString::new("nx:test:expression-table#table")
                 .unwrap(),
             source_offset: 20,
         };
@@ -5174,7 +5174,7 @@ mod tests {
             expression: "12".to_string(),
             value: Some(crate::native::om::finite_value::FiniteValue::try_from(12.0).unwrap()),
             source_entry: "/Root/UG_PART/UG_PART".to_string(),
-            source_table: cadmpeg_ir::NonEmptyString::new("nx:test:expression-table#table")
+            source_table: cadmpeg_ir::NonBlankString::new("nx:test:expression-table#table")
                 .unwrap(),
             source_offset: 900,
         };

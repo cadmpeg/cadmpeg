@@ -98,7 +98,7 @@ fn native_entity(sketch: &SketchId, id: &str, native_ref: &str) -> SketchEntity 
         SketchEntityId::mint(id).unwrap(),
         sketch.clone(),
         SketchGeometry::native(
-            cadmpeg_ir::products::NonEmptyString::new("native-circle")
+            cadmpeg_ir::products::NonBlankString::new("native-circle")
                 .expect("nonempty source identity"),
         ),
     )

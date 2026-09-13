@@ -404,7 +404,7 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
         byte_offset: 0,
         state_offset: 100,
         owner_reference: 1,
-        owner_entity_id: Some(cadmpeg_ir::NonEmptyString::new("0_1").unwrap()),
+        owner_entity_id: Some(cadmpeg_ir::NonBlankString::new("0_1").unwrap()),
         auxiliary_references: crate::records::ReferenceRun::located(vec![
             crate::records::Located {
                 value: 0,

@@ -2841,7 +2841,7 @@ pub(crate) fn bind_sketch_graph(
                 ))
             })?;
         relation.owner_entity_id =
-            Some(cadmpeg_ir::NonEmptyString::new(*owner).ok_or_else(|| {
+            Some(cadmpeg_ir::NonBlankString::new(*owner).ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "Fusion sketch relation {} has an empty owner_entity_id",
                     relation.record_index,

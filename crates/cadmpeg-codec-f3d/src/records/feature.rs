@@ -3235,11 +3235,11 @@ pub struct DesignThreadConstruction {
     /// Byte offset of the designation LP-UTF16 field.
     pub designation_offset: u64,
     /// Standard thread designation.
-    pub designation: cadmpeg_ir::NonEmptyString,
+    pub designation: cadmpeg_ir::NonBlankString,
     /// Validated nominal-size spelling; its numeric value is derived on read.
     pub nominal_size: DesignThreadNominalSize,
     /// Thread profile name.
-    pub profile: cadmpeg_ir::NonEmptyString,
+    pub profile: cadmpeg_ir::NonBlankString,
     /// Ordered physical thread diameters in Design length units.
     pub diameters: DesignThreadDiameters,
     /// Thread pitch in Design length units.
@@ -3434,9 +3434,9 @@ impl TryFrom<DesignThreadConstructionWire> for DesignThreadConstruction {
         Ok(Self {
             form,
             designation_offset: value.designation_offset,
-            designation: cadmpeg_ir::NonEmptyString::new(value.designation).ok_or("designation must not be empty")?,
+            designation: cadmpeg_ir::NonBlankString::new(value.designation).ok_or("designation must not be empty")?,
             nominal_size,
-            profile: cadmpeg_ir::NonEmptyString::new(value.profile).ok_or("profile must not be empty")?,
+            profile: cadmpeg_ir::NonBlankString::new(value.profile).ok_or("profile must not be empty")?,
             diameters: DesignThreadDiameters::new(value.major_diameter, value.minor_diameter, value.pitch_diameter)
                 .ok_or("major_diameter, minor_diameter, and pitch_diameter must be positive finite and strictly ordered")?,
             pitch: DesignPositiveScalar::new(value.pitch).ok_or("pitch must be positive finite")?,

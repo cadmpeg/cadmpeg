@@ -486,7 +486,7 @@ fn a_law_formula_names_its_variant_with_a_tag() {
     );
 
     let named = crate::geometry::LawFormula::Named {
-        name: crate::nonempty_literal!("distance-law"),
+        name: crate::nonblank_literal!("distance-law"),
         variables: vec![crate::geometry::LawExpression::Double { value: 2.0 }],
     };
     let named_wire = serde_json::to_value(&named).unwrap();

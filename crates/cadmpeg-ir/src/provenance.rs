@@ -134,7 +134,7 @@ pub struct SourceObjectAssociation {
     pub format: CodecFormat,
     /// Native source object identifier.
     #[serde(deserialize_with = "deserialize_object_id")]
-    pub object_id: crate::products::NonEmptyString,
+    pub object_id: crate::products::NonBlankString,
     /// Effective source object name, when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -154,7 +154,7 @@ pub struct SourceObjectAssociation {
 
 crate::units::named_field!(
     deserialize_object_id,
-    crate::products::NonEmptyString,
+    crate::products::NonBlankString,
     "object_id"
 );
 

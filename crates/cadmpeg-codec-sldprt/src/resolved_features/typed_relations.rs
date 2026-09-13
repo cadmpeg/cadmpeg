@@ -31,7 +31,7 @@ use super::{
 use crate::records::{SketchInputEntity, SketchInputKind, SketchInputLink};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point2;
-use cadmpeg_ir::nonempty_literal;
+use cadmpeg_ir::nonblank_literal;
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchEntity, SketchEntityId,
     SketchGeometryDefinition, SketchId, SketchLocus, SketchNativeOperand,
@@ -308,20 +308,20 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             .links()
             .iter()
             .map(|link| SketchNativeOperand {
-                native_kind: nonempty_literal!("sldprt:marker-local-id"),
+                native_kind: nonblank_literal!("sldprt:marker-local-id"),
                 field: None,
                 object_index: Some(u32::from(link.local_id)),
                 native_ref: Some(link.entity_ref.clone()),
             })
             .collect::<Vec<_>>();
         operands.extend(owners.into_iter().map(|owner| SketchNativeOperand {
-            native_kind: nonempty_literal!("sldprt:marker-constraint-owner"),
+            native_kind: nonblank_literal!("sldprt:marker-constraint-owner"),
             field: None,
             object_index: owner.object_index().or(owner.local_id()),
             native_ref: Some(owner.id().to_string()),
         }));
         SketchConstraintDefinitionInput::Native {
-            native_kind: nonempty_literal!(
+            native_kind: nonblank_literal!(
                 "sldprt:marker-relation:{}",
                 marker.kind().native_code()
             ),

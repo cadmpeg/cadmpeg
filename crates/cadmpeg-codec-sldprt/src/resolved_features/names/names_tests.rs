@@ -50,17 +50,17 @@ fn operand_kind_names_preserve_wire_spelling() {
 
 #[test]
 fn marker_literals_keep_their_wire_spelling() {
-    use cadmpeg_ir::nonempty_literal;
+    use cadmpeg_ir::nonblank_literal;
     assert_eq!(
-        nonempty_literal!("sldprt:marker-local-id").as_str(),
+        nonblank_literal!("sldprt:marker-local-id").as_str(),
         "sldprt:marker-local-id"
     );
     assert_eq!(
-        nonempty_literal!("sldprt:marker-relation:{}", 34).as_str(),
+        nonblank_literal!("sldprt:marker-relation:{}", 34).as_str(),
         "sldprt:marker-relation:34"
     );
     assert_eq!(
-        nonempty_literal!("sldprt:marker-geometry:{}", 2).as_str(),
+        nonblank_literal!("sldprt:marker-geometry:{}", 2).as_str(),
         "sldprt:marker-geometry:2"
     );
 }

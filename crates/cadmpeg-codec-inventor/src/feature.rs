@@ -10,7 +10,7 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::FeatureResultTopologyId;
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::products::NonEmptyString;
+use cadmpeg_ir::products::NonBlankString;
 use cadmpeg_ir::sketches::Sketch;
 use cadmpeg_ir::{
     features::{
@@ -284,7 +284,7 @@ pub(crate) struct PmDcFeatureLabelPayload {
     pub(crate) header: PmDcLinkedHeader,
     pub(crate) index: u32,
     pub(crate) participants: PmDcReferenceList,
-    name: NonEmptyString,
+    name: NonBlankString,
     class_id: ClassId,
 }
 
@@ -306,7 +306,7 @@ impl TryFrom<PmDcFeatureLabelPayloadWire> for PmDcFeatureLabelPayload {
             header: wire.header,
             index: wire.index,
             participants: wire.participants,
-            name: NonEmptyString::new(wire.name).ok_or("name must not be empty")?,
+            name: NonBlankString::new(wire.name).ok_or("name must not be empty")?,
             class_id: ClassId::try_from(wire.class_id)?,
         })
     }
@@ -1541,7 +1541,7 @@ fn feature_result(
         .map(|reference| {
             let body = resolve_property(&source.identity.segment_token, reference.index, index)?;
             matches!(body.kind, PmDcFeaturePropertyKind::SurfaceBody { .. })
-                .then(|| cadmpeg_ir::products::NonEmptyString::new(body.id()))
+                .then(|| cadmpeg_ir::products::NonBlankString::new(body.id()))
                 .flatten()
         })
         .collect::<Option<Vec<_>>>()?;

@@ -10,7 +10,7 @@ use crate::ids::{
     VertexId,
 };
 use crate::math::{Point2, Point3, Vector3};
-use crate::products::{JointId, NonEmptyString};
+use crate::products::{JointId, NonBlankString};
 use crate::scalar::{
     Angle, FiniteReal, Fraction, InteriorAngle, Length, NonNegativeLength, NonZeroLength,
     NonZeroReal, PositiveAngle, PositiveLength, PositiveReal, SlopeAngle,
@@ -1509,22 +1509,22 @@ pub enum SelectionMember {
     /// A feature-local body identity.
     Body {
         /// Feature-local identity.
-        id: NonEmptyString,
+        id: NonBlankString,
     },
     /// A feature-local face identity.
     Face {
         /// Feature-local identity.
-        id: NonEmptyString,
+        id: NonBlankString,
     },
     /// A feature-local edge identity.
     Edge {
         /// Feature-local identity.
-        id: NonEmptyString,
+        id: NonBlankString,
     },
     /// A feature-local vertex identity.
     Vertex {
         /// Feature-local identity.
-        id: NonEmptyString,
+        id: NonBlankString,
     },
 }
 
@@ -1538,10 +1538,10 @@ pub enum SelectionMember {
     into = "Vec<SelectionMember>"
 )]
 struct FeatureResultMembers {
-    bodies: Vec<NonEmptyString>,
-    faces: Vec<NonEmptyString>,
-    edges: Vec<NonEmptyString>,
-    vertices: Vec<NonEmptyString>,
+    bodies: Vec<NonBlankString>,
+    faces: Vec<NonBlankString>,
+    edges: Vec<NonBlankString>,
+    vertices: Vec<NonBlankString>,
 }
 
 /// Refusal for a feature result member list.
@@ -1651,10 +1651,10 @@ impl FeatureResultTopology {
     pub fn new(
         id: FeatureResultTopologyId,
         output_of: FeatureId,
-        bodies: Vec<NonEmptyString>,
-        faces: Vec<NonEmptyString>,
-        edges: Vec<NonEmptyString>,
-        vertices: Vec<NonEmptyString>,
+        bodies: Vec<NonBlankString>,
+        faces: Vec<NonBlankString>,
+        edges: Vec<NonBlankString>,
+        vertices: Vec<NonBlankString>,
         native_ref: Option<String>,
     ) -> Result<Self, FeatureResultMemberError> {
         let members = FeatureResultMembers {
@@ -1673,19 +1673,19 @@ impl FeatureResultTopology {
     }
 
     /// Feature-local body identities.
-    pub fn bodies(&self) -> &[NonEmptyString] {
+    pub fn bodies(&self) -> &[NonBlankString] {
         &self.members.bodies
     }
     /// Feature-local face identities.
-    pub fn faces(&self) -> &[NonEmptyString] {
+    pub fn faces(&self) -> &[NonBlankString] {
         &self.members.faces
     }
     /// Feature-local edge identities.
-    pub fn edges(&self) -> &[NonEmptyString] {
+    pub fn edges(&self) -> &[NonBlankString] {
         &self.members.edges
     }
     /// Feature-local vertex identities.
-    pub fn vertices(&self) -> &[NonEmptyString] {
+    pub fn vertices(&self) -> &[NonBlankString] {
         &self.members.vertices
     }
 }
@@ -2625,7 +2625,7 @@ pub enum FeatureOperation {
     HelixNativeAxis {
         /// Source-native record carrying the unresolved construction axis.
         #[serde(deserialize_with = "deserialize_local_axis_native_ref")]
-        axis_native_ref: NonEmptyString,
+        axis_native_ref: NonBlankString,
         /// Signed total rise along the axis.
         #[serde(alias = "radius")]
         axial_rise: Length,
@@ -5223,7 +5223,7 @@ pub enum EdgeSelection {
         edges: SelectionMembers<HistoricalEdgeId>,
         /// Format-native selection reference.
         #[serde(deserialize_with = "deserialize_selection_native")]
-        native: NonEmptyString,
+        native: NonBlankString,
     },
     /// Proven historical edges plus source operands whose edge identity is unresolved.
     /// `edges` is empty when the input state is known but no member identity resolves.
@@ -5238,7 +5238,7 @@ pub enum EdgeSelection {
         unresolved: NativeSelections,
         /// Format-native group selection reference.
         #[serde(deserialize_with = "deserialize_selection_native")]
-        native: NonEmptyString,
+        native: NonBlankString,
     },
     /// Edges in intermediate regenerated feature results, paired with the
     /// format-native selection required for rewrite.
@@ -5315,7 +5315,7 @@ pub enum VertexSelection {
         vertex: HistoricalVertexId,
         /// Format-native persistent selection reference.
         #[serde(deserialize_with = "deserialize_selection_native")]
-        native: NonEmptyString,
+        native: NonBlankString,
     },
     /// Format-native selection reference.
     Native(#[serde(deserialize_with = "deserialize_selection_native")] SelectionReference),
@@ -5351,7 +5351,7 @@ pub enum FaceSelection {
         faces: SelectionMembers<HistoricalFaceId>,
         /// Format-native selection reference.
         #[serde(deserialize_with = "deserialize_selection_native")]
-        native: NonEmptyString,
+        native: NonBlankString,
     },
     /// Historical faces proven for part of a native selection.
     HistoricalPartial {
@@ -5365,7 +5365,7 @@ pub enum FaceSelection {
         unresolved: NativeSelections,
         /// Format-native selection reference.
         #[serde(deserialize_with = "deserialize_selection_native")]
-        native: NonEmptyString,
+        native: NonBlankString,
     },
     /// Faces in an intermediate regenerated feature result, paired with the
     /// format-native selection required for rewrite.
@@ -5473,7 +5473,7 @@ impl VertexSelection {
         Ok(Self::Historical {
             state,
             vertex,
-            native: NonEmptyString::new(native).ok_or(BodySelectionError::BlankNativeMember)?,
+            native: NonBlankString::new(native).ok_or(BodySelectionError::BlankNativeMember)?,
         })
     }
 
@@ -5493,7 +5493,7 @@ impl EdgeSelection {
         Ok(Self::Historical {
             state,
             edges: edges.try_into()?,
-            native: NonEmptyString::new(native).ok_or(BodySelectionError::BlankNativeMember)?,
+            native: NonBlankString::new(native).ok_or(BodySelectionError::BlankNativeMember)?,
         })
     }
 
@@ -5510,7 +5510,7 @@ impl EdgeSelection {
                 .try_into()
                 .map_err(|_| BodySelectionError::RepeatedBody)?,
             unresolved: unresolved.try_into()?,
-            native: NonEmptyString::new(native).ok_or(BodySelectionError::BlankNativeMember)?,
+            native: NonBlankString::new(native).ok_or(BodySelectionError::BlankNativeMember)?,
         })
     }
 
@@ -5536,7 +5536,7 @@ impl FaceSelection {
         Ok(Self::Historical {
             state,
             faces: faces.try_into()?,
-            native: NonEmptyString::new(native).ok_or(BodySelectionError::BlankNativeMember)?,
+            native: NonBlankString::new(native).ok_or(BodySelectionError::BlankNativeMember)?,
         })
     }
 
@@ -5553,7 +5553,7 @@ impl FaceSelection {
                 .try_into()
                 .map_err(|_| BodySelectionError::RepeatedBody)?,
             unresolved: unresolved.try_into()?,
-            native: NonEmptyString::new(native).ok_or(BodySelectionError::BlankNativeMember)?,
+            native: NonBlankString::new(native).ok_or(BodySelectionError::BlankNativeMember)?,
         })
     }
 
@@ -6419,7 +6419,7 @@ pub enum FaceMaker {
     /// Builds overlapping, nested, or non-planar faces.
     Unified,
     /// Retains an extension face-maker class.
-    Other(NonEmptyString),
+    Other(NonBlankString),
 }
 
 impl FaceMaker {
@@ -6432,7 +6432,7 @@ impl FaceMaker {
             "Part::FaceMakerExtrusion" => Self::Extrusion,
             "Part::FaceMakerBullseye" => Self::Bullseye,
             "Part::FaceMakerUnified" => Self::Unified,
-            _ => Self::Other(NonEmptyString::new(class)?),
+            _ => Self::Other(NonBlankString::new(class)?),
         })
     }
 
@@ -7597,7 +7597,7 @@ pub struct BinderSource {
     /// Ordered native subelement selectors; empty selects the complete object.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[serde(deserialize_with = "deserialize_local_subelements")]
-    pub subelements: Vec<NonEmptyString>,
+    pub subelements: Vec<NonBlankString>,
 }
 
 /// Resolved or externally scoped binder target.
@@ -7615,16 +7615,16 @@ pub enum BinderTarget {
     External {
         /// Source document identity.
         #[serde(deserialize_with = "deserialize_local_document")]
-        document: NonEmptyString,
+        document: NonBlankString,
         /// Object identity within the source document.
         #[serde(deserialize_with = "deserialize_local_object")]
-        object: NonEmptyString,
+        object: NonBlankString,
     },
     /// Source-native target identity that cannot be resolved further.
     Native {
         /// Opaque source-native target identity.
         #[serde(deserialize_with = "deserialize_local_reference")]
-        reference: NonEmptyString,
+        reference: NonBlankString,
     },
 }
 
@@ -7887,7 +7887,7 @@ pub enum LoftSection {
 pub enum LoftPointSection {
     /// Source-native point-selection record whose position is not resolved.
     #[serde(rename = "native_point")]
-    Native(#[serde(deserialize_with = "deserialize_local_value")] NonEmptyString),
+    Native(#[serde(deserialize_with = "deserialize_local_value")] NonBlankString),
     /// Solved model-space point section.
     Point(FinitePoint3),
     /// Solved B-rep vertex section.
@@ -7959,7 +7959,7 @@ pub enum PathRef {
         edges: SelectionMembers<HistoricalEdgeId>,
         /// Full-fidelity source path selection.
         #[serde(deserialize_with = "deserialize_selection_native")]
-        native: NonEmptyString,
+        native: NonBlankString,
     },
 }
 
@@ -8094,7 +8094,7 @@ impl PathRef {
         Ok(Self::HistoricalEdges {
             state,
             edges: edges.try_into()?,
-            native: NonEmptyString::new(native).ok_or(BodySelectionError::BlankNativeMember)?,
+            native: NonBlankString::new(native).ok_or(BodySelectionError::BlankNativeMember)?,
         })
     }
 }

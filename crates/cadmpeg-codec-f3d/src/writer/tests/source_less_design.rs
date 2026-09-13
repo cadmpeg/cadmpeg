@@ -935,7 +935,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         native.sketch_relations[0]
             .owner_entity_id
             .as_ref()
-            .map(cadmpeg_ir::NonEmptyString::as_str),
+            .map(cadmpeg_ir::NonBlankString::as_str),
         Some("0_277")
     );
     assert_eq!(native.sketch_relations[0].definition.state(), 0x11);

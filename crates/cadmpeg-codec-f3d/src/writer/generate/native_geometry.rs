@@ -2363,10 +2363,13 @@ fn native_law_formula(
     target: &CadIr,
     formula: &cadmpeg_ir::geometry::LawFormula,
 ) -> Result<(), CodecError> {
-    native_length_prefixed_string(bytes, formula.name())?;
-    let cadmpeg_ir::geometry::LawFormula::Named { variables, .. } = formula else {
+    let cadmpeg_ir::geometry::LawFormula::Named { name, variables } = formula else {
+        // The native stream spells the null law with its own token; the IR
+        // states the variant and carries no such text.
+        native_length_prefixed_string(bytes, "null_law")?;
         return Ok(());
     };
+    native_length_prefixed_string(bytes, name.as_str())?;
     native_i64(
         bytes,
         i64::try_from(variables.len())

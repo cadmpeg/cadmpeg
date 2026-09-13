@@ -1017,7 +1017,7 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
             FeatureResultTopologyId::mint("synthetic:test:feature-result-topology#producer")
                 .expect("valid identity"),
             producer.clone(),
-            vec![crate::nonempty_literal!("body#declared")],
+            vec![crate::nonblank_literal!("body#declared")],
             Vec::new(),
             Vec::new(),
             Vec::new(),

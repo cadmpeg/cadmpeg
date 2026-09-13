@@ -5,7 +5,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::products::NonEmptyString;
+use crate::products::NonBlankString;
 
 crate::ids::id_type!(
     /// Stable identity of one document asset.
@@ -56,7 +56,7 @@ pub enum AssetContent {
     External {
         /// Stable external resource identifier or URI.
         #[serde(deserialize_with = "deserialize_uri")]
-        uri: NonEmptyString,
+        uri: NonBlankString,
     },
 }
 
@@ -69,10 +69,10 @@ pub struct Asset {
     pub id: AssetId,
     /// Source display name or basename.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub name: Option<NonEmptyString>,
+    pub name: Option<NonBlankString>,
     /// IANA media type when identified from the source container.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub media_type: Option<NonEmptyString>,
+    pub media_type: Option<NonBlankString>,
     /// Embedded bytes or an external resource location.
     pub content: AssetContent,
     /// Full-fidelity source record or container-entry identity.
@@ -82,8 +82,8 @@ pub struct Asset {
 
 fn deserialize_uri<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
-) -> Result<NonEmptyString, D::Error> {
-    NonEmptyString::new(String::deserialize(deserializer)?)
+) -> Result<NonBlankString, D::Error> {
+    NonBlankString::new(String::deserialize(deserializer)?)
         .ok_or_else(|| serde::de::Error::custom("asset uri must not be empty"))
 }
 
@@ -109,12 +109,12 @@ impl Asset {
     ) -> Result<Self, String> {
         let name = name
             .map(|name| {
-                NonEmptyString::new(name).ok_or_else(|| "asset name must not be empty".to_owned())
+                NonBlankString::new(name).ok_or_else(|| "asset name must not be empty".to_owned())
             })
             .transpose()?;
         let media_type = media_type
             .map(|media_type| {
-                NonEmptyString::new(media_type)
+                NonBlankString::new(media_type)
                     .ok_or_else(|| "asset media_type must not be empty".to_owned())
             })
             .transpose()?;

@@ -2222,11 +2222,11 @@ impl From<SubtypeTableIndex> for i64 {
 )]
 pub struct InlineTSplineSubtransform {
     /// Line-oriented topology and geometry program.
-    pub program: crate::products::NonEmptyString,
+    pub program: crate::products::NonBlankString,
     /// Optional native separator boolean.
     pub separator: Option<bool>,
     /// Companion values program.
-    pub values: crate::products::NonEmptyString,
+    pub values: crate::products::NonBlankString,
 }
 
 #[derive(Deserialize)]
@@ -2261,10 +2261,10 @@ impl InlineTSplineSubtransform {
         values: impl Into<String>,
     ) -> Result<Self, &'static str> {
         Ok(Self {
-            program: crate::products::NonEmptyString::new(program)
+            program: crate::products::NonBlankString::new(program)
                 .ok_or("T-spline program must not be empty")?,
             separator,
-            values: crate::products::NonEmptyString::new(values)
+            values: crate::products::NonBlankString::new(values)
                 .ok_or("T-spline values must not be empty")?,
         })
     }
@@ -4845,7 +4845,7 @@ pub enum LawFormula {
     /// Named formula and its ordered recursive variables.
     Named {
         /// Native formula name.
-        name: crate::products::NonEmptyString,
+        name: crate::products::NonBlankString,
         /// Ordered recursive variables.
         variables: Vec<LawExpression>,
     },
@@ -4927,7 +4927,7 @@ pub enum LawExpression {
     /// Serializer-preserved textual law expression.
     Text {
         /// Exact text stored in the native law slot.
-        value: crate::products::NonEmptyString,
+        value: crate::products::NonBlankString,
     },
     /// Tagged integer constant.
     Integer {

@@ -215,7 +215,7 @@ pub(in super::super) fn transfer_sketches(
                     .flatten()
                     .or_else(|| {
                         Some(SketchGeometry::native(
-                            cadmpeg_ir::products::NonEmptyString::new("line".to_string())?,
+                            cadmpeg_ir::products::NonBlankString::new("line".to_string())?,
                         ))
                     });
             }
@@ -492,7 +492,7 @@ pub(in super::super) fn transfer_sketches(
                     id,
                     sketch_id.clone(),
                     SketchGeometry::native(
-                        cadmpeg_ir::products::NonEmptyString::new(
+                        cadmpeg_ir::products::NonBlankString::new(
                             match solver_only_section_entity_family(definition, external_id) {
                                 Some(SectionEntityIncidenceFamily::Point) => "point",
                                 Some(SectionEntityIncidenceFamily::BoundedCurve) => "bounded_curve",

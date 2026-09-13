@@ -984,10 +984,10 @@ fn feature_result_topology_round_trips_without_current_model_bodies() {
     let state = FeatureResultTopology::new(
         FeatureResultTopologyId::mint("synthetic:history-result:state#0").expect("valid identity"),
         FeatureId::mint("synthetic:model:feature#0").expect("identity grammar"),
-        vec![crate::nonempty_literal!("body:17")],
-        vec![crate::nonempty_literal!("face:3")],
-        vec![crate::nonempty_literal!("edge:5")],
-        vec![crate::nonempty_literal!("vertex:8")],
+        vec![crate::nonblank_literal!("body:17")],
+        vec![crate::nonblank_literal!("face:3")],
+        vec![crate::nonblank_literal!("edge:5")],
+        vec![crate::nonblank_literal!("vertex:8")],
         Some("native:result#0".into()),
     )
     .unwrap();

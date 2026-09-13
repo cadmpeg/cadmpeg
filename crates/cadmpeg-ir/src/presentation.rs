@@ -304,7 +304,7 @@ pub enum PresentationItem {
     Source {
         /// Stable source item identity.
         #[serde(deserialize_with = "deserialize_source_id")]
-        source_id: crate::products::NonEmptyString,
+        source_id: crate::products::NonBlankString,
     },
 }
 
@@ -354,7 +354,7 @@ crate::units::named_field!(
 
 crate::units::named_field!(
     deserialize_source_id,
-    crate::products::NonEmptyString,
+    crate::products::NonBlankString,
     "source_id"
 );
 
@@ -425,7 +425,7 @@ mod tests {
             description: None,
             visible: None,
             items: vec![PresentationItem::Source {
-                source_id: crate::products::NonEmptyString::prefixed('#', 42),
+                source_id: crate::nonblank_literal!("#{}", 42),
             }],
         });
 
@@ -441,7 +441,7 @@ mod tests {
             description: None,
             visible: None,
             items: vec![PresentationItem::Source {
-                source_id: crate::products::NonEmptyString::prefixed('#', 42),
+                source_id: crate::nonblank_literal!("#{}", 42),
             }],
         });
 
@@ -478,7 +478,7 @@ mod tests {
         )
         .expect_err("empty source_id");
         assert!(error.to_string().contains("source_id"));
-        assert!(crate::products::NonEmptyString::new("").is_none());
+        assert!(crate::products::NonBlankString::new("").is_none());
     }
 
     #[test]

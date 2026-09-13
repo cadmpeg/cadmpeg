@@ -2,7 +2,7 @@
 //! `UFRx` document states and their owned child records.
 
 use crate::native::digest::Sha256Hex;
-use cadmpeg_ir::products::NonEmptyString;
+use cadmpeg_ir::products::NonBlankString;
 
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
 use serde::{de::Error as _, Deserialize, Serialize};
@@ -53,9 +53,9 @@ pub(crate) enum UfrxRecord {
 )]
 pub(crate) struct UfrxRepresentationRecord {
     pub(crate) prefix: u16,
-    pub(crate) active_representation: Option<(NonEmptyString, NonEmptyString)>,
+    pub(crate) active_representation: Option<(NonBlankString, NonBlankString)>,
     pub(crate) secondary_active_lod_state: [u16; 2],
-    pub(crate) active_model_state: NonEmptyString,
+    pub(crate) active_model_state: NonBlankString,
     pub(crate) active_model_state_state: [u16; 2],
 }
 
@@ -97,8 +97,8 @@ impl TryFrom<UfrxRepresentationRecordWire> for UfrxRepresentationRecord {
             match (wire.active_representation, wire.active_representation_kind) {
                 (None, None) => None,
                 (Some(name), Some(kind)) => Some((
-                    NonEmptyString::new(name).ok_or("active_representation must not be empty")?,
-                    NonEmptyString::new(kind)
+                    NonBlankString::new(name).ok_or("active_representation must not be empty")?,
+                    NonBlankString::new(kind)
                         .ok_or("active_representation_kind must not be empty")?,
                 )),
                 _ => return Err(
@@ -110,7 +110,7 @@ impl TryFrom<UfrxRepresentationRecordWire> for UfrxRepresentationRecord {
             prefix: wire.prefix,
             active_representation,
             secondary_active_lod_state: wire.secondary_active_lod_state,
-            active_model_state: NonEmptyString::new(wire.active_model_state)
+            active_model_state: NonBlankString::new(wire.active_model_state)
                 .ok_or("active_model_state must not be empty")?,
             active_model_state_state: wire.active_model_state_state,
         })
@@ -126,7 +126,7 @@ pub(crate) struct UfrxModelStateRecord {
     pub(crate) id: String,
     pub(crate) ordinal: u32,
     pub(crate) prefix: u8,
-    name: NonEmptyString,
+    name: NonBlankString,
     pub(crate) state: [u16; 2],
     pub(crate) prefix_count: u32,
     pub(crate) parameters: Vec<UfrxModelStateParameterRecord>,
@@ -156,7 +156,7 @@ impl TryFrom<UfrxModelStateRecordWire> for UfrxModelStateRecord {
             id: wire.id,
             ordinal: wire.ordinal,
             prefix: wire.prefix,
-            name: NonEmptyString::new(wire.name).ok_or("name must not be empty")?,
+            name: NonBlankString::new(wire.name).ok_or("name must not be empty")?,
             state: wire.state,
             prefix_count: wire.prefix_count,
             parameters: wire.parameters,
@@ -479,11 +479,11 @@ impl TryFrom<ExternalReferenceRecordWire> for ExternalReferenceRecord {
         let document_id = wire
             .document_id
             .filter(|value| !value.chars().all(|character| character == '0'))
-            .and_then(NonEmptyString::new);
+            .and_then(NonBlankString::new);
         Ok(Self {
             id: wire.id,
             ordinal: wire.ordinal,
-            identity: match NonEmptyString::new(wire.path) {
+            identity: match NonBlankString::new(wire.path) {
                 Some(path) => ExternalReferenceIdentity::Path { path, document_id },
                 None => ExternalReferenceIdentity::DocumentId(
                     document_id.ok_or("path or a nonzero document_id is required")?,
@@ -536,10 +536,10 @@ impl From<ExternalReferenceRecord> for ExternalReferenceRecordWire {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ExternalReferenceIdentity {
     Path {
-        path: NonEmptyString,
-        document_id: Option<NonEmptyString>,
+        path: NonBlankString,
+        document_id: Option<NonBlankString>,
     },
-    DocumentId(NonEmptyString),
+    DocumentId(NonBlankString),
 }
 
 impl ExternalReferenceRecord {

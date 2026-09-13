@@ -20,7 +20,7 @@ fn sketch_constraint_completeness_distinguishes_neutral_and_native_semantics() {
     ));
     assert!(!sketch_constraint_has_complete_neutral_semantics(
         &SketchConstraintDefinitionInput::Native {
-            native_kind: cadmpeg_ir::products::NonEmptyString::new("unresolved").unwrap(),
+            native_kind: cadmpeg_ir::products::NonBlankString::new("unresolved").unwrap(),
             native_state: None,
             native_flags: None,
             native_properties: BTreeMap::new(),
@@ -37,7 +37,7 @@ fn sketch_constraint_completeness_distinguishes_neutral_and_native_semantics() {
     ));
     assert!(!spatial_sketch_constraint_has_complete_neutral_semantics(
         &SpatialSketchConstraintDefinitionInput::Native {
-            native_kind: cadmpeg_ir::products::NonEmptyString::new("unresolved").unwrap(),
+            native_kind: cadmpeg_ir::products::NonBlankString::new("unresolved").unwrap(),
             native_state: None,
             parameter: None,
             operands: Vec::new(),
@@ -55,11 +55,11 @@ fn native_spatial_sketch_constraints_are_reported_as_design_losses() {
             sketch: SpatialSketchId::mint("synthetic:test:id#spatial-sketch").unwrap(),
             definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::try_from(
                 SpatialSketchConstraintDefinitionInput::Native {
-                    native_kind: cadmpeg_ir::products::NonEmptyString::new("unresolved").unwrap(),
+                    native_kind: cadmpeg_ir::products::NonBlankString::new("unresolved").unwrap(),
                     native_state: None,
                     parameter: None,
                     operands: vec![cadmpeg_ir::sketches::SketchNativeOperand {
-                        native_kind: cadmpeg_ir::products::NonEmptyString::new("entity").unwrap(),
+                        native_kind: cadmpeg_ir::products::NonBlankString::new("entity").unwrap(),
                         field: None,
                         object_index: Some(1),
                         native_ref: None,

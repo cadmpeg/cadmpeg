@@ -461,7 +461,7 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
     ("crates/cadmpeg-ir/src/pmi.rs", "PmiMagnitude", "keyless"),
     (
         "crates/cadmpeg-ir/src/products.rs",
-        "NonEmptyString",
+        "NonBlankString",
         "keyless",
     ),
     (

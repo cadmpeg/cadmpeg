@@ -90,10 +90,10 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                     .items
                     .iter()
                     .map(|item| SketchNativeOperand {
-                        native_kind: cadmpeg_ir::products::NonEmptyString::new("skamp_ptr")
+                        native_kind: cadmpeg_ir::products::NonBlankString::new("skamp_ptr")
                             .expect("source operand kind is nonempty"),
                         field: Some(NativeOperandField {
-                            name: cadmpeg_ir::products::NonEmptyString::new("items.entity_id")
+                            name: cadmpeg_ir::products::NonBlankString::new("items.entity_id")
                                 .expect("source field name is nonempty"),
                             role: Some(item.sense),
                         }),
@@ -103,10 +103,10 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                     .collect::<Vec<_>>();
                 if let Some(equation_id) = joined_equation_id {
                     operands.push(SketchNativeOperand {
-                        native_kind: cadmpeg_ir::products::NonEmptyString::new("triples_ptr")
+                        native_kind: cadmpeg_ir::products::NonBlankString::new("triples_ptr")
                             .expect("source operand kind is nonempty"),
                         field: Some(NativeOperandField {
-                            name: cadmpeg_ir::products::NonEmptyString::new("equation_id")
+                            name: cadmpeg_ir::products::NonBlankString::new("equation_id")
                                 .expect("source field name is nonempty"),
                             role: None,
                         }),
@@ -115,7 +115,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                     });
                 }
                 Some(SketchConstraintDefinitionInput::Native {
-                    native_kind: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    native_kind: cadmpeg_ir::products::NonBlankString::new(format!(
                         "creo:skamp:{}",
                         skamp.kind
                     ))?,

@@ -3740,7 +3740,7 @@ fn attach_feature_operations(
                             format_args!("{key}-{:010}", write.ordinal),
                         ),
                         id.clone(),
-                        vec![cadmpeg_ir::nonempty_literal!(
+                        vec![cadmpeg_ir::nonblank_literal!(
                             "nx:feature-history:body-identity#{:010}",
                             write.frame.body_identity()
                         )],
@@ -3819,9 +3819,9 @@ fn attach_feature_operations(
 
 #[derive(Clone, Default, PartialEq, Eq)]
 struct FeatureResultGroupMembers {
-    faces: Vec<cadmpeg_ir::products::NonEmptyString>,
-    edges: Vec<cadmpeg_ir::products::NonEmptyString>,
-    vertices: Vec<cadmpeg_ir::products::NonEmptyString>,
+    faces: Vec<cadmpeg_ir::products::NonBlankString>,
+    edges: Vec<cadmpeg_ir::products::NonBlankString>,
+    vertices: Vec<cadmpeg_ir::products::NonBlankString>,
 }
 
 fn operation_body_write_result_group_members(
@@ -3894,13 +3894,13 @@ fn feature_result_group_members(
             continue;
         };
         match family {
-            GroupNodeFamily::Face => result.faces.push(cadmpeg_ir::nonempty_literal!(
+            GroupNodeFamily::Face => result.faces.push(cadmpeg_ir::nonblank_literal!(
                 "nx:s{partition_stream_ordinal}:face#{xmt}"
             )),
-            GroupNodeFamily::Edge => result.edges.push(cadmpeg_ir::nonempty_literal!(
+            GroupNodeFamily::Edge => result.edges.push(cadmpeg_ir::nonblank_literal!(
                 "nx:s{partition_stream_ordinal}:edge#{xmt}"
             )),
-            GroupNodeFamily::Vertex => result.vertices.push(cadmpeg_ir::nonempty_literal!(
+            GroupNodeFamily::Vertex => result.vertices.push(cadmpeg_ir::nonblank_literal!(
                 "nx:s{partition_stream_ordinal}:vertex#{xmt}"
             )),
             _ => {}
@@ -3915,14 +3915,14 @@ fn feature_result_group_members(
 fn native_result_body_identity(
     primary: Option<&crate::native::features::FeatureBodyReference>,
     boolean: Option<&crate::native::features::FeatureBooleanOperation>,
-) -> Option<(cadmpeg_ir::products::NonEmptyString, String)> {
+) -> Option<(cadmpeg_ir::products::NonBlankString, String)> {
     primary
         .map(|writer| (writer.id.clone(), writer.id.clone()))
         .or_else(|| {
             boolean.map(|operation| (format!("{}:target", operation.id), operation.id.clone()))
         })
         .and_then(|(local, native)| {
-            Some((cadmpeg_ir::products::NonEmptyString::new(local)?, native))
+            Some((cadmpeg_ir::products::NonBlankString::new(local)?, native))
         })
 }
 
@@ -4022,7 +4022,7 @@ fn attach_sketch_graph(
                         format_args!("coordinate-pair-{pair_key}"),
                     )?,
                     sketch_id.clone(),
-                    SketchGeometry::native(cadmpeg_ir::products::NonEmptyString::new(
+                    SketchGeometry::native(cadmpeg_ir::products::NonBlankString::new(
                         "nx-coordinate-pair",
                     )?),
                 )
@@ -4297,7 +4297,7 @@ fn native_fixed_point_entities(
                     format_args!("fixed-point-{point_key}"),
                 )?,
                 sketch_id.clone(),
-                SketchGeometry::native(cadmpeg_ir::products::NonEmptyString::new(
+                SketchGeometry::native(cadmpeg_ir::products::NonBlankString::new(
                     "nx-fixed-point",
                 )?),
             )

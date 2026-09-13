@@ -987,7 +987,7 @@ fn append_native_provider(
         id: id.clone(),
         object: object
             .map(|object| {
-                cadmpeg_ir::products::NonEmptyString::new(object).ok_or_else(|| {
+                cadmpeg_ir::products::NonBlankString::new(object).ok_or_else(|| {
                     CodecError::Malformed("GUI provider object must not be empty".into())
                 })
             })
@@ -3608,7 +3608,7 @@ fn transfer_shape_appearances(
         let Some(object_id) = provider
             .object
             .as_ref()
-            .map(cadmpeg_ir::products::NonEmptyString::as_str)
+            .map(cadmpeg_ir::products::NonBlankString::as_str)
         else {
             continue;
         };

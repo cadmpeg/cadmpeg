@@ -207,7 +207,7 @@ fn nx_hole_completeness_checks_nested_auxiliary_semantics() {
     use cadmpeg_ir::features::{HoleSpecification, HoleThreadDepth, ThreadHand};
 
     let invalid_specification = HoleSpecification::Threaded {
-        standard: cadmpeg_ir::NonEmptyString::new(" ").unwrap(),
+        standard: cadmpeg_ir::NonBlankString::new(" ").unwrap(),
         designation: None,
         class: None,
         modeled: false,
@@ -534,7 +534,7 @@ fn nx_selection_completeness_requires_nonempty_unique_identities() {
         curve
     ])));
     assert!(loft_section_is_incomplete(&LoftSection::Point(
-        LoftPointSection::Native(cadmpeg_ir::NonEmptyString::new("nx:point-selection#0").unwrap(),)
+        LoftPointSection::Native(cadmpeg_ir::NonBlankString::new("nx:point-selection#0").unwrap(),)
     )));
     assert!(!loft_section_is_incomplete(&LoftSection::Point(
         LoftPointSection::Point(
@@ -608,7 +608,7 @@ fn nx_loft_completeness_checks_native_point_sections_and_centerlines() {
     ir.model.features[0].evaluation.set_definition(definition(
         vec![
             LoftSection::Point(LoftPointSection::Native(
-                cadmpeg_ir::NonEmptyString::new("nx:point#0").unwrap(),
+                cadmpeg_ir::NonBlankString::new("nx:point#0").unwrap(),
             )),
             LoftSection::Point(LoftPointSection::Point(
                 cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 1.0)).unwrap(),
@@ -810,7 +810,7 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
             FeatureResultTopologyId::mint("test:model:feature-result#extrude")
                 .expect("identity grammar"),
             ir.model.features[0].id.clone(),
-            vec![cadmpeg_ir::nonempty_literal!("test:feature-local-body#0")],
+            vec![cadmpeg_ir::nonblank_literal!("test:feature-local-body#0")],
             Vec::new(),
             Vec::new(),
             Vec::new(),
@@ -1087,7 +1087,7 @@ fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
         entity_id.clone(),
         sketch_id.clone(),
         SketchGeometry::native(
-            cadmpeg_ir::products::NonEmptyString::new("test").expect("nonempty source identity"),
+            cadmpeg_ir::products::NonBlankString::new("test").expect("nonempty source identity"),
         ),
     ));
     ir.model.sketch_constraints.push(SketchConstraint {
@@ -1095,7 +1095,7 @@ fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
         sketch: sketch_id,
         definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
             SketchConstraintDefinitionInput::Native {
-                native_kind: cadmpeg_ir::products::NonEmptyString::new("test").unwrap(),
+                native_kind: cadmpeg_ir::products::NonBlankString::new("test").unwrap(),
                 entities: vec![entity_id],
                 parameter: None,
                 operands: Vec::new(),

@@ -1433,7 +1433,7 @@ fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
                         Vector3::new(0.0, 0.0, 1.0),
                     ],
                     first_law: Box::new(LawExpression::Text {
-                        value: crate::nonempty_literal!("2.0*X"),
+                        value: crate::nonblank_literal!("2.0*X"),
                     }),
                     first_mode: 21,
                     first_range: [0.0, 1.0],
@@ -1444,7 +1444,7 @@ fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
                     path_parameter: 0.0,
                     second_law_flag: false,
                     second_law: Box::new(LawExpression::Text {
-                        value: crate::nonempty_literal!("VEC(1,1,1)"),
+                        value: crate::nonblank_literal!("VEC(1,1,1)"),
                     }),
                     formula_mode: 0,
                     formula: LawFormula::Null {},

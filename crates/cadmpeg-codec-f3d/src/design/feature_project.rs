@@ -6407,7 +6407,7 @@ pub(crate) fn project_fixed_loft(
                     .map(|(ordinal, group)| {
                         Some(if ordinal == point_ordinal {
                             LoftSection::Point(LoftPointSection::Native(
-                                cadmpeg_ir::NonEmptyString::new(group.id.clone())?,
+                                cadmpeg_ir::NonBlankString::new(group.id.clone())?,
                             ))
                         } else {
                             LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Native(
@@ -7897,7 +7897,7 @@ pub(crate) fn project_split(
                 }
                 FaceSelection::Historical { native, .. }
                 | FaceSelection::HistoricalPartial { native, .. } => {
-                    *native = cadmpeg_ir::products::NonEmptyString::new(tool.id.clone())?;
+                    *native = cadmpeg_ir::products::NonBlankString::new(tool.id.clone())?;
                 }
                 _ => {}
             }

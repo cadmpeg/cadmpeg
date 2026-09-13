@@ -92,7 +92,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         sketch: SketchId::mint("synthetic:test:id#sketch").unwrap(),
         definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
             SketchConstraintDefinitionInput::Native {
-                native_kind: cadmpeg_ir::products::NonEmptyString::new("dimension").unwrap(),
+                native_kind: cadmpeg_ir::products::NonBlankString::new("dimension").unwrap(),
                 native_state: None,
                 native_flags: None,
                 native_properties: std::collections::BTreeMap::new(),
@@ -312,7 +312,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             byte_offset: 0,
             state_offset: 0,
             owner_reference: 1,
-            owner_entity_id: Some(cadmpeg_ir::NonEmptyString::new("0_1").unwrap()),
+            owner_entity_id: Some(cadmpeg_ir::NonBlankString::new("0_1").unwrap()),
             auxiliary_references: crate::records::ReferenceRun::located(Vec::new()),
             rectangular_counted_reference_count: None,
             members: (Vec::new()).try_into().expect("uniform member resolution"),

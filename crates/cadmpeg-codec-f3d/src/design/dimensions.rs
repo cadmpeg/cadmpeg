@@ -366,7 +366,7 @@ fn project_all_dimension_constraints(
             }
         };
     let native_definition = |scope: &str,
-                             source_kind: cadmpeg_ir::products::NonEmptyString,
+                             source_kind: cadmpeg_ir::products::NonBlankString,
                              state: Option<u64>,
                              operands: &[(&'static str, Option<u32>, u32)],
                              parameter| {

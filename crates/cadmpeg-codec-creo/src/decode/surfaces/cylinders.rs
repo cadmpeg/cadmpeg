@@ -137,7 +137,7 @@ pub(in super::super) fn transfer_active_datum_cylinders(
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                object_id: cadmpeg_ir::products::NonBlankString::new(format!(
                     "ActDatums:{}",
                     datum.id
                 ))
@@ -249,7 +249,7 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                object_id: cadmpeg_ir::products::NonBlankString::new(format!(
                     "AllFeatur:{}:{}",
                     feature_id, row.id
                 ))
@@ -320,7 +320,7 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(*cylinder_surface)),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                object_id: cadmpeg_ir::products::NonBlankString::new(format!(
                     "AllFeatur:{rowless_id}"
                 ))
                 .ok_or_else(|| {
@@ -381,7 +381,7 @@ pub(in super::super) fn transfer_hole_cylinders(
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    object_id: cadmpeg_ir::products::NonBlankString::new(format!(
                         "VisibGeom:{cylinder_id}"
                     ))
                     .ok_or_else(|| {
@@ -503,7 +503,7 @@ pub(in super::super) fn transfer_split_outline_cylinders(
                 geometry: geometry.clone(),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    object_id: cadmpeg_ir::products::NonBlankString::new(format!(
                         "VisibGeom:{cylinder_id}"
                     ))
                     .ok_or_else(|| {
@@ -1200,7 +1200,7 @@ pub(in super::super) fn transfer_positional_cylinders(
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                object_id: cadmpeg_ir::products::NonBlankString::new(format!(
                     "VisibGeom:{}",
                     record.surface_id
                 ))
@@ -1448,7 +1448,7 @@ pub(in super::super) fn transfer_positional_cones(
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                object_id: cadmpeg_ir::products::NonBlankString::new(format!(
                     "VisibGeom:{}",
                     record.surface_id
                 ))
@@ -1512,7 +1512,7 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    object_id: cadmpeg_ir::products::NonBlankString::new(format!(
                         "VisibGeom:{cylinder_id}"
                     ))
                     .ok_or_else(|| {
@@ -1577,7 +1577,7 @@ pub(in super::super) fn transfer_cross_section_planes(
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                object_id: cadmpeg_ir::products::NonBlankString::new(format!(
                     "Xsections:{}",
                     frame.surface_id
                 ))
@@ -1622,7 +1622,7 @@ pub(in super::super) fn transfer_cross_section_planes(
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                object_id: cadmpeg_ir::products::NonBlankString::new(format!(
                     "Xsections:{}",
                     plane.surface_id
                 ))

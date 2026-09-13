@@ -490,7 +490,7 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
     let brep = crate::brep::ValidatedRawBrep::try_new(raw).expect("validate source-shaped Brep");
     let association = SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Rhino,
-        object_id: cadmpeg_ir::products::NonEmptyString::new("plane-brep".to_string())
+        object_id: cadmpeg_ir::products::NonBlankString::new("plane-brep".to_string())
             .expect("nonempty source identity"),
         name: Some("plane".to_string()),
         color: None,
@@ -587,7 +587,7 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
     let brep = crate::brep::ValidatedRawBrep::try_new(raw).expect("validate Brep");
     let association = SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Rhino,
-        object_id: cadmpeg_ir::products::NonEmptyString::new("free-vertex-brep".to_string())
+        object_id: cadmpeg_ir::products::NonBlankString::new("free-vertex-brep".to_string())
             .expect("nonempty source identity"),
         name: None,
         color: None,
@@ -646,7 +646,7 @@ fn failed_trim_pcurve_does_not_discard_brep_topology() {
     let brep = crate::brep::ValidatedRawBrep::try_new(raw).expect("validate source-shaped Brep");
     let association = SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Rhino,
-        object_id: cadmpeg_ir::products::NonEmptyString::new("plane-brep".to_string())
+        object_id: cadmpeg_ir::products::NonBlankString::new("plane-brep".to_string())
             .expect("nonempty source identity"),
         name: None,
         color: None,
@@ -992,7 +992,7 @@ fn cap_extrusion(caps: [bool; 2]) -> crate::extrusion::DecodedExtrusion {
 fn test_association() -> SourceObjectAssociation {
     SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Rhino,
-        object_id: cadmpeg_ir::products::NonEmptyString::new("extrusion".to_string())
+        object_id: cadmpeg_ir::products::NonBlankString::new("extrusion".to_string())
             .expect("nonempty source identity"),
         name: Some("Extrusion".to_string()),
         color: None,

@@ -75,14 +75,14 @@ fn decode_exposes_strict_nx_jpeg_preview_metadata() {
         asset
             .name
             .as_ref()
-            .map(cadmpeg_ir::products::NonEmptyString::as_str),
+            .map(cadmpeg_ir::products::NonBlankString::as_str),
         Some("preview.jpg")
     );
     assert_eq!(
         asset
             .media_type
             .as_ref()
-            .map(cadmpeg_ir::products::NonEmptyString::as_str),
+            .map(cadmpeg_ir::products::NonBlankString::as_str),
         Some("image/jpeg")
     );
     assert_eq!(
@@ -161,14 +161,14 @@ fn retained_material_library_assets_do_not_imply_an_assignment_loss() {
         asset
             .name
             .as_ref()
-            .map(cadmpeg_ir::products::NonEmptyString::as_str),
+            .map(cadmpeg_ir::products::NonBlankString::as_str),
         Some("Steel")
     );
     assert_eq!(
         asset
             .media_type
             .as_ref()
-            .map(cadmpeg_ir::products::NonEmptyString::as_str),
+            .map(cadmpeg_ir::products::NonBlankString::as_str),
         Some("image/tiff")
     );
     assert!(matches!(

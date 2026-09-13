@@ -1472,7 +1472,7 @@ fn validate_decal_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                 && native == &operand.id
                                 && ctx.ir.model.assets.iter().any(|candidate| {
                                     candidate.id == *asset
-                                        && candidate.name.as_ref().map(cadmpeg_ir::products::NonEmptyString::as_str) == Some(image.asset.name())
+                                        && candidate.name.as_ref().map(cadmpeg_ir::products::NonBlankString::as_str) == Some(image.asset.name())
                                 })
                         )
                 })
@@ -7506,7 +7506,7 @@ fn validate_sketch_relations(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let owner_matches = matches!(
             (
                 sketch_owner_ids.get(&(native_stream, relation.owner_reference)),
-                relation.owner_entity_id.as_ref().map(cadmpeg_ir::NonEmptyString::as_str),
+                relation.owner_entity_id.as_ref().map(cadmpeg_ir::NonBlankString::as_str),
             ),
             (Some(expected), Some(actual)) if *expected == actual
         );

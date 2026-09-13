@@ -127,9 +127,9 @@ impl fmt::Display for UuidTail {
 
 impl Uuid {
     /// Renders the UUID as a source identifier, which always has a leading hex digit.
-    pub(crate) fn to_nonempty(self) -> cadmpeg_ir::products::NonEmptyString {
-        cadmpeg_ir::products::NonEmptyString::prefixed(
-            HEX_DIGITS[usize::from(self.bytes[0] >> 4)],
+    pub(crate) fn to_nonempty(self) -> cadmpeg_ir::products::NonBlankString {
+        cadmpeg_ir::products::NonBlankString::prefixed(
+            cadmpeg_ir::products::NonWhitespaceChar::hex_digit(self.bytes[0] >> 4),
             UuidTail(self.bytes),
         )
     }
