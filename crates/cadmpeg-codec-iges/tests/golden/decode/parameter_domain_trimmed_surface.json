@@ -25,8 +25,8 @@
         {
           "id": "iges:model:face#D3",
           "loops": {
-            "classification": "classified",
-            "inner": []
+            "classification": "unspecified",
+            "loops": []
           },
           "sense": "forward",
           "shell": "iges:model:shell#D3",
