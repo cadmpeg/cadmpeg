@@ -490,19 +490,19 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
         };
         let chart_origin = unique_tabulated_cylinder_prototype(scan, replay)
             .and_then(crate::surface::SurfacePrototypeRecord::tabulated_cylinder_chart_origin);
-        let mut refusal = None;
+        let mut refusal = crate::lane_refusal::LaneRefusals::new();
         let directrix =
             placed_tabulated_cylinder_directrix(replay, parameters, chart_origin, &mut refusal);
-        if let Some(error) = refusal {
-            return Err(error.into());
+        if let Some(error) = refusal.take_error() {
+            return Err(error);
         }
         let Some((directrix, sweep)) = directrix else {
             continue;
         };
-        let mut refusal = None;
+        let mut refusal = crate::lane_refusal::LaneRefusals::new();
         let surface = extruded_nurbs_surface(&directrix, sweep, &mut refusal);
-        if let Some(error) = refusal {
-            return Err(error.into());
+        if let Some(error) = refusal.take_error() {
+            return Err(error);
         }
         let Some(surface) = surface else {
             continue;

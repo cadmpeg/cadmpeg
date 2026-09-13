@@ -279,6 +279,7 @@ fn loop_metadata_counts<'a>(
 pub(crate) fn try_decode_freeform_surfaces(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<FamilyOutput> {
     let logical_streams = container::logical_record_streams(scan);
     let selection_budget =
@@ -329,8 +330,6 @@ pub(crate) fn try_decode_freeform_surfaces(
         &scan.data,
         container::consolidated_record_sources(scan),
     );
-    let mut lane_refusal = None;
-    let refusal = &mut lane_refusal;
     let mut b5_graph = crate::families::b5::graph::parse_from_records_budgeted(
         &object_source,
         &selected_object_records,
@@ -434,7 +433,7 @@ pub(crate) fn try_decode_freeform_surfaces(
     let typed_vertex_incidence_roster_member_count =
         typed_vertex_incidence_rosters.values().map(Vec::len).sum();
     let mut fallback_surfaces = if b5_graph.is_none() {
-        Some(freeform_surface_carriers(&scan.data, &consolidated_records).ok()?)
+        Some(freeform_surface_carriers(&scan.data, &consolidated_records, refusal).ok()?)
     } else {
         None
     };
@@ -502,7 +501,7 @@ pub(crate) fn try_decode_freeform_surfaces(
     if !topology_transferred {
         let surfaces = match fallback_surfaces.take() {
             Some(surfaces) => surfaces,
-            None => freeform_surface_carriers(&scan.data, &consolidated_records).ok()?,
+            None => freeform_surface_carriers(&scan.data, &consolidated_records, refusal).ok()?,
         };
         for (index, surface) in surfaces.iter().enumerate() {
             let id = SurfaceId::mint(format!("catia:a8:surf#{index}")).expect("identity grammar");
@@ -836,11 +835,6 @@ pub(crate) fn try_decode_freeform_surfaces(
             typed_vertex_incidence_roster_member_count,
         );
     }
-    if let Some(refusal) = lane_refusal {
-        losses.push(CatiaLossCode::GeometryAnalyticPayloadInvalid.note(format!(
-            "A freeform carrier record states lanes the IR carrier refuses: {refusal}"
-        )));
-    }
     Some(FamilyOutput {
         ir,
         report: DecodeBody {
@@ -995,13 +989,10 @@ fn attach_standalone_wires(
 fn freeform_surface_carriers(
     data: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<FreeformSurfaceCarrier>, cadmpeg_core::CodecError> {
-    let mut refusal = None;
-    let resolved = crate::families::a5a8::records::resolved_a8_surfaces(data, &mut refusal);
-    let a5 = crate::families::a5a8::records::a5_surfaces_from_records(data, records, &mut refusal);
-    if let Some(error) = refusal {
-        return Err(error.into());
-    }
+    let resolved = crate::families::a5a8::records::resolved_a8_surfaces(data, refusal);
+    let a5 = crate::families::a5a8::records::a5_surfaces_from_records(data, records, refusal);
     let mut surfaces = resolved
         .into_iter()
         .chain(a5)
@@ -1220,17 +1211,12 @@ pub(crate) fn append_freeform_surface_pools(
     data: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
     surface_alias_tags: &HashMap<u32, Option<u32>>,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<ConsolidatedCurveBindingCounts, cadmpeg_core::CodecError> {
-    let mut refusal = None;
-    let mut surfaces = crate::families::a5a8::records::resolved_a8_surfaces(data, &mut refusal);
+    let mut surfaces = crate::families::a5a8::records::resolved_a8_surfaces(data, refusal);
     surfaces.extend(crate::families::a5a8::records::a5_surfaces_from_records(
-        data,
-        records,
-        &mut refusal,
+        data, records, refusal,
     ));
-    if let Some(error) = refusal {
-        return Err(error.into());
-    }
     let mut carrier_ids = Vec::with_capacity(surfaces.len());
     for surface in &surfaces {
         let (source_object, source_tag) = freeform_surface_source(surface)?;
@@ -1385,7 +1371,7 @@ pub(crate) fn append_freeform_surface_pools(
             let Some(curve) = crate::families::a5a8::records::rolling_ball_limit_curve(
                 &jet,
                 second_limit,
-                &mut refusal,
+                refusal,
             ) else {
                 continue;
             };
@@ -1494,14 +1480,8 @@ pub(crate) fn append_freeform_surface_pools(
             surface_ids: &carrier_ids,
             surface_alias_tags,
         },
-        &mut refusal,
+        refusal,
     )?;
-    // Every refusal the rolling-ball limit curves and the consolidated
-    // surface-curve subtree record reaches the caller here. A refusal written
-    // into the cell and never read is a record dropped in silence.
-    if let Some(refusal) = refusal {
-        return Err(refusal.into());
-    }
     Ok(counts)
 }
 
@@ -1580,7 +1560,7 @@ impl ConsolidatedCarrierChart<'_> {
 pub(crate) fn consolidated_jet_pcurve(
     pcurve: &crate::wire::records::ConsolidatedPcurve,
     chart: &ConsolidatedCarrierChart<'_>,
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<PcurveGeometry> {
     let points = pcurve
         .sites
@@ -1636,7 +1616,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
     data: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
     pool: FreeformSurfacePool<'_>,
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<ConsolidatedCurveBindingCounts, cadmpeg_core::CodecError> {
     let FreeformSurfacePool {
         surfaces: freeform_surfaces,
@@ -2970,7 +2950,7 @@ mod tests {
             902,
             &[0x82, 0x18, 100, 0, 0x18, 0xe7, 0x03, 0x03],
         );
-        let graph = parse(&bytes, &mut None).expect("one resolved and one unresolved face");
+        let graph = parse(&bytes, &mut crate::nurbs::LaneRefusals::new()).expect("one resolved and one unresolved face");
         assert_eq!(graph.face_records.len(), 2);
         assert_eq!(graph.faces.len(), 1);
         assert!(graph
@@ -2991,10 +2971,10 @@ mod tests {
             payload: vec![0x82, 0x18, 100, 0, 0x18, 0xe7, 0x03, 0x03],
         };
         assert!(
-            parse_from_records(&[], std::slice::from_ref(&record), &[], false, &mut None).is_some()
+            parse_from_records(&[], std::slice::from_ref(&record), &[], false, &mut crate::nurbs::LaneRefusals::new()).is_some()
         );
         assert!(
-            parse_from_records(&[], &[record.clone(), record], &[], false, &mut None).is_none()
+            parse_from_records(&[], &[record.clone(), record], &[], false, &mut crate::nurbs::LaneRefusals::new()).is_none()
         );
     }
 
@@ -3151,6 +3131,7 @@ mod tests {
             &bytes,
             &crate::wire::records::consolidated_records(&bytes),
             &HashMap::new(),
+            &mut crate::nurbs::LaneRefusals::new(),
         )
         .expect("valid source object identity");
 
@@ -3176,7 +3157,7 @@ mod tests {
 
         let records = crate::wire::records::consolidated_records(&bytes);
         let carriers =
-            freeform_surface_carriers(&bytes, &records).expect("valid source object identity");
+            freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new()).expect("valid source object identity");
         assert_eq!(carriers.len(), 2);
         assert!(carriers[0].source_tag.starts_with("b2_03_28:"));
         assert!(carriers[1].source_tag.starts_with("b2_03_60:"));
@@ -3509,7 +3490,7 @@ mod tests {
                 surface_ids: &[],
                 surface_alias_tags: &HashMap::new(),
             },
-            &mut None,
+            &mut crate::nurbs::LaneRefusals::new(),
         )
         .expect("valid source object identity");
         assert_eq!(attached.standard_edges, 1);
@@ -3579,7 +3560,7 @@ mod tests {
                 surface_ids: &[],
                 surface_alias_tags: &HashMap::new(),
             },
-            &mut None,
+            &mut crate::nurbs::LaneRefusals::new(),
         )
         .expect("valid source object identity");
 
@@ -3641,7 +3622,7 @@ mod tests {
                 surface_ids: &[],
                 surface_alias_tags: &HashMap::from([(0x5678, Some(0x1234))]),
             },
-            &mut None,
+            &mut crate::nurbs::LaneRefusals::new(),
         )
         .expect("valid source object identity");
 
@@ -3806,7 +3787,7 @@ mod tests {
                 surface_ids: &[],
                 surface_alias_tags: &HashMap::new(),
             },
-            &mut None,
+            &mut crate::nurbs::LaneRefusals::new(),
         )
         .expect("valid source object identity");
         assert_eq!(attached.standard_edges, 1);
@@ -3999,7 +3980,7 @@ mod tests {
         let bytes = crate::test_support::b2_sphere_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let carriers =
-            freeform_surface_carriers(&bytes, &records).expect("valid freeform carriers");
+            freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new()).expect("valid freeform carriers");
         assert!(matches!(carriers.as_slice(), [carrier]
                 if matches!(carrier.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))
                 if {
@@ -4018,7 +3999,7 @@ mod tests {
         let bytes = crate::test_support::b2_torus_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let carriers =
-            freeform_surface_carriers(&bytes, &records).expect("valid freeform carriers");
+            freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new()).expect("valid freeform carriers");
         assert!(matches!(carriers.as_slice(), [carrier]
                 if matches!(carrier.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
                 if {
@@ -4038,7 +4019,7 @@ mod tests {
         let bytes = crate::test_support::b2_range_origin_cylinder_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let carriers =
-            freeform_surface_carriers(&bytes, &records).expect("valid freeform carriers");
+            freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new()).expect("valid freeform carriers");
         assert!(matches!(carriers.as_slice(), [carrier]
                 if matches!(carrier.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
                 if {

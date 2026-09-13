@@ -217,7 +217,7 @@ pub(in super::super) fn interpolation_curve_data(
 
 pub(in super::super) fn saved_spline_nurbs(
     spline: &crate::feature::FeatureSavedSpline,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<NurbsCurve> {
     (usize::try_from(spline.declared_point_count?).ok()? == spline.interpolation_points.len())
         .then_some(())?;
@@ -232,7 +232,7 @@ pub(in super::super) fn saved_spline_nurbs(
     match NurbsCurve::from_lanes(3, knots, control_points, None, false) {
         Ok(curve) => Some(curve),
         Err(error) => {
-            *refusal = Some(error);
+            refusal.note("creo saved-spline NURBS record", &error);
             None
         }
     }
@@ -240,7 +240,7 @@ pub(in super::super) fn saved_spline_nurbs(
 
 pub(in super::super) fn saved_spline_sketch_geometry(
     spline: &crate::feature::FeatureSavedSpline,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<SketchGeometry> {
     let nurbs = saved_spline_nurbs(spline, refusal)?;
     if !nurbs
@@ -263,7 +263,7 @@ pub(in super::super) fn saved_spline_sketch_geometry(
     ) {
         Ok(pcurve) => Some(SketchGeometry::nurbs(pcurve)),
         Err(error) => {
-            *refusal = Some(error);
+            refusal.note("creo saved-spline sketch geometry record", &error);
             None
         }
     }
@@ -271,7 +271,7 @@ pub(in super::super) fn saved_spline_sketch_geometry(
 
 pub(in super::super) fn interpolation_spline_surface(
     grid: &crate::interpolation_grid::InterpolationGrid,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<NurbsSurface> {
     let points = grid.points();
     let u_parameters = grid.u_parameters();
@@ -368,7 +368,7 @@ pub(in super::super) fn interpolation_spline_surface(
     ) {
         Ok(surface) => Some(surface),
         Err(error) => {
-            *refusal = Some(error);
+            refusal.note("creo interpolation-spline surface record", &error);
             None
         }
     }
@@ -408,7 +408,7 @@ pub(in super::super) fn translated_nurbs_curve(
 pub(in super::super) fn extruded_nurbs_surface(
     directrix: &NurbsCurve,
     sweep: [f64; 3],
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<NurbsSurface> {
     let mut control_points = Vec::with_capacity(directrix.control_points().len() * 2);
     let mut weights = directrix
@@ -440,7 +440,7 @@ pub(in super::super) fn extruded_nurbs_surface(
     ) {
         Ok(surface) => Some(surface),
         Err(error) => {
-            *refusal = Some(error);
+            refusal.note("creo extruded NURBS surface record", &error);
             None
         }
     }
@@ -482,7 +482,7 @@ pub(in super::super) fn oriented_sketch_nurbs_curve(
 pub(in super::super) fn sketch_nurbs_pcurve(
     geometry: &SketchGeometry,
     reversed: bool,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<PcurveGeometry> {
     let nurbs = oriented_sketch_nurbs_curve(geometry, reversed)?;
     match cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
@@ -498,7 +498,7 @@ pub(in super::super) fn sketch_nurbs_pcurve(
     ) {
         Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),
         Err(error) => {
-            *refusal = Some(error);
+            refusal.note("creo sketch NURBS pcurve record", &error);
             None
         }
     }
@@ -511,7 +511,7 @@ pub(in super::super) fn extrusion_brep_side_surface(
     start: [f64; 2],
     end: [f64; 2],
     span: ExtrusionSpan,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<SurfaceGeometry> {
     if matches!(
         geometry.definition(),
@@ -584,7 +584,7 @@ pub(in super::super) fn placed_tabulated_cylinder_directrix(
     replay: &crate::surface::TabulatedCylinderCurveReplay,
     parameters: &crate::surface::SurfaceParameterRecord,
     chart_origin: Option<[f64; 3]>,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<(NurbsCurve, [f64; 3])> {
     #[derive(Clone, Copy)]
     enum FrameLayout {
@@ -824,7 +824,7 @@ pub(in super::super) fn placed_tabulated_cylinder_directrix(
     ) {
         Ok(curve) => Some((curve, sweep)),
         Err(error) => {
-            *refusal = Some(error);
+            refusal.note("creo placed tabulated-cylinder directrix record", &error);
             None
         }
     }
@@ -868,7 +868,7 @@ mod tests {
     }
 
     #[test]
-    fn a_refused_extruded_carrier_states_its_reason() {
+    fn two_refused_extruded_carriers_state_two_records_each_naming_its_carrier() {
         let directrix = NurbsCurve::from_lanes(
             1,
             vec![0.0, 0.0, 1.0, 1.0],
@@ -880,17 +880,22 @@ mod tests {
             false,
         )
         .expect("valid directrix");
-        let mut refusal = None;
-        let surface = extruded_nurbs_surface(&directrix, [f64::MAX, 0.0, 0.0], &mut refusal);
-        assert!(surface.is_none(), "the refused ruling states no surface");
-        let error = refusal.expect("the refusal is carried out of the extrusion");
-        let reported = cadmpeg_core::CodecError::from(error);
-        let cadmpeg_core::CodecError::Malformed(message) = &reported else {
-            panic!("expected a malformed refusal, got {reported:?}");
-        };
+        let mut refusal = crate::lane_refusal::LaneRefusals::new();
+        let first = extruded_nurbs_surface(&directrix, [f64::MAX, 0.0, 0.0], &mut refusal);
+        let second = extruded_nurbs_surface(&directrix, [f64::MAX, 0.0, 0.0], &mut refusal);
+        assert!(first.is_none(), "the refused ruling states no surface");
+        assert!(second.is_none(), "the refused ruling states no surface");
+        let records = refusal.take_records();
+        assert_eq!(records.len(), 2, "one record per refused ruling: {records:?}");
+        for record in &records {
+            assert!(
+                record.starts_with("creo extruded NURBS surface record: "),
+                "the record names the carrier that stated the lanes: {record}"
+            );
+        }
         assert!(
-            !message.is_empty(),
-            "the refusal carries the carrier's own text"
+            refusal.take_records().is_empty(),
+            "the sink is empty once its records are taken"
         );
     }
 }

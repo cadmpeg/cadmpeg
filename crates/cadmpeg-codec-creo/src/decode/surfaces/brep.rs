@@ -1925,7 +1925,7 @@ pub(in super::super) fn transfer_native_brep(
                         Exactness::Derived,
                     );
                     let native_candidates = native_pcurves.get(&(half_edge.curve_id, *face_id));
-                    let mut refusal = None;
+                    let mut refusal = crate::lane_refusal::LaneRefusals::new();
                     let refusal_cell = &mut refusal;
                     let pcurve_geometry = native_candidates
                         .and_then(|candidates| {
@@ -2009,8 +2009,8 @@ pub(in super::super) fn transfer_native_brep(
                                 tag,
                             ))
                         });
-                    if let Some(error) = refusal {
-                        return Err(error.into());
+                    if let Some(error) = refusal.take_error() {
+                        return Err(error);
                     }
                     let pcurves = pcurve_geometry
                         .and_then(|(geometry, parameter_range, offset, tag)| {

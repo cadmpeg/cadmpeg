@@ -858,7 +858,7 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         }),
         offset: 10,
     };
-    let nurbs = saved_spline_nurbs(&spline, &mut None).expect("clamped interpolation spline");
+    let nurbs = saved_spline_nurbs(&spline, &mut crate::lane_refusal::LaneRefusals::new()).expect("clamped interpolation spline");
     for (parameter, expected) in [(0.0, 0.0), (1.0, 1.0), (2.0, 2.0)] {
         let point = nurbs.control_points().iter().enumerate().fold(
             [0.0; 3],
@@ -902,7 +902,7 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         assert!(derivative[1].abs() < 1.0e-12 && derivative[2].abs() < 1.0e-12);
     }
     assert!(
-        matches!(saved_spline_sketch_geometry(&spline, &mut None).map(cadmpeg_ir::sketches::SketchGeometry::into_definition),
+        matches!(saved_spline_sketch_geometry(&spline, &mut crate::lane_refusal::LaneRefusals::new()).map(cadmpeg_ir::sketches::SketchGeometry::into_definition),
             Some(SketchGeometryDefinition::Nurbs { curve }) if curve.degree() == 3
         )
     );
@@ -961,14 +961,14 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         offset: 1,
     };
     assert_eq!(
-        materialized_saved_section_external_ids(&definition, &mut None),
+        materialized_saved_section_external_ids(&definition, &mut crate::lane_refusal::LaneRefusals::new()),
         BTreeSet::from([42])
     );
 
     let mut incomplete = spline;
     incomplete.declared_point_count = Some(4);
-    assert!(saved_spline_nurbs(&incomplete, &mut None).is_none());
-    assert!(saved_spline_sketch_geometry(&incomplete, &mut None).is_none());
+    assert!(saved_spline_nurbs(&incomplete, &mut crate::lane_refusal::LaneRefusals::new()).is_none());
+    assert!(saved_spline_sketch_geometry(&incomplete, &mut crate::lane_refusal::LaneRefusals::new()).is_none());
 
     let mut duplicate_saved_id = definition.clone();
     duplicate_saved_id
@@ -977,7 +977,7 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         .expect("saved section")
         .entities
         .push(crate::feature::FeatureSavedEntity::Spline(incomplete));
-    assert!(materialized_saved_section_external_ids(&duplicate_saved_id, &mut None).is_empty());
+    assert!(materialized_saved_section_external_ids(&duplicate_saved_id, &mut crate::lane_refusal::LaneRefusals::new()).is_empty());
 
     let mut ambiguous_external_id = definition;
     let duplicate_opaque = ambiguous_external_id
@@ -1002,7 +1002,7 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         .as_mut()
         .expect("segments")
         .declared_count = 2;
-    assert!(materialized_saved_section_external_ids(&ambiguous_external_id, &mut None).is_empty());
+    assert!(materialized_saved_section_external_ids(&ambiguous_external_id, &mut crate::lane_refusal::LaneRefusals::new()).is_empty());
 
     let mut incomplete_segment_table = ambiguous_external_id;
     incomplete_segment_table
@@ -1012,7 +1012,7 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         .rows
         .edit_opaque(Vec::pop);
     assert_eq!(
-        materialized_saved_section_external_ids(&incomplete_segment_table, &mut None),
+        materialized_saved_section_external_ids(&incomplete_segment_table, &mut crate::lane_refusal::LaneRefusals::new()),
         BTreeSet::from([42])
     );
 }
@@ -1038,7 +1038,7 @@ fn tensor_product_collocation_preserves_position_and_derivative_order() {
     )
     .expect("complete interpolation grid");
     let nurbs =
-        interpolation_spline_surface(&grid, &mut None).expect("bicubic tensor-product surface");
+        interpolation_spline_surface(&grid, &mut crate::lane_refusal::LaneRefusals::new()).expect("bicubic tensor-product surface");
 
     assert_eq!((nurbs.u_count(), nurbs.v_count()), (4, 4));
     assert_eq!(nurbs.u_knots(), [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]);
@@ -1113,7 +1113,7 @@ fn full_revolution_uses_exact_quadratic_circle_poles() {
                 .expect("valid direction fixture"),
             reference: None,
         },
-        &mut None,
+        &mut crate::lane_refusal::LaneRefusals::new(),
     )
     .expect("revolution surface");
 
@@ -1176,7 +1176,7 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
     );
     let segment = crate::decode::sweep::profiles::ProfileEntity::new(spline.clone(), false)
         .expect("valid profile entity");
-    let surface = revolved_brep_surface(&transform, &spline, false, &axis, &mut None)
+    let surface = revolved_brep_surface(&transform, &spline, false, &axis, &mut crate::lane_refusal::LaneRefusals::new())
         .expect("revolved spline surface");
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = &surface else {
         panic!("spline revolution must retain a NURBS surface");
@@ -1209,7 +1209,7 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         &axis,
         segment.start(),
         RevolutionBoundary::Start,
-        &mut None,
+        &mut crate::lane_refusal::LaneRefusals::new(),
     )
     .expect("start boundary pcurve");
     let end_pcurve = revolution_profile_boundary_pcurve(
@@ -1219,7 +1219,7 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         &axis,
         segment.end(),
         RevolutionBoundary::End,
-        &mut None,
+        &mut crate::lane_refusal::LaneRefusals::new(),
     )
     .expect("end boundary pcurve");
     for (pcurve, expected_u) in [(start_pcurve, 2.0), (end_pcurve, 5.0)] {
@@ -1239,7 +1239,7 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.clone())),
         &axis,
         1.0,
-        &mut None,
+        &mut crate::lane_refusal::LaneRefusals::new(),
     )
     .expect("forward face sense");
     let reverse_sense = revolution_face_sense(
@@ -1248,12 +1248,12 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.clone())),
         &axis,
         -1.0,
-        &mut None,
+        &mut crate::lane_refusal::LaneRefusals::new(),
     )
     .expect("reverse face sense");
     assert_ne!(forward_sense, reverse_sense);
 
-    let reversed = revolved_brep_surface(&transform, &spline, true, &axis, &mut None)
+    let reversed = revolved_brep_surface(&transform, &spline, true, &axis, &mut crate::lane_refusal::LaneRefusals::new())
         .expect("reversed revolved spline surface");
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(reversed)) = reversed else {
         panic!("reversed spline revolution must retain a NURBS surface");
@@ -1430,7 +1430,7 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
             origin: [0.0, 1.0, 0.0],
             normal: [0.0, 1.0, 0.0],
         },
-        &mut None,
+        &mut crate::lane_refusal::LaneRefusals::new(),
     )
     .expect("v1 boundary");
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(boundary)) = boundary else {
@@ -1455,7 +1455,7 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
             origin: [3.0, 0.0, 0.0],
             normal: [1.0, 0.0, 0.0],
         },
-        &mut None,
+        &mut crate::lane_refusal::LaneRefusals::new(),
     )
     .expect("u1 boundary");
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(generator)) = generator else {
@@ -1475,7 +1475,7 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
             origin: [0.0, 0.5, 0.0],
             normal: [0.0, 1.0, 0.0],
         },
-        &mut None,
+        &mut crate::lane_refusal::LaneRefusals::new(),
     )
     .is_none());
     let mut coplanar = surface.clone();
@@ -1490,7 +1490,7 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
             origin: [0.0, 0.0, 0.0],
             normal: [0.0, 0.0, 1.0],
         },
-        &mut None,
+        &mut crate::lane_refusal::LaneRefusals::new(),
     )
     .is_none());
     let mut restored = surface.poles().into_iter();
@@ -1536,7 +1536,7 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
         false,
     )
     .expect("valid second extrusion surface");
-    let shared = shared_extrusion_generator_curve(&first, &second, &mut None)
+    let shared = shared_extrusion_generator_curve(&first, &second, &mut crate::lane_refusal::LaneRefusals::new())
         .expect("shared generator boundary");
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(shared)) = shared else {
         panic!("shared extrusion generator must retain its NURBS representation");
@@ -1564,7 +1564,7 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
                 .expect("finite fixture geometry preserves NURBS invariants"),
         )
         .expect("finite fixture geometry preserves NURBS invariants");
-    assert!(shared_extrusion_generator_curve(&first, &reversed, &mut None).is_some());
+    assert!(shared_extrusion_generator_curve(&first, &reversed, &mut crate::lane_refusal::LaneRefusals::new()).is_some());
 
     let mut same_side = second.clone();
     let mut same_side_grid = same_side.control_grid();
@@ -1577,11 +1577,11 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
                 .expect("finite fixture geometry preserves NURBS invariants"),
         )
         .expect("finite fixture geometry preserves NURBS invariants");
-    assert!(shared_extrusion_generator_curve(&first, &same_side, &mut None).is_none());
+    assert!(shared_extrusion_generator_curve(&first, &same_side, &mut crate::lane_refusal::LaneRefusals::new()).is_none());
 
     let mut periodic_transverse = second.clone();
     periodic_transverse.set_u_periodic(true);
-    assert!(shared_extrusion_generator_curve(&first, &periodic_transverse, &mut None).is_none());
+    assert!(shared_extrusion_generator_curve(&first, &periodic_transverse, &mut crate::lane_refusal::LaneRefusals::new()).is_none());
 
     let mut different_boundary = second;
     let mut different_grid = different_boundary.control_grid();
@@ -1593,7 +1593,7 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
                 .expect("finite fixture geometry preserves NURBS invariants"),
         )
         .expect("finite fixture geometry preserves NURBS invariants");
-    assert!(shared_extrusion_generator_curve(&first, &different_boundary, &mut None).is_none());
+    assert!(shared_extrusion_generator_curve(&first, &different_boundary, &mut crate::lane_refusal::LaneRefusals::new()).is_none());
 }
 
 #[test]

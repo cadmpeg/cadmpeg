@@ -300,7 +300,7 @@ pub fn e5_edges(data: &[u8]) -> Vec<E5Edge> {
 
 /// Decode E5 cylinder (`0xc9`), cone (`0xca`), and torus (`0xcc`) surface
 /// records. The E5 plane class does not serialize a standalone normal.
-pub fn e5_surfaces(data: &[u8], refusal: &mut Option<crate::nurbs::LaneRefusal>) -> Vec<E5Surface> {
+pub fn e5_surfaces(data: &[u8], refusal: &mut crate::nurbs::LaneRefusals) -> Vec<E5Surface> {
     let mut out = Vec::new();
     for record in e5_records(data) {
         let pos = record.pos;
@@ -602,7 +602,7 @@ pub fn e5_surface_wrappers(data: &[u8]) -> Vec<E5SurfaceWrapper> {
 fn e5_nurbs_surface(
     data: &[u8],
     record: E5Record,
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<SurfaceGeometry> {
     let mut view = View::over_retained(data).child(record.pos + 13, record.end())?;
     if view.u8()? != 0x80 {
@@ -881,7 +881,7 @@ mod tests {
         for mode in [0, 1] {
             let mut bytes = Vec::new();
             append_e5_record(&mut bytes, 0xe7, 116, &nurbs_surface_payload(mode));
-            let surfaces = e5_surfaces(&bytes, &mut None);
+            let surfaces = e5_surfaces(&bytes, &mut crate::nurbs::LaneRefusals::new());
             let [surface] = surfaces.as_slice() else {
                 panic!("E7 surface did not decode");
             };
@@ -905,7 +905,7 @@ mod tests {
         payload.pop();
         let mut bytes = Vec::new();
         append_e5_record(&mut bytes, 0xe7, 116, &payload);
-        assert!(e5_surfaces(&bytes, &mut None).is_empty());
+        assert!(e5_surfaces(&bytes, &mut crate::nurbs::LaneRefusals::new()).is_empty());
     }
 
     #[test]

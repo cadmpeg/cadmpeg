@@ -84,7 +84,7 @@ fn decode_inner_no_directory_transfers_b2_cylinder() {
 
 #[test]
 fn offset_support_binds_by_native_domain_knot_limits() {
-    let mut carriers = crate::families::a5a8::records::a5_surfaces(&a5_surface_stream(), &mut None);
+    let mut carriers = crate::families::a5a8::records::a5_surfaces(&a5_surface_stream(), &mut crate::nurbs::LaneRefusals::new());
     let mut decoy = carriers[0].clone();
     decoy
         .geometry

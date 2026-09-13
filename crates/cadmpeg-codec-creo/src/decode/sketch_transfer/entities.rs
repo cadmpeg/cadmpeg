@@ -668,10 +668,10 @@ pub(super) fn transfer_section_entities(
         crate::feature::FeatureSavedEntity::Spline(spline) => Some(spline),
         _ => None,
     }) {
-        let mut refusal = None;
+        let mut refusal = crate::lane_refusal::LaneRefusals::new();
         let geometry = saved_spline_sketch_geometry(spline, &mut refusal);
-        if let Some(error) = refusal {
-            return Err(error.into());
+        if let Some(error) = refusal.take_error() {
+            return Err(error);
         }
         let Some(geometry) = geometry else {
             continue;

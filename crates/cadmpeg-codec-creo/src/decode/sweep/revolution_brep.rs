@@ -92,7 +92,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             .iter()
             .map(|entity| revolved_section_circle(transform, entity.start(), &axis))
             .collect::<Vec<_>>();
-        let mut refusal = None;
+        let mut refusal = crate::lane_refusal::LaneRefusals::new();
         let refusal = &mut refusal;
         let surface_geometries = profile
             .iter()
@@ -104,9 +104,9 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             })
             .collect::<Option<Vec<_>>>();
         let Some(surface_geometries) = surface_geometries else {
-            if let Some(error) = refusal.take() {
+            for record in refusal.take_records() {
                 losses.push(crate::loss::CreoLossCode::BrepTransferIncomplete.note(format!(
-                    "Revolution feature {feature_id} states no revolved surface; its B-rep was skipped: {error}"
+                    "Revolution feature {feature_id} states no revolved surface; its B-rep was skipped: {record}"
                 )));
             }
             continue;
@@ -148,14 +148,19 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             })
             .collect::<Option<Vec<_>>>();
         let Some(boundaries) = boundaries else {
-            losses.push(crate::loss::CreoLossCode::BrepTransferIncomplete.note(match refusal.take() {
-                Some(error) => format!(
-                    "Revolution feature {feature_id} has an unresolved boundary pcurve; its B-rep was skipped: {error}"
-                ),
-                None => format!(
-                    "Revolution feature {feature_id} has an unresolved boundary pcurve; its B-rep was skipped."
-                ),
-            }));
+            let records = refusal.take_records();
+            losses.push(
+                crate::loss::CreoLossCode::BrepTransferIncomplete.note(if records.is_empty() {
+                    format!(
+                        "Revolution feature {feature_id} has an unresolved boundary pcurve; its B-rep was skipped."
+                    )
+                } else {
+                    format!(
+                        "Revolution feature {feature_id} has an unresolved boundary pcurve; its B-rep was skipped: {}",
+                        records.join("; ")
+                    )
+                }),
+            );
             continue;
         };
         let face_senses = profile
@@ -166,9 +171,9 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             })
             .collect::<Option<Vec<_>>>();
         let Some(face_senses) = face_senses else {
-            if let Some(error) = refusal.take() {
+            for record in refusal.take_records() {
                 losses.push(crate::loss::CreoLossCode::BrepTransferIncomplete.note(format!(
-                    "Revolution feature {feature_id} states no face sense; its B-rep was skipped: {error}"
+                    "Revolution feature {feature_id} states no face sense; its B-rep was skipped: {record}"
                 )));
             }
             continue;
@@ -360,7 +365,7 @@ impl PrevalidatedRevolutionBoundary {
         axis: &cadmpeg_ir::features::RevolutionAxis,
         section_point: [f64; 2],
         boundary: RevolutionBoundary,
-        refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+        refusal: &mut crate::lane_refusal::LaneRefusals,
     ) -> Option<Self> {
         Some(Self {
             boundary,

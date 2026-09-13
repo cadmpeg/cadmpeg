@@ -139,7 +139,7 @@ pub(crate) fn scan_sweep_carriers(bytes: &[u8]) -> HashMap<u16, SweepCarrier> {
 /// `sqrt(2) / 2`.
 pub(crate) fn profile_nurbs(
     geometry: &CurveGeometry,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<NurbsCurve> {
     let (center, axis, major, major_radius, minor_radius) = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => return Some(curve.clone()),
@@ -211,7 +211,7 @@ pub(crate) fn profile_nurbs(
     ) {
         Ok(curve) => Some(curve),
         Err(error) => {
-            *refusal = Some(error);
+            refusal.note("sldprt sweep profile arc", &error);
             None
         }
     }
@@ -224,7 +224,7 @@ pub(crate) fn swept_nurbs(
     direction: Vector3,
     v_start: f64,
     v_end: f64,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<NurbsSurface> {
     if !(v_start.is_finite() && v_end.is_finite()) || v_end <= v_start {
         return None;
@@ -262,7 +262,7 @@ pub(crate) fn swept_nurbs(
     ) {
         Ok(surface) => Some(surface),
         Err(error) => {
-            *refusal = Some(error);
+            refusal.note("sldprt swept ruled surface patch", &error);
             None
         }
     }
@@ -275,7 +275,7 @@ pub(crate) fn spun_nurbs(
     profile: &NurbsCurve,
     base: Point3,
     axis: Vector3,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<NurbsSurface> {
     use std::f64::consts::{FRAC_PI_2, PI};
     let n = profile.control_points().len();
@@ -356,7 +356,7 @@ pub(crate) fn spun_nurbs(
     ) {
         Ok(surface) => Some(surface),
         Err(error) => {
-            *refusal = Some(error);
+            refusal.note("sldprt spun surface patch", &error);
             None
         }
     }
@@ -475,7 +475,7 @@ mod tests {
             )
             .unwrap(),
         ));
-        let curve = profile_nurbs(&geometry, &mut None).expect("ellipse NURBS");
+        let curve = profile_nurbs(&geometry, &mut crate::lane_refusal::LaneRefusals::new()).expect("ellipse NURBS");
 
         assert_eq!(curve.degree(), 2);
         assert_eq!(curve.control_points().len(), 9);
@@ -505,7 +505,7 @@ mod tests {
             )
             .unwrap(),
         ));
-        let curve = profile_nurbs(&geometry, &mut None).expect("circle NURBS");
+        let curve = profile_nurbs(&geometry, &mut crate::lane_refusal::LaneRefusals::new()).expect("circle NURBS");
 
         for parameter in [0.0, 0.7, FRAC_PI_2, 3.4, 5.9] {
             let point = eval_curve(&curve, parameter);
@@ -592,7 +592,7 @@ mod tests {
             &profile,
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
-            &mut None,
+            &mut crate::lane_refusal::LaneRefusals::new(),
         )
         .expect("valid spun surface");
         // The revolution is the standard rational quadratic NURBS circle: four
@@ -634,7 +634,7 @@ mod tests {
             false,
         )
         .expect("valid line profile");
-        let surface = swept_nurbs(&profile, Vector3::new(0.0, 1.0, 0.0), -2.0, 3.0, &mut None)
+        let surface = swept_nurbs(&profile, Vector3::new(0.0, 1.0, 0.0), -2.0, 3.0, &mut crate::lane_refusal::LaneRefusals::new())
             .expect("swept surface");
         let p = eval_surface(&surface, 0.5, 1.5);
         assert!((p.x - 0.5).abs() < 1.0e-12);
@@ -643,7 +643,7 @@ mod tests {
     }
 
     #[test]
-    fn a_refused_swept_carrier_states_its_reason() {
+    fn two_refused_swept_carriers_state_two_records_each_naming_its_carrier() {
         let profile = NurbsCurve::from_lanes(
             1,
             vec![0.0, 0.0, 1.0, 1.0],
@@ -655,23 +655,34 @@ mod tests {
             false,
         )
         .expect("valid profile");
-        let mut refusal = None;
-        let surface = swept_nurbs(
+        let mut refusal = crate::lane_refusal::LaneRefusals::new();
+        let first = swept_nurbs(
             &profile,
             Vector3::new(1.0, 0.0, 0.0),
             0.0,
             f64::MAX,
             &mut refusal,
         );
-        assert!(surface.is_none(), "the refused ruling states no surface");
-        let error = refusal.expect("the refusal is carried out of the sweep");
-        let reported = cadmpeg_core::CodecError::from(error);
-        let cadmpeg_core::CodecError::Malformed(message) = &reported else {
-            panic!("expected a malformed refusal, got {reported:?}");
-        };
+        let second = swept_nurbs(
+            &profile,
+            Vector3::new(1.0, 0.0, 0.0),
+            0.0,
+            f64::MAX,
+            &mut refusal,
+        );
+        assert!(first.is_none(), "the refused ruling states no surface");
+        assert!(second.is_none(), "the refused ruling states no surface");
+        let records = refusal.take_records();
+        assert_eq!(records.len(), 2, "one record per refused ruling: {records:?}");
+        for record in &records {
+            assert!(
+                record.starts_with("sldprt swept ruled surface patch: "),
+                "the record names the carrier that stated the lanes: {record}"
+            );
+        }
         assert!(
-            !message.is_empty(),
-            "the refusal carries the carrier's own text"
+            refusal.take_records().is_empty(),
+            "the sink is empty once its records are taken"
         );
     }
 }

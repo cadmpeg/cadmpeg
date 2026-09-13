@@ -148,7 +148,7 @@ fn targeted_face_surface_evidence_follows_an_analytic_offset() {
         [stream.clone(), stream.clone()],
         &HashSet::from([10]),
         &HashSet::new(),
-        &mut None,
+        &mut crate::nurbs::LaneRefusals::new(),
     );
     assert!(
         matches!(evidence.surface_geometries.get(&10), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)))
@@ -165,7 +165,7 @@ fn targeted_face_surface_evidence_follows_an_analytic_offset() {
         [stream, conflicting],
         &HashSet::from([10]),
         &HashSet::new(),
-        &mut None,
+        &mut crate::nurbs::LaneRefusals::new(),
     );
     assert!(!evidence.surface_geometries.contains_key(&10));
 }
@@ -219,7 +219,7 @@ fn targeted_surface_evidence_retains_revolution_construction() {
         )]),
     };
 
-    let evidence = standard_surface_evidence(&graph, 10, &mut None).expect("revolution evidence");
+    let evidence = standard_surface_evidence(&graph, 10, &mut crate::nurbs::LaneRefusals::new()).expect("revolution evidence");
     let Some(StandardSurfaceProcedure::Revolution(revolution)) = evidence.procedure_ref() else {
         panic!("surface-of-revolution evidence must retain its construction");
     };
@@ -280,7 +280,7 @@ fn object_evidence_exports_revolution_cache_and_construction() {
         [stream],
         &HashSet::from([120]),
         &HashSet::new(),
-        &mut None,
+        &mut crate::nurbs::LaneRefusals::new(),
     );
     assert!(matches!(
         evidence.surface_geometries.get(&120),
@@ -827,7 +827,7 @@ fn standard_spline_uses_identity_bound_native_support_pcurves() {
         [0, 1],
         Some(&native),
         None,
-        &mut None,
+        &mut crate::nurbs::LaneRefusals::new(),
     )
     .expect("valid source object identity");
     let curve = curve.expect("native support identifies the curve");
@@ -895,7 +895,7 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
         Some([0, 1])
     );
     assert_eq!(
-        standard_oriented_native_support_pcurves(&native, &points, [1, 0], &mut None),
+        standard_oriented_native_support_pcurves(&native, &points, [1, 0], &mut crate::nurbs::LaneRefusals::new()),
         Some([
             PcurveGeometry::Line(
                 cadmpeg_ir::geometry::LinePcurve::try_new(
@@ -1045,7 +1045,7 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
         [0, 1],
         None,
         Some((&limit_curve, binding.parameter_range)),
-        &mut None,
+        &mut crate::nurbs::LaneRefusals::new(),
     )
     .expect("valid source object identity");
     assert_eq!(range, Some(binding.parameter_range));
@@ -1105,7 +1105,7 @@ fn standard_line_edge_uses_distance_parameterization() {
         [0, 1],
         None,
         None,
-        &mut None,
+        &mut crate::nurbs::LaneRefusals::new(),
     )
     .expect("valid source object identity");
     assert_eq!(range, Some([0.0, 5.0]));
@@ -1140,7 +1140,7 @@ fn standard_line_edge_accepts_a_finite_nonzero_distance() {
         [0, 1],
         None,
         None,
-        &mut None,
+        &mut crate::nurbs::LaneRefusals::new(),
     )
     .expect("valid source object identity");
     assert!(curve.is_some());
@@ -1193,7 +1193,7 @@ fn witnessed_cylinder_circle_edge_uses_complementary_angular_range() {
         reference,
         Point3::new(2.0, 0.0, 3.0),
         Point3::new(0.0, 2.0, 3.0),
-        &mut None,
+        &mut crate::nurbs::LaneRefusals::new(),
     )
     .expect("witnessed circle range");
     assert!(((range[1] - range[0]).abs() - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
@@ -1290,7 +1290,7 @@ fn native_support_pcurve_midpoint_selects_an_unwitnessed_circle_branch() {
         [0, 1],
         Some(&native),
         None,
-        &mut None,
+        &mut crate::nurbs::LaneRefusals::new(),
     )
     .expect("valid source object identity");
     assert_eq!(range, Some([0.0, 1.5 * std::f64::consts::PI]));

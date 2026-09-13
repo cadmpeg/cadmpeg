@@ -8240,7 +8240,7 @@ fn consolidated_edge_runs(
     records: &[ConsolidatedRecord],
     pcurves: &[CatiaConsolidatedPcurve],
     nodes: &[CatiaConsolidatedEdgeNode],
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Vec<CatiaConsolidatedEdgeRun> {
     let pcurve_ids = pcurves
         .iter()
@@ -8759,7 +8759,7 @@ impl CatiaNative {
     pub(crate) fn decode_with_record_ranges(bytes: &[u8], ranges: &[Range<usize>]) -> Self {
         let consolidated_records =
             crate::wire::records::consolidated_records_in_ranges(bytes, ranges.iter().cloned());
-        Self::decode_with_records(bytes, &consolidated_records, &mut None)
+        Self::decode_with_records(bytes, &consolidated_records, &mut crate::nurbs::LaneRefusals::new())
     }
 
     /// Decode CATIA-native records from descriptor-scoped logical sources.
@@ -8767,7 +8767,7 @@ impl CatiaNative {
     pub(crate) fn decode_with_record_sources(
         bytes: &[u8],
         sources: &[Vec<Range<usize>>],
-        refusal: &mut Option<crate::nurbs::LaneRefusal>,
+        refusal: &mut crate::nurbs::LaneRefusals,
     ) -> Self {
         let consolidated_records =
             crate::wire::records::consolidated_records_in_sources(bytes, sources.iter().cloned());
@@ -8777,7 +8777,7 @@ impl CatiaNative {
     fn decode_with_records(
         bytes: &[u8],
         consolidated_records: &[ConsolidatedRecord],
-        refusal: &mut Option<crate::nurbs::LaneRefusal>,
+        refusal: &mut crate::nurbs::LaneRefusals,
     ) -> Self {
         let outer_directory = container::parse_outer_stream_directory(bytes);
         let outer_container_declarations =

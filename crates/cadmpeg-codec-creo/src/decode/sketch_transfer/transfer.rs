@@ -298,11 +298,11 @@ pub(in super::super) fn transfer_sketches(
             })
             .map(|segment| segment.offset)
             .collect::<BTreeSet<_>>();
-        let mut refusal = None;
+        let mut refusal = crate::lane_refusal::LaneRefusals::new();
         let materialized_saved_section_external_ids =
             materialized_saved_section_external_ids(definition, &mut refusal);
-        if let Some(error) = refusal {
-            return Err(error.into());
+        if let Some(error) = refusal.take_error() {
+            return Err(error);
         }
         coverage.record_resolved_geometry(resolved_segment_offsets.len());
         for segment in segments

@@ -273,18 +273,21 @@ pub(in super::super) fn transfer_saved_spline_curves(
                 _ => None,
             })
         {
-            let mut refusal = None;
+            let mut refusal = crate::lane_refusal::LaneRefusals::new();
             let Some(nurbs) = saved_spline_nurbs(spline, &mut refusal) else {
+                let records = refusal.take_records();
                 losses.push(crate::loss::CreoLossCode::SectionSplineUnresolved.note(
-                    match &refusal {
-                        Some(error) => format!(
-                            "Saved section spline at offset {} cannot form a NURBS curve: {error}",
-                            spline.offset
-                        ),
-                        None => format!(
+                    if records.is_empty() {
+                        format!(
                             "Saved section spline at offset {} cannot form a NURBS curve.",
                             spline.offset
-                        ),
+                        )
+                    } else {
+                        format!(
+                            "Saved section spline at offset {} cannot form a NURBS curve: {}",
+                            spline.offset,
+                            records.join("; ")
+                        )
                     },
                 ));
                 continue;
@@ -339,7 +342,7 @@ pub(in super::super) fn transfer_saved_spline_curves(
 pub(in super::super) fn revolved_nurbs_surface(
     directrix: &NurbsCurve,
     axis: &RevolutionAxis,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<NurbsSurface> {
     let axis_direction = normalize([axis.direction.x, axis.direction.y, axis.direction.z])?;
     let axis_origin = [axis.origin.x, axis.origin.y, axis.origin.z];
@@ -430,7 +433,7 @@ pub(in super::super) fn revolved_nurbs_surface(
     ) {
         Ok(surface) => Some(surface),
         Err(error) => {
-            *refusal = Some(error);
+            refusal.note("creo revolved NURBS surface record", &error);
             None
         }
     }
@@ -689,18 +692,21 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             .normal()
             .map(|value| value * (span.upper - span.lower));
         for (native_surface_id, internal_id, spline) in splines {
-            let mut refusal = None;
+            let mut refusal = crate::lane_refusal::LaneRefusals::new();
             let Some(section_curve) = saved_spline_nurbs(spline, &mut refusal) else {
+                let records = refusal.take_records();
                 losses.push(crate::loss::CreoLossCode::SectionSplineUnresolved.note(
-                    match &refusal {
-                        Some(error) => format!(
-                            "Saved section spline at offset {} cannot form a NURBS curve: {error}",
-                            spline.offset
-                        ),
-                        None => format!(
+                    if records.is_empty() {
+                        format!(
                             "Saved section spline at offset {} cannot form a NURBS curve.",
                             spline.offset
-                        ),
+                        )
+                    } else {
+                        format!(
+                            "Saved section spline at offset {} cannot form a NURBS curve: {}",
+                            spline.offset,
+                            records.join("; ")
+                        )
                     },
                 ));
                 continue;
@@ -711,14 +717,14 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             let Some(directrix) = translated_nurbs_curve(&placed, lower_translation) else {
                 continue;
             };
-            let mut refusal = None;
+            let mut refusal = crate::lane_refusal::LaneRefusals::new();
             let Some(surface) = extruded_nurbs_surface(&directrix, sweep, &mut refusal) else {
-                if let Some(error) = refusal {
+                for record in refusal.take_records() {
                     losses.push(
                         crate::loss::CreoLossCode::SectionSplineUnresolved.note(format!(
-                        "Extruded section spline at offset {} states no surface carrier: {error}",
-                        spline.offset
-                    )),
+                            "Extruded section spline at offset {} states no surface carrier: {record}",
+                            spline.offset
+                        )),
                     );
                 }
                 continue;

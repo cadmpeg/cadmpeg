@@ -261,7 +261,7 @@ pub(in super::super) fn semantic_saved_section_entities(
 
 pub(in super::super) fn materialized_saved_section_external_ids(
     definition: &crate::feature::FeatureDefinition,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> BTreeSet<u32> {
     let unique_saved_ids = unique_saved_section_internal_ids(definition);
     let ambiguous_segment_ids = ambiguous_section_segment_external_ids(definition);

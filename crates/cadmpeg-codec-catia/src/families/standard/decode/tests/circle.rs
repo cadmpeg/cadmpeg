@@ -60,7 +60,7 @@ fn standard_circle_without_an_admissible_plane_normal_retains_unknown_carrier() 
         [0, 1],
         None,
         None,
-        &mut None,
+        &mut crate::nurbs::LaneRefusals::new(),
     )
     .expect("valid source object identity");
     let curve = curve.expect("the serialized circle retains a carrier identity");
@@ -105,7 +105,7 @@ fn unknown_standard_circle_carrier_does_not_create_a_sphere_pcurve() {
         Point3::new(center.x, center.y, center.z + radius),
         None,
         Some(&unknown),
-        &mut None,
+        &mut crate::nurbs::LaneRefusals::new(),
     )
     .is_none());
 }

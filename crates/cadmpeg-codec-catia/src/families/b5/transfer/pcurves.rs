@@ -387,7 +387,7 @@ pub(super) fn neutral_pcurve_point(point: [f64; 2], surface: &B5Surface) -> Poin
 pub(super) fn lifted_curve_geometry(
     pcurve: &B5Pcurve,
     surface: &B5Surface,
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<CurveGeometry> {
     let knots = pcurve_nurbs_knots(pcurve)?;
     match surface {
@@ -563,7 +563,7 @@ pub(super) fn lifted_curve_geometry(
 pub(super) fn nurbs_isocurve(
     pcurve: &B5Pcurve,
     surface: &NurbsSurface,
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<NurbsCurve> {
     let record = format!("b5 isoparametric pcurve record #{}", pcurve.object_id);
     if let Some(u) = constant_coordinate(&pcurve.control_points, 0) {
@@ -614,7 +614,7 @@ pub(super) fn cylinder_helix(
     endpoint_parameters: [f64; 2],
     edge_start: [f64; 3],
     edge_end: [f64; 3],
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<HelixPlan> {
     const FIT_TOLERANCE: f64 = 1e-4;
 

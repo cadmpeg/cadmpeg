@@ -169,7 +169,7 @@ fn quintic_jet_reproduces_endpoint_second_order_data() {
         &[[0.0, 0.0], [2.0, 0.0]],
         &[[1.0, 0.0], [1.0, 0.0]],
         &[[0.0, 0.0], [0.0, 0.0]],
-        &mut None,
+        &mut crate::nurbs::LaneRefusals::new(),
         "test record",
     )
     .expect("linear quintic segment");
@@ -194,7 +194,7 @@ fn reversing_nurbs_preserves_tiny_knot_domain() {
         .expect("valid tiny-domain NURBS"),
     ));
     let (reversed, range) =
-        crate::nurbs::reverse_curve_geometry(&curve, [tiny, 2.0 * tiny], &mut None, "test record")
+        crate::nurbs::reverse_curve_geometry(&curve, [tiny, 2.0 * tiny], &mut crate::nurbs::LaneRefusals::new(), "test record")
             .expect("reversed NURBS");
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(reversed)) = reversed else {
         panic!("expected NURBS");

@@ -68,6 +68,7 @@ pub(crate) mod dialect;
 pub(crate) mod feature;
 pub(crate) mod interpolation_grid;
 /// Byte-offset constants generated from `docs/layouts/creo.toml`.
+pub(crate) mod lane_refusal;
 pub(crate) mod layout;
 pub(crate) mod legacy;
 pub(crate) mod legacy_family;

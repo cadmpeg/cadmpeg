@@ -433,7 +433,7 @@ fn projects_exact_planar_carriers_without_changing_parameters() {
         .expect("valid CircleCurve fixture"),
     ));
     assert!(
-        matches!(planar_curve_pcurve(&plane(), &circle, &mut None), Some(PcurveGeometry::Circle(circle_pcurve))
+        matches!(planar_curve_pcurve(&plane(), &circle, &mut crate::lane_refusal::LaneRefusals::new()), Some(PcurveGeometry::Circle(circle_pcurve))
                 if {
                     let center = circle_pcurve.center();
         let x_axis = circle_pcurve.x_axis();
@@ -457,7 +457,7 @@ fn projects_exact_planar_carriers_without_changing_parameters() {
         .expect("valid planar NURBS"),
     ));
     assert!(matches!(
-        planar_curve_pcurve(&plane(), &nurbs, &mut None),
+        planar_curve_pcurve(&plane(), &nurbs, &mut crate::lane_refusal::LaneRefusals::new()),
         Some(PcurveGeometry::Nurbs { nurbs })
             if nurbs.degree() == 1
                 && nurbs.knots() == [2.0, 2.0, 5.0, 5.0]
@@ -474,7 +474,7 @@ fn projects_exact_planar_carriers_without_changing_parameters() {
         )
         .expect("valid LineCurve fixture"),
     ));
-    assert!(planar_curve_pcurve(&plane(), &off_plane, &mut None).is_none());
+    assert!(planar_curve_pcurve(&plane(), &off_plane, &mut crate::lane_refusal::LaneRefusals::new()).is_none());
 }
 
 #[test]
