@@ -21,9 +21,11 @@ use crate::provenance::{AnnotationProvenance, Exactness};
 pub struct Annotations {
     /// Source location for each annotated entity.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub provenance: BTreeMap<String, AnnotationProvenance>,
     /// Non-byte-exact entity or field annotations.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     exactness: BTreeMap<String, ExactnessNote>,
 }
 
@@ -167,6 +169,7 @@ pub enum ExactnessNote {
         entity: Inexactness,
         /// Exactness overrides keyed by serde field path.
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
         fields: BTreeMap<FieldName, Exactness>,
     },
     /// The entity is byte-exact apart from the listed fields.

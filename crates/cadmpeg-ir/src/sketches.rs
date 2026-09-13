@@ -2808,6 +2808,7 @@ pub enum SketchConstraintDefinitionInput {
         native_flags: Option<u64>,
         /// Exact source-native scalar properties not represented by common state or flags.
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
         native_properties: BTreeMap<String, String>,
         /// Referenced entities.
         entities: Vec<SketchEntityId>,

@@ -5,6 +5,7 @@ pub mod bytes;
 pub mod container;
 pub mod decode;
 pub mod dialect;
+pub mod distinct_keys;
 pub mod error;
 pub mod io;
 pub mod target;

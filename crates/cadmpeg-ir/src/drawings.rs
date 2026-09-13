@@ -65,6 +65,7 @@ pub struct Drawing {
     pub visible: Option<bool>,
     /// Ordered relationships grouped by exact source-property role.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub relationships: BTreeMap<String, Vec<crate::references::ReferenceSelection>>,
     /// Page template drawing identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -87,6 +88,7 @@ pub struct Drawing {
     pub rotation_degrees: Option<crate::scalar::FiniteReal>,
     /// Remaining typed or exactly framed parameters by source name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub parameters: BTreeMap<String, String>,
     /// Template, image, symbol, or other retained assets.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

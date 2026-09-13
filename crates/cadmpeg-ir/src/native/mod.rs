@@ -274,6 +274,7 @@ where
 #[serde(transparent)]
 pub struct NativeNamespace {
     /// Record arenas keyed by stable arena name.
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     arenas: BTreeMap<String, Vec<NativeRecord>>,
 }
 

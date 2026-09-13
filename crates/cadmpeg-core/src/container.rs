@@ -409,6 +409,7 @@ pub struct ContainerEntry {
     /// Byte storage of this entry.
     pub storage: EntryStorage,
     /// Extra codec-extracted attributes, sorted by key.
+    #[serde(deserialize_with = "crate::distinct_keys::btree_map")]
     pub attributes: BTreeMap<String, String>,
 }
 
@@ -434,6 +435,7 @@ struct EntryIdentityWire {
     name: String,
     role: ContainerRole,
     #[serde(default)]
+    #[serde(deserialize_with = "crate::distinct_keys::btree_map")]
     attributes: BTreeMap<String, String>,
 }
 

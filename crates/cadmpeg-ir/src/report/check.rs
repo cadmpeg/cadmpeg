@@ -101,6 +101,7 @@ pub struct Finding {
 #[serde(deny_unknown_fields)]
 pub struct ValidationReport {
     /// Count of entities per arena, keyed by entity kind (sorted).
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub entity_counts: BTreeMap<CensusKey, usize>,
     /// Findings, in discovery order.
     pub findings: Vec<Finding>,
