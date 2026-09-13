@@ -797,16 +797,28 @@ enum ProceduralSurfaceDefinitionWire {
         first: CurveId,
         second: CurveId,
         /// Solved-cache fit contract this construction states itself.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         cache: Option<LegacyCache>,
     },
     Blend(surface_payloads::BlendSurfacePayload),
     RollingBallJet(RollingBallJetStations),
     Unknown {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         record: Option<UnknownId>,
         /// Solved-cache fit contract this construction states itself.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         cache: Option<LegacyCache>,
     },
 }
@@ -4395,7 +4407,12 @@ pub struct VariableBlendConstruction {
     /// Second interval: a lower bound with an unbounded-above marker,
     /// encoded as `(T lo, F)` and decoding to `[Some(lo), None]`. The `F`
     /// upper-bound marker is an interval bound, not a standalone Boolean.
-    #[serde(rename = "v_lower", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "v_lower",
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub v_lower: Option<f64>,
     /// Requested fit tolerance for the surface cache.
     pub shape_parameter: f64,
@@ -6612,18 +6629,30 @@ pub enum ProceduralCurveDefinition {
 enum ProceduralCurveDefinitionWire {
     Exact {
         /// Solved-cache fit contract this construction states itself.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         cache: Option<LegacyCache>,
     },
     Law {
         context: IntcurveSupportContext,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         version: Option<LawCurveVersionForm>,
         extension: i64,
         primary: LawFormula,
         additional: Vec<LawFormula>,
         /// Solved-cache fit contract this construction states itself.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         cache: Option<LegacyCache>,
     },
     Compound(CompoundCurveConstruction),
@@ -6632,15 +6661,27 @@ enum ProceduralCurveDefinitionWire {
         context: IntcurveSupportContext,
         discontinuity_flag: bool,
         /// Solved-cache fit contract this construction states itself.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         cache: Option<LegacyCache>,
     },
     TolerantIntersection {
         construction: TolerantIntersectionConstruction,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         parameterization: Option<TolerantIntersectionParameterization>,
         /// Solved-cache fit contract this construction states itself.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         cache: Option<LegacyCache>,
     },
     ThreeSurfaceIntersection(curve_payloads::ThreeSurfaceIntersectionCurvePayload),
@@ -6662,16 +6703,32 @@ enum ProceduralCurveDefinitionWire {
         transform: Transform,
     },
     BlendSpine {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         blend_surface: Option<SurfaceId>,
     },
     Unknown {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         native_kind: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         record: Option<UnknownId>,
         /// Solved-cache fit contract this construction states itself.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         cache: Option<LegacyCache>,
     },
 }
