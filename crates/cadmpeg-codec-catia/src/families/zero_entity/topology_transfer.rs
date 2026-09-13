@@ -67,6 +67,7 @@ struct OccurrencePcurve {
 /// refuses the whole candidate when any support occurrence or endpoint lacks
 /// a unique relation. The caller keeps the existing wire transfer as the
 /// atomic fallback.
+#[allow(clippy::too_many_arguments)] // the carrier refusal rides along as the eighth argument
 pub(crate) fn transfer_closed_face_topology(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,

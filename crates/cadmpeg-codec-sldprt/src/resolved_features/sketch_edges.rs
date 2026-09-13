@@ -89,6 +89,7 @@ pub(super) fn project_endpoint_constraints(
     }
 }
 
+#[allow(clippy::too_many_arguments)] // the carrier refusal rides along as the eighth argument
 pub(super) fn project_edge(
     edge: &cadmpeg_ir::topology::Edge,
     vertices: &HashMap<&cadmpeg_ir::ids::VertexId, &cadmpeg_ir::ids::PointId>,

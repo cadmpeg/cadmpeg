@@ -2051,7 +2051,7 @@ pub(super) fn project(
                 if let Some(error) = pcurve_refusal {
                     losses.push(entity_loss(
                         entry,
-                        &format!("boundary parameter curve states no NURBS carrier: {error}"),
+                        format!("boundary parameter curve states no NURBS carrier: {error}"),
                     ));
                     valid = false;
                     break;

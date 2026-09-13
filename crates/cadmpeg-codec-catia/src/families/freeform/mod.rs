@@ -1601,6 +1601,7 @@ pub(crate) fn consolidated_jet_pcurve(
 
 /// Transfer resolved consolidated surface curves, reusing an existing
 /// pcurve-less standard edge construction when endpoint loci select one.
+#[allow(clippy::too_many_arguments)] // the carrier refusal rides along as the eighth argument
 pub(crate) fn append_resolved_consolidated_surface_curves(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
