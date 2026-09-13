@@ -21,7 +21,7 @@ pub mod annotations;
 pub mod attributes;
 mod emit;
 pub mod geometry;
-mod key_maps;
+pub mod key_maps;
 pub mod records;
 pub mod stats;
 use stats::Stats;
@@ -104,7 +104,6 @@ pub struct AsmBrep {
     /// Native sidedness fields stored on solved faces.
     pub face_sidedness: Vec<FaceSidedness>,
     /// Native Design-join key field for every emitted face, including null keys.
-    #[serde(flatten, with = "key_maps::faces")]
     pub face_native_keys: Vec<FaceNativeKey>,
     /// Native parameter intervals stored on tolerant coedges.
     pub tolerant_coedge_parameters: Vec<TolerantCoedgeParameters>,
@@ -117,7 +116,6 @@ pub struct AsmBrep {
     /// Native rotation/reflection/shear classifications stored on transforms.
     pub transform_hints: Vec<TransformHints>,
     /// Native Design-join key field for every emitted body, including null keys.
-    #[serde(flatten, with = "key_maps::bodies")]
     pub body_native_keys: Vec<BodyNativeKey>,
     /// Native wire records projected onto solved shells.
     pub wire_topologies: Vec<WireTopology>,
@@ -134,10 +132,9 @@ pub struct AsmBrep {
 
 /// Flat wire shape of [`AsmBrep`].
 ///
-/// The two join maps are serialized flattened beside the key records they
-/// project, so the read names every key of the document object in one struct
-/// and refuses any other. A container that flattens cannot declare
-/// `deny_unknown_fields`; naming the flattened keys here is what lets it.
+/// The read names every key of the document object in one struct and refuses
+/// any other. The join maps are not on the wire: they are projections of the
+/// key records, derived on read through [`key_maps`].
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct AsmBrepWire {
@@ -159,14 +156,12 @@ struct AsmBrepWire {
     edge_ownerships: Vec<EdgeOwnership>,
     vertex_ownerships: Vec<VertexOwnership>,
     face_sidedness: Vec<FaceSidedness>,
-    face_keys: HashMap<cadmpeg_ir::ids::FaceId, u64>,
     face_native_keys: Vec<FaceNativeKey>,
     tolerant_coedge_parameters: Vec<TolerantCoedgeParameters>,
     tolerant_edge_tails: Vec<TolerantEdgeTail>,
     tolerant_vertex_tails: Vec<TolerantVertexTail>,
     mesh_surface_sentinels: Vec<MeshSurfaceSentinel>,
     transform_hints: Vec<TransformHints>,
-    body_keys: HashMap<cadmpeg_ir::ids::BodyId, u64>,
     body_native_keys: Vec<BodyNativeKey>,
     wire_topologies: Vec<WireTopology>,
     attributes: Vec<SourceAttribute>,
@@ -177,16 +172,6 @@ struct AsmBrepWire {
 impl<'de> Deserialize<'de> for AsmBrep {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let wire = AsmBrepWire::deserialize(deserializer)?;
-        if !key_maps::faces::agrees(&wire.face_keys, &wire.face_native_keys) {
-            return Err(serde::de::Error::custom(
-                "face_keys must match face_native_keys",
-            ));
-        }
-        if !key_maps::bodies::agrees(&wire.body_keys, &wire.body_native_keys) {
-            return Err(serde::de::Error::custom(
-                "body_keys must match body_native_keys",
-            ));
-        }
         Ok(Self {
             bodies: wire.bodies,
             regions: wire.regions,
@@ -374,16 +359,9 @@ pub fn retain_root_entities(value: &mut Value, reachable: &HashSet<String>) {
     let Value::Map(fields) = value else {
         return;
     };
-    for (name, value) in fields {
-        match value {
-            Value::Seq(items) => {
-                items.retain(|item| entity_id(item).is_none_or(|id| reachable.contains(id)));
-            }
-            Value::Map(keys) if matches!(name, Value::String(name) if matches!(name.as_str(), "body_keys" | "face_keys")) =>
-            {
-                keys.retain(|key, _| matches!(key, Value::String(id) if reachable.contains(id)));
-            }
-            _ => {}
+    for (_, value) in fields {
+        if let Value::Seq(items) = value {
+            items.retain(|item| entity_id(item).is_none_or(|id| reachable.contains(id)));
         }
     }
 }
