@@ -934,8 +934,9 @@ fn elevate_nurbs_to_degree(
             }
             .into());
         };
-        let mut piece_knots = alloc_filled(target_knot_count, start, "iges composite elevated knots")
-            .map_err(DegreeElevationError::Allocation)?;
+        let mut piece_knots =
+            alloc_filled(target_knot_count, start, "iges composite elevated knots")
+                .map_err(DegreeElevationError::Allocation)?;
         let end_knots = alloc_filled(target_knot_count, end, "iges composite elevated knots")
             .map_err(DegreeElevationError::Allocation)?;
         piece_knots.extend(end_knots);

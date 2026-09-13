@@ -14,8 +14,9 @@ use cadmpeg_core::decode::{alloc_filled, refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{
     derive_reference_direction, knots_nondecreasing, Curve, CurveGeometry, NurbsCurve,
-    NurbsSurface, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, Surface, SurfaceGeometry, SurfaceParameterAxis,
+    NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes, ProceduralSurface,
+    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry, SurfaceParameterAxis,
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -723,20 +724,22 @@ fn same_basis_ruled_surface(
         Some(surface_weights)
     };
     NurbsSurface::from_lanes(
-        first.degree(),
-        1,
-        first.knots().to_vec(),
-        vec![0.0, 0.0, 1.0, 1.0],
-        first
-            .control_points()
-            .iter()
-            .copied()
-            .zip(second.control_points().iter().copied())
-            .map(|(first, second)| vec![first, second])
-            .collect(),
-        weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
-        false,
-        first.periodic() && second.periodic(),
+        NurbsSurfaceAxis::new(
+            first.degree(),
+            first.knots().to_vec(),
+            first.periodic() && second.periodic(),
+        ),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceLanes::new(
+            first
+                .control_points()
+                .iter()
+                .copied()
+                .zip(second.control_points().iter().copied())
+                .map(|(first, second)| vec![first, second])
+                .collect(),
+            weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
+        ),
         false,
     )
 }
@@ -780,14 +783,12 @@ fn ruled_surface_carrier(
         return Ok(None);
     };
     Ok(Some(NurbsSurface::from_lanes(
-        degree,
-        1,
-        u_knots,
-        vec![0.0, 0.0, 1.0, 1.0],
-        control_points.chunks(2_usize).map(<[_]>::to_vec).collect(),
-        weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
-        false,
-        first.periodic() && second.periodic(),
+        NurbsSurfaceAxis::new(degree, u_knots, first.periodic() && second.periodic()),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceLanes::new(
+            control_points.chunks(2_usize).map(<[_]>::to_vec).collect(),
+            weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
+        ),
         false,
     )?))
 }
@@ -1700,14 +1701,16 @@ pub(super) fn project(
         };
         let surface_id = crate::ids::surface(&crate::ids::Stem::directory(entry.sequence));
         let surface = match NurbsSurface::from_lanes(
-            placed_directrix.degree(),
-            1,
-            placed_directrix.knots().to_vec(),
-            vec![0.0, 0.0, 1.0, 1.0],
-            control_points.chunks(2).map(<[_]>::to_vec).collect(),
-            weights,
-            false,
-            placed_directrix.periodic(),
+            NurbsSurfaceAxis::new(
+                placed_directrix.degree(),
+                placed_directrix.knots().to_vec(),
+                placed_directrix.periodic(),
+            ),
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsSurfaceLanes::new(
+                control_points.chunks(2).map(<[_]>::to_vec).collect(),
+                weights,
+            ),
             false,
         ) {
             Ok(nurbs) => nurbs,
@@ -1989,22 +1992,28 @@ pub(super) fn project(
         let placed_generatrix = (entry.transform != 0).then(|| generatrix.clone());
         let surface_id = crate::ids::surface(&crate::ids::Stem::directory(entry.sequence));
         let surface = match NurbsSurface::from_lanes(
-            generatrix.degree(),
-            2,
-            generatrix.knots().to_vec(),
-            v_knots,
-            control_points
-                .chunks(v_count as usize)
-                .map(<[_]>::to_vec)
-                .collect(),
-            Some(weights)
-                .map(|values| values.chunks(v_count as usize).map(<[_]>::to_vec).collect()),
-            false,
-            generatrix.periodic(),
-            super::curve_conversion::angularly_equal(
-                end_angle - start_angle,
-                std::f64::consts::TAU,
+            NurbsSurfaceAxis::new(
+                generatrix.degree(),
+                generatrix.knots().to_vec(),
+                generatrix.periodic(),
             ),
+            NurbsSurfaceAxis::new(
+                2,
+                v_knots,
+                super::curve_conversion::angularly_equal(
+                    end_angle - start_angle,
+                    std::f64::consts::TAU,
+                ),
+            ),
+            NurbsSurfaceLanes::new(
+                control_points
+                    .chunks(v_count as usize)
+                    .map(<[_]>::to_vec)
+                    .collect(),
+                Some(weights)
+                    .map(|values| values.chunks(v_count as usize).map(<[_]>::to_vec).collect()),
+            ),
+            false,
         ) {
             Ok(nurbs) => nurbs,
             Err(error) => {
@@ -2379,23 +2388,21 @@ pub(super) fn project(
             }
         }
         let surface = match NurbsSurface::from_lanes(
-            u_degree,
-            v_degree,
-            u_knots,
-            v_knots,
-            control_points
-                .chunks(v_count_u32 as usize)
-                .map(<[_]>::to_vec)
-                .collect(),
-            weights.map(|values| {
-                values
+            NurbsSurfaceAxis::new(u_degree, u_knots, flags[3] == Some(1)),
+            NurbsSurfaceAxis::new(v_degree, v_knots, flags[4] == Some(1)),
+            NurbsSurfaceLanes::new(
+                control_points
                     .chunks(v_count_u32 as usize)
                     .map(<[_]>::to_vec)
-                    .collect()
-            }),
+                    .collect(),
+                weights.map(|values| {
+                    values
+                        .chunks(v_count_u32 as usize)
+                        .map(<[_]>::to_vec)
+                        .collect()
+                }),
+            ),
             false,
-            flags[3] == Some(1),
-            flags[4] == Some(1),
         ) {
             Ok(nurbs) => nurbs,
             Err(error) => {

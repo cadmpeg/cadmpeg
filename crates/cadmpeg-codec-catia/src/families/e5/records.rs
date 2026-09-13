@@ -300,10 +300,7 @@ pub fn e5_edges(data: &[u8]) -> Vec<E5Edge> {
 
 /// Decode E5 cylinder (`0xc9`), cone (`0xca`), and torus (`0xcc`) surface
 /// records. The E5 plane class does not serialize a standalone normal.
-pub fn e5_surfaces(
-    data: &[u8],
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
-) -> Vec<E5Surface> {
+pub fn e5_surfaces(data: &[u8], refusal: &mut Option<crate::nurbs::LaneRefusal>) -> Vec<E5Surface> {
     let mut out = Vec::new();
     for record in e5_records(data) {
         let pos = record.pos;
@@ -647,14 +644,12 @@ fn e5_nurbs_surface(
         .then(|| {
             crate::nurbs::note_refusal(
                 NurbsSurface::from_lanes(
-                    u_degree,
-                    v_degree,
-                    u_knots,
-                    v_knots,
-                    control_points.chunks(row_len).map(<[_]>::to_vec).collect(),
-                    weights.map(|values| values.chunks(row_len).map(<[_]>::to_vec).collect()),
-                    false,
-                    false,
+                    cadmpeg_ir::geometry::NurbsSurfaceAxis::new(u_degree, u_knots, false),
+                    cadmpeg_ir::geometry::NurbsSurfaceAxis::new(v_degree, v_knots, false),
+                    cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                        control_points.chunks(row_len).map(<[_]>::to_vec).collect(),
+                        weights.map(|values| values.chunks(row_len).map(<[_]>::to_vec).collect()),
+                    ),
                     false,
                 ),
                 refusal,

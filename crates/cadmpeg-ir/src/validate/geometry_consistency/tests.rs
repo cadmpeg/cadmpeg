@@ -545,25 +545,23 @@ fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
     // surface domain supplies an interior seed on the same branch.
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
-            1,
-            2,
-            vec![0.0, 0.0, 1.0, 1.0],
-            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            vec![
+            crate::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            crate::geometry::NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
+            crate::geometry::NurbsSurfaceLanes::new(
                 vec![
-                    Point3::new(0.0, 0.0, 0.0),
-                    Point3::new(0.0, 0.0, 0.0),
-                    Point3::new(0.0, 0.0, 1.0),
+                    vec![
+                        Point3::new(0.0, 0.0, 0.0),
+                        Point3::new(0.0, 0.0, 0.0),
+                        Point3::new(0.0, 0.0, 1.0),
+                    ],
+                    vec![
+                        Point3::new(1.0, 0.0, 0.0),
+                        Point3::new(1.0, 0.0, 0.0),
+                        Point3::new(1.0, 0.0, 1.0),
+                    ],
                 ],
-                vec![
-                    Point3::new(1.0, 0.0, 0.0),
-                    Point3::new(1.0, 0.0, 0.0),
-                    Point3::new(1.0, 0.0, 1.0),
-                ],
-            ],
-            None,
-            false,
-            false,
+                None,
+            ),
             false,
         )
         .unwrap(),

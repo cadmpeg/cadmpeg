@@ -55,7 +55,9 @@ impl DecodeSidecar {
     ///
     /// Refuses a non-finite float: the sidecar is an IR document and takes
     /// the same write route as every other.
-    pub fn to_canonical_json(&self) -> Result<String, crate::hash::finite_json::CanonicalJsonError> {
+    pub fn to_canonical_json(
+        &self,
+    ) -> Result<String, crate::hash::finite_json::CanonicalJsonError> {
         crate::hash::finite_json::to_canonical_json_string(self)
     }
 

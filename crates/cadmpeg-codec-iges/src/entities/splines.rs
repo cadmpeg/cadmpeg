@@ -11,8 +11,8 @@ use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::{alloc_filled, refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, SolvedCurveGeometry, SolvedSurfaceGeometry,
-    Surface, SurfaceGeometry,
+    Curve, CurveGeometry, NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes,
+    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::EdgeId;
 use cadmpeg_ir::math::Point3;
@@ -858,17 +858,15 @@ pub(super) fn project(
             continue;
         };
         let nurbs = match NurbsSurface::from_lanes(
-            3,
-            3,
-            u_knots,
-            v_knots,
-            control_points
-                .chunks(v_count as usize)
-                .map(<[_]>::to_vec)
-                .collect(),
-            None,
-            false,
-            false,
+            NurbsSurfaceAxis::new(3, u_knots, false),
+            NurbsSurfaceAxis::new(3, v_knots, false),
+            NurbsSurfaceLanes::new(
+                control_points
+                    .chunks(v_count as usize)
+                    .map(<[_]>::to_vec)
+                    .collect(),
+                None,
+            ),
             false,
         ) {
             Ok(nurbs) => nurbs,

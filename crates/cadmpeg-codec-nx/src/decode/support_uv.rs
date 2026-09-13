@@ -866,8 +866,7 @@ pub(crate) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
                     let parent_exhausted = parent_geometry_budget
                         .consume_child(lane_geometry_budget)
                         .is_err();
-                    lane_geometry_exhausted |=
-                        lane_geometry_budget.exhausted() || parent_exhausted;
+                    lane_geometry_exhausted |= lane_geometry_budget.exhausted() || parent_exhausted;
                 }
                 if inconsistent {
                     invalid.push((procedural_id.clone(), side));
@@ -1305,8 +1304,7 @@ fn complete_support_uv_wave(
                     let parent_exhausted = parent_geometry_budget
                         .consume_child(&lane_geometry_budget)
                         .is_err();
-                    lane_geometry_exhausted |=
-                        lane_geometry_budget.exhausted() || parent_exhausted;
+                    lane_geometry_exhausted |= lane_geometry_budget.exhausted() || parent_exhausted;
                     failed_attempts.insert(
                         attempt_key,
                         source_pcurve.map(|pcurve| pcurve.geometry.clone()),
@@ -2411,17 +2409,15 @@ mod tests {
         let surface_id = SurfaceId::mint("test:model:entity#synthetic:coarse-nurbs-support")
             .expect("identity grammar");
         let nurbs = cadmpeg_ir::geometry::NurbsSurface::from_lanes(
-            1,
-            1,
-            vec![0.0, 0.0, 1.0, 1.0],
-            vec![0.0, 0.0, 1.0, 1.0],
-            vec![
-                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
-                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
-            ],
-            None,
-            false,
-            false,
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                vec![
+                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                    vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+                ],
+                None,
+            ),
             false,
         )
         .expect("valid test surface");

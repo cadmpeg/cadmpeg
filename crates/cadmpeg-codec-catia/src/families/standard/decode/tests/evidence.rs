@@ -569,28 +569,26 @@ fn shared_nurbs_boundary_filters_identity_free_endpoint_pairs() {
         };
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
             NurbsSurface::from_lanes(
-                1,
-                1,
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![
-                    vec![shared[0], shared[1]],
+                cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
                     vec![
-                        Point3::new(
-                            offset + if reverse_shared_boundary { 1.0 } else { -1.0 },
-                            shared[0].y,
-                            0.0,
-                        ),
-                        Point3::new(
-                            offset + if reverse_shared_boundary { 1.0 } else { -1.0 },
-                            shared[1].y,
-                            0.0,
-                        ),
+                        vec![shared[0], shared[1]],
+                        vec![
+                            Point3::new(
+                                offset + if reverse_shared_boundary { 1.0 } else { -1.0 },
+                                shared[0].y,
+                                0.0,
+                            ),
+                            Point3::new(
+                                offset + if reverse_shared_boundary { 1.0 } else { -1.0 },
+                                shared[1].y,
+                                0.0,
+                            ),
+                        ],
                     ],
-                ],
-                None,
-                false,
-                false,
+                    None,
+                ),
                 false,
             )
             .expect("valid bilinear NURBS"),

@@ -1489,9 +1489,11 @@ pub(crate) fn append_freeform_surface_pools(
         annotations,
         data,
         records,
-        &surfaces,
-        &carrier_ids,
-        surface_alias_tags,
+        FreeformSurfacePool {
+            surfaces: &surfaces,
+            surface_ids: &carrier_ids,
+            surface_alias_tags: surface_alias_tags,
+        },
         &mut refusal,
     )?;
     // Every refusal the rolling-ball limit curves and the consolidated
@@ -1613,17 +1615,33 @@ pub(crate) fn consolidated_jet_pcurve(
 
 /// Transfer resolved consolidated surface curves, reusing an existing
 /// pcurve-less standard edge construction when endpoint loci select one.
-#[allow(clippy::too_many_arguments)] // the carrier refusal rides along as the eighth argument
+/// The freeform surface pool a consolidated surface curve binds against.
+///
+/// The surfaces, the ids they were emitted under, and the alias tags that
+/// name them are one pool: the ids are index-aligned with the surfaces, and
+/// the alias tags resolve a record's support onto the same pool.
+pub(crate) struct FreeformSurfacePool<'a> {
+    /// Decoded freeform surfaces in emission order.
+    pub(crate) surfaces: &'a [crate::families::a5a8::records::FreeformSurface],
+    /// Ids the surfaces were emitted under, index-aligned with `surfaces`.
+    pub(crate) surface_ids: &'a [SurfaceId],
+    /// Support alias tags that resolve a record's support onto the pool.
+    pub(crate) surface_alias_tags: &'a HashMap<u32, Option<u32>>,
+}
+
 pub(crate) fn append_resolved_consolidated_surface_curves(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     data: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
-    freeform_surfaces: &[crate::families::a5a8::records::FreeformSurface],
-    freeform_surface_ids: &[SurfaceId],
-    surface_alias_tags: &HashMap<u32, Option<u32>>,
+    pool: FreeformSurfacePool<'_>,
     refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Result<ConsolidatedCurveBindingCounts, cadmpeg_core::CodecError> {
+    let FreeformSurfacePool {
+        surfaces: freeform_surfaces,
+        surface_ids: freeform_surface_ids,
+        surface_alias_tags,
+    } = pool;
     let standalone = crate::families::b2::records::b2_cylinders_from_records(data, records)
         .into_iter()
         .map(|cylinder| (cylinder.pos, cylinder))
@@ -3485,9 +3503,11 @@ mod tests {
             &mut AnnotationBuilder::new(),
             &bytes,
             &crate::wire::records::consolidated_records(&bytes),
-            &[],
-            &[],
-            &HashMap::new(),
+            FreeformSurfacePool {
+                surfaces: &[],
+                surface_ids: &[],
+                surface_alias_tags: &HashMap::new(),
+            },
             &mut None,
         )
         .expect("valid source object identity");
@@ -3553,9 +3573,11 @@ mod tests {
             &mut AnnotationBuilder::new(),
             &bytes,
             &crate::wire::records::consolidated_records(&bytes),
-            &[],
-            &[],
-            &HashMap::new(),
+            FreeformSurfacePool {
+                surfaces: &[],
+                surface_ids: &[],
+                surface_alias_tags: &HashMap::new(),
+            },
             &mut None,
         )
         .expect("valid source object identity");
@@ -3613,9 +3635,11 @@ mod tests {
             &mut AnnotationBuilder::new(),
             &bytes,
             &crate::wire::records::consolidated_records(&bytes),
-            &[],
-            &[],
-            &HashMap::from([(0x5678, Some(0x1234))]),
+            FreeformSurfacePool {
+                surfaces: &[],
+                surface_ids: &[],
+                surface_alias_tags: &HashMap::from([(0x5678, Some(0x1234))]),
+            },
             &mut None,
         )
         .expect("valid source object identity");
@@ -3776,9 +3800,11 @@ mod tests {
             &mut AnnotationBuilder::new(),
             &bytes,
             &crate::wire::records::consolidated_records(&bytes),
-            &[],
-            &[],
-            &HashMap::new(),
+            FreeformSurfacePool {
+                surfaces: &[],
+                surface_ids: &[],
+                surface_alias_tags: &HashMap::new(),
+            },
             &mut None,
         )
         .expect("valid source object identity");

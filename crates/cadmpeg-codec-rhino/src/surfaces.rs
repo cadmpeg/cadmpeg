@@ -5,7 +5,10 @@ use std::f64::consts::{FRAC_PI_2, TAU};
 use std::ops::Range;
 
 use cadmpeg_core::decode::alloc_filled;
-use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface, SolvedSurfaceGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes, SolvedSurfaceGeometry,
+    SurfaceGeometry,
+};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader};
@@ -596,15 +599,17 @@ fn revolution_nurbs(
     }
     let row_len = profile_count;
     let mut result = NurbsSurface::from_lanes(
-        2,
-        profile.degree(),
-        knots,
-        profile.knots().to_vec(),
-        control_points.chunks(row_len).map(<[_]>::to_vec).collect(),
-        Some(weights).map(|values| values.chunks(row_len).map(<[_]>::to_vec).collect()),
+        NurbsSurfaceAxis::new(2, knots, false),
+        NurbsSurfaceAxis::new(
+            profile.degree(),
+            profile.knots().to_vec(),
+            profile.periodic(),
+        ),
+        NurbsSurfaceLanes::new(
+            control_points.chunks(row_len).map(<[_]>::to_vec).collect(),
+            Some(weights).map(|values| values.chunks(row_len).map(<[_]>::to_vec).collect()),
+        ),
         false,
-        false,
-        profile.periodic(),
     )
     .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
     if transposed {
@@ -673,15 +678,13 @@ fn sum_nurbs(
     }
     let row_len = v_count;
     NurbsSurface::from_lanes(
-        first.degree(),
-        second.degree(),
-        first.knots().to_vec(),
-        second.knots().to_vec(),
-        control_points.chunks(row_len).map(<[_]>::to_vec).collect(),
-        weights.map(|values| values.chunks(row_len).map(<[_]>::to_vec).collect()),
+        NurbsSurfaceAxis::new(first.degree(), first.knots().to_vec(), first.periodic()),
+        NurbsSurfaceAxis::new(second.degree(), second.knots().to_vec(), second.periodic()),
+        NurbsSurfaceLanes::new(
+            control_points.chunks(row_len).map(<[_]>::to_vec).collect(),
+            weights.map(|values| values.chunks(row_len).map(<[_]>::to_vec).collect()),
+        ),
         false,
-        first.periodic(),
-        second.periodic(),
     )
     .map_err(|error| GeometryError::malformed(offset, error.to_string()))
 }
@@ -721,19 +724,21 @@ pub(crate) fn extrusion_nurbs(
         }
     }
     let mut surface = NurbsSurface::from_lanes(
-        start.degree(),
-        1,
-        start.knots().to_vec(),
-        vec![
-            path_domain[0],
-            path_domain[0],
-            path_domain[1],
-            path_domain[1],
-        ],
-        control_points.chunks(2_usize).map(<[_]>::to_vec).collect(),
-        weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
-        false,
-        start.periodic(),
+        NurbsSurfaceAxis::new(start.degree(), start.knots().to_vec(), start.periodic()),
+        NurbsSurfaceAxis::new(
+            1,
+            vec![
+                path_domain[0],
+                path_domain[0],
+                path_domain[1],
+                path_domain[1],
+            ],
+            false,
+        ),
+        NurbsSurfaceLanes::new(
+            control_points.chunks(2_usize).map(<[_]>::to_vec).collect(),
+            weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
+        ),
         false,
     )
     .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
@@ -939,17 +944,23 @@ pub(crate) fn read_nurbs_surface_prefix(
     let v_knots = reconstruct_knots(&v_knots, v_order, v_count)?;
     let row_len = v_count;
     NurbsSurface::from_lanes(
-        u32::try_from(u_order - 1)
-            .map_err(|_| error(reader.position(), "surface U order overflow"))?,
-        u32::try_from(v_order - 1)
-            .map_err(|_| error(reader.position(), "surface V order overflow"))?,
-        u_knots,
-        v_knots,
-        control_points.chunks(row_len).map(<[_]>::to_vec).collect(),
-        weights.map(|values| values.chunks(row_len).map(<[_]>::to_vec).collect()),
+        NurbsSurfaceAxis::new(
+            u32::try_from(u_order - 1)
+                .map_err(|_| error(reader.position(), "surface U order overflow"))?,
+            u_knots,
+            u_periodic,
+        ),
+        NurbsSurfaceAxis::new(
+            u32::try_from(v_order - 1)
+                .map_err(|_| error(reader.position(), "surface V order overflow"))?,
+            v_knots,
+            v_periodic,
+        ),
+        NurbsSurfaceLanes::new(
+            control_points.chunks(row_len).map(<[_]>::to_vec).collect(),
+            weights.map(|values| values.chunks(row_len).map(<[_]>::to_vec).collect()),
+        ),
         false,
-        u_periodic,
-        v_periodic,
     )
     .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))
 }

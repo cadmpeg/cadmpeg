@@ -309,7 +309,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
         surface: SurfaceId::mint("test:model:entity#blind-cap-surface").expect("identity grammar"),
         sense: Sense::Forward,
         loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![LoopId::mint(
-            "test:model:entity#blind-cap-face-loop"
+            "test:model:entity#blind-cap-face-loop",
         )
         .expect("identity grammar")]),
         name: None,

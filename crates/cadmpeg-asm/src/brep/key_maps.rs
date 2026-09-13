@@ -11,7 +11,6 @@ use std::collections::HashMap;
 
 /// Face id to ASM face key, for the records that state a key.
 #[must_use]
-#[allow(clippy::implicit_hasher)]
 pub fn face_keys(records: &[FaceNativeKey]) -> HashMap<FaceId, u64> {
     records
         .iter()
@@ -21,7 +20,6 @@ pub fn face_keys(records: &[FaceNativeKey]) -> HashMap<FaceId, u64> {
 
 /// Body id to ASM body key, for the records that state a key.
 #[must_use]
-#[allow(clippy::implicit_hasher)]
 pub fn body_keys(records: &[BodyNativeKey]) -> HashMap<BodyId, u64> {
     records
         .iter()

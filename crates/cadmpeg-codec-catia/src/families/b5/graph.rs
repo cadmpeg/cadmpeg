@@ -826,10 +826,7 @@ impl B5Loop {
 
 /// Resolve the dominant object-stream topology graph through inline object ids.
 #[must_use]
-pub fn parse(
-    bytes: &[u8],
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
-) -> Option<B5Graph> {
+pub fn parse(bytes: &[u8], refusal: &mut Option<crate::nurbs::LaneRefusal>) -> Option<B5Graph> {
     let mut graphs = topology_runs(bytes, refusal)
         .into_iter()
         .map(|(_, graph)| graph);
@@ -857,10 +854,7 @@ pub(crate) fn topology_runs(
         .collect()
 }
 
-fn parse_flat(
-    bytes: &[u8],
-    refusal: &mut Option<crate::nurbs::LaneRefusal>,
-) -> Option<B5Graph> {
+fn parse_flat(bytes: &[u8], refusal: &mut Option<crate::nurbs::LaneRefusal>) -> Option<B5Graph> {
     let frames = object_stream_frames(bytes);
     let records = records_from_frames(bytes, &frames);
     parse_from_records(bytes, &records, &frames, true, refusal)

@@ -208,19 +208,21 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
         id: support.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
             NurbsSurface::from_lanes(
-                3,
-                1,
-                vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![
-                    vec![Point3::new(-3.0, 0.0, 0.0), Point3::new(-3.0, 0.0, 1.0)],
-                    vec![Point3::new(3.0, 2.0, 0.0), Point3::new(3.0, 2.0, 1.0)],
-                    vec![Point3::new(-3.0, 4.0, 0.0), Point3::new(-3.0, 4.0, 1.0)],
-                    vec![Point3::new(3.0, 6.0, 0.0), Point3::new(3.0, 6.0, 1.0)],
-                ],
-                None,
-                false,
-                false,
+                cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+                    3,
+                    vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+                    false,
+                ),
+                cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                    vec![
+                        vec![Point3::new(-3.0, 0.0, 0.0), Point3::new(-3.0, 0.0, 1.0)],
+                        vec![Point3::new(3.0, 2.0, 0.0), Point3::new(3.0, 2.0, 1.0)],
+                        vec![Point3::new(-3.0, 4.0, 0.0), Point3::new(-3.0, 4.0, 1.0)],
+                        vec![Point3::new(3.0, 6.0, 0.0), Point3::new(3.0, 6.0, 1.0)],
+                    ],
+                    None,
+                ),
                 false,
             )
             .expect("valid wavy support"),
@@ -971,17 +973,15 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
             NurbsSurface::from_lanes(
-                1,
-                1,
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![
-                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 10.0, 0.0)],
-                    vec![Point3::new(10.0, 0.0, 0.0), Point3::new(10.0, 10.0, 0.0)],
-                ],
-                None,
-                false,
-                false,
+                cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                    vec![
+                        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 10.0, 0.0)],
+                        vec![Point3::new(10.0, 0.0, 0.0), Point3::new(10.0, 10.0, 0.0)],
+                    ],
+                    None,
+                ),
                 false,
             )
             .expect("valid serialized-seed surface"),

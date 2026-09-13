@@ -75,12 +75,12 @@ pub use carriers::{
     ConeSurface, CylinderSurface, DegenerateCurve, EllipseCurve, EllipsePcurve,
     GeometryLayoutError, HarmonicPcurve, HyperbolaCurve, HyperbolaPcurve, HyperbolicPcurve,
     LineCurve, LinePcurve, NurbsCurve, NurbsError, NurbsPoleGrid, NurbsPoles3, NurbsSurface,
-    OffsetPcurve, ParabolaCurve, ParabolaPcurve, Pcurve, PcurveGeneralForm, PcurveGeometry,
-    PcurveInlineForm, PcurveMetadata, PcurveNurbs, PcurveNurbsPoles, PlaneSurface,
-    PolarHarmonicPcurve, PolarNurbsPole, PolarNurbsPoles, PolarPcurveNurbs, PolygonalSurface,
-    PolylineCurve, PolylineSamples, PolylineVertex, SphereSurface, SphericalGreatCirclePcurve,
-    SurfaceParameterAxis, TorusSurface, TrimmedPcurve, WeightedPolarNurbsPole, WeightedPole2,
-    WeightedPole3,
+    NurbsSurfaceAxis, NurbsSurfaceLanes, OffsetPcurve, ParabolaCurve, ParabolaPcurve, Pcurve,
+    PcurveGeneralForm, PcurveGeometry, PcurveInlineForm, PcurveMetadata, PcurveNurbs,
+    PcurveNurbsPoles, PlaneSurface, PolarHarmonicPcurve, PolarNurbsPole, PolarNurbsPoles,
+    PolarPcurveNurbs, PolygonalSurface, PolylineCurve, PolylineSamples, PolylineVertex,
+    SphereSurface, SphericalGreatCirclePcurve, SurfaceParameterAxis, TorusSurface, TrimmedPcurve,
+    WeightedPolarNurbsPole, WeightedPole2, WeightedPole3,
 };
 
 /// Analytic, NURBS, or opaque surface geometry established without a

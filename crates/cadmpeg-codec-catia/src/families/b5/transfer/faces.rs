@@ -287,9 +287,7 @@ fn b5_face_loops(
     let ids: Vec<LoopId> = face
         .loops
         .iter()
-        .map(|loop_id| {
-            LoopId::mint(format!("catia:b5:loop#{loop_id}")).expect("identity grammar")
-        })
+        .map(|loop_id| LoopId::mint(format!("catia:b5:loop#{loop_id}")).expect("identity grammar"))
         .collect();
     let unspecified = || cadmpeg_ir::topology::FaceLoops::unspecified(ids.clone());
     if let [single] = ids.as_slice() {
@@ -446,8 +444,7 @@ pub(super) fn emit_faces(
             ownership.face_components[face_index]
         ))
         .expect("identity grammar");
-        let face_loops =
-            b5_face_loops(ir, graph, face, loop_orientation, surface_ids, pcurve_uses);
+        let face_loops = b5_face_loops(ir, graph, face, loop_orientation, surface_ids, pcurve_uses);
         annotate(
             annotations,
             &face_id,

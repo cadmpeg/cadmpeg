@@ -450,8 +450,6 @@ pub struct BsplineSurface {
 
 impl BsplineSurface {
     /// Build a rectangular grid with full knot vectors for both parameters.
-    // Both parameter axes and their shared control grid form one NURBS invariant.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         u_degree: u32,
         v_degree: u32,
@@ -697,20 +695,70 @@ fn require_curve_cardinality(
     )
 }
 
+/// One parameter axis of a tensor-product NURBS surface.
+///
+/// A degree, its knot vector and its periodicity are one statement about one
+/// axis: the knot count a source may state depends on the degree, and the
+/// periodicity describes that same knot vector. They travel together.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NurbsSurfaceAxis {
+    degree: u32,
+    knots: Vec<f64>,
+    periodic: bool,
+}
+
+impl NurbsSurfaceAxis {
+    /// One axis of a surface: its degree, its knot vector and its periodicity.
+    #[must_use]
+    pub const fn new(degree: u32, knots: Vec<f64>, periodic: bool) -> Self {
+        Self {
+            degree,
+            knots,
+            periodic,
+        }
+    }
+}
+
+/// The pole grid and weight grid a source states for one NURBS surface.
+///
+/// A weight grid covers the pole grid it belongs to, so the two are one
+/// statement and are paired once, at the decode boundary.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NurbsSurfaceLanes {
+    control_points: Vec<Vec<Point3>>,
+    weights: Option<Vec<Vec<f64>>>,
+}
+
+impl NurbsSurfaceLanes {
+    /// The pole grid a source states, with its weight grid when it is
+    /// rational.
+    #[must_use]
+    pub const fn new(control_points: Vec<Vec<Point3>>, weights: Option<Vec<Vec<f64>>>) -> Self {
+        Self {
+            control_points,
+            weights,
+        }
+    }
+}
+
 impl NurbsSurface {
     /// Build a tensor-product NURBS surface with consistent cardinalities.
-    // Both parameter axes and their shared control grid form one NURBS invariant.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
-        u_degree: u32,
-        v_degree: u32,
-        u_knots: Vec<f64>,
-        v_knots: Vec<f64>,
+        u: NurbsSurfaceAxis,
+        v: NurbsSurfaceAxis,
         poles: NurbsPoleGrid,
         normal_reversed: bool,
-        u_periodic: bool,
-        v_periodic: bool,
     ) -> Result<Self, NurbsError> {
+        let NurbsSurfaceAxis {
+            degree: u_degree,
+            knots: u_knots,
+            periodic: u_periodic,
+        } = u;
+        let NurbsSurfaceAxis {
+            degree: v_degree,
+            knots: v_knots,
+            periodic: v_periodic,
+        } = v;
         let control_points = poles.points();
         let u_count = poles.u_count();
         let v_count = poles.v_count();
@@ -808,30 +856,24 @@ impl NurbsSurface {
     ///
     /// A source that states poles and weights as two grids pairs them here,
     /// once, at the decode boundary; the surface itself carries pole rows.
-    // Both parameter axes and their shared control grid form one NURBS invariant.
-    #[allow(clippy::too_many_arguments)]
+    ///
+    /// # Errors
+    ///
+    /// Refuses lanes the carrier cannot state: a weight grid that does not
+    /// cover its pole grid, an unusable weight, a knot count that does not
+    /// follow from the degree and the pole count, or a non-finite coordinate.
     pub fn from_lanes(
-        u_degree: u32,
-        v_degree: u32,
-        u_knots: Vec<f64>,
-        v_knots: Vec<f64>,
-        control_points: Vec<Vec<Point3>>,
-        weights: Option<Vec<Vec<f64>>>,
+        u: NurbsSurfaceAxis,
+        v: NurbsSurfaceAxis,
+        lanes: NurbsSurfaceLanes,
         normal_reversed: bool,
-        u_periodic: bool,
-        v_periodic: bool,
     ) -> Result<Self, NurbsError> {
+        let NurbsSurfaceLanes {
+            control_points,
+            weights,
+        } = lanes;
         let poles = NurbsPoleGrid::from_lanes(control_points, weights)?;
-        Self::new(
-            u_degree,
-            v_degree,
-            u_knots,
-            v_knots,
-            poles,
-            normal_reversed,
-            u_periodic,
-            v_periodic,
-        )
+        Self::new(u, v, poles, normal_reversed)
     }
 
     /// Control grid rows, with the surface's rational form.
@@ -883,14 +925,10 @@ impl NurbsSurface {
     /// Replace the control grid, keeping the knot cardinalities.
     pub fn set_poles(&mut self, poles: NurbsPoleGrid) -> Result<(), NurbsError> {
         *self = Self::new(
-            self.u_degree,
-            self.v_degree,
-            self.u_knots.clone(),
-            self.v_knots.clone(),
+            NurbsSurfaceAxis::new(self.u_degree, self.u_knots.clone(), self.u_periodic),
+            NurbsSurfaceAxis::new(self.v_degree, self.v_knots.clone(), self.v_periodic),
             poles,
             self.normal_reversed,
-            self.u_periodic,
-            self.v_periodic,
         )?;
         Ok(())
     }
@@ -956,14 +994,10 @@ impl<'de> Deserialize<'de> for NurbsSurface {
 
         let wire = Wire::deserialize(deserializer)?;
         Self::new(
-            wire.u_degree,
-            wire.v_degree,
-            wire.u_knots,
-            wire.v_knots,
+            NurbsSurfaceAxis::new(wire.u_degree, wire.u_knots, wire.u_periodic),
+            NurbsSurfaceAxis::new(wire.v_degree, wire.v_knots, wire.v_periodic),
             wire.poles,
             wire.normal_reversed,
-            wire.u_periodic,
-            wire.v_periodic,
         )
         .map_err(serde::de::Error::custom)
     }

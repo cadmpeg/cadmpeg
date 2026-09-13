@@ -605,7 +605,10 @@ pub(crate) fn rolling_ball_limit_curve(
             false,
         ),
         refusal,
-        format_args!("consolidated_a5_03_32 rolling-ball limit curve at byte {}", jet.pos),
+        format_args!(
+            "consolidated_a5_03_32 rolling-ball limit curve at byte {}",
+            jet.pos
+        ),
     )
 }
 
@@ -1376,20 +1379,26 @@ pub fn a8_surface_from_external_grid(
         identity: Some(header.object_id),
         geometry: crate::nurbs::note_refusal(
             NurbsSurface::from_lanes(
-                header.u_degree,
-                header.v_degree,
-                header.u_knots.expanded()?,
-                header.v_knots.expanded()?,
-                control_points
-                    .clone()
-                    .chunks(row_len)
-                    .map(<[_]>::to_vec)
-                    .collect(),
-                weights
-                    .clone()
-                    .map(|values| values.chunks(row_len).map(<[_]>::to_vec).collect()),
-                false,
-                false,
+                cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+                    header.u_degree,
+                    header.u_knots.expanded()?,
+                    false,
+                ),
+                cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+                    header.v_degree,
+                    header.v_knots.expanded()?,
+                    false,
+                ),
+                cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                    control_points
+                        .clone()
+                        .chunks(row_len)
+                        .map(<[_]>::to_vec)
+                        .collect(),
+                    weights
+                        .clone()
+                        .map(|values| values.chunks(row_len).map(<[_]>::to_vec).collect()),
+                ),
                 false,
             ),
             refusal,
@@ -1600,17 +1609,16 @@ fn a5_surface(
         identity: None,
         geometry: crate::nurbs::note_refusal(
             NurbsSurface::from_lanes(
-                u_degree,
-                v_degree,
-                u_knots,
-                v_knots,
-                control_points
-                    .chunks(v_count as usize)
-                    .map(<[_]>::to_vec)
-                    .collect(),
-                weights.map(|values| values.chunks(v_count as usize).map(<[_]>::to_vec).collect()),
-                false,
-                false,
+                cadmpeg_ir::geometry::NurbsSurfaceAxis::new(u_degree, u_knots, false),
+                cadmpeg_ir::geometry::NurbsSurfaceAxis::new(v_degree, v_knots, false),
+                cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                    control_points
+                        .chunks(v_count as usize)
+                        .map(<[_]>::to_vec)
+                        .collect(),
+                    weights
+                        .map(|values| values.chunks(v_count as usize).map(<[_]>::to_vec).collect()),
+                ),
                 false,
             ),
             refusal,
@@ -1770,19 +1778,17 @@ fn a8_surface_from_parsed(
         identity: Some(object_id),
         geometry: crate::nurbs::note_refusal(
             NurbsSurface::from_lanes(
-                u_degree,
-                v_degree,
-                u_knots.expanded()?,
-                v_knots.expanded()?,
-                control_points
-                    .chunks(v_count as usize)
-                    .map(<[_]>::to_vec)
-                    .collect(),
-                rational
-                    .then_some(weights)
-                    .map(|values| values.chunks(v_count as usize).map(<[_]>::to_vec).collect()),
-                false,
-                false,
+                cadmpeg_ir::geometry::NurbsSurfaceAxis::new(u_degree, u_knots.expanded()?, false),
+                cadmpeg_ir::geometry::NurbsSurfaceAxis::new(v_degree, v_knots.expanded()?, false),
+                cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                    control_points
+                        .chunks(v_count as usize)
+                        .map(<[_]>::to_vec)
+                        .collect(),
+                    rational
+                        .then_some(weights)
+                        .map(|values| values.chunks(v_count as usize).map(<[_]>::to_vec).collect()),
+                ),
                 false,
             ),
             refusal,

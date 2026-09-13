@@ -1128,7 +1128,8 @@ fn a_restated_join_map_names_no_wire_key() {
 #[test]
 fn the_join_projections_read_the_key_records() {
     let face = FaceId::mint("asm:test:face#1".to_string()).expect("identity grammar");
-    let body = cadmpeg_ir::ids::BodyId::mint("asm:test:body#1".to_string()).expect("identity grammar");
+    let body =
+        cadmpeg_ir::ids::BodyId::mint("asm:test:body#1".to_string()).expect("identity grammar");
     let mut brep = AsmBrep::default();
     let namespace = records::identity::NativeRecordNamespace::new(crate::ids::IdFormat("f3d"));
     brep.face_native_keys.push(records::FaceNativeKey {

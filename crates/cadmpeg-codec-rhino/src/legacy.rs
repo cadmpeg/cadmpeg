@@ -8,8 +8,9 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, PcurveNurbs,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes, Pcurve,
+    PcurveGeometry, PcurveNurbs, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
@@ -1331,17 +1332,23 @@ fn legacy_surface(
     }
     let row_len = counts[1];
     NurbsSurface::from_lanes(
-        u32::try_from(orders[0] - 1)
-            .map_err(|_| CodecError::Malformed("V1 surface degree overflow".to_string()))?,
-        u32::try_from(orders[1] - 1)
-            .map_err(|_| CodecError::Malformed("V1 surface degree overflow".to_string()))?,
-        u_knots,
-        v_knots,
-        control_points.chunks(row_len).map(<[_]>::to_vec).collect(),
-        weights.map(|values| values.chunks(row_len).map(<[_]>::to_vec).collect()),
+        NurbsSurfaceAxis::new(
+            u32::try_from(orders[0] - 1)
+                .map_err(|_| CodecError::Malformed("V1 surface degree overflow".to_string()))?,
+            u_knots,
+            closed[0] == 2,
+        ),
+        NurbsSurfaceAxis::new(
+            u32::try_from(orders[1] - 1)
+                .map_err(|_| CodecError::Malformed("V1 surface degree overflow".to_string()))?,
+            v_knots,
+            closed[1] == 2,
+        ),
+        NurbsSurfaceLanes::new(
+            control_points.chunks(row_len).map(<[_]>::to_vec).collect(),
+            weights.map(|values| values.chunks(row_len).map(<[_]>::to_vec).collect()),
+        ),
         false,
-        closed[0] == 2,
-        closed[1] == 2,
     )
     .map_err(|error| CodecError::Malformed(error.to_string()))
 }

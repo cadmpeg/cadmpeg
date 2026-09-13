@@ -6891,8 +6891,9 @@ mod null_law_token_tests {
         )
         .expect("the null law writes its token");
         assert!(
-            bytes.windows(NULL_LAW_TOKEN.len()).any(|window| window
-                == NULL_LAW_TOKEN.as_bytes()),
+            bytes
+                .windows(NULL_LAW_TOKEN.len())
+                .any(|window| window == NULL_LAW_TOKEN.as_bytes()),
             "the null law writes {NULL_LAW_TOKEN}"
         );
 

@@ -19,19 +19,17 @@ fn curve() -> NurbsCurve {
 
 fn surface() -> NurbsSurface {
     NurbsSurface::from_lanes(
-        1,
-        1,
-        vec![0.0, 0.0, 1.0, 1.0],
-        vec![2.0, 2.0, 5.0, 5.0],
-        vec![
-            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
-            vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
-        ],
-        Some(vec![-1.0, 1.0, 2.0, -2.0])
-            .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
+        crate::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], true),
+        crate::geometry::NurbsSurfaceAxis::new(1, vec![2.0, 2.0, 5.0, 5.0], false),
+        crate::geometry::NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+            ],
+            Some(vec![-1.0, 1.0, 2.0, -2.0])
+                .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
+        ),
         true,
-        true,
-        false,
     )
     .unwrap()
 }
@@ -131,14 +129,9 @@ fn construction_rejects_invalid_knots_and_non_finite_poles() {
         let mut points = source.control_grid();
         points[0][1].x = invalid;
         assert!(NurbsSurface::from_lanes(
-            1,
-            1,
-            source.u_knots().to_vec(),
-            source.v_knots().to_vec(),
-            points,
-            None,
-            false,
-            false,
+            crate::geometry::NurbsSurfaceAxis::new(1, source.u_knots().to_vec(), false),
+            crate::geometry::NurbsSurfaceAxis::new(1, source.v_knots().to_vec(), false),
+            crate::geometry::NurbsSurfaceLanes::new(points, None),
             false
         )
         .is_err());

@@ -10,9 +10,9 @@ use std::collections::BTreeMap;
 use cadmpeg_core::decode::{bounded_len, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, ProceduralCurve, ProceduralCurveDefinition,
-    ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
-    Surface, SurfaceGeometry,
+    Curve, CurveGeometry, NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes,
+    ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
+    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -2782,18 +2782,24 @@ fn parse_binary_surface(
             }
             TextSurface::Nurbs(
                 NurbsSurface::from_lanes(
-                    u32::try_from(u_degree).map_err(|_| {
-                        CodecError::Malformed("binary Bezier u degree exceeds u32".into())
-                    })?,
-                    u32::try_from(v_degree).map_err(|_| {
-                        CodecError::Malformed("binary Bezier v degree exceeds u32".into())
-                    })?,
-                    clamped_bezier_knots(u_degree),
-                    clamped_bezier_knots(v_degree),
-                    control_points.chunks(v_count).map(<[_]>::to_vec).collect(),
-                    weights.map(|values| values.chunks(v_count).map(<[_]>::to_vec).collect()),
-                    false,
-                    false,
+                    NurbsSurfaceAxis::new(
+                        u32::try_from(u_degree).map_err(|_| {
+                            CodecError::Malformed("binary Bezier u degree exceeds u32".into())
+                        })?,
+                        clamped_bezier_knots(u_degree),
+                        false,
+                    ),
+                    NurbsSurfaceAxis::new(
+                        u32::try_from(v_degree).map_err(|_| {
+                            CodecError::Malformed("binary Bezier v degree exceeds u32".into())
+                        })?,
+                        clamped_bezier_knots(v_degree),
+                        false,
+                    ),
+                    NurbsSurfaceLanes::new(
+                        control_points.chunks(v_count).map(<[_]>::to_vec).collect(),
+                        weights.map(|values| values.chunks(v_count).map(<[_]>::to_vec).collect()),
+                    ),
                     false,
                 )
                 .map_err(|error| CodecError::Malformed(error.to_string()))?,
@@ -4426,22 +4432,20 @@ fn parse_bezier_surface(cursor: &mut TokenCursor<'_>) -> Result<NurbsSurface, Co
         }
     }
     NurbsSurface::from_lanes(
-        u_degree as u32,
-        v_degree as u32,
-        clamped_bezier_knots(u_degree),
-        clamped_bezier_knots(v_degree),
-        control_points
-            .chunks(v_count as u32 as usize)
-            .map(<[_]>::to_vec)
-            .collect(),
-        weights.map(|values| {
-            values
+        NurbsSurfaceAxis::new(u_degree as u32, clamped_bezier_knots(u_degree), false),
+        NurbsSurfaceAxis::new(v_degree as u32, clamped_bezier_knots(v_degree), false),
+        NurbsSurfaceLanes::new(
+            control_points
                 .chunks(v_count as u32 as usize)
                 .map(<[_]>::to_vec)
-                .collect()
-        }),
-        false,
-        false,
+                .collect(),
+            weights.map(|values| {
+                values
+                    .chunks(v_count as u32 as usize)
+                    .map(<[_]>::to_vec)
+                    .collect()
+            }),
+        ),
         false,
     )
     .map_err(|error| CodecError::Malformed(error.to_string()))
@@ -4609,18 +4613,16 @@ fn normalize_periodic_surface(
     let v_count = u32::try_from(new_v)
         .map_err(|_| CodecError::Malformed("periodic B-spline v pole count exceeds u32".into()))?;
     NurbsSurface::from_lanes(
-        degrees[0],
-        degrees[1],
-        u_knots,
-        v_knots,
-        control_points
-            .chunks(v_count as usize)
-            .map(<[_]>::to_vec)
-            .collect(),
-        weights.map(|values| values.chunks(v_count as usize).map(<[_]>::to_vec).collect()),
+        NurbsSurfaceAxis::new(degrees[0], u_knots, periodic[0]),
+        NurbsSurfaceAxis::new(degrees[1], v_knots, periodic[1]),
+        NurbsSurfaceLanes::new(
+            control_points
+                .chunks(v_count as usize)
+                .map(<[_]>::to_vec)
+                .collect(),
+            weights.map(|values| values.chunks(v_count as usize).map(<[_]>::to_vec).collect()),
+        ),
         false,
-        periodic[0],
-        periodic[1],
     )
     .map_err(|error| CodecError::Malformed(error.to_string()))
 }

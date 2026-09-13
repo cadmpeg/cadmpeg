@@ -786,15 +786,13 @@ pub(crate) fn rectangular_nurbs_patch() -> CadIr {
     let mut ir = polygon_sheet(&points);
     ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
-            1,
-            1,
-            vec![2.0, 2.0, 5.0, 5.0],
-            vec![7.0, 7.0, 11.0, 11.0],
-            vec![vec![points[0], points[3]], vec![points[1], points[2]]],
-            Some(vec![1.0, 0.8, 1.2, 1.0])
-                .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
-            false,
-            false,
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![2.0, 2.0, 5.0, 5.0], false),
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![7.0, 7.0, 11.0, 11.0], false),
+            cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                vec![vec![points[0], points[3]], vec![points[1], points[2]]],
+                Some(vec![1.0, 0.8, 1.2, 1.0])
+                    .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
+            ),
             false,
         )
         .expect("valid patch surface"),
@@ -883,15 +881,13 @@ pub(crate) fn mixed_plane_nurbs_sheet() -> CadIr {
     ];
     ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
-            1,
-            1,
-            vec![2.0, 2.0, 5.0, 5.0],
-            vec![7.0, 7.0, 11.0, 11.0],
-            vec![vec![points[0], points[3]], vec![points[1], points[2]]],
-            Some(vec![1.0, 0.8, 1.2, 1.0])
-                .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
-            false,
-            false,
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![2.0, 2.0, 5.0, 5.0], false),
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![7.0, 7.0, 11.0, 11.0], false),
+            cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                vec![vec![points[0], points[3]], vec![points[1], points[2]]],
+                Some(vec![1.0, 0.8, 1.2, 1.0])
+                    .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
+            ),
             false,
         )
         .expect("valid mixed surface"),
@@ -972,17 +968,15 @@ pub(crate) fn make_planar_nurbs_trimmed_face(ir: &mut CadIr) {
 
     ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
-            1,
-            1,
-            vec![0.0, 0.0, 4.0, 4.0],
-            vec![0.0, 0.0, 4.0, 4.0],
-            vec![
-                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 4.0, 0.0)],
-                vec![Point3::new(4.0, 0.0, 0.0), Point3::new(4.0, 4.0, 0.0)],
-            ],
-            None,
-            false,
-            false,
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 4.0, 4.0], false),
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 4.0, 4.0], false),
+            cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                vec![
+                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 4.0, 0.0)],
+                    vec![Point3::new(4.0, 0.0, 0.0), Point3::new(4.0, 4.0, 0.0)],
+                ],
+                None,
+            ),
             false,
         )
         .expect("valid planar patch"),

@@ -169,9 +169,11 @@ fn project_brep(
                         &vertices,
                         &points,
                         &curves,
-                        *origin,
-                        *u_axis,
-                        v_axis,
+                        super::sketch_edges::SketchPlaneFrame {
+                            origin: *origin,
+                            u_axis: *u_axis,
+                            v_axis,
+                        },
                         &mut edge_refusal,
                     );
                     if let Some(error) = edge_refusal {

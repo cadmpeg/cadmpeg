@@ -3,17 +3,15 @@ use std::collections::BTreeMap;
 
 fn unit_square_surface() -> NurbsSurface {
     NurbsSurface::from_lanes(
-        1,
-        1,
-        vec![0.0, 0.0, 1.0, 1.0],
-        vec![0.0, 0.0, 1.0, 1.0],
-        vec![
-            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
-            vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
-        ],
-        None,
-        false,
-        false,
+        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+            ],
+            None,
+        ),
         false,
     )
     .expect("valid unit-square surface")
@@ -421,7 +419,8 @@ fn native_identity_locus_binds_only_one_coordinate_row_within_tolerance() {
 #[test]
 fn reverse_angular_interval_becomes_an_increasing_nurbs_domain() {
     let range = ordered_range([0.0, -std::f64::consts::PI]);
-    let arc = rational_pcurve_arc([0.0, 0.0], 2.0, range, &mut None, "test record").expect("reverse semicircle");
+    let arc = rational_pcurve_arc([0.0, 0.0], 2.0, range, &mut None, "test record")
+        .expect("reverse semicircle");
     let PcurveGeometry::Nurbs { nurbs } = &arc else {
         panic!("expected rational NURBS arc");
     };

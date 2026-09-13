@@ -2104,17 +2104,23 @@ fn zero_entity_nurbs_surface(
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         crate::nurbs::note_refusal(
             NurbsSurface::from_lanes(
-                layout.u_degree,
-                layout.v_degree,
-                expand_knots(&layout.u_distinct, &layout.u_mults)?,
-                expand_knots(&layout.v_distinct, &layout.v_mults)?,
-                control_points
-                    .chunks(layout.v_count as usize)
-                    .map(<[_]>::to_vec)
-                    .collect(),
-                None,
-                false,
-                false,
+                cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+                    layout.u_degree,
+                    expand_knots(&layout.u_distinct, &layout.u_mults)?,
+                    false,
+                ),
+                cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+                    layout.v_degree,
+                    expand_knots(&layout.v_distinct, &layout.v_mults)?,
+                    false,
+                ),
+                cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                    control_points
+                        .chunks(layout.v_count as usize)
+                        .map(<[_]>::to_vec)
+                        .collect(),
+                    None,
+                ),
                 false,
             ),
             refusal,

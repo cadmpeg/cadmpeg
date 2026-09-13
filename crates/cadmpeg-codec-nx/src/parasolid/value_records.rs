@@ -259,9 +259,9 @@ fn append_value_record<'a>(
         family,
     };
     match frame.payload {
-        ValuePayload::Integers(value) => records.integers.push(
-            frame.retained(value.materialize().ok_or_else(|| refused("integer"))?),
-        ),
+        ValuePayload::Integers(value) => records
+            .integers
+            .push(frame.retained(value.materialize().ok_or_else(|| refused("integer"))?)),
         ValuePayload::Doubles(value) => records
             .doubles
             .push(frame.retained(value.materialize().ok_or_else(|| refused("double"))?)),

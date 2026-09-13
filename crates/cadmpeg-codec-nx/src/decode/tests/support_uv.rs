@@ -313,19 +313,21 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
             id: support.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                 NurbsSurface::from_lanes(
-                    3,
-                    1,
-                    vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
-                    vec![0.0, 0.0, 1.0, 1.0],
-                    vec![
-                        vec![Point3::new(-3.0, 0.0, 0.0), Point3::new(-3.0, 0.0, 1.0)],
-                        vec![Point3::new(3.0, 2.0, 0.0), Point3::new(3.0, 2.0, 1.0)],
-                        vec![Point3::new(-3.0, 4.0, 0.0), Point3::new(-3.0, 4.0, 1.0)],
-                        vec![Point3::new(3.0, 6.0, 0.0), Point3::new(3.0, 6.0, 1.0)],
-                    ],
-                    None,
-                    false,
-                    false,
+                    cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+                        3,
+                        vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+                        false,
+                    ),
+                    cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                    cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                        vec![
+                            vec![Point3::new(-3.0, 0.0, 0.0), Point3::new(-3.0, 0.0, 1.0)],
+                            vec![Point3::new(3.0, 2.0, 0.0), Point3::new(3.0, 2.0, 1.0)],
+                            vec![Point3::new(-3.0, 4.0, 0.0), Point3::new(-3.0, 4.0, 1.0)],
+                            vec![Point3::new(3.0, 6.0, 0.0), Point3::new(3.0, 6.0, 1.0)],
+                        ],
+                        None,
+                    ),
                     false,
                 )
                 .expect("valid seeded offset support"),

@@ -172,9 +172,7 @@ impl Brep {
                 .try_into()
                 .expect("qualified identity");
             let qualify_loop = |id: &cadmpeg_ir::ids::LoopId| -> cadmpeg_ir::ids::LoopId {
-                qualify(id.as_str())
-                    .try_into()
-                    .expect("qualified identity")
+                qualify(id.as_str()).try_into().expect("qualified identity")
             };
             face.loops = match &face.loops {
                 cadmpeg_ir::topology::FaceLoops::Unspecified { loops } => {
@@ -5803,17 +5801,15 @@ mod tests {
         weights: Option<Vec<f64>>,
     ) -> cadmpeg_ir::geometry::NurbsSurface {
         cadmpeg_ir::geometry::NurbsSurface::from_lanes(
-            u_degree,
-            v_degree,
-            u_knots,
-            v_knots,
-            control_points
-                .chunks(v_count as usize)
-                .map(<[_]>::to_vec)
-                .collect(),
-            weights.map(|values| values.chunks(v_count as usize).map(<[_]>::to_vec).collect()),
-            false,
-            false,
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(u_degree, u_knots, false),
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(v_degree, v_knots, false),
+            cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                control_points
+                    .chunks(v_count as usize)
+                    .map(<[_]>::to_vec)
+                    .collect(),
+                weights.map(|values| values.chunks(v_count as usize).map(<[_]>::to_vec).collect()),
+            ),
             false,
         )
         .expect("valid test NURBS surface")

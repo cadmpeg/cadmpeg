@@ -601,17 +601,15 @@ fn targeted_surface_resolution_rejects_conflicting_exact_carriers() {
         1,
         Some(B5Surface::Nurbs(
             NurbsSurface::from_lanes(
-                1,
-                1,
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![0.0, 0.0, 1.0, 1.0],
-                [cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0); 4]
-                    .chunks(2_usize)
-                    .map(<[_]>::to_vec)
-                    .collect(),
-                None,
-                false,
-                false,
+                cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                    [cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0); 4]
+                        .chunks(2_usize)
+                        .map(<[_]>::to_vec)
+                        .collect(),
+                    None,
+                ),
                 false,
             )
             .expect("valid bilinear NURBS"),

@@ -1249,17 +1249,15 @@ fn nurbs_curve_rational_uses_complex_form() {
 #[test]
 pub(crate) fn nurbs_surface_grid_orientation_is_u_major() {
     let n = NurbsSurface::from_lanes(
-        1,
-        1,
-        vec![0.0, 0.0, 1.0, 1.0],
-        vec![0.0, 0.0, 1.0, 1.0],
-        vec![
-            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
-            vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
-        ],
-        None,
-        false,
-        false,
+        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+            ],
+            None,
+        ),
         false,
     )
     .unwrap();

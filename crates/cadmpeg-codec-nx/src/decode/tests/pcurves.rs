@@ -535,17 +535,15 @@ fn boundary_pcurve_accepts_a_certified_affine_nurbs_boundary() {
 fn affine_nurbs_surface(z: f64) -> SurfaceGeometry {
     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
-            1,
-            1,
-            vec![0.0, 0.0, 1.0, 1.0],
-            vec![0.0, 0.0, 1.0, 1.0],
-            vec![
-                vec![Point3::new(0.0, 0.0, z), Point3::new(0.0, 2.0, z)],
-                vec![Point3::new(3.0, 0.0, z), Point3::new(3.0, 2.0, z)],
-            ],
-            None,
-            false,
-            false,
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                vec![
+                    vec![Point3::new(0.0, 0.0, z), Point3::new(0.0, 2.0, z)],
+                    vec![Point3::new(3.0, 0.0, z), Point3::new(3.0, 2.0, z)],
+                ],
+                None,
+            ),
             false,
         )
         .unwrap(),
@@ -555,22 +553,29 @@ fn affine_nurbs_surface(z: f64) -> SurfaceGeometry {
 fn quadratic_translation_surface(z: f64) -> SurfaceGeometry {
     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
-            2,
-            2,
-            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            [0.0, 1.0, 3.0]
-                .into_iter()
-                .map(|x| {
-                    [0.0, 2.0, 5.0]
-                        .into_iter()
-                        .map(|y| Point3::new(x, y, z))
-                        .collect()
-                })
-                .collect(),
-            Some(vec![2.0; 9]).map(|values| values.chunks(3_usize).map(<[_]>::to_vec).collect()),
-            false,
-            false,
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                false,
+            ),
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                false,
+            ),
+            cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                [0.0, 1.0, 3.0]
+                    .into_iter()
+                    .map(|x| {
+                        [0.0, 2.0, 5.0]
+                            .into_iter()
+                            .map(|y| Point3::new(x, y, z))
+                            .collect()
+                    })
+                    .collect(),
+                Some(vec![2.0; 9])
+                    .map(|values| values.chunks(3_usize).map(<[_]>::to_vec).collect()),
+            ),
             false,
         )
         .unwrap(),
@@ -580,22 +585,28 @@ fn quadratic_translation_surface(z: f64) -> SurfaceGeometry {
 fn degree_elevated_affine_surface(z: f64) -> SurfaceGeometry {
     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
-            2,
-            2,
-            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            [0.0, 1.5, 3.0]
-                .into_iter()
-                .map(|x| {
-                    [0.0, 1.0, 2.0]
-                        .into_iter()
-                        .map(|y| Point3::new(x, y, z))
-                        .collect()
-                })
-                .collect(),
-            None,
-            false,
-            false,
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                false,
+            ),
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                false,
+            ),
+            cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                [0.0, 1.5, 3.0]
+                    .into_iter()
+                    .map(|x| {
+                        [0.0, 1.0, 2.0]
+                            .into_iter()
+                            .map(|y| Point3::new(x, y, z))
+                            .collect()
+                    })
+                    .collect(),
+                None,
+            ),
             false,
         )
         .unwrap(),
@@ -607,26 +618,32 @@ fn quadratic_paraboloid_surface() -> SurfaceGeometry {
     let square_controls = [0.0, 0.0, 1.0];
     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
-            2,
-            2,
-            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            (0..3)
-                .map(|u| {
-                    (0..3)
-                        .map(|v| {
-                            Point3::new(
-                                coordinates[u],
-                                coordinates[v],
-                                square_controls[u] + square_controls[v],
-                            )
-                        })
-                        .collect()
-                })
-                .collect(),
-            None,
-            false,
-            false,
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                false,
+            ),
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                false,
+            ),
+            cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                (0..3)
+                    .map(|u| {
+                        (0..3)
+                            .map(|v| {
+                                Point3::new(
+                                    coordinates[u],
+                                    coordinates[v],
+                                    square_controls[u] + square_controls[v],
+                                )
+                            })
+                            .collect()
+                    })
+                    .collect(),
+                None,
+            ),
             false,
         )
         .unwrap(),
@@ -838,19 +855,21 @@ fn offset_cache_fit_decouples_distant_knot_span_scale() {
     let z = [0.0, 0.0, 0.1, 0.2];
     let support = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
-            2,
-            1,
-            vec![0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 1.0],
-            vec![0.0, 0.0, 1.0, 1.0],
-            (0..4)
-                .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
-                .collect::<Vec<_>>()
-                .chunks(2_usize)
-                .map(<[_]>::to_vec)
-                .collect(),
-            None,
-            false,
-            false,
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+                2,
+                vec![0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 1.0],
+                false,
+            ),
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                (0..4)
+                    .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
+                    .collect::<Vec<_>>()
+                    .chunks(2_usize)
+                    .map(<[_]>::to_vec)
+                    .collect(),
+                None,
+            ),
             false,
         )
         .unwrap(),
@@ -867,19 +886,21 @@ fn offset_cache_fit_certifies_regular_c0_knot_spans() {
     let z = [0.0, 0.0, 0.1, 0.1, 0.2];
     let support = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
-            2,
-            1,
-            vec![0.0, 0.0, 0.0, 0.5, 0.5, 1.0, 1.0, 1.0],
-            vec![0.0, 0.0, 1.0, 1.0],
-            (0..5)
-                .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
-                .collect::<Vec<_>>()
-                .chunks(2_usize)
-                .map(<[_]>::to_vec)
-                .collect(),
-            None,
-            false,
-            false,
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+                2,
+                vec![0.0, 0.0, 0.0, 0.5, 0.5, 1.0, 1.0, 1.0],
+                false,
+            ),
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                (0..5)
+                    .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
+                    .collect::<Vec<_>>()
+                    .chunks(2_usize)
+                    .map(<[_]>::to_vec)
+                    .collect(),
+                None,
+            ),
             false,
         )
         .unwrap(),
@@ -939,19 +960,21 @@ fn curved_offset_cache_fit_certifies_deeply_localized_regularity() {
     let z = [0.0, 0.0, 1.0 / 3.0, 1.0];
     let support = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
-            3,
-            1,
-            vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
-            vec![0.0, 0.0, 1.0, 1.0],
-            (0..4)
-                .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
-                .collect::<Vec<_>>()
-                .chunks(2_usize)
-                .map(<[_]>::to_vec)
-                .collect(),
-            None,
-            false,
-            false,
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+                3,
+                vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+                false,
+            ),
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                (0..4)
+                    .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
+                    .collect::<Vec<_>>()
+                    .chunks(2_usize)
+                    .map(<[_]>::to_vec)
+                    .collect(),
+                None,
+            ),
             false,
         )
         .unwrap(),
@@ -1703,24 +1726,26 @@ fn boundary_coincidence_is_certified_between_uniform_samples() {
     ];
     let surface = || {
         NurbsSurface::from_lanes(
-            1,
-            1,
-            vec![0.0, 0.0, 1.0, 1.0],
-            vec![0.0, 0.0, 0.01, 0.02, 1.0, 1.0],
-            [0.0, 1.0]
-                .into_iter()
-                .flat_map(|y| {
-                    [0.0, 0.1, 0.2, 10.0]
-                        .into_iter()
-                        .map(move |x| Point3::new(x, y, 0.0))
-                })
-                .collect::<Vec<_>>()
-                .chunks(4_usize)
-                .map(<[_]>::to_vec)
-                .collect(),
-            None,
-            false,
-            false,
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+                1,
+                vec![0.0, 0.0, 0.01, 0.02, 1.0, 1.0],
+                false,
+            ),
+            cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                [0.0, 1.0]
+                    .into_iter()
+                    .flat_map(|y| {
+                        [0.0, 0.1, 0.2, 10.0]
+                            .into_iter()
+                            .map(move |x| Point3::new(x, y, 0.0))
+                    })
+                    .collect::<Vec<_>>()
+                    .chunks(4_usize)
+                    .map(<[_]>::to_vec)
+                    .collect(),
+                None,
+            ),
             false,
         )
         .unwrap()
