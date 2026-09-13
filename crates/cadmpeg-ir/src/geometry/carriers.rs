@@ -1383,12 +1383,6 @@ impl PolylineSamples {
         }
     }
 
-    /// Number of samples.
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.count().get()
-    }
-
     /// Ordered model-space samples.
     pub fn points(&self) -> impl Iterator<Item = Point3> + '_ {
         let (points, vertices) = match self {
@@ -1432,7 +1426,7 @@ impl PolylineCurve {
         samples: PolylineSamples,
         chordal_deflection: f64,
     ) -> Result<Self, GeometryLayoutError> {
-        if samples.len() < 2 {
+        if samples.count().get() < 2 {
             return Err(geometry_layout_error(
                 "polyline must contain at least two points",
             ));

@@ -1809,7 +1809,7 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
                 LoopBoundaryRole::Outer => {
                     classified = true;
                     if outer_loop.replace(loop_id.clone()).is_some() {
-                        return Err(CodecError::Malformed(format!(
+                        return Err(CodecError::malformed(format_args!(
                             "V1 face {face_id} states more than one outer boundary"
                         )));
                     }
@@ -1820,7 +1820,7 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
         }
         let face_loops = if classified {
             let Some(outer) = outer_loop else {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "V1 face {face_id} classifies its boundaries but states no outer boundary"
                 )));
             };

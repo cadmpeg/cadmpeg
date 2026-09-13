@@ -1264,15 +1264,14 @@ mod tests {
             text.contains("consolidated_a5_03_32 at byte 64"),
             "the refusal names the record that stated the lanes: {text}"
         );
-        let error = cadmpeg_core::CodecError::from(refusal);
-        assert!(
-            error.to_string().contains("pole(s) against"),
-            "the refusal reaches a CodecError: {error}"
-        );
-        let reported = cadmpeg_core::CodecError::from(error);
+        let reported = cadmpeg_core::CodecError::from(refusal);
         let cadmpeg_core::CodecError::Malformed(message) = &reported else {
             panic!("expected a malformed refusal, got {reported:?}");
         };
-        assert!(message.contains("pole(s) against"));
+        assert!(message.contains("pole(s) against"), "{message}");
+        assert!(
+            message.contains("consolidated_a5_03_32 at byte 64"),
+            "{message}"
+        );
     }
 }
