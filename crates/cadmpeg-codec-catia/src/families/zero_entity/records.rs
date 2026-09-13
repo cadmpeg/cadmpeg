@@ -757,7 +757,7 @@ pub fn zero_entity_surfaces(data: &[u8]) -> Vec<ZeroEntitySurface> {
 pub(crate) fn zero_entity_surfaces_in_range(
     data: &[u8],
     range: Range<usize>,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Vec<ZeroEntitySurface> {
     zero_entity_records_in_range(data, range)
         .into_iter()
@@ -782,7 +782,7 @@ pub fn zero_entity_support_runs(data: &[u8]) -> Vec<ZeroEntitySupportRun> {
 pub(crate) fn zero_entity_support_runs_in_range(
     data: &[u8],
     range: Range<usize>,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Vec<ZeroEntitySupportRun> {
     let records = zero_entity_records_in_range(data, range);
     let mut runs = Vec::new();
@@ -1152,7 +1152,7 @@ fn zero_entity_loops_from_records(
 fn zero_entity_support_occurrence(
     data: &[u8],
     record: ZeroEntityRecord,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Option<ZeroEntitySupportOccurrence> {
     if data.get(record.pos + 12) != Some(&0x10) {
         return None;
@@ -1218,7 +1218,7 @@ fn zero_entity_support_occurrence(
 fn zero_entity_support_pcurve(
     data: &[u8],
     record: ZeroEntityRecord,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Option<PcurveGeometry> {
     let (
         knot_offsets,
@@ -1354,6 +1354,7 @@ fn zero_entity_support_pcurve(
         nurbs: crate::nurbs::note_refusal(
             PcurveNurbs::from_lanes(degree, knots, control_points, weights, false),
             refusal,
+            "zero-entity NURBS pcurve record",
         )?,
     })
 }
@@ -1365,7 +1366,7 @@ fn zero_entity_support_pcurve(
 pub(crate) fn zero_entity_neutral_pcurve(
     surface: &SurfaceGeometry,
     pcurve: &PcurveGeometry,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Option<PcurveGeometry> {
     let (u_scale, v_scale) = match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
@@ -1409,6 +1410,7 @@ pub(crate) fn zero_entity_neutral_pcurve(
                 nurbs.periodic(),
             ),
             refusal,
+            "zero-entity pcurve scaled onto its surface parameters",
         )?,
     })
 }
@@ -1417,7 +1419,7 @@ fn zero_entity_model_curve(
     surface: &SurfaceGeometry,
     pcurve: &PcurveGeometry,
     uv_endpoints: [[f64; 2]; 2],
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Option<(CurveGeometry, [f64; 2])> {
     let PcurveGeometry::Nurbs { nurbs } = pcurve else {
         return None;
@@ -1476,6 +1478,7 @@ fn zero_entity_model_curve(
                         false,
                     ),
                     refusal,
+                    "zero-entity planar edge curve lifted from its pcurve",
                 )?)),
                 parameters,
             ))
@@ -1659,6 +1662,7 @@ fn zero_entity_model_curve(
                         constant_coordinate(0)?,
                         true,
                         refusal,
+                        "zero-entity isoparametric edge curve",
                     )?,
                 )),
                 uv_endpoints.map(|uv| uv[1]),
@@ -1674,6 +1678,7 @@ fn zero_entity_model_curve(
                         constant_coordinate(1)?,
                         false,
                         refusal,
+                        "zero-entity isoparametric edge curve",
                     )?,
                 )),
                 uv_endpoints.map(|uv| uv[0]),
@@ -2042,7 +2047,7 @@ fn tagged_u32(data: &[u8], at: usize) -> Option<u32> {
 pub(crate) fn zero_entity_surface_at(
     data: &[u8],
     record: usize,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Option<SurfaceGeometry> {
     let tag = [
         *data.get(record + a9_03::TAG_HI)?,
@@ -2084,7 +2089,7 @@ fn zero_entity_nurbs_shape(tag: [u8; 2]) -> Option<(usize, usize, usize)> {
 fn zero_entity_nurbs_surface(
     data: &[u8],
     record: usize,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Option<SurfaceGeometry> {
     let layout = zero_entity_nurbs_layout(data, record)?;
     let pole_count =
@@ -2113,6 +2118,7 @@ fn zero_entity_nurbs_surface(
                 false,
             ),
             refusal,
+            "zero-entity NURBS surface record",
         )?,
     )))
 }

@@ -421,7 +421,7 @@ fn native_identity_locus_binds_only_one_coordinate_row_within_tolerance() {
 #[test]
 fn reverse_angular_interval_becomes_an_increasing_nurbs_domain() {
     let range = ordered_range([0.0, -std::f64::consts::PI]);
-    let arc = rational_pcurve_arc([0.0, 0.0], 2.0, range, &mut None).expect("reverse semicircle");
+    let arc = rational_pcurve_arc([0.0, 0.0], 2.0, range, &mut None, "test record").expect("reverse semicircle");
     let PcurveGeometry::Nurbs { nurbs } = &arc else {
         panic!("expected rational NURBS arc");
     };

@@ -302,7 +302,7 @@ pub fn e5_edges(data: &[u8]) -> Vec<E5Edge> {
 /// records. The E5 plane class does not serialize a standalone normal.
 pub fn e5_surfaces(
     data: &[u8],
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Vec<E5Surface> {
     let mut out = Vec::new();
     for record in e5_records(data) {
@@ -605,7 +605,7 @@ pub fn e5_surface_wrappers(data: &[u8]) -> Vec<E5SurfaceWrapper> {
 fn e5_nurbs_surface(
     data: &[u8],
     record: E5Record,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Option<SurfaceGeometry> {
     let mut view = View::over_retained(data).child(record.pos + 13, record.end())?;
     if view.u8()? != 0x80 {
@@ -658,6 +658,7 @@ fn e5_nurbs_surface(
                     false,
                 ),
                 refusal,
+                "e5 NURBS surface record",
             )
             .map(SolvedSurfaceGeometry::Nurbs)
             .map(SurfaceGeometry::Solved)

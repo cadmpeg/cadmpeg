@@ -76,7 +76,7 @@ pub(crate) fn transfer_closed_face_topology(
     support_curve_ids: &HashMap<u32, CurveId>,
     ownership_root: Option<&ZeroEntityOwnershipRoot>,
     topology_budget: &WorkBudget<'_>,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Option<ZeroEntityTopologyCounts> {
     if support_runs.is_empty() || support_runs.iter().any(|run| run.face.is_none()) {
         return None;
@@ -233,6 +233,7 @@ pub(crate) fn transfer_closed_face_topology(
                         &curve_geometry,
                         parameter_range,
                         refusal,
+                        "zero-entity edge curve reversed onto its coedge",
                     );
                     let curve = ir
                         .model

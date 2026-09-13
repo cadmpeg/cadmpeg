@@ -1995,7 +1995,7 @@ pub fn b2_nurbs_curves(data: &[u8]) -> Vec<B2NurbsCurve> {
 pub(crate) fn b2_nurbs_curves_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Vec<B2NurbsCurve> {
     b_family_frames_from_records(records, 0x16)
         .into_iter()
@@ -2006,7 +2006,7 @@ pub(crate) fn b2_nurbs_curves_from_records(
 fn parse_b2_nurbs_curve(
     data: &[u8],
     frame: ConsolidatedFrame,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Option<B2NurbsCurve> {
     let mut at = frame.payload;
     let degree = compact_int(data, &mut at)?;
@@ -2074,6 +2074,7 @@ fn parse_b2_nurbs_curve(
         geometry: crate::nurbs::note_refusal(
             NurbsCurve::from_lanes(degree, knots, control_points, Some(weights), false),
             refusal,
+            format_args!("b2 NURBS curve record at byte {}", frame.pos),
         )?,
     })
 }
