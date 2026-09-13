@@ -232,7 +232,13 @@ fn vertex_loop_is_valid_and_exclusive_with_coedges() {
             pcurves: Vec::new(),
         },
     });
-    ir.model.faces[0].loops.push(loop_id.clone());
+    let face_loops = ir.model.faces[0]
+        .loops
+        .iter()
+        .cloned()
+        .chain(std::iter::once(loop_id.clone()))
+        .collect();
+    ir.model.faces[0].loops = crate::topology::FaceLoops::unspecified(face_loops);
     ir.model.finalize();
     let report = validate_neutral(&ir, Vec::new());
     assert!(report.is_ok(), "{:#?}", report.findings);

@@ -287,7 +287,9 @@ fn untrimmed_surface_curve() -> CadIr {
             .try_into()
             .expect("valid identity"),
         sense: Sense::Forward,
-        loops: vec!["test:model:loop#loop".try_into().expect("valid identity")].into(),
+        loops: crate::topology::FaceLoops::unspecified(vec!["test:model:loop#loop"
+            .try_into()
+            .expect("valid identity")]),
         name: None,
         color: None,
         tolerance: None,

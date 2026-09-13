@@ -214,7 +214,9 @@ pub fn unit_cube() -> CadIr {
             shell: "synthetic:cube:shell#0".try_into().expect("valid identity"),
             surface: SurfaceId::mint(surf_id).expect("valid identity"),
             sense: Sense::Forward,
-            loops: vec![loop_id.try_into().expect("valid identity")].into(),
+            loops: crate::topology::FaceLoops::unspecified(vec![loop_id
+                .try_into()
+                .expect("valid identity")]),
             name: Some(format!("{name} face")),
             color: None,
             tolerance: None,
