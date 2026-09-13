@@ -27,6 +27,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+use cadmpeg_ir::CadIr;
 use cadmpeg_test_support::unknown_keys::accepting_shapes;
 use serde_json::Value;
 
@@ -90,6 +91,132 @@ fn every_golden_shape_refuses_an_unknown_key() {
         unexpected.len(),
         unexpected.join("\n")
     );
+
+    // Every listed shape is load-bearing: it is reached by a committed golden
+    // or by a hand-written document below that exercises it. An entry proven
+    // by neither is over-listing, and over-listing hides an entry that has
+    // stopped being free-form.
+    for (name, document) in hand_written_documents() {
+        let (shapes, swept) = accepting_shapes(&document)
+            .unwrap_or_else(|error| panic!("the {name} document reads back as a CadIr: {error}"));
+        assert!(swept > 0, "the {name} document states a shape to sweep");
+        accepting.extend(shapes);
+    }
+    let unreached = FREE_FORM_SHAPES
+        .iter()
+        .filter(|shape| !accepting.contains(**shape))
+        .copied()
+        .collect::<Vec<_>>();
+    assert!(
+        unreached.is_empty(),
+        "{} free-form shapes are listed and reached by nothing:\n{}",
+        unreached.len(),
+        unreached.join("\n")
+    );
+}
+
+/// Minimal documents that reach the free-form shapes no committed golden
+/// carries.
+///
+/// Each is a whole `CadIr` built from the IR's own types, so a field that
+/// stops being a free-form map stops reaching its shape here and the sweep
+/// says so.
+fn hand_written_documents() -> Vec<(&'static str, Value)> {
+    use cadmpeg_ir::presentation::{
+        CameraState, PresentationDocument, PresentationState, PresentationStateKind,
+        ViewPresentation,
+    };
+    use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
+    use cadmpeg_ir::references::{ReferenceSelection, ReferenceTarget};
+    use cadmpeg_ir::semantic_annotations::{SemanticAnnotation, SemanticAnnotationKind};
+    use std::collections::BTreeMap;
+
+    let named = |value: &str| BTreeMap::from([("zz_source_name".to_string(), value.to_string())]);
+
+    let mut presentation = CadIr::empty();
+    let mut document = PresentationDocument::new(
+        "test:model:presentation#0"
+            .try_into()
+            .expect("valid identity"),
+    );
+    document
+        .set_states(vec![PresentationState {
+            kind: PresentationStateKind::Camera(CameraState {
+                position: None,
+                orientation: None,
+                properties: named("camera"),
+            }),
+            order: 0,
+            attributes: named("state"),
+            assets: Vec::new(),
+        }])
+        .expect("distinct state orders");
+    presentation.model.presentation_documents.push(document);
+    presentation
+        .model
+        .view_presentations
+        .push(ViewPresentation {
+            id: "test:model:presentation#1"
+                .try_into()
+                .expect("valid identity"),
+            object: None,
+            order: 0,
+            expanded: None,
+            visible: None,
+            display_mode: None,
+            selection_style: None,
+            line_width: None,
+            point_size: None,
+            properties: named("view"),
+            native_ref: None,
+        });
+
+    let mut products = CadIr::empty();
+    products.model.product_definitions.push(ProductDefinition {
+        id: "test:model:product#0".try_into().expect("valid identity"),
+        kind: ProductDefinitionKind::Part,
+        source_name: None,
+        label: None,
+        description: None,
+        part_number: None,
+        bom_properties: named("bom"),
+        bodies: Vec::new(),
+        native_ref: None,
+    });
+
+    let mut annotations = CadIr::empty();
+    annotations
+        .model
+        .semantic_annotations
+        .push(SemanticAnnotation {
+            id: "test:model:semantic-annotation#0"
+                .try_into()
+                .expect("valid identity"),
+            object: "zz:object".to_string(),
+            kind: SemanticAnnotationKind::Text,
+            runtime_type: "zz:runtime".to_string(),
+            order: 0,
+            text: Vec::new(),
+            references: BTreeMap::from([(
+                "zz_source_role".to_string(),
+                vec![ReferenceSelection::new(ReferenceTarget::Null, Vec::new())],
+            )]),
+            value: None,
+            format: None,
+            position: None,
+            parameters: named("parameter"),
+            assets: Vec::new(),
+            native_ref: "zz:native-ref".to_string(),
+        });
+
+    [
+        ("presentation", presentation),
+        ("product definition", products),
+        ("semantic annotation", annotations),
+    ]
+    .into_iter()
+    .map(|(name, ir)| (name, serde_json::to_value(&ir).expect("a CadIr serializes")))
+    .collect()
 }
 
 /// The non-native nodes a document may accept an unknown key on.
