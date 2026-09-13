@@ -1946,7 +1946,7 @@ fn decode_graph(
                                     signed_radius: blend.signed_radius,
                                 },
                                 BlendCrossSection::Circular,
-                                None,
+                                cadmpeg_ir::geometry::CacheContract::from_form(None),
                             )
                             .map_err(cadmpeg_core::CodecError::malformed)?,
                         ),
@@ -6568,7 +6568,7 @@ mod tests {
                         Some(spine.clone()),
                         BlendRadiusLaw::Constant { signed_radius: 0.5 },
                         BlendCrossSection::Circular,
-                        None,
+                        cadmpeg_ir::geometry::CacheContract::from_form(None),
                     )
                     .unwrap(),
                 ),

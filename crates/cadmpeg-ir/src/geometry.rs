@@ -2441,7 +2441,7 @@ impl TSplineSurfaceConstruction {
         trailing_value: i64,
         discontinuities: [Vec<f64>; 6],
         discontinuity_flag: bool,
-        revision_form: Option<RevisionSurfaceForm>,
+        cache: CacheContract<RevisionSurfaceForm>,
     ) -> Result<Self, ProceduralGeometryError> {
         let parameter_ranges = [
             crate::topology::ParameterInterval::new(parameter_ranges[0])
@@ -2465,7 +2465,7 @@ impl TSplineSurfaceConstruction {
             trailing_value,
             discontinuities,
             discontinuity_flag,
-            cache: CacheContract::from_form(revision_form),
+            cache,
         })
     }
 
@@ -2558,12 +2558,9 @@ impl TryFrom<TSplineSurfaceConstructionWire> for TSplineSurfaceConstruction {
             wire.trailing_value,
             wire.discontinuities,
             wire.discontinuity_flag,
-            wire.cache.form().cloned(),
+            wire.cache,
         )
-        .map(|mut construction| {
-            construction.cache = wire.cache;
-            construction
-        })
+
     }
 }
 

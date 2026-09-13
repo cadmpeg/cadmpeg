@@ -418,7 +418,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
             Some(slice.clone()),
             BlendRadiusLaw::Constant { signed_radius: 3.0 },
             BlendCrossSection::Circular,
-            Some(Box::new(RollingBallConstruction {
+            crate::geometry::CacheContract::from_form(Some(Box::new(RollingBallConstruction {
                 definition_index: 0,
                 sides,
                 slice,
@@ -441,7 +441,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
                 tail_flag: false,
                 third: None,
                 tail_extensions: [0; 3],
-            })),
+            }))),
         )
         .unwrap(),
     ));
@@ -547,7 +547,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
             definition_payload.spine().clone(),
             definition_payload.radius().clone(),
             definition_payload.cross_section().clone(),
-            Some(Box::new(native)),
+            crate::geometry::CacheContract::from_form(Some(Box::new(native))),
         )
         .unwrap();
         definition
@@ -582,7 +582,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
             definition_payload.spine().clone(),
             definition_payload.radius().clone(),
             definition_payload.cross_section().clone(),
-            Some(Box::new(native)),
+            crate::geometry::CacheContract::from_form(Some(Box::new(native))),
         )
         .unwrap();
         definition
@@ -618,7 +618,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
             definition_payload.spine().clone(),
             definition_payload.radius().clone(),
             definition_payload.cross_section().clone(),
-            Some(Box::new(native)),
+            crate::geometry::CacheContract::from_form(Some(Box::new(native))),
         )
         .unwrap();
         definition

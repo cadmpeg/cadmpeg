@@ -1332,7 +1332,7 @@ fn cacheless_revision_extrusion_uses_the_directrix_sense_chart() {
     });
     ir.model.procedural_surfaces.push(procedural_surface! {
         id: construction_id,
-        definition: ProceduralSurfaceDefinition::Extrusion(crate::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(directrix_id, Some([-2.0, 0.0]), Vector3::new(0.0, 0.0, 1.0), Some(Point3::new(0.0, 0.0, 0.0)), Some(RevisionSurfaceForm {
+        definition: ProceduralSurfaceDefinition::Extrusion(crate::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(directrix_id, Some([-2.0, 0.0]), Vector3::new(0.0, 0.0, 1.0), Some(Point3::new(0.0, 0.0, 0.0)), crate::geometry::CacheContract::from_form(Some(RevisionSurfaceForm {
                 revision: 1,
                 support_bounds: [None; 4],
                 reference_endpoints: [None; 2],
@@ -1344,7 +1344,7 @@ fn cacheless_revision_extrusion_uses_the_directrix_sense_chart() {
                 discontinuities: Default::default(),
                 tail_flag: false,
                 trailing_flags: Vec::new(),
-            })).unwrap()),
+            }))).unwrap()),
         cache_fit_tolerance: None,
         record_bounds: None,
     });
@@ -1553,7 +1553,7 @@ fn revolution_surface_maps_its_angular_parameter_interval() {
             surface_id.clone(),
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#mapped-revolution-construction").expect("valid identity"),
-                definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)), [0.0, std::f64::consts::PI], Some([10.0, 14.0]), None, false, None).unwrap()),
+                definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)), [0.0, std::f64::consts::PI], Some([10.0, 14.0]), None, false, crate::geometry::CacheContract::from_form(None)).unwrap()),
                 cache_fit_tolerance: None,
                 record_bounds: None,
             },
@@ -1642,7 +1642,7 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
             surface_id.clone(),
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#normalized-revolution-construction").expect("valid identity"),
-                definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)), [0.0, std::f64::consts::TAU], None, Some([0.0, 1.0]), false, None).unwrap()),
+                definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)), [0.0, std::f64::consts::TAU], None, Some([0.0, 1.0]), false, crate::geometry::CacheContract::from_form(None)).unwrap()),
                 cache_fit_tolerance: None,
                 record_bounds: Some([Some(0.0), Some(10.0), None, None]),
             },

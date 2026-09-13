@@ -87,7 +87,7 @@ fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
                 None,
                 Vector3::new(0.0, 0.0, 1.0),
                 None,
-                None,
+                cadmpeg_ir::geometry::CacheContract::from_form(None),
             )
             .unwrap(),
         ),

@@ -1067,7 +1067,7 @@ pub(crate) fn emit_standard_extrusion_definition(
             Some(extrusion.directrix_parameter_range),
             extrusion.direction,
             None,
-            None,
+            cadmpeg_ir::geometry::CacheContract::from_form(None),
         )
         .map_err(cadmpeg_core::CodecError::malformed)?,
     );
@@ -2034,7 +2034,7 @@ fn try_decode_standard_population(
                 (
                     "object_stream_b5_03_2d",
                     tag,
-                    ProceduralSurfaceDefinition::Revolution(cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (revolution.axis_origin, revolution.axis_direction), revolution.angular_interval, Some(revolution.angular_parameter_interval), Some(revolution.parameter_interval), false, None).ok()?),
+                    ProceduralSurfaceDefinition::Revolution(cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (revolution.axis_origin, revolution.axis_direction), revolution.angular_interval, Some(revolution.angular_parameter_interval), Some(revolution.parameter_interval), false, cadmpeg_ir::geometry::CacheContract::from_form(None)).ok()?),
                     Exactness::Derived,
                 )
             }

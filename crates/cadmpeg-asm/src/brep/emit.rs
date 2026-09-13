@@ -162,7 +162,7 @@ fn emit_carrier_surface(
                             construction.trailing_value,
                             construction.discontinuities,
                             construction.discontinuity_flag,
-                            construction.revision_form,
+                            cadmpeg_ir::geometry::CacheContract::from_form(construction.revision_form),
                         )
                         .map_err(CodecError::malformed)?,
                     ),
@@ -254,7 +254,7 @@ fn emit_carrier_surface(
                         pcurve,
                         parameter,
                         taper,
-                        revision_form,
+                        cadmpeg_ir::geometry::CacheContract::from_form(revision_form),
                     )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 )
@@ -333,7 +333,7 @@ fn emit_carrier_surface(
                         first_id,
                         second_id,
                         basepoint,
-                        revision_form,
+                        cadmpeg_ir::geometry::CacheContract::from_form(revision_form),
                     )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 )
@@ -362,7 +362,7 @@ fn emit_carrier_surface(
                         None,
                         Some(parameter_interval),
                         false,
-                        revision_form,
+                        cadmpeg_ir::geometry::CacheContract::from_form(revision_form),
                     )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 )
@@ -427,7 +427,7 @@ fn emit_carrier_surface(
                         Some(parameter_interval),
                         direction,
                         Some(native_position),
-                        revision_form,
+                        cadmpeg_ir::geometry::CacheContract::from_form(revision_form),
                     )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 )
@@ -853,7 +853,7 @@ fn emit_loft_surface(
                 singularities,
                 mode,
                 bridge,
-                None,
+                cadmpeg_ir::geometry::CacheContract::from_form(None),
             )
             .map_err(cadmpeg_core::CodecError::malformed)?,
         ),
@@ -865,7 +865,7 @@ fn emit_loft_surface(
                 [0; 2],
                 0,
                 Vec::new(),
-                Some(*form),
+                cadmpeg_ir::geometry::CacheContract::from_form(Some(*form)),
             )
             .map_err(cadmpeg_core::CodecError::malformed)?,
         ),
@@ -2438,7 +2438,7 @@ fn emit_blend_surface(
             spine,
             radius,
             cross_section,
-            native,
+            cadmpeg_ir::geometry::CacheContract::from_form(native),
         )
         .map_err(cadmpeg_core::CodecError::malformed)?,
     ))
@@ -3078,7 +3078,7 @@ fn emit_surface_offset_curve(
                 discontinuity_flag,
                 [embedded.base_u_range, embedded.base_v_range],
                 (base, embedded.base_range, base_endpoints),
-                cache_first,
+                cadmpeg_ir::geometry::CacheContract::from_form(cache_first),
                 embedded.distance,
                 [embedded.shift, embedded.scale],
             )

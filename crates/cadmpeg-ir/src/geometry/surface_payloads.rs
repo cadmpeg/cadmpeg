@@ -144,7 +144,7 @@ impl TaperSurfaceConstruction {
         pcurve: Option<PcurveGeometry>,
         parameter: f64,
         taper: TaperSurfaceKind,
-        revision_form: Option<RevisionSurfaceForm>,
+        cache: CacheContract<RevisionSurfaceForm>,
     ) -> Result<Self, ProceduralGeometryError> {
         let vector_finite =
             |vector: &Vector3| vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite();
@@ -185,7 +185,7 @@ impl TaperSurfaceConstruction {
                 "Taper.parameter is not finite",
             ))?,
             taper,
-            cache: CacheContract::from_form(revision_form),
+            cache,
         })
     }
     /// Return the support.
@@ -217,16 +217,14 @@ impl TaperSurfaceConstruction {
 impl TryFrom<TaperSurfaceConstructionWire> for TaperSurfaceConstruction {
     type Error = ProceduralGeometryError;
     fn try_from(wire: TaperSurfaceConstructionWire) -> Result<Self, Self::Error> {
-        let mut payload = Self::try_new(
+        Self::try_new(
             wire.support,
             wire.reference,
             wire.pcurve,
             wire.parameter,
             wire.taper,
-            wire.cache.form().cloned(),
-        )?;
-        payload.cache = wire.cache;
-        Ok(payload)
+            wire.cache,
+        )
     }
 }
 
@@ -299,7 +297,7 @@ impl ExtrusionSurfaceConstruction {
         parameter_interval: Option<[f64; 2]>,
         direction: Vector3,
         native_position: Option<Point3>,
-        revision_form: Option<RevisionSurfaceForm>,
+        cache: CacheContract<RevisionSurfaceForm>,
     ) -> Result<Self, ProceduralGeometryError> {
         Ok(Self {
             directrix,
@@ -320,7 +318,7 @@ impl ExtrusionSurfaceConstruction {
                     ))
                 })
                 .transpose()?,
-            cache: CacheContract::from_form(revision_form),
+            cache,
         })
     }
     /// Return the directrix.
@@ -348,15 +346,13 @@ impl ExtrusionSurfaceConstruction {
 impl TryFrom<ExtrusionSurfaceConstructionWire> for ExtrusionSurfaceConstruction {
     type Error = ProceduralGeometryError;
     fn try_from(wire: ExtrusionSurfaceConstructionWire) -> Result<Self, Self::Error> {
-        let mut payload = Self::try_new(
+        Self::try_new(
             wire.directrix,
             wire.parameter_interval,
             wire.direction,
             wire.native_position,
-            wire.cache.form().cloned(),
-        )?;
-        payload.cache = wire.cache;
-        Ok(payload)
+            wire.cache,
+        )
     }
 }
 
@@ -447,7 +443,7 @@ impl RevolutionSurfaceConstruction {
         angular_parameter_interval: Option<[f64; 2]>,
         parameter_interval: Option<[f64; 2]>,
         transposed: bool,
-        revision_form: Option<RevisionSurfaceForm>,
+        cache: CacheContract<RevisionSurfaceForm>,
     ) -> Result<Self, ProceduralGeometryError> {
         let admit_interval = |range: [f64; 2], message| {
             let interval = ParameterInterval::new(range)
@@ -486,7 +482,7 @@ impl RevolutionSurfaceConstruction {
             angular_parameter_interval,
             parameter_interval,
             transposed,
-            cache: CacheContract::from_form(revision_form),
+            cache,
         })
     }
     /// Return the directrix.
@@ -527,17 +523,15 @@ impl RevolutionSurfaceConstruction {
 impl TryFrom<RevolutionSurfaceConstructionWire> for RevolutionSurfaceConstruction {
     type Error = ProceduralGeometryError;
     fn try_from(wire: RevolutionSurfaceConstructionWire) -> Result<Self, Self::Error> {
-        let mut payload = Self::try_new(
+        Self::try_new(
             wire.directrix,
             (wire.axis_origin, wire.axis_direction),
             wire.angular_interval,
             wire.angular_parameter_interval,
             wire.parameter_interval,
             wire.transposed,
-            wire.cache.form().cloned(),
-        )?;
-        payload.cache = wire.cache;
-        Ok(payload)
+            wire.cache,
+        )
     }
 }
 
@@ -1049,7 +1043,7 @@ impl SumSurfaceConstruction {
         first: CurveId,
         second: CurveId,
         basepoint: Vector3,
-        revision_form: Option<RevisionSurfaceForm>,
+        cache: CacheContract<RevisionSurfaceForm>,
     ) -> Result<Self, ProceduralGeometryError> {
         Ok(Self {
             first,
@@ -1057,7 +1051,7 @@ impl SumSurfaceConstruction {
             basepoint: FiniteVector3::new(basepoint).ok_or(ProceduralGeometryError::Payload(
                 "sum basepoint must be finite",
             ))?,
-            cache: CacheContract::from_form(revision_form),
+            cache,
         })
     }
     /// Return the first curve.
@@ -1081,14 +1075,12 @@ impl SumSurfaceConstruction {
 impl TryFrom<SumSurfaceConstructionWire> for SumSurfaceConstruction {
     type Error = ProceduralGeometryError;
     fn try_from(wire: SumSurfaceConstructionWire) -> Result<Self, Self::Error> {
-        let mut payload = Self::try_new(
+        Self::try_new(
             wire.first,
             wire.second,
             wire.basepoint,
-            wire.cache.form().cloned(),
-        )?;
-        payload.cache = wire.cache;
-        Ok(payload)
+            wire.cache,
+        )
     }
 }
 
@@ -1239,7 +1231,7 @@ impl LoftSurfacePayload {
         singularities: [i64; 2],
         mode: i64,
         bridge: Vec<LoftBridgeToken>,
-        revision_form: Option<LoftRevisionForm>,
+        cache: CacheContract<LoftRevisionForm>,
     ) -> Result<Self, ProceduralGeometryError> {
         let parameters_valid = match &parameters {
             crate::geometry::SplineSurfaceParameters::OrderedRanges { ranges } => ranges
@@ -1280,7 +1272,7 @@ impl LoftSurfacePayload {
             singularities,
             mode,
             bridge,
-            cache: CacheContract::from_form(revision_form),
+            cache,
         })
     }
     /// Return the sections.
@@ -1315,17 +1307,15 @@ impl LoftSurfacePayload {
 impl TryFrom<LoftSurfacePayloadWire> for LoftSurfacePayload {
     type Error = ProceduralGeometryError;
     fn try_from(wire: LoftSurfacePayloadWire) -> Result<Self, Self::Error> {
-        let mut payload = Self::try_new(
+        Self::try_new(
             wire.sections,
             wire.parameters,
             wire.closures,
             wire.singularities,
             wire.mode,
             wire.bridge,
-            wire.cache.form().cloned(),
-        )?;
-        payload.cache = wire.cache;
-        Ok(payload)
+            wire.cache,
+        )
     }
 }
 
@@ -2371,9 +2361,9 @@ impl BlendSurfacePayload {
         spine: Option<CurveId>,
         radius: BlendRadiusLaw,
         cross_section: BlendCrossSection,
-        native: Option<Box<RollingBallConstruction>>,
+        cache: CacheContract<Box<RollingBallConstruction>>,
     ) -> Result<Self, ProceduralGeometryError> {
-        if let Some(construction) = &native {
+        if let Some(construction) = cache.form() {
             let point_finite = |point: &crate::math::Point3| {
                 point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
             };
@@ -2418,7 +2408,7 @@ impl BlendSurfacePayload {
             spine,
             radius,
             cross_section,
-            cache: CacheContract::from_form(native),
+            cache,
         })
     }
     /// Return the supports.
@@ -2450,12 +2440,9 @@ impl TryFrom<BlendSurfacePayloadWire> for BlendSurfacePayload {
             wire.spine,
             wire.radius,
             wire.cross_section,
-            wire.cache.form().cloned(),
+            wire.cache,
         )
-        .map(|mut payload| {
-            payload.cache = wire.cache;
-            payload
-        })
+
     }
 }
 

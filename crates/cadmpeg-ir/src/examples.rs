@@ -327,7 +327,7 @@ pub fn directed_subd_sum() -> Result<CadIr, crate::geometry::ProceduralGeometryE
             CurveId::mint("synthetic:v2:curve#u").expect("valid identity"),
             CurveId::mint("synthetic:v2:curve#v").expect("valid identity"),
             Vector3::new(0.0, 0.0, 0.0),
-            None,
+            crate::geometry::CacheContract::from_form(None),
         )?,
     );
     sum_definition.set_legacy_cache(Some(crate::geometry::LegacyCache::try_new(

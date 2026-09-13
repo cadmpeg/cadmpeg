@@ -189,7 +189,7 @@ pub(crate) fn append_consolidated_revolutions(
                 Some(revolution.angular_range),
                 Some(revolution.profile_range.get()),
                 false,
-                None,
+                cadmpeg_ir::geometry::CacheContract::from_form(None),
             )
             .and_then(|admitted_payload| {
                 ProceduralSurface::new(

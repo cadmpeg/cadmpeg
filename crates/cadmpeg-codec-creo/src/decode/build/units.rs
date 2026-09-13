@@ -1592,7 +1592,7 @@ impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralSurfaceDefinitio
                         payload.parameter_interval(),
                         direction,
                         native_position,
-                        payload.revision_form().cloned(),
+                        cadmpeg_ir::geometry::CacheContract::from_form(payload.revision_form().cloned()),
                     )?;
             }
             ProceduralSurfaceDefinition::LinearSweep(payload) => {
@@ -1615,7 +1615,7 @@ impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralSurfaceDefinitio
                         payload.angular_parameter_interval(),
                         payload.parameter_interval(),
                         *payload.transposed(),
-                        payload.revision_form().cloned(),
+                        cadmpeg_ir::geometry::CacheContract::from_form(payload.revision_form().cloned()),
                     )?;
             }
             ProceduralSurfaceDefinition::AxisRevolution(payload) => {
@@ -1634,7 +1634,7 @@ impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralSurfaceDefinitio
                     payload.first().clone(),
                     payload.second().clone(),
                     basepoint,
-                    payload.revision_form().cloned(),
+                    cadmpeg_ir::geometry::CacheContract::from_form(payload.revision_form().cloned()),
                 )?;
             }
             _ => {}
@@ -2206,7 +2206,7 @@ mod tests {
                 Some([1.0, 2.0]),
                 Vector3::new(1.0, 2.0, 3.0),
                 Some(Point3::new(4.0, 5.0, 6.0)),
-                None,
+                cadmpeg_ir::geometry::CacheContract::from_form(None),
             )
             .unwrap(),
         );

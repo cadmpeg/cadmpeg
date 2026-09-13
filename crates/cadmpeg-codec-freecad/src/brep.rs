@@ -5239,7 +5239,7 @@ pub(crate) fn append_text_surface(
                     None,
                     *direction,
                     None,
-                    None,
+                    cadmpeg_ir::geometry::CacheContract::from_form(None),
                 )
                 .and_then(|admitted_payload| {
                     ProceduralSurface::new(
@@ -5269,7 +5269,7 @@ pub(crate) fn append_text_surface(
                     None,
                     None,
                     true,
-                    None,
+                    cadmpeg_ir::geometry::CacheContract::from_form(None),
                 )
                 .and_then(|admitted_payload| {
                     ProceduralSurface::new(

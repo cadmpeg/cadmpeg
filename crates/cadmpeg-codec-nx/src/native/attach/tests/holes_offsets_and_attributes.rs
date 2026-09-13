@@ -1066,7 +1066,7 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
                     None,
                     radius,
                     BlendCrossSection::Circular,
-                    None,
+                    cadmpeg_ir::geometry::CacheContract::from_form(None),
                 )
                 .unwrap(),
             ),
@@ -1142,7 +1142,7 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
                     definition_payload.spine().clone(),
                     definition_payload.radius().clone(),
                     definition_payload.cross_section().clone(),
-                    definition_payload.native().cloned().map(Box::new),
+                    cadmpeg_ir::geometry::CacheContract::from_form(definition_payload.native().cloned().map(Box::new)),
                 )
                 .unwrap();
             definition
@@ -1233,7 +1233,7 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
                 None,
                 BlendRadiusLaw::Constant { signed_radius: 7.0 },
                 BlendCrossSection::Conic,
-                None,
+                cadmpeg_ir::geometry::CacheContract::from_form(None),
             )
             .unwrap(),
         ),
