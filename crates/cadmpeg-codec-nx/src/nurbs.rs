@@ -19,7 +19,7 @@ use crate::layout::nurbs_surface_descriptor_prefix as surf_desc;
 use crate::topology::Graph;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{
-    knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry,
+    CurveGeometry, NurbsCurve, NurbsError, NurbsSurface, PcurveGeometry,
     SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3};
@@ -56,12 +56,14 @@ pub struct Pcurve {
 ///
 /// The returned geometry uses millimetre control points. Malformed references,
 /// knots, dimensions, control points, and weights are skipped.
-pub fn surfaces(bytes: &[u8]) -> Vec<Surface> {
+pub fn surfaces(bytes: &[u8]) -> (Vec<Surface>, Vec<CarrierRefusal>) {
     let arrays = arrays(bytes);
     let payloads = surface_payloads(bytes);
     let descriptors = surface_descriptors(bytes);
     let graph = Graph::parse(bytes);
-    decode_surfaces(&graph, &arrays, &payloads, &descriptors)
+    let mut refusals = Vec::new();
+    let surfaces = decode_surfaces(&graph, &arrays, &payloads, &descriptors, &mut refusals);
+    (surfaces, refusals)
 }
 
 fn decode_surfaces(
@@ -69,6 +71,7 @@ fn decode_surfaces(
     arrays: &Arrays<'_>,
     payloads: &BTreeMap<u32, Payload<'_>>,
     descriptors: &BTreeMap<u32, SurfaceDescriptor>,
+    refusals: &mut Vec<CarrierRefusal>,
 ) -> Vec<Surface> {
     graph
         .of_kind(NodeKind::BSurface)
@@ -138,10 +141,7 @@ fn decode_surfaces(
                     weights.push(weight);
                 }
             }
-            Some(Surface {
-                pos: node.pos,
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                    NurbsSurface::from_lanes(
+            let surface = NurbsSurface::from_lanes(
                         descriptor.u_degree as u32,
                         descriptor.v_degree as u32,
                         full_u,
@@ -156,24 +156,38 @@ fn decode_surfaces(
                                 .map(<[_]>::to_vec)
                                 .collect()
                         }),
-                        node.byte_at(18)? == b'-',
-                        descriptor.u_periodic,
-                        descriptor.v_periodic,
-                    )
-                    .ok()?,
-                )),
+                node.byte_at(18)? == b'-',
+                descriptor.u_periodic,
+                descriptor.v_periodic,
+            );
+            let surface = match surface {
+                Ok(surface) => surface,
+                Err(error) => {
+                    refusals.push(CarrierRefusal {
+                        pos: node.pos,
+                        family: "B_SURFACE",
+                        error,
+                    });
+                    return None;
+                }
+            };
+            Some(Surface {
+                pos: node.pos,
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             })
         })
         .collect()
 }
 
 /// Decode dimension-2 `B_CURVE` families as surface parameter-space curves.
-pub fn pcurves(bytes: &[u8]) -> Vec<Pcurve> {
+pub fn pcurves(bytes: &[u8]) -> (Vec<Pcurve>, Vec<CarrierRefusal>) {
     let arrays = arrays(bytes);
     let controls = curve_payloads(bytes);
     let descriptors = curve_descriptors(bytes);
     let graph = Graph::parse(bytes);
-    decode_pcurves(&graph, &arrays, &controls, &descriptors)
+    let mut refusals = Vec::new();
+    let pcurves = decode_pcurves(&graph, &arrays, &controls, &descriptors, &mut refusals);
+    (pcurves, refusals)
 }
 
 fn decode_pcurves(
@@ -181,6 +195,7 @@ fn decode_pcurves(
     arrays: &Arrays<'_>,
     controls: &BTreeMap<u32, Payload<'_>>,
     descriptors: &BTreeMap<u32, CurveDescriptor>,
+    refusals: &mut Vec<CarrierRefusal>,
 ) -> Vec<Pcurve> {
     graph
         .of_kind(NodeKind::BCurve)
@@ -231,18 +246,27 @@ fn decode_pcurves(
                     weights.push(weight);
                 }
             }
+            let nurbs = cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+                descriptor.basis.degree as u32,
+                knots,
+                control_points,
+                weights,
+                descriptor.basis.periodic,
+            );
+            let nurbs = match nurbs {
+                Ok(nurbs) => nurbs,
+                Err(error) => {
+                    refusals.push(CarrierRefusal {
+                        pos: node.pos,
+                        family: "B_CURVE pcurve",
+                        error,
+                    });
+                    return None;
+                }
+            };
             Some(Pcurve {
                 pos: node.pos,
-                geometry: PcurveGeometry::Nurbs {
-                    nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
-                        descriptor.basis.degree as u32,
-                        knots,
-                        control_points,
-                        weights,
-                        descriptor.basis.periodic,
-                    )
-                    .ok()?,
-                },
+                geometry: PcurveGeometry::Nurbs { nurbs },
             })
         })
         .collect()
@@ -252,12 +276,14 @@ fn decode_pcurves(
 ///
 /// The returned geometry uses millimetre control points. Malformed references,
 /// knots, dimensions, control points, and weights are skipped.
-pub fn curves(bytes: &[u8]) -> Vec<Curve> {
+pub fn curves(bytes: &[u8]) -> (Vec<Curve>, Vec<CarrierRefusal>) {
     let arrays = arrays(bytes);
     let controls = curve_payloads(bytes);
     let descriptors = curve_descriptors(bytes);
     let graph = Graph::parse(bytes);
-    decode_curves(&graph, &arrays, &controls, &descriptors)
+    let mut refusals = Vec::new();
+    let curves = decode_curves(&graph, &arrays, &controls, &descriptors, &mut refusals);
+    (curves, refusals)
 }
 
 fn decode_curves(
@@ -265,6 +291,7 @@ fn decode_curves(
     arrays: &Arrays<'_>,
     controls: &BTreeMap<u32, Payload<'_>>,
     descriptors: &BTreeMap<u32, CurveDescriptor>,
+    refusals: &mut Vec<CarrierRefusal>,
 ) -> Vec<Curve> {
     graph
         .of_kind(NodeKind::BCurve)
@@ -318,18 +345,27 @@ fn decode_curves(
                     weights.push(weight);
                 }
             }
+            let curve = NurbsCurve::from_lanes(
+                descriptor.basis.degree as u32,
+                knots,
+                control_points,
+                weights,
+                descriptor.basis.periodic,
+            );
+            let curve = match curve {
+                Ok(curve) => curve,
+                Err(error) => {
+                    refusals.push(CarrierRefusal {
+                        pos: node.pos,
+                        family: "B_CURVE",
+                        error,
+                    });
+                    return None;
+                }
+            };
             Some(Curve {
                 pos: node.pos,
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                    NurbsCurve::from_lanes(
-                        descriptor.basis.degree as u32,
-                        knots,
-                        control_points,
-                        weights,
-                        descriptor.basis.periodic,
-                    )
-                    .ok()?,
-                )),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
             })
         })
         .collect()
@@ -345,6 +381,19 @@ pub(crate) struct Parsed {
     pub(crate) surfaces: Vec<Surface>,
     pub(crate) curves: Vec<Curve>,
     pub(crate) pcurves: Vec<Pcurve>,
+    /// Records of the right family whose lanes the IR carrier refused.
+    pub(crate) refusals: Vec<CarrierRefusal>,
+}
+
+/// A carrier record of the right family whose lanes the IR carrier refused.
+#[derive(Debug, Clone)]
+pub struct CarrierRefusal {
+    /// Byte offset of the descriptor record within the stream.
+    pub pos: usize,
+    /// Carrier family the record states.
+    pub family: &'static str,
+    /// The carrier's refusal.
+    pub error: NurbsError,
 }
 
 pub(crate) fn parse_with_graph(bytes: &[u8], graph: &Graph) -> Parsed {
@@ -353,10 +402,30 @@ pub(crate) fn parse_with_graph(bytes: &[u8], graph: &Graph) -> Parsed {
     let curve_payloads = curve_payloads(bytes);
     let surface_descriptors = surface_descriptors(bytes);
     let curve_descriptors = curve_descriptors(bytes);
+    let mut refusals = Vec::new();
     Parsed {
-        surfaces: decode_surfaces(graph, &arrays, &surface_payloads, &surface_descriptors),
-        curves: decode_curves(graph, &arrays, &curve_payloads, &curve_descriptors),
-        pcurves: decode_pcurves(graph, &arrays, &curve_payloads, &curve_descriptors),
+        surfaces: decode_surfaces(
+            graph,
+            &arrays,
+            &surface_payloads,
+            &surface_descriptors,
+            &mut refusals,
+        ),
+        curves: decode_curves(
+            graph,
+            &arrays,
+            &curve_payloads,
+            &curve_descriptors,
+            &mut refusals,
+        ),
+        pcurves: decode_pcurves(
+            graph,
+            &arrays,
+            &curve_payloads,
+            &curve_descriptors,
+            &mut refusals,
+        ),
+        refusals,
     }
 }
 
@@ -1006,7 +1075,10 @@ fn expand_knots(
     multiplicities: &[u16],
     required_count: usize,
 ) -> Option<Vec<f64>> {
-    if distinct.len() != multiplicities.len() || !knots_nondecreasing(distinct) {
+    // The knot order is the carrier's own refusal, not this reader's: a
+    // decreasing knot lane is a record of the right kind that the carrier
+    // states a reason for, so it travels to `from_lanes` and is reported.
+    if distinct.len() != multiplicities.len() {
         return None;
     }
     let expanded_count = multiplicities.iter().try_fold(0usize, |total, &count| {

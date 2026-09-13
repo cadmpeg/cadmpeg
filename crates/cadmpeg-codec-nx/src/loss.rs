@@ -107,6 +107,8 @@ loss_codes! {
     NonParasolidStreamOmitted => ("stream.non-parasolid-omitted", Info, PassthroughRecordOmitted),
     /// Assembly `.prt` has no inline geometry; children live in external parts.
     AssemblyComponentsExternal => ("assembly.components-external", Blocking, AssemblyComponentsExternal),
+    /// A carrier record of the right family states lanes the IR carrier refuses.
+    CarrierLanesUnpaired => ("carrier.lanes-unpaired", Warning, ObjectRecordsUntransferred),
     /// No gate-passing analytic carrier was found in the Parasolid streams.
     GeometryNotTransferred => ("geometry.not-transferred", Blocking, GeometryNotTransferred),
 }
@@ -176,6 +178,7 @@ mod tests {
                 "container.stream-opaque",
                 "stream.non-parasolid-omitted",
                 "assembly.components-external",
+                "carrier.lanes-unpaired",
                 "geometry.not-transferred",
             ]
         );

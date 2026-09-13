@@ -889,7 +889,7 @@ fn ext11_uv_completion_runs_after_support_incidence_resolution() {
         ]),
     )];
 
-    complete_ext11_support_uv(&mut result.ir_mut(), &pending);
+    complete_ext11_support_uv(&mut result.ir_mut(), &pending).expect("support-uv lanes pair");
 
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
         &result.ir().model.procedural_curves[0].definition()

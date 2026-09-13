@@ -2210,9 +2210,9 @@ pub(crate) fn intersection_side(
     surfaces_by_xmt: &BTreeMap<u32, SurfaceId>,
     surface_xmt: Option<crate::framing::xmt_reference::NonNullXmt>,
     uv: Option<(&[[f64; 2]], &[f64])>,
-) -> IntcurveSupportSide {
+) -> Result<IntcurveSupportSide, cadmpeg_ir::geometry::NurbsError> {
     let surface = surface_xmt.and_then(|xmt| surfaces_by_xmt.get(&u32::from(xmt)).cloned());
-    let pcurve = surface.as_ref().and_then(|surface_id| {
+    let lanes = surface.as_ref().and_then(|surface_id| {
         let geometry = ir
             .model
             .surfaces
@@ -2231,21 +2231,24 @@ pub(crate) fn intersection_side(
             .iter()
             .map(|pair| surface_parameters(geometry, *pair))
             .collect::<Option<Vec<_>>>()?;
-        Some(PcurveGeometry::Nurbs {
+        Some((control_points, linear_knots(parameters)))
+    });
+    let pcurve = match lanes {
+        Some((control_points, knots)) => Some(PcurveGeometry::Nurbs {
             nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
                 1,
-                linear_knots(parameters),
+                knots,
                 control_points,
                 None,
                 false,
-            )
-            .ok()?,
-        })
-    });
-    IntcurveSupportSide {
+            )?,
+        }),
+        None => None,
+    };
+    Ok(IntcurveSupportSide {
         surface,
         pcurve: pcurve.map(Into::into),
-    }
+    })
 }
 
 pub(crate) fn surface_parameters(surface: &SurfaceGeometry, uv: [f64; 2]) -> Option<Point2> {

@@ -37,7 +37,7 @@ use cadmpeg_ir::eval::{
     pcurve_tangent, pcurve_uv, surface_second_partials,
 };
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, PcurveNurbs, PolarPcurveNurbs,
+    Curve, CurveGeometry, NurbsCurve, NurbsError, NurbsSurface, PcurveGeometry, PcurveNurbs, PolarPcurveNurbs,
     ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
     SurfaceGeometry, SurfaceParameterAxis, TolerantIntersectionParameterization,
 };
@@ -542,6 +542,7 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
                 continue;
             };
             let carriers = [first, second];
+            let mut refusal = None;
             let pcurves: [Option<PcurveGeometry>; 2] = std::array::from_fn(|side| {
                 orient_tolerant_intersection_pcurve_with_index_and_budget(
                     &model_index,
@@ -552,8 +553,12 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
                     *endpoints,
                     endpoint_tolerance,
                     geometry_budget,
+                    &mut refusal,
                 )
             });
+            if let Some(error) = refusal {
+                return Err(error.into());
+            }
             if let [Some(first), Some(second)] = pcurves {
                 let Ok(parameterization) =
                     TolerantIntersectionParameterization::try_new([first, second], first_range)
@@ -621,10 +626,11 @@ pub(crate) fn orient_tolerant_intersection_pcurve(
     range: [f64; 2],
     endpoints: [Point3; 2],
     tolerance: f64,
-) -> Option<PcurveGeometry> {
+) -> Result<Option<PcurveGeometry>, NurbsError> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
-    orient_tolerant_intersection_pcurve_with_index_and_budget(
+    let mut refusal = None;
+    let oriented = orient_tolerant_intersection_pcurve_with_index_and_budget(
         &index,
         curve,
         support,
@@ -633,7 +639,12 @@ pub(crate) fn orient_tolerant_intersection_pcurve(
         endpoints,
         tolerance,
         &geometry_budget,
-    )
+        &mut refusal,
+    );
+    match refusal {
+        Some(error) => Err(error),
+        None => Ok(oriented),
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -646,6 +657,7 @@ fn orient_tolerant_intersection_pcurve_with_index_and_budget(
     endpoints: [Point3; 2],
     tolerance: f64,
     geometry_budget: &GeometryWorkBudget<'_>,
+    refusal: &mut Option<NurbsError>,
 ) -> Option<PcurveGeometry> {
     let points = range.map(|parameter| {
         let uv = pcurve_uv(pcurve, parameter)?;
@@ -660,9 +672,9 @@ fn orient_tolerant_intersection_pcurve_with_index_and_budget(
         && point_distance(second, endpoints[0]) <= tolerance;
     match (forward, reversed) {
         (true, false) => Some(pcurve.clone()),
-        (false, true) => reverse_pcurve_over_range(pcurve, range),
+        (false, true) => reverse_pcurve_over_range_inner(pcurve, range, refusal),
         (true, true) => {
-            let reversed = reverse_pcurve_over_range(pcurve, range)?;
+            let reversed = reverse_pcurve_over_range_inner(pcurve, range, refusal)?;
             let curve = index.curves(curve.as_str())?;
             let curve_tangent = unit_vector(curve_tangent_with_budget(
                 &curve.geometry,
@@ -704,9 +716,25 @@ fn orient_tolerant_intersection_pcurve_with_index_and_budget(
     }
 }
 
+/// Reverse a pcurve over `[start, end]`. `Ok(None)` states a pcurve family the
+/// reversal cannot carry; `Err` states reversed lanes the carrier refuses.
+#[cfg(test)]
 pub(crate) fn reverse_pcurve_over_range(
     pcurve: &PcurveGeometry,
+    range: [f64; 2],
+) -> Result<Option<PcurveGeometry>, NurbsError> {
+    let mut refusal = None;
+    let reversed = reverse_pcurve_over_range_inner(pcurve, range, &mut refusal);
+    match refusal {
+        Some(error) => Err(error),
+        None => Ok(reversed),
+    }
+}
+
+fn reverse_pcurve_over_range_inner(
+    pcurve: &PcurveGeometry,
     [start, end]: [f64; 2],
+    refusal: &mut Option<NurbsError>,
 ) -> Option<PcurveGeometry> {
     let reflection = start + end;
     if !reflection.is_finite() {
@@ -812,19 +840,22 @@ pub(crate) fn reverse_pcurve_over_range(
                         .flat_map(|pole| [&pole.radial.u, &pole.radial.v, &pole.axial]),
                 )
                 .all(|value| value.is_finite());
-            finite
-                .then(|| {
-                    PolarPcurveNurbs::from_lanes(
-                        nurbs.degree(),
-                        reversed_knots,
-                        poles,
-                        weights,
-                        nurbs.periodic(),
-                    )
-                    .ok()
-                })
-                .flatten()
-                .map(|nurbs| PcurveGeometry::PolarNurbs { nurbs })
+            if !finite {
+                return None;
+            }
+            match PolarPcurveNurbs::from_lanes(
+                nurbs.degree(),
+                reversed_knots,
+                poles,
+                weights,
+                nurbs.periodic(),
+            ) {
+                Ok(nurbs) => Some(PcurveGeometry::PolarNurbs { nurbs }),
+                Err(error) => {
+                    *refusal = Some(error);
+                    None
+                }
+            }
         }
         PcurveGeometry::SphericalGreatCircle(spherical_great_circle_pcurve) => {
             let azimuth_origin = spherical_great_circle_pcurve.azimuth_origin();
@@ -888,19 +919,22 @@ pub(crate) fn reverse_pcurve_over_range(
                 .iter()
                 .chain(control_points.iter().flat_map(|point| [&point.u, &point.v]))
                 .all(|value| value.is_finite());
-            finite
-                .then(|| {
-                    PcurveNurbs::from_lanes(
-                        nurbs.degree(),
-                        reversed_knots,
-                        control_points,
-                        weights,
-                        nurbs.periodic(),
-                    )
-                    .ok()
-                })
-                .flatten()
-                .map(|nurbs| PcurveGeometry::Nurbs { nurbs })
+            if !finite {
+                return None;
+            }
+            match PcurveNurbs::from_lanes(
+                nurbs.degree(),
+                reversed_knots,
+                control_points,
+                weights,
+                nurbs.periodic(),
+            ) {
+                Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),
+                Err(error) => {
+                    *refusal = Some(error);
+                    None
+                }
+            }
         }
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
             let parameter_range = trimmed_pcurve.parameter_range();
@@ -910,13 +944,13 @@ pub(crate) fn reverse_pcurve_over_range(
                 cadmpeg_ir::geometry::TrimmedPcurve::try_new(
                     *parameter_range,
                     same_sense,
-                    Box::new(reverse_pcurve_over_range(basis, [start, end])?),
+                    Box::new(reverse_pcurve_over_range_inner(basis, [start, end], refusal)?),
                 )
                 .ok()?,
             ))
         }
         PcurveGeometry::Transformed { basis, transform } => Some(PcurveGeometry::Transformed {
-            basis: Box::new(reverse_pcurve_over_range(basis, [start, end])?),
+            basis: Box::new(reverse_pcurve_over_range_inner(basis, [start, end], refusal)?),
             transform: *transform,
         }),
         PcurveGeometry::Offset(offset_pcurve) => {
@@ -925,7 +959,7 @@ pub(crate) fn reverse_pcurve_over_range(
             Some(PcurveGeometry::Offset(
                 cadmpeg_ir::geometry::OffsetPcurve::try_new(
                     -distance,
-                    Box::new(reverse_pcurve_over_range(basis, [start, end])?),
+                    Box::new(reverse_pcurve_over_range_inner(basis, [start, end], refusal)?),
                 )
                 .ok()?,
             ))
@@ -1016,21 +1050,25 @@ pub(crate) fn reverse_pcurve_over_range(
                 first.u + half_span * derivative.u,
                 first.v + half_span * derivative.v,
             );
-            [first.u, first.v, middle.u, middle.v, last.u, last.v]
+            if ![first.u, first.v, middle.u, middle.v, last.u, last.v]
                 .into_iter()
                 .all(f64::is_finite)
-                .then(|| {
-                    PcurveNurbs::from_lanes(
-                        2,
-                        vec![start, start, start, end, end, end],
-                        vec![first, middle, last],
-                        None,
-                        false,
-                    )
-                    .ok()
-                })
-                .flatten()
-                .map(|nurbs| PcurveGeometry::Nurbs { nurbs })
+            {
+                return None;
+            }
+            match PcurveNurbs::from_lanes(
+                2,
+                vec![start, start, start, end, end, end],
+                vec![first, middle, last],
+                None,
+                false,
+            ) {
+                Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),
+                Err(error) => {
+                    *refusal = Some(error);
+                    None
+                }
+            }
         }
         PcurveGeometry::Hyperbola(hyperbola_pcurve) if { reflection == 0.0 } => {
             let center = hyperbola_pcurve.center();
@@ -1161,6 +1199,8 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
             .then_with(|| first.2.cmp(&second.2))
     });
     let candidate_count = candidates.len();
+    let mut transfer_refusal: Option<NurbsError> = None;
+    let transfer_refusal = &mut transfer_refusal;
     let replacements = candidates
         .into_iter()
         .enumerate()
@@ -1221,6 +1261,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
                     transfer_budget,
                     &candidate_geometry_budget,
                     &mut blend_parameter_grids,
+                    transfer_refusal,
                 )?;
                 Some((
                     procedural_index,
@@ -1234,6 +1275,9 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
             replacement
         })
         .collect::<Vec<_>>();
+    if let Some(error) = transfer_refusal.take() {
+        return Err(error.into());
+    }
     for (procedural_index, side, pcurve, tolerance, cache_backed) in replacements {
         let Some(procedural) = ir.model.procedural_curves.get_mut(procedural_index) else {
             continue;
@@ -1357,6 +1401,8 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
         },
     );
     let mut blend_parameter_grids = BlendParameterGridCache::new();
+    let mut exact_transfer_refusal: Option<NurbsError> = None;
+    let exact_transfer_refusal = &mut exact_transfer_refusal;
     let replacements = ir
         .model
         .procedural_curves
@@ -1455,6 +1501,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                                 transfer_budget,
                                 geometry_budget,
                                 &mut blend_parameter_grids,
+                                exact_transfer_refusal,
                             )
                             .map(|transferred| [first.clone(), transferred]),
                             transfer_intersection_pcurve(
@@ -1468,6 +1515,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                                 transfer_budget,
                                 geometry_budget,
                                 &mut blend_parameter_grids,
+                                exact_transfer_refusal,
                             )
                             .map(|transferred| [transferred, second.clone()]),
                         ];
@@ -1490,6 +1538,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                         transfer_budget,
                         geometry_budget,
                         &mut blend_parameter_grids,
+                        exact_transfer_refusal,
                     )?,
                 ],
                 [None, Some(second)] => [
@@ -1504,6 +1553,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                         transfer_budget,
                         geometry_budget,
                         &mut blend_parameter_grids,
+                        exact_transfer_refusal,
                     )?,
                     second,
                 ],
@@ -1520,6 +1570,9 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
             ))
         })
         .collect::<Vec<_>>();
+    if let Some(error) = exact_transfer_refusal.take() {
+        return Err(error.into());
+    }
     let mut bounded_tolerant_curves = Vec::new();
     for (procedural_id, pcurves, tolerance, cache_backed, curve, range, tolerant) in replacements {
         let Some(procedural_index) = procedural_indices.get(&procedural_id).copied() else {
@@ -2464,6 +2517,7 @@ fn transfer_intersection_pcurve(
     budget: &TransferBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
     blend_parameter_grids: &mut BlendParameterGridCache,
+    refusal: &mut Option<NurbsError>,
 ) -> Option<PcurveGeometry> {
     let blend_contact = blend_transfer_contact(index, source_surface, target_surface);
     transfer_intersection_pcurve_with_contact_and_budget(
@@ -2478,6 +2532,7 @@ fn transfer_intersection_pcurve(
         budget,
         geometry_budget,
         blend_parameter_grids,
+        refusal,
     )
 }
 
@@ -2494,6 +2549,7 @@ fn transfer_intersection_pcurve_with_contact_and_budget(
     budget: &TransferBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
     blend_parameter_grids: &mut BlendParameterGridCache,
+    refusal: &mut Option<NurbsError>,
 ) -> Option<PcurveGeometry> {
     let source_geometry = index
         .surfaces(source_surface.as_str())
@@ -2515,6 +2571,7 @@ fn transfer_intersection_pcurve_with_contact_and_budget(
         budget,
         geometry_budget,
         blend_parameter_grids,
+        refusal,
     )
 }
 
@@ -2533,6 +2590,7 @@ fn transfer_intersection_pcurve_with_budget(
     budget: &TransferBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
     blend_parameter_grids: &mut BlendParameterGridCache,
+    refusal: &mut Option<NurbsError>,
 ) -> Option<PcurveGeometry> {
     const GENERAL_CONTINUATION_STEPS: usize = 16;
     // A complete blend boundary is one continuous image even when its
@@ -2621,16 +2679,19 @@ fn transfer_intersection_pcurve_with_budget(
             blend_parameter_grids,
         )?;
     }
-    Some(PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::from_lanes(
-            1,
-            linear_knots(&samples.iter().map(|sample| sample.0).collect::<Vec<_>>()),
-            samples.iter().map(|sample| sample.1).collect(),
-            None,
-            false,
-        )
-        .ok()?,
-    })
+    match PcurveNurbs::from_lanes(
+        1,
+        linear_knots(&samples.iter().map(|sample| sample.0).collect::<Vec<_>>()),
+        samples.iter().map(|sample| sample.1).collect(),
+        None,
+        false,
+    ) {
+        Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),
+        Err(error) => {
+            *refusal = Some(error);
+            None
+        }
+    }
 }
 
 type TransferredPcurveSample = (f64, Point2, Point3);
