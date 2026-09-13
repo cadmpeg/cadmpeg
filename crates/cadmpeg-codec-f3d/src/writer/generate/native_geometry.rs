@@ -2223,6 +2223,10 @@ fn native_cacheless_procedural_surface_definition(
     Ok(false)
 }
 
+/// The native token for the null law. The codec knows its own token; the IR
+/// does not.
+const NULL_LAW_TOKEN: &str = "null_law";
+
 fn native_law_expression(
     bytes: &mut Vec<u8>,
     target: &CadIr,
@@ -2236,8 +2240,16 @@ fn native_law_expression(
         ));
     }
     match expression {
-        LawExpression::Null {} => native_string(bytes, "null_law")?,
-        LawExpression::Text { value } => native_string(bytes, value.as_str())?,
+        LawExpression::Null {} => native_string(bytes, NULL_LAW_TOKEN)?,
+        LawExpression::Text { value } => {
+            if value.as_str() == NULL_LAW_TOKEN {
+                return Err(CodecError::InvalidInput(format!(
+                    "law expression text {NULL_LAW_TOKEN} reads back as the native null law; \
+                     the null law is stated by the variant, not by a text value"
+                )));
+            }
+            native_string(bytes, value.as_str())?;
+        }
         LawExpression::Integer { value } => native_i64(bytes, *value),
         LawExpression::Double { value } => native_f64(bytes, *value),
         LawExpression::Point { value } => {
@@ -2363,12 +2375,22 @@ fn native_law_formula(
     target: &CadIr,
     formula: &cadmpeg_ir::geometry::LawFormula,
 ) -> Result<(), CodecError> {
-    let cadmpeg_ir::geometry::LawFormula::Named { name, variables } = formula else {
-        // The native stream spells the null law with its own token; the IR
-        // states the variant and carries no such text.
-        native_length_prefixed_string(bytes, "null_law")?;
-        return Ok(());
+    // The native stream spells the null law with its own token; the IR states
+    // the variant and knows no such text. The match is exhaustive so a third
+    // variant is a compile error here, not a silently written token.
+    let (name, variables) = match formula {
+        cadmpeg_ir::geometry::LawFormula::Null {} => {
+            native_length_prefixed_string(bytes, NULL_LAW_TOKEN)?;
+            return Ok(());
+        }
+        cadmpeg_ir::geometry::LawFormula::Named { name, variables } => (name, variables),
     };
+    if name.as_str() == NULL_LAW_TOKEN {
+        return Err(CodecError::InvalidInput(format!(
+            "law formula named {NULL_LAW_TOKEN} reads back as the native null law; \
+             the null law is stated by the variant, not by a name"
+        )));
+    }
     native_length_prefixed_string(bytes, name.as_str())?;
     native_i64(
         bytes,
@@ -6846,5 +6868,53 @@ fn legacy_extension_flag_run(flags: cadmpeg_ir::geometry::LegacyExtensionFlags) 
             run.extend(tertiary);
             run
         }
+    }
+}
+
+#[cfg(test)]
+mod null_law_token_tests {
+    use super::*;
+
+    /// The native null law is stated by the variant. A `Named` law whose name
+    /// is the native token would read back as `Null`, so the writer refuses
+    /// it; the `Null` variant writes the token, and the reader reads it back
+    /// as `Null`.
+    #[test]
+    fn the_writer_cannot_emit_a_named_law_that_reads_back_as_null() {
+        let target = CadIr::empty();
+
+        let mut bytes = Vec::new();
+        native_law_formula(
+            &mut bytes,
+            &target,
+            &cadmpeg_ir::geometry::LawFormula::Null {},
+        )
+        .expect("the null law writes its token");
+        assert!(
+            bytes.windows(NULL_LAW_TOKEN.len()).any(|window| window
+                == NULL_LAW_TOKEN.as_bytes()),
+            "the null law writes {NULL_LAW_TOKEN}"
+        );
+
+        let named = cadmpeg_ir::geometry::LawFormula::Named {
+            name: cadmpeg_ir::products::NonBlankString::new(NULL_LAW_TOKEN.to_string())
+                .expect("the token is a non-blank string"),
+            variables: Vec::new(),
+        };
+        let Err(error) = native_law_formula(&mut Vec::new(), &target, &named) else {
+            panic!("a named null law has no native spelling");
+        };
+        let error = error.to_string();
+        assert!(error.contains(NULL_LAW_TOKEN), "{error}");
+
+        let text = cadmpeg_ir::geometry::LawExpression::Text {
+            value: cadmpeg_ir::products::NonBlankString::new(NULL_LAW_TOKEN.to_string())
+                .expect("the token is a non-blank string"),
+        };
+        let Err(error) = native_law_expression(&mut Vec::new(), &target, &text, 0) else {
+            panic!("a law expression text of the token has no native spelling");
+        };
+        let error = error.to_string();
+        assert!(error.contains(NULL_LAW_TOKEN), "{error}");
     }
 }
