@@ -483,9 +483,10 @@ mod tests {
         }))
         .unwrap_err();
 
-        assert!(error
-            .to_string()
-            .contains("DatumReference.precedence must start at one"));
+        // The refusal is the `NonZeroU32` carrier's own: no `deserialize_with`
+        // restates it.
+        let error = error.to_string();
+        assert!(error.contains("nonzero"), "{error}");
     }
 
     #[test]
