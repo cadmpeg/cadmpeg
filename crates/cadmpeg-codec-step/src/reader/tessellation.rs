@@ -261,7 +261,7 @@ pub(super) fn decode(
                 indices
             }
         };
-        let (mut local_vertices, local_triangles, coordinate_indices) = if pnindex.is_empty() {
+        let (mut local_vertices, local_triangles, addressing) = if pnindex.is_empty() {
             if triangles
                 .iter()
                 .flatten()
@@ -286,7 +286,11 @@ pub(super) fn decode(
                 .iter()
                 .map(|triangle| triangle.map(|index| local_index[&index]))
                 .collect::<Vec<_>>();
-            (local_vertices, local_triangles, Some(coordinate_indices))
+            (
+                local_vertices,
+                local_triangles,
+                CoordinateAddressing::TriangleIndices(coordinate_indices),
+            )
         } else {
             if pnindex
                 .iter()
@@ -310,7 +314,7 @@ pub(super) fn decode(
                     .iter()
                     .map(|triangle| triangle.map(|index| index - 1))
                     .collect(),
-                None,
+                CoordinateAddressing::PnIndex,
             )
         };
         let source_normals =
@@ -332,20 +336,25 @@ pub(super) fn decode(
                 }
             },
             count if count == local_vertices.len() => Some(source_normals),
-            count if pnindex.is_empty() && count == vertices.len() => Some(
-                coordinate_indices
-                    .expect("coordinate indices exist without pnindex")
-                    .iter()
-                    .map(|index| source_normals[*index as usize - 1])
-                    .collect(),
-            ),
-            count => {
-                losses.push(StepLossCode::DecodeWarning.note(format!(
-                    "{kind} #{id} carries {count} normals for {} coordinates",
-                    local_vertices.len()
-                )));
-                None
-            }
+            count => match &addressing {
+                CoordinateAddressing::TriangleIndices(coordinate_indices)
+                    if count == vertices.len() =>
+                {
+                    Some(
+                        coordinate_indices
+                            .iter()
+                            .map(|index| source_normals[*index as usize - 1])
+                            .collect(),
+                    )
+                }
+                CoordinateAddressing::PnIndex | CoordinateAddressing::TriangleIndices(_) => {
+                    losses.push(StepLossCode::DecodeWarning.note(format!(
+                        "{kind} #{id} carries {count} normals for {} coordinates",
+                        local_vertices.len()
+                    )));
+                    None
+                }
+            },
         };
         if item_bodies.get(&id).is_some_and(BTreeSet::is_empty) {
             let distinct = distinct_placements(item_placements.get(&id).map_or(&[], Vec::as_slice));
@@ -440,6 +449,21 @@ pub(super) fn decode(
         losses,
         notes: Vec::new(),
     })
+}
+
+/// How a tessellated item addresses the coordinate list it shares.
+///
+/// A STEP tessellated item states either a PNINDEX list, which names the
+/// coordinates it uses, or no PNINDEX at all, in which case its triangle
+/// indices name them directly. The two are one statement of the record, so
+/// they are one value: the coordinate set exists exactly when the record
+/// states no PNINDEX.
+enum CoordinateAddressing {
+    /// The record states a PNINDEX list.
+    PnIndex,
+    /// The record states no PNINDEX; these triangle indices name the
+    /// coordinates it uses, in ascending order.
+    TriangleIndices(BTreeSet<u32>),
 }
 
 fn complex_triangulated_face_surface(record: &RawRecord) -> Option<u64> {
