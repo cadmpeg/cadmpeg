@@ -1295,12 +1295,12 @@ pub enum PolylineSamples {
     /// Samples the source did not parameterize.
     Unparameterized {
         /// Ordered model-space samples.
-        points: Vec<Point3>,
+        points: crate::features::NonEmptyMembers<Point3>,
     },
     /// Samples the source parameterized.
     Parameterized {
         /// Ordered samples, each with its source parameter.
-        vertices: Vec<PolylineVertex>,
+        vertices: crate::features::NonEmptyMembers<PolylineVertex>,
     },
 }
 
@@ -1340,19 +1340,19 @@ impl TryFrom<PolylineCurveWire> for PolylineCurve {
 }
 
 impl PolylineSamples {
-    /// Number of samples.
+    /// Number of samples. The sample list is nonempty by type.
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub fn count(&self) -> std::num::NonZeroUsize {
         match self {
-            Self::Unparameterized { points } => points.len(),
-            Self::Parameterized { vertices } => vertices.len(),
+            Self::Unparameterized { points } => points.count(),
+            Self::Parameterized { vertices } => vertices.count(),
         }
     }
 
-    /// True when the polyline states no sample.
+    /// Number of samples.
     #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
+    pub fn len(&self) -> usize {
+        self.count().get()
     }
 
     /// Ordered model-space samples.
@@ -1444,8 +1444,8 @@ impl PolylineCurve {
 
     /// Number of samples.
     #[must_use]
-    pub fn point_count(&self) -> usize {
-        self.samples.len()
+    pub fn point_count(&self) -> std::num::NonZeroUsize {
+        self.samples.count()
     }
 
     /// Source parameters, absent when the source stated none.

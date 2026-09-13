@@ -5407,6 +5407,16 @@ impl<T> NonEmptyMembers<T> {
     pub fn as_slice(&self) -> &[T] {
         &self.0
     }
+
+    /// Number of members.
+    ///
+    /// The mint refuses an empty sequence, so the count is nonzero by type
+    /// and no caller needs a floor under it.
+    #[must_use]
+    pub fn count(&self) -> std::num::NonZeroUsize {
+        // `MIN` is the count of the empty sequence this type does not hold.
+        std::num::NonZeroUsize::new(self.0.len()).unwrap_or(std::num::NonZeroUsize::MIN)
+    }
 }
 
 impl<T> std::ops::Deref for NonEmptyMembers<T> {

@@ -520,7 +520,9 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
                 .into_iter()
                 .zip(vec![0.0, 0.5, 1.0])
                 .map(|(point, parameter)| PolylineVertex { parameter, point })
-                .collect(),
+                .collect::<Vec<_>>()
+                .try_into()
+                .expect("nonempty polyline fixture"),
             },
             0.0,
         )

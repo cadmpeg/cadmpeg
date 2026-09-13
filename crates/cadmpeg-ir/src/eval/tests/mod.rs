@@ -661,7 +661,9 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
                             Point3::new(0.0, 0.0, 0.0),
                             Point3::new(1.0, 0.0, 0.0),
                             Point3::new(1.0, 1.0, 0.0),
-                        ],
+                        ]
+                        .try_into()
+                        .expect("nonempty polyline fixture"),
                     },
                     0.0,
                 )
@@ -683,7 +685,9 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
                         .into_iter()
                         .zip(vec![4.0, 2.0, 0.0])
                         .map(|(point, parameter)| PolylineVertex { parameter, point })
-                        .collect(),
+                        .collect::<Vec<_>>()
+                        .try_into()
+                        .expect("nonempty polyline fixture"),
                     },
                     0.0,
                 )
@@ -705,7 +709,9 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
                         .into_iter()
                         .zip(vec![0.0, 1.0, 2.0])
                         .map(|(point, parameter)| PolylineVertex { parameter, point })
-                        .collect(),
+                        .collect::<Vec<_>>()
+                        .try_into()
+                        .expect("nonempty polyline fixture"),
                     },
                     0.0,
                 )
@@ -1830,7 +1836,9 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
                 .into_iter()
                 .zip(vec![0.0, 1.0, 2.0])
                 .map(|(point, parameter)| PolylineVertex { parameter, point })
-                .collect(),
+                .collect::<Vec<_>>()
+                .try_into()
+                .expect("nonempty polyline fixture"),
             },
             0.0,
         )

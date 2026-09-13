@@ -53,6 +53,8 @@ fn indexed_polygon_admits_only_aligned_parameters() {
                 parameter: 2.0,
                 point: node
             }]
+            .try_into()
+            .expect("nonempty polyline fixture")
         }
     );
     assert!(IndexedPolygon::try_new(vec![node], None, 0.0).is_ok());
