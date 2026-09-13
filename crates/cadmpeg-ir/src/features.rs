@@ -1452,6 +1452,14 @@ impl FeatureReadWire {
     }
 }
 
+/// Read one feature outside any model.
+///
+/// The model route does not use this: it reads [`FeatureRowWire`] and splits
+/// the row with `into_parts`. The reader is
+/// [`crate::document::Model::extend_rewritten`], whose `EntityRewrite::rewrite`
+/// bound round-trips every arena entity through serde; the catia standard
+/// population scope and the f3d occurrence scope both rescope a `Feature` that
+/// way.
 impl<'de> Deserialize<'de> for Feature {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
