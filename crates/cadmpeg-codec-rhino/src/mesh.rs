@@ -213,7 +213,8 @@ pub(crate) struct MeshDecodeOptions<'a> {
 #[derive(Default)]
 struct MeshChannels {
     vertices: Vec<[f32; 3]>,
-    normals: Vec<Vector3>,
+    /// The normal lane, absent when the archive carries no normal channel.
+    normals: Option<Vec<Vector3>>,
     channels: Vec<TessellationChannel>,
     warnings: Diagnostics,
     losses: Vec<cadmpeg_ir::report::LossNote>,
@@ -535,7 +536,7 @@ pub(crate) fn decode(
                 triangles,
                 decoded.normals,
             )
-            .ok_or_else(|| error(reader.position(), "mesh normals do not cover its vertices"))?,
+            .map_err(|lanes| error(reader.position(), &lanes.to_string()))?,
             decoded.channels,
         )
         .map_err(|err| error(reader.position(), &err.to_string()))?
@@ -732,7 +733,7 @@ fn read_raw_channels(
     reader: &mut BoundedReader<'_>,
     vertices: usize,
     points: &mut Vec<[f32; 3]>,
-    normals: &mut Vec<Vector3>,
+    normals: &mut Option<Vec<Vector3>>,
     channels: &mut Vec<TessellationChannel>,
     warnings: &mut Diagnostics,
 ) -> Result<(), GeometryError> {
@@ -743,7 +744,7 @@ fn read_raw_channels(
     let normal_bytes = read_counted_raw(reader, vertices, 12, "normals", warnings)?;
     if let Some(bytes) = normal_bytes {
         match parse_f32_vectors(&bytes) {
-            Ok(value) => *normals = value,
+            Ok(value) => *normals = Some(value),
             Err(_) => warnings.push("normals channel contains nonfinite values".to_string()),
         }
     }
@@ -835,7 +836,7 @@ fn read_compressed_channels(
         match spec.action {
             MeshChannelAction::Vertices => decoded.vertices = parse_f32_points(&bytes)?,
             MeshChannelAction::Normals => match parse_f32_vectors(&bytes) {
-                Ok(value) => decoded.normals = value,
+                Ok(value) => decoded.normals = Some(value),
                 Err(_) => decoded
                     .warnings
                     .push("normals channel contains nonfinite values".to_string()),

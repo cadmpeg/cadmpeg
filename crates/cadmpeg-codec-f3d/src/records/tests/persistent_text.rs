@@ -40,7 +40,8 @@ fn persistent_design_text_preserves_decimal_spelling_without_an_integer_bound() 
 #[test]
 fn persistent_subentity_tokens_require_content_and_preserve_non_numeric_text() {
     assert!(NonBlankString::new("").is_none());
-    for text in ["-1", "0003", " ", "named-token", "面"] {
+    assert!(NonBlankString::new(" ").is_none());
+    for text in ["-1", "0003", " a ", "named-token", "面"] {
         let tag = PersistentSubentityTag {
             id: "tag".into(),
             target: AttributeTarget::Face(FaceId::mint("test:model:face#1").unwrap()),

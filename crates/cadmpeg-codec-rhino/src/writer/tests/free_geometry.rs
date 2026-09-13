@@ -324,7 +324,7 @@ fn standalone_mesh_round_trips_across_archive_versions() {
                     Point3::new(0.0, 3.0, 0.0),
                 ],
                 vec![[0, 1, 2]],
-                vec![cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0); 3],
+                Some(vec![cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0); 3]),
             )
             .expect("normals cover the mesh"),
             Vec::new(),

@@ -398,16 +398,17 @@ fn transfer_display_tessellations(
                         .iter()
                         .map(|point| Point3::new(point[0], point[1], point[2]))
                         .collect(),
-                    strip
-                        .normals
-                        .iter()
-                        .map(|normal| Vector3::new(normal[0], normal[1], normal[2]))
-                        .collect(),
+                    // The native strip record states no normal lane by
+                    // carrying none.
+                    (!strip.normals.is_empty()).then(|| {
+                        strip
+                            .normals
+                            .iter()
+                            .map(|normal| Vector3::new(normal[0], normal[1], normal[2]))
+                            .collect()
+                    }),
                     &strip.strip_lengths,
-                )
-                .ok_or_else(|| {
-                    CodecError::Malformed("display triangle strip lanes do not line up".into())
-                })?,
+                )?,
                 Vec::new(),
             )
             .map_err(|error| {

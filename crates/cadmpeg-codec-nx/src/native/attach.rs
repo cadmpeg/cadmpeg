@@ -211,8 +211,7 @@ pub(crate) fn attach(
         transforms: &model.display_jt.display_jt_geometric_transform_attributes,
         materials: &model.display_jt.display_jt_material_attributes,
         compressed_elements: model.display_jt.graph.compressed_elements(),
-    })
-    .unwrap_or_default();
+    })?;
     for (tessellation, source_offset) in display_jt_tessellations {
         annotations
             .note(tessellation.id.as_str(), &annotation_stream, source_offset)

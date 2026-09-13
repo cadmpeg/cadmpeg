@@ -315,33 +315,36 @@ pub(super) fn decode(
         };
         let source_normals =
             normal_rows(inherited_parameter(record, base_kind, 2)).unwrap_or_default();
+        // An unshaded mesh is stated by absence, not by an empty lane.
         let mut normals = match source_normals.len() {
-            0 => Vec::new(),
+            0 => None,
             1 => match alloc_filled(
                 local_vertices.len(),
                 source_normals[0],
                 "STEP tessellation normal rows",
             ) {
-                Ok(normals) => normals,
+                Ok(normals) => Some(normals),
                 Err(error) => {
                     losses.push(StepLossCode::DecodeWarning.note(format!(
                         "{kind} #{id} normal-row allocation refused: {error}"
                     )));
-                    Vec::new()
+                    None
                 }
             },
-            count if count == local_vertices.len() => source_normals,
-            count if pnindex.is_empty() && count == vertices.len() => coordinate_indices
-                .expect("coordinate indices exist without pnindex")
-                .iter()
-                .map(|index| source_normals[*index as usize - 1])
-                .collect(),
+            count if count == local_vertices.len() => Some(source_normals),
+            count if pnindex.is_empty() && count == vertices.len() => Some(
+                coordinate_indices
+                    .expect("coordinate indices exist without pnindex")
+                    .iter()
+                    .map(|index| source_normals[*index as usize - 1])
+                    .collect(),
+            ),
             count => {
                 losses.push(StepLossCode::DecodeWarning.note(format!(
                     "{kind} #{id} carries {count} normals for {} coordinates",
                     local_vertices.len()
                 )));
-                Vec::new()
+                None
             }
         };
         if item_bodies.get(&id).is_some_and(BTreeSet::is_empty) {
@@ -351,10 +354,12 @@ pub(super) fn decode(
                     .into_iter()
                     .map(|vertex| placement.apply_point(vertex))
                     .collect();
-                normals = normals
-                    .into_iter()
-                    .map(|normal| placement.apply_normal(normal).unwrap_or(normal))
-                    .collect();
+                normals = normals.map(|normals| {
+                    normals
+                        .into_iter()
+                        .map(|normal| placement.apply_normal(normal).unwrap_or(normal))
+                        .collect()
+                });
             }
         }
         if let Some(surface_step) = complex_triangulated_face_surface(record) {
@@ -370,15 +375,19 @@ pub(super) fn decode(
                 }
             }
         }
-        let Some(rows) = cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
+        let rows = match cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
             local_vertices,
             local_triangles,
             normals,
-        ) else {
-            losses.push(StepLossCode::TessellationInvalidPayload.note(format!(
-                "{kind} #{id}: normals do not cover the mesh vertices"
-            )));
-            continue;
+        ) {
+            Ok(rows) => rows,
+            Err(error) => {
+                losses.push(
+                    StepLossCode::TessellationInvalidPayload
+                        .note(format!("{kind} #{id}: {error}")),
+                );
+                continue;
+            }
         };
         let mesh = match Tessellation::new(
             ids::tessellation(kind!("mesh"), id).into_string(),

@@ -2084,8 +2084,10 @@ fn legacy_mesh(
         }
         faces.push(face);
     }
-    let mut normals = Vec::new();
-    if has_normals {
+    // An unshaded mesh is stated by absence: the V1 header says whether the
+    // record carries a normal lane at all.
+    let mut normals = has_normals.then(Vec::new);
+    if let Some(normals) = normals.as_mut() {
         normals.reserve(point_count);
         for _ in 0..point_count {
             normals.push(Vector3::new(
@@ -2107,10 +2109,9 @@ fn legacy_mesh(
     let triangles = crate::mesh::triangulate_faces(&faces, &vertices);
     Tessellation::new(
         id,
-        cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(vertices, triangles, normals)
-            .ok_or_else(|| {
-            CodecError::Malformed("V1 mesh normals do not cover its vertices".to_string())
-        })?,
+        cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
+            vertices, triangles, normals,
+        )?,
         Vec::new(),
     )
     .map_err(|err| CodecError::Malformed(err.to_string()))

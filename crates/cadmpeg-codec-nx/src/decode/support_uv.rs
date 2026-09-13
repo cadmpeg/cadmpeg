@@ -1381,15 +1381,13 @@ fn complete_support_uv_wave(
                         ];
                     }
                     let parameter_range = samples.parameter_range();
-                    let Ok(nurbs) = cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+                    let nurbs = cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
                         1,
                         linear_knots(parameters),
                         uv,
                         None,
                         false,
-                    ) else {
-                        continue;
-                    };
+                    )?;
                     let pcurve = PcurveGeometry::Nurbs { nurbs };
                     if let [Some(first), Some(last)] = endpoint_values {
                         endpoint_witnesses
@@ -1467,7 +1465,7 @@ fn complete_support_uv_wave(
             coupled_geometry_budget,
             failed_coupled_attempts,
             endpoint_witnesses,
-        );
+        )?;
     }
     Ok(lane_geometry_exhausted)
 }
@@ -1560,9 +1558,9 @@ fn complete_coupled_support_uv(
         [Option<cadmpeg_ir::geometry::SupportPcurve>; 2],
     >,
     endpoint_witnesses: &mut EndpointWitnesses,
-) -> bool {
+) -> Result<bool, cadmpeg_core::CodecError> {
     if geometry_budget.exhausted() {
-        return false;
+        return Ok(false);
     }
     let mut lane_geometry_exhausted = false;
     let mut replacements = Vec::new();
@@ -1720,15 +1718,13 @@ fn complete_coupled_support_uv(
                             ]
                         });
                 let parameter_range = samples.parameter_range();
-                let Ok(nurbs) = cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+                let nurbs = cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
                     1,
                     linear_knots(parameters),
                     lanes[side].clone(),
                     None,
                     false,
-                ) else {
-                    continue;
-                };
+                )?;
                 let pcurve = PcurveGeometry::Nurbs { nurbs };
                 if let Some([Some(first), Some(last)]) = endpoint_values {
                     endpoint_witnesses
@@ -1765,7 +1761,7 @@ fn complete_coupled_support_uv(
             context.set_unmapped_pcurve(side, Some(pcurve));
         }
     }
-    lane_geometry_exhausted
+    Ok(lane_geometry_exhausted)
 }
 
 #[cfg(test)]
@@ -1796,7 +1792,8 @@ pub(super) fn complete_coupled_support_uv_with_geometry_budget_for_test(
         &geometry_budget,
         &mut failed_attempts,
         &mut BTreeMap::new(),
-    );
+    )
+    .expect("the coupled support-uv wave pairs its lanes");
 }
 
 pub(crate) fn complete_parameterization_equivalent_support_uv(ir: &mut CadIr) {

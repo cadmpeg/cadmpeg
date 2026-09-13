@@ -591,11 +591,21 @@ pub(super) fn project(
                     distances,
                     control_range,
                 };
-                let Ok(offset_nurbs) =
-                    NurbsCurve::from_lanes(1, vec![start, start, end, end], controls, None, false)
-                else {
-                    losses.push(entity_loss(entry, "linear offset carrier is inconsistent"));
-                    continue;
+                let offset_nurbs = match NurbsCurve::from_lanes(
+                    1,
+                    vec![start, start, end, end],
+                    controls,
+                    None,
+                    false,
+                ) {
+                    Ok(nurbs) => nurbs,
+                    Err(error) => {
+                        losses.push(entity_loss(
+                            entry,
+                            &format!("linear offset carrier is inconsistent: {error}"),
+                        ));
+                        continue;
+                    }
                 };
                 (
                     distances[0],
@@ -775,14 +785,21 @@ pub(super) fn project(
                     function_parameter_offset,
                     function_parameter_scale,
                 };
-                let Ok(offset_nurbs) =
-                    NurbsCurve::from_lanes(function_nurbs.degree(), knots, controls, None, false)
-                else {
-                    losses.push(entity_loss(
-                        entry,
-                        "offset-function carrier is inconsistent",
-                    ));
-                    continue;
+                let offset_nurbs = match NurbsCurve::from_lanes(
+                    function_nurbs.degree(),
+                    knots,
+                    controls,
+                    None,
+                    false,
+                ) {
+                    Ok(nurbs) => nurbs,
+                    Err(error) => {
+                        losses.push(entity_loss(
+                            entry,
+                            &format!("offset-function carrier is inconsistent: {error}"),
+                        ));
+                        continue;
+                    }
                 };
                 (
                     distance,

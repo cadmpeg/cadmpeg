@@ -1648,7 +1648,7 @@ pub(super) fn project(
             placed_id
         };
         let surface_id = crate::ids::surface(&crate::ids::Stem::directory(entry.sequence));
-        let Ok(surface) = NurbsSurface::from_lanes(
+        let surface = match NurbsSurface::from_lanes(
             placed_directrix.degree(),
             1,
             placed_directrix.knots().to_vec(),
@@ -1658,12 +1658,15 @@ pub(super) fn project(
             false,
             placed_directrix.periodic(),
             false,
-        ) else {
-            losses.push(entity_loss(
-                entry,
-                "tabulated-cylinder carrier cardinalities are inconsistent",
-            ));
-            continue;
+        ) {
+            Ok(nurbs) => nurbs,
+            Err(error) => {
+                losses.push(entity_loss(
+                    entry,
+                    format!("tabulated-cylinder carrier cardinalities are inconsistent: {error}"),
+                ));
+                continue;
+            }
         };
         sequences.record_surface(&surface_id, entry.sequence);
         ir.model.surfaces.push(Surface {
@@ -1926,7 +1929,7 @@ pub(super) fn project(
         }
         let placed_generatrix = (entry.transform != 0).then(|| generatrix.clone());
         let surface_id = crate::ids::surface(&crate::ids::Stem::directory(entry.sequence));
-        let Ok(surface) = NurbsSurface::from_lanes(
+        let surface = match NurbsSurface::from_lanes(
             generatrix.degree(),
             2,
             generatrix.knots().to_vec(),
@@ -1943,12 +1946,15 @@ pub(super) fn project(
                 end_angle - start_angle,
                 std::f64::consts::TAU,
             ),
-        ) else {
-            losses.push(entity_loss(
-                entry,
-                "surface-of-revolution carrier cardinalities are inconsistent",
-            ));
-            continue;
+        ) {
+            Ok(nurbs) => nurbs,
+            Err(error) => {
+                losses.push(entity_loss(
+                    entry,
+                    format!("surface-of-revolution carrier cardinalities are inconsistent: {error}"),
+                ));
+                continue;
+            }
         };
         sequences.record_surface(&surface_id, entry.sequence);
         ir.model.surfaces.push(Surface {
@@ -2311,7 +2317,7 @@ pub(super) fn project(
                 }
             }
         }
-        let Ok(surface) = NurbsSurface::from_lanes(
+        let surface = match NurbsSurface::from_lanes(
             u_degree,
             v_degree,
             u_knots,
@@ -2329,12 +2335,15 @@ pub(super) fn project(
             false,
             flags[3] == Some(1),
             flags[4] == Some(1),
-        ) else {
-            losses.push(entity_loss(
-                entry,
-                "spline surface cardinalities are inconsistent",
-            ));
-            continue;
+        ) {
+            Ok(nurbs) => nurbs,
+            Err(error) => {
+                losses.push(entity_loss(
+                    entry,
+                    format!("spline surface cardinalities are inconsistent: {error}"),
+                ));
+                continue;
+            }
         };
         for (declared, fixed_axis, fixed_range, varying_range, direction) in [
             (

@@ -4812,15 +4812,18 @@ fn decode_pcurves(
         let id: cadmpeg_ir::ids::PcurveId = format!("rhino:object:pcurve#{key}.trim-{index}")
             .try_into()
             .expect("valid identity");
-        let Ok(nurbs) = PcurveNurbs::from_lanes(
+        let nurbs = match PcurveNurbs::from_lanes(
             nurbs.degree(),
             nurbs.knots().to_vec(),
             control_points,
             nurbs.weights(),
             nurbs.periodic(),
-        ) else {
-            warnings.push(format!("trim {index} C2 has an invalid NURBS shape"));
-            continue;
+        ) {
+            Ok(nurbs) => nurbs,
+            Err(error) => {
+                warnings.push(format!("trim {index} C2 has an invalid NURBS shape: {error}"));
+                continue;
+            }
         };
         values.push(Pcurve {
             id: id.clone(),

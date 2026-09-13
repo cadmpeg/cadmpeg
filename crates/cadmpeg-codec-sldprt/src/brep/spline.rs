@@ -674,7 +674,17 @@ pub(crate) fn patch_nurbs_surface(
     patch_f64_span(bytes, v_knot_span, &new_v)
 }
 
-pub(crate) fn scan_curve_carriers(bytes: &[u8]) -> HashMap<u16, CurveCarrier> {
+/// Every compact NURBS curve carrier in `bytes`, keyed by attribute id.
+///
+/// A candidate offset whose bytes are not a spline record is not a refusal: the
+/// scan sweeps every offset. A record whose poles, knots and weights do parse
+/// but do not pair is one, and it is recorded in `refusals` with the attribute
+/// id it belongs to, so the decode reports it rather than deleting the carrier
+/// in silence.
+pub(crate) fn scan_curve_carriers(
+    bytes: &[u8],
+    refusals: &mut Vec<String>,
+) -> HashMap<u16, CurveCarrier> {
     let arrays = scan_arrays(bytes, None);
     let descriptors = scan_curve_descriptors(bytes);
     let mut out = HashMap::new();
@@ -748,9 +758,13 @@ pub(crate) fn scan_curve_carriers(bytes: &[u8]) -> HashMap<u16, CurveCarrier> {
         if knots.len() != expected {
             continue;
         }
-        let Ok(nurbs) = NurbsCurve::from_lanes(descriptor.degree, knots, points, weights, false)
-        else {
-            continue;
+        let nurbs = match NurbsCurve::from_lanes(descriptor.degree, knots, points, weights, false)
+        {
+            Ok(nurbs) => nurbs,
+            Err(error) => {
+                refusals.push(format!("curve carrier attribute {attr}: {error}"));
+                continue;
+            }
         };
         out.entry(attr).or_insert(CurveCarrier {
             attr,
@@ -826,7 +840,13 @@ fn surface_knot_values(
     (resolved.len() == 1).then(|| resolved.pop()).flatten()
 }
 
-pub(crate) fn scan_surface_carriers(bytes: &[u8]) -> HashMap<u16, SurfaceCarrier> {
+/// Every compact NURBS surface carrier in `bytes`, keyed by attribute id.
+///
+/// `refusals` carries the same meaning as in [`scan_curve_carriers`].
+pub(crate) fn scan_surface_carriers(
+    bytes: &[u8],
+    refusals: &mut Vec<String>,
+) -> HashMap<u16, SurfaceCarrier> {
     let descriptors = scan_surface_descriptors(bytes);
     let compact_attrs = descriptors
         .values()
@@ -951,7 +971,7 @@ pub(crate) fn scan_surface_carriers(bytes: &[u8]) -> HashMap<u16, SurfaceCarrier
         if u_knots.len() != u_expected || v_knots.len() != v_expected {
             continue;
         }
-        let Ok(nurbs) = NurbsSurface::from_lanes(
+        let nurbs = match NurbsSurface::from_lanes(
             descriptor.u_degree,
             descriptor.v_degree,
             u_knots,
@@ -969,8 +989,12 @@ pub(crate) fn scan_surface_carriers(bytes: &[u8]) -> HashMap<u16, SurfaceCarrier
             false,
             descriptor.u_periodic,
             descriptor.v_periodic,
-        ) else {
-            continue;
+        ) {
+            Ok(nurbs) => nurbs,
+            Err(error) => {
+                refusals.push(format!("surface carrier attribute {attr}: {error}"));
+                continue;
+            }
         };
         out.entry(attr).or_insert(SurfaceCarrier {
             attr,

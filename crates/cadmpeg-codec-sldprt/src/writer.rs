@@ -3758,7 +3758,7 @@ mod nurbs_write_tests {
             "test:surface#high-degree",
         )
         .expect("stored degree is representable");
-        let carrier = crate::brep::spline::scan_surface_carriers(&bytes)
+        let carrier = crate::brep::spline::scan_surface_carriers(&bytes, &mut Vec::new())
             .remove(&2)
             .expect("surface carrier");
         let Some(SolvedSurfaceGeometry::Nurbs(decoded)) = carrier.geometry.solved() else {
@@ -3796,7 +3796,7 @@ mod nurbs_write_tests {
             "test:surface#ambiguous-shape",
         )
         .expect("stored counts disambiguate the surface");
-        let carrier = crate::brep::spline::scan_surface_carriers(&bytes)
+        let carrier = crate::brep::spline::scan_surface_carriers(&bytes, &mut Vec::new())
             .remove(&2)
             .expect("surface carrier");
         let Some(SolvedSurfaceGeometry::Nurbs(decoded)) = carrier.geometry.solved() else {

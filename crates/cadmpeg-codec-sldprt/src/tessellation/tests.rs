@@ -928,11 +928,11 @@ fn chordal_cylindrical_mesh_records_measured_support_deflection() {
                     Point3::new(5.0 - deflection, 0.0, 0.75),
                 ],
                 vec![[0, 1, 2]],
-                vec![
+                Some(vec![
                     Vector3::new(1.0, 0.0, 0.0),
                     Vector3::new(0.0, 1.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
-                ],
+                ]),
             )
             .expect("normals cover the mesh"),
             Vec::new(),
@@ -966,11 +966,11 @@ fn chordal_cylindrical_mesh_uses_unique_trim_when_normals_disagree() {
                     Point3::new(5.0 - deflection, 0.0, 0.75),
                 ],
                 vec![[0, 1, 2]],
-                vec![
+                Some(vec![
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(0.0, 0.0, 1.0),
-                ],
+                ]),
             )
             .expect("normals cover the mesh"),
             Vec::new(),
@@ -1003,11 +1003,11 @@ fn off_surface_planar_mesh_does_not_become_a_chordal_cache() {
                     Point3::new(1.0, 0.75, 0.1),
                 ],
                 vec![[0, 1, 2]],
-                vec![
+                Some(vec![
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(0.0, 0.0, 1.0),
-                ],
+                ]),
             )
             .expect("normals cover the mesh"),
             Vec::new(),
@@ -1154,10 +1154,14 @@ fn cone_chordal_display_list_uses_analytic_normal_for_ownership() {
         Point3::new(0.0, cache_radius * 0.5, axial),
         Point3::new(-cache_radius, 0.0, axial),
     ];
-    let normals = vertices
-        .iter()
-        .map(|point| analytic_surface_normal(cone.solved().expect("solved cone"), *point).unwrap())
-        .collect();
+    let normals = Some(
+        vertices
+            .iter()
+            .map(|point| {
+                analytic_surface_normal(cone.solved().expect("solved cone"), *point).unwrap()
+            })
+            .collect(),
+    );
     model.tessellations.push(
         Tessellation::new(
             "synthetic:test:tessellation#cone-cache-mesh",
@@ -1293,7 +1297,7 @@ fn non_exact_nurbs_support_does_not_use_an_unbounded_cache_fit() {
                     .map(|(point, normal)| point.translated(*normal, deflection))
                     .collect(),
                 vec![[0, 1, 2]],
-                samples.iter().map(|(_, normal)| *normal).collect(),
+                Some(samples.iter().map(|(_, normal)| *normal).collect()),
             )
             .expect("normals cover the mesh"),
             Vec::new(),
@@ -1385,7 +1389,7 @@ fn coincident_nurbs_and_analytic_supports_do_not_fall_through_to_analytic_fit() 
                     .map(|(u, v)| cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v).unwrap())
                     .to_vec(),
                 vec![[0, 1, 2]],
-                vec![Vector3::new(0.0, 0.0, 1.0); 3],
+                Some(vec![Vector3::new(0.0, 0.0, 1.0); 3]),
             )
             .expect("normals cover the mesh"),
             Vec::new(),

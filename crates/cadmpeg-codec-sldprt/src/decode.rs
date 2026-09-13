@@ -2138,6 +2138,10 @@ fn merge_brep(target: &mut Brep, mut source: Brep) {
     target.face_colors.append(&mut source.face_colors);
     target.face_atoms.append(&mut source.face_atoms);
     target.body_modifiers.append(&mut source.body_modifiers);
+    target
+        .stats
+        .spline_lane_refusals
+        .extend(source.stats.spline_lane_refusals.iter().cloned());
     target.stats.unknown_surface_faces += source.stats.unknown_surface_faces;
     target.stats.unknown_procedural_supports += source.stats.unknown_procedural_supports;
     target.stats.unknown_curve_edges += source.stats.unknown_curve_edges;
@@ -3141,6 +3145,12 @@ fn build_geometry_report(
             ));
         }
         losses.push(SldprtLossCode::GeometryFaceSupportSurfaceUntyped.note(message.join(" ")));
+    }
+    for refusal in &s.spline_lane_refusals {
+        losses.push(SldprtLossCode::GeometrySplineLanesUnpaired.note(format!(
+            "{refusal}; the carrier is not emitted and the entities that reference it fall back \
+             to an untyped support."
+        )));
     }
     if s.unknown_curve_edges > 0 {
         losses.push(

@@ -490,6 +490,9 @@ pub(crate) struct Stats {
     pub(crate) off_surface_nurbs_pcurves: usize,
     /// No explicit body record was available, so one body hierarchy was derived.
     pub(crate) synthetic_body_grouping: bool,
+    /// Spline carriers whose pole and weight lanes do not pair, each naming its
+    /// attribute id and the pairing's own refusal.
+    pub(crate) spline_lane_refusals: Vec<String>,
 }
 
 fn id_face(a: u16) -> String {
@@ -1248,6 +1251,7 @@ fn decode_graph(
         stats: Stats {
             source_entity_records: entity_facts.entity_count,
             unresolved_face_colors: entity_facts.unresolved_face_colors + conflicting_face_colors,
+            spline_lane_refusals: carriers.lane_refusals.clone(),
             ..Stats::default()
         },
         ..Brep::default()
@@ -2698,6 +2702,7 @@ fn derive_cylindrical_pcurves(
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) {
+    let mut refusals = Vec::new();
     let loop_faces: HashMap<_, _> = out
         .loops
         .iter()
@@ -2952,14 +2957,18 @@ fn derive_cylindrical_pcurves(
                         ),
                     })
                     .collect();
-                let Ok(polar) = PolarPcurveNurbs::from_lanes(
+                let polar = match PolarPcurveNurbs::from_lanes(
                     nurbs.degree(),
                     nurbs.knots().to_vec(),
                     poles,
                     nurbs.weights(),
                     nurbs.periodic(),
-                ) else {
-                    continue;
+                ) {
+                    Ok(polar) => polar,
+                    Err(error) => {
+                        refusals.push(format!("cylindrical pcurve for edge {}: {error}", edge.id));
+                        continue;
+                    }
                 };
                 PcurveGeometry::PolarNurbs { nurbs: polar }
             }
@@ -3007,6 +3016,7 @@ fn derive_cylindrical_pcurves(
         annotations.exactness(&id, Exactness::Derived);
         out.pcurves.push(pcurve);
     }
+    out.stats.spline_lane_refusals.extend(refusals);
 }
 
 enum InverseResolution<T> {

@@ -367,11 +367,8 @@ impl<'a> Builder<'a> {
                     cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
                         triangulation.nodes().to_vec(),
                         triangulation.triangles().to_vec(),
-                        triangulation.normals().unwrap_or_default().to_vec(),
-                    )
-                    .ok_or_else(|| {
-                        CodecError::Malformed("triangulation normals do not cover its nodes".into())
-                    })?,
+                        triangulation.normals().map(<[_]>::to_vec),
+                    )?,
                     Vec::new(),
                 )
                 .map_err(|error| {
@@ -878,15 +875,13 @@ impl<'a> Builder<'a> {
             located_triangulation
         {
             self.emitted_triangulations.insert(index);
-            let normals = triangulation
-                .normals()
-                .map(|normals| {
-                    normals
-                        .iter()
-                        .map(|normal| transform_normalized_vector(face_transform, *normal))
-                        .collect()
-                })
-                .unwrap_or_default();
+            // An unshaded mesh is stated by absence, not by an empty lane.
+            let normals = triangulation.normals().map(|normals| {
+                normals
+                    .iter()
+                    .map(|normal| transform_normalized_vector(face_transform, *normal))
+                    .collect()
+            });
             ir.model.tessellations.push(
                 Tessellation::new(
                     crate::native::model_id(
@@ -896,10 +891,7 @@ impl<'a> Builder<'a> {
                     ),
                     cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
                         vertices, triangles, normals,
-                    )
-                    .ok_or_else(|| {
-                        CodecError::Malformed("triangulation normals do not cover its nodes".into())
-                    })?,
+                    )?,
                     Vec::new(),
                 )
                 .map_err(|error| {
