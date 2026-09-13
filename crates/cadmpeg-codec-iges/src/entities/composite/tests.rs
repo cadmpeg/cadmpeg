@@ -590,12 +590,14 @@ fn bounded_line_carrier_excludes_an_endpoint_at_the_resolution_boundary() {
     });
 
     assert!(
-        bounded_nurbs_for_curve_with_tolerance(&ir, &curve_id, Some(0.001), None, None).is_none()
+        bounded_nurbs_for_curve_with_tolerance(&ir, &curve_id, Some(0.001), None, None)
+        .expect("carrier lanes pair").is_none()
     );
 
     ir.model.points[0].position = Point3::new(0.000_999, 0.0, 0.0);
     assert!(
-        bounded_nurbs_for_curve_with_tolerance(&ir, &curve_id, Some(0.001), None, None).is_some()
+        bounded_nurbs_for_curve_with_tolerance(&ir, &curve_id, Some(0.001), None, None)
+        .expect("carrier lanes pair").is_some()
     );
 }
 
@@ -695,7 +697,8 @@ fn composite_flattening_over_its_depth_limit_fuses_the_decode_session() {
 
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &DecodePolicy::default()).unwrap();
-    assert!(bounded_nurbs_for_curve(&ir, &child_id, Some(&ctx), None).is_none());
+    assert!(bounded_nurbs_for_curve(&ir, &child_id, Some(&ctx), None)
+        .expect("carrier lanes pair").is_none());
     assert!(matches!(
         ctx.finish_session(),
         Err(CodecError::ResourceLimit(limit))
@@ -794,6 +797,7 @@ fn bounded_line_carrier_selects_a_curve_valid_edge_occurrence() {
         None,
         None,
     )
+        .expect("carrier lanes pair")
     .expect("the curve-valid edge occurrence");
     assert_eq!(range, [0.0, 1.0]);
     assert_eq!(carrier.control_points()[0], Point3::new(0.0, 0.0, 0.0));
@@ -861,7 +865,8 @@ fn bounded_line_carrier_rejects_conflicting_valid_edge_ranges() {
         });
     }
 
-    assert!(bounded_nurbs_for_curve(&ir, &curve_id, None, None).is_none());
+    assert!(bounded_nurbs_for_curve(&ir, &curve_id, None, None)
+        .expect("carrier lanes pair").is_none());
 }
 
 #[test]
@@ -918,8 +923,10 @@ fn composite_index_lookups_match_the_unindexed_scan() {
 
     let index = CompositeIndex::from_ir(&ir);
     for curve_id in [bounded, edgeless, absent] {
-        let scanned = bounded_nurbs_for_curve(&ir, &curve_id, None, None);
-        let indexed = bounded_nurbs_for_curve(&ir, &curve_id, None, Some(&index));
+        let scanned = bounded_nurbs_for_curve(&ir, &curve_id, None, None)
+        .expect("carrier lanes pair");
+        let indexed = bounded_nurbs_for_curve(&ir, &curve_id, None, Some(&index))
+        .expect("carrier lanes pair");
         assert_eq!(
             scanned.as_ref().map(|(carrier, range)| (
                 carrier.degree(),
@@ -940,6 +947,7 @@ fn composite_index_lookups_match_the_unindexed_scan() {
         None,
         Some(&index)
     )
+        .expect("carrier lanes pair")
     .is_some());
     assert!(bounded_nurbs_for_curve(
         &ir,
@@ -947,6 +955,7 @@ fn composite_index_lookups_match_the_unindexed_scan() {
         None,
         Some(&index)
     )
+        .expect("carrier lanes pair")
     .is_none());
     assert!(bounded_nurbs_for_curve(
         &ir,
@@ -954,6 +963,7 @@ fn composite_index_lookups_match_the_unindexed_scan() {
         None,
         Some(&index)
     )
+        .expect("carrier lanes pair")
     .is_none());
 }
 
@@ -973,7 +983,8 @@ fn rational_linear_degree_elevation_preserves_the_curve() {
         0.25,
     )
     .expect("valid rational linear NURBS evaluates before degree elevation");
-    assert!(elevate_nurbs_to_degree(&mut curve, [0.0, 1.0], 2, None));
+    assert!(elevate_nurbs_to_degree(&mut curve, [0.0, 1.0], 2, None)
+        .expect("elevation lanes pair"));
     let after = cadmpeg_ir::eval::nurbs_curve_point(
         curve.degree(),
         curve.knots(),
@@ -1003,6 +1014,7 @@ fn trimming_active_nurbs_subranges_preserves_a_rational_curve() {
     );
     let interval = [0.25, 1.5];
     let trimmed = trim_nurbs_to_interval(&curve, interval)
+        .expect("carrier lanes pair")
         .expect("a bounded active interval has an exact NURBS subrange");
 
     assert_eq!(trimmed.knots().first(), Some(&interval[0]));
@@ -1051,13 +1063,16 @@ fn concatenation_accepts_exact_active_nurbs_subranges() {
         Some(vec![1.0, 0.5, 2.0, 1.0]),
     );
     let first =
-        trim_nurbs_to_interval(&curve, [0.0, 1.0]).expect("first active NURBS interval is exact");
+        trim_nurbs_to_interval(&curve, [0.0, 1.0])
+        .expect("carrier lanes pair").expect("first active NURBS interval is exact");
     let second =
-        trim_nurbs_to_interval(&curve, [1.0, 2.0]).expect("second active NURBS interval is exact");
+        trim_nurbs_to_interval(&curve, [1.0, 2.0])
+        .expect("carrier lanes pair").expect("second active NURBS interval is exact");
     let concatenated = concatenate_nurbs(
         vec![(first, [0.0, 1.0], ()), (second, [1.0, 2.0], ())],
         None,
     )
+        .expect("carrier lanes pair")
     .expect("evaluated active endpoints join exactly");
 
     let curve_points = curve.control_points();
@@ -1111,6 +1126,7 @@ fn trimming_supports_degree_zero_and_nonclamped_nurbs() {
         (nonclamped, [1.0, 3.0], vec![1.25, 2.0, 2.75]),
     ] {
         let trimmed = trim_nurbs_to_interval(&curve, interval)
+        .expect("carrier lanes pair")
             .expect("a valid active interval has an exact NURBS subrange");
         let curve_points = curve.control_points();
         let curve_weights = curve.weights();
@@ -1148,6 +1164,7 @@ fn concatenation_preserves_degree_zero_spans() {
     let second = (test_nurbs(0, vec![0.0, 1.0], vec![point], None), [0.0, 1.0]);
     let concatenated =
         concatenate_nurbs(vec![(first.0, first.1, ()), (second.0, second.1, ())], None)
+        .expect("carrier lanes pair")
             .expect("degree-zero spans with an exact join concatenate");
 
     assert_eq!(concatenated.nurbs.degree(), 0);
@@ -1192,7 +1209,8 @@ fn multi_span_linear_degree_elevation_preserves_a_degenerate_curve() {
         2.0,
     )
     .expect("valid multi-span linear NURBS evaluates before degree elevation");
-    assert!(elevate_nurbs_to_degree(&mut curve, [0.5, 2.5], 3, None));
+    assert!(elevate_nurbs_to_degree(&mut curve, [0.5, 2.5], 3, None)
+        .expect("elevation lanes pair"));
     let after = cadmpeg_ir::eval::nurbs_curve_point(
         curve.degree(),
         curve.knots(),
@@ -1210,7 +1228,8 @@ fn multi_span_degree_zero_elevation_preserves_the_curve() {
     let point = Point3::new(1.0, 2.0, 3.0);
     let source = test_nurbs(0, vec![0.0, 1.0, 2.0], vec![point; 2], None);
     let mut elevated = source.clone();
-    assert!(elevate_nurbs_to_degree(&mut elevated, [0.0, 2.0], 2, None));
+    assert!(elevate_nurbs_to_degree(&mut elevated, [0.0, 2.0], 2, None)
+        .expect("elevation lanes pair"));
     assert_eq!(elevated.degree(), 2);
     let source_points = source.control_points();
     let source_weights = source.weights();
@@ -1252,7 +1271,8 @@ fn multi_span_rational_degree_elevation_preserves_the_curve() {
         Some(vec![1.0, 2.0, 1.0, 3.0]),
     );
     let mut elevated = source.clone();
-    assert!(elevate_nurbs_to_degree(&mut elevated, [0.0, 1.0], 3, None));
+    assert!(elevate_nurbs_to_degree(&mut elevated, [0.0, 1.0], 3, None)
+        .expect("elevation lanes pair"));
     assert_eq!(elevated.degree(), 3);
     assert_eq!(elevated.weights().map(|weights| weights.len()), Some(7));
     let source_points = source.control_points();
@@ -1307,7 +1327,8 @@ fn mixed_degree_composition_accepts_a_multi_span_linear_child() {
     for (index, (curve, interval)) in children.iter_mut().enumerate() {
         if curve.degree() < 3 {
             assert!(
-                elevate_nurbs_to_degree(curve, *interval, 3, None),
+                elevate_nurbs_to_degree(curve, *interval, 3, None)
+        .expect("elevation lanes pair"),
                 "child {index} should elevate"
             );
         }
@@ -1319,6 +1340,7 @@ fn mixed_degree_composition_accepts_a_multi_span_linear_child() {
             .collect(),
         None,
     )
+        .expect("carrier lanes pair")
     .expect("mixed-degree composite should have an exact NURBS carrier");
     assert_eq!(concatenated.nurbs.degree(), 3);
     assert_eq!(
@@ -1347,6 +1369,7 @@ fn concatenated_range_is_exactly_the_canonical_knot_domain() {
 
     let concatenated =
         concatenate_nurbs(vec![(first.0, first.1, ()), (second.0, second.1, ())], None)
+        .expect("carrier lanes pair")
             .expect("joined lines should concatenate");
 
     assert_eq!(
@@ -1415,9 +1438,11 @@ fn tolerance_allows_a_bounded_carrier_join_within_resolution() {
             tolerance: None,
         });
     }
-    assert!(bounded_nurbs_for_curve(&ir, &composite_id, None, None).is_none());
+    assert!(bounded_nurbs_for_curve(&ir, &composite_id, None, None)
+        .expect("carrier lanes pair").is_none());
     let (carrier, range) =
         bounded_nurbs_for_curve_with_tolerance(&ir, &composite_id, Some(0.001), None, None)
+        .expect("carrier lanes pair")
             .expect("carrier join within the global resolution should project");
     assert_eq!(range, [0.0, 2.0]);
     assert_eq!(carrier.control_points()[0], Point3::new(0.0, 0.0, 0.0));
@@ -1432,6 +1457,7 @@ fn reversing_a_subrange_reflects_the_active_nurbs_domain() {
         None,
     );
     let (reversed, range) = reverse_nurbs(curve, [2.0, 5.0])
+        .expect("carrier lanes pair")
         .expect("a bounded subrange should have an exact reversed carrier");
     assert_eq!(range, [5.0, 8.0]);
     assert_eq!(
@@ -1464,7 +1490,8 @@ fn reversing_a_range_outside_the_active_nurbs_domain_is_rejected() {
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
         None,
     );
-    assert!(reverse_nurbs(curve, [-1.0, 5.0]).is_none());
+    assert!(reverse_nurbs(curve, [-1.0, 5.0])
+        .expect("carrier lanes pair").is_none());
 }
 
 #[test]

@@ -219,15 +219,15 @@ fn resolve_pcurve_uses<'a>(
     tolerance: f64,
     ctx: Option<&DecodeContext<'_>>,
     model_index: &mut Option<cadmpeg_ir::index::ModelIndex<'a>>,
-) -> Option<Vec<(PcurveGeometry, [f64; 2])>> {
+) -> Result<Option<Vec<(PcurveGeometry, [f64; 2])>>, cadmpeg_ir::geometry::NurbsError> {
     if uses.is_empty() {
-        return Some(Vec::new());
+        return Ok(Some(Vec::new()));
     }
     let index = model_index.get_or_insert_with(|| cadmpeg_ir::index::ModelIndex::new(source));
     let mut resolved = Vec::with_capacity(uses.len());
     let mut mapped = Vec::with_capacity(uses.len());
     for (_, sequence) in uses {
-        let (geometry, range) = pcurve_geometry(
+        let Some((geometry, range)) = pcurve_geometry(
             source,
             *sequence,
             &super::trimming::PcurveSupport {
@@ -238,22 +238,29 @@ fn resolve_pcurve_uses<'a>(
             Some(tolerance),
             ctx,
             None,
-        )?;
-        let start = evaluation::pcurve(&geometry, range[0]).and_then(|uv| {
-            cadmpeg_ir::eval::model_surface_point_by_id(index, support.id, uv.u, uv.v)
-        })?;
-        let end = evaluation::pcurve(&geometry, range[1]).and_then(|uv| {
-            cadmpeg_ir::eval::model_surface_point_by_id(index, support.id, uv.u, uv.v)
-        })?;
+        )?
+        else {
+            return Ok(None);
+        };
+        let (Some(start), Some(end)) = (
+            evaluation::pcurve(&geometry, range[0]).and_then(|uv| {
+                cadmpeg_ir::eval::model_surface_point_by_id(index, support.id, uv.u, uv.v)
+            }),
+            evaluation::pcurve(&geometry, range[1]).and_then(|uv| {
+                cadmpeg_ir::eval::model_surface_point_by_id(index, support.id, uv.u, uv.v)
+            }),
+        ) else {
+            return Ok(None);
+        };
         resolved.push((geometry, range));
         mapped.push((start, end));
     }
-    (evaluation::distance(mapped[0].0, expected_start) <= tolerance
+    Ok((evaluation::distance(mapped[0].0, expected_start) <= tolerance
         && evaluation::distance(mapped[mapped.len() - 1].1, expected_end) <= tolerance
         && mapped
             .windows(2)
             .all(|pair| evaluation::distance(pair[0].1, pair[1].0) <= tolerance))
-    .then_some(resolved)
+    .then_some(resolved))
 }
 
 pub(super) fn project(
@@ -860,7 +867,7 @@ pub(super) fn project(
                                 })
                             };
                             let expected = vertex_lists[vertex_list][*vertex_index];
-                            let Some(resolved) = resolve_pcurve_uses(
+                            let Some(resolved) = (match resolve_pcurve_uses(
                                 ir,
                                 pcurves,
                                 &SurfaceSupport {
@@ -873,7 +880,19 @@ pub(super) fn project(
                                 tolerance,
                                 ctx,
                                 &mut model_index,
-                            ) else {
+                            ) {
+                                Ok(resolved) => resolved,
+                                Err(error) => {
+                                    losses.push(entity_loss(
+                                        entry,
+                                        format!(
+                                            "a loop vertex-use pcurve states no carrier: {error}"
+                                        ),
+                                    ));
+                                    valid = false;
+                                    break;
+                                }
+                            }) else {
                                 losses.push(entity_loss(
                                     entry,
                                     "loop vertex-use pcurves disagree with the pole vertex",
@@ -923,7 +942,7 @@ pub(super) fn project(
                         } else {
                             (natural_end, natural_start)
                         };
-                        let Some(resolved) = resolve_pcurve_uses(
+                        let Some(resolved) = (match resolve_pcurve_uses(
                             ir,
                             pcurves,
                             &SurfaceSupport {
@@ -936,7 +955,17 @@ pub(super) fn project(
                             tolerance,
                             ctx,
                             &mut model_index,
-                        ) else {
+                        ) {
+                            Ok(resolved) => resolved,
+                            Err(error) => {
+                                losses.push(entity_loss(
+                                    entry,
+                                    format!("a loop edge-use pcurve states no carrier: {error}"),
+                                ));
+                                valid = false;
+                                break;
+                            }
+                        }) else {
                             losses.push(entity_loss(
                                 entry,
                                 "loop edge-use pcurves disagree with the edge vertices",

@@ -120,7 +120,7 @@ fn bounded_nurbs(
     curve_id: &CurveId,
     ctx: Option<&DecodeContext<'_>>,
     index: &CompositeIndex,
-) -> Option<(NurbsCurve, [f64; 2])> {
+) -> Result<Option<(NurbsCurve, [f64; 2])>, cadmpeg_ir::geometry::NurbsError> {
     super::composite::bounded_nurbs_for_curve(ir, curve_id, ctx, Some(index))
 }
 
@@ -711,7 +711,7 @@ fn same_basis_ruled_surface(
     first: &NurbsCurve,
     second: &NurbsCurve,
     weights: &[f64],
-) -> Option<NurbsSurface> {
+) -> Result<NurbsSurface, cadmpeg_ir::geometry::NurbsError> {
     let surface_weights = weights
         .iter()
         .copied()
@@ -739,7 +739,6 @@ fn same_basis_ruled_surface(
         first.periodic() && second.periodic(),
         false,
     )
-    .ok()
 }
 
 fn admit_surface_pole_count(ctx: Option<&DecodeContext<'_>>, pole_count: usize) -> Option<()> {
@@ -760,17 +759,46 @@ fn ruled_surface_carrier(
     first: &NurbsCurve,
     second: &NurbsCurve,
     ctx: Option<&DecodeContext<'_>>,
-) -> Option<NurbsSurface> {
+) -> Result<Option<NurbsSurface>, cadmpeg_ir::geometry::NurbsError> {
     if first.degree() == second.degree()
         && first.knots() == second.knots()
         && first.control_points().len() == second.control_points().len()
     {
         if let Some(weights) = projectively_shared_weights(first, second) {
-            admit_surface_pole_count(ctx, first.control_points().len().checked_mul(2)?)?;
-            return same_basis_ruled_surface(first, second, &weights);
+            let Some(pole_count) = first.control_points().len().checked_mul(2) else {
+                return Ok(None);
+            };
+            if admit_surface_pole_count(ctx, pole_count).is_none() {
+                return Ok(None);
+            }
+            return same_basis_ruled_surface(first, second, &weights).map(Some);
         }
     }
+    let Some((degree, u_knots, control_points, weights)) =
+        ruled_surface_span_lanes(first, second, ctx)
+    else {
+        return Ok(None);
+    };
+    Ok(Some(NurbsSurface::from_lanes(
+        degree,
+        1,
+        u_knots,
+        vec![0.0, 0.0, 1.0, 1.0],
+        control_points.chunks(2_usize).map(<[_]>::to_vec).collect(),
+        weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
+        false,
+        first.periodic() && second.periodic(),
+        false,
+    )?))
+}
 
+type RuledSpanLanes = (u32, Vec<f64>, Vec<Point3>, Option<Vec<f64>>);
+
+fn ruled_surface_span_lanes(
+    first: &NurbsCurve,
+    second: &NurbsCurve,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Option<RuledSpanLanes> {
     let degree = usize::try_from(first.degree())
         .ok()?
         .checked_add(usize::try_from(second.degree()).ok()?)?;
@@ -839,18 +867,12 @@ fn ruled_surface_carrier(
     } else {
         Some(weights)
     };
-    NurbsSurface::from_lanes(
+    Some((
         u32::try_from(degree).ok()?,
-        1,
         u_knots,
-        vec![0.0, 0.0, 1.0, 1.0],
-        control_points.chunks(2_usize).map(<[_]>::to_vec).collect(),
-        weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
-        false,
-        first.periodic() && second.periodic(),
-        false,
-    )
-    .ok()
+        control_points,
+        weights,
+    ))
 }
 
 fn homogeneous_curve_boundary_matches(
@@ -1333,10 +1355,21 @@ pub(super) fn project(
         }
         let first_id = crate::ids::curve(&crate::ids::Stem::directory(first_sequence));
         let second_id = crate::ids::curve(&crate::ids::Stem::directory(second_sequence));
-        let (Some((first, first_interval)), Some((mut second, second_interval))) = (
+        let rails = (
             bounded_nurbs(ir, &first_id, ctx, &composite_index),
             bounded_nurbs(ir, &second_id, ctx, &composite_index),
-        ) else {
+        );
+        let rails = match rails {
+            (Ok(first), Ok(second)) => (first, second),
+            (Err(error), _) | (_, Err(error)) => {
+                losses.push(entity_loss(
+                    entry,
+                    format!("a rail curve states no NURBS carrier: {error}"),
+                ));
+                continue;
+            }
+        };
+        let (Some((first, first_interval)), Some((mut second, second_interval))) = rails else {
             losses.push(entity_loss(
                 entry,
                 "rail curves do not have bounded polynomial or NURBS carriers",
@@ -1379,12 +1412,22 @@ pub(super) fn project(
                 continue;
             }
         }
-        let Some(surface) = ruled_surface_carrier(&first, &second, ctx) else {
-            losses.push(entity_loss(
-                entry,
-                "ruled rails do not have a finite exact NURBS carrier",
-            ));
-            continue;
+        let surface = match ruled_surface_carrier(&first, &second, ctx) {
+            Ok(Some(surface)) => surface,
+            Ok(None) => {
+                losses.push(entity_loss(
+                    entry,
+                    "ruled rails do not have a finite exact NURBS carrier",
+                ));
+                continue;
+            }
+            Err(error) => {
+                losses.push(entity_loss(
+                    entry,
+                    format!("ruled rails state no NURBS carrier: {error}"),
+                ));
+                continue;
+            }
         };
         let surface_id = crate::ids::surface(&crate::ids::Stem::directory(entry.sequence));
         sequences.record_surface(&surface_id, entry.sequence);
@@ -1477,9 +1520,17 @@ pub(super) fn project(
             ));
             continue;
         };
-        let Some((directrix, cached_interval)) =
-            bounded_nurbs(ir, &directrix_id, ctx, &composite_index)
-        else {
+        let directrix_carrier = match bounded_nurbs(ir, &directrix_id, ctx, &composite_index) {
+            Ok(carrier) => carrier,
+            Err(error) => {
+                losses.push(entity_loss(
+                    entry,
+                    format!("the directrix states no NURBS carrier: {error}"),
+                ));
+                continue;
+            }
+        };
+        let Some((directrix, cached_interval)) = directrix_carrier else {
             let Some((directrix_geometry, carrier_interval)) = bounded_evaluable_curve(
                 ir,
                 &directrix_id,
@@ -1777,9 +1828,17 @@ pub(super) fn project(
             ));
             continue;
         };
-        let Some((generatrix, cached_interval)) =
-            bounded_nurbs(ir, &generatrix_id, ctx, &composite_index)
-        else {
+        let generatrix_carrier = match bounded_nurbs(ir, &generatrix_id, ctx, &composite_index) {
+            Ok(carrier) => carrier,
+            Err(error) => {
+                losses.push(entity_loss(
+                    entry,
+                    format!("the generatrix states no NURBS carrier: {error}"),
+                ));
+                continue;
+            }
+        };
+        let Some((generatrix, cached_interval)) = generatrix_carrier else {
             let Some((directrix_geometry, carrier_interval)) = bounded_evaluable_curve(
                 ir,
                 &generatrix_id,

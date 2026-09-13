@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact conversions from bounded analytic curves to NURBS carriers.
 
-use cadmpeg_ir::geometry::NurbsCurve;
+use cadmpeg_ir::geometry::{NurbsCurve, NurbsError};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 const EPS_CURVE_CONVERSION_EXACT_GEOMETRY: f64 = 1.0e-12;
@@ -34,7 +34,7 @@ pub(crate) fn circular_arc_nurbs(
     reference: Vector3,
     radius: f64,
     interval: [f64; 2],
-) -> Option<NurbsCurve> {
+) -> Result<Option<NurbsCurve>, NurbsError> {
     elliptical_arc_nurbs(center, axis, reference, radius, radius, interval)
 }
 
@@ -45,7 +45,7 @@ pub(crate) fn elliptical_arc_nurbs(
     major_radius: f64,
     minor_radius: f64,
     interval: [f64; 2],
-) -> Option<NurbsCurve> {
+) -> Result<Option<NurbsCurve>, NurbsError> {
     let delta = interval[1] - interval[0];
     if !delta.is_finite()
         || delta <= 0.0
@@ -55,7 +55,7 @@ pub(crate) fn elliptical_arc_nurbs(
         || major_radius <= 0.0
         || minor_radius <= 0.0
     {
-        return None;
+        return Ok(None);
     }
     let delta = delta.min(std::f64::consts::TAU);
     let transverse = axis.cross(major_direction);
@@ -78,7 +78,7 @@ pub(crate) fn elliptical_arc_nurbs(
         let middle = (start + end) * 0.5;
         let middle_weight = ((end - start) * 0.5).cos();
         if !middle_weight.is_finite() || middle_weight <= 0.0 {
-            return None;
+            return Ok(None);
         }
         if span == 0 {
             control_points.push(
@@ -107,7 +107,13 @@ pub(crate) fn elliptical_arc_nurbs(
             knots.extend([end, end, end]);
         }
     }
-    NurbsCurve::from_lanes(2, knots, control_points, Some(weights), false).ok()
+    Ok(Some(NurbsCurve::from_lanes(
+        2,
+        knots,
+        control_points,
+        Some(weights),
+        false,
+    )?))
 }
 
 pub(crate) fn parabolic_arc_nurbs(
@@ -116,11 +122,11 @@ pub(crate) fn parabolic_arc_nurbs(
     major_direction: Vector3,
     focal_distance: f64,
     interval: [f64; 2],
-) -> Option<NurbsCurve> {
+) -> Result<Option<NurbsCurve>, NurbsError> {
     let [start, end] = interval;
     let delta = end - start;
     if !delta.is_finite() || delta <= 0.0 || !focal_distance.is_finite() || focal_distance <= 0.0 {
-        return None;
+        return Ok(None);
     }
     let transverse = axis.cross(major_direction);
     let start_point = vertex
@@ -132,24 +138,20 @@ pub(crate) fn parabolic_arc_nurbs(
     let end_point = vertex
         .translated(major_direction, focal_distance * end * end)
         .translated(transverse, 2.0 * focal_distance * end);
-    [start_point, middle_point, end_point]
-        .iter()
-        .all(|point| {
-            [point.x, point.y, point.z]
-                .iter()
-                .all(|value| value.is_finite())
-        })
-        .then(|| {
-            NurbsCurve::from_lanes(
-                2,
-                vec![start, start, start, end, end, end],
-                vec![start_point, middle_point, end_point],
-                None,
-                false,
-            )
-            .ok()
-        })
-        .flatten()
+    if ![start_point, middle_point, end_point].iter().all(|point| {
+        [point.x, point.y, point.z]
+            .iter()
+            .all(|value| value.is_finite())
+    }) {
+        return Ok(None);
+    }
+    Ok(Some(NurbsCurve::from_lanes(
+        2,
+        vec![start, start, start, end, end, end],
+        vec![start_point, middle_point, end_point],
+        None,
+        false,
+    )?))
 }
 
 #[cfg(test)]

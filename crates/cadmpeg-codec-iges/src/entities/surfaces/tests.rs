@@ -268,6 +268,7 @@ fn homogeneous_ruled_carrier_aligns_relative_parameter_partitions() {
     )
     .expect("valid second rail");
     let surface = super::ruled_surface_carrier(&first, &second, None)
+        .expect("ruled lanes pair")
         .expect("relative-parameter rational ruled carrier");
     assert_eq!((surface.u_degree(), surface.v_degree()), (3, 1));
     assert_eq!((surface.u_count(), surface.v_count()), (4, 2));
@@ -326,6 +327,7 @@ fn homogeneous_ruled_carrier_splits_mismatched_knot_partitions() {
     )
     .expect("valid second rail");
     let surface = super::ruled_surface_carrier(&first, &second, None)
+        .expect("ruled lanes pair")
         .expect("partition-aligned rational ruled carrier");
     assert_eq!((surface.u_degree(), surface.v_degree()), (2, 1));
     assert_eq!((surface.u_count(), surface.v_count()), (5, 2));
@@ -1627,4 +1629,26 @@ fn decode_applies_rational_surface_weight_declaration_in_iges_4_and_5_0() {
             }
         }
     }
+}
+
+#[test]
+fn a_ruled_weight_lane_shorter_than_its_pole_lane_reaches_the_codec_error() {
+    let rail = NurbsCurve::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        None,
+        false,
+    )
+    .expect("valid rail");
+    let error = super::same_basis_ruled_surface(&rail, &rail, &[0.5])
+        .expect_err("a weight lane one shorter than the pole lane is refused");
+    let reported = CodecError::from(error);
+    let CodecError::Malformed(message) = &reported else {
+        panic!("expected a malformed refusal, got {reported:?}");
+    };
+    assert!(
+        message.contains("pole(s) against"),
+        "the refusal states both lane counts: {message}"
+    );
 }
