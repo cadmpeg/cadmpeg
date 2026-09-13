@@ -114,7 +114,9 @@ fn short_compact_surface_knot_array_is_rejected_without_panicking() {
         .expect("u multiplicity header");
     bytes[header + 1] = 1;
 
-    assert!(!crate::brep::spline::scan_surface_carriers(&bytes, &mut Vec::new()).contains_key(&180));
+    assert!(
+        !crate::brep::spline::scan_surface_carriers(&bytes, &mut Vec::new()).contains_key(&180)
+    );
 }
 
 #[test]
@@ -296,7 +298,9 @@ fn cyclic_offset_surface_graph_remains_unknown() {
 fn surface_rejects_nonzero_terminal_multiplicity() {
     let bytes =
         nurbs_surface_carrier_with_v_knot_storage(180, 181, 10, &[2, 2, 1], &[0.0, 1.0, 2.0]);
-    assert!(!crate::brep::spline::scan_surface_carriers(&bytes, &mut Vec::new()).contains_key(&180));
+    assert!(
+        !crate::brep::spline::scan_surface_carriers(&bytes, &mut Vec::new()).contains_key(&180)
+    );
 }
 
 #[test]

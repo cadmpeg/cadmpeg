@@ -715,14 +715,18 @@ fn generated_law_surfaces_decode_and_round_trip_modern_and_legacy_layouts() {
             construction.parameter_ranges,
             legacy_ranges.then_some([[-1.0, 2.0], [-3.0, 4.0]])
         );
-        assert!(matches!(&construction.primary, cadmpeg_ir::geometry::LawFormula::Named { name, .. } if name.as_str() == "primary-law"));
+        assert!(
+            matches!(&construction.primary, cadmpeg_ir::geometry::LawFormula::Named { name, .. } if name.as_str() == "primary-law")
+        );
         assert!(matches!(
             construction.primary.variables(),
             [LawExpression::Algebraic { operator, operands }]
                 if operator == "SET" && operands.len() == 1
         ));
         assert_eq!(construction.additional.len(), 1);
-        assert!(matches!(&construction.additional[0], cadmpeg_ir::geometry::LawFormula::Named { name, .. } if name.as_str() == "aux-law"));
+        assert!(
+            matches!(&construction.additional[0], cadmpeg_ir::geometry::LawFormula::Named { name, .. } if name.as_str() == "aux-law")
+        );
         assert!(matches!(
             construction.additional[0].variables(),
             [LawExpression::Algebraic { operator, operands }]

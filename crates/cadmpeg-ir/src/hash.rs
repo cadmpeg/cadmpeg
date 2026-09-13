@@ -335,9 +335,8 @@ mod tests {
     #[test]
     fn a_non_finite_float_has_no_digest() {
         for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-            let Err(DigestError::CanonicalJson(CanonicalJsonError::NonFinite {
-                value: refused,
-            })) = canonical_json_sha256(&value)
+            let Err(DigestError::CanonicalJson(CanonicalJsonError::NonFinite { value: refused })) =
+                canonical_json_sha256(&value)
             else {
                 panic!("a non-finite float must have no canonical JSON");
             };
@@ -353,7 +352,9 @@ mod tests {
         let nested = vec![Some(vec![(1.0f64, f64::NAN)])];
         assert!(matches!(
             canonical_json_sha256(&nested),
-            Err(DigestError::CanonicalJson(CanonicalJsonError::NonFinite { .. }))
+            Err(DigestError::CanonicalJson(
+                CanonicalJsonError::NonFinite { .. }
+            ))
         ));
     }
 

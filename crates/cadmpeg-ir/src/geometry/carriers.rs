@@ -53,10 +53,7 @@ impl NurbsPoles3 {
     ///
     /// Refuses a weight lane that does not cover the poles, naming both counts,
     /// and a weight that is zero or non-finite, naming its index.
-    pub fn from_lanes(
-        points: Vec<Point3>,
-        weights: Option<Vec<f64>>,
-    ) -> Result<Self, NurbsError> {
+    pub fn from_lanes(points: Vec<Point3>, weights: Option<Vec<f64>>) -> Result<Self, NurbsError> {
         let Some(weights) = weights else {
             return Ok(Self::Polynomial { points });
         };
@@ -212,13 +209,11 @@ impl NurbsPoleGrid {
                     .map(|(index, (point, weight))| {
                         Ok(WeightedPole3 {
                             point,
-                            weight: NonZeroReal::new(weight).ok_or(
-                                NurbsError::UnusableWeight {
-                                    field: "pole grid row".to_owned(),
-                                    index,
-                                    weight,
-                                },
-                            )?,
+                            weight: NonZeroReal::new(weight).ok_or(NurbsError::UnusableWeight {
+                                field: "pole grid row".to_owned(),
+                                index,
+                                weight,
+                            })?,
                         })
                     })
                     .collect::<Result<Vec<_>, NurbsError>>()
@@ -329,10 +324,7 @@ impl PcurveNurbsPoles {
     ///
     /// Refuses a weight lane that does not cover the poles, naming both counts,
     /// and a weight that is not positive and finite, naming its index.
-    pub fn from_lanes(
-        points: Vec<Point2>,
-        weights: Option<Vec<f64>>,
-    ) -> Result<Self, NurbsError> {
+    pub fn from_lanes(points: Vec<Point2>, weights: Option<Vec<f64>>) -> Result<Self, NurbsError> {
         let Some(weights) = weights else {
             return Ok(Self::Polynomial { points });
         };
@@ -595,7 +587,6 @@ pub enum NurbsError {
     Structure(String),
 }
 
-
 impl From<NurbsError> for cadmpeg_core::CodecError {
     fn from(error: NurbsError) -> Self {
         Self::Malformed(error.to_string())
@@ -650,7 +641,9 @@ fn require_finite_points_2(field: &str, points: &[Point2]) -> Result<(), NurbsEr
     {
         Ok(())
     } else {
-        Err(NurbsError::Structure(format!("{field} contains a non-finite point")))
+        Err(NurbsError::Structure(format!(
+            "{field} contains a non-finite point"
+        )))
     }
 }
 
@@ -661,7 +654,9 @@ fn require_finite_points_3(field: &str, points: &[Point3]) -> Result<(), NurbsEr
     {
         Ok(())
     } else {
-        Err(NurbsError::Structure(format!("{field} contains a non-finite point")))
+        Err(NurbsError::Structure(format!(
+            "{field} contains a non-finite point"
+        )))
     }
 }
 
@@ -669,7 +664,9 @@ fn require_finite_scalars(field: &str, values: &[f64]) -> Result<(), NurbsError>
     if values.iter().all(|value| value.is_finite()) {
         Ok(())
     } else {
-        Err(NurbsError::Structure(format!("{field} contains a non-finite value")))
+        Err(NurbsError::Structure(format!(
+            "{field} contains a non-finite value"
+        )))
     }
 }
 
@@ -741,8 +738,10 @@ impl NurbsSurface {
         for row in &control_points {
             require_finite_points_3("control_points", row)?;
         }
-        require_nondecreasing_knots(&u_knots).map_err(|error| NurbsError::Structure(format!("u_{error}")))?;
-        require_nondecreasing_knots(&v_knots).map_err(|error| NurbsError::Structure(format!("v_{error}")))?;
+        require_nondecreasing_knots(&u_knots)
+            .map_err(|error| NurbsError::Structure(format!("u_{error}")))?;
+        require_nondecreasing_knots(&v_knots)
+            .map_err(|error| NurbsError::Structure(format!("v_{error}")))?;
         Ok(Self {
             u_degree,
             v_degree,
@@ -779,7 +778,8 @@ impl NurbsSurface {
     pub fn edit_u_knots(&mut self, edit: impl FnOnce(&mut [f64])) -> Result<(), NurbsError> {
         let mut values = self.u_knots.clone();
         edit(&mut values);
-        require_nondecreasing_knots(&values).map_err(|error| NurbsError::Structure(format!("u_{error}")))?;
+        require_nondecreasing_knots(&values)
+            .map_err(|error| NurbsError::Structure(format!("u_{error}")))?;
         self.u_knots = values;
         Ok(())
     }
@@ -788,7 +788,8 @@ impl NurbsSurface {
     pub fn edit_v_knots(&mut self, edit: impl FnOnce(&mut [f64])) -> Result<(), NurbsError> {
         let mut values = self.v_knots.clone();
         edit(&mut values);
-        require_nondecreasing_knots(&values).map_err(|error| NurbsError::Structure(format!("v_{error}")))?;
+        require_nondecreasing_knots(&values)
+            .map_err(|error| NurbsError::Structure(format!("v_{error}")))?;
         self.v_knots = values;
         Ok(())
     }
@@ -3469,12 +3470,16 @@ impl PolarPcurveNurbs {
     ) -> Result<Self, NurbsError> {
         require_curve_cardinality(degree, knots.len(), poles.len(), "poles")?;
         if degree == 0 {
-            return Err(NurbsError::Structure("polar NURBS degree must be positive".into()));
+            return Err(NurbsError::Structure(
+                "polar NURBS degree must be positive".into(),
+            ));
         }
         if !poles.poles().iter().all(|pole| {
             pole.radial.u.is_finite() && pole.radial.v.is_finite() && pole.axial.is_finite()
         }) {
-            return Err(NurbsError::Structure("poles contain a non-finite value".into()));
+            return Err(NurbsError::Structure(
+                "poles contain a non-finite value".into(),
+            ));
         }
         require_nondecreasing_knots(&knots)?;
         Ok(Self {
@@ -3539,7 +3544,9 @@ impl PolarPcurveNurbs {
             self.poles = poles;
             Ok(())
         } else {
-            Err(NurbsError::Structure("poles contain a non-finite value".into()))
+            Err(NurbsError::Structure(
+                "poles contain a non-finite value".into(),
+            ))
         }
     }
 
@@ -3627,7 +3634,9 @@ impl PcurveNurbs {
     ) -> Result<Self, NurbsError> {
         require_curve_cardinality(degree, knots.len(), poles.len(), "control_points")?;
         if degree == 0 {
-            return Err(NurbsError::Structure("pcurve NURBS degree must be positive".into()));
+            return Err(NurbsError::Structure(
+                "pcurve NURBS degree must be positive".into(),
+            ));
         }
         require_finite_points_2("control_points", &poles.points())?;
         require_nondecreasing_knots(&knots)?;

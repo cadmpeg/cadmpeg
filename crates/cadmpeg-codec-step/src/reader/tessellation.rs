@@ -383,8 +383,7 @@ pub(super) fn decode(
             Ok(rows) => rows,
             Err(error) => {
                 losses.push(
-                    StepLossCode::TessellationInvalidPayload
-                        .note(format!("{kind} #{id}: {error}")),
+                    StepLossCode::TessellationInvalidPayload.note(format!("{kind} #{id}: {error}")),
                 );
                 continue;
             }

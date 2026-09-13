@@ -209,9 +209,7 @@ impl<'de> Deserialize<'de> for NonBlankString {
         D: serde::Deserializer<'de>,
     {
         Self::new(String::deserialize(deserializer)?)
-            .ok_or_else(|| {
-                serde::de::Error::custom("source identity must not be blank")
-            })
+            .ok_or_else(|| serde::de::Error::custom("source identity must not be blank"))
     }
 }
 

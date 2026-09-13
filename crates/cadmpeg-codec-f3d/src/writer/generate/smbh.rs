@@ -886,9 +886,7 @@ fn encode_face_topology_smbh(
             .iter()
             .position(|loop_| &loop_.id == first_loop)
             .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "face references missing loop {first_loop}"
-                ))
+                CodecError::malformed(format_args!("face references missing loop {first_loop}"))
             })?;
         let surface_position = model
             .surfaces

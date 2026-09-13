@@ -1058,8 +1058,10 @@ fn generated_revision_text_law_sweep_decodes_and_round_trips() {
         second_law.as_ref(),
         LawExpression::Text { value } if value == "VEC(1,1,1)"
     ));
-    assert!(matches!(formula, cadmpeg_ir::geometry::LawFormula::Named { name, .. }
-        if name.as_str() == "ROTATE(DOMAIN(VEC(1,0,0),0,0.8),TRANS1)"));
+    assert!(
+        matches!(formula, cadmpeg_ir::geometry::LawFormula::Named { name, .. }
+        if name.as_str() == "ROTATE(DOMAIN(VEC(1,0,0),0,0.8),TRANS1)")
+    );
     assert!(matches!(
         formula.variables(),
         [LawExpression::TransformVec { .. }]

@@ -1597,8 +1597,17 @@ mod tests {
     fn a_classified_face_states_its_outer_loop_once() {
         let mut model = crate::examples::unit_cube().model;
         let face = &mut model.faces[0];
-        let outer = face.loops.first().expect("a cube face states a loop").clone();
-        let inner = face.loops.iter().filter(|id| **id != outer).cloned().collect();
+        let outer = face
+            .loops
+            .first()
+            .expect("a cube face states a loop")
+            .clone();
+        let inner = face
+            .loops
+            .iter()
+            .filter(|id| **id != outer)
+            .cloned()
+            .collect();
         face.loops = FaceLoops::classified(Some(outer.clone()), inner);
         let wire = serde_json::to_value(&*face).unwrap();
         assert_eq!(
@@ -1658,7 +1667,7 @@ mod tests {
         let none: FaceLoops =
             serde_json::from_value(serde_json::json!({"classification": "unspecified",
                 "loops": []}))
-                .unwrap();
+            .unwrap();
         assert!(none.is_empty());
     }
 

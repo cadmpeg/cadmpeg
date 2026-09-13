@@ -318,7 +318,11 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
     ),
     ("crates/cadmpeg-ir/src/features.rs", "$name", "wire"),
     ("crates/cadmpeg-ir/src/features.rs", "BodyMember", "wire"),
-    ("crates/cadmpeg-ir/src/features.rs", "BodyMembers", "keyless"),
+    (
+        "crates/cadmpeg-ir/src/features.rs",
+        "BodyMembers",
+        "keyless",
+    ),
     (
         "crates/cadmpeg-ir/src/features.rs",
         "ConfigurationEvaluation",

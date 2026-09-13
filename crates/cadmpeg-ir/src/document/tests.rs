@@ -564,7 +564,9 @@ fn parent_only_wire_preserves_regeneration_without_tree_membership() {
 #[test]
 fn a_document_holding_a_non_finite_coordinate_has_no_canonical_json() {
     let finite = unit_cube();
-    let text = finite.to_canonical_json().expect("a finite document writes");
+    let text = finite
+        .to_canonical_json()
+        .expect("a finite document writes");
     assert!(text.contains("\"x\": 0.0") || text.contains("\"x\": 1.0"));
 
     let mut non_finite = unit_cube();

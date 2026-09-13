@@ -41,7 +41,7 @@ fn per_corner_mesh_exposes_its_normals() {
             base.triangles(),
             Some(normals.clone()),
         )
-            .unwrap(),
+        .unwrap(),
         Vec::new(),
     )
     .unwrap();
@@ -56,11 +56,7 @@ fn per_vertex_mesh_exposes_its_normals() {
     let normals = vec![Vector3::new(0.0, 0.0, 1.0); base.vertex_count()];
     let value = Tessellation::new(
         "test:mesh:tessellation#vertices",
-        TessellationMesh::from_list_lanes(
-            base.vertices(),
-            base.triangles(),
-            Some(normals.clone()),
-        )
+        TessellationMesh::from_list_lanes(base.vertices(), base.triangles(), Some(normals.clone()))
             .unwrap(),
         Vec::new(),
     )
@@ -409,12 +405,10 @@ fn the_wire_spells_the_shading_by_name() {
 
     // An unshaded mesh is stated by absence. An empty lane against a non-empty
     // vertex lane is a length mismatch, not a shading form.
-    assert!(TessellationMesh::from_list_lanes(
-        base.vertices(),
-        base.triangles(),
-        Some(Vec::new()),
-    )
-    .is_err());
+    assert!(
+        TessellationMesh::from_list_lanes(base.vertices(), base.triangles(), Some(Vec::new()),)
+            .is_err()
+    );
     assert!(matches!(
         TessellationMesh::from_list_lanes(base.vertices(), base.triangles(), None),
         Ok(TessellationMesh::List { .. })
