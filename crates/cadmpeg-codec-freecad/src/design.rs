@@ -3833,6 +3833,26 @@ fn taper_angle(
         .map_err(|error| CodecError::malformed(format!("{key}: {error}")))
 }
 
+/// Whether the record states the legacy two-length extent.
+fn legacy_two_length_extent(properties: &[&PropertyRecord]) -> bool {
+    property(properties, "SideType").is_none()
+        && enumeration_selector(properties, "Type", 0) == Some(4)
+}
+
+/// The extent kind the extrude record states: 0 one-sided, 1 two-sided,
+/// 2 midplane.
+fn extrude_side_type(properties: &[&PropertyRecord]) -> Option<u64> {
+    if legacy_two_length_extent(properties) {
+        Some(1)
+    } else if bool_selector(properties, "Midplane", false)? {
+        Some(2)
+    } else if property(properties, "SideType").is_some() {
+        enumeration_selector(properties, "SideType", 0)
+    } else {
+        Some(0)
+    }
+}
+
 fn extrusion_definition(
     kind: &str,
     properties: &[&PropertyRecord],
@@ -3840,10 +3860,21 @@ fn extrusion_definition(
     profile_normal: Option<Vector3>,
     sketches: &[Sketch],
 ) -> Result<Option<FeatureDefinition>, CodecError> {
+    // `TaperAngle2` states the draft of a second, independent side. The
+    // property set an extrude record means depends on its extent kind, so the
+    // reader decides the kind first and reads the second side's draft only
+    // for the kind that carries one. A one-sided or midplane extrude has no
+    // second side: reading a property its kind does not carry is over-reach,
+    // and refusing the whole feature over it deletes what the record states.
+    let taper_second = if extrude_side_type(properties) == Some(1) {
+        taper_angle(properties, "TaperAngle2")?
+    } else {
+        None
+    };
     let drafts = ExtrudeDrafts {
         taper: taper_angle(properties, "TaperAngle")?,
         taper_reverse: taper_angle(properties, "TaperAngleRev")?,
-        taper_second: taper_angle(properties, "TaperAngle2")?,
+        taper_second,
     };
     Ok(extrusion_shape(
         kind,
@@ -4026,8 +4057,7 @@ fn extrusion_shape(
             allow_multi_profile_faces: None,
         }));
     }
-    let legacy_two_lengths = property(properties, "SideType").is_none()
-        && enumeration_selector(properties, "Type", 0) == Some(4);
+    let legacy_two_lengths = legacy_two_length_extent(properties);
     let termination = |side: u8| {
         let suffix = if side == 1 { "" } else { "2" };
         let type_name = format!("Type{suffix}");
@@ -4068,15 +4098,7 @@ fn extrusion_shape(
             _ => None,
         }
     };
-    let side_type = if legacy_two_lengths {
-        1
-    } else if bool_selector(properties, "Midplane", false)? {
-        2
-    } else if property(properties, "SideType").is_some() {
-        enumeration_selector(properties, "SideType", 0)?
-    } else {
-        0
-    };
+    let side_type = extrude_side_type(properties)?;
     // `TaperAngle2` describes a second, independent side and reaches the IR
     // only when the extent actually carries one (`SideType` 1 / two-sided). A
     // symmetric (Midplane) pad mirrors side one, so it has no second side to
