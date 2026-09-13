@@ -1326,22 +1326,21 @@ fn torus_chart_lifts_meridians_and_latitudes_exactly() {
 #[test]
 fn tensor_surface_contraction_preserves_exact_isocurve() {
     let surface = cadmpeg_ir::geometry::NurbsSurface::from_lanes(
-        1,
-        1,
-        vec![0.0, 0.0, 1.0, 1.0],
-        vec![0.0, 0.0, 1.0, 1.0],
-        vec![
-            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
-            vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 1.0, 2.0)],
-        ],
-        None,
-        false,
-        false,
+        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 1.0, 2.0)],
+            ],
+            None,
+        ),
         false,
     )
     .expect("valid tensor surface");
     let curve =
-        crate::nurbs::nurbs_surface_isocurve(&surface, 0.25, true, &mut None, "test record").expect("u isocurve");
+        crate::nurbs::nurbs_surface_isocurve(&surface, 0.25, true, &mut None, "test record")
+            .expect("u isocurve");
     assert_eq!(curve.degree(), 1);
     assert_eq!(curve.knots(), surface.v_knots());
     assert_eq!(curve.control_points()[0], Point3::new(0.5, 0.0, 0.0));

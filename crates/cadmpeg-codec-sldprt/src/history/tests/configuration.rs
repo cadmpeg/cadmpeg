@@ -1642,7 +1642,10 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
         shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
         surface: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
         sense: Sense::Forward,
-        loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![LoopId::mint("test:model:entity#loop").expect("identity grammar")]),
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![LoopId::mint(
+            "test:model:entity#loop",
+        )
+        .expect("identity grammar")]),
         name: None,
         color: None,
         tolerance: None,
@@ -1751,7 +1754,10 @@ fn configuration_frame_alias_binds_without_body_membership() {
         shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
         surface: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
         sense: Sense::Forward,
-        loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![LoopId::mint("test:model:entity#loop").expect("identity grammar")]),
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![LoopId::mint(
+            "test:model:entity#loop",
+        )
+        .expect("identity grammar")]),
         name: None,
         color: None,
         tolerance: None,

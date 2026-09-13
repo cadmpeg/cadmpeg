@@ -255,18 +255,16 @@ fn free_plane_and_rational_nurbs_surface_round_trip() {
         id: cadmpeg_ir::ids::SurfaceId::mint("rhino:test:surface#nurbs").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
             cadmpeg_ir::geometry::NurbsSurface::from_lanes(
-                1,
-                1,
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![2.0, 2.0, 5.0, 5.0],
-                vec![
-                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 2.0, 0.0)],
-                    vec![Point3::new(3.0, 0.0, 1.0), Point3::new(3.0, 2.0, 1.0)],
-                ],
-                Some(vec![1.0, 0.75, 0.5, 1.0])
-                    .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
-                false,
-                false,
+                cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![2.0, 2.0, 5.0, 5.0], false),
+                cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                    vec![
+                        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 2.0, 0.0)],
+                        vec![Point3::new(3.0, 0.0, 1.0), Point3::new(3.0, 2.0, 1.0)],
+                    ],
+                    Some(vec![1.0, 0.75, 0.5, 1.0])
+                        .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
+                ),
                 false,
             )
             .expect("valid rational surface"),

@@ -971,23 +971,29 @@ pub(crate) fn scan_surface_carriers(
             continue;
         }
         let nurbs = match NurbsSurface::from_lanes(
-            descriptor.u_degree,
-            descriptor.v_degree,
-            u_knots,
-            v_knots,
-            points
-                .chunks(descriptor.v_count as u32 as usize)
-                .map(<[_]>::to_vec)
-                .collect(),
-            weights.map(|values| {
-                values
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+                descriptor.u_degree,
+                u_knots,
+                descriptor.u_periodic,
+            ),
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+                descriptor.v_degree,
+                v_knots,
+                descriptor.v_periodic,
+            ),
+            cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                points
                     .chunks(descriptor.v_count as u32 as usize)
                     .map(<[_]>::to_vec)
-                    .collect()
-            }),
+                    .collect(),
+                weights.map(|values| {
+                    values
+                        .chunks(descriptor.v_count as u32 as usize)
+                        .map(<[_]>::to_vec)
+                        .collect()
+                }),
+            ),
             false,
-            descriptor.u_periodic,
-            descriptor.v_periodic,
         ) {
             Ok(nurbs) => nurbs,
             Err(error) => {

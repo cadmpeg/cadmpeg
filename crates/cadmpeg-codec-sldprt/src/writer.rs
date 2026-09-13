@@ -3738,17 +3738,15 @@ mod nurbs_write_tests {
     #[test]
     fn writes_surface_degree_from_stored_descriptor() {
         let surface = NurbsSurface::from_lanes(
-            9,
-            1,
-            vec![0.0; 20],
-            vec![0.0; 4],
-            vec![Point3::new(0.0, 0.0, 0.0); 20]
-                .chunks(2_usize)
-                .map(<[_]>::to_vec)
-                .collect(),
-            None,
-            false,
-            false,
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(9, vec![0.0; 20], false),
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0; 4], false),
+            cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                vec![Point3::new(0.0, 0.0, 0.0); 20]
+                    .chunks(2_usize)
+                    .map(<[_]>::to_vec)
+                    .collect(),
+                None,
+            ),
             false,
         )
         .expect("valid high-degree surface");
@@ -3776,17 +3774,23 @@ mod nurbs_write_tests {
     #[test]
     fn writes_surface_shape_from_stored_counts() {
         let surface = NurbsSurface::from_lanes(
-            2,
-            1,
-            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            vec![0.0, 0.0, 0.25, 0.75, 1.0, 1.0],
-            vec![Point3::new(0.0, 0.0, 0.0); 12]
-                .chunks(4_usize)
-                .map(<[_]>::to_vec)
-                .collect(),
-            None,
-            false,
-            false,
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                false,
+            ),
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+                1,
+                vec![0.0, 0.0, 0.25, 0.75, 1.0, 1.0],
+                false,
+            ),
+            cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                vec![Point3::new(0.0, 0.0, 0.0); 12]
+                    .chunks(4_usize)
+                    .map(<[_]>::to_vec)
+                    .collect(),
+                None,
+            ),
             false,
         )
         .expect("valid asymmetric surface");

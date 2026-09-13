@@ -45,18 +45,20 @@ use std::collections::{BTreeMap, BTreeSet};
 fn generated_nurbs_translations_define_a_blind_extrusion() {
     let translated_surface = |last_z| {
         NurbsSurface::from_lanes(
-            2,
-            1,
-            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            vec![0.0, 0.0, 1.0, 1.0],
-            vec![
-                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 2.0)],
-                vec![Point3::new(1.0, 1.0, 0.0), Point3::new(1.0, 1.0, 2.0)],
-                vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, last_z)],
-            ],
-            None,
-            false,
-            false,
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                false,
+            ),
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                vec![
+                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 2.0)],
+                    vec![Point3::new(1.0, 1.0, 0.0), Point3::new(1.0, 1.0, 2.0)],
+                    vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, last_z)],
+                ],
+                None,
+            ),
             false,
         )
         .expect("valid translated surface")
@@ -153,14 +155,16 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
     );
 
     let ambiguous = NurbsSurface::from_lanes(
-        1,
-        translated_surface(2.0).v_degree(),
-        vec![0.0, 0.0, 1.0, 1.0],
-        translated_surface(2.0).v_knots().to_vec(),
-        translated_surface(2.0).control_grid()[..2].to_vec(),
-        None,
-        false,
-        false,
+        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+            translated_surface(2.0).v_degree(),
+            translated_surface(2.0).v_knots().to_vec(),
+            false,
+        ),
+        cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+            translated_surface(2.0).control_grid()[..2].to_vec(),
+            None,
+        ),
         false,
     )
     .expect("valid ambiguous translation surface");

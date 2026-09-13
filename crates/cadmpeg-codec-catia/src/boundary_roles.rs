@@ -323,10 +323,7 @@ mod tests {
         assert_eq!(
             classify_planar_boundaries(
                 &plane(),
-                &rows(vec![
-                    square(1.0, 1.0, 3.0, 3.0),
-                    square(0.0, 0.0, 5.0, 5.0)
-                ])
+                &rows(vec![square(1.0, 1.0, 3.0, 3.0), square(0.0, 0.0, 5.0, 5.0)])
             ),
             FaceLoops::classified(loop_id(1), vec![loop_id(0)])
         );
@@ -337,10 +334,7 @@ mod tests {
         assert_eq!(
             classify_planar_boundaries(
                 &plane(),
-                &rows(vec![
-                    square(0.0, 0.0, 1.0, 1.0),
-                    square(3.0, 0.0, 4.0, 1.0)
-                ])
+                &rows(vec![square(0.0, 0.0, 1.0, 1.0), square(3.0, 0.0, 4.0, 1.0)])
             ),
             FaceLoops::unspecified(vec![loop_id(0), loop_id(1)])
         );

@@ -1801,8 +1801,7 @@ pub(super) fn project(
             has_explicit_outer,
             explicit_outer_sequence,
             mut valid,
-        ) = if surface_kind == BoundarySurfaceKind::Trimmed
-        {
+        ) = if surface_kind == BoundarySurfaceKind::Trimmed {
             let Some(surface) = pointer(record, 1) else {
                 losses.push(entity_loss(
                     entry,

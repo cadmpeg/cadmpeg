@@ -2011,17 +2011,23 @@ mod tests {
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                     NurbsSurface::from_lanes(
-                        1,
-                        1,
-                        vec![0.0, 0.0, 1.0, 1.0],
-                        vec![0.0, 0.0, 1.0, 1.0],
-                        vec![
-                            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
-                            vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
-                        ],
-                        None,
-                        false,
-                        false,
+                        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+                            1,
+                            vec![0.0, 0.0, 1.0, 1.0],
+                            false,
+                        ),
+                        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+                            1,
+                            vec![0.0, 0.0, 1.0, 1.0],
+                            false,
+                        ),
+                        cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                            vec![
+                                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+                            ],
+                            None,
+                        ),
                         false,
                     )
                     .expect("valid test surface"),

@@ -9,9 +9,10 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{nurbs_curve_parameter_domain, nurbs_curve_parameter_near_point};
 use cadmpeg_ir::geometry::{
     CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, NurbsCurve,
-    NurbsSurface, Pcurve, PcurveGeometry, PcurveNurbs, PolylineCurve, PolylineSamples,
-    ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes, Pcurve, PcurveGeometry, PcurveNurbs,
+    PolylineCurve, PolylineSamples, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
+    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     CurveId, PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId,
@@ -5154,18 +5155,16 @@ fn nurbs_surface(
         None
     };
     match NurbsSurface::from_lanes(
-        u_degree,
-        v_degree,
-        u_knots,
-        v_knots,
-        control_points
-            .chunks(v_count as usize)
-            .map(<[_]>::to_vec)
-            .collect(),
-        weights,
+        NurbsSurfaceAxis::new(u_degree, u_knots, u_periodic),
+        NurbsSurfaceAxis::new(v_degree, v_knots, v_periodic),
+        NurbsSurfaceLanes::new(
+            control_points
+                .chunks(v_count as usize)
+                .map(<[_]>::to_vec)
+                .collect(),
+            weights,
+        ),
         false,
-        u_periodic,
-        v_periodic,
     ) {
         Ok(surface) => Some(surface),
         Err(error) => {

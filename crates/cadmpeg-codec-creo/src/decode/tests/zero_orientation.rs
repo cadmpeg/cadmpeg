@@ -1400,25 +1400,27 @@ fn planar_loop_containment_derives_plane_from_solved_boundary_vertices() {
 #[test]
 fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
     let surface = NurbsSurface::from_lanes(
-        3,
-        1,
-        vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
-        vec![0.0, 0.0, 1.0, 1.0],
-        (0..4)
-            .flat_map(|u| {
-                [
-                    Point3::new(f64::from(u), 0.0, f64::from(u * u)),
-                    Point3::new(f64::from(u), 1.0, f64::from(u * u)),
-                ]
-            })
-            .collect::<Vec<_>>()
-            .chunks(2_usize)
-            .map(<[_]>::to_vec)
-            .collect(),
-        Some(vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0])
-            .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
-        false,
-        false,
+        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+            3,
+            vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+            false,
+        ),
+        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+            (0..4)
+                .flat_map(|u| {
+                    [
+                        Point3::new(f64::from(u), 0.0, f64::from(u * u)),
+                        Point3::new(f64::from(u), 1.0, f64::from(u * u)),
+                    ]
+                })
+                .collect::<Vec<_>>()
+                .chunks(2_usize)
+                .map(<[_]>::to_vec)
+                .collect(),
+            Some(vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0])
+                .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
+        ),
         false,
     )
     .expect("valid extrusion surface");
@@ -1507,34 +1509,30 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
 #[test]
 fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets() {
     let first = NurbsSurface::from_lanes(
-        1,
-        1,
-        vec![0.0, 0.0, 1.0, 1.0],
-        vec![0.0, 0.0, 1.0, 1.0],
-        vec![
-            vec![Point3::new(-1.0, 0.0, 0.0), Point3::new(-1.0, 0.0, 1.0)],
-            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 1.0)],
-        ],
-        Some(vec![2.0, 2.0, 3.0, 4.0])
-            .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
-        false,
-        false,
+        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(-1.0, 0.0, 0.0), Point3::new(-1.0, 0.0, 1.0)],
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 1.0)],
+            ],
+            Some(vec![2.0, 2.0, 3.0, 4.0])
+                .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
+        ),
         false,
     )
     .expect("valid first extrusion surface");
     let second = NurbsSurface::from_lanes(
-        1,
-        1,
-        vec![0.0, 0.0, 1.0, 1.0],
-        vec![4.0, 4.0, 8.0, 8.0],
-        vec![
-            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 1.0)],
-            vec![Point3::new(0.0, 1.0, 0.0), Point3::new(0.0, 1.0, 1.0)],
-        ],
-        Some(vec![6.0, 8.0, 8.0, 8.0])
-            .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
-        false,
-        false,
+        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![4.0, 4.0, 8.0, 8.0], false),
+        cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 1.0)],
+                vec![Point3::new(0.0, 1.0, 0.0), Point3::new(0.0, 1.0, 1.0)],
+            ],
+            Some(vec![6.0, 8.0, 8.0, 8.0])
+                .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
+        ),
         false,
     )
     .expect("valid second extrusion surface");
@@ -1601,21 +1599,23 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
 #[test]
 fn cubic_extrusion_plane_generator_requires_one_directrix_root() {
     let surface = NurbsSurface::from_lanes(
-        3,
-        1,
-        vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
-        vec![0.0, 0.0, 1.0, 1.0],
-        [-1.0, -0.5, 0.5, 1.0]
-            .into_iter()
-            .flat_map(|x| [Point3::new(x, 0.0, 0.0), Point3::new(x, 0.0, 2.0)])
-            .collect::<Vec<_>>()
-            .chunks(2_usize)
-            .map(<[_]>::to_vec)
-            .collect(),
-        Some(vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0])
-            .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
-        false,
-        false,
+        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+            3,
+            vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+            false,
+        ),
+        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+            [-1.0, -0.5, 0.5, 1.0]
+                .into_iter()
+                .flat_map(|x| [Point3::new(x, 0.0, 0.0), Point3::new(x, 0.0, 2.0)])
+                .collect::<Vec<_>>()
+                .chunks(2_usize)
+                .map(<[_]>::to_vec)
+                .collect(),
+            Some(vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0])
+                .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
+        ),
         false,
     )
     .expect("valid cubic extrusion surface");

@@ -248,14 +248,16 @@ pub(crate) fn swept_nurbs(
         }
     }
     match NurbsSurface::from_lanes(
-        profile.degree(),
-        1,
-        profile.knots().to_vec(),
-        vec![v_start, v_start, v_end, v_end],
-        control.chunks(2_usize).map(<[_]>::to_vec).collect(),
-        weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
-        false,
-        profile.periodic(),
+        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+            profile.degree(),
+            profile.knots().to_vec(),
+            profile.periodic(),
+        ),
+        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![v_start, v_start, v_end, v_end], false),
+        cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+            control.chunks(2_usize).map(<[_]>::to_vec).collect(),
+            weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
+        ),
         false,
     ) {
         Ok(surface) => Some(surface),
@@ -340,15 +342,17 @@ pub(crate) fn spun_nurbs(
         2.0 * PI,
     ];
     match NurbsSurface::from_lanes(
-        profile.degree(),
-        2,
-        profile.knots().to_vec(),
-        v_knots,
-        control.chunks(9_usize).map(<[_]>::to_vec).collect(),
-        Some(weights).map(|values| values.chunks(9_usize).map(<[_]>::to_vec).collect()),
+        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+            profile.degree(),
+            profile.knots().to_vec(),
+            profile.periodic(),
+        ),
+        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(2, v_knots, true),
+        cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+            control.chunks(9_usize).map(<[_]>::to_vec).collect(),
+            Some(weights).map(|values| values.chunks(9_usize).map(<[_]>::to_vec).collect()),
+        ),
         false,
-        profile.periodic(),
-        true,
     ) {
         Ok(surface) => Some(surface),
         Err(error) => {

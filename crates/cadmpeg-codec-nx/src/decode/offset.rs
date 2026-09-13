@@ -2326,26 +2326,32 @@ mod tests {
         let coordinates = [0.0, 0.5, 1.0];
         let square_controls = [0.0, 0.0, 1.0];
         let support = NurbsSurface::from_lanes(
-            2,
-            2,
-            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            (0..3)
-                .map(|u| {
-                    (0..3)
-                        .map(|v| {
-                            Point3::new(
-                                coordinates[u],
-                                coordinates[v],
-                                square_controls[u] + square_controls[v],
-                            )
-                        })
-                        .collect()
-                })
-                .collect(),
-            None,
-            false,
-            false,
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                false,
+            ),
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                false,
+            ),
+            cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                (0..3)
+                    .map(|u| {
+                        (0..3)
+                            .map(|v| {
+                                Point3::new(
+                                    coordinates[u],
+                                    coordinates[v],
+                                    square_controls[u] + square_controls[v],
+                                )
+                            })
+                            .collect()
+                    })
+                    .collect(),
+                None,
+            ),
             false,
         )
         .expect("valid offset support");
@@ -2380,18 +2386,16 @@ mod tests {
             id: support.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                 NurbsSurface::from_lanes(
-                    1,
-                    1,
-                    vec![0.0, 0.0, 1.0, 1.0],
-                    vec![0.0, 0.0, 1.0, 1.0],
-                    vec![
-                        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
-                        vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
-                    ],
-                    Some(vec![1.0; 4])
-                        .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
-                    false,
-                    false,
+                    cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                    cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                    cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                        vec![
+                            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                            vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+                        ],
+                        Some(vec![1.0; 4])
+                            .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
+                    ),
                     false,
                 )
                 .expect("valid rational hull support"),
@@ -2431,17 +2435,15 @@ mod tests {
             id: support.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                 NurbsSurface::from_lanes(
-                    1,
-                    1,
-                    vec![0.0, 0.0, 1.0, 1.0],
-                    vec![0.0, 0.0, 1.0, 1.0],
-                    vec![
-                        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
-                        vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
-                    ],
-                    None,
-                    false,
-                    false,
+                    cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                    cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                    cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                        vec![
+                            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                            vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+                        ],
+                        None,
+                    ),
                     false,
                 )
                 .expect("valid linear support"),

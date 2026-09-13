@@ -400,14 +400,9 @@ fn test_nurbs_surface() -> NurbsSurface {
         })
         .collect();
     NurbsSurface::from_lanes(
-        2,
-        2,
-        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        control_points,
-        None,
-        false,
-        false,
+        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
+        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
+        cadmpeg_ir::geometry::NurbsSurfaceLanes::new(control_points, None),
         false,
     )
     .expect("valid test NURBS surface")

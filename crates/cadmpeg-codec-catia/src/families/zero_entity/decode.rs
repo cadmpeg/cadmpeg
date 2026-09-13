@@ -853,10 +853,12 @@ pub(crate) fn try_decode_zero_entity(
         let counts = crate::families::zero_entity::topology_transfer::transfer_closed_face_topology(
             &mut candidate_ir,
             &mut candidate_annotations,
-            &support_runs,
-            &surface_ids_by_position,
-            &support_curve_ids,
-            ownership_root.as_ref(),
+            crate::families::zero_entity::topology_transfer::ZeroEntityClosedTopology {
+                support_runs: &support_runs,
+                surface_ids_by_position: &surface_ids_by_position,
+                support_curve_ids: &support_curve_ids,
+                ownership_root: ownership_root.as_ref(),
+            },
             &topology_budget,
             refusal,
         );

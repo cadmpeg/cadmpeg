@@ -2252,8 +2252,7 @@ pub(crate) struct ParasolidEntityValueRecords {
     pub(crate) tags: Vec<ParasolidEntity58TagRecord>,
     pub(crate) unicode: Vec<ParasolidEntity62UnicodeRecord>,
     /// Value-record frames whose payload did not materialize.
-    pub(crate) unmaterialized:
-        Vec<crate::parasolid::value_records::UnmaterializedValueRecord>,
+    pub(crate) unmaterialized: Vec<crate::parasolid::value_records::UnmaterializedValueRecord>,
 }
 
 /// Numeric value-record family referenced by a type-81 record.

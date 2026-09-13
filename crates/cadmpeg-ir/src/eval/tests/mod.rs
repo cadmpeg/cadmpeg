@@ -76,17 +76,15 @@ const EPS_DEGREE_ZERO_SURFACE_BOUND: f64 = 1.0e-12;
 
 fn bilinear_surface() -> NurbsSurface {
     NurbsSurface::from_lanes(
-        1,
-        1,
-        vec![0.0, 0.0, 1.0, 1.0],
-        vec![0.0, 0.0, 1.0, 1.0],
-        vec![
-            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
-            vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
-        ],
-        None,
-        false,
-        false,
+        crate::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        crate::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        crate::geometry::NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+            ],
+            None,
+        ),
         false,
     )
     .unwrap()
@@ -419,19 +417,17 @@ fn nurbs_surface_local_inverse_returns_a_forward_checked_candidate() {
 #[test]
 fn nurbs_surface_inverse_handles_rational_internal_spans() {
     let surface = NurbsSurface::from_lanes(
-        1,
-        1,
-        vec![0.0, 0.0, 0.5, 1.0, 1.0],
-        vec![0.0, 0.0, 1.0, 1.0],
-        vec![
-            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
-            vec![Point3::new(0.5, 0.0, 0.2), Point3::new(0.5, 1.0, 0.2)],
-            vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
-        ],
-        Some(vec![1.0, 1.0, 0.7, 0.7, 1.0, 1.0])
-            .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
-        false,
-        false,
+        crate::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 0.5, 1.0, 1.0], false),
+        crate::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        crate::geometry::NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                vec![Point3::new(0.5, 0.0, 0.2), Point3::new(0.5, 1.0, 0.2)],
+                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+            ],
+            Some(vec![1.0, 1.0, 0.7, 0.7, 1.0, 1.0])
+                .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
+        ),
         false,
     )
     .unwrap();
@@ -482,14 +478,9 @@ fn nurbs_surface_parameter_segment_bound_contains_curved_diagonal() {
 #[test]
 fn degree_zero_nurbs_surface_has_an_exact_parameter_segment_bound() {
     let surface = NurbsSurface::from_lanes(
-        0,
-        0,
-        vec![0.0, 1.0],
-        vec![0.0, 1.0],
-        vec![vec![Point3::new(1.0, 2.0, 3.0)]],
-        None,
-        false,
-        false,
+        crate::geometry::NurbsSurfaceAxis::new(0, vec![0.0, 1.0], false),
+        crate::geometry::NurbsSurfaceAxis::new(0, vec![0.0, 1.0], false),
+        crate::geometry::NurbsSurfaceLanes::new(vec![vec![Point3::new(1.0, 2.0, 3.0)]], None),
         false,
     )
     .unwrap();
@@ -507,17 +498,15 @@ fn degree_zero_nurbs_surface_has_an_exact_parameter_segment_bound() {
 #[test]
 fn degree_zero_nurbs_surface_patch_spans_use_their_matching_poles() {
     let surface = NurbsSurface::from_lanes(
-        0,
-        0,
-        vec![0.0, 1.0, 2.0],
-        vec![0.0, 1.0],
-        vec![
-            vec![Point3::new(1.0, 2.0, 3.0)],
-            vec![Point3::new(4.0, 5.0, 6.0)],
-        ],
-        None,
-        false,
-        false,
+        crate::geometry::NurbsSurfaceAxis::new(0, vec![0.0, 1.0, 2.0], false),
+        crate::geometry::NurbsSurfaceAxis::new(0, vec![0.0, 1.0], false),
+        crate::geometry::NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(1.0, 2.0, 3.0)],
+                vec![Point3::new(4.0, 5.0, 6.0)],
+            ],
+            None,
+        ),
         false,
     )
     .unwrap();
@@ -536,19 +525,17 @@ fn degree_zero_nurbs_surface_patch_spans_use_their_matching_poles() {
 #[test]
 fn nurbs_surface_parameter_segment_bound_splits_internal_knots() {
     let surface = NurbsSurface::from_lanes(
-        1,
-        1,
-        vec![0.0, 0.0, 0.5, 1.0, 1.0],
-        vec![0.0, 0.0, 1.0, 1.0],
-        vec![
-            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
-            vec![Point3::new(0.5, 0.0, 0.25), Point3::new(0.5, 1.0, 0.25)],
-            vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
-        ],
-        Some(vec![1.0, 1.0, 0.5, 0.5, 1.0, 1.0])
-            .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
-        false,
-        false,
+        crate::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 0.5, 1.0, 1.0], false),
+        crate::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        crate::geometry::NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                vec![Point3::new(0.5, 0.0, 0.25), Point3::new(0.5, 1.0, 0.25)],
+                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+            ],
+            Some(vec![1.0, 1.0, 0.5, 0.5, 1.0, 1.0])
+                .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
+        ),
         false,
     )
     .unwrap();
@@ -840,19 +827,17 @@ fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
     // Rational, quadratic in u and linear in v, so the blend across the
     // fixed direction has to carry weights to stay exact.
     let surface = NurbsSurface::from_lanes(
-        2,
-        1,
-        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        vec![-2.0, -2.0, 3.0, 3.0],
-        vec![
-            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 4.0)],
-            vec![Point3::new(1.0, 2.0, 0.5), Point3::new(1.0, 2.0, 4.5)],
-            vec![Point3::new(3.0, -1.0, 1.0), Point3::new(3.0, -1.0, 5.0)],
-        ],
-        Some(vec![1.0, 2.0, 0.5, 1.5, 3.0, 0.25])
-            .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
-        false,
-        false,
+        crate::geometry::NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
+        crate::geometry::NurbsSurfaceAxis::new(1, vec![-2.0, -2.0, 3.0, 3.0], false),
+        crate::geometry::NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 4.0)],
+                vec![Point3::new(1.0, 2.0, 0.5), Point3::new(1.0, 2.0, 4.5)],
+                vec![Point3::new(3.0, -1.0, 1.0), Point3::new(3.0, -1.0, 5.0)],
+            ],
+            Some(vec![1.0, 2.0, 0.5, 1.5, 3.0, 0.25])
+                .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
+        ),
         false,
     )
     .unwrap();
@@ -892,17 +877,15 @@ fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
 #[test]
 fn bilinear_surface_partials_follow_stored_parameterization() {
     let surface = NurbsSurface::from_lanes(
-        1,
-        1,
-        vec![0.0, 0.0, 1.0, 1.0],
-        vec![0.0, 0.0, 1.0, 1.0],
-        vec![
-            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 3.0, 0.0)],
-            vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 3.0, 0.0)],
-        ],
-        None,
-        false,
-        false,
+        crate::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        crate::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        crate::geometry::NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 3.0, 0.0)],
+                vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 3.0, 0.0)],
+            ],
+            None,
+        ),
         false,
     )
     .unwrap();
@@ -915,26 +898,24 @@ fn bilinear_surface_partials_follow_stored_parameterization() {
 #[test]
 fn quadratic_surface_second_partials_follow_stored_parameterization() {
     let surface = NurbsSurface::from_lanes(
-        2,
-        2,
-        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        (0..3)
-            .map(|i| {
-                (0..3)
-                    .map(|j| {
-                        Point3::new(
-                            f64::from(i) / 2.0,
-                            f64::from(j) / 2.0,
-                            f64::from(u8::from(i == 2)) + f64::from(u8::from(j == 2)),
-                        )
-                    })
-                    .collect()
-            })
-            .collect(),
-        None,
-        false,
-        false,
+        crate::geometry::NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
+        crate::geometry::NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
+        crate::geometry::NurbsSurfaceLanes::new(
+            (0..3)
+                .map(|i| {
+                    (0..3)
+                        .map(|j| {
+                            Point3::new(
+                                f64::from(i) / 2.0,
+                                f64::from(j) / 2.0,
+                                f64::from(u8::from(i == 2)) + f64::from(u8::from(j == 2)),
+                            )
+                        })
+                        .collect()
+                })
+                .collect(),
+            None,
+        ),
         false,
     )
     .unwrap();
@@ -1038,22 +1019,24 @@ fn linear_offset_support_extension_uses_the_boundary_tangent_plane() {
             id: support_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                 NurbsSurface::from_lanes(
-                    1,
-                    2,
-                    vec![0.0, 0.0, 1.0, 1.0],
-                    vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-                    [0.0, 1.0]
-                        .into_iter()
-                        .map(|u| {
-                            [(0.0, 0.0), (0.5, 0.0), (1.0, 1.0)]
-                                .into_iter()
-                                .map(|(v, z)| Point3::new(u, v, z))
-                                .collect()
-                        })
-                        .collect(),
-                    None,
-                    false,
-                    false,
+                    crate::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                    crate::geometry::NurbsSurfaceAxis::new(
+                        2,
+                        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                        false,
+                    ),
+                    crate::geometry::NurbsSurfaceLanes::new(
+                        [0.0, 1.0]
+                            .into_iter()
+                            .map(|u| {
+                                [(0.0, 0.0), (0.5, 0.0), (1.0, 1.0)]
+                                    .into_iter()
+                                    .map(|(v, z)| Point3::new(u, v, z))
+                                    .collect()
+                            })
+                            .collect(),
+                        None,
+                    ),
                     false,
                 )
                 .unwrap(),
@@ -1857,18 +1840,16 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
 #[test]
 fn rational_surface_partials_apply_the_weight_quotient_rule() {
     let surface = NurbsSurface::from_lanes(
-        1,
-        1,
-        vec![0.0, 0.0, 1.0, 1.0],
-        vec![0.0, 0.0, 1.0, 1.0],
-        vec![
-            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 3.0, 0.0)],
-            vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 3.0, 0.0)],
-        ],
-        Some(vec![1.0, 1.0, 2.0, 2.0])
-            .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
-        false,
-        false,
+        crate::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        crate::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        crate::geometry::NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 3.0, 0.0)],
+                vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 3.0, 0.0)],
+            ],
+            Some(vec![1.0, 1.0, 2.0, 2.0])
+                .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
+        ),
         false,
     )
     .unwrap();
@@ -1888,18 +1869,16 @@ fn rational_surface_partials_apply_the_weight_quotient_rule() {
 #[test]
 fn rational_surface_isocurves_preserve_the_tensor_product_parameterization() {
     let surface = NurbsSurface::from_lanes(
-        1,
-        1,
-        vec![0.0, 0.0, 1.0, 1.0],
-        vec![0.0, 0.0, 1.0, 1.0],
-        vec![
-            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 3.0, 0.0)],
-            vec![Point3::new(2.0, 0.0, 1.0), Point3::new(2.0, 3.0, 1.0)],
-        ],
-        Some(vec![1.0, 2.0, 3.0, 4.0])
-            .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
-        false,
-        false,
+        crate::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        crate::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        crate::geometry::NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 3.0, 0.0)],
+                vec![Point3::new(2.0, 0.0, 1.0), Point3::new(2.0, 3.0, 1.0)],
+            ],
+            Some(vec![1.0, 2.0, 3.0, 4.0])
+                .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
+        ),
         false,
     )
     .unwrap();

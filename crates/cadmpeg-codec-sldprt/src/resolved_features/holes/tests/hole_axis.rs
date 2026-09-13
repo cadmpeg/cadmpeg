@@ -548,7 +548,10 @@ fn hole_topology_uses_exact_cylinder_spans() {
         shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
         surface: surface.id.clone(),
         sense: Sense::Forward,
-        loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![LoopId::mint("test:model:entity#loop").expect("identity grammar")]),
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![LoopId::mint(
+            "test:model:entity#loop",
+        )
+        .expect("identity grammar")]),
         name: None,
         color: None,
         tolerance: None,

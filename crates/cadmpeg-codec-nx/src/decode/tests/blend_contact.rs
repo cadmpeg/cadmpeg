@@ -29,14 +29,12 @@ fn test_surface(
     u_periodic: bool,
 ) -> cadmpeg_ir::geometry::NurbsSurface {
     cadmpeg_ir::geometry::NurbsSurface::from_lanes(
-        1,
-        1,
-        u_knots,
-        vec![0.0, 0.0, 1.0, 1.0],
-        control_points.chunks(2_usize).map(<[_]>::to_vec).collect(),
-        weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
-        false,
-        u_periodic,
+        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, u_knots, u_periodic),
+        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+            control_points.chunks(2_usize).map(<[_]>::to_vec).collect(),
+            weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
+        ),
         false,
     )
     .unwrap()

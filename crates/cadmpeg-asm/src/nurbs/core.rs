@@ -17,7 +17,7 @@ use crate::nurbs::subtypes::{decode_cache_resolving_refs, SubtypeTables};
 use crate::nurbs::toks;
 use crate::nurbs::toks::Cur;
 use crate::sab::Token;
-use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface};
+use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis};
 use cadmpeg_ir::math::Point3;
 
 use crate::nurbs::toks::take_knot_table as knots;
@@ -81,14 +81,10 @@ pub(crate) fn surface_block(toks: &[Token], marker_pos: usize) -> Option<(NurbsS
     let poles = control_points(&mut cur, n_poles_u * n_poles_v, marker)?;
     let grid = poles.into_transposed_grid(n_poles_u, n_poles_v)?;
     let surface = NurbsSurface::new(
-        degree_u as u32,
-        degree_v as u32,
-        u_knots,
-        v_knots,
+        NurbsSurfaceAxis::new(degree_u as u32, u_knots, is_periodic(enums[0])),
+        NurbsSurfaceAxis::new(degree_v as u32, v_knots, is_periodic(enums[1])),
         grid,
         false,
-        is_periodic(enums[0]),
-        is_periodic(enums[1]),
     )
     .ok()?;
     Some((surface, cur.pos()))
@@ -306,14 +302,10 @@ pub(crate) fn decode_surface_block(
     let poles = read_control_points(b, &mut pos, n_poles_u * n_poles_v, marker)?;
     let grid = poles.into_transposed_grid(n_poles_u, n_poles_v)?;
     let surface = NurbsSurface::new(
-        degree_u as u32,
-        degree_v as u32,
-        u_knots,
-        v_knots,
+        NurbsSurfaceAxis::new(degree_u as u32, u_knots, is_periodic(enums[0])),
+        NurbsSurfaceAxis::new(degree_v as u32, v_knots, is_periodic(enums[1])),
         grid,
         false,
-        is_periodic(enums[0]),
-        is_periodic(enums[1]),
     )
     .ok()?;
     Some(SurfacePatchLayout {

@@ -465,14 +465,16 @@ pub(super) fn revolve_nurbs(
     let row_len = angular_count;
     crate::nurbs::note_refusal(
         NurbsSurface::from_lanes(
-            profile.degree(),
-            2,
-            profile.knots().to_vec(),
-            v_knots,
-            control_points.chunks(row_len).map(<[_]>::to_vec).collect(),
-            Some(weights).map(|values| values.chunks(row_len).map(<[_]>::to_vec).collect()),
-            false,
-            false,
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+                profile.degree(),
+                profile.knots().to_vec(),
+                false,
+            ),
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(2, v_knots, false),
+            cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                control_points.chunks(row_len).map(<[_]>::to_vec).collect(),
+                Some(weights).map(|values| values.chunks(row_len).map(<[_]>::to_vec).collect()),
+            ),
             false,
         ),
         refusal,

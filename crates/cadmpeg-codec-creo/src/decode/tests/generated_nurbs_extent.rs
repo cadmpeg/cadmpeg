@@ -10,18 +10,16 @@ use cadmpeg_ir::math::{Point3, Vector3};
 
 fn translated_surface() -> NurbsSurface {
     NurbsSurface::from_lanes(
-        2,
-        1,
-        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        vec![0.0, 0.0, 1.0, 1.0],
-        vec![
-            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 2.0)],
-            vec![Point3::new(1.0, 1.0, 0.0), Point3::new(1.0, 1.0, 2.0)],
-            vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, 2.0)],
-        ],
-        None,
-        false,
-        false,
+        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
+        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 2.0)],
+                vec![Point3::new(1.0, 1.0, 0.0), Point3::new(1.0, 1.0, 2.0)],
+                vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, 2.0)],
+            ],
+            None,
+        ),
         false,
     )
     .expect("valid translated surface")

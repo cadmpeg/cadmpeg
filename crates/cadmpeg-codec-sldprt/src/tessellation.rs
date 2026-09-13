@@ -10,9 +10,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::FaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::tessellation::{
-    TessellationChannel, TessellationMesh,
-};
+use cadmpeg_ir::tessellation::{TessellationChannel, TessellationMesh};
 use cadmpeg_ir::topology::Sense;
 use std::collections::HashMap;
 
@@ -430,10 +428,7 @@ fn probe_table(bytes: &[u8], mut at: usize) -> Option<(ProbedTable, usize)> {
 /// for every table, so the lane is always present and `None` is never the
 /// reading of an empty one: a normal lane that does not cover the vertices is
 /// a record that states a shaded mesh it cannot fill, and it is refused.
-fn parse_table(
-    bytes: &[u8],
-    at: usize,
-) -> Result<Option<(Mesh, usize)>, cadmpeg_core::CodecError> {
+fn parse_table(bytes: &[u8], at: usize) -> Result<Option<(Mesh, usize)>, cadmpeg_core::CodecError> {
     let Some((
         ProbedTable {
             strips,
@@ -522,9 +517,7 @@ pub(crate) fn section_display_faces(
     Ok(faces)
 }
 
-pub(crate) fn section_meshes(
-    section: Section<'_>,
-) -> Result<Vec<Mesh>, cadmpeg_core::CodecError> {
+pub(crate) fn section_meshes(section: Section<'_>) -> Result<Vec<Mesh>, cadmpeg_core::CodecError> {
     Ok(section_display_faces(section)?
         .into_iter()
         .map(|face| face.mesh)

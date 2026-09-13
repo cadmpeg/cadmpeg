@@ -881,8 +881,8 @@ mod tests {
             .expect("valid LinePcurve fixture"),
         );
         let range = [5.0, 9.0];
-        let reversed =
-            reverse_pcurve_geometry(&geometry, range, &mut None, "test record").expect("reversible line");
+        let reversed = reverse_pcurve_geometry(&geometry, range, &mut None, "test record")
+            .expect("reversible line");
         for (parameter, source_parameter) in [(5.0, 9.0), (9.0, 5.0)] {
             let actual = pcurve_uv(&reversed, parameter).expect("reversed evaluation");
             let expected = pcurve_uv(&geometry, source_parameter).expect("source evaluation");
@@ -912,8 +912,9 @@ mod tests {
             .expect("valid CircleCurve fixture"),
         ));
         for (geometry, range) in [(line, [5.0, 9.0]), (circle, [0.25, 2.0])] {
-            let (reversed, reversed_range) = reverse_curve_geometry(&geometry, range, &mut None, "test record")
-                .expect("reversible model curve");
+            let (reversed, reversed_range) =
+                reverse_curve_geometry(&geometry, range, &mut None, "test record")
+                    .expect("reversible model curve");
             for (parameter, source_parameter) in
                 [(reversed_range[0], range[1]), (reversed_range[1], range[0])]
             {
@@ -940,7 +941,8 @@ mod tests {
         ));
         let range = [0.2, 0.8];
         let (reversed, reversed_range) =
-            reverse_curve_geometry(&geometry, range, &mut None, "test record").expect("reversible NURBS");
+            reverse_curve_geometry(&geometry, range, &mut None, "test record")
+                .expect("reversible NURBS");
         for parameter in [range[0], 0.5, range[1]] {
             let actual = curve_point(&reversed, parameter).expect("reversed NURBS point");
             let expected = curve_point(&geometry, range[0] + range[1] - parameter)
@@ -999,17 +1001,16 @@ mod tests {
     fn surface_isocurve_preserves_tiny_weights_and_knot_domain() {
         let tiny = 1e-200;
         let surface = NurbsSurface::from_lanes(
-            1,
-            1,
-            vec![0.0, 0.0, tiny, tiny],
-            vec![0.0, 0.0, 1.0, 1.0],
-            vec![
-                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
-                vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 1.0, 0.0)],
-            ],
-            Some(vec![tiny; 4]).map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
-            false,
-            false,
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, tiny, tiny], false),
+            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                vec![
+                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                    vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 1.0, 0.0)],
+                ],
+                Some(vec![tiny; 4])
+                    .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
+            ),
             false,
         )
         .unwrap();
@@ -1028,14 +1029,12 @@ mod tests {
     fn surface_isocurve_rejects_nonfinite_output() {
         let surface = |control_points: Vec<Point3>, weights: Option<Vec<f64>>| {
             NurbsSurface::from_lanes(
-                1,
-                1,
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![0.0, 0.0, 1.0, 1.0],
-                control_points.chunks(2).map(<[_]>::to_vec).collect(),
-                weights.map(|values| values.chunks(2).map(<[_]>::to_vec).collect()),
-                false,
-                false,
+                cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                    control_points.chunks(2).map(<[_]>::to_vec).collect(),
+                    weights.map(|values| values.chunks(2).map(<[_]>::to_vec).collect()),
+                ),
                 false,
             )
             .unwrap()
@@ -1069,7 +1068,8 @@ mod tests {
             .expect("valid HelixCurveConstruction fixture"),
         );
 
-        let cache = circular_helix_cache(&definition, 1.0e-4, &mut None, "test record").expect("valid helix");
+        let cache = circular_helix_cache(&definition, 1.0e-4, &mut None, "test record")
+            .expect("valid helix");
         assert_eq!(cache.curve.knots()[1], range[0]);
         assert_eq!(cache.curve.knots()[cache.curve.knots().len() - 2], range[1]);
         assert!(cache.fit_tolerance.is_finite());
@@ -1170,7 +1170,9 @@ mod tests {
             )
             .expect("valid HelixCurveConstruction fixture"),
         );
-        assert!(circular_helix_cache(&overflowing_fit, f64::MAX, &mut None, "test record").is_none());
+        assert!(
+            circular_helix_cache(&overflowing_fit, f64::MAX, &mut None, "test record").is_none()
+        );
     }
 
     #[test]
@@ -1201,9 +1203,13 @@ mod tests {
             cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
                 .unwrap(),
         );
-        assert!(
-            reverse_pcurve_geometry(&pcurve_line, [f64::MAX / 2.0, f64::MAX], &mut None, "test record").is_none()
-        );
+        assert!(reverse_pcurve_geometry(
+            &pcurve_line,
+            [f64::MAX / 2.0, f64::MAX],
+            &mut None,
+            "test record"
+        )
+        .is_none());
 
         let model_line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::LineCurve::try_new(
@@ -1212,7 +1218,10 @@ mod tests {
             )
             .unwrap(),
         ));
-        assert!(reverse_curve_geometry(&model_line, [0.0, f64::MAX], &mut None, "test record").is_none());
+        assert!(
+            reverse_curve_geometry(&model_line, [0.0, f64::MAX], &mut None, "test record")
+                .is_none()
+        );
 
         let pcurve_nurbs = PcurveGeometry::Nurbs {
             nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
@@ -1224,7 +1233,10 @@ mod tests {
             )
             .unwrap(),
         };
-        assert!(reverse_pcurve_geometry(&pcurve_nurbs, [0.0, f64::MAX], &mut None, "test record").is_none());
+        assert!(
+            reverse_pcurve_geometry(&pcurve_nurbs, [0.0, f64::MAX], &mut None, "test record")
+                .is_none()
+        );
     }
 
     #[test]

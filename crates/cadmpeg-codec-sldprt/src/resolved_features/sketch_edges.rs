@@ -89,17 +89,33 @@ pub(super) fn project_endpoint_constraints(
     }
 }
 
-#[allow(clippy::too_many_arguments)] // the carrier refusal rides along as the eighth argument
+/// The sketch plane a projection maps model space onto.
+///
+/// The origin and the two in-plane axes are one frame: a projection reads
+/// all three together or none of them.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct SketchPlaneFrame {
+    /// Plane origin in model space.
+    pub(super) origin: Point3,
+    /// In-plane u direction.
+    pub(super) u_axis: Vector3,
+    /// In-plane v direction.
+    pub(super) v_axis: Vector3,
+}
+
 pub(super) fn project_edge(
     edge: &cadmpeg_ir::topology::Edge,
     vertices: &HashMap<&cadmpeg_ir::ids::VertexId, &cadmpeg_ir::ids::PointId>,
     points: &HashMap<&cadmpeg_ir::ids::PointId, Point3>,
     curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
-    origin: Point3,
-    u_axis: Vector3,
-    v_axis: Vector3,
+    frame: SketchPlaneFrame,
     refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<SketchGeometry> {
+    let SketchPlaneFrame {
+        origin,
+        u_axis,
+        v_axis,
+    } = frame;
     let start = project_point(
         *points.get(vertices.get(&edge.start)?)?,
         origin,

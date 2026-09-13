@@ -67,17 +67,36 @@ struct OccurrencePcurve {
 /// refuses the whole candidate when any support occurrence or endpoint lacks
 /// a unique relation. The caller keeps the existing wire transfer as the
 /// atomic fallback.
-#[allow(clippy::too_many_arguments)] // the carrier refusal rides along as the eighth argument
+/// The solved zero-entity carriers one closed-topology transfer reads.
+///
+/// The support runs, the surface ids their carrier positions were emitted
+/// under, the curve ids their supports were emitted under, and the ownership
+/// root that orders them are one solved pool: a run resolves through all
+/// four or through none of them.
+pub(crate) struct ZeroEntityClosedTopology<'a> {
+    /// Support runs in record order.
+    pub(crate) support_runs: &'a [ZeroEntitySupportRun],
+    /// Surface id emitted for each carrier position.
+    pub(crate) surface_ids_by_position: &'a HashMap<usize, SurfaceId>,
+    /// Curve id emitted for each support.
+    pub(crate) support_curve_ids: &'a HashMap<u32, CurveId>,
+    /// Ownership root ordering the face slots, when the source states one.
+    pub(crate) ownership_root: Option<&'a ZeroEntityOwnershipRoot>,
+}
+
 pub(crate) fn transfer_closed_face_topology(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    support_runs: &[ZeroEntitySupportRun],
-    surface_ids_by_position: &HashMap<usize, SurfaceId>,
-    support_curve_ids: &HashMap<u32, CurveId>,
-    ownership_root: Option<&ZeroEntityOwnershipRoot>,
+    solved: ZeroEntityClosedTopology<'_>,
     topology_budget: &WorkBudget<'_>,
     refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Option<ZeroEntityTopologyCounts> {
+    let ZeroEntityClosedTopology {
+        support_runs,
+        surface_ids_by_position,
+        support_curve_ids,
+        ownership_root,
+    } = solved;
     if support_runs.is_empty() || support_runs.iter().any(|run| run.face.is_none()) {
         return None;
     }
@@ -1048,13 +1067,15 @@ mod tests {
         let no_root_counts = transfer_closed_face_topology(
             &mut no_root_ir,
             &mut no_root_annotations,
-            &runs,
-            &HashMap::from([(
-                100,
-                SurfaceId::mint("catia:test:surface#0").expect("identity grammar"),
-            )]),
-            &curve_ids,
-            None,
+            ZeroEntityClosedTopology {
+                support_runs: &runs,
+                surface_ids_by_position: &HashMap::from([(
+                    100,
+                    SurfaceId::mint("catia:test:surface#0").expect("identity grammar"),
+                )]),
+                support_curve_ids: &curve_ids,
+                ownership_root: None,
+            },
             &topology_budget,
             &mut None,
         )
@@ -1076,13 +1097,15 @@ mod tests {
         let counts = transfer_closed_face_topology(
             &mut ir,
             &mut annotations,
-            &runs,
-            &HashMap::from([(
-                100,
-                SurfaceId::mint("catia:test:surface#0").expect("identity grammar"),
-            )]),
-            &curve_ids,
-            Some(&root),
+            ZeroEntityClosedTopology {
+                support_runs: &runs,
+                surface_ids_by_position: &HashMap::from([(
+                    100,
+                    SurfaceId::mint("catia:test:surface#0").expect("identity grammar"),
+                )]),
+                support_curve_ids: &curve_ids,
+                ownership_root: Some(&root),
+            },
             &topology_budget,
             &mut None,
         )
@@ -1172,13 +1195,15 @@ mod tests {
         let counts = transfer_closed_face_topology(
             &mut ir,
             &mut annotations,
-            &runs,
-            &HashMap::from([(
-                100,
-                SurfaceId::mint("catia:test:surface#0").expect("identity grammar"),
-            )]),
-            &curve_ids,
-            None,
+            ZeroEntityClosedTopology {
+                support_runs: &runs,
+                surface_ids_by_position: &HashMap::from([(
+                    100,
+                    SurfaceId::mint("catia:test:surface#0").expect("identity grammar"),
+                )]),
+                support_curve_ids: &curve_ids,
+                ownership_root: None,
+            },
             &budget,
             &mut None,
         )

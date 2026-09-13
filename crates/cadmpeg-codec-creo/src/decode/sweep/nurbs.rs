@@ -355,17 +355,15 @@ pub(in super::super) fn interpolation_spline_surface(
     }
 
     match NurbsSurface::from_lanes(
-        3,
-        3,
-        u_knots?,
-        v_knots?,
-        control_points
-            .chunks(u32::try_from(v_control_count).ok()? as usize)
-            .map(<[_]>::to_vec)
-            .collect(),
-        None,
-        false,
-        false,
+        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(3, u_knots?, false),
+        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(3, v_knots?, false),
+        cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+            control_points
+                .chunks(u32::try_from(v_control_count).ok()? as usize)
+                .map(<[_]>::to_vec)
+                .collect(),
+            None,
+        ),
         false,
     ) {
         Ok(surface) => Some(surface),
@@ -428,14 +426,16 @@ pub(in super::super) fn extruded_nurbs_surface(
         }
     }
     match NurbsSurface::from_lanes(
-        directrix.degree(),
-        1,
-        directrix.knots().to_vec(),
-        vec![0.0, 0.0, 1.0, 1.0],
-        control_points.chunks(2_usize).map(<[_]>::to_vec).collect(),
-        weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
-        false,
-        directrix.periodic(),
+        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+            directrix.degree(),
+            directrix.knots().to_vec(),
+            directrix.periodic(),
+        ),
+        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+            control_points.chunks(2_usize).map(<[_]>::to_vec).collect(),
+            weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
+        ),
         false,
     ) {
         Ok(surface) => Some(surface),
