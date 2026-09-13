@@ -589,10 +589,9 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
 #[test]
 fn generated_termination_vertices_require_declared_feature_dependencies() {
     use crate::features::{
-        BooleanOp, ConfigurationFeatureState, ConfigurationId,
-        DesignConfiguration, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
-        FeatureOperation, GeneratedVertexRef, LinearTermination, PlanarProfileRef, ProfileRef,
-        VertexSelection,
+        BooleanOp, ConfigurationFeatureState, ConfigurationId, DesignConfiguration, ExtrudeExtent,
+        ExtrudeSide, Feature, FeatureDefinition, FeatureId, FeatureOperation, GeneratedVertexRef,
+        LinearTermination, PlanarProfileRef, ProfileRef, VertexSelection,
     };
     use std::collections::BTreeMap;
 
@@ -780,11 +779,11 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
 fn definition_references_must_be_declared_dependencies_in_every_configuration() {
     use crate::{
         features::{
-            BooleanOp, ConfigurationFeatureState, ConfigurationId,
-            DatumPlaneReference, DesignConfiguration, ExtrudeDirection, ExtrudeExtent, ExtrudeSide,
-            ExtrudeStart, Feature, FeatureDefinition, FeatureId, FeatureOperation,
-            GeneratedCurveRef, LinearTermination, PatternKind, PatternSeed, PatternTransform,
-            PlanarProfileRef, ProfileRef,
+            BooleanOp, ConfigurationFeatureState, ConfigurationId, DatumPlaneReference,
+            DesignConfiguration, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
+            Feature, FeatureDefinition, FeatureId, FeatureOperation, GeneratedCurveRef,
+            LinearTermination, PatternKind, PatternSeed, PatternTransform, PlanarProfileRef,
+            ProfileRef,
         },
         scalar::Length,
     };

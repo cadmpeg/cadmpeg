@@ -3351,9 +3351,7 @@ fn project_mesh_bodies(
                 body.corner_normals,
             )
             .map_err(|error| {
-                CodecError::Malformed(format!(
-                    "paramesh body record {record}: {error}"
-                ))
+                CodecError::malformed(format_args!("paramesh body record {record}: {error}"))
             })?,
             channels,
         )

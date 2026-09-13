@@ -1657,10 +1657,9 @@ fn decode_graph(
                     .map_err(cadmpeg_core::CodecError::malformed)?
                     .unwrap_or_default();
                 out.stats.spline_lane_refusals.extend(
-                    pcurve_refusal
-                        .take_records()
-                        .into_iter()
-                        .map(|record| format!("intersection pcurve for coedge {ce_attr}: {record}")),
+                    pcurve_refusal.take_records().into_iter().map(|record| {
+                        format!("intersection pcurve for coedge {ce_attr}: {record}")
+                    }),
                 );
                 let mut sense = ce.sense;
                 if reversed_edge_orientation.contains(&edge_attr) {
@@ -1976,11 +1975,11 @@ fn decode_graph(
                 } else if let Some((geometry, offset, tag, exactness)) = {
                     let mut sweep_refusal = crate::lane_refusal::LaneRefusals::new();
                     let resolved = resolve_sweep_surface(carriers, t, f, &mut sweep_refusal);
-                    out.stats
-                        .spline_lane_refusals
-                        .extend(sweep_refusal.take_records().into_iter().map(|record| {
+                    out.stats.spline_lane_refusals.extend(
+                        sweep_refusal.take_records().into_iter().map(|record| {
                             format!("swept surface for face attr {}: {record}", f.surface_attr)
-                        }));
+                        }),
+                    );
                     resolved
                 } {
                     annotations
@@ -4553,13 +4552,17 @@ fn insert_nurbs_homogeneous_knot(
     Some((inserted_knots, inserted_controls))
 }
 
-/// The clamped segment lanes of `curve` over `domain`, as
-/// `(knots, control points, weights)`. `None` when the curve does not clamp to
-/// the domain at all; the lanes themselves are minted by the caller.
+/// The knots, control points and weights of one clamped NURBS segment, before
+/// the carrier mints them.
+type ClampedCurveLanes = (Vec<f64>, Vec<cadmpeg_ir::math::Point3>, Option<Vec<f64>>);
+
+/// The clamped segment lanes of `curve` over `domain`. `None` when the curve
+/// does not clamp to the domain at all; the lanes themselves are minted by the
+/// caller.
 fn clamp_nurbs_curve_to_domain_lanes(
     curve: &cadmpeg_ir::geometry::NurbsCurve,
     domain: [f64; 2],
-) -> Option<(Vec<f64>, Vec<cadmpeg_ir::math::Point3>, Option<Vec<f64>>)> {
+) -> Option<ClampedCurveLanes> {
     if curve.periodic()
         || !domain[0].is_finite()
         || !domain[1].is_finite()
@@ -4966,8 +4969,7 @@ fn nurbs_degree_one_cache_pcurve(
     curve: &cadmpeg_ir::geometry::NurbsCurve,
     range: [f64; 2],
 ) -> Result<Option<(PcurveGeometry, f64)>, cadmpeg_ir::geometry::NurbsError> {
-    let Some((control_points, fit_tolerance)) =
-        nurbs_degree_one_cache_lanes(surface, curve, range)
+    let Some((control_points, fit_tolerance)) = nurbs_degree_one_cache_lanes(surface, curve, range)
     else {
         return Ok(None);
     };
@@ -5019,15 +5021,13 @@ fn derive_nurbs_edge_pcurve(
     Ok(match nurbs_isocurve_pcurve(surface, curve)? {
         InverseResolution::Unique(geometry) => NurbsPcurveResolution::Exact(geometry),
         InverseResolution::Ambiguous => NurbsPcurveResolution::Ambiguous,
-        InverseResolution::NoMatch => {
-            match nurbs_degree_one_cache_pcurve(surface, curve, range)? {
-                Some((geometry, fit_tolerance)) => NurbsPcurveResolution::Cache {
-                    geometry,
-                    fit_tolerance,
-                },
-                None => NurbsPcurveResolution::NoMatch,
-            }
-        }
+        InverseResolution::NoMatch => match nurbs_degree_one_cache_pcurve(surface, curve, range)? {
+            Some((geometry, fit_tolerance)) => NurbsPcurveResolution::Cache {
+                geometry,
+                fit_tolerance,
+            },
+            None => NurbsPcurveResolution::NoMatch,
+        },
     })
 }
 
@@ -6064,7 +6064,12 @@ mod tests {
             ..support_data.clone()
         };
         assert!(super::intersection_support_pcurve(
-            &ambiguous, &chart, 10, &surface, endpoints, &mut crate::lane_refusal::LaneRefusals::new()
+            &ambiguous,
+            &chart,
+            10,
+            &surface,
+            endpoints,
+            &mut crate::lane_refusal::LaneRefusals::new()
         )
         .is_none());
 
@@ -6073,7 +6078,12 @@ mod tests {
             ..support_data
         };
         assert!(super::intersection_support_pcurve(
-            &malformed, &chart, 10, &surface, endpoints, &mut crate::lane_refusal::LaneRefusals::new()
+            &malformed,
+            &chart,
+            10,
+            &surface,
+            endpoints,
+            &mut crate::lane_refusal::LaneRefusals::new()
         )
         .is_none());
     }

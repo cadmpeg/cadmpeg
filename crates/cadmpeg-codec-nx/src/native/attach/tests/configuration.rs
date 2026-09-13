@@ -499,10 +499,7 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
     for (ordinal, feature) in ir.model.features.iter_mut().enumerate() {
         feature.ordinal = ordinal as u64;
     }
-    ir.model.configurations = vec![configuration(
-        true,
-        Some((vec![body]).try_into().unwrap()),
-    )];
+    ir.model.configurations = vec![configuration(true, Some((vec![body]).try_into().unwrap()))];
     let mut annotations = AnnotationBuilder::new();
 
     super::attach_active_configuration_feature_states(&mut ir, &mut annotations)
@@ -665,11 +662,8 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
     let mut unresolved_bodies = CadIr::empty();
     unresolved_bodies.model.features = vec![producer("writer")];
     unresolved_bodies.model.features[0].dependencies.clear();
-    unresolved_bodies.model.configurations = vec![configuration(
-        "synthetic:test:id#active",
-        true,
-        None,
-    )];
+    unresolved_bodies.model.configurations =
+        vec![configuration("synthetic:test:id#active", true, None)];
     super::attach_active_configuration_feature_states(&mut unresolved_bodies, &mut annotations)
         .expect("valid exactness fields");
     assert_eq!(unresolved_bodies.model.features[0].suppressed, None);

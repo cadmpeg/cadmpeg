@@ -319,7 +319,6 @@ impl ExternalDocument {
     }
 }
 
-
 /// Copy-on-change ownership behavior of a link.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]

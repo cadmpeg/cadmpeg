@@ -1845,10 +1845,9 @@ fn a_reversed_child_interval_names_itself_not_the_endpoint_join() {
     // The second child states the interval [1.0, 0.0] over an ordinary knot
     // vector: the stated interval, not the knots, runs backwards.
     let second = (test_nurbs(0, vec![0.0, 1.0], vec![point], None), [1.0, 0.0]);
-    let error =
-        concatenate_nurbs(vec![(first.0, first.1, ()), (second.0, second.1, ())], None)
-            .expect_err("a reversed child interval is refused by name")
-            .to_string();
+    let error = concatenate_nurbs(vec![(first.0, first.1, ()), (second.0, second.1, ())], None)
+        .expect_err("a reversed child interval is refused by name")
+        .to_string();
     assert!(
         error.contains("reversed interval"),
         "the refusal names the reversed interval: {error}"

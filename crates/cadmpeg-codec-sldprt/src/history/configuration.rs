@@ -5,9 +5,8 @@ use crate::records::FeatureHistory;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::{
     features::{
-        ConfigurationEvaluation, DatumPlaneReference, DesignConfiguration,
-        FaceSelection, FeatureDefinition, FeatureId, FeatureOperation, LinearTermination,
-        ParameterValue,
+        ConfigurationEvaluation, DatumPlaneReference, DesignConfiguration, FaceSelection,
+        FeatureDefinition, FeatureId, FeatureOperation, LinearTermination, ParameterValue,
     },
     scalar::{Angle, Length},
 };
@@ -372,10 +371,9 @@ pub(crate) fn bind_configuration_topology_selections(
     for (configuration_index, lane_index) in
         configuration_lane_assignments(&ir.model.configurations, lanes)
     {
-        let body_membership_resolved = matches!(
-            ir.model.configurations[configuration_index].bodies,
-            Some(_)
-        );
+        let body_membership_resolved = ir.model.configurations[configuration_index]
+            .bodies
+            .is_some();
         let scoped_lanes = &lanes[lane_index..=lane_index];
         let mut features = {
             let states = &ir.model.configurations[configuration_index].feature_states;

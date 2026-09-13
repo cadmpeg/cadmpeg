@@ -40,7 +40,6 @@ impl LaneRefusals {
     /// when no record was refused.
     pub(crate) fn take_error(&mut self) -> Option<cadmpeg_core::CodecError> {
         let records = self.take_records();
-        (!records.is_empty())
-            .then(|| cadmpeg_core::CodecError::malformed(records.join("; ")))
+        (!records.is_empty()).then(|| cadmpeg_core::CodecError::malformed(records.join("; ")))
     }
 }

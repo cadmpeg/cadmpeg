@@ -453,6 +453,11 @@ mod tests {
     /// can state is both halves that make the claim: the sidecar's text is what
     /// an independent writer produces for the same value, and the route the
     /// method delegates to refuses a non-finite float in a struct field.
+    #[derive(serde::Serialize)]
+    struct FloatBearing {
+        value: f64,
+    }
+
     #[test]
     fn the_sidecar_writes_through_the_finite_route() {
         let sidecar = DecodeSidecar::bind(b"cad-ir", report(), SourceFidelity::default());
@@ -461,22 +466,16 @@ mod tests {
             serde_json::to_string_pretty(&sidecar).expect("an independent writer writes it too")
         );
 
-        #[derive(serde::Serialize)]
-        struct FloatBearing {
-            value: f64,
-        }
-
-        let refused = crate::hash::finite_json::to_canonical_json_string(&FloatBearing {
-            value: f64::NAN,
-        });
+        let refused =
+            crate::hash::finite_json::to_canonical_json_string(&FloatBearing { value: f64::NAN });
         assert!(
             refused.is_err(),
             "the route the sidecar delegates to refuses a non-finite float"
         );
-        assert!(crate::hash::finite_json::to_canonical_json_string(&FloatBearing {
-            value: 1.0
-        })
-        .is_ok());
+        assert!(
+            crate::hash::finite_json::to_canonical_json_string(&FloatBearing { value: 1.0 })
+                .is_ok()
+        );
     }
 
     #[test]

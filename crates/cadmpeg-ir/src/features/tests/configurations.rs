@@ -46,9 +46,7 @@ fn configuration_body_membership_round_trips_and_validates() {
         material: None,
         properties: BTreeMap::new(),
         parameter_overrides: BTreeMap::from([(parameter_id.clone(), "25 mm".into())]),
-        bodies: Some(
-            (vec![body.clone()]).try_into().unwrap(),
-        ),
+        bodies: Some((vec![body.clone()]).try_into().unwrap()),
         parameter_values: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: None,
@@ -319,18 +317,15 @@ fn configuration_name_preserves_resolution_state() {
         }))
         .expect_err("a stated null is not a second spelling of absence")
         .to_string();
-        assert!(
-            error.contains("does not state null"),
-            "{key}: {error}"
-        );
+        assert!(error.contains("does not state null"), "{key}: {error}");
     }
 }
 
 #[test]
 fn configuration_suppression_is_read_from_feature_states_and_refuses_the_deleted_key() {
     use crate::features::{
-        ConfigurationFeatureState, ConfigurationId, DesignConfiguration,
-        Feature, FeatureDefinition, FeatureId, FeatureOperation,
+        ConfigurationFeatureState, ConfigurationId, DesignConfiguration, Feature,
+        FeatureDefinition, FeatureId, FeatureOperation,
     };
     use std::collections::BTreeMap;
 

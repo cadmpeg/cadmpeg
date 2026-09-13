@@ -1142,7 +1142,9 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
                     definition_payload.spine().clone(),
                     definition_payload.radius().clone(),
                     definition_payload.cross_section().clone(),
-                    cadmpeg_ir::geometry::CacheContract::from_form(definition_payload.native().cloned().map(Box::new)),
+                    cadmpeg_ir::geometry::CacheContract::from_form(
+                        definition_payload.native().cloned().map(Box::new),
+                    ),
                 )
                 .unwrap();
             definition

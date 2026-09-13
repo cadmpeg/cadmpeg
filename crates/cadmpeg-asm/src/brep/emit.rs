@@ -162,7 +162,9 @@ fn emit_carrier_surface(
                             construction.trailing_value,
                             construction.discontinuities,
                             construction.discontinuity_flag,
-                            cadmpeg_ir::geometry::CacheContract::from_form(construction.revision_form),
+                            cadmpeg_ir::geometry::CacheContract::from_form(
+                                construction.revision_form,
+                            ),
                         )
                         .map_err(CodecError::malformed)?,
                     ),

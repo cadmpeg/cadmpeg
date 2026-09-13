@@ -6,8 +6,7 @@ use std::collections::BTreeMap;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::products::{
-    AssemblyJoint, ExternalDocument, JointConnector, JointLimits, JointOperand,
-    PairedJointKind,
+    AssemblyJoint, ExternalDocument, JointConnector, JointLimits, JointOperand, PairedJointKind,
 };
 
 use crate::ids::native_stream;
@@ -387,9 +386,7 @@ fn project_qualified_operands(
                     subelements,
                 ),
                 None => JointOperand::external(
-                    ExternalDocument::document_id(
-                        path.identity_guids().first()?.value.clone(),
-                    ),
+                    ExternalDocument::document_id(path.identity_guids().first()?.value.clone()),
                     object,
                     subelements,
                 ),

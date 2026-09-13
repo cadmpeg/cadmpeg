@@ -219,7 +219,8 @@ fn targeted_surface_evidence_retains_revolution_construction() {
         )]),
     };
 
-    let evidence = standard_surface_evidence(&graph, 10, &mut crate::nurbs::LaneRefusals::new()).expect("revolution evidence");
+    let evidence = standard_surface_evidence(&graph, 10, &mut crate::nurbs::LaneRefusals::new())
+        .expect("revolution evidence");
     let Some(StandardSurfaceProcedure::Revolution(revolution)) = evidence.procedure_ref() else {
         panic!("surface-of-revolution evidence must retain its construction");
     };
@@ -895,7 +896,12 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
         Some([0, 1])
     );
     assert_eq!(
-        standard_oriented_native_support_pcurves(&native, &points, [1, 0], &mut crate::nurbs::LaneRefusals::new()),
+        standard_oriented_native_support_pcurves(
+            &native,
+            &points,
+            [1, 0],
+            &mut crate::nurbs::LaneRefusals::new()
+        ),
         Some([
             PcurveGeometry::Line(
                 cadmpeg_ir::geometry::LinePcurve::try_new(

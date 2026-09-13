@@ -2504,8 +2504,12 @@ mod tests {
             let [record] = records.as_slice() else {
                 panic!("one support record")
             };
-            let support = zero_entity_support_occurrence(&bytes, *record, &mut crate::nurbs::LaneRefusals::new())
-                .expect("complete support pcurve");
+            let support = zero_entity_support_occurrence(
+                &bytes,
+                *record,
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
+            .expect("complete support pcurve");
             assert_eq!(support.uv_endpoints, Some([[0.0, 0.0], [1.0, 0.0]]));
             let Some(PcurveGeometry::Nurbs { nurbs }) = support.pcurve else {
                 panic!("NURBS support pcurve")
@@ -2530,7 +2534,12 @@ mod tests {
             let [record] = malformed_records.as_slice() else {
                 panic!("one malformed support record")
             };
-            assert!(zero_entity_support_occurrence(&malformed, *record, &mut crate::nurbs::LaneRefusals::new()).is_none());
+            assert!(zero_entity_support_occurrence(
+                &malformed,
+                *record,
+                &mut crate::nurbs::LaneRefusals::new()
+            )
+            .is_none());
         }
     }
 
@@ -2542,7 +2551,12 @@ mod tests {
         let [record] = records.as_slice() else {
             panic!("one support record")
         };
-        assert!(zero_entity_support_occurrence(&bytes, *record, &mut crate::nurbs::LaneRefusals::new()).is_none());
+        assert!(zero_entity_support_occurrence(
+            &bytes,
+            *record,
+            &mut crate::nurbs::LaneRefusals::new()
+        )
+        .is_none());
     }
 
     #[test]
@@ -2644,8 +2658,13 @@ mod tests {
                 .into_iter()
                 .collect(),
         );
-        let (curve, parameters) = zero_entity_model_curve(&surface, &pcurve, endpoints, &mut crate::nurbs::LaneRefusals::new())
-            .expect("cone latitude");
+        let (curve, parameters) = zero_entity_model_curve(
+            &surface,
+            &pcurve,
+            endpoints,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .expect("cone latitude");
         for index in 0..2 {
             let curve_point = curve_point(&curve, parameters[index]).expect("circle point");
             let surface_point =
@@ -3171,7 +3190,12 @@ mod tests {
         let mut stream = zero_entity_face_support_stream();
         let support = zero_entity_records(&stream)[1];
         stream[support.pos + 13..support.pos + 17].copy_from_slice(&0u32.to_le_bytes());
-        assert!(zero_entity_support_occurrence(&stream, support, &mut crate::nurbs::LaneRefusals::new()).is_none());
+        assert!(zero_entity_support_occurrence(
+            &stream,
+            support,
+            &mut crate::nurbs::LaneRefusals::new()
+        )
+        .is_none());
     }
 
     #[test]

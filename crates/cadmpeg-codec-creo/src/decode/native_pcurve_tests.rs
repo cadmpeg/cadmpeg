@@ -474,7 +474,12 @@ fn projects_exact_planar_carriers_without_changing_parameters() {
         )
         .expect("valid LineCurve fixture"),
     ));
-    assert!(planar_curve_pcurve(&plane(), &off_plane, &mut crate::lane_refusal::LaneRefusals::new()).is_none());
+    assert!(planar_curve_pcurve(
+        &plane(),
+        &off_plane,
+        &mut crate::lane_refusal::LaneRefusals::new()
+    )
+    .is_none());
 }
 
 #[test]

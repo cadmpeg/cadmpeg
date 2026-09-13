@@ -20,8 +20,8 @@ fn decode_reports_structurally_typed_unresolved_b5_faces() {
         &[0x82, 0x18, 100, 0, 0x18, 0xe7, 0x03, 0x03],
     );
     append_b5_record(&mut stream, 0x5e, 903, &[]);
-    let graph =
-        crate::families::b5::graph::parse(&stream, &mut crate::nurbs::LaneRefusals::new()).expect("typed unresolved face graph");
+    let graph = crate::families::b5::graph::parse(&stream, &mut crate::nurbs::LaneRefusals::new())
+        .expect("typed unresolved face graph");
     assert_eq!(graph.face_records.len(), 2);
     assert_eq!(graph.faces.len(), 1);
     let result = CatiaCodec
@@ -68,8 +68,8 @@ fn decode_reports_typed_distinct_surface_b5_faces() {
     face_payload.push(0x05);
     append_b5_record(&mut stream, 0x5f, 902, &face_payload);
 
-    let graph =
-        crate::families::b5::graph::parse(&stream, &mut crate::nurbs::LaneRefusals::new()).expect("typed multi-surface graph");
+    let graph = crate::families::b5::graph::parse(&stream, &mut crate::nurbs::LaneRefusals::new())
+        .expect("typed multi-surface graph");
     assert_eq!(graph.face_records.len(), 2);
     assert_eq!(graph.faces.len(), 1);
 
@@ -125,7 +125,10 @@ fn decode_reports_typed_b5_faces_without_a_resolved_topology_graph() {
     incidence_payload.push(0x81);
     append_b5_record(&mut stream, 0x06, 4, &incidence_payload);
     append_b5_record(&mut stream, 0x05, 6, &[0x81, 0x84]);
-    assert!(crate::families::b5::graph::parse(&stream, &mut crate::nurbs::LaneRefusals::new()).is_none());
+    assert!(
+        crate::families::b5::graph::parse(&stream, &mut crate::nurbs::LaneRefusals::new())
+            .is_none()
+    );
     assert_eq!(
         crate::families::b5::graph::typed_face_records(&stream).len(),
         1

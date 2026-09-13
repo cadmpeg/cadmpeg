@@ -56,13 +56,22 @@ fn configuration_partitions_require_explicit_source_identity() {
     .unwrap();
 
     assert_eq!(ir.model.configurations[0].source_index, Some(5));
-    assert_eq!(ir.model.configurations[0].bodies.as_deref(), Some([first, second].as_slice()));
+    assert_eq!(
+        ir.model.configurations[0].bodies.as_deref(),
+        Some([first, second].as_slice())
+    );
     assert_eq!(ir.model.configurations[1].source_index, None);
     assert!(ir.model.configurations[1].bodies.is_none());
     assert_eq!(ir.model.configurations[2].source_index, Some(8));
-    assert!(ir.model.configurations[2].bodies.as_deref().is_some_and(<[_]>::is_empty));
+    assert!(ir.model.configurations[2]
+        .bodies
+        .as_deref()
+        .is_some_and(<[_]>::is_empty));
     assert_eq!(ir.model.configurations[3].source_index, Some(7));
-    assert_eq!(ir.model.configurations[3].bodies.as_deref(), Some([third].as_slice()));
+    assert_eq!(
+        ir.model.configurations[3].bodies.as_deref(),
+        Some([third].as_slice())
+    );
     assert!(ir.model.configurations[3].native_ref.is_none());
 }
 
@@ -93,7 +102,10 @@ fn duplicate_configuration_source_identity_does_not_select_a_partition() {
     assert!(ir.model.configurations[0].bodies.is_none());
     assert!(ir.model.configurations[1].bodies.is_none());
     assert_eq!(ir.model.configurations[2].source_index, Some(5));
-    assert_eq!(ir.model.configurations[2].bodies.as_deref(), Some([body].as_slice()));
+    assert_eq!(
+        ir.model.configurations[2].bodies.as_deref(),
+        Some([body].as_slice())
+    );
     assert!(ir.model.configurations[2].native_ref.is_none());
 }
 
@@ -189,9 +201,7 @@ fn duplicate_configuration_partition_identities_are_reported() {
             name: Some(id.to_string()),
             material: None,
             properties: BTreeMap::new(),
-            bodies: Some(
-                cadmpeg_ir::features::DistinctMembers::default(),
-            ),
+            bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
             parameter_values: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::new(),
@@ -223,9 +233,7 @@ fn incomplete_configuration_names_are_reported() {
             name: Some(name.to_string()),
             material: None,
             properties: BTreeMap::new(),
-            bodies: Some(
-                cadmpeg_ir::features::DistinctMembers::default(),
-            ),
+            bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
             parameter_values: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::new(),
@@ -262,9 +270,7 @@ fn active_configuration_partition_disagreement_is_reported() {
         name: Some("Default".to_string()),
         material: None,
         properties: BTreeMap::new(),
-        bodies: Some(
-            cadmpeg_ir::features::DistinctMembers::default(),
-        ),
+        bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
         parameter_values: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),
@@ -316,11 +322,7 @@ fn incoherent_configuration_bodies_are_reported() {
                     .unwrap(),
             ),
         ),
-        configuration(
-            "synthetic:test:id#unresolved",
-            2,
-            None,
-        ),
+        configuration("synthetic:test:id#unresolved", 2, None),
     ];
     let mut report = super::empty_report(true);
 
@@ -357,9 +359,7 @@ fn configuration_values_complete_parameters_without_baseline_values() {
         name: Some("Default".to_string()),
         material: None,
         properties: BTreeMap::new(),
-        bodies: Some(
-            cadmpeg_ir::features::DistinctMembers::default(),
-        ),
+        bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
         parameter_values: BTreeMap::from([(
             parameter,
             ParameterValue::Length(Length::new(12.0).unwrap()),
@@ -409,9 +409,7 @@ fn configuration_suppression_and_override_references_are_coherent() {
         name: Some("Default".to_string()),
         material: None,
         properties: BTreeMap::new(),
-        bodies: Some(
-            cadmpeg_ir::features::DistinctMembers::default(),
-        ),
+        bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
         parameter_values: BTreeMap::new(),
         parameter_overrides: BTreeMap::from([(
             ParameterId::mint("synthetic:test:id#missing").expect("identity grammar"),

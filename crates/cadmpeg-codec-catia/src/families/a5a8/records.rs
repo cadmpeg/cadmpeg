@@ -1282,10 +1282,7 @@ fn parse_object_stream_pcurve(
 /// Decode common-form object-stream NURBS surfaces.  Every variable-length
 /// field is bounded by the record's `payload_len`, so signature collisions do
 /// not become carriers.
-pub fn a8_surfaces(
-    data: &[u8],
-    refusal: &mut crate::nurbs::LaneRefusals,
-) -> Vec<FreeformSurface> {
+pub fn a8_surfaces(data: &[u8], refusal: &mut crate::nurbs::LaneRefusals) -> Vec<FreeformSurface> {
     a8_frames(data, 0x34)
         .into_iter()
         .filter_map(|frame| {
@@ -1529,10 +1526,7 @@ fn a8_external_grid_candidates(
 
 /// Decode consolidated `a5 03 34` NURBS surface carriers.  This family uses
 /// implicit clamped multiplicities instead of the explicit `a8` vectors.
-pub fn a5_surfaces(
-    data: &[u8],
-    refusal: &mut crate::nurbs::LaneRefusals,
-) -> Vec<FreeformSurface> {
+pub fn a5_surfaces(data: &[u8], refusal: &mut crate::nurbs::LaneRefusals) -> Vec<FreeformSurface> {
     let records = consolidated_records(data);
     a5_surfaces_from_records(data, &records, refusal)
 }

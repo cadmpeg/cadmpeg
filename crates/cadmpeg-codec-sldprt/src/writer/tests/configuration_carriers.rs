@@ -127,9 +127,7 @@ fn encoder_writes_source_less_neutral_configurations() {
         name: Some("Metric".to_string()),
         material: Some("Steel".into()),
         properties: BTreeMap::from([("Finish".into(), "Ground".into())]),
-        bodies: Some(
-            (vec![ir.model.bodies[0].id.clone()]).try_into().unwrap(),
-        ),
+        bodies: Some((vec![ir.model.bodies[0].id.clone()]).try_into().unwrap()),
         parameter_values: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),
@@ -144,9 +142,7 @@ fn encoder_writes_source_less_neutral_configurations() {
         name: Some("Empty".to_string()),
         material: None,
         properties: BTreeMap::new(),
-        bodies: Some(
-            cadmpeg_ir::features::DistinctMembers::default(),
-        ),
+        bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
         parameter_values: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),
@@ -213,7 +209,10 @@ fn encoder_writes_source_less_neutral_configurations() {
                 .as_slice()
         )
     );
-    assert!(decoded.ir().model.configurations[1].bodies.as_deref().is_some_and(<[_]>::is_empty));
+    assert!(decoded.ir().model.configurations[1]
+        .bodies
+        .as_deref()
+        .is_some_and(<[_]>::is_empty));
 
     let (mut inactive, _, fidelity) = decoded.into_parts();
     inactive
@@ -343,9 +342,7 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
             name: format!("Config {index}").into(),
             material: None,
             properties: BTreeMap::new(),
-            bodies: Some(
-                (vec![body.clone()]).try_into().unwrap(),
-            ),
+            bodies: Some((vec![body.clone()]).try_into().unwrap()),
             parameter_values: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::new(),
@@ -379,8 +376,20 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir().model.bodies.len(), 2);
-    assert_eq!(decoded.ir().model.configurations[0].bodies.as_deref().map_or(0, <[_]>::len), 1);
-    assert_eq!(decoded.ir().model.configurations[1].bodies.as_deref().map_or(0, <[_]>::len), 1);
+    assert_eq!(
+        decoded.ir().model.configurations[0]
+            .bodies
+            .as_deref()
+            .map_or(0, <[_]>::len),
+        1
+    );
+    assert_eq!(
+        decoded.ir().model.configurations[1]
+            .bodies
+            .as_deref()
+            .map_or(0, <[_]>::len),
+        1
+    );
     assert!(decoded.ir().model.configurations[1].active);
     assert_ne!(
         decoded.ir().model.configurations[0].bodies,
@@ -1566,7 +1575,10 @@ fn semantic_writer_applies_neutral_configuration_edits() {
     assert_eq!(configuration.name, "Machined");
     assert_eq!(configuration.material.as_deref(), Some("Aluminum"));
     assert_eq!(configuration.properties["Finish"], "Anodized");
-    assert_eq!(regenerated.ir().model.configurations[0].name.as_deref(), Some("Machined"));
+    assert_eq!(
+        regenerated.ir().model.configurations[0].name.as_deref(),
+        Some("Machined")
+    );
 }
 
 #[test]

@@ -1120,9 +1120,9 @@ fn nx_body_operation_completeness_requires_distinct_members() {
 #[test]
 fn nx_configuration_completeness_requires_one_active_full_body_set() {
     use cadmpeg_ir::features::{
-        BodySelection, ConfigurationFeatureState, ConfigurationId,
-        DesignConfiguration, DesignParameter, Feature, FeatureDefinition, FeatureId,
-        FeatureOperation, ParameterId, ParameterValue,
+        BodySelection, ConfigurationFeatureState, ConfigurationId, DesignConfiguration,
+        DesignParameter, Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
+        ParameterValue,
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();

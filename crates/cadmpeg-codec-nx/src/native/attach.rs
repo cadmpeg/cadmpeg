@@ -328,7 +328,10 @@ pub(crate) fn attach(
             annotations
                 .derived(id.as_str(), "native_ref")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
-            if bodies.as_deref().is_some_and(|bodies: &[_]| !bodies.is_empty()) {
+            if bodies
+                .as_deref()
+                .is_some_and(|bodies: &[_]| !bodies.is_empty())
+            {
                 annotations
                     .derived(id.as_str(), "bodies")
                     .map_err(cadmpeg_core::CodecError::malformed)?;

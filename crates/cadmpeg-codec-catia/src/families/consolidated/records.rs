@@ -1226,7 +1226,11 @@ pub fn consolidated_native_edge_graph(data: &[u8]) -> Option<ConsolidatedNativeE
 #[cfg(test)]
 pub fn resolve_consolidated_edge_blocks(data: &[u8]) -> Vec<ResolvedConsolidatedEdgeBlock> {
     let records = consolidated_records(data);
-    resolve_consolidated_edge_blocks_from_records(data, &records, &mut crate::nurbs::LaneRefusals::new())
+    resolve_consolidated_edge_blocks_from_records(
+        data,
+        &records,
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
 }
 
 pub(crate) fn resolve_consolidated_edge_blocks_from_records(

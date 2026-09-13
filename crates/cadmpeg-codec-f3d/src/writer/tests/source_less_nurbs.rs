@@ -1287,7 +1287,9 @@ fn generated_cacheless_circle_extrusion_decodes_as_analytic_cylinder() {
                 Some([0.0, std::f64::consts::TAU]),
                 Vector3::new(0.0, 0.0, -20.0),
                 definition_payload.native_position(),
-                cadmpeg_ir::geometry::CacheContract::from_form(definition_payload.revision_form().cloned()),
+                cadmpeg_ir::geometry::CacheContract::from_form(
+                    definition_payload.revision_form().cloned(),
+                ),
             )
             .unwrap();
         let directrix = definition_payload.directrix().clone();

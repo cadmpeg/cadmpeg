@@ -969,7 +969,9 @@ fn generated_f3d_rewrites_translational_extrusion_header() {
                 parameter_interval_value,
                 direction_value,
                 native_position_value,
-                cadmpeg_ir::geometry::CacheContract::from_form(definition_payload.revision_form().cloned()),
+                cadmpeg_ir::geometry::CacheContract::from_form(
+                    definition_payload.revision_form().cloned(),
+                ),
             )
             .unwrap();
         definition
@@ -1337,7 +1339,9 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
                     edited_spine,
                     edited_radius,
                     definition_payload.cross_section().clone(),
-                    cadmpeg_ir::geometry::CacheContract::from_form(definition_payload.native().cloned().map(Box::new)),
+                    cadmpeg_ir::geometry::CacheContract::from_form(
+                        definition_payload.native().cloned().map(Box::new),
+                    ),
                 )
                 .unwrap();
             definition
@@ -1487,7 +1491,9 @@ fn generated_f3d_rewrites_rolling_ball_radius_law() {
             definition_payload.spine().clone(),
             edited_radius,
             definition_payload.cross_section().clone(),
-            cadmpeg_ir::geometry::CacheContract::from_form(definition_payload.native().cloned().map(Box::new)),
+            cadmpeg_ir::geometry::CacheContract::from_form(
+                definition_payload.native().cloned().map(Box::new),
+            ),
         )
         .unwrap();
         definition

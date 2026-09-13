@@ -8,9 +8,9 @@ use cadmpeg_ir::ids::AttributeId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::{
     features::{
-        ConfigurationId, DatumPlaneReference, DesignConfiguration,
-        FeatureDefinition, FeatureId, FeatureOperation, FeatureSourceContent, ParameterId, PathRef,
-        PlanarProfileRef, ProfileRef, SplitFaceTool, UnresolvedFamily,
+        ConfigurationId, DatumPlaneReference, DesignConfiguration, FeatureDefinition, FeatureId,
+        FeatureOperation, FeatureSourceContent, ParameterId, PathRef, PlanarProfileRef, ProfileRef,
+        SplitFaceTool, UnresolvedFamily,
     },
     scalar::Length,
 };

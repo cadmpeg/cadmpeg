@@ -14,8 +14,8 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{
-    CopyOnChange, CopyOnChangePolicy, ExternalDocument, LinkState, Occurrence,
-    OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
+    CopyOnChange, CopyOnChangePolicy, ExternalDocument, LinkState, Occurrence, OccurrenceParent,
+    ProductDefinition, ProductDefinitionKind, PrototypeReference,
 };
 use cadmpeg_ir::topology::Body;
 use cadmpeg_ir::transform::Transform;
@@ -350,9 +350,7 @@ pub(crate) fn transfer_neutral(
                                 cadmpeg_ir::products::ExternalDocument::path(path.as_str())
                             }
                             crate::native::ExternalDocument::Name(name) => {
-                                cadmpeg_ir::products::ExternalDocument::document_id(
-                                    name.as_str(),
-                                )
+                                cadmpeg_ir::products::ExternalDocument::document_id(name.as_str())
                             }
                         },
                         object: record.prototype().map(str::to_owned),

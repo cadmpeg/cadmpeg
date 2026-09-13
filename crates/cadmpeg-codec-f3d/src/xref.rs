@@ -17,9 +17,7 @@ use serde::Deserialize;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
-use cadmpeg_ir::products::{
-    ExternalDocument, Occurrence, OccurrenceParent, PrototypeReference,
-};
+use cadmpeg_ir::products::{ExternalDocument, Occurrence, OccurrenceParent, PrototypeReference};
 
 use crate::bytes::{
     is_guid_prefix, is_guid_relaxed, lp_ascii_filtered, lp_ascii_strict, lp_utf16_bounded,
