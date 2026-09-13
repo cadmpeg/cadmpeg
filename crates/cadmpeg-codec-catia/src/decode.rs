@@ -66,7 +66,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecE
 fn decode_stating_lane_refusals(
     ctx: &DecodeContext<'_>,
     root: View<'_>,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Result<Decoded, CodecError> {
     let scan = container::scan_bytes(root.window());
     let matched = crate::dialect::classify(&scan);
@@ -169,7 +169,7 @@ fn finish_decode(
     mut annotations: Annotations,
     unknowns: Vec<UnknownRecord>,
     standard_face_population: bool,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Result<Decoded, CodecError> {
     // Retained unknown records are source entities even when a route transfers
     // no neutral model entity (for example, an unrecognized storage variant).

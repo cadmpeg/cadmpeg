@@ -162,7 +162,7 @@ pub(crate) fn transfer(
     annotations: &mut AnnotationBuilder,
     mut graph: B5Graph,
     payload: &UnknownId,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> bool {
     if !graph.complete {
         graph.loops.retain(|_, loop_| {
@@ -218,7 +218,7 @@ fn transfer_complete(
     annotations: &mut AnnotationBuilder,
     graph: &B5Graph,
     payload: &UnknownId,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> bool {
     let Some(mut plan) = build_plan(graph, payload, refusal) else {
         return false;
@@ -300,7 +300,7 @@ fn referenced_surface_ids(
 fn build_plan(
     graph: &B5Graph,
     payload: &UnknownId,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Option<TransferPlan> {
     if graph.faces.is_empty() {
         return None;
@@ -431,6 +431,7 @@ fn build_plan(
                         false,
                     ),
                     refusal,
+                    format_args!("b5 object-stream pcurve record #{}", pcurve.object_id),
                 )?,
             };
             pcurve_plan.entry(pcurve_id).or_insert((
@@ -635,7 +636,7 @@ fn build_plan(
 pub(crate) fn resolved_surface_geometry(
     graph: &B5Graph,
     surface_id: u32,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Option<SurfaceGeometry> {
     let surface = graph.surfaces.get(&surface_id)?;
     let payload =
@@ -670,7 +671,7 @@ pub(crate) struct ResolvedRevolutionSurface {
 pub(crate) fn resolved_revolution_surface(
     graph: &B5Graph,
     surface_id: u32,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Option<ResolvedRevolutionSurface> {
     let surface = graph.surfaces.get(&surface_id)?;
     let payload =
@@ -749,7 +750,7 @@ pub(crate) fn resolved_surface_carrier(surface: &B5Surface) -> Option<ResolvedPc
 pub(crate) fn resolved_surface_carrier_in_graph(
     graph: &B5Graph,
     surface_object_id: u32,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Option<ResolvedPcurveSurface> {
     let surface = graph.surfaces.get(&surface_object_id)?;
     resolved_surface_carrier(surface).or_else(|| {
@@ -764,7 +765,7 @@ pub(crate) fn resolved_object_stream_pcurve(
     pcurve: &crate::families::a5a8::records::A8Pcurve,
     surface: &B5Surface,
     graph: Option<&B5Graph>,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Option<ResolvedObjectStreamPcurve> {
     let carrier = graph
         .and_then(|graph| resolved_surface_carrier_in_graph(graph, pcurve.support_id, refusal))
@@ -786,6 +787,7 @@ pub(crate) fn resolved_object_stream_pcurve(
                     false,
                 ),
                 refusal,
+                format_args!("a8 object-stream pcurve record #{}", pcurve.support_id),
             )?,
         },
         parameter_range: pcurve.range,
@@ -795,7 +797,7 @@ pub(crate) fn resolved_object_stream_pcurve(
 pub(crate) fn resolved_surface_procedural_definition(
     graph: &B5Graph,
     surface_id: u32,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Option<(u32, ProceduralSurfaceDefinition)> {
     let surface = graph.surfaces.get(&surface_id)?;
     let payload =
@@ -912,7 +914,7 @@ pub(crate) struct ResolvedOffsetSurface {
 pub(crate) fn resolved_extrusion_surface(
     graph: &B5Graph,
     surface_id: u32,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Option<ResolvedExtrusionSurface> {
     let construction_id = graph.canonical_surface_id(surface_id)?;
     let extrusion = graph.extrusion_surfaces.get(&construction_id)?;
@@ -938,6 +940,7 @@ pub(crate) fn resolved_extrusion_surface(
                         false,
                     ),
                     refusal,
+                    format_args!("b5 extrusion pcurve record #{pcurve_object_id}"),
                 )?,
             };
             let curve = lifted_curve_geometry(pcurve, source_surface, refusal);
@@ -1021,7 +1024,7 @@ fn curve_on_parameter_range(
     curve: CurveGeometry,
     source: [f64; 2],
     target: [f64; 2],
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Option<CurveGeometry> {
     if parameter_range_contains(source, target) {
         return Some(curve);
@@ -1070,6 +1073,7 @@ fn curve_on_parameter_range(
                         false,
                     ),
                     refusal,
+                    "b5 line curve reparameterized onto its occurrence range",
                 )
                 .map(SolvedCurveGeometry::Nurbs)
                 .map(CurveGeometry::Solved);
@@ -1103,7 +1107,7 @@ fn parameter_range_contains(domain: [f64; 2], active: [f64; 2]) -> bool {
 pub(crate) fn resolved_offset_surface(
     graph: &B5Graph,
     surface_id: u32,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Option<ResolvedOffsetSurface> {
     let construction_id = graph.canonical_surface_id(surface_id)?;
     let offset = graph.offset_surfaces.get(&construction_id)?;

@@ -555,7 +555,7 @@ impl A5FreeformCurve {
 pub(crate) fn rolling_ball_limit_curve(
     jet: &A5FreeformCurve,
     second_limit: bool,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Option<NurbsCurve> {
     let offset = usize::from(second_limit) * 3;
     let positions = jet
@@ -605,6 +605,7 @@ pub(crate) fn rolling_ball_limit_curve(
             false,
         ),
         refusal,
+        format_args!("consolidated_a5_03_32 rolling-ball limit curve at byte {}", jet.pos),
     )
 }
 
@@ -664,7 +665,7 @@ pub fn a5_nurbs_curves(data: &[u8]) -> Vec<A5NurbsCurve> {
 pub(crate) fn a5_nurbs_curves_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Vec<A5NurbsCurve> {
     a_family_frames_from_records(records, 0x16)
         .into_iter()
@@ -675,7 +676,7 @@ pub(crate) fn a5_nurbs_curves_from_records(
 fn parse_a5_nurbs_curve(
     data: &[u8],
     frame: ConsolidatedFrame,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Option<A5NurbsCurve> {
     let mut at = frame.payload;
     let degree = compact_int(data, &mut at)?;
@@ -748,6 +749,7 @@ fn parse_a5_nurbs_curve(
         geometry: crate::nurbs::note_refusal(
             NurbsCurve::from_lanes(degree, knots, control_points, None, false),
             refusal,
+            format_args!("a5 NURBS curve record at byte {}", frame.pos),
         )?,
     })
 }
@@ -1279,7 +1281,7 @@ fn parse_object_stream_pcurve(
 /// not become carriers.
 pub fn a8_surfaces(
     data: &[u8],
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Vec<FreeformSurface> {
     a8_frames(data, 0x34)
         .into_iter()
@@ -1295,7 +1297,7 @@ pub fn a8_surfaces(
 #[must_use]
 pub fn resolved_a8_surfaces(
     data: &[u8],
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Vec<FreeformSurface> {
     a8_frames(data, 0x34)
         .into_iter()
@@ -1339,7 +1341,7 @@ pub(crate) fn resolved_a8_surface_from_object_frame(
     start: usize,
     end: usize,
     object_id: u32,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Option<FreeformSurface> {
     let parsed = parse_selected_a8_surface_header(data, start, end, object_id)?;
     if parsed.header.pole_storage == PoleStorage::Elided {
@@ -1357,7 +1359,7 @@ pub(crate) fn resolved_a8_surface_from_object_frame(
 pub fn a8_surface_from_external_grid(
     data: &[u8],
     header: &A8SurfaceHeader,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Option<FreeformSurface> {
     let candidates = a8_external_grid_candidates(data, header);
     let [ExternalGridCandidate {
@@ -1391,6 +1393,10 @@ pub fn a8_surface_from_external_grid(
                 false,
             ),
             refusal,
+            format_args!(
+                "a8 NURBS surface record #{} at byte {}",
+                header.object_id, header.pos
+            ),
         )?,
     })
 }
@@ -1516,7 +1522,7 @@ fn a8_external_grid_candidates(
 /// implicit clamped multiplicities instead of the explicit `a8` vectors.
 pub fn a5_surfaces(
     data: &[u8],
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Vec<FreeformSurface> {
     let records = consolidated_records(data);
     a5_surfaces_from_records(data, &records, refusal)
@@ -1525,7 +1531,7 @@ pub fn a5_surfaces(
 pub(crate) fn a5_surfaces_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Vec<FreeformSurface> {
     a_family_frames_from_records(records, 0x34)
         .into_iter()
@@ -1536,7 +1542,7 @@ pub(crate) fn a5_surfaces_from_records(
 fn a5_surface(
     data: &[u8],
     frame: ConsolidatedFrame,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Option<FreeformSurface> {
     let ConsolidatedFrame {
         pos, payload, end, ..
@@ -1608,6 +1614,7 @@ fn a5_surface(
                 false,
             ),
             refusal,
+            format_args!("a5 NURBS surface record at byte {pos}"),
         )?,
     })
 }
@@ -1708,7 +1715,7 @@ fn parse_a8_surface_header(data: &[u8], frame: A8Frame) -> Option<ParsedA8Surfac
 fn a8_surface_from_parsed(
     data: &[u8],
     parsed: ParsedA8SurfaceHeader,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Option<FreeformSurface> {
     let ParsedA8SurfaceHeader {
         header,
@@ -1779,6 +1786,7 @@ fn a8_surface_from_parsed(
                 false,
             ),
             refusal,
+            format_args!("a8 NURBS surface record #{object_id} at byte {pos}"),
         )?,
     })
 }

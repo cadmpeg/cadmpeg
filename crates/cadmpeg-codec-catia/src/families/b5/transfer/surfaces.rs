@@ -175,7 +175,7 @@ pub(super) fn neutral_surface(
     graph: &B5Graph,
     surface_id: u32,
     payload: &UnknownId,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> SurfacePlan {
     let carrier = match surface_carrier(surface) {
         B5SurfaceCarrier::Analytic(geometry) => {
@@ -252,7 +252,7 @@ pub(super) fn revolution_surface(
     axis_direction: [f64; 3],
     angular_scale: f64,
     bounds: [[f64; 2]; 2],
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Option<(NurbsSurface, RevolutionPlan)> {
     let profile = profile?;
     let [parameter_interval, native_angular_interval] = bounds;
@@ -288,7 +288,7 @@ pub(super) fn revolution_surface(
 pub(super) fn profile_nurbs(
     profile: &B5Profile,
     interval: [f64; 2],
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Option<NurbsCurve> {
     (profile
         .parameter_range()
@@ -310,6 +310,7 @@ pub(super) fn profile_nurbs(
                 false,
             ),
             refusal,
+            "b5 line profile of a revolution surface",
         ),
         B5Profile::Arc {
             center,
@@ -334,7 +335,7 @@ pub(super) fn rational_arc(
     direction_y: [f64; 3],
     radius: f64,
     interval: [f64; 2],
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Option<NurbsCurve> {
     let angles = [interval[0] / radius, interval[1] / radius];
     let span_count = ((angles[1] - angles[0]).abs() / std::f64::consts::FRAC_PI_2).ceil();
@@ -387,6 +388,7 @@ pub(super) fn rational_arc(
     crate::nurbs::note_refusal(
         NurbsCurve::from_lanes(2, knots, control_points, Some(weights), false),
         refusal,
+        "b5 rational arc profile of a revolution surface",
     )
 }
 
@@ -396,7 +398,7 @@ pub(super) fn revolve_nurbs(
     axis_direction: [f64; 3],
     angular_interval: [f64; 2],
     native_interval: [f64; 2],
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Option<NurbsSurface> {
     let span_count =
         ((angular_interval[1] - angular_interval[0]).abs() / std::f64::consts::FRAC_PI_2).ceil();
@@ -474,6 +476,7 @@ pub(super) fn revolve_nurbs(
             false,
         ),
         refusal,
+        "b5 revolution surface built from its profile",
     )
 }
 

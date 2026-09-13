@@ -1232,7 +1232,7 @@ pub fn resolve_consolidated_edge_blocks(data: &[u8]) -> Vec<ResolvedConsolidated
 pub(crate) fn resolve_consolidated_edge_blocks_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Vec<ResolvedConsolidatedEdgeBlock> {
     let points = object_stream_vertices_from_records(data, records);
     let embedded = b2_embedded_cylinders_from_records(data, records);

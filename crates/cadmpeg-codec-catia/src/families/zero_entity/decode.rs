@@ -221,7 +221,7 @@ fn transfer_closed_wire_loops(
     support_runs: &[crate::families::zero_entity::records::ZeroEntitySupportRun],
     support_curve_ids: &HashMap<u32, CurveId>,
     ownership_root: Option<&crate::families::zero_entity::records::ZeroEntityOwnershipRoot>,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Result<WireTransferCounts, cadmpeg_core::CodecError> {
     let mut counts = WireTransferCounts::default();
     let root_owns_support_runs = ownership_root.is_some_and(|root| {
@@ -433,6 +433,7 @@ fn transfer_closed_wire_loops(
                                     &geometry,
                                     source_range,
                                     refusal,
+                                    "zero-entity edge curve reversed onto its edge",
                                 )
                                 .map(|(geometry, edge_range)| (geometry, edge_range, None)),
                             }

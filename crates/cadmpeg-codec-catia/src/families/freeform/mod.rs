@@ -836,9 +836,9 @@ pub(crate) fn try_decode_freeform_surfaces(
             typed_vertex_incidence_roster_member_count,
         );
     }
-    if let Some(error) = lane_refusal {
+    if let Some(refusal) = lane_refusal {
         losses.push(CatiaLossCode::GeometryAnalyticPayloadInvalid.note(format!(
-            "A freeform carrier record states lanes the IR carrier refuses: {error}"
+            "A freeform carrier record states lanes the IR carrier refuses: {refusal}"
         )));
     }
     Some(FamilyOutput {
@@ -1484,7 +1484,7 @@ pub(crate) fn append_freeform_surface_pools(
     }
 
     append_a8_rolling_ball_pools(ir, annotations, data)?;
-    append_resolved_consolidated_surface_curves(
+    let counts = append_resolved_consolidated_surface_curves(
         ir,
         annotations,
         data,
@@ -1493,7 +1493,14 @@ pub(crate) fn append_freeform_surface_pools(
         &carrier_ids,
         surface_alias_tags,
         &mut refusal,
-    )
+    )?;
+    // Every refusal the rolling-ball limit curves and the consolidated
+    // surface-curve subtree record reaches the caller here. A refusal written
+    // into the cell and never read is a record dropped in silence.
+    if let Some(refusal) = refusal {
+        return Err(refusal.into());
+    }
+    Ok(counts)
 }
 
 type ConsolidatedCarrierKey = (usize, Option<u64>);
@@ -1571,7 +1578,7 @@ impl ConsolidatedCarrierChart<'_> {
 pub(crate) fn consolidated_jet_pcurve(
     pcurve: &crate::wire::records::ConsolidatedPcurve,
     chart: &ConsolidatedCarrierChart<'_>,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Option<PcurveGeometry> {
     let points = pcurve
         .sites
@@ -1589,6 +1596,10 @@ pub(crate) fn consolidated_jet_pcurve(
         .map(|site| chart.derivative(site.second_derivatives))
         .collect::<Vec<_>>();
     let knots = pcurve.knots();
+    let record = format!(
+        "consolidated quintic-jet pcurve record at byte {}",
+        pcurve.pos
+    );
     quintic_jet_pcurve(
         crate::wire::records::ConsolidatedPcurve::DEGREE,
         &knots,
@@ -1596,6 +1607,7 @@ pub(crate) fn consolidated_jet_pcurve(
         &first,
         &second,
         refusal,
+        &record,
     )
 }
 
@@ -1610,7 +1622,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
     freeform_surfaces: &[crate::families::a5a8::records::FreeformSurface],
     freeform_surface_ids: &[SurfaceId],
     surface_alias_tags: &HashMap<u32, Option<u32>>,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Result<ConsolidatedCurveBindingCounts, cadmpeg_core::CodecError> {
     let standalone = crate::families::b2::records::b2_cylinders_from_records(data, records)
         .into_iter()
@@ -2131,6 +2143,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                             &pcurve.geometry,
                             resolved.block.parameters.range,
                             refusal,
+                            "consolidated surface-curve pcurve reversed onto its edge",
                         )
                         .map(Some),
                         None => Some(None),
@@ -2235,6 +2248,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                                     &pcurve,
                                     resolved.block.parameters.range,
                                     refusal,
+                                    "consolidated partner pcurve reversed onto its edge",
                                 )?;
                             }
                             pcurve
@@ -2313,6 +2327,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                                     &geometry,
                                     resolved.block.parameters.range,
                                     refusal,
+                                    "standard pcurve reversed onto its coedge",
                                 )?;
                             }
                             // A pcurve binds to a face only when it lifts onto

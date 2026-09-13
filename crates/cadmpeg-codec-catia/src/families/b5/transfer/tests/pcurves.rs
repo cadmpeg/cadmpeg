@@ -1341,7 +1341,7 @@ fn tensor_surface_contraction_preserves_exact_isocurve() {
     )
     .expect("valid tensor surface");
     let curve =
-        crate::nurbs::nurbs_surface_isocurve(&surface, 0.25, true, &mut None).expect("u isocurve");
+        crate::nurbs::nurbs_surface_isocurve(&surface, 0.25, true, &mut None, "test record").expect("u isocurve");
     assert_eq!(curve.degree(), 1);
     assert_eq!(curve.knots(), surface.v_knots());
     assert_eq!(curve.control_points()[0], Point3::new(0.5, 0.0, 0.0));

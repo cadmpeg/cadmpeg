@@ -387,7 +387,7 @@ pub(super) fn neutral_pcurve_point(point: [f64; 2], surface: &B5Surface) -> Poin
 pub(super) fn lifted_curve_geometry(
     pcurve: &B5Pcurve,
     surface: &B5Surface,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Option<CurveGeometry> {
     let knots = pcurve_nurbs_knots(pcurve)?;
     match surface {
@@ -563,12 +563,13 @@ pub(super) fn lifted_curve_geometry(
 pub(super) fn nurbs_isocurve(
     pcurve: &B5Pcurve,
     surface: &NurbsSurface,
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Option<NurbsCurve> {
+    let record = format!("b5 isoparametric pcurve record #{}", pcurve.object_id);
     if let Some(u) = constant_coordinate(&pcurve.control_points, 0) {
-        crate::nurbs::nurbs_surface_isocurve(surface, u, true, refusal)
+        crate::nurbs::nurbs_surface_isocurve(surface, u, true, refusal, &record)
     } else if let Some(v) = constant_coordinate(&pcurve.control_points, 1) {
-        crate::nurbs::nurbs_surface_isocurve(surface, v, false, refusal)
+        crate::nurbs::nurbs_surface_isocurve(surface, v, false, refusal, &record)
     } else {
         None
     }
@@ -613,7 +614,7 @@ pub(super) fn cylinder_helix(
     endpoint_parameters: [f64; 2],
     edge_start: [f64; 3],
     edge_end: [f64; 3],
-    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+    refusal: &mut Option<crate::nurbs::LaneRefusal>,
 ) -> Option<HelixPlan> {
     const FIT_TOLERANCE: f64 = 1e-4;
 
@@ -670,7 +671,12 @@ pub(super) fn cylinder_helix(
         )
         .ok()?,
     );
-    let cache = crate::nurbs::circular_helix_cache(&definition, FIT_TOLERANCE, refusal)?;
+    let cache = crate::nurbs::circular_helix_cache(
+        &definition,
+        FIT_TOLERANCE,
+        refusal,
+        "b5 helix edge construction",
+    )?;
     let cache_points = cache.curve.control_points();
     let cache_start = cache_points.first()?;
     let cache_end = cache_points.last()?;
