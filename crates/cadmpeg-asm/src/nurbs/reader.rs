@@ -4,7 +4,79 @@
 use crate::kernel_header::RefWidth;
 use crate::sab::{int_le_at, vec3_le_at};
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::geometry::{NurbsPoleGrid, NurbsPoles3, WeightedPole3};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::NonZeroReal;
+
+/// Poles read from one record, each pole carrying the weight read from its own
+/// slot.
+///
+/// The record states a pole and its weight together, so the reader states rows
+/// and no reader downstream pairs a pole lane with a weight lane.
+#[derive(Debug, Clone)]
+pub(crate) enum ReadPoles3 {
+    /// A polynomial record: its poles carry no weight.
+    Polynomial(Vec<Point3>),
+    /// A rational record: every pole carries its weight.
+    Rational(Vec<WeightedPole3>),
+}
+
+impl ReadPoles3 {
+    /// Start a read of `count` poles in the marker-selected form.
+    pub(crate) fn with_capacity(count: usize, rational: bool) -> Self {
+        if rational {
+            Self::Rational(Vec::with_capacity(count))
+        } else {
+            Self::Polynomial(Vec::with_capacity(count))
+        }
+    }
+
+    /// Add one pole with the weight its own slot states.
+    pub(crate) fn push(&mut self, point: Point3, weight: f64) -> Option<()> {
+        match self {
+            Self::Polynomial(points) => points.push(point),
+            Self::Rational(points) => points.push(WeightedPole3 {
+                point,
+                weight: NonZeroReal::new(weight)?,
+            }),
+        }
+        Some(())
+    }
+
+    /// The poles as one lane, in the order they were read.
+    pub(crate) fn into_lane(self) -> NurbsPoles3 {
+        match self {
+            Self::Polynomial(points) => NurbsPoles3::Polynomial { points },
+            Self::Rational(points) => NurbsPoles3::Rational { points },
+        }
+    }
+
+    /// The poles as a `u`-major grid, read in the stream's `v`-major order.
+    pub(crate) fn into_transposed_grid(
+        self,
+        u_count: usize,
+        v_count: usize,
+    ) -> Option<NurbsPoleGrid> {
+        fn transpose<T: Clone>(flat: &[T], u_count: usize, v_count: usize) -> Option<Vec<Vec<T>>> {
+            (flat.len() == u_count.checked_mul(v_count)?).then_some(())?;
+            (0..u_count)
+                .map(|u| {
+                    (0..v_count)
+                        .map(|v| flat.get(v.checked_mul(u_count)?.checked_add(u)?).cloned())
+                        .collect::<Option<Vec<_>>>()
+                })
+                .collect()
+        }
+        match self {
+            Self::Polynomial(points) => Some(NurbsPoleGrid::Polynomial {
+                rows: transpose(&points, u_count, v_count)?,
+            }),
+            Self::Rational(points) => Some(NurbsPoleGrid::Rational {
+                rows: transpose(&points, u_count, v_count)?,
+            }),
+        }
+    }
+}
 
 /// Millimetres per ASM model-space length unit (centimetres).
 pub const LEN_TO_MM: f64 = 10.0;
@@ -250,13 +322,8 @@ pub(crate) fn read_control_points(
     pos: &mut usize,
     count: usize,
     marker: BsplineMarker,
-) -> Option<(Vec<Point3>, Option<Vec<f64>>)> {
-    let mut points = Vec::with_capacity(count);
-    let mut weights = if marker.rational() {
-        Some(Vec::with_capacity(count))
-    } else {
-        None
-    };
+) -> Option<ReadPoles3> {
+    let mut poles = ReadPoles3::with_capacity(count, marker.rational());
     for _ in 0..count {
         let mut comps = [0.0f64; 4];
         for comp in comps.iter_mut().take(marker.cp_dims()) {
@@ -266,16 +333,16 @@ pub(crate) fn read_control_points(
             *comp = View::f64_le_at(b, *pos + 1)?;
             *pos += 9;
         }
-        points.push(Point3::new(
-            comps[0] * LEN_TO_MM,
-            comps[1] * LEN_TO_MM,
-            comps[2] * LEN_TO_MM,
-        ));
-        if let Some(w) = weights.as_mut() {
-            w.push(comps[3]);
-        }
+        poles.push(
+            Point3::new(
+                comps[0] * LEN_TO_MM,
+                comps[1] * LEN_TO_MM,
+                comps[2] * LEN_TO_MM,
+            ),
+            comps[3],
+        )?;
     }
-    Some((points, weights))
+    Some(poles)
 }
 
 /// CLOSURE enum value `2` denotes a periodic parametric direction.
@@ -417,8 +484,10 @@ pub(crate) fn take_native_vec3(bytes: &[u8], position: &mut usize, tag: u8) -> O
 
 #[cfg(test)]
 mod string_width_tests {
-    use super::take_native_string;
+    use super::{take_native_string, ReadPoles3};
     use crate::kernel_header::RefWidth;
+    use cadmpeg_ir::geometry::NurbsPoleGrid;
+    use cadmpeg_ir::math::Point3;
 
     /// A `0x09` string whose length prefix is the stream integer width.
     fn long_string_bytes(payload: &str, int_width: RefWidth) -> Vec<u8> {
@@ -451,5 +520,39 @@ mod string_width_tests {
         let mut position = 0;
         let value = take_native_string(&bytes, &mut position, RefWidth::Four);
         assert_ne!(value.as_deref(), Some("#TS0200\ndegree 3"));
+    }
+
+    /// The reader states one row per pole, so a weight lane that is shorter
+    /// than the pole lane has no spelling here and there is no refusal for a
+    /// reader to drop: a pole whose own slot holds an unusable weight ends the
+    /// read instead.
+    #[test]
+    fn read_poles_state_rows_and_refuse_an_unusable_weight() {
+        let mut poles = ReadPoles3::with_capacity(2, true);
+        assert!(poles
+            .push(Point3::new(0.0, 0.0, 0.0), 1.0)
+            .is_some());
+        assert!(poles.push(Point3::new(1.0, 0.0, 0.0), 0.0).is_none());
+        let ReadPoles3::Rational(rows) = poles else {
+            panic!("a rational read states weighted rows");
+        };
+        assert_eq!(rows.len(), 1);
+
+        let mut grid = ReadPoles3::with_capacity(4, false);
+        for index in 0..4 {
+            assert!(grid
+                .push(Point3::new(f64::from(index), 0.0, 0.0), 1.0)
+                .is_some());
+        }
+        let NurbsPoleGrid::Polynomial { rows } = grid
+            .into_transposed_grid(2, 2)
+            .expect("a four-pole read states a two-by-two grid")
+        else {
+            panic!("a polynomial read states unweighted rows");
+        };
+        assert_eq!(rows[0][0].x, 0.0);
+        assert_eq!(rows[0][1].x, 2.0);
+        assert_eq!(rows[1][0].x, 1.0);
+        assert_eq!(rows[1][1].x, 3.0);
     }
 }

@@ -1539,7 +1539,15 @@ pub(crate) fn embedded_base_curve_resolving_refs(
                 (origin[1] + direction[1]) * LEN_TO_MM,
                 (origin[2] + direction[2]) * LEN_TO_MM,
             );
-            NurbsCurve::from_lanes(1, vec![0.0, 0.0, 1.0, 1.0], vec![start, end], None, false).ok()
+            NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                cadmpeg_ir::geometry::NurbsPoles3::Polynomial {
+                    points: vec![start, end],
+                },
+                false,
+            )
+            .ok()
         }
         "ellipse" => {
             let center = cur.take_position()?;
@@ -1555,7 +1563,15 @@ pub(crate) fn embedded_base_curve_resolving_refs(
                 point[1] * LEN_TO_MM,
                 point[2] * LEN_TO_MM,
             );
-            NurbsCurve::from_lanes(1, vec![0.0, 0.0, 1.0, 1.0], vec![at, at], None, false).ok()
+            NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                cadmpeg_ir::geometry::NurbsPoles3::Polynomial {
+                    points: vec![at, at],
+                },
+                false,
+            )
+            .ok()
         }
         "intcurve" => {
             cur.take_bool()?;
