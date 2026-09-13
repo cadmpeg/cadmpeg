@@ -80,7 +80,8 @@ fn sketch_container_visibility_projects_to_the_neutral_sketch() {
         paired_class_tag: crate::records::DesignClassTag::try_from("257".to_owned()).unwrap(),
     };
 
-    let (sketches, entities) = project_sketch_design(&[placement], &[], &[], &[], &[], 1.0e-6);
+    let (sketches, entities) = project_sketch_design(&[placement], &[], &[], &[], &[], 1.0e-6)
+        .expect("sketch lanes pair");
     assert!(entities.is_empty());
     assert_eq!(sketches.len(), 1);
     assert_eq!(sketches[0].visible, Some(false));
@@ -230,7 +231,8 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
         &[relation],
         &[text],
         EPS_POINT_PROJECTION,
-    );
+    )
+    .expect("sketch lanes pair");
     assert_eq!(sketches.len(), 1);
     assert!(sketches[0].profiles.is_empty());
     assert_eq!(entities.len(), 6);
@@ -335,7 +337,8 @@ fn point_closure_does_not_mark_construction_geometry() {
         &[],
         &[],
         EPS_POINT_PROJECTION,
-    );
+    )
+    .expect("sketch lanes pair");
     assert_eq!(sketches.len(), 1);
     assert!(sketches[0].profiles.is_empty());
     assert_eq!(entities.len(), 3);
@@ -458,7 +461,8 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     let points = vec![point];
     let curves = vec![line, nonclamped_nurbs, clockwise_arc];
     let (sketches, entities) =
-        project_sketch_design(&placements, &points, &curves, &[], &[], 1.0e-6);
+        project_sketch_design(&placements, &points, &curves, &[], &[], 1.0e-6)
+            .expect("sketch lanes pair");
     assert_eq!(sketches.len(), 1);
     assert_eq!(
         sketches[0].resolved_placement(),
@@ -1082,7 +1086,8 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         point_on_surface_relation,
     ];
     let (planar_sketches, planar_entities) =
-        project_sketch_design(&[placement.clone()], &points, &curves, &[], &[], 1.0e-6);
+        project_sketch_design(&[placement.clone()], &points, &curves, &[], &[], 1.0e-6)
+            .expect("sketch lanes pair");
     assert!(planar_sketches.is_empty());
     assert!(planar_entities.is_empty());
     let surfaces = [surface];
@@ -1211,7 +1216,8 @@ fn surface_only_owner_preserves_planar_and_spatial_projection_policies() {
     };
     let placements = [placement];
     let (planar, planar_entities) =
-        project_sketch_design(&placements, &[], &[], &[], &[], EPS_POINT_PROJECTION);
+        project_sketch_design(&placements, &[], &[], &[], &[], EPS_POINT_PROJECTION)
+            .expect("sketch lanes pair");
     let (spatial, spatial_entities) =
         project_spatial_sketch_design(&placements, &[], &[], &[surface], &[], EPS_POINT_PROJECTION)
             .expect("valid spatial surface fixture");
@@ -1219,4 +1225,68 @@ fn surface_only_owner_preserves_planar_and_spatial_projection_policies() {
     assert!(planar_entities.is_empty());
     assert_eq!(spatial.len(), 1);
     assert_eq!(spatial_entities.len(), 1);
+}
+
+#[test]
+fn a_refused_sketch_nurbs_carrier_reaches_the_codec_error() {
+    let placement = DesignSketchPlacement {
+        frame: crate::records::DesignSketchFrame::new(
+            100,
+            crate::records::DesignSketchFrameForm::ScopeExplicit(
+                crate::records::SketchPlacementMatrix::try_from([
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ])
+                .unwrap(),
+            ),
+        )
+        .unwrap(),
+        id: "f3d:native:placement#0".into(),
+        scope_record_index: Some(177),
+        entity_id: crate::records::DesignEntityId::try_from("0_172".to_owned())
+            .expect("valid entity ID"),
+        visibility: None,
+        class_tag: crate::records::DesignClassTag::try_from("356".to_owned()).unwrap(),
+        record_index: 185,
+        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
+    };
+    let refused = SketchCurveIdentity {
+        id: "f3d:native:curve#218".into(),
+        record_index: 218,
+        owner_reference: Some(172),
+        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+        byte_offset: 700,
+        geometry_offset: 100,
+        entity_genesis: None,
+        primary_id: std::num::NonZeroU64::new(21).unwrap(),
+        secondary_id: 0,
+        geometry: Some(SketchCurveGeometry::Nurbs {
+            carrier_reference: None,
+            subtype_class_tag: crate::records::DesignClassTag::try_from("304".to_owned()).unwrap(),
+            subtype_record_index: 219,
+            degree: 1,
+            fit_tolerance: 1.0e-6,
+            scalar_width: 8,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            poles: crate::records::SketchNurbsPoles::Rational(vec![
+                crate::records::SketchNurbsPole {
+                    point: Point3::new(0.0, 0.0, 0.0),
+                    weight: 1.0,
+                },
+                crate::records::SketchNurbsPole {
+                    point: Point3::new(2.0, 0.0, 0.0),
+                    weight: 0.0,
+                },
+            ]),
+        }),
+    };
+    let error = project_sketch_design(&[placement], &[], &[refused], &[], &[], 1.0e-6)
+        .expect_err("a refused pole carrier is not dropped in silence");
+    assert!(
+        matches!(&error, cadmpeg_core::CodecError::Malformed(message)
+            if message.contains("is not a usable weight")),
+        "the refusal reaches the codec error: {error:?}"
+    );
 }

@@ -2540,7 +2540,7 @@ impl<'a> F3dDecodeSession<'a> {
                 &self.native.sketch_relations,
                 &self.native.sketch_texts,
                 self.ir.tolerances.linear.get(),
-            );
+            )?;
         (
             self.ir.model.spatial_sketches,
             self.ir.model.spatial_sketch_entities,
