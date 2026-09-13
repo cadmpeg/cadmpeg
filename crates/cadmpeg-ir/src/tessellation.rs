@@ -328,7 +328,7 @@ impl TessellationMesh {
     ) -> Result<Self, TessellationLaneError> {
         let Some(normals) = normals else {
             let strips = Strips::from_spans(positions, spans)
-                .ok_or_else(|| TessellationLaneError::Strips { spans: spans.len() })?;
+                .ok_or(TessellationLaneError::Strips { spans: spans.len() })?;
             return Ok(Self::Strips { strips });
         };
         if normals.len() != positions.len() {
@@ -343,7 +343,7 @@ impl TessellationMesh {
             .map(|(position, normal)| ShadedVertex { position, normal })
             .collect();
         let strips = Strips::from_spans(rows, spans)
-            .ok_or_else(|| TessellationLaneError::Strips { spans: spans.len() })?;
+            .ok_or(TessellationLaneError::Strips { spans: spans.len() })?;
         Ok(Self::ShadedStrips { strips })
     }
 

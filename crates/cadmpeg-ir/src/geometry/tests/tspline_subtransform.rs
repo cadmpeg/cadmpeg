@@ -5,7 +5,8 @@ use serde_json::json;
 fn subtransform_admission_requires_nonempty_programs_and_nonnegative_indices() {
     assert!(InlineTSplineSubtransform::try_new("", None, "values").is_err());
     assert!(InlineTSplineSubtransform::try_new("program", None, "").is_err());
-    assert!(InlineTSplineSubtransform::try_new(" ", None, "\n").is_ok());
+    assert!(InlineTSplineSubtransform::try_new(" ", None, "\n").is_err());
+    assert!(InlineTSplineSubtransform::try_new(" p ", None, " v\n").is_ok());
     assert!(SubtypeTableIndex::try_new(-1).is_err());
     for index in [0, i64::MAX] {
         assert_eq!(SubtypeTableIndex::try_new(index).unwrap().get(), index);

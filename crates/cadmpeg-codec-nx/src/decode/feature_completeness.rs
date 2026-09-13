@@ -17,7 +17,7 @@ pub(crate) mod operands;
 use operands::{
     body_selection_is_incomplete, edge_selection_is_incomplete, extrude_extent_is_incomplete,
     extrude_start_is_incomplete, face_selection_is_incomplete, hole_feature_is_incomplete,
-    hole_specification_is_incomplete, loft_section_is_incomplete, path_ref_is_incomplete,
+    loft_section_is_incomplete, path_ref_is_incomplete,
     planar_profile_dependency_is_incomplete, planar_profile_ref_is_incomplete,
     profile_dependency_is_incomplete, profile_ref_is_incomplete, revolve_feature_is_incomplete,
     rib_feature_is_incomplete, sweep_mode_is_incomplete, sweep_orientation_is_incomplete,
@@ -411,20 +411,14 @@ pub(crate) fn hole_definition_is_incomplete(feature: &Feature) -> bool {
     let construction = shape.construction();
     let exit_kind = shape.exit_kind();
     let diameter = shape.diameter();
-    let (construction_incomplete, specification) = match construction {
-        cadmpeg_ir::features::HoleConstruction::Form {
-            kind,
-            specification,
-        } => (
-            hole_feature_is_incomplete(
-                profile.as_ref(),
-                face.as_ref(),
-                placements.as_deref(),
-                (kind, exit_kind.as_ref()),
-                diameter.map(Into::into),
-                extent.as_ref(),
-            ),
-            specification.as_deref(),
+    let construction_incomplete = match construction {
+        cadmpeg_ir::features::HoleConstruction::Form { kind, .. } => hole_feature_is_incomplete(
+            profile.as_ref(),
+            face.as_ref(),
+            placements.as_deref(),
+            (kind, exit_kind.as_ref()),
+            diameter.map(Into::into),
+            extent.as_ref(),
         ),
         cadmpeg_ir::features::HoleConstruction::NativeThread {
             major_diameter,
@@ -434,21 +428,17 @@ pub(crate) fn hole_definition_is_incomplete(feature: &Feature) -> bool {
             let kind = cadmpeg_ir::features::HoleKind::SimpleDrilled {
                 drill_point_angle: *drill_point_angle,
             };
-            (
-                hole_feature_is_incomplete(
-                    profile.as_ref(),
-                    face.as_ref(),
-                    placements.as_deref(),
-                    (&kind, exit_kind.as_ref()),
-                    diameter.map(Into::into),
-                    extent.as_ref(),
-                ) || diameter.is_none_or(|diameter| major_diameter.get() <= diameter.get()),
-                None,
-            )
+            hole_feature_is_incomplete(
+                profile.as_ref(),
+                face.as_ref(),
+                placements.as_deref(),
+                (&kind, exit_kind.as_ref()),
+                diameter.map(Into::into),
+                extent.as_ref(),
+            ) || diameter.is_none_or(|diameter| major_diameter.get() <= diameter.get())
         }
     };
     construction_incomplete
-        || hole_specification_is_incomplete(specification)
         || extent.as_ref().is_some_and(|extent| {
             termination_dependency_is_incomplete(extent, &feature.dependencies)
         })

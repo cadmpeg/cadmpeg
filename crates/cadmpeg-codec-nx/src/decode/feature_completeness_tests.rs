@@ -7,7 +7,7 @@
 use crate::decode::feature_completeness::operands::{
     body_selection_is_incomplete, edge_selection_is_incomplete, extrude_extent_is_incomplete,
     extrude_start_is_incomplete, face_selection_is_incomplete, hole_feature_is_incomplete,
-    hole_specification_is_incomplete, loft_section_is_incomplete, path_ref_is_incomplete,
+    loft_section_is_incomplete, path_ref_is_incomplete,
     pattern_feature_is_incomplete, pattern_is_incomplete, pattern_occurrence_count,
     planar_profile_dependency_is_incomplete, planar_profile_ref_is_incomplete,
     profile_dependency_is_incomplete, profile_ref_is_incomplete, revolve_feature_is_incomplete,
@@ -200,29 +200,6 @@ fn nx_datum_completeness_requires_coherent_finite_frames() {
         Vector3::new(1.0e-6, 1.0, 0.0),
         z_axis,
     ));
-}
-
-#[test]
-fn nx_hole_completeness_checks_nested_auxiliary_semantics() {
-    use cadmpeg_ir::features::{HoleSpecification, HoleThreadDepth, ThreadHand};
-
-    let invalid_specification = HoleSpecification::Threaded {
-        standard: cadmpeg_ir::NonBlankString::new(" ").unwrap(),
-        designation: None,
-        class: None,
-        modeled: false,
-        cosmetic: true,
-        pitch: Some(cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap()),
-        major_diameter: Some(cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap()),
-        hand: ThreadHand::Right,
-        depth: HoleThreadDepth::Blind {
-            depth: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
-        },
-        clearance: None,
-    };
-    assert!(hole_specification_is_incomplete(Some(
-        &invalid_specification
-    )));
 }
 
 #[test]

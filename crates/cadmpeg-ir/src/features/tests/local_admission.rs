@@ -211,7 +211,7 @@ fn local_feature_wire_rejects_empty_collections_and_invalid_strings() {
     )
     .is_err());
     assert!(serde_json::from_value::<LoftPointSection>(
-        serde_json::json!({"kind":"native_point","value":" "})
+        serde_json::json!({"kind":"native_point","value":" p "})
     )
     .is_ok());
     assert!(GeometryImportPath::try_from(" ".to_owned()).is_ok());

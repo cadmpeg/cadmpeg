@@ -7,3 +7,4 @@ mod history;
 pub(crate) mod holes_extrude;
 pub(crate) mod primitives;
 pub(crate) mod sketches;
+pub(crate) mod taper;

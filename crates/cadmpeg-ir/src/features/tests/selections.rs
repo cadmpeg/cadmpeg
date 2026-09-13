@@ -10,11 +10,11 @@ fn historical_selection_admission_preserves_partial_and_reference_semantics() {
     for kind in ["historical", "historical_partial"] {
         let mut edge = json!({"kind":kind,"value":{
             "state":"test:model:feature-input-topology#1",
-            "edges":["test:model:historical-edge#1"],"native":" "
+            "edges":["test:model:historical-edge#1"],"native":" n "
         }});
         let mut face = json!({"kind":kind,"value":{
             "state":"test:model:feature-input-topology#1",
-            "faces":["test:model:historical-face#1"],"native":" "
+            "faces":["test:model:historical-face#1"],"native":" n "
         }});
         if kind == "historical_partial" {
             edge["value"]["unresolved"] = json!(["edge:unknown"]);
@@ -125,7 +125,7 @@ fn vertex_selection_wire_admission_preserves_valid_forms() {
     for wire in [
         json!({"kind":"unresolved"}),
         json!({"kind":"native","value":"vertex"}),
-        json!({"kind":"historical","value":{"state":"test:model:state#1","vertex":"vertex","native":" "}}),
+        json!({"kind":"historical","value":{"state":"test:model:state#1","vertex":"vertex","native":" n "}}),
         json!({"kind":"generated","value":{"vertex":{"feature":feature,"local_id":"vertex"},"native":"native"}}),
     ] {
         let admitted = serde_json::from_value::<VertexSelection>(wire.clone()).unwrap();

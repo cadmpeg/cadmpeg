@@ -86,16 +86,6 @@ pub(crate) fn hole_kind_is_incomplete(kind: &HoleKind, bore_diameter: Option<Len
     }
 }
 
-pub(crate) fn hole_specification_is_incomplete(
-    specification: Option<&cadmpeg_ir::features::HoleSpecification>,
-) -> bool {
-    specification.is_some_and(|specification| {
-        let (cadmpeg_ir::features::HoleSpecification::Clearance { standard, .. }
-        | cadmpeg_ir::features::HoleSpecification::Threaded { standard, .. }) = specification;
-        standard.as_str().trim().is_empty()
-    })
-}
-
 pub(crate) fn extrude_extent_is_incomplete(
     extent: &ExtrudeExtent,
     dependencies: &[FeatureId],
