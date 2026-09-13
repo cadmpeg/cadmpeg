@@ -414,8 +414,18 @@ impl<'a> WorkBudget<'a> {
     }
 
     /// Charges this budget for work consumed by a child slice.
-    pub fn consume_child(&self, child: &WorkBudget<'_>) -> bool {
-        self.charge_by(child.consumed())
+    ///
+    /// # Errors
+    ///
+    /// [`BudgetExhausted`] when the child's work is above this budget's
+    /// remainder. The budget marks itself exhausted in that case, so
+    /// [`WorkBudget::exhausted`] answers `true` afterwards.
+    pub fn consume_child(&self, child: &WorkBudget<'_>) -> Result<(), BudgetExhausted> {
+        if self.charge_by(child.consumed()) {
+            Ok(())
+        } else {
+            Err(BudgetExhausted)
+        }
     }
 
     /// Classifies this local budget's refusal as a resource limit.
@@ -431,6 +441,14 @@ impl<'a> WorkBudget<'a> {
         )
     }
 }
+
+/// A work budget reached its limit.
+///
+/// The budget marks itself exhausted when it refuses, so this error names the
+/// event and carries no state of its own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("work budget exhausted")]
+pub struct BudgetExhausted;
 
 /// Builds a correctly classified refusal for a codec-local ceiling.
 pub fn refuse_local_limit(what: &'static str, limit: u64, requested: u64) -> CodecError {

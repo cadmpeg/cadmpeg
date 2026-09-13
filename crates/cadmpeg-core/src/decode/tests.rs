@@ -263,7 +263,7 @@ fn depth_is_scoped_and_work_budget_is_sticky() {
     assert!(budget.charge_by(2));
     let child = budget.child_slice(1);
     assert!(child.charge());
-    assert!(budget.consume_child(&child));
+    assert!(matches!(budget.consume_child(&child), Ok(())));
     assert_eq!(budget.consumed(), 3);
     assert!(!budget.charge());
     assert!(budget.exhausted());
@@ -383,7 +383,7 @@ fn forced_child_exhaustion_charges_its_full_slice() {
     let child = parent.child_slice(4);
     assert!(child.charge());
     child.exhaust();
-    assert!(parent.consume_child(&child));
+    assert!(matches!(parent.consume_child(&child), Ok(())));
     assert_eq!(parent.remaining(), 6);
     assert!(!child.charge_by(0));
 }
