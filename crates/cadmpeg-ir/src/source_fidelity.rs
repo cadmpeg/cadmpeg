@@ -335,18 +335,27 @@ mod tests {
         assert_eq!(sidecar.retained_record("a"), Some(&record(&[1])));
 
         // A record id is a map key, so a document cannot carry two records
-        // under one id: serde_json keeps the last value for a repeated key.
-        let duplicated = serde_json::from_str::<SourceFidelity>(
+        // under one id. `serde_json` hands both to the visitor, so the reader
+        // refuses the second by name rather than keeping the last.
+        let error = serde_json::from_str::<SourceFidelity>(
             r#"{"retained_records":{
                  "a":{"stream":"source","offset":0,
                       "bytes":{"retention":"inline","data":"AQ=="}},
                  "a":{"stream":"source","offset":0,
                       "bytes":{"retention":"inline","data":"Ag=="}}}}"#,
         )
-        .expect("a repeated key is not a parse error");
-        assert_eq!(duplicated.retained_records.len(), 1);
+        .expect_err("a repeated record id states two records under one identity")
+        .to_string();
+        assert!(error.contains("duplicate key a"), "{error}");
+
+        let single = serde_json::from_str::<SourceFidelity>(
+            r#"{"retained_records":{
+                 "a":{"stream":"source","offset":0,
+                      "bytes":{"retention":"inline","data":"Ag=="}}}}"#,
+        )
+        .expect("one record under one id reads");
         assert_eq!(
-            duplicated
+            single
                 .retained_record("a")
                 .and_then(RetainedSourceRecord::data),
             Some([2].as_slice())
@@ -472,7 +481,8 @@ mod tests {
         let sidecar = DecodeSidecar::bind(b"cad-ir", report(), SourceFidelity::default());
         let json = sidecar.to_canonical_json().expect("serialize sidecar");
         assert!(
-            json.contains("\"identity\":{\"classification\":\"unclassified\",\"format\":\"test\"}"),
+            json.contains("\"classification\": \"unclassified\"")
+                && json.contains("\"format\": \"test\""),
             "{json}"
         );
 
