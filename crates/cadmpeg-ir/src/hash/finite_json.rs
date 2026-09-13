@@ -56,7 +56,11 @@ pub(crate) fn write_canonical_json<W: std::io::Write, T: Serialize + ?Sized>(
 }
 
 /// Renders `value` as canonical pretty JSON text, refusing a non-finite float.
-pub(crate) fn to_canonical_json_string<T: Serialize + ?Sized>(
+///
+/// This is the one route every production write of an IR document takes: the
+/// CADIR encoder, `CadIr::to_canonical_json`, and the decode sidecar. A
+/// document written any other way would spell a non-finite float `null`.
+pub fn to_canonical_json_string<T: Serialize + ?Sized>(
     value: &T,
 ) -> Result<String, CanonicalJsonError> {
     let mut bytes = Vec::new();

@@ -49,9 +49,14 @@ impl DecodeSidecar {
         self.ir_sha256 == crate::hash::sha256_hex(ir_bytes)
     }
 
-    /// Serializes this sidecar as canonical compact JSON.
-    pub fn to_canonical_json(&self) -> Result<String, serde_json::Error> {
-        serde_json::to_string(self)
+    /// Serializes this sidecar as canonical JSON.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a non-finite float: the sidecar is an IR document and takes
+    /// the same write route as every other.
+    pub fn to_canonical_json(&self) -> Result<String, crate::hash::finite_json::CanonicalJsonError> {
+        crate::hash::finite_json::to_canonical_json_string(self)
     }
 
     /// Parses a decode sidecar.
@@ -393,6 +398,19 @@ mod tests {
             assert_eq!(retained.sha256(), crate::hash::sha256_hex(&[1, 2, 3]));
             assert_eq!(retained.data(), Some([1, 2, 3].as_slice()));
         }
+    }
+
+    /// The sidecar is an IR document and takes the one finite write route.
+    #[test]
+    fn the_sidecar_writes_through_the_finite_route() {
+        let sidecar = DecodeSidecar::bind(b"cad-ir", report(), SourceFidelity::default());
+        let canonical: Result<String, crate::hash::finite_json::CanonicalJsonError> =
+            sidecar.to_canonical_json();
+        assert_eq!(
+            canonical.expect("the sidecar writes"),
+            crate::hash::finite_json::to_canonical_json_string(&sidecar)
+                .expect("the one finite route writes the same text")
+        );
     }
 
     #[test]
