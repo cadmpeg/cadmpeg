@@ -362,17 +362,22 @@ pub(super) fn pcurve_geometry(
     tolerance: Option<f64>,
     ctx: Option<&DecodeContext<'_>>,
     composite_index: Option<&CompositeIndex>,
-) -> Option<(PcurveGeometry, [f64; 2])> {
+) -> Result<Option<(PcurveGeometry, [f64; 2])>, cadmpeg_ir::geometry::NurbsError> {
     let curve_id = crate::ids::curve(&crate::ids::Stem::directory(sequence));
-    let (nurbs, range) =
-        bounded_nurbs_for_curve_with_tolerance(ir, &curve_id, tolerance, ctx, composite_index)?;
+    let Some((nurbs, range)) =
+        bounded_nurbs_for_curve_with_tolerance(ir, &curve_id, tolerance, ctx, composite_index)?
+    else {
+        return Ok(None);
+    };
     let source_parameter_map = match procedural_source_parameter_map(ir, support) {
         ProceduralSourceParameterMap::Mapped(parameter_map) => Some(parameter_map),
         ProceduralSourceParameterMap::NotApplicable | ProceduralSourceParameterMap::Unavailable => {
             None
         }
     };
-    let (u_factor, u_offset, v_factor, v_offset) = pcurve_parameter_map(ir, support)?;
+    let Some((u_factor, u_offset, v_factor, v_offset)) = pcurve_parameter_map(ir, support) else {
+        return Ok(None);
+    };
     let parameter_curve = PcurveNurbs::from_lanes(
         nurbs.degree(),
         nurbs.knots().to_vec(),
@@ -399,14 +404,13 @@ pub(super) fn pcurve_geometry(
             .collect(),
         nurbs.weights(),
         nurbs.periodic(),
-    )
-    .ok()?;
-    Some((
+    )?;
+    Ok(Some((
         PcurveGeometry::Nurbs {
             nurbs: parameter_curve,
         },
         range,
-    ))
+    )))
 }
 
 fn line_directrix(ir: &CadIr, curve_id: &CurveId) -> bool {
@@ -2013,26 +2017,45 @@ pub(super) fn project(
                     valid = false;
                     break;
                 };
-                let pcurves = segment
-                    .pcurves
-                    .iter()
-                    .map(|sequence| {
-                        pcurve_geometry(
-                            ir,
-                            *sequence,
-                            &PcurveSupport {
-                                surface_id: &surface_id,
-                                geometry: &support_geometry,
-                                factor,
-                            },
-                            Some(carrier_agreement_tolerance),
-                            ctx,
-                            Some(
-                                composite_index.get_or_insert_with(|| CompositeIndex::from_ir(ir)),
-                            ),
-                        )
-                    })
-                    .collect::<Option<Vec<_>>>();
+                let mut pcurves = Some(Vec::with_capacity(segment.pcurves.len()));
+                let mut pcurve_refusal = None;
+                for sequence in &segment.pcurves {
+                    match pcurve_geometry(
+                        ir,
+                        *sequence,
+                        &PcurveSupport {
+                            surface_id: &surface_id,
+                            geometry: &support_geometry,
+                            factor,
+                        },
+                        Some(carrier_agreement_tolerance),
+                        ctx,
+                        Some(composite_index.get_or_insert_with(|| CompositeIndex::from_ir(ir))),
+                    ) {
+                        Ok(Some(resolved)) => {
+                            if let Some(pcurves) = pcurves.as_mut() {
+                                pcurves.push(resolved);
+                            }
+                        }
+                        Ok(None) => {
+                            pcurves = None;
+                            break;
+                        }
+                        Err(error) => {
+                            pcurves = None;
+                            pcurve_refusal = Some(error);
+                            break;
+                        }
+                    }
+                }
+                if let Some(error) = pcurve_refusal {
+                    losses.push(entity_loss(
+                        entry,
+                        &format!("boundary parameter curve states no NURBS carrier: {error}"),
+                    ));
+                    valid = false;
+                    break;
+                }
                 let mut pcurves = match pcurves {
                     Some(pcurves) => pcurves,
                     None if segment.parameter_curves_authoritative => {

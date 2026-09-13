@@ -3145,6 +3145,7 @@ fn oriented_curve_entity(
                 radius,
                 span.range,
             )
+            .map_err(|error| CodecError::malformed(format_args!("circular: {error}")))?
             .ok_or_else(|| {
                 CodecError::NotImplemented(format!(
                     "IGES reversed circular edge span is not convertible ({span:?})"
@@ -3175,6 +3176,7 @@ fn oriented_curve_entity(
                 minor_radius,
                 span.range,
             )
+            .map_err(|error| CodecError::malformed(format_args!("elliptical: {error}")))?
             .ok_or_else(|| {
                 CodecError::NotImplemented(format!(
                     "IGES reversed elliptical edge span is not convertible ({span:?})"
@@ -3203,6 +3205,7 @@ fn oriented_curve_entity(
                 focal_distance,
                 span.range,
             )
+            .map_err(|error| CodecError::malformed(format_args!("parabolic: {error}")))?
             .ok_or_else(|| {
                 CodecError::NotImplemented(format!(
                     "IGES reversed parabolic edge span is not convertible ({span:?})"

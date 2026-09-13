@@ -14,7 +14,8 @@ fn degree_elevation_preserves_nonzero_declared_interval_endpoints() {
     )
     .expect("valid line");
 
-    assert!(elevate_nurbs_to_degree(&mut curve, interval, 3, None));
+    assert!(elevate_nurbs_to_degree(&mut curve, interval, 3, None)
+        .expect("elevation lanes pair"));
     assert_eq!(curve.knots().first(), Some(&interval[0]));
     assert_eq!(curve.knots().last(), Some(&interval[1]));
     assert_eq!(&curve.knots()[..4], &[interval[0]; 4]);
@@ -31,6 +32,7 @@ fn concatenation_accepts_analytic_arcs_with_ulp_endpoint_rounding() {
         10.185_400_000_000_001,
         [0.0, 3.141_592_560_240_814_3],
     )
+        .expect("carrier lanes pair")
     .unwrap();
     let second = circular_arc_nurbs(
         center,
@@ -39,6 +41,7 @@ fn concatenation_accepts_analytic_arcs_with_ulp_endpoint_rounding() {
         10.185_400_000_000_001,
         [0.0, 3.141_592_746_938_772],
     )
+        .expect("carrier lanes pair")
     .unwrap();
     assert!(
         first
@@ -55,6 +58,7 @@ fn concatenation_accepts_analytic_arcs_with_ulp_endpoint_rounding() {
         ],
         Some(0.001),
     )
+        .expect("carrier lanes pair")
     .expect("analytic arcs with source-valid endpoints should concatenate");
 }
 
@@ -118,10 +122,12 @@ fn bounded_analytic_carrier_uses_admitted_source_endpoint_witnesses() {
 
     let (carrier, _) =
         bounded_nurbs_for_curve_with_tolerance(&ir, &curve_id, Some(0.001), None, None)
+        .expect("carrier lanes pair")
             .expect("the source endpoint is inside the declared resolution");
     assert_eq!(carrier.control_points().first(), Some(&start));
     assert_eq!(carrier.control_points().last(), Some(&declared_end));
     assert!(
-        bounded_nurbs_for_curve_with_tolerance(&ir, &curve_id, Some(0.0001), None, None,).is_none()
+        bounded_nurbs_for_curve_with_tolerance(&ir, &curve_id, Some(0.0001), None, None,)
+        .expect("carrier lanes pair").is_none()
     );
 }
