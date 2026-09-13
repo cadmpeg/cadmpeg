@@ -321,7 +321,7 @@ impl<'a> Builder<'a> {
                     }
                 };
                 let Some(primary_geometry) = primary_read
-                    .map(|geometry| transformed_pcurve_geometry(geometry, parameter_affine))
+                    .and_then(|geometry| transformed_pcurve_geometry(geometry, parameter_affine))
                 else {
                     self.losses
                         .push(FreecadLossCode::PcurveNotTransferred.note(format!(
@@ -354,7 +354,7 @@ impl<'a> Builder<'a> {
                         }
                     };
                     let Some(secondary_geometry) = secondary_read
-                        .map(|geometry| transformed_pcurve_geometry(geometry, parameter_affine))
+                        .and_then(|geometry| transformed_pcurve_geometry(geometry, parameter_affine))
                     else {
                         self.losses.push(FreecadLossCode::PcurveNotTransferred.note(format!(
                             "payload {} curve2ds index {secondary} could not enter neutral geometry", self.payload.id
@@ -1601,12 +1601,17 @@ fn connected_components(connectivity: &[HashSet<String>]) -> Result<Vec<Vec<usiz
     Ok(components)
 }
 
+/// The pcurve placed onto its support's parameter frame.
+///
+/// The affine coefficients come off the document, so a scale or offset that
+/// drives one non-finite is a source the transform carrier refuses; `None`
+/// then states that the placement is not representable, rather than panicking.
 fn transformed_pcurve_geometry(
     geometry: PcurveGeometry,
     affine: Option<SurfaceParameterAffine>,
-) -> PcurveGeometry {
+) -> Option<PcurveGeometry> {
     let Some(affine) = affine else {
-        return geometry;
+        return Some(geometry);
     };
     if affine
         == (SurfaceParameterAffine {
@@ -1616,16 +1621,15 @@ fn transformed_pcurve_geometry(
             v_offset: 0.0,
         })
     {
-        return geometry;
+        return Some(geometry);
     }
-    PcurveGeometry::Transformed {
+    Some(PcurveGeometry::Transformed {
         basis: Box::new(geometry),
         transform: Transform2::affine([
             [affine.u_scale, 0.0, affine.u_offset],
             [0.0, affine.v_scale, affine.v_offset],
-        ])
-        .expect("affine transform"),
-    }
+        ])?,
+    })
 }
 
 fn positive_tolerance(value: f64) -> Option<cadmpeg_ir::scalar::PositiveReal> {
