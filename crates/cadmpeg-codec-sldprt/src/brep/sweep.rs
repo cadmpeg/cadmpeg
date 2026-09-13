@@ -137,7 +137,10 @@ pub(crate) fn scan_sweep_carriers(bytes: &[u8]) -> HashMap<u16, SweepCarrier> {
 /// The nine poles are four rational quadratic quarter arcs. Odd poles are the
 /// intersections of adjacent endpoint tangents and therefore carry weight
 /// `sqrt(2) / 2`.
-pub(crate) fn profile_nurbs(geometry: &CurveGeometry) -> Option<NurbsCurve> {
+pub(crate) fn profile_nurbs(
+    geometry: &CurveGeometry,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
+) -> Option<NurbsCurve> {
     let (center, axis, major, major_radius, minor_radius) = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => return Some(curve.clone()),
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
@@ -186,7 +189,7 @@ pub(crate) fn profile_nurbs(geometry: &CurveGeometry) -> Option<NurbsCurve> {
         );
         weights.push(if index % 2 == 0 { 1.0 } else { half_sqrt2 });
     }
-    NurbsCurve::from_lanes(
+    match NurbsCurve::from_lanes(
         2,
         vec![
             0.0,
@@ -205,8 +208,13 @@ pub(crate) fn profile_nurbs(geometry: &CurveGeometry) -> Option<NurbsCurve> {
         control_points,
         Some(weights),
         false,
-    )
-    .ok()
+    ) {
+        Ok(curve) => Some(curve),
+        Err(error) => {
+            *refusal = Some(error);
+            None
+        }
+    }
 }
 
 /// Build the ruled NURBS patch of a swept surface over `v` in
@@ -216,6 +224,7 @@ pub(crate) fn swept_nurbs(
     direction: Vector3,
     v_start: f64,
     v_end: f64,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<NurbsSurface> {
     if !(v_start.is_finite() && v_end.is_finite()) || v_end <= v_start {
         return None;
@@ -238,7 +247,7 @@ pub(crate) fn swept_nurbs(
             }
         }
     }
-    NurbsSurface::from_lanes(
+    match NurbsSurface::from_lanes(
         profile.degree(),
         1,
         profile.knots().to_vec(),
@@ -248,8 +257,13 @@ pub(crate) fn swept_nurbs(
         false,
         profile.periodic(),
         false,
-    )
-    .ok()
+    ) {
+        Ok(surface) => Some(surface),
+        Err(error) => {
+            *refusal = Some(error);
+            None
+        }
+    }
 }
 
 /// Build the exact rational NURBS of a full surface of revolution: the
@@ -259,6 +273,7 @@ pub(crate) fn spun_nurbs(
     profile: &NurbsCurve,
     base: Point3,
     axis: Vector3,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<NurbsSurface> {
     use std::f64::consts::{FRAC_PI_2, PI};
     let n = profile.control_points().len();
@@ -324,7 +339,7 @@ pub(crate) fn spun_nurbs(
         2.0 * PI,
         2.0 * PI,
     ];
-    NurbsSurface::from_lanes(
+    match NurbsSurface::from_lanes(
         profile.degree(),
         2,
         profile.knots().to_vec(),
@@ -334,8 +349,13 @@ pub(crate) fn spun_nurbs(
         false,
         profile.periodic(),
         true,
-    )
-    .ok()
+    ) {
+        Ok(surface) => Some(surface),
+        Err(error) => {
+            *refusal = Some(error);
+            None
+        }
+    }
 }
 
 #[cfg(test)]
@@ -451,7 +471,7 @@ mod tests {
             )
             .unwrap(),
         ));
-        let curve = profile_nurbs(&geometry).expect("ellipse NURBS");
+        let curve = profile_nurbs(&geometry, &mut None).expect("ellipse NURBS");
 
         assert_eq!(curve.degree(), 2);
         assert_eq!(curve.control_points().len(), 9);
@@ -481,7 +501,7 @@ mod tests {
             )
             .unwrap(),
         ));
-        let curve = profile_nurbs(&geometry).expect("circle NURBS");
+        let curve = profile_nurbs(&geometry, &mut None).expect("circle NURBS");
 
         for parameter in [0.0, 0.7, FRAC_PI_2, 3.4, 5.9] {
             let point = eval_curve(&curve, parameter);
@@ -568,6 +588,7 @@ mod tests {
             &profile,
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
+            &mut None,
         )
         .expect("valid spun surface");
         // The revolution is the standard rational quadratic NURBS circle: four
@@ -610,10 +631,43 @@ mod tests {
         )
         .expect("valid line profile");
         let surface =
-            swept_nurbs(&profile, Vector3::new(0.0, 1.0, 0.0), -2.0, 3.0).expect("swept surface");
+            swept_nurbs(&profile, Vector3::new(0.0, 1.0, 0.0), -2.0, 3.0, &mut None).expect("swept surface");
         let p = eval_surface(&surface, 0.5, 1.5);
         assert!((p.x - 0.5).abs() < 1.0e-12);
         assert!((p.y - 1.5).abs() < 1.0e-12);
         assert!(p.z.abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn a_refused_swept_carrier_states_its_reason() {
+        let profile = NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![
+                Point3::new(f64::MAX, 0.0, 0.0),
+                Point3::new(f64::MAX, 1.0, 0.0),
+            ],
+            None,
+            false,
+        )
+        .expect("valid profile");
+        let mut refusal = None;
+        let surface = swept_nurbs(
+            &profile,
+            Vector3::new(1.0, 0.0, 0.0),
+            0.0,
+            f64::MAX,
+            &mut refusal,
+        );
+        assert!(surface.is_none(), "the refused ruling states no surface");
+        let error = refusal.expect("the refusal is carried out of the sweep");
+        let reported = cadmpeg_core::CodecError::from(error);
+        let cadmpeg_core::CodecError::Malformed(message) = &reported else {
+            panic!("expected a malformed refusal, got {reported:?}");
+        };
+        assert!(
+            !message.is_empty(),
+            "the refusal carries the carrier's own text"
+        );
     }
 }

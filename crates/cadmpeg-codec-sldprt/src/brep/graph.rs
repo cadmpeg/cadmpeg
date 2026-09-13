@@ -547,6 +547,7 @@ fn resolve_sweep_surface(
     carriers: &CarrierIndex,
     tables: &topology::Tables,
     face: &WalkedFace,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<(
     SolvedSurfaceGeometry,
     usize,
@@ -555,11 +556,11 @@ fn resolve_sweep_surface(
 )> {
     let construction = carriers.sweep(face.surface_attr)?;
     let profile = carriers.curve(construction.profile_attr)?;
-    let curve = sweep::profile_nurbs(&profile.carrier().geometry)?;
+    let curve = sweep::profile_nurbs(&profile.carrier().geometry, refusal)?;
     let profile_derived = matches!(profile, IndexedCurve::Derived(_));
     match &construction.kind {
         SweepKind::Spun { base, axis } => Some((
-            SolvedSurfaceGeometry::Nurbs(sweep::spun_nurbs(&curve, *base, *axis)?),
+            SolvedSurfaceGeometry::Nurbs(sweep::spun_nurbs(&curve, *base, *axis, refusal)?),
             construction.offset,
             "00_44",
             profile_derived.then_some(Exactness::Derived),
@@ -611,6 +612,7 @@ fn resolve_sweep_surface(
                     *direction,
                     v_start - pad,
                     v_end + pad,
+                    refusal,
                 )?),
                 construction.offset,
                 "00_43",
@@ -1589,6 +1591,8 @@ fn decode_graph(
                 annotations
                     .note(id_coedge(ce_attr), &source_stream, ce.offset as u64)
                     .tag("00_11");
+                let mut pcurve_refusal = None;
+                let pcurve_refusal = &mut pcurve_refusal;
                 let pcurves = edge_ends
                     .get(&edge_attr)
                     .and_then(|(_, _, curve_attr)| {
@@ -1611,6 +1615,7 @@ fn decode_graph(
                             f.surface_attr,
                             surface,
                             *edge_endpoint_positions.get(&edge_attr)?,
+                            pcurve_refusal,
                         )?;
                         let id =
                             PcurveId::mint(format!("sldprt:brep:pcurve#intersection:{ce_attr}"))
@@ -1653,6 +1658,11 @@ fn decode_graph(
                     .transpose()
                     .map_err(cadmpeg_core::CodecError::malformed)?
                     .unwrap_or_default();
+                if let Some(error) = pcurve_refusal.take() {
+                    out.stats
+                        .spline_lane_refusals
+                        .push(format!("intersection pcurve for coedge {ce_attr}: {error}"));
+                }
                 let mut sense = ce.sense;
                 if reversed_edge_orientation.contains(&edge_attr) {
                     sense = match sense {
@@ -1964,9 +1974,17 @@ fn decode_graph(
                         source_object: None,
                         geometry,
                     });
-                } else if let Some((geometry, offset, tag, exactness)) =
-                    resolve_sweep_surface(carriers, t, f)
-                {
+                } else if let Some((geometry, offset, tag, exactness)) = {
+                    let mut sweep_refusal = None;
+                    let resolved = resolve_sweep_surface(carriers, t, f, &mut sweep_refusal);
+                    if let Some(error) = sweep_refusal {
+                        out.stats.spline_lane_refusals.push(format!(
+                            "swept surface for face attr {}: {error}",
+                            f.surface_attr
+                        ));
+                    }
+                    resolved
+                } {
                     annotations
                         .note(id_surf(f.bridge_attr), &source_stream, offset as u64)
                         .tag(tag);
@@ -3608,6 +3626,7 @@ fn derive_nurbs_isoparametric_pcurves(
         .collect();
     let edges: HashMap<_, _> = out.edges.iter().map(|edge| (&edge.id, edge)).collect();
     let curves: HashMap<_, _> = out.curves.iter().map(|curve| (&curve.id, curve)).collect();
+    let mut lane_refusals: Vec<String> = Vec::new();
     let vertices: HashMap<_, _> = out
         .vertices
         .iter()
@@ -3655,7 +3674,17 @@ fn derive_nurbs_isoparametric_pcurves(
                 else {
                     continue;
                 };
-                match derive_nurbs_edge_pcurve(surface, curve, parameter_range) {
+                let resolution = match derive_nurbs_edge_pcurve(surface, curve, parameter_range) {
+                    Ok(resolution) => resolution,
+                    Err(error) => {
+                        lane_refusals.push(format!(
+                            "isoparametric pcurve for edge {}: {error}",
+                            edge.id.as_str()
+                        ));
+                        continue;
+                    }
+                };
+                match resolution {
                     NurbsPcurveResolution::Exact(geometry) => {
                         (geometry, Some(parameter_range), None, false)
                     }
@@ -3755,6 +3784,7 @@ fn derive_nurbs_isoparametric_pcurves(
         annotations.exactness(&id, Exactness::Derived);
         out.pcurves.push(pcurve);
     }
+    out.stats.spline_lane_refusals.extend(lane_refusals);
     Ok(())
 }
 
@@ -3814,6 +3844,7 @@ fn intersection_support_pcurve(
     surface_attr: u16,
     surface: &SurfaceGeometry,
     edge_endpoints: [cadmpeg_ir::math::Point3; 2],
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<(PcurveGeometry, [f64; 2], IntersectionPcurveSource)> {
     if chart.degree() != 1
         || chart.weights().is_some()
@@ -4036,7 +4067,13 @@ fn intersection_support_pcurve(
         return None;
     }
     let nurbs =
-        PcurveNurbs::from_lanes(1, chart.knots().to_vec(), control_points, None, false).ok()?;
+        match PcurveNurbs::from_lanes(1, chart.knots().to_vec(), control_points, None, false) {
+            Ok(nurbs) => nurbs,
+            Err(error) => {
+                *refusal = Some(error);
+                return None;
+            }
+        };
     Some((PcurveGeometry::Nurbs { nurbs }, parameter_range, source))
 }
 
@@ -4483,6 +4520,7 @@ fn insert_nurbs_homogeneous_knot(
 fn clamp_nurbs_curve_to_domain(
     curve: &cadmpeg_ir::geometry::NurbsCurve,
     domain: [f64; 2],
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<cadmpeg_ir::geometry::NurbsCurve> {
     if curve.periodic()
         || !domain[0].is_finite()
@@ -4535,20 +4573,26 @@ fn clamp_nurbs_curve_to_domain(
             weights.push(weight);
         }
     }
-    cadmpeg_ir::geometry::NurbsCurve::from_lanes(
+    match cadmpeg_ir::geometry::NurbsCurve::from_lanes(
         curve.degree(),
         segment_knots,
         control_points,
         weights,
         false,
-    )
-    .ok()
+    ) {
+        Ok(clamped) => Some(clamped),
+        Err(error) => {
+            *refusal = Some(error);
+            None
+        }
+    }
 }
 
 fn extended_nurbs_isocurve_axis_candidate(
     surface: &cadmpeg_ir::geometry::NurbsSurface,
     curve: &cadmpeg_ir::geometry::NurbsCurve,
     fixed_axis: SurfaceParameterAxis,
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> InverseResolution<PcurveGeometry> {
     let (fixed_degree, fixed_count, fixed_knots, fixed_periodic) = match fixed_axis {
         SurfaceParameterAxis::U => (
@@ -4642,7 +4686,7 @@ fn extended_nurbs_isocurve_axis_candidate(
         }
     }
     let mut matches = unique_fixed_values.into_iter().filter(|fixed| {
-        let Some(clamped) = clamp_nurbs_curve_to_domain(curve, varying_domain) else {
+        let Some(clamped) = clamp_nurbs_curve_to_domain(curve, varying_domain, refusal) else {
             return false;
         };
         nurbs_surface_isocurve(surface, fixed_axis, *fixed)
@@ -4679,20 +4723,35 @@ fn extended_nurbs_isocurve_axis_candidate(
 fn extended_nurbs_isocurve_pcurve(
     surface: &cadmpeg_ir::geometry::NurbsSurface,
     curve: &cadmpeg_ir::geometry::NurbsCurve,
-) -> InverseResolution<PcurveGeometry> {
-    resolve_axis_candidates([
-        extended_nurbs_isocurve_axis_candidate(surface, curve, SurfaceParameterAxis::U),
-        extended_nurbs_isocurve_axis_candidate(surface, curve, SurfaceParameterAxis::V),
-    ])
+) -> Result<InverseResolution<PcurveGeometry>, cadmpeg_ir::geometry::NurbsError> {
+    let mut refusal = None;
+    let resolved = resolve_axis_candidates([
+        extended_nurbs_isocurve_axis_candidate(
+            surface,
+            curve,
+            SurfaceParameterAxis::U,
+            &mut refusal,
+        ),
+        extended_nurbs_isocurve_axis_candidate(
+            surface,
+            curve,
+            SurfaceParameterAxis::V,
+            &mut refusal,
+        ),
+    ]);
+    match refusal {
+        Some(error) => Err(error),
+        None => Ok(resolved),
+    }
 }
 
 fn nurbs_isocurve_pcurve(
     surface: &cadmpeg_ir::geometry::NurbsSurface,
     curve: &cadmpeg_ir::geometry::NurbsCurve,
-) -> InverseResolution<PcurveGeometry> {
+) -> Result<InverseResolution<PcurveGeometry>, cadmpeg_ir::geometry::NurbsError> {
     match nurbs_strict_isocurve_pcurve(surface, curve) {
         InverseResolution::NoMatch => extended_nurbs_isocurve_pcurve(surface, curve),
-        other => other,
+        other => Ok(other),
     }
 }
 
@@ -4815,6 +4874,7 @@ fn nurbs_degree_one_cache_pcurve(
     surface: &cadmpeg_ir::geometry::NurbsSurface,
     curve: &cadmpeg_ir::geometry::NurbsCurve,
     range: [f64; 2],
+    refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<(PcurveGeometry, f64)> {
     if curve.degree() != 1
         || curve.weights().is_some()
@@ -4858,7 +4918,13 @@ fn nurbs_degree_one_cache_pcurve(
         return None;
     }
     let nurbs =
-        PcurveNurbs::from_lanes(1, curve.knots().to_vec(), control_points, None, false).ok()?;
+        match PcurveNurbs::from_lanes(1, curve.knots().to_vec(), control_points, None, false) {
+            Ok(nurbs) => nurbs,
+            Err(error) => {
+                *refusal = Some(error);
+                return None;
+            }
+        };
     Some((PcurveGeometry::Nurbs { nurbs }, fit_tolerance))
 }
 
@@ -4896,24 +4962,31 @@ fn derive_nurbs_edge_pcurve(
     surface: &cadmpeg_ir::geometry::NurbsSurface,
     curve: &cadmpeg_ir::geometry::NurbsCurve,
     range: [f64; 2],
-) -> NurbsPcurveResolution {
+) -> Result<NurbsPcurveResolution, cadmpeg_ir::geometry::NurbsError> {
     if nurbs_edge_endpoint_parameters(surface, curve, range).is_none() {
-        return NurbsPcurveResolution::OffSurface;
+        return Ok(NurbsPcurveResolution::OffSurface);
     }
     if nurbs_curve_surface_deviation(surface, curve, range).is_none() {
-        return NurbsPcurveResolution::NoMatch;
+        return Ok(NurbsPcurveResolution::NoMatch);
     }
-    match nurbs_isocurve_pcurve(surface, curve) {
+    Ok(match nurbs_isocurve_pcurve(surface, curve)? {
         InverseResolution::Unique(geometry) => NurbsPcurveResolution::Exact(geometry),
         InverseResolution::Ambiguous => NurbsPcurveResolution::Ambiguous,
-        InverseResolution::NoMatch => match nurbs_degree_one_cache_pcurve(surface, curve, range) {
-            Some((geometry, fit_tolerance)) => NurbsPcurveResolution::Cache {
-                geometry,
-                fit_tolerance,
-            },
-            None => NurbsPcurveResolution::NoMatch,
-        },
-    }
+        InverseResolution::NoMatch => {
+            let mut refusal = None;
+            let cached = nurbs_degree_one_cache_pcurve(surface, curve, range, &mut refusal);
+            if let Some(error) = refusal {
+                return Err(error);
+            }
+            match cached {
+                Some((geometry, fit_tolerance)) => NurbsPcurveResolution::Cache {
+                    geometry,
+                    fit_tolerance,
+                },
+                None => NurbsPcurveResolution::NoMatch,
+            }
+        }
+    })
 }
 
 fn ruled_surface_line_pcurve(
@@ -5923,7 +5996,7 @@ mod tests {
             ]),
         };
         let (geometry, range, source) =
-            super::intersection_support_pcurve(&support_data, &chart, 10, &surface, endpoints)
+            super::intersection_support_pcurve(&support_data, &chart, 10, &surface, endpoints, &mut None)
                 .expect("support parameterization");
         let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = geometry else {
             panic!("expected solved UV NURBS");
@@ -5944,7 +6017,7 @@ mod tests {
             ..support_data.clone()
         };
         assert!(
-            super::intersection_support_pcurve(&ambiguous, &chart, 10, &surface, endpoints)
+            super::intersection_support_pcurve(&ambiguous, &chart, 10, &surface, endpoints, &mut None)
                 .is_none()
         );
 
@@ -5953,7 +6026,7 @@ mod tests {
             ..support_data
         };
         assert!(
-            super::intersection_support_pcurve(&malformed, &chart, 10, &surface, endpoints)
+            super::intersection_support_pcurve(&malformed, &chart, 10, &surface, endpoints, &mut None)
                 .is_none()
         );
     }
@@ -5982,7 +6055,7 @@ mod tests {
         };
 
         let (geometry, _, source) =
-            super::intersection_support_pcurve(&support_data, &chart, 10, &surface, endpoints)
+            super::intersection_support_pcurve(&support_data, &chart, 10, &surface, endpoints, &mut None)
                 .expect("analytic support inversion");
         let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = geometry else {
             panic!("expected solved UV NURBS");
@@ -6008,7 +6081,7 @@ mod tests {
             10,
             &surface,
             endpoints
-        )
+        , &mut None)
         .is_none());
     }
 
@@ -6037,7 +6110,7 @@ mod tests {
         };
 
         let (geometry, _, _) =
-            super::intersection_support_pcurve(&support_data, &chart, 10, &surface, endpoints)
+            super::intersection_support_pcurve(&support_data, &chart, 10, &surface, endpoints, &mut None)
                 .expect("torus support inversion");
         let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = geometry else {
             panic!("expected solved UV NURBS");
@@ -6083,7 +6156,7 @@ mod tests {
         };
 
         let (geometry, _, source) =
-            super::intersection_support_pcurve(&support_data, &chart, 10, &surface, endpoints)
+            super::intersection_support_pcurve(&support_data, &chart, 10, &surface, endpoints, &mut None)
                 .expect("NURBS support inversion");
         let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = geometry else {
             panic!("expected solved UV NURBS");
@@ -6131,6 +6204,7 @@ mod tests {
             10,
             &surface,
             endpoints,
+            &mut None,
         )
         .is_none());
         assert!(super::intersection_support_pcurve(
@@ -6139,6 +6213,7 @@ mod tests {
             10,
             &surface,
             endpoints,
+            &mut None,
         )
         .is_some());
     }
@@ -6548,7 +6623,8 @@ mod tests {
             ],
             Some(vec![1.0, 2.0, 1.0]),
         );
-        let geometry = match super::nurbs_isocurve_pcurve(&surface, &curve) {
+        let geometry = match super::nurbs_isocurve_pcurve(&surface, &curve)
+            .expect("isocurve lanes pair") {
             super::InverseResolution::Unique(geometry) => geometry,
             super::InverseResolution::NoMatch => panic!("interior isocurve did not match"),
             super::InverseResolution::Ambiguous => panic!("interior isocurve was ambiguous"),
@@ -6590,7 +6666,8 @@ mod tests {
             ],
             None,
         );
-        let resolution = super::derive_nurbs_edge_pcurve(&surface, &curve, [0.2, 0.8]);
+        let resolution = super::derive_nurbs_edge_pcurve(&surface, &curve, [0.2, 0.8])
+            .expect("isocurve lanes pair");
         let super::NurbsPcurveResolution::Exact(cadmpeg_ir::geometry::PcurveGeometry::Line(
             line_pcurve,
         )) = resolution
@@ -6604,7 +6681,7 @@ mod tests {
         assert!(direction.u.abs() < 1e-12);
         assert!((direction.v - 1.0).abs() < 1e-12);
         let clamped =
-            super::clamp_nurbs_curve_to_domain(&curve, [0.0, 1.0]).expect("clamped segment");
+            super::clamp_nurbs_curve_to_domain(&curve, [0.0, 1.0], &mut None).expect("clamped segment");
         let expected = cadmpeg_ir::eval::nurbs_surface_isocurve(
             &surface,
             cadmpeg_ir::geometry::SurfaceParameterAxis::U,
@@ -6643,7 +6720,8 @@ mod tests {
             ],
             None,
         );
-        let resolution = super::derive_nurbs_edge_pcurve(&surface, &curve, [0.1, 0.9]);
+        let resolution = super::derive_nurbs_edge_pcurve(&surface, &curve, [0.1, 0.9])
+            .expect("isocurve lanes pair");
         assert!(
             matches!(resolution, super::NurbsPcurveResolution::Exact(cadmpeg_ir::geometry::PcurveGeometry::Line(
                             line_pcurve,
@@ -6656,7 +6734,7 @@ mod tests {
                                 && (direction.v - 1.0).abs() <= f64::EPSILON * 64.0
                         })
         );
-        let clamped = super::clamp_nurbs_curve_to_domain(&curve, [0.0, 1.0])
+        let clamped = super::clamp_nurbs_curve_to_domain(&curve, [0.0, 1.0], &mut None)
             .expect("clamped quadratic segment");
         let expected = cadmpeg_ir::eval::nurbs_surface_isocurve(
             &surface,
@@ -6693,7 +6771,8 @@ mod tests {
             ],
             Some(vec![0.8, 1.4]),
         );
-        let resolution = super::derive_nurbs_edge_pcurve(&surface, &curve, [0.2, 0.8]);
+        let resolution = super::derive_nurbs_edge_pcurve(&surface, &curve, [0.2, 0.8])
+            .expect("isocurve lanes pair");
         assert!(
             matches!(resolution, super::NurbsPcurveResolution::Exact(cadmpeg_ir::geometry::PcurveGeometry::Line(
                             line_pcurve,
@@ -6706,7 +6785,7 @@ mod tests {
                                 && (direction.v - 1.0).abs() <= f64::EPSILON * 64.0
                         })
         );
-        let clamped = super::clamp_nurbs_curve_to_domain(&curve, [0.0, 1.0])
+        let clamped = super::clamp_nurbs_curve_to_domain(&curve, [0.0, 1.0], &mut None)
             .expect("clamped rational segment");
         let expected = cadmpeg_ir::eval::nurbs_surface_isocurve(
             &surface,
@@ -6745,7 +6824,8 @@ mod tests {
             ],
             None,
         );
-        let resolution = super::derive_nurbs_edge_pcurve(&surface, &curve, [0.0, 1.0]);
+        let resolution = super::derive_nurbs_edge_pcurve(&surface, &curve, [0.0, 1.0])
+            .expect("isocurve lanes pair");
         let super::NurbsPcurveResolution::Cache {
             geometry: cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs },
             fit_tolerance,
@@ -6789,7 +6869,8 @@ mod tests {
             None,
         );
         assert!(matches!(
-            super::derive_nurbs_edge_pcurve(&surface, &curve, [0.0, 1.0]),
+            super::derive_nurbs_edge_pcurve(&surface, &curve, [0.0, 1.0])
+            .expect("isocurve lanes pair"),
             super::NurbsPcurveResolution::OffSurface
         ));
     }
