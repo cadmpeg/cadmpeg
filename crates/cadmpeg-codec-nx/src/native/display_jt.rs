@@ -4679,7 +4679,9 @@ fn display_jt_tessellation_rows(
                     ) {
                         Ok(mesh) => mesh,
                         Err(error) => {
-                            *refusal = Some(error.into());
+                            *refusal = Some(CodecError::malformed(format_args!(
+                                "display-jt tessellation: {error}"
+                            )));
                             return None;
                         }
                     },

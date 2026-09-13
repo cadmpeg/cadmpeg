@@ -14,7 +14,7 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{
-    CopyOnChange, CopyOnChangePolicy, ExternalDocumentReference, LinkState, Occurrence,
+    CopyOnChange, CopyOnChangePolicy, ExternalDocument, LinkState, Occurrence,
     OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
 };
 use cadmpeg_ir::topology::Body;
@@ -347,10 +347,10 @@ pub(crate) fn transfer_neutral(
                     PrototypeReference::External {
                         document: match document {
                             crate::native::ExternalDocument::File(path) => {
-                                cadmpeg_ir::products::ExternalDocumentReference::path(path.as_str())
+                                cadmpeg_ir::products::ExternalDocument::path(path.as_str())
                             }
                             crate::native::ExternalDocument::Name(name) => {
-                                cadmpeg_ir::products::ExternalDocumentReference::document_id(
+                                cadmpeg_ir::products::ExternalDocument::document_id(
                                     name.as_str(),
                                 )
                             }
@@ -579,12 +579,12 @@ fn copy_on_change_policy(value: &str) -> CopyOnChangePolicy {
 pub(crate) fn external_document_reference(
     value: &str,
     attribute: Option<&str>,
-) -> ExternalDocumentReference {
+) -> ExternalDocument {
     let is_path = attribute.is_some_and(|name| name.eq_ignore_ascii_case("file"));
     if is_path {
-        ExternalDocumentReference::path(value)
+        ExternalDocument::path(value)
     } else {
-        ExternalDocumentReference::document_id(value)
+        ExternalDocument::document_id(value)
     }
 }
 

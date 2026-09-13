@@ -78,7 +78,7 @@ fn external_reference_placements_project_as_root_occurrences_in_millimetres() {
     assert_eq!(
         occurrences[0].prototype,
         cadmpeg_ir::products::PrototypeReference::External {
-            document: cadmpeg_ir::products::ExternalDocumentReference::path("part.f3d"),
+            document: cadmpeg_ir::products::ExternalDocument::path("part.f3d"),
             object: None,
         }
     );

@@ -9,8 +9,14 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// A format-specific product record.
+///
+/// The `Deserialize` derive has a reader: `CadIr::native_unknowns_iter` and
+/// `all_native_unknowns_iter` read this type out of the reserved `unknowns`
+/// arena through `arena_iter_as`, whose bound is `T: DeserializeOwned`. Since
+/// the read is live, the record denies a key it does not declare.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct NativeUnknownRecord {
     /// Arena id.
     pub id: UnknownId,
