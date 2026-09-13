@@ -33,6 +33,9 @@ pub(crate) struct CarrierIndex {
     offsets: HashMap<u16, offset::OffsetCarrier>,
     /// Zero-offset surface pairs referenced by rolling-ball constructions.
     blend_support_pairs: HashMap<u16, blend::SupportPairCarrier>,
+    /// Spline carriers whose pole and weight lanes do not pair, each naming its
+    /// attribute id and the pairing's own refusal.
+    pub(crate) lane_refusals: Vec<String>,
 }
 
 impl CarrierIndex {
@@ -114,6 +117,7 @@ impl CarrierIndex {
         for (attr, carrier) in other.blend_support_pairs {
             self.blend_support_pairs.entry(attr).or_insert(carrier);
         }
+        self.lane_refusals.extend(other.lane_refusals);
     }
 }
 
@@ -133,12 +137,14 @@ pub(crate) fn scan_carriers(body: &[u8]) -> CarrierIndex {
         }
         i += 1;
     }
-    for carrier in spline::scan_curve_carriers(body).into_values() {
+    let mut lane_refusals = Vec::new();
+    for carrier in spline::scan_curve_carriers(body, &mut lane_refusals).into_values() {
         out.insert(Carrier::Curve(carrier));
     }
-    for carrier in spline::scan_surface_carriers(body).into_values() {
+    for carrier in spline::scan_surface_carriers(body, &mut lane_refusals).into_values() {
         out.insert(Carrier::Surface(carrier));
     }
+    out.lane_refusals = lane_refusals;
     for carrier in subset::scan(body, &out) {
         out.insert(Carrier::Curve(carrier));
     }

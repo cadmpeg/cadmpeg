@@ -30,13 +30,15 @@ fn thread_diameters_require_strict_order_and_positive_finite_values() {
 }
 
 #[test]
-fn thread_wire_rejects_empty_names_and_invalid_dimensions() {
+fn thread_wire_rejects_blank_names_and_invalid_dimensions() {
     for field in ["designation", "profile"] {
+        for blank in ["", " "] {
+            let mut wire = thread_wire();
+            wire[field] = serde_json::json!(blank);
+            assert!(serde_json::from_value::<DesignThreadConstruction>(wire).is_err());
+        }
         let mut wire = thread_wire();
-        wire[field] = serde_json::json!("");
-        assert!(serde_json::from_value::<DesignThreadConstruction>(wire).is_err());
-        let mut wire = thread_wire();
-        wire[field] = serde_json::json!(" ");
+        wire[field] = serde_json::json!(" a ");
         let admitted: DesignThreadConstruction = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
     }

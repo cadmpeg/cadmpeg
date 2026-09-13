@@ -129,6 +129,9 @@ fn every_golden_shape_refuses_an_unknown_key() {
 ///   fields;
 /// * `/model/semantic_annotations/#/parameters` -
 ///   `SemanticAnnotation::parameters`, the native note's own fields;
+/// * `/model/semantic_annotations/#/references` -
+///   `SemanticAnnotation::references`, `BTreeMap<String,
+///   Vec<ReferenceSelection>>`, the native note's reference roles by name;
 /// * `/model/view_presentations/#/properties` - `ViewPresentation::properties`;
 /// * `/source/identity/dialects/primary/declared` and
 ///   `/source/identity/dialects/extra/#/declared` - `DialectMatch::declared`,
@@ -148,6 +151,7 @@ const FREE_FORM_SHAPES: &[&str] = &[
     "/model/presentation_documents/#/states/#/kind/value/properties",
     "/model/product_definitions/#/bom_properties",
     "/model/semantic_annotations/#/parameters",
+    "/model/semantic_annotations/#/references",
     "/model/view_presentations/#/properties",
     "/source/attributes",
     "/source/identity/dialects/extra/#/declared",

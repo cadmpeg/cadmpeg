@@ -560,12 +560,15 @@ pub(super) fn project(
             knots.extend([*breakpoint; 3]);
         }
         knots.extend([breakpoints[segment_count]; 4]);
-        let Ok(nurbs) = NurbsCurve::from_lanes(3, knots, control_points, None, false) else {
-            losses.push(entity_loss(
-                entry,
-                "converted spline cardinalities are inconsistent",
-            ));
-            continue;
+        let nurbs = match NurbsCurve::from_lanes(3, knots, control_points, None, false) {
+            Ok(nurbs) => nurbs,
+            Err(error) => {
+                losses.push(entity_loss(
+                    entry,
+                    format!("converted spline cardinalities are inconsistent: {error}"),
+                ));
+                continue;
+            }
         };
         let Some(edge) = add_edge(
             ir,
@@ -854,7 +857,7 @@ pub(super) fn project(
             ));
             continue;
         };
-        let Ok(nurbs) = NurbsSurface::from_lanes(
+        let nurbs = match NurbsSurface::from_lanes(
             3,
             3,
             u_knots,
@@ -867,12 +870,15 @@ pub(super) fn project(
             false,
             false,
             false,
-        ) else {
-            losses.push(entity_loss(
-                entry,
-                "converted spline-surface cardinalities are inconsistent",
-            ));
-            continue;
+        ) {
+            Ok(nurbs) => nurbs,
+            Err(error) => {
+                losses.push(entity_loss(
+                    entry,
+                    format!("converted spline-surface cardinalities are inconsistent: {error}"),
+                ));
+                continue;
+            }
         };
         sequences.record_surface(
             &crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),

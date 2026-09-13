@@ -81,6 +81,8 @@ pub(crate) enum SldprtLossCode {
     GeometryEdgeSupportCurveUntyped,
     /// A derived pcurve parameter has multiple geometric candidates.
     GeometryPcurveAmbiguous,
+    /// A spline carrier's pole and weight lanes do not pair.
+    GeometrySplineLanesUnpaired,
     /// Current face records carry conflicting or incoherent color bindings.
     AppearanceFaceColorUnresolved,
     /// Appearance assignments have no unambiguous `DisplayLists` target.
@@ -157,6 +159,7 @@ impl SldprtLossCode {
         Self::GeometryFaceSupportSurfaceUntyped,
         Self::GeometryEdgeSupportCurveUntyped,
         Self::GeometryPcurveAmbiguous,
+        Self::GeometrySplineLanesUnpaired,
         Self::AppearanceFaceColorUnresolved,
         Self::AppearanceAssignmentUnresolved,
         Self::TessellationFaceOwnershipUnresolved,
@@ -209,6 +212,7 @@ impl SldprtLossCode {
             Self::GeometryFaceSupportSurfaceUntyped => "geometry.face-support-surface-untyped",
             Self::GeometryEdgeSupportCurveUntyped => "geometry.edge-support-curve-untyped",
             Self::GeometryPcurveAmbiguous => "geometry.pcurve-ambiguous",
+            Self::GeometrySplineLanesUnpaired => "geometry.spline-lanes-unpaired",
             Self::AppearanceFaceColorUnresolved => "appearance.face-color-unresolved",
             Self::AppearanceAssignmentUnresolved => "appearance.assignment-unresolved",
             Self::TessellationFaceOwnershipUnresolved => "tessellation.face-ownership-unresolved",
@@ -266,6 +270,7 @@ impl SldprtLossCode {
             | Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometryEdgeSupportCurveUntyped
             | Self::GeometryPcurveAmbiguous
+            | Self::GeometrySplineLanesUnpaired
             | Self::AppearanceFaceColorUnresolved
             | Self::AppearanceAssignmentUnresolved
             | Self::TessellationFaceOwnershipUnresolved
@@ -298,6 +303,7 @@ impl SldprtLossCode {
             Self::TopologyGraphNotTransferred => LossTaxonomy::TopologyNotTransferred,
             Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometryEdgeSupportCurveUntyped
+            | Self::GeometrySplineLanesUnpaired
             | Self::GeometryParasolidNotTransferred => LossTaxonomy::GeometryNotTransferred,
             Self::GeometryPcurveAmbiguous => LossTaxonomy::PcurveOmitted,
             Self::AppearanceFaceColorUnresolved | Self::AppearanceAssignmentUnresolved => {

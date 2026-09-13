@@ -1332,7 +1332,7 @@ pub(crate) fn append_freeform_surface_pools(
         ) else {
             continue;
         };
-        let Ok(geometry) = NurbsCurve::from_lanes(
+        let geometry = NurbsCurve::from_lanes(
             guide.degree,
             knots,
             control_points
@@ -1341,9 +1341,7 @@ pub(crate) fn append_freeform_surface_pools(
                 .collect(),
             None,
             false,
-        ) else {
-            continue;
-        };
+        )?;
         let id = CurveId::mint(format!("catia:guide:curve#{}", ir.model.curves.len()))
             .expect("identity grammar");
         annotate(

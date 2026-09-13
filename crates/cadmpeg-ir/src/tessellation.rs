@@ -265,52 +265,114 @@ fn strip_triangles<V>(strips: &Strips<V>) -> Vec<[u32; 3]> {
     triangles
 }
 
+/// A source's tessellation lanes do not pair.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum TessellationLaneError {
+    /// A stated per-vertex normal lane does not cover the vertex lane.
+    #[error("{vertices} vertex/vertices against {normals} vertex normal(s)")]
+    VertexNormalLane {
+        /// Vertices the source stated.
+        vertices: usize,
+        /// Normals the source stated.
+        normals: usize,
+    },
+    /// A stated per-corner normal lane does not cover the triangle corners.
+    #[error("{corners} triangle corner(s) against {normals} corner normal(s)")]
+    CornerNormalLane {
+        /// Triangle corners the source stated: three per triangle.
+        corners: usize,
+        /// Normals the source stated.
+        normals: usize,
+    },
+    /// The triangle count has no corner count: three times it overflows.
+    #[error("{triangles} triangle(s) name more corners than an index can count")]
+    CornerCountOverflow {
+        /// Triangles the source stated.
+        triangles: usize,
+    },
+    /// The stated strip spans do not cut the vertex lane into strips.
+    ///
+    /// A span below three spans no triangle, a span the lane cannot fill, a
+    /// vertex the spans do not consume, an empty span list, and a strip set
+    /// spanning more vertices than a `u32` index can name are all refused here.
+    #[error("{spans} strip span(s) do not cut the vertex lane")]
+    Strips {
+        /// Spans the source stated.
+        spans: usize,
+    },
+}
+
+impl From<TessellationLaneError> for cadmpeg_core::CodecError {
+    fn from(error: TessellationLaneError) -> Self {
+        Self::Malformed(error.to_string())
+    }
+}
+
 impl TessellationMesh {
     /// Pair a source's flat strip lanes into mesh rows.
     ///
     /// A display stream that states strip spans, vertex positions and vertex
-    /// normals as separate lanes pairs them here. An empty normal lane states
-    /// an unshaded mesh; any other normal lane covers the vertices exactly.
-    #[must_use]
+    /// normals as separate lanes pairs them here. An unshaded mesh is stated by
+    /// absence — `None` — not by an empty lane: a stated lane covers the
+    /// vertices exactly, and `Some(vec![])` against a non-empty vertex lane is
+    /// a length mismatch.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a normal lane whose length differs from the vertex lane, naming
+    /// both counts, and a strip set the spans cannot cut.
     pub fn from_strip_lanes(
         positions: Vec<Point3>,
-        normals: Vec<Vector3>,
+        normals: Option<Vec<Vector3>>,
         spans: &[u32],
-    ) -> Option<Self> {
-        if normals.is_empty() {
-            return Strips::from_spans(positions, spans).map(|strips| Self::Strips { strips });
-        }
+    ) -> Result<Self, TessellationLaneError> {
+        let Some(normals) = normals else {
+            let strips = Strips::from_spans(positions, spans)
+                .ok_or_else(|| TessellationLaneError::Strips { spans: spans.len() })?;
+            return Ok(Self::Strips { strips });
+        };
         if normals.len() != positions.len() {
-            return None;
+            return Err(TessellationLaneError::VertexNormalLane {
+                vertices: positions.len(),
+                normals: normals.len(),
+            });
         }
         let rows = positions
             .into_iter()
             .zip(normals)
             .map(|(position, normal)| ShadedVertex { position, normal })
             .collect();
-        Strips::from_spans(rows, spans).map(|strips| Self::ShadedStrips { strips })
+        let strips = Strips::from_spans(rows, spans)
+            .ok_or_else(|| TessellationLaneError::Strips { spans: spans.len() })?;
+        Ok(Self::ShadedStrips { strips })
     }
 
     /// Pair a source's flat triangle-list lanes into mesh rows.
     ///
-    /// An empty normal lane states an unshaded mesh; any other normal lane
-    /// covers the vertices exactly.
-    #[must_use]
+    /// An unshaded mesh is stated by absence — `None` — not by an empty lane.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a normal lane whose length differs from the vertex lane, naming
+    /// both counts.
     pub fn from_list_lanes(
         positions: Vec<Point3>,
         triangles: Vec<[u32; 3]>,
-        normals: Vec<Vector3>,
-    ) -> Option<Self> {
-        if normals.is_empty() {
-            return Some(Self::List {
+        normals: Option<Vec<Vector3>>,
+    ) -> Result<Self, TessellationLaneError> {
+        let Some(normals) = normals else {
+            return Ok(Self::List {
                 vertices: positions,
                 triangles,
             });
-        }
+        };
         if normals.len() != positions.len() {
-            return None;
+            return Err(TessellationLaneError::VertexNormalLane {
+                vertices: positions.len(),
+                normals: normals.len(),
+            });
         }
-        Some(Self::ShadedList {
+        Ok(Self::ShadedList {
             vertices: positions
                 .into_iter()
                 .zip(normals)
@@ -322,34 +384,49 @@ impl TessellationMesh {
 
     /// Pair a source's flat triangle-list lanes and corner normals into rows.
     ///
-    /// An empty normal lane states an unshaded mesh; any other normal lane
-    /// covers the triangle corners exactly.
-    #[must_use]
+    /// An unshaded mesh is stated by absence — `None` — not by an empty lane.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a corner-normal lane whose length differs from three times the
+    /// triangle count, naming both counts.
     pub fn from_corner_lanes(
         positions: Vec<Point3>,
         triangles: Vec<[u32; 3]>,
-        corner_normals: Vec<Vector3>,
-    ) -> Option<Self> {
-        if corner_normals.is_empty() {
-            return Some(Self::List {
+        corner_normals: Option<Vec<Vector3>>,
+    ) -> Result<Self, TessellationLaneError> {
+        let Some(corner_normals) = corner_normals else {
+            return Ok(Self::List {
                 vertices: positions,
                 triangles,
             });
-        }
-        if corner_normals.len() != triangles.len().checked_mul(3)? {
-            return None;
+        };
+        let Some(corner_count) = triangles.len().checked_mul(3) else {
+            return Err(TessellationLaneError::CornerCountOverflow {
+                triangles: triangles.len(),
+            });
+        };
+        if corner_normals.len() != corner_count {
+            return Err(TessellationLaneError::CornerNormalLane {
+                corners: corner_count,
+                normals: corner_normals.len(),
+            });
         }
         let mut normals = corner_normals.into_iter();
         let rows = triangles
             .into_iter()
             .map(|corners| {
-                Some(ShadedTriangle {
-                    corners,
-                    normals: [normals.next()?, normals.next()?, normals.next()?],
-                })
+                let triple: Vec<Vector3> = normals.by_ref().take(3).collect();
+                let normals = <[Vector3; 3]>::try_from(triple).map_err(|short: Vec<_>| {
+                    TessellationLaneError::CornerNormalLane {
+                        corners: corner_count,
+                        normals: short.len(),
+                    }
+                })?;
+                Ok(ShadedTriangle { corners, normals })
             })
-            .collect::<Option<Vec<_>>>()?;
-        Some(Self::CornerShadedList {
+            .collect::<Result<Vec<_>, TessellationLaneError>>()?;
+        Ok(Self::CornerShadedList {
             vertices: positions,
             triangles: rows,
         })

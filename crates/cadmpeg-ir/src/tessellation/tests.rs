@@ -36,7 +36,11 @@ fn per_corner_mesh_exposes_its_normals() {
     let normals = vec![Vector3::new(0.0, 0.0, 1.0); 6];
     let value = Tessellation::new(
         "test:mesh:tessellation#corners",
-        TessellationMesh::from_corner_lanes(base.vertices(), base.triangles(), normals.clone())
+        TessellationMesh::from_corner_lanes(
+            base.vertices(),
+            base.triangles(),
+            Some(normals.clone()),
+        )
             .unwrap(),
         Vec::new(),
     )
@@ -52,7 +56,11 @@ fn per_vertex_mesh_exposes_its_normals() {
     let normals = vec![Vector3::new(0.0, 0.0, 1.0); base.vertex_count()];
     let value = Tessellation::new(
         "test:mesh:tessellation#vertices",
-        TessellationMesh::from_list_lanes(base.vertices(), base.triangles(), normals.clone())
+        TessellationMesh::from_list_lanes(
+            base.vertices(),
+            base.triangles(),
+            Some(normals.clone()),
+        )
             .unwrap(),
         Vec::new(),
     )
@@ -237,13 +245,13 @@ fn numeric_admission_rejects_non_finite_vertices_and_normals() {
                 TessellationMesh::from_corner_lanes(
                     base.vertices(),
                     base.triangles(),
-                    normals.clone(),
+                    Some(normals.clone()),
                 )
             } else {
                 TessellationMesh::from_list_lanes(
                     base.vertices(),
                     base.triangles(),
-                    normals.clone(),
+                    Some(normals.clone()),
                 )
             }
             .unwrap();
@@ -262,9 +270,9 @@ fn numeric_edits_reject_invalid_values_without_partial_changes() {
         let base = mesh();
         let normals = vec![Vector3::new(0.0, 0.0, 1.0); if corner { 6 } else { 4 }];
         let rows = if corner {
-            TessellationMesh::from_corner_lanes(base.vertices(), base.triangles(), normals)
+            TessellationMesh::from_corner_lanes(base.vertices(), base.triangles(), Some(normals))
         } else {
-            TessellationMesh::from_list_lanes(base.vertices(), base.triangles(), normals)
+            TessellationMesh::from_list_lanes(base.vertices(), base.triangles(), Some(normals))
         }
         .unwrap();
         let mut value =
@@ -370,7 +378,7 @@ fn the_wire_spells_the_shading_by_name() {
         TessellationMesh::from_list_lanes(
             base.vertices(),
             base.triangles(),
-            vec![Vector3::new(0.0, 0.0, 1.0); 4],
+            Some(vec![Vector3::new(0.0, 0.0, 1.0); 4]),
         )
         .unwrap(),
         Vec::new(),
@@ -389,15 +397,28 @@ fn the_wire_spells_the_shading_by_name() {
     assert!(TessellationMesh::from_list_lanes(
         base.vertices(),
         base.triangles(),
-        vec![Vector3::new(0.0, 0.0, 1.0); 3],
+        Some(vec![Vector3::new(0.0, 0.0, 1.0); 3]),
     )
-    .is_none());
+    .is_err());
     assert!(TessellationMesh::from_corner_lanes(
         base.vertices(),
         base.triangles(),
-        vec![Vector3::new(0.0, 0.0, 1.0); 5],
+        Some(vec![Vector3::new(0.0, 0.0, 1.0); 5]),
     )
-    .is_none());
+    .is_err());
+
+    // An unshaded mesh is stated by absence. An empty lane against a non-empty
+    // vertex lane is a length mismatch, not a shading form.
+    assert!(TessellationMesh::from_list_lanes(
+        base.vertices(),
+        base.triangles(),
+        Some(Vec::new()),
+    )
+    .is_err());
+    assert!(matches!(
+        TessellationMesh::from_list_lanes(base.vertices(), base.triangles(), None),
+        Ok(TessellationMesh::List { .. })
+    ));
 }
 
 // A strip owns the vertices it spans, so the wire states no strip length, no

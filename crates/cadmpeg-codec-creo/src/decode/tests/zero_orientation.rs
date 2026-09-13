@@ -1491,7 +1491,7 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
         .expect("finite fixture geometry preserves NURBS invariants");
     let mut zero_weights = coplanar.weights().expect("rational fixture");
     zero_weights[0][0] = 0.0;
-    assert!(NurbsPoleGrid::from_lanes(coplanar.control_grid(), Some(zero_weights)).is_none());
+    assert!(NurbsPoleGrid::from_lanes(coplanar.control_grid(), Some(zero_weights)).is_err());
 }
 
 #[test]

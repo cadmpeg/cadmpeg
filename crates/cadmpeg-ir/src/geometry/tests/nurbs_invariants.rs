@@ -155,19 +155,19 @@ fn construction_rejects_invalid_knots_and_non_finite_poles() {
 }
 
 fn curve_weights(curve: &NurbsCurve, weights: Vec<f64>) -> Option<NurbsPoles3> {
-    NurbsPoles3::from_lanes(curve.control_points(), Some(weights))
+    NurbsPoles3::from_lanes(curve.control_points(), Some(weights)).ok()
 }
 
 fn surface_weights(surface: &NurbsSurface, weights: Vec<Vec<f64>>) -> Option<NurbsPoleGrid> {
-    NurbsPoleGrid::from_lanes(surface.control_grid(), Some(weights))
+    NurbsPoleGrid::from_lanes(surface.control_grid(), Some(weights)).ok()
 }
 
 fn pcurve_weights(pcurve: &PcurveNurbs, weights: Vec<f64>) -> Option<PcurveNurbsPoles> {
-    PcurveNurbsPoles::from_lanes(pcurve.control_points(), Some(weights))
+    PcurveNurbsPoles::from_lanes(pcurve.control_points(), Some(weights)).ok()
 }
 
 fn polar_weights(polar: &PolarPcurveNurbs, weights: Vec<f64>) -> Option<PolarNurbsPoles> {
-    PolarNurbsPoles::from_lanes(polar.poles(), Some(weights))
+    PolarNurbsPoles::from_lanes(polar.poles(), Some(weights)).ok()
 }
 
 #[test]

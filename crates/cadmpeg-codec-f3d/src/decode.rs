@@ -3340,16 +3340,15 @@ fn project_mesh_bodies(
             &body.triangles,
             &mut unresolved,
         );
+        // The paramesh record states no corner-normal lane by carrying none.
+        let corner_normals = body.corner_normals;
         let tessellation = cadmpeg_ir::tessellation::Tessellation::new(
             id,
             cadmpeg_ir::tessellation::TessellationMesh::from_corner_lanes(
                 body.vertices,
                 body.triangles,
-                body.corner_normals,
-            )
-            .ok_or_else(|| {
-                CodecError::Malformed("mesh corner normals do not cover its triangles".into())
-            })?,
+                (!corner_normals.is_empty()).then_some(corner_normals),
+            )?,
             channels,
         )
         .map_err(|err| CodecError::Malformed(err.to_string()))?

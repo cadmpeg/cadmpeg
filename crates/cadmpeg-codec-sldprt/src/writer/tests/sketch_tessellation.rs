@@ -768,7 +768,7 @@ fn semantic_writer_expands_indexed_tessellation() {
                 Point3::new(0.0, 1.0, 0.0),
             ],
             vec![[0, 1, 2], [0, 2, 3]],
-            corner_normals.clone(),
+            Some(corner_normals.clone()),
         )
         .expect("normals cover the mesh"),
         vec![TessellationChannel::new(

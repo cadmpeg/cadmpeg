@@ -2458,13 +2458,9 @@ pub fn nurbs_surface_isocurve(
             surface.u_periodic(),
         ),
     };
-    NurbsCurve::new(
-        degree,
-        knots,
-        NurbsPoles3::from_lanes(control_points, surface.weights().map(|_| derived_weights))?,
-        periodic,
-    )
-    .ok()
+    let poles =
+        NurbsPoles3::from_lanes(control_points, surface.weights().map(|_| derived_weights)).ok()?;
+    NurbsCurve::new(degree, knots, poles, periodic).ok()
 }
 
 /// Point and first partial derivatives of a NURBS surface in its stored

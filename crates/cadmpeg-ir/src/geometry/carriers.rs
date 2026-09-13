@@ -47,27 +47,42 @@ impl NurbsPoles3 {
     /// Pair a source's pole lane with its weight lane.
     ///
     /// A source that states poles and weights as two arrays pairs them here,
-    /// once, at the decode boundary: the result is absent when the weight lane
-    /// does not cover the poles or carries a zero or non-finite weight.
-    #[must_use]
-    pub fn from_lanes(points: Vec<Point3>, weights: Option<Vec<f64>>) -> Option<Self> {
+    /// once, at the decode boundary.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a weight lane that does not cover the poles, naming both counts,
+    /// and a weight that is zero or non-finite, naming its index.
+    pub fn from_lanes(
+        points: Vec<Point3>,
+        weights: Option<Vec<f64>>,
+    ) -> Result<Self, NurbsError> {
         let Some(weights) = weights else {
-            return Some(Self::Polynomial { points });
+            return Ok(Self::Polynomial { points });
         };
         if weights.len() != points.len() {
-            return None;
+            return Err(NurbsError::WeightLaneLength {
+                field: "poles".to_owned(),
+                poles: points.len(),
+                weights: weights.len(),
+            });
         }
-        Some(Self::Rational {
+        Ok(Self::Rational {
             points: points
                 .into_iter()
                 .zip(weights)
-                .map(|(point, weight)| {
-                    Some(WeightedPole3 {
+                .enumerate()
+                .map(|(index, (point, weight))| {
+                    Ok(WeightedPole3 {
                         point,
-                        weight: NonZeroReal::new(weight)?,
+                        weight: NonZeroReal::new(weight).ok_or(NurbsError::UnusableWeight {
+                            field: "poles".to_owned(),
+                            index,
+                            weight,
+                        })?,
                     })
                 })
-                .collect::<Option<Vec<_>>>()?,
+                .collect::<Result<Vec<_>, NurbsError>>()?,
         })
     }
 
@@ -128,10 +143,11 @@ impl NurbsPoles3 {
 
     /// Replace the weights, keeping the pole positions.
     ///
-    /// Absent when the weight lane does not cover the poles or carries a zero
-    /// or non-finite weight.
-    #[must_use]
-    pub fn with_weights(&self, weights: Option<Vec<f64>>) -> Option<Self> {
+    /// # Errors
+    ///
+    /// Refuses a weight lane that does not cover the poles or carries a zero or
+    /// non-finite weight, as [`Self::from_lanes`] does.
+    pub fn with_weights(&self, weights: Option<Vec<f64>>) -> Result<Self, NurbsError> {
         Self::from_lanes(self.points(), weights)
     }
 }
@@ -160,35 +176,55 @@ pub enum NurbsPoleGrid {
 impl NurbsPoleGrid {
     /// Pair a source's pole grid with its weight grid.
     ///
-    /// The result is absent when the weight grid does not cover the pole grid
-    /// or carries a zero or non-finite weight.
-    #[must_use]
-    pub fn from_lanes(rows: Vec<Vec<Point3>>, weights: Option<Vec<Vec<f64>>>) -> Option<Self> {
+    /// # Errors
+    ///
+    /// Refuses a weight grid that does not cover the pole grid, row count or
+    /// row width, naming both counts, and a weight that is zero or non-finite,
+    /// naming its index within its row.
+    pub fn from_lanes(
+        rows: Vec<Vec<Point3>>,
+        weights: Option<Vec<Vec<f64>>>,
+    ) -> Result<Self, NurbsError> {
         let Some(weights) = weights else {
-            return Some(Self::Polynomial { rows });
+            return Ok(Self::Polynomial { rows });
         };
         if weights.len() != rows.len() {
-            return None;
+            return Err(NurbsError::WeightLaneLength {
+                field: "pole grid".to_owned(),
+                poles: rows.len(),
+                weights: weights.len(),
+            });
         }
         let paired = rows
             .into_iter()
             .zip(weights)
             .map(|(row, weight_row)| {
                 if weight_row.len() != row.len() {
-                    return None;
+                    return Err(NurbsError::WeightLaneLength {
+                        field: "pole grid row".to_owned(),
+                        poles: row.len(),
+                        weights: weight_row.len(),
+                    });
                 }
                 row.into_iter()
                     .zip(weight_row)
-                    .map(|(point, weight)| {
-                        Some(WeightedPole3 {
+                    .enumerate()
+                    .map(|(index, (point, weight))| {
+                        Ok(WeightedPole3 {
                             point,
-                            weight: NonZeroReal::new(weight)?,
+                            weight: NonZeroReal::new(weight).ok_or(
+                                NurbsError::UnusableWeight {
+                                    field: "pole grid row".to_owned(),
+                                    index,
+                                    weight,
+                                },
+                            )?,
                         })
                     })
-                    .collect::<Option<Vec<_>>>()
+                    .collect::<Result<Vec<_>, NurbsError>>()
             })
-            .collect::<Option<Vec<_>>>()?;
-        Some(Self::Rational { rows: paired })
+            .collect::<Result<Vec<_>, NurbsError>>()?;
+        Ok(Self::Rational { rows: paired })
     }
 
     /// Number of grid rows, the pole count along u.
@@ -289,27 +325,40 @@ pub enum PcurveNurbsPoles {
 impl PcurveNurbsPoles {
     /// Pair a source's pole lane with its weight lane.
     ///
-    /// The result is absent when the weight lane does not cover the poles or
-    /// carries a non-positive or non-finite weight.
-    #[must_use]
-    pub fn from_lanes(points: Vec<Point2>, weights: Option<Vec<f64>>) -> Option<Self> {
+    /// # Errors
+    ///
+    /// Refuses a weight lane that does not cover the poles, naming both counts,
+    /// and a weight that is not positive and finite, naming its index.
+    pub fn from_lanes(
+        points: Vec<Point2>,
+        weights: Option<Vec<f64>>,
+    ) -> Result<Self, NurbsError> {
         let Some(weights) = weights else {
-            return Some(Self::Polynomial { points });
+            return Ok(Self::Polynomial { points });
         };
         if weights.len() != points.len() {
-            return None;
+            return Err(NurbsError::WeightLaneLength {
+                field: "pcurve poles".to_owned(),
+                poles: points.len(),
+                weights: weights.len(),
+            });
         }
-        Some(Self::Rational {
+        Ok(Self::Rational {
             points: points
                 .into_iter()
                 .zip(weights)
-                .map(|(point, weight)| {
-                    Some(WeightedPole2 {
+                .enumerate()
+                .map(|(index, (point, weight))| {
+                    Ok(WeightedPole2 {
                         point,
-                        weight: PositiveReal::new(weight)?,
+                        weight: PositiveReal::new(weight).ok_or(NurbsError::UnusableWeight {
+                            field: "pcurve poles".to_owned(),
+                            index,
+                            weight,
+                        })?,
                     })
                 })
-                .collect::<Option<Vec<_>>>()?,
+                .collect::<Result<Vec<_>, NurbsError>>()?,
         })
     }
 
@@ -425,7 +474,7 @@ impl BsplineSurface {
             ("v", v_degree, v_count, &v_knots),
         ] {
             if count <= degree as usize {
-                return Err(NurbsError(format!(
+                return Err(NurbsError::Structure(format!(
                     "control_points {axis} count must exceed degree {degree}, found {count}"
                 )));
             }
@@ -519,16 +568,39 @@ impl<'de> Deserialize<'de> for BsplineSurface {
 }
 
 /// Structural error in a NURBS knot or pole carrier.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NurbsError(String);
-
-impl std::fmt::Display for NurbsError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(&self.0)
-    }
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+pub enum NurbsError {
+    /// A source stated a weight lane that does not cover its pole lane.
+    #[error("{field}: {poles} pole(s) against {weights} weight(s)")]
+    WeightLaneLength {
+        /// The carrier field the lanes belong to.
+        field: String,
+        /// Poles the source stated.
+        poles: usize,
+        /// Weights the source stated.
+        weights: usize,
+    },
+    /// A source stated a weight no pole can carry.
+    #[error("{field}: weight {weight} at index {index} is not a usable weight")]
+    UnusableWeight {
+        /// The carrier field the weight belongs to.
+        field: String,
+        /// Position of the weight in the lane the source stated.
+        index: usize,
+        /// The refused weight.
+        weight: f64,
+    },
+    /// A knot vector, degree, grid or coordinate the carrier cannot state.
+    #[error("{0}")]
+    Structure(String),
 }
 
-impl std::error::Error for NurbsError {}
+
+impl From<NurbsError> for cadmpeg_core::CodecError {
+    fn from(error: NurbsError) -> Self {
+        Self::Malformed(error.to_string())
+    }
+}
 
 /// Exchange the outer and inner index of a rectangular row grid.
 fn transpose_rows<T: Clone>(rows: &[Vec<T>]) -> Vec<Vec<T>> {
@@ -546,7 +618,7 @@ fn checked_knot_count(field: &str, pole_count: usize, degree: u32) -> Result<usi
     pole_count
         .checked_add(degree as usize)
         .and_then(|count| count.checked_add(1))
-        .ok_or_else(|| NurbsError(format!("{field} knot count overflows usize")))
+        .ok_or_else(|| NurbsError::Structure(format!("{field} knot count overflows usize")))
 }
 
 /// Every row of a control grid states the same pole count.
@@ -565,7 +637,7 @@ fn require_length(field: &str, actual: usize, expected: usize) -> Result<(), Nur
     if actual == expected {
         Ok(())
     } else {
-        Err(NurbsError(format!(
+        Err(NurbsError::Structure(format!(
             "{field} must contain {expected} values, found {actual}"
         )))
     }
@@ -578,7 +650,7 @@ fn require_finite_points_2(field: &str, points: &[Point2]) -> Result<(), NurbsEr
     {
         Ok(())
     } else {
-        Err(NurbsError(format!("{field} contains a non-finite point")))
+        Err(NurbsError::Structure(format!("{field} contains a non-finite point")))
     }
 }
 
@@ -589,7 +661,7 @@ fn require_finite_points_3(field: &str, points: &[Point3]) -> Result<(), NurbsEr
     {
         Ok(())
     } else {
-        Err(NurbsError(format!("{field} contains a non-finite point")))
+        Err(NurbsError::Structure(format!("{field} contains a non-finite point")))
     }
 }
 
@@ -597,7 +669,7 @@ fn require_finite_scalars(field: &str, values: &[f64]) -> Result<(), NurbsError>
     if values.iter().all(|value| value.is_finite()) {
         Ok(())
     } else {
-        Err(NurbsError(format!("{field} contains a non-finite value")))
+        Err(NurbsError::Structure(format!("{field} contains a non-finite value")))
     }
 }
 
@@ -606,7 +678,7 @@ fn require_nondecreasing_knots(knots: &[f64]) -> Result<(), NurbsError> {
     if knots_nondecreasing(knots) {
         Ok(())
     } else {
-        Err(NurbsError("knots must be non-decreasing".into()))
+        Err(NurbsError::Structure("knots must be non-decreasing".into()))
     }
 }
 
@@ -617,7 +689,7 @@ fn require_curve_cardinality(
     point_field: &str,
 ) -> Result<(), NurbsError> {
     if pole_count <= degree as usize {
-        return Err(NurbsError(format!(
+        return Err(NurbsError::Structure(format!(
             "{point_field} must contain more than degree {degree} poles, found {pole_count}"
         )));
     }
@@ -646,12 +718,12 @@ impl NurbsSurface {
         let u_count = poles.u_count();
         let v_count = poles.v_count();
         if u_count <= u_degree as usize {
-            return Err(NurbsError(format!(
+            return Err(NurbsError::Structure(format!(
                 "u_count must exceed u_degree {u_degree}, found {u_count}"
             )));
         }
         if v_count <= v_degree as usize {
-            return Err(NurbsError(format!(
+            return Err(NurbsError::Structure(format!(
                 "v_count must exceed v_degree {v_degree}, found {v_count}"
             )));
         }
@@ -669,8 +741,8 @@ impl NurbsSurface {
         for row in &control_points {
             require_finite_points_3("control_points", row)?;
         }
-        require_nondecreasing_knots(&u_knots).map_err(|error| NurbsError(format!("u_{error}")))?;
-        require_nondecreasing_knots(&v_knots).map_err(|error| NurbsError(format!("v_{error}")))?;
+        require_nondecreasing_knots(&u_knots).map_err(|error| NurbsError::Structure(format!("u_{error}")))?;
+        require_nondecreasing_knots(&v_knots).map_err(|error| NurbsError::Structure(format!("v_{error}")))?;
         Ok(Self {
             u_degree,
             v_degree,
@@ -707,7 +779,7 @@ impl NurbsSurface {
     pub fn edit_u_knots(&mut self, edit: impl FnOnce(&mut [f64])) -> Result<(), NurbsError> {
         let mut values = self.u_knots.clone();
         edit(&mut values);
-        require_nondecreasing_knots(&values).map_err(|error| NurbsError(format!("u_{error}")))?;
+        require_nondecreasing_knots(&values).map_err(|error| NurbsError::Structure(format!("u_{error}")))?;
         self.u_knots = values;
         Ok(())
     }
@@ -716,7 +788,7 @@ impl NurbsSurface {
     pub fn edit_v_knots(&mut self, edit: impl FnOnce(&mut [f64])) -> Result<(), NurbsError> {
         let mut values = self.v_knots.clone();
         edit(&mut values);
-        require_nondecreasing_knots(&values).map_err(|error| NurbsError(format!("v_{error}")))?;
+        require_nondecreasing_knots(&values).map_err(|error| NurbsError::Structure(format!("v_{error}")))?;
         self.v_knots = values;
         Ok(())
     }
@@ -748,11 +820,7 @@ impl NurbsSurface {
         u_periodic: bool,
         v_periodic: bool,
     ) -> Result<Self, NurbsError> {
-        let poles = NurbsPoleGrid::from_lanes(control_points, weights).ok_or_else(|| {
-            NurbsError(
-                "3D NURBS weights must cover the pole grid and be finite and non-zero".into(),
-            )
-        })?;
+        let poles = NurbsPoleGrid::from_lanes(control_points, weights)?;
         Self::new(
             u_degree,
             v_degree,
@@ -975,9 +1043,7 @@ impl NurbsCurve {
         weights: Option<Vec<f64>>,
         periodic: bool,
     ) -> Result<Self, NurbsError> {
-        let poles = NurbsPoles3::from_lanes(control_points, weights).ok_or_else(|| {
-            NurbsError("3D NURBS weights must cover the poles and be finite and non-zero".into())
-        })?;
+        let poles = NurbsPoles3::from_lanes(control_points, weights)?;
         Self::new(degree, knots, poles, periodic)
     }
 
@@ -3292,28 +3358,41 @@ pub enum PolarNurbsPoles {
 impl PolarNurbsPoles {
     /// Pair a source's pole lane with its weight lane.
     ///
-    /// The result is absent when the weight lane does not cover the poles or
-    /// carries a non-positive or non-finite weight.
-    #[must_use]
-    pub fn from_lanes(poles: Vec<PolarNurbsPole>, weights: Option<Vec<f64>>) -> Option<Self> {
+    /// # Errors
+    ///
+    /// Refuses a weight lane that does not cover the poles, naming both counts,
+    /// and a weight that is not positive and finite, naming its index.
+    pub fn from_lanes(
+        poles: Vec<PolarNurbsPole>,
+        weights: Option<Vec<f64>>,
+    ) -> Result<Self, NurbsError> {
         let Some(weights) = weights else {
-            return Some(Self::Polynomial { poles });
+            return Ok(Self::Polynomial { poles });
         };
         if weights.len() != poles.len() {
-            return None;
+            return Err(NurbsError::WeightLaneLength {
+                field: "polar poles".to_owned(),
+                poles: poles.len(),
+                weights: weights.len(),
+            });
         }
-        Some(Self::Rational {
+        Ok(Self::Rational {
             poles: poles
                 .into_iter()
                 .zip(weights)
-                .map(|(pole, weight)| {
-                    Some(WeightedPolarNurbsPole {
+                .enumerate()
+                .map(|(index, (pole, weight))| {
+                    Ok(WeightedPolarNurbsPole {
                         radial: pole.radial,
                         axial: pole.axial,
-                        weight: PositiveReal::new(weight)?,
+                        weight: PositiveReal::new(weight).ok_or(NurbsError::UnusableWeight {
+                            field: "polar poles".to_owned(),
+                            index,
+                            weight,
+                        })?,
                     })
                 })
-                .collect::<Option<Vec<_>>>()?,
+                .collect::<Result<Vec<_>, NurbsError>>()?,
         })
     }
 
@@ -3390,12 +3469,12 @@ impl PolarPcurveNurbs {
     ) -> Result<Self, NurbsError> {
         require_curve_cardinality(degree, knots.len(), poles.len(), "poles")?;
         if degree == 0 {
-            return Err(NurbsError("polar NURBS degree must be positive".into()));
+            return Err(NurbsError::Structure("polar NURBS degree must be positive".into()));
         }
         if !poles.poles().iter().all(|pole| {
             pole.radial.u.is_finite() && pole.radial.v.is_finite() && pole.axial.is_finite()
         }) {
-            return Err(NurbsError("poles contain a non-finite value".into()));
+            return Err(NurbsError::Structure("poles contain a non-finite value".into()));
         }
         require_nondecreasing_knots(&knots)?;
         Ok(Self {
@@ -3433,9 +3512,7 @@ impl PolarPcurveNurbs {
         weights: Option<Vec<f64>>,
         periodic: bool,
     ) -> Result<Self, NurbsError> {
-        let poles = PolarNurbsPoles::from_lanes(poles, weights).ok_or_else(|| {
-            NurbsError("polar NURBS weights must cover the poles and be finite and positive".into())
-        })?;
+        let poles = PolarNurbsPoles::from_lanes(poles, weights)?;
         Self::new(degree, knots, poles, periodic)
     }
 
@@ -3462,7 +3539,7 @@ impl PolarPcurveNurbs {
             self.poles = poles;
             Ok(())
         } else {
-            Err(NurbsError("poles contain a non-finite value".into()))
+            Err(NurbsError::Structure("poles contain a non-finite value".into()))
         }
     }
 
@@ -3550,7 +3627,7 @@ impl PcurveNurbs {
     ) -> Result<Self, NurbsError> {
         require_curve_cardinality(degree, knots.len(), poles.len(), "control_points")?;
         if degree == 0 {
-            return Err(NurbsError("pcurve NURBS degree must be positive".into()));
+            return Err(NurbsError::Structure("pcurve NURBS degree must be positive".into()));
         }
         require_finite_points_2("control_points", &poles.points())?;
         require_nondecreasing_knots(&knots)?;
@@ -3565,8 +3642,7 @@ impl PcurveNurbs {
     /// Lift each two-dimensional pole into model space, keeping its weight.
     pub fn lift(&self, lift: impl FnMut(Point2) -> Point3) -> Result<NurbsCurve, NurbsError> {
         let points: Vec<Point3> = self.poles.points().into_iter().map(lift).collect();
-        let poles = NurbsPoles3::from_lanes(points, self.poles.weights())
-            .ok_or_else(|| NurbsError("lifted pcurve weights are not admissible".into()))?;
+        let poles = NurbsPoles3::from_lanes(points, self.poles.weights())?;
         NurbsCurve::new(self.degree, self.knots.clone(), poles, self.periodic)
     }
 
@@ -3597,11 +3673,7 @@ impl PcurveNurbs {
         weights: Option<Vec<f64>>,
         periodic: bool,
     ) -> Result<Self, NurbsError> {
-        let poles = PcurveNurbsPoles::from_lanes(control_points, weights).ok_or_else(|| {
-            NurbsError(
-                "pcurve NURBS weights must cover the poles and be finite and positive".into(),
-            )
-        })?;
+        let poles = PcurveNurbsPoles::from_lanes(control_points, weights)?;
         Self::new(degree, knots, poles, periodic)
     }
 

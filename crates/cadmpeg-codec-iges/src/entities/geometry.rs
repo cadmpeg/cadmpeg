@@ -2100,7 +2100,7 @@ pub(crate) fn project_geometry(
             continue;
         }
         let weights = (!polynomial).then_some(native_weights);
-        let Ok(nurbs) = NurbsCurve::from_lanes(
+        let nurbs = match NurbsCurve::from_lanes(
             degree,
             knots,
             control_points,
@@ -2108,9 +2108,15 @@ pub(crate) fn project_geometry(
             // IGES PROP4 is informational; neutral evaluation uses the
             // serialized active carrier without periodic parameter wrapping.
             false,
-        ) else {
-            losses.push(entity_loss(entry, "spline cardinalities are inconsistent"));
-            continue;
+        ) {
+            Ok(nurbs) => nurbs,
+            Err(error) => {
+                losses.push(entity_loss(
+                    entry,
+                    format!("spline cardinalities are inconsistent: {error}"),
+                ));
+                continue;
+            }
         };
         let nurbs_points = nurbs.control_points();
         let nurbs_weights = nurbs.weights();

@@ -17,12 +17,12 @@ pub fn parasolid(data: &[u8]) {
 
 /// Exercise spline-curve carrier scanning.
 pub fn spline_curves(data: &[u8]) {
-    let _ = crate::brep::spline::scan_curve_carriers(data);
+    let _ = crate::brep::spline::scan_curve_carriers(data, &mut Vec::new());
 }
 
 /// Exercise spline-surface carrier scanning.
 pub fn spline_surfaces(data: &[u8]) {
-    let _ = crate::brep::spline::scan_surface_carriers(data);
+    let _ = crate::brep::spline::scan_surface_carriers(data, &mut Vec::new());
 }
 
 /// Exercise topology record scanning.

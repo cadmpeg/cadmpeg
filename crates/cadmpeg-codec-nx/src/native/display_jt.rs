@@ -4368,8 +4368,31 @@ fn transform_jt_normal(matrix: [[f64; 4]; 4], normal: [f32; 3]) -> Option<Vector
     })
 }
 
+/// Every Display-JT tessellation the shape graph states.
+///
+/// A record the graph does not shape as a mesh yields no tessellation and is
+/// not an error; a mesh whose lanes do not pair is. The refusal travels in
+/// `refusal` because the walk itself answers absence, and
+/// [`display_jt_tessellations`] turns it into the codec's error.
+///
+/// # Errors
+///
+/// Refuses a vertex-normal lane that does not cover the vertex lane, and a
+/// tessellation the IR will not admit.
 pub(crate) fn display_jt_tessellations(
     inputs: &DisplayJtTessellationInputs<'_>,
+) -> Result<Vec<(Tessellation, u64)>, CodecError> {
+    let mut refusal = None;
+    let rows = display_jt_tessellation_rows(inputs, &mut refusal);
+    match refusal {
+        Some(error) => Err(error),
+        None => Ok(rows.unwrap_or_default()),
+    }
+}
+
+fn display_jt_tessellation_rows(
+    inputs: &DisplayJtTessellationInputs<'_>,
+    refusal: &mut Option<CodecError>,
 ) -> Option<Vec<(Tessellation, u64)>> {
     let DisplayJtTessellationInputs {
         meshes,
@@ -4508,8 +4531,10 @@ pub(crate) fn display_jt_tessellations(
                 vertices.try_reserve_exact(triangle_vertex_count).ok()?;
                 let mut triangles = Vec::new();
                 triangles.try_reserve_exact(rendered.len()).ok()?;
-                let mut normal_vectors = Vec::new();
-                if normal_array.is_some() {
+                // An unshaded mesh is stated by absence: no normal record, no
+                // normal lane.
+                let mut normal_vectors = normal_array.is_some().then(Vec::new);
+                if let Some(normal_vectors) = normal_vectors.as_mut() {
                     normal_vectors
                         .try_reserve_exact(triangle_vertex_count)
                         .ok()?;
@@ -4551,7 +4576,9 @@ pub(crate) fn display_jt_tessellations(
                     for (coordinate, attribute) in triangle.into_iter().zip(attributes) {
                         vertices.push(convert_point(coordinate)?);
                         let attribute = attribute? as usize;
-                        if let Some(normal_array) = normal_array {
+                        if let (Some(normal_array), Some(normal_vectors)) =
+                            (normal_array, normal_vectors.as_mut())
+                        {
                             let normal = normal_array.normals.get(attribute)?;
                             normal_vectors.push(transform_jt_normal(transform, *normal)?);
                         }
@@ -4629,7 +4656,7 @@ pub(crate) fn display_jt_tessellations(
                 let mut triangles = Vec::new();
                 triangles.try_reserve_exact(rendered.len()).ok()?;
                 triangles.extend(rendered.iter().map(|(triangle, _)| *triangle));
-                (vertices, triangles, Vec::new(), Vec::new())
+                (vertices, triangles, None, Vec::new())
             };
             tessellations.try_reserve(1).ok()?;
             tessellations.push((
@@ -4645,13 +4672,25 @@ pub(crate) fn display_jt_tessellations(
                             shape_element.source_offset, shape_element.object_id
                         )
                     },
-                    cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
+                    match cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
                         vertices,
                         triangles,
                         normal_vectors,
-                    )?,
+                    ) {
+                        Ok(mesh) => mesh,
+                        Err(error) => {
+                            *refusal = Some(error.into());
+                            return None;
+                        }
+                    },
                     channels,
                 )
+                .map_err(|error| {
+                    CodecError::malformed(format_args!("display-jt tessellation: {error}"))
+                })
+                .map_err(|error| {
+                    *refusal = Some(error);
+                })
                 .ok()?
                 .with_source_object(Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Nx,

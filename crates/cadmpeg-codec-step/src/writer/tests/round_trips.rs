@@ -647,7 +647,7 @@ pub(crate) fn ap242_writer_round_trips_indexed_tessellation_and_exact_body_link(
                     Point3::new(0.0, 1.0, 0.0),
                 ],
                 vec![[0, 1, 2], [2, 1, 0]],
-                vec![Vector3::new(0.0, 0.0, 1.0); 3],
+                Some(vec![Vector3::new(0.0, 0.0, 1.0); 3]),
             )
             .expect("normals cover the vertices"),
             Vec::new(),
