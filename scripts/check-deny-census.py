@@ -35,7 +35,11 @@ import re
 import sys
 from pathlib import Path
 
-ROOTS = ("crates/cadmpeg-ir/src", "crates/cadmpeg-core/src")
+ROOTS = (
+    "crates/cadmpeg-ir/src",
+    "crates/cadmpeg-core/src",
+    "crates/cadmpeg-asm/src",
+)
 
 # Items admitted by declaring file and name, each with the reason it cannot
 # carry a deny. Every entry is load-bearing: the item derives ``Deserialize``,

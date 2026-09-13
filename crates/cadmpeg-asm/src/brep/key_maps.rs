@@ -4,7 +4,7 @@
 pub(super) mod faces {
     use crate::brep::records::FaceNativeKey;
     use cadmpeg_ir::ids::FaceId;
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use serde::{Serialize, Serializer};
     use std::collections::HashMap;
 
     pub(crate) fn serialize<S: Serializer>(
@@ -26,33 +26,20 @@ pub(super) mod faces {
         .serialize(serializer)
     }
 
-    pub(crate) fn deserialize<'de, D: Deserializer<'de>>(
-        deserializer: D,
-    ) -> Result<Vec<FaceNativeKey>, D::Error> {
-        #[derive(Deserialize)]
-        struct Wire {
-            face_keys: HashMap<FaceId, u64>,
-            face_native_keys: Vec<FaceNativeKey>,
-        }
-        let wire = Wire::deserialize(deserializer)?;
-        let expected = wire
-            .face_native_keys
+    /// Whether the stated join map is the one the key records project.
+    pub(crate) fn agrees(keys: &HashMap<FaceId, u64>, records: &[FaceNativeKey]) -> bool {
+        let projected = records
             .iter()
             .filter_map(|record| record.asm_face_key.map(|key| (record.face.clone(), key)))
             .collect::<HashMap<_, _>>();
-        if wire.face_keys != expected {
-            return Err(serde::de::Error::custom(
-                "face_keys must match face_native_keys",
-            ));
-        }
-        Ok(wire.face_native_keys)
+        *keys == projected
     }
 }
 
 pub(super) mod bodies {
     use crate::brep::records::BodyNativeKey;
     use cadmpeg_ir::ids::BodyId;
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use serde::{Serialize, Serializer};
     use std::collections::HashMap;
 
     pub(crate) fn serialize<S: Serializer>(
@@ -74,25 +61,12 @@ pub(super) mod bodies {
         .serialize(serializer)
     }
 
-    pub(crate) fn deserialize<'de, D: Deserializer<'de>>(
-        deserializer: D,
-    ) -> Result<Vec<BodyNativeKey>, D::Error> {
-        #[derive(Deserialize)]
-        struct Wire {
-            body_keys: HashMap<BodyId, u64>,
-            body_native_keys: Vec<BodyNativeKey>,
-        }
-        let wire = Wire::deserialize(deserializer)?;
-        let expected = wire
-            .body_native_keys
+    /// Whether the stated join map is the one the key records project.
+    pub(crate) fn agrees(keys: &HashMap<BodyId, u64>, records: &[BodyNativeKey]) -> bool {
+        let projected = records
             .iter()
             .filter_map(|record| record.asm_body_key.map(|key| (record.body.clone(), key)))
             .collect::<HashMap<_, _>>();
-        if wire.body_keys != expected {
-            return Err(serde::de::Error::custom(
-                "body_keys must match body_native_keys",
-            ));
-        }
-        Ok(wire.body_native_keys)
+        *keys == projected
     }
 }

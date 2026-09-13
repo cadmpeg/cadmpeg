@@ -97,6 +97,7 @@ impl Stats {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct StatsWire {
     missing_face_surfaces: usize,
     missing_face_surface_kinds: std::collections::BTreeMap<String, usize>,

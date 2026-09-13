@@ -52,6 +52,7 @@ macro_rules! native_record {
             $(#[doc = $record_doc])*
             #[derive(Deserialize)]
             #[cfg_attr(feature = "schema", derive(JsonSchema))]
+            #[serde(deny_unknown_fields)]
             pub(super) struct Wire {
                 /// Globally unique deterministic identifier for this native record.
                 pub id: String,
@@ -256,6 +257,7 @@ impl FaceSidedness {
 /// Serialized face sidedness with the native and normalized senses.
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct FaceSidednessWire {
     id: String,
     face: FaceId,
@@ -320,7 +322,7 @@ native_record! {
 /// with the version-gated LONG that follows the slot when it is present.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case", tag = "slot")]
+#[serde(rename_all = "snake_case", tag = "slot", deny_unknown_fields)]
 pub enum EvaluatedToleranceSlot {
     /// The record ends before the slot; the vertex carries no tolerance and
     /// there is no trailing field.
@@ -408,7 +410,7 @@ native_record! {
 /// Release-selected fixed fields following a tolerant-coedge parameter interval.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case", tag = "layout")]
+#[serde(rename_all = "snake_case", tag = "layout", deny_unknown_fields)]
 pub enum TolerantCoedgeExtension {
     /// Releases below 215 have no fixed extension fields.
     #[default]
@@ -502,6 +504,7 @@ impl WireMembers {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
 struct WireMembersWire {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     edges: Vec<EdgeId>,
