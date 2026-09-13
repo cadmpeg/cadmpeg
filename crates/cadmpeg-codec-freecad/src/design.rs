@@ -313,7 +313,7 @@ pub(crate) fn transfer(
                 profile,
                 profile_normal,
                 &ir.model.sketches,
-            )
+            )?
             .unwrap_or_else(|| {
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: object.type_name.clone().into(),
@@ -3763,12 +3763,69 @@ fn parametric_helix_definition(
     }))
 }
 
+/// The draft angles an extrude states, one per native taper property.
+///
+/// A FreeCAD extrude carries every taper property whether or not it drafts, so
+/// every field here is read once, before the extent shape is decided.
+struct ExtrudeDrafts {
+    /// `TaperAngle`: the draft of the first (or only, or symmetric) side.
+    taper: Option<cadmpeg_ir::scalar::SlopeAngle>,
+    /// `TaperAngleRev`: the draft of the reverse side of a `Part::Extrusion`.
+    taper_reverse: Option<cadmpeg_ir::scalar::SlopeAngle>,
+    /// `TaperAngle2`: the draft of the second side of a two-sided extent.
+    taper_second: Option<cadmpeg_ir::scalar::SlopeAngle>,
+}
+
+/// The draft angle the extrude states under `key`, in canonical radians.
+///
+/// FreeCAD writes every taper property unconditionally and spells "no draft"
+/// with the native sentinel `0`, so a stated zero decodes to absence. A stated
+/// non-zero angle is degrees; `SlopeAngle` admits it after the conversion to
+/// radians and refuses a value that is not finite or whose magnitude is not
+/// strictly below half pi, which is the draft that folds the drafted face onto
+/// the sweep direction. That refusal is reported, not swallowed: dropping it
+/// would delete the whole feature over one property.
+fn taper_angle(
+    properties: &[&PropertyRecord],
+    key: &str,
+) -> Result<Option<cadmpeg_ir::scalar::SlopeAngle>, CodecError> {
+    let Some(degrees) = scalar_named(properties, key).filter(|angle| *angle != 0.0) else {
+        return Ok(None);
+    };
+    cadmpeg_ir::scalar::SlopeAngle::try_from(degrees.to_radians())
+        .map(Some)
+        .map_err(|error| CodecError::malformed(format!("{key}: {error}")))
+}
+
 fn extrusion_definition(
     kind: &str,
     properties: &[&PropertyRecord],
     profile: ProfileRef,
     profile_normal: Option<Vector3>,
     sketches: &[Sketch],
+) -> Result<Option<FeatureDefinition>, CodecError> {
+    let drafts = ExtrudeDrafts {
+        taper: taper_angle(properties, "TaperAngle")?,
+        taper_reverse: taper_angle(properties, "TaperAngleRev")?,
+        taper_second: taper_angle(properties, "TaperAngle2")?,
+    };
+    Ok(extrusion_shape(
+        kind,
+        properties,
+        profile,
+        profile_normal,
+        sketches,
+        &drafts,
+    ))
+}
+
+fn extrusion_shape(
+    kind: &str,
+    properties: &[&PropertyRecord],
+    profile: ProfileRef,
+    profile_normal: Option<Vector3>,
+    sketches: &[Sketch],
+    drafts: &ExtrudeDrafts,
 ) -> Option<FeatureDefinition> {
     if kind == "Part::Extrusion" {
         let raw_direction = vector_property(properties, "Dir");
@@ -3816,18 +3873,6 @@ fn extrusion_definition(
             forward = direction_magnitude.filter(|value| value.is_finite() && *value > 0.0)?;
         }
         let symmetric = bool_selector(properties, "Symmetric", false)?;
-        let forward_draft = scalar_named(properties, "TaperAngle").unwrap_or(0.0);
-        let reverse_draft = scalar_named(properties, "TaperAngleRev").unwrap_or(0.0);
-        if !forward_draft.is_finite() || !reverse_draft.is_finite() {
-            return None;
-        }
-        let to_draft = |degrees: f64| {
-            if degrees == 0.0 {
-                Some(None)
-            } else {
-                cadmpeg_ir::scalar::SlopeAngle::new(degrees.to_radians()).map(Some)
-            }
-        };
         let (extent, reverse_direction) = if symmetric {
             // A symmetric extent mirrors one side across the profile plane, so
             // its single side carries the taper once (from `TaperAngle`).
@@ -3839,18 +3884,18 @@ fn extrusion_definition(
                                 (forward != 0.0).then_some(forward.abs())?,
                             )?,
                         },
-                        draft: to_draft(forward_draft)?,
+                        draft: drafts.taper,
                     },
                 },
                 false,
             )
         } else {
-            let forward_travel = (forward != 0.0).then_some((forward, forward_draft));
-            let reverse_travel = (reverse != 0.0).then_some((-reverse, reverse_draft));
+            let forward_travel = (forward != 0.0).then_some((forward, drafts.taper));
+            let reverse_travel = (reverse != 0.0).then_some((-reverse, drafts.taper_reverse));
             let same_side = forward_travel
                 .zip(reverse_travel)
                 .is_some_and(|((first, _), (second, _))| first.signum() == second.signum());
-            if same_side && forward_draft != reverse_draft {
+            if same_side && drafts.taper != drafts.taper_reverse {
                 return None;
             }
             let farthest = |positive: bool| {
@@ -3869,7 +3914,7 @@ fn extrusion_definition(
                             termination: LinearTermination::Blind {
                                 length: cadmpeg_ir::scalar::NonZeroLength::new(length)?,
                             },
-                            draft: to_draft(draft)?,
+                            draft,
                         },
                     },
                     false,
@@ -3880,7 +3925,7 @@ fn extrusion_definition(
                             termination: LinearTermination::Blind {
                                 length: cadmpeg_ir::scalar::NonZeroLength::new(-length)?,
                             },
-                            draft: to_draft(draft)?,
+                            draft,
                         },
                     },
                     true,
@@ -3891,13 +3936,13 @@ fn extrusion_definition(
                             termination: LinearTermination::Blind {
                                 length: cadmpeg_ir::scalar::NonZeroLength::new(first)?,
                             },
-                            draft: to_draft(first_draft)?,
+                            draft: first_draft,
                         },
                         second: ExtrudeSide {
                             termination: LinearTermination::Blind {
                                 length: cadmpeg_ir::scalar::NonZeroLength::new(-second)?,
                             },
-                            draft: to_draft(second_draft)?,
+                            draft: second_draft,
                         },
                     },
                     false,
@@ -3996,40 +4041,31 @@ fn extrusion_definition(
     } else {
         0
     };
-    // `TaperAngle2` describes a second, independent side and is read only when
-    // the extent actually carries one (`SideType` 1 / two-sided). A symmetric
-    // (Midplane) pad mirrors side one, so it has no second side to receive it;
-    // the native property remains retained but maps nowhere in the IR.
-    let first_draft = scalar_named(properties, "TaperAngle")
-        .filter(|angle| *angle != 0.0)
-        .map(|angle| cadmpeg_ir::scalar::SlopeAngle::try_from(angle.to_radians()))
-        .transpose()
-        .ok()?;
+    // `TaperAngle2` describes a second, independent side and reaches the IR
+    // only when the extent actually carries one (`SideType` 1 / two-sided). A
+    // symmetric (Midplane) pad mirrors side one, so it has no second side to
+    // receive it; the native property remains retained but maps nowhere.
     let extent = match side_type {
         0 => ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: termination(1)?,
-                draft: first_draft,
+                draft: drafts.taper,
             },
         },
         1 => ExtrudeExtent::TwoSided {
             first: ExtrudeSide {
                 termination: termination(1)?,
-                draft: first_draft,
+                draft: drafts.taper,
             },
             second: ExtrudeSide {
                 termination: termination(2)?,
-                draft: scalar_named(properties, "TaperAngle2")
-                    .filter(|angle| *angle != 0.0)
-                    .map(|angle| cadmpeg_ir::scalar::SlopeAngle::try_from(angle.to_radians()))
-                    .transpose()
-                    .ok()?,
+                draft: drafts.taper_second,
             },
         },
         2 => ExtrudeExtent::Symmetric {
             side: ExtrudeSide {
                 termination: termination(1)?,
-                draft: first_draft,
+                draft: drafts.taper,
             },
         },
         _ => return None,
