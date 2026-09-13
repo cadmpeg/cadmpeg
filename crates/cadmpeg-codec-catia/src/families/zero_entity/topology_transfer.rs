@@ -73,6 +73,7 @@ struct OccurrencePcurve {
 /// under, the curve ids their supports were emitted under, and the ownership
 /// root that orders them are one solved pool: a run resolves through all
 /// four or through none of them.
+#[derive(Clone, Copy)]
 pub(crate) struct ZeroEntityClosedTopology<'a> {
     /// Support runs in record order.
     pub(crate) support_runs: &'a [ZeroEntitySupportRun],

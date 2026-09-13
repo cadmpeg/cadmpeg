@@ -359,7 +359,7 @@ pub fn retain_root_entities(value: &mut Value, reachable: &HashSet<String>) {
     let Value::Map(fields) = value else {
         return;
     };
-    for (_, value) in fields {
+    for value in fields.values_mut() {
         if let Value::Seq(items) = value {
             items.retain(|item| entity_id(item).is_none_or(|id| reachable.contains(id)));
         }

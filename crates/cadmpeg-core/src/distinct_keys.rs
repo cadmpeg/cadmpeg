@@ -61,12 +61,13 @@ where
     fn visit_map<A: MapAccess<'de>>(self, mut access: A) -> Result<Self::Value, A::Error> {
         let mut map = BTreeMap::new();
         while let Some((key, value)) = access.next_entry::<K, V>()? {
-            let restated = key.to_string();
-            // `insert` returns the value the earlier entry stated, so a
-            // returned value means the document named this key twice.
-            if map.insert(key, value).is_some() {
-                return Err(A::Error::custom(format!("duplicate key {restated}")));
+            // The lookup precedes the insert so the refusal can name the key
+            // the document restated. Rendering every key instead would cost
+            // one allocation per entry on the reading path.
+            if map.contains_key(&key) {
+                return Err(A::Error::custom(format!("duplicate key {key}")));
             }
+            map.insert(key, value);
         }
         Ok(map)
     }
@@ -88,10 +89,12 @@ where
     fn visit_map<A: MapAccess<'de>>(self, mut access: A) -> Result<Self::Value, A::Error> {
         let mut map = HashMap::new();
         while let Some((key, value)) = access.next_entry::<K, V>()? {
-            let restated = key.to_string();
-            if map.insert(key, value).is_some() {
-                return Err(A::Error::custom(format!("duplicate key {restated}")));
+            // As above: look up first so the refusal names the restated key
+            // without rendering every key the document states.
+            if map.contains_key(&key) {
+                return Err(A::Error::custom(format!("duplicate key {key}")));
             }
+            map.insert(key, value);
         }
         Ok(map)
     }

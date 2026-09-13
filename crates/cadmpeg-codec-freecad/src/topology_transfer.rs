@@ -58,7 +58,7 @@ impl IndexedPolygon {
         let samples = match parameters {
             None => PolylineSamples::Unparameterized {
                 points: nodes.try_into().map_err(|error| {
-                    CodecError::Malformed(format!("polygon states no node: {error}"))
+                    CodecError::malformed(format_args!("polygon states no node: {error}"))
                 })?,
             },
             Some(parameters) => {
@@ -73,7 +73,7 @@ impl IndexedPolygon {
                 }
                 PolylineSamples::Parameterized {
                     vertices: vertices.try_into().map_err(|error| {
-                        CodecError::Malformed(format!("polygon states no node: {error}"))
+                        CodecError::malformed(format_args!("polygon states no node: {error}"))
                     })?,
                 }
             }

@@ -251,7 +251,7 @@ fn scale_transform_translation(transform: &mut Transform, scale: f64) -> Result<
     // the document, so a scale that drives a translation non-finite is a
     // source the transform carrier refuses, not an impossible state.
     *transform = Transform::affine(rows).ok_or_else(|| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "Creo length scale {scale} drives a transform translation the carrier refuses"
         ))
     })?;

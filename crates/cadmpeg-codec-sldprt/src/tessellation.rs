@@ -445,7 +445,7 @@ fn parse_table(bytes: &[u8], at: usize) -> Result<Option<(Mesh, usize)>, cadmpeg
     match TessellationMesh::from_strip_lanes(vertices, Some(normals), &spans) {
         Ok(mesh) => Ok(Some((Mesh { mesh, channels }, end))),
         Err(error @ cadmpeg_ir::tessellation::TessellationLaneError::VertexNormalLane { .. }) => {
-            Err(cadmpeg_core::CodecError::Malformed(format!(
+            Err(cadmpeg_core::CodecError::malformed(format_args!(
                 "sldprt display-list table at byte {at}: {error}"
             )))
         }
@@ -544,11 +544,14 @@ fn descriptor_table_offset(payload: &[u8], at: usize) -> usize {
     }
 }
 
+/// One display-list table: the byte range it spans and the mesh it states.
+type TableSpan = (usize, usize, Mesh);
+
 fn parse_table_sequence(
     payload: &[u8],
     at: usize,
     limit: usize,
-) -> Result<Option<Vec<(usize, usize, Mesh)>>, cadmpeg_core::CodecError> {
+) -> Result<Option<Vec<TableSpan>>, cadmpeg_core::CodecError> {
     let first_start = at;
     let Some((mesh, mut at)) = parse_table(payload, at)? else {
         return Ok(None);

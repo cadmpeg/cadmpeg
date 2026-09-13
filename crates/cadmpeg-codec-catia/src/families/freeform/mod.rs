@@ -1492,7 +1492,7 @@ pub(crate) fn append_freeform_surface_pools(
         FreeformSurfacePool {
             surfaces: &surfaces,
             surface_ids: &carrier_ids,
-            surface_alias_tags: surface_alias_tags,
+            surface_alias_tags,
         },
         &mut refusal,
     )?;
@@ -1620,6 +1620,7 @@ pub(crate) fn consolidated_jet_pcurve(
 /// The surfaces, the ids they were emitted under, and the alias tags that
 /// name them are one pool: the ids are index-aligned with the surfaces, and
 /// the alias tags resolve a record's support onto the same pool.
+#[derive(Clone, Copy)]
 pub(crate) struct FreeformSurfacePool<'a> {
     /// Decoded freeform surfaces in emission order.
     pub(crate) surfaces: &'a [crate::families::a5a8::records::FreeformSurface],

@@ -1993,8 +1993,7 @@ fn a_second_side_draft_is_read_only_by_the_extent_that_carries_one() {
         &DecodeOptions::default(),
     );
     let error = two_sided
-        .err()
-        .expect("a two-sided pad carries the second side's draft")
+        .expect_err("a two-sided pad carries the second side's draft")
         .to_string();
     assert!(error.contains("TaperAngle2"), "{error}");
 }
