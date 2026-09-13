@@ -800,7 +800,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                         .map(CurveGeometry::Solved)
                     },
                 ),
-            LeafCurveEntity::Polyline => polyline(record, &points)
+            LeafCurveEntity::Polyline => polyline(id, record, &points, &mut losses)
                 .map(SolvedCurveGeometry::Nurbs)
                 .map(CurveGeometry::Solved),
             LeafCurveEntity::BSplineWithKnots
@@ -4236,10 +4236,7 @@ fn nurbs_curve_definition(
         return None;
     }
     let weights = if let Some(leaf) = record.partial("RATIONAL_B_SPLINE_CURVE") {
-        let values = numbers(leaf.parameters.first()?)?;
-        (values.len() == control_points.len())
-            .then_some(values)
-            .map(Some)?
+        Some(numbers(leaf.parameters.first()?)?)
     } else {
         None
     };
@@ -4311,14 +4308,22 @@ fn nurbs_curve(
         .into_iter()
         .map(|id| points.get(&id).copied())
         .collect::<Option<Vec<_>>>()?;
-    NurbsCurve::from_lanes(
+    match NurbsCurve::from_lanes(
         definition.degree,
         definition.knots,
         control_points,
         definition.weights,
         definition.periodic,
-    )
-    .ok()
+    ) {
+        Ok(curve) => Some(curve),
+        Err(error) => {
+            losses.push(
+                StepLossCode::DecodeWarning
+                    .note(format!("B_SPLINE_CURVE #{id} is not a curve carrier: {error}")),
+            );
+            None
+        }
+    }
 }
 
 fn nurbs_pcurve(
@@ -4333,16 +4338,21 @@ fn nurbs_pcurve(
         .into_iter()
         .map(|id| points.get(&id).copied())
         .collect::<Option<Vec<_>>>()?;
-    Some(PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::from_lanes(
-            definition.degree,
-            definition.knots,
-            control_points,
-            definition.weights,
-            definition.periodic,
-        )
-        .ok()?,
-    })
+    match PcurveNurbs::from_lanes(
+        definition.degree,
+        definition.knots,
+        control_points,
+        definition.weights,
+        definition.periodic,
+    ) {
+        Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),
+        Err(error) => {
+            losses.push(StepLossCode::DecodeWarning.note(format!(
+                "B_SPLINE_CURVE pcurve #{id} is not a pcurve carrier: {error}"
+            )));
+            None
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -4468,7 +4478,7 @@ fn decode_pcurve_geometry(
                         .ok()?,
                     )
                 }
-                "POLYLINE" => polyline_pcurve(record, points)?,
+                "POLYLINE" => polyline_pcurve(id, record, points, losses)?,
                 "CURVE_REPLICA" => {
                     let basis_id = named_parameter(record, "CURVE_REPLICA", 1)?.reference()?;
                     let operator_id = named_parameter(record, "CURVE_REPLICA", 2)?.reference()?;
@@ -4961,7 +4971,12 @@ fn nurbs_surface_parameter_period(degree: u32, knots: &[f64], count: u32) -> Opt
     (period.is_finite() && period > 0.0).then_some(period)
 }
 
-fn polyline_pcurve(record: &RawRecord, points: &BTreeMap<u64, Point2>) -> Option<PcurveGeometry> {
+fn polyline_pcurve(
+    id: u64,
+    record: &RawRecord,
+    points: &BTreeMap<u64, Point2>,
+    losses: &mut Vec<LossNote>,
+) -> Option<PcurveGeometry> {
     let control_points = record
         .parameter(1)?
         .list()?
@@ -4976,12 +4991,23 @@ fn polyline_pcurve(record: &RawRecord, points: &BTreeMap<u64, Point2>) -> Option
     knots.push(0.0);
     knots.extend((0..control_points.len()).map(|index| index as f64));
     knots.push(last);
-    Some(PcurveGeometry::Nurbs {
-        nurbs: PcurveNurbs::from_lanes(1, knots, control_points, None, false).ok()?,
-    })
+    match PcurveNurbs::from_lanes(1, knots, control_points, None, false) {
+        Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),
+        Err(error) => {
+            losses.push(StepLossCode::DecodeWarning.note(format!(
+                "POLYLINE pcurve #{id} is not a pcurve carrier: {error}"
+            )));
+            None
+        }
+    }
 }
 
-fn polyline(record: &RawRecord, points: &BTreeMap<u64, Point3>) -> Option<NurbsCurve> {
+fn polyline(
+    id: u64,
+    record: &RawRecord,
+    points: &BTreeMap<u64, Point3>,
+    losses: &mut Vec<LossNote>,
+) -> Option<NurbsCurve> {
     let control_points = record
         .parameter(1)?
         .list()?
@@ -4996,7 +5022,16 @@ fn polyline(record: &RawRecord, points: &BTreeMap<u64, Point3>) -> Option<NurbsC
     knots.push(0.0);
     knots.extend((0..control_points.len()).map(|index| index as f64));
     knots.push(last);
-    NurbsCurve::from_lanes(1, knots, control_points, None, false).ok()
+    match NurbsCurve::from_lanes(1, knots, control_points, None, false) {
+        Ok(curve) => Some(curve),
+        Err(error) => {
+            losses.push(
+                StepLossCode::DecodeWarning
+                    .note(format!("POLYLINE #{id} is not a curve carrier: {error}")),
+            );
+            None
+        }
+    }
 }
 
 fn nurbs_surface(
@@ -5103,24 +5138,20 @@ fn nurbs_surface(
     }
     let weights = if let Some(leaf) = record.partial("RATIONAL_B_SPLINE_SURFACE") {
         let rows = leaf.parameters.first()?.list()?;
-        if rows.len() != usize::try_from(u_count).ok()? {
-            return None;
-        }
         let mut values = Vec::new();
         for row in rows {
-            let row = row.list()?;
-            if row.len() != usize::try_from(v_count).ok()? {
-                return None;
-            }
-            values.extend(row.iter().map(Value::number).collect::<Option<Vec<_>>>()?);
+            values.push(
+                row.list()?
+                    .iter()
+                    .map(Value::number)
+                    .collect::<Option<Vec<_>>>()?,
+            );
         }
-        (values.len() == control_points.len())
-            .then_some(values)
-            .map(Some)?
+        Some(values)
     } else {
         None
     };
-    NurbsSurface::from_lanes(
+    match NurbsSurface::from_lanes(
         u_degree,
         v_degree,
         u_knots,
@@ -5129,12 +5160,19 @@ fn nurbs_surface(
             .chunks(v_count as usize)
             .map(<[_]>::to_vec)
             .collect(),
-        weights.map(|values| values.chunks(v_count as usize).map(<[_]>::to_vec).collect()),
+        weights,
         false,
         u_periodic,
         v_periodic,
-    )
-    .ok()
+    ) {
+        Ok(surface) => Some(surface),
+        Err(error) => {
+            losses.push(StepLossCode::DecodeWarning.note(format!(
+                "B_SPLINE_SURFACE #{id} is not a surface carrier: {error}"
+            )));
+            None
+        }
+    }
 }
 
 fn expand_knots(multiplicities: &Value, distinct: &Value, expected: usize) -> Option<Vec<f64>> {
