@@ -125,9 +125,10 @@ impl NonWhitespaceChar {
     /// The character an ASCII literal byte names.
     ///
     /// Macro-only: [`nonblank_literal!`](crate::nonblank_literal) is the one
-    /// caller, and it evaluates this constructor inside a `const { … }`
-    /// block. The assertion is therefore a compile error at every use, and
-    /// there is no run-time path that can reach it. Call it nowhere else.
+    /// caller, and it evaluates this constructor in the initializer of a
+    /// `const` item. The assertion is therefore an E0080 at every use, under
+    /// `cargo check` as well as a build, and there is no run-time path that
+    /// can reach it. Call it nowhere else.
     ///
     /// [`NonWhitespaceChar::hex_digit`] is the total constructor for a value
     /// computed at run time.
@@ -206,25 +207,25 @@ impl NonBlankString {
 /// Builds a [`NonBlankString`] from a format literal whose first character is
 /// literal, non-whitespace text.
 ///
-/// The template is always a literal, so the leading byte is evaluated inside
-/// a `const { … }` block: a template that starts with whitespace, with a
-/// non-ASCII byte or with a `{` placeholder fails the build. Formatted
-/// arguments follow that literal prefix and cannot make the result blank.
+/// The template is always a literal, so the leading byte is the initializer of
+/// a `const` *item*: a template that starts with whitespace, with a non-ASCII
+/// byte or with a `{` placeholder fails `cargo check` with E0080, not only a
+/// codegen build. (An inline `const { … }` block is evaluated at codegen, so
+/// `check` would pass a whitespace literal.) Formatted arguments follow that
+/// literal prefix and cannot make the result blank.
 #[macro_export]
 macro_rules! nonblank_literal {
     ($template:literal $(, $argument:expr)* $(,)?) => {{
+        const NONBLANK_LITERAL_LEADING: $crate::products::NonWhitespaceChar = {
+            let bytes = $template.as_bytes();
+            assert!(
+                !bytes.is_empty() && bytes[0] != b'{',
+                "a nonblank literal must start with literal ASCII text",
+            );
+            $crate::products::NonWhitespaceChar::from_ascii_literal(bytes[0])
+        };
         let rendered = format!($template $(, $argument)*);
-        $crate::products::NonBlankString::prefixed(
-            const {
-                let bytes = $template.as_bytes();
-                assert!(
-                    !bytes.is_empty() && bytes[0] != b'{',
-                    "a nonblank literal must start with literal ASCII text",
-                );
-                $crate::products::NonWhitespaceChar::from_ascii_literal(bytes[0])
-            },
-            &rendered[1..],
-        )
+        $crate::products::NonBlankString::prefixed(NONBLANK_LITERAL_LEADING, &rendered[1..])
     }};
 }
 
