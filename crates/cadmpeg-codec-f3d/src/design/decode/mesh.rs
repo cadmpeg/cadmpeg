@@ -112,7 +112,7 @@ pub(crate) struct MeshBody {
     /// Source-classified feature edges as ascending vertex-index pairs.
     pub(crate) feature_edges: Vec<[u32; 2]>,
     /// One transformed unit normal per flattened triangle corner.
-    pub(crate) corner_normals: Vec<cadmpeg_ir::math::Vector3>,
+    pub(crate) corner_normals: Option<Vec<cadmpeg_ir::math::Vector3>>,
     /// Source face groups as an ordered partition of triangle ordinals.
     pub(crate) triangle_groups: Vec<crate::paramesh::MeshTriangleGroup>,
     /// One texture-table selector per triangle, when authored.
@@ -333,9 +333,13 @@ impl MeshBody {
             triangles,
             feature_edges,
             corner_normals: corner_normals
-                .into_iter()
-                .map(|normal| transform.transform_normal(normal))
-                .collect::<Result<_, _>>()?,
+                .map(|normals| {
+                    normals
+                        .into_iter()
+                        .map(|normal| transform.transform_normal(normal))
+                        .collect::<Result<Vec<_>, _>>()
+                })
+                .transpose()?,
             triangle_groups,
             texture_ids,
             attributes,
@@ -2809,7 +2813,7 @@ mod tests {
             vertices: vec![[2.0, 8.0, 3.0], [0.0, 0.0, 0.0], [4.0, 4.0, -1.0]],
             triangles: vec![[2, 0, 1]],
             feature_edges: vec![[0, 2]],
-            corner_normals: Vec::new(),
+            corner_normals: None,
             triangle_groups: Vec::new(),
             texture_ids: None,
             attributes: vec![crate::paramesh::MeshAttribute {
@@ -2858,7 +2862,7 @@ mod tests {
             vertices: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
             triangles: vec![[0, 1, 2]],
             feature_edges: vec![[0, 1]],
-            corner_normals: vec![[0.0, 0.0, 1.0]; 3],
+            corner_normals: Some(vec![[0.0, 0.0, 1.0]; 3]),
             triangle_groups: Vec::new(),
             texture_ids: None,
             attributes: Vec::new(),
@@ -2870,8 +2874,11 @@ mod tests {
             .cross(body.vertices[2].vector_from(body.vertices[0]))
             .unit()
             .expect("triangle normal");
-        assert_eq!(body.corner_normals.len(), 3);
-        for normal in body.corner_normals {
+        let corner_normals = body
+            .corner_normals
+            .expect("a stated corner-normal channel reaches the body");
+        assert_eq!(corner_normals.len(), 3);
+        for normal in corner_normals {
             assert!((normal.dot(geometric_normal) - 1.0).abs() < 1.0e-12);
         }
     }
