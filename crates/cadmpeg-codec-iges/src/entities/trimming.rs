@@ -2392,13 +2392,16 @@ pub(super) fn project(
             shell: shell_id.clone(),
             surface: face_surface_id,
             sense: Sense::Forward,
-            loops: {
-                let mut loops = cadmpeg_ir::topology::FaceLoops::from(loop_ids);
-                if surface_kind == BoundarySurfaceKind::Trimmed {
-                    let outer = has_explicit_outer.then(|| loops.first().cloned()).flatten();
-                    loops.classify_outer(outer.as_ref());
-                }
-                loops
+            loops: if surface_kind == BoundarySurfaceKind::Trimmed {
+                // A trimmed surface classifies its boundary, and states the
+                // outer loop first when it states one at all.
+                let mut ids = loop_ids;
+                let outer = has_explicit_outer
+                    .then(|| (!ids.is_empty()).then(|| ids.remove(0)))
+                    .flatten();
+                cadmpeg_ir::topology::FaceLoops::classified(outer, ids)
+            } else {
+                cadmpeg_ir::topology::FaceLoops::from(loop_ids)
             },
             name: None,
             color: None,

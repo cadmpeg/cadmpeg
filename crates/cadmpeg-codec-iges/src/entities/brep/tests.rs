@@ -445,7 +445,7 @@ fn decode_builds_shared_explicit_open_shell_topology() {
         .model
         .loops
         .iter()
-        .find(|loop_| loop_.id == face.loops[0])
+        .find(|loop_| Some(&loop_.id) == face.loops.first())
         .unwrap();
     assert_eq!(
         loop_.boundary_role_in(&result.ir().model.faces),

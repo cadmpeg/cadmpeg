@@ -661,7 +661,7 @@ pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
         .find(|face| face.id.as_str() == ids::data(kind!("face"), face_step).as_str())
         .expect("decoded face");
     assert_eq!(
-        face.loops[0].as_str(),
+        face.loops.first().expect("a decoded face states a loop").as_str(),
         ids::data(kind!("loop"), format!("{outer_loop}-face-{face_step}")).as_str()
     );
 }

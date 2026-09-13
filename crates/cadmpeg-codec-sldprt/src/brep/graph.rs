@@ -171,9 +171,24 @@ impl Brep {
             face.surface = qualify(face.surface.as_str())
                 .try_into()
                 .expect("qualified identity");
-            face.loops
-                .iter_mut()
-                .for_each(|id| *id = qualify(id.as_str()).try_into().expect("qualified identity"));
+            let qualified: Vec<_> = face
+                .loops
+                .iter()
+                .map(|id| qualify(id.as_str()).try_into().expect("qualified identity"))
+                .collect();
+            face.loops = match &face.loops {
+                cadmpeg_ir::topology::FaceLoops::Unspecified { .. } => {
+                    cadmpeg_ir::topology::FaceLoops::unspecified(qualified)
+                }
+                cadmpeg_ir::topology::FaceLoops::Classified { outer: None, .. } => {
+                    cadmpeg_ir::topology::FaceLoops::classified(None, qualified)
+                }
+                cadmpeg_ir::topology::FaceLoops::Classified { outer: Some(_), .. } => {
+                    let mut qualified = qualified;
+                    let outer = qualified.remove(0);
+                    cadmpeg_ir::topology::FaceLoops::classified(Some(outer), qualified)
+                }
+            };
         }
         for loop_ in &mut self.loops {
             loop_.id = qualify(loop_.id.as_str())
@@ -5138,10 +5153,10 @@ fn synthesize_cylinder_seams(
         if face.loops.len() != 2 {
             continue;
         }
-        let Some(a) = loops.get(&face.loops[0]) else {
-            continue;
-        };
-        let Some(b) = loops.get(&face.loops[1]) else {
+        let (Some(a), Some(b)) = (
+            face.loops.get(0).and_then(|id| loops.get(id)),
+            face.loops.get(1).and_then(|id| loops.get(id)),
+        ) else {
             continue;
         };
         if a.coedges().len() != 1 || b.coedges().len() != 1 {
@@ -5351,7 +5366,8 @@ fn synthesize_sphere_seams(
         let center = sphere_surface.center();
         let axis = sphere_surface.axis();
         let radius = sphere_surface.radius();
-        let [loop_id] = face.loops.as_slice() else {
+        let face_loops = face.loops.to_vec();
+        let [loop_id] = face_loops.as_slice() else {
             continue;
         };
         let Some(coedge_ids) = loop_coedges.get(loop_id).copied() else {
@@ -5470,7 +5486,7 @@ fn synthesize_sphere_seams(
         if face.loops.len() != 1 {
             continue;
         }
-        let Some(lp) = loops.get(&face.loops[0]) else {
+        let Some(lp) = face.loops.first().and_then(|id| loops.get(id)) else {
             continue;
         };
         if lp.coedges().len() != 3 {

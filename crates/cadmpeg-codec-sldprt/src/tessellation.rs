@@ -1820,7 +1820,8 @@ fn cylindrical_trim(
     if !radius.is_finite() || radius <= EPS_DISPLAY_QUANTIZATION {
         return None;
     }
-    let [loop_id] = face.loops.as_slice() else {
+    let face_loops = face.loops.to_vec();
+    let [loop_id] = face_loops.as_slice() else {
         return None;
     };
     let loop_ = *loops.get(loop_id)?;
@@ -1935,7 +1936,8 @@ fn conical_trim(
     {
         return None;
     }
-    let [loop_id] = face.loops.as_slice() else {
+    let face_loops = face.loops.to_vec();
+    let [loop_id] = face_loops.as_slice() else {
         return None;
     };
     let loop_ = *loops.get(loop_id)?;

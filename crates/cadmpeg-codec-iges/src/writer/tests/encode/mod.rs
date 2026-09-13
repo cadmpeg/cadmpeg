@@ -1810,7 +1810,9 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
         .iter()
         .find(|face| face.id == target_face_id)
         .unwrap()
-        .loops[0]
+        .loops
+        .first()
+        .expect("a decoded face states a loop")
         .clone();
     let moved_loop_id = decoded
         .ir()
@@ -1819,7 +1821,9 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
         .iter()
         .find(|face| face.id == moved_face_id)
         .unwrap()
-        .loops[0]
+        .loops
+        .first()
+        .expect("a decoded face states a loop")
         .clone();
 
     decoded
