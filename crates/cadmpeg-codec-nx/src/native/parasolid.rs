@@ -2251,6 +2251,9 @@ pub(crate) struct ParasolidEntityValueRecords {
     pub(crate) axes: Vec<ParasolidEntity57AxisRecord>,
     pub(crate) tags: Vec<ParasolidEntity58TagRecord>,
     pub(crate) unicode: Vec<ParasolidEntity62UnicodeRecord>,
+    /// Value-record frames whose payload did not materialize.
+    pub(crate) unmaterialized:
+        Vec<crate::parasolid::value_records::UnmaterializedValueRecord>,
 }
 
 /// Numeric value-record family referenced by a type-81 record.
@@ -2766,6 +2769,7 @@ pub(crate) fn parasolid_entity_value_records(
         axes: Vec::new(),
         tags: Vec::new(),
         unicode: Vec::new(),
+        unmaterialized: Vec::new(),
     };
     for (stream_ordinal, stream) in streams.iter().enumerate() {
         let owned_offsets = match stream.kind() {
@@ -2926,6 +2930,7 @@ pub(crate) fn parasolid_entity_value_records(
                 inflated_offset: record.offset as u64,
             });
         }
+        records.unmaterialized.extend(values.unmaterialized);
     }
     records
         .integers

@@ -18,7 +18,7 @@ mod tests;
 
 pub use arena::DecodeArena;
 pub use budget::{
-    alloc_filled, refuse_local_limit, DepthGuard, ScopedReservation, WorkBudget,
+    alloc_filled, refuse_local_limit, BudgetExhausted, DepthGuard, ScopedReservation, WorkBudget,
     WorkBudgetRecursionGuard,
 };
 pub use context::{DecodeContext, ExpandSpec, ExpandWriter};

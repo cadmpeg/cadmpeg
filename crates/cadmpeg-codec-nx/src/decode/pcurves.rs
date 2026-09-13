@@ -1284,7 +1284,15 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
                     curve_is_cache_backed_with_index(&model_index, owner),
                 ))
             })();
-            let _ = geometry_budget.consume_child(&candidate_geometry_budget);
+            // Charging the shared budget for this candidate's work is how the
+            // route reports its own exhaustion: `WorkBudget::charge_by` marks
+            // the budget exhausted when the candidate overran the remainder,
+            // and `GeometryWorkBudget::exhausted` is what the decode reports
+            // as `geometry.adaptive-work-bounded`. The candidate's own
+            // replacement was computed inside its slice and is kept.
+            match geometry_budget.consume_child(&candidate_geometry_budget) {
+                Ok(()) | Err(cadmpeg_core::decode::BudgetExhausted) => {}
+            }
             replacement
         })
         .collect::<Vec<_>>();

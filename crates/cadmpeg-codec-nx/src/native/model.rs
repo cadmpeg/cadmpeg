@@ -534,6 +534,12 @@ impl NativeModel {
         let parasolid_attribute_definitions = parasolid_attribute_definitions(streams);
         let parasolid_entity_51_records = parasolid_entity_51_records(streams);
         let value_records = parasolid_entity_value_records(streams, &deltas_events.records);
+        // A value-record frame that passes its family validation and then does
+        // not materialize is a disagreement inside the reader, not a record
+        // the decoder may drop in silence.
+        if let Some(refusal) = value_records.unmaterialized.first() {
+            return Err(cadmpeg_core::CodecError::Malformed(refusal.to_string()));
+        }
         let parasolid_entity_52_integer_records = value_records.integers;
         let parasolid_entity_53_double_records = value_records.doubles;
         let parasolid_entity_54_string_records = value_records.strings;

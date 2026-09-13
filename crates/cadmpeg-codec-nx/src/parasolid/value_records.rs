@@ -28,6 +28,30 @@ pub(crate) struct EntityValueRecords<'a> {
     pub(crate) tags: Vec<ValueRecord<CountedValues<u32>>>,
     pub(crate) directions: Vec<ValueRecord<CountedValues<[f64; 3]>>>,
     pub(crate) unicode: Vec<ValueRecord<UnicodeValue>>,
+    /// Frames that passed their family validation but whose payload did not
+    /// materialize. A record that does not materialize is stated, not dropped.
+    pub(crate) unmaterialized: Vec<UnmaterializedValueRecord>,
+}
+
+/// One value-record frame whose payload did not materialize.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct UnmaterializedValueRecord {
+    /// Byte offset of the frame in the inflated stream.
+    pub(crate) offset: usize,
+    /// Entity tag the frame carries.
+    pub(crate) xmt: u32,
+    /// Value family the frame declared.
+    pub(crate) family: &'static str,
+}
+
+impl std::fmt::Display for UnmaterializedValueRecord {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "{} value record for entity {} at byte {} states a payload that does not materialize",
+            self.family, self.xmt, self.offset
+        )
+    }
 }
 
 /// Decode every attribute-value family in one bounded byte pass.
@@ -40,14 +64,16 @@ pub(crate) fn entity_value_records(bytes: &[u8]) -> EntityValueRecords<'_> {
             offset += 1;
             continue;
         };
-        if append_value_record(frame, &mut records).is_some() {
-            offset = frame.next_offset();
-        } else {
+        let next_offset = frame.next_offset();
+        if let Err(refusal) = append_value_record(frame, &mut records) {
+            records.unmaterialized.push(refusal);
             // The frame has already passed its family-specific validation. If
             // materialization ever disagrees, preserve the old recovery rule
             // and keep looking for a later record instead of owning a partial
             // candidate.
             offset += 1;
+        } else {
+            offset = next_offset;
         }
     }
     records
@@ -61,7 +87,11 @@ pub(crate) fn entity_value_records_at(
     let mut records = EntityValueRecords::default();
     for offset in offsets {
         if let Some(frame) = value_record_frame_at(bytes, offset) {
-            let _ = append_value_record(frame, &mut records);
+            // The ledger owns this offset, so there is no scan to resume: a
+            // frame that does not materialize is carried out, not dropped.
+            if let Err(refusal) = append_value_record(frame, &mut records) {
+                records.unmaterialized.push(refusal);
+            }
         }
     }
     records
@@ -211,26 +241,51 @@ fn frame_at<'a>(
         payload,
     })
 }
+/// Materialize one value-record frame into its family's list.
+///
+/// # Errors
+///
+/// Names the frame whose payload did not materialize: its family, its entity
+/// tag and its byte offset.
 fn append_value_record<'a>(
     frame: ValueRecordFrame<'a>,
     records: &mut EntityValueRecords<'a>,
-) -> Option<()> {
+) -> Result<(), UnmaterializedValueRecord> {
+    let offset = frame.offset;
+    let xmt = u32::from(frame.xmt);
+    let refused = |family: &'static str| UnmaterializedValueRecord {
+        offset,
+        xmt,
+        family,
+    };
     match frame.payload {
-        ValuePayload::Integers(value) => {
-            records.integers.push(frame.retained(value.materialize()?));
-        }
-        ValuePayload::Doubles(value) => records.doubles.push(frame.retained(value.materialize()?)),
+        ValuePayload::Integers(value) => records.integers.push(
+            frame.retained(value.materialize().ok_or_else(|| refused("integer"))?),
+        ),
+        ValuePayload::Doubles(value) => records
+            .doubles
+            .push(frame.retained(value.materialize().ok_or_else(|| refused("double"))?)),
         ValuePayload::String(value) => records.strings.push(frame.retained(value)),
-        ValuePayload::Points(value) => records.points.push(frame.retained(value.materialize()?)),
-        ValuePayload::Vectors(value) => records.vectors.push(frame.retained(value.materialize()?)),
-        ValuePayload::Axes(value) => records.axes.push(frame.retained(value.materialize()?)),
-        ValuePayload::Tags(value) => records.tags.push(frame.retained(value.materialize()?)),
+        ValuePayload::Points(value) => records
+            .points
+            .push(frame.retained(value.materialize().ok_or_else(|| refused("point"))?)),
+        ValuePayload::Vectors(value) => records
+            .vectors
+            .push(frame.retained(value.materialize().ok_or_else(|| refused("vector"))?)),
+        ValuePayload::Axes(value) => records
+            .axes
+            .push(frame.retained(value.materialize().ok_or_else(|| refused("axis"))?)),
+        ValuePayload::Tags(value) => records
+            .tags
+            .push(frame.retained(value.materialize().ok_or_else(|| refused("tag"))?)),
         ValuePayload::Directions(value) => records
             .directions
-            .push(frame.retained(value.materialize()?)),
-        ValuePayload::Unicode(value) => records.unicode.push(frame.retained(value.materialize()?)),
+            .push(frame.retained(value.materialize().ok_or_else(|| refused("direction"))?)),
+        ValuePayload::Unicode(value) => records
+            .unicode
+            .push(frame.retained(value.materialize().ok_or_else(|| refused("unicode"))?)),
     }
-    Some(())
+    Ok(())
 }
 #[cfg(test)]
 pub(crate) fn entity_52_integer_record_at(

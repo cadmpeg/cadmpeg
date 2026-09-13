@@ -863,8 +863,11 @@ pub(crate) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
                     }
                 }
                 if let Some(lane_geometry_budget) = &lane_geometry_budget {
-                    lane_geometry_exhausted |= lane_geometry_budget.exhausted();
-                    let _ = parent_geometry_budget.consume_child(lane_geometry_budget);
+                    let parent_exhausted = parent_geometry_budget
+                        .consume_child(lane_geometry_budget)
+                        .is_err();
+                    lane_geometry_exhausted |=
+                        lane_geometry_budget.exhausted() || parent_exhausted;
                 }
                 if inconsistent {
                     invalid.push((procedural_id.clone(), side));
@@ -1299,8 +1302,11 @@ fn complete_support_uv_wave(
                     Some((uv, all_parameters_certified))
                 })();
                 let Some((mut uv, all_parameters_certified)) = uv else {
-                    lane_geometry_exhausted |= lane_geometry_budget.exhausted();
-                    let _ = parent_geometry_budget.consume_child(&lane_geometry_budget);
+                    let parent_exhausted = parent_geometry_budget
+                        .consume_child(&lane_geometry_budget)
+                        .is_err();
+                    lane_geometry_exhausted |=
+                        lane_geometry_budget.exhausted() || parent_exhausted;
                     failed_attempts.insert(
                         attempt_key,
                         source_pcurve.map(|pcurve| pcurve.geometry.clone()),
@@ -1411,8 +1417,10 @@ fn complete_support_uv_wave(
                         source_pcurve.map(|pcurve| pcurve.geometry.clone()),
                     );
                 }
-                lane_geometry_exhausted |= lane_geometry_budget.exhausted();
-                let _ = parent_geometry_budget.consume_child(&lane_geometry_budget);
+                let parent_exhausted = parent_geometry_budget
+                    .consume_child(&lane_geometry_budget)
+                    .is_err();
+                lane_geometry_exhausted |= lane_geometry_budget.exhausted() || parent_exhausted;
             }
         }
         let cache_backed_constructions = ir
@@ -1686,8 +1694,10 @@ fn complete_coupled_support_uv(
         });
         let Some(lanes) = lanes else {
             failed_attempts.insert(procedural_id.clone(), lane_state);
-            lane_geometry_exhausted |= lane_geometry_budget.exhausted();
-            let _ = parent_geometry_budget.consume_child(&lane_geometry_budget);
+            let parent_exhausted = parent_geometry_budget
+                .consume_child(&lane_geometry_budget)
+                .is_err();
+            lane_geometry_exhausted |= lane_geometry_budget.exhausted() || parent_exhausted;
             continue;
         };
         for side in 0..2 {
@@ -1739,8 +1749,10 @@ fn complete_coupled_support_uv(
                 replacements.push((procedural_id.clone(), side, pcurve));
             }
         }
-        lane_geometry_exhausted |= lane_geometry_budget.exhausted();
-        let _ = parent_geometry_budget.consume_child(&lane_geometry_budget);
+        let parent_exhausted = parent_geometry_budget
+            .consume_child(&lane_geometry_budget)
+            .is_err();
+        lane_geometry_exhausted |= lane_geometry_budget.exhausted() || parent_exhausted;
     }
     drop(model_index);
     for (procedural_id, side, pcurve) in replacements {
@@ -2380,7 +2392,7 @@ mod tests {
         assert_eq!(parent.consumed(), 0);
         assert!(!parent.exhausted());
 
-        assert!(parent.consume_child(&lane));
+        assert!(matches!(parent.consume_child(&lane), Ok(())));
         assert_eq!(parent.consumed(), MAX_SUPPORT_UV_LANE_GEOMETRY_WORK);
         assert!(!parent.exhausted());
 
