@@ -13,7 +13,7 @@ fn source() -> CurveId {
 
 fn subset(range: [f64; 2]) -> ProceduralCurveDefinition {
     ProceduralCurveDefinition::Subset(
-        crate::geometry::curve_payloads::SubsetCurveConstruction::try_new(source(), range, false)
+        crate::geometry::curve_payloads::SubsetCurveConstruction::try_new(source(), range, false, None)
             .unwrap(),
     )
 }
@@ -36,7 +36,7 @@ fn curve_payload_admission_requires_finite_ordered_subset_ranges() {
         curve
     );
     for range in [[1.0, 0.0], [f64::NAN, 1.0], [0.0, f64::INFINITY]] {
-        assert!(SubsetCurveConstruction::try_new(source(), range, false).is_err());
+        assert!(SubsetCurveConstruction::try_new(source(), range, false, None).is_err());
         let mut invalid = wire.clone();
         invalid["definition"]["parameter_range"] = serde_json::json!(range);
         assert!(

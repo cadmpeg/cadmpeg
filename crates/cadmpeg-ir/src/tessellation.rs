@@ -1284,11 +1284,13 @@ impl TryFrom<TessellationWire> for Tessellation {
     type Error = TessellationError;
 
     fn try_from(wire: TessellationWire) -> Result<Self, Self::Error> {
-        let mut mesh = Self::new(wire.id.into_string(), wire.mesh, wire.channels)?;
-        mesh.body = wire.body;
-        mesh.faces = wire.faces;
+        let mut mesh = Self {
+            body: wire.body,
+            faces: wire.faces,
+            source_object: wire.source_object,
+            ..Self::new(wire.id.into_string(), wire.mesh, wire.channels)?
+        };
         mesh.set_chordal_deflection(wire.chordal_deflection)?;
-        mesh.source_object = wire.source_object;
         mesh = mesh.with_feature_edges(wire.feature_edges)?;
         mesh = mesh.with_triangle_groups(wire.triangle_groups)?;
         mesh.with_texture_assignments(wire.texture_assignments)

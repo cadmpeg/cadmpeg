@@ -19,7 +19,7 @@ fn helix_fixture() -> (CadIr, CurveId) {
             Vector3::new(0.0, 0.0, 3.0),
             0.4,
             Vector3::new(0.0, 0.0, 1.0),
-        )
+        None,)
         .unwrap(),
     );
     let mut ir = CadIr::empty();

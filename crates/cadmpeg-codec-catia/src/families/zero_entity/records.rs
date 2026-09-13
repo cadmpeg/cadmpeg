@@ -1755,7 +1755,7 @@ fn zero_entity_model_curve_construction(
             ),
             std::f64::consts::TAU * slope * half_angle.sin() / start_radius,
             *axis,
-        )
+        None,)
         .ok()?,
     ))
 }

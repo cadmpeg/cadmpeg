@@ -558,9 +558,7 @@ struct CompoundCurveConstructionWire {
 impl TryFrom<CompoundCurveConstructionWire> for CompoundCurveConstruction {
     type Error = &'static str;
     fn try_from(wire: CompoundCurveConstructionWire) -> Result<Self, Self::Error> {
-        let mut payload = Self::try_new(wire.parameters, wire.components)?;
-        payload.cache = wire.cache;
-        Ok(payload)
+        Self::try_new(wire.parameters, wire.components, wire.cache)
     }
 }
 
@@ -580,6 +578,7 @@ impl CompoundCurveConstruction {
     pub fn try_new(
         parameters: Vec<f64>,
         components: Vec<CompoundComponent<CurveId>>,
+        cache: Option<LegacyCache>,
     ) -> Result<Self, &'static str> {
         if components.is_empty() {
             return Err("compound curve components must not be empty");
@@ -592,7 +591,7 @@ impl CompoundCurveConstruction {
             return Err("compound curve parameters must be finite");
         }
         Ok(Self {
-            cache: None,
+            cache,
             parameters,
             components,
         })
@@ -1929,6 +1928,7 @@ impl HelixCurveConstruction {
         pitch: Vector3,
         apex_factor: f64,
         axis: Vector3,
+        cache: Option<LegacyCache>,
     ) -> Result<Self, &'static str> {
         if angle_range[0] > angle_range[1] {
             return Err("helix curve angle_range must be ordered");
@@ -1957,7 +1957,7 @@ impl HelixCurveConstruction {
             .ok_or("HelixCurveConstruction.apex_factor must be finite")?;
         let axis = FiniteVector3::new(axis).ok_or("HelixCurveConstruction.axis must be finite")?;
         Ok(Self {
-            cache: None,
+            cache,
             angle_range,
             center,
             major,
@@ -2013,7 +2013,7 @@ impl HelixCurveConstruction {
 impl TryFrom<HelixCurveConstructionWire> for HelixCurveConstruction {
     type Error = &'static str;
     fn try_from(wire: HelixCurveConstructionWire) -> Result<Self, Self::Error> {
-        let mut payload = Self::try_new(
+        Self::try_new(
             wire.angle_range,
             wire.center,
             wire.major,
@@ -2021,9 +2021,7 @@ impl TryFrom<HelixCurveConstructionWire> for HelixCurveConstruction {
             wire.pitch,
             wire.apex_factor,
             wire.axis,
-        )?;
-        payload.cache = wire.cache;
-        Ok(payload)
+        wire.cache,)
     }
 }
 
@@ -2052,12 +2050,11 @@ impl HelixCurveConstruction {
             vector(self.pitch.get()),
             self.apex_factor.get(),
             self.axis.get(),
+            // The rebuilt construction is minted fresh; the solved-cache
+            // contract this construction states travels with it.
+            self.cache,
         )?;
-        // The rebuilt construction is minted fresh; the solved-cache contract
-        // this construction states travels with it.
-        let cache = self.cache;
         *self = candidate;
-        self.cache = cache;
         Ok(())
     }
 }

@@ -450,7 +450,7 @@ pub(crate) fn reverse_helix_definition(
                 pitch,
                 apex_factor,
                 axis,
-            )
+            None,)
             .ok()?,
         ),
         range,
@@ -1033,7 +1033,7 @@ mod tests {
                 Vector3::new(0.0, 0.0, 3.0),
                 0.4,
                 Vector3::new(0.0, 0.0, 1.0),
-            )
+            None,)
             .expect("valid HelixCurveConstruction fixture"),
         );
         let (reversed, reversed_range) =
@@ -1139,7 +1139,7 @@ mod tests {
                 Vector3::new(0.0, 0.0, 1.0),
                 0.0,
                 Vector3::new(0.0, 0.0, 1.0),
-            )
+            None,)
             .expect("valid HelixCurveConstruction fixture"),
         );
 
@@ -1175,7 +1175,7 @@ mod tests {
                     Vector3::new(0.0, 0.0, 1.0),
                     0.0,
                     Vector3::new(0.0, 0.0, 1.0),
-                )
+                None,)
                 .expect("valid HelixCurveConstruction fixture"),
             )
         };
@@ -1214,7 +1214,7 @@ mod tests {
                 Vector3::new(0.0, 0.0, 1.0),
                 0.0,
                 Vector3::new(0.0, 0.0, 1.0),
-            )
+            None,)
             .expect("valid HelixCurveConstruction fixture"),
         );
         let mut non_axial_pitch = definition.clone();
@@ -1233,7 +1233,7 @@ mod tests {
                 Vector3::new(1.0, 0.0, 0.0),
                 apex_factor,
                 axis,
-            )
+            None,)
             .expect("valid HelixCurveConstruction fixture");
         }
         assert!(circular_helix_cache(
@@ -1253,7 +1253,7 @@ mod tests {
                 Vector3::new(0.0, 0.0, 0.0),
                 0.0,
                 Vector3::new(0.0, 0.0, 1.0),
-            )
+            None,)
             .expect("valid HelixCurveConstruction fixture"),
         );
         assert!(circular_helix_cache(

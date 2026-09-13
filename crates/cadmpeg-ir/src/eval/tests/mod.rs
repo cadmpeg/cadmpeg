@@ -1151,7 +1151,7 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
             subset_id.clone(),
             procedural_surface! {
                 id: subset_construction,
-                definition: ProceduralSurfaceDefinition::Subset(crate::geometry::surface_payloads::SubsetSurfaceConstruction::try_new(base_id, [[0.0, 1.0], [0.0, 1.0]], Some(false), Some(true)).unwrap()),
+                definition: ProceduralSurfaceDefinition::Subset(crate::geometry::surface_payloads::SubsetSurfaceConstruction::try_new(base_id, [[0.0, 1.0], [0.0, 1.0]], Some(false), Some(true), None).unwrap()),
                 cache_fit_tolerance: None,
                 record_bounds: None,
             },

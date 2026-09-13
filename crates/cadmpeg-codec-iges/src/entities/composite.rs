@@ -2133,7 +2133,7 @@ fn project_with_type_130_policy(
                 ProceduralCurveDefinition::Compound(
                     cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
                         boundaries, components,
-                    )
+                    None,)
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 ),
             )

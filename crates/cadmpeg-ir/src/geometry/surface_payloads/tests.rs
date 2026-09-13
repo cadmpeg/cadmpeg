@@ -24,9 +24,9 @@ fn surface_restrictions_keep_their_distinct_range_domains_and_wire_fields() {
         serde_json::from_value::<ProceduralSurfaceDefinition>(wire).unwrap(),
         definition
     );
-    assert!(SubsetSurfaceConstruction::try_new(support(), ranges, None, None).is_err());
+    assert!(SubsetSurfaceConstruction::try_new(support(), ranges, None, None, None).is_err());
     assert!(
-        SubsetSurfaceConstruction::try_new(support(), [[2.0, 0.0], [3.0, 1.0]], None, None).is_ok()
+        SubsetSurfaceConstruction::try_new(support(), [[2.0, 0.0], [3.0, 1.0]], None, None, None).is_ok()
     );
     for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         assert!(SubSurfaceConstruction::try_new(support(), [[value, 1.0], [0.0, 1.0]]).is_err());
@@ -239,12 +239,12 @@ fn exact_and_compound_payloads_reject_nonfinite_nested_parameters() {
     let mut invalid = wire;
     invalid["spline"]["ranges"][0] = serde_json::json!([2.0, 1.0]);
     assert!(serde_json::from_value::<ProceduralSurfaceDefinition>(invalid).is_err());
-    assert!(CompoundSurfacePayload::try_new(Vec::new()).is_ok());
+    assert!(CompoundSurfacePayload::try_new(Vec::new(), None).is_ok());
     for parameter in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         assert!(CompoundSurfacePayload::try_new(vec![CompoundComponent {
             parameter,
             component: support(),
-        }])
+        }], None)
         .is_err());
     }
 }

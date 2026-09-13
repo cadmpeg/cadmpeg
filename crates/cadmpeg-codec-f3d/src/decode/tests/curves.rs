@@ -146,7 +146,7 @@ fn decode_retains_generated_helix_construction() {
             cadmpeg_ir::math::Vector3::new(0.0, 0.0, 55.0),
             0.5,
             cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-        )
+        None,)
         .unwrap(),
     ));
     edited.model.procedural_curves[0]
@@ -421,7 +421,7 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
                 parameter_range_value,
                 offset_value,
                 *definition_payload.roles(),
-            )
+            None,)
             .unwrap();
         match restored_cache {
             Some(cache) => definition
@@ -576,7 +576,7 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
                 definition_payload.source().clone(),
                 parameter_range_value,
                 *definition_payload.sense(),
-            )
+            None,)
             .unwrap();
         match restored_cache {
             Some(cache) => definition
@@ -999,7 +999,7 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
         *compound = cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
             vec![-0.25, 0.75, 1.25],
             components,
-        )
+        None,)
         .unwrap();
         match restored_cache {
             Some(cache) => definition
@@ -1139,7 +1139,7 @@ fn generated_two_sided_offset_decodes_and_writes_source_less() {
                 context_value,
                 discontinuity_flag_value,
                 offsets_value,
-            )
+            None,)
             .unwrap();
         match restored_cache {
             Some(cache) => definition
@@ -1247,7 +1247,7 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
                 context_value,
                 discontinuity_flag_value,
                 offsets_value,
-            )
+            None,)
             .unwrap();
         match restored_cache {
             Some(cache) => definition
@@ -1316,7 +1316,7 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
             expected_context,
             *expected_payload.discontinuity_flag(),
             *expected_payload.offsets(),
-        )
+        None,)
         .unwrap();
     assert_eq!(
         round_trip.ir().model.procedural_curves[0].definition(),
@@ -1373,7 +1373,7 @@ fn generated_mixed_offset_supports_write_source_less() {
                 context_value,
                 *definition_payload.discontinuity_flag(),
                 *definition_payload.offsets(),
-            )
+            None,)
             .unwrap();
         match restored_cache {
             Some(cache) => definition
