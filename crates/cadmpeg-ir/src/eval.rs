@@ -2417,8 +2417,9 @@ pub fn nurbs_surface_isocurve(
         SurfaceParameterAxis::U => v_count,
         SurfaceParameterAxis::V => u_count,
     };
+    let rational = surface.weights().is_some();
     let mut control_points = Vec::with_capacity(varying_count);
-    let mut derived_weights = Vec::with_capacity(varying_count);
+    let mut weighted_poles = Vec::with_capacity(varying_count);
     for varying in 0..varying_count {
         let mut weighted = [0.0; 3];
         let mut weight_sum = 0.0;
@@ -2439,12 +2440,22 @@ pub fn nurbs_surface_isocurve(
         if !weight_sum.is_finite() || weight_sum <= 0.0 {
             return None;
         }
-        control_points.push(Point3::new(
+        let point = Point3::new(
             weighted[0] / weight_sum,
             weighted[1] / weight_sum,
             weighted[2] / weight_sum,
-        ));
-        derived_weights.push(weight_sum);
+        );
+        control_points.push(point);
+        if rational {
+            // The pole and its weight are one row, so the isocurve states no
+            // pole lane and no weight lane for a reader to pair. `weight_sum`
+            // is finite and positive above, which is what the row's weight
+            // holds.
+            weighted_poles.push(crate::geometry::WeightedPole3 {
+                point,
+                weight: crate::scalar::NonZeroReal::new(weight_sum)?,
+            });
+        }
     }
     let (degree, knots, periodic) = match fixed_axis {
         SurfaceParameterAxis::U => (
@@ -2458,8 +2469,15 @@ pub fn nurbs_surface_isocurve(
             surface.u_periodic(),
         ),
     };
-    let poles =
-        NurbsPoles3::from_lanes(control_points, surface.weights().map(|_| derived_weights)).ok()?;
+    let poles = if rational {
+        NurbsPoles3::Rational {
+            points: weighted_poles,
+        }
+    } else {
+        NurbsPoles3::Polynomial {
+            points: control_points,
+        }
+    };
     NurbsCurve::new(degree, knots, poles, periodic).ok()
 }
 

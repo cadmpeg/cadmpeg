@@ -154,20 +154,20 @@ fn construction_rejects_invalid_knots_and_non_finite_poles() {
     }
 }
 
-fn curve_weights(curve: &NurbsCurve, weights: Vec<f64>) -> Option<NurbsPoles3> {
-    NurbsPoles3::from_lanes(curve.control_points(), Some(weights)).ok()
+fn curve_weights(curve: &NurbsCurve, weights: Vec<f64>) -> Result<NurbsPoles3, crate::geometry::NurbsError> {
+    NurbsPoles3::from_lanes(curve.control_points(), Some(weights))
 }
 
-fn surface_weights(surface: &NurbsSurface, weights: Vec<Vec<f64>>) -> Option<NurbsPoleGrid> {
-    NurbsPoleGrid::from_lanes(surface.control_grid(), Some(weights)).ok()
+fn surface_weights(surface: &NurbsSurface, weights: Vec<Vec<f64>>) -> Result<NurbsPoleGrid, crate::geometry::NurbsError> {
+    NurbsPoleGrid::from_lanes(surface.control_grid(), Some(weights))
 }
 
-fn pcurve_weights(pcurve: &PcurveNurbs, weights: Vec<f64>) -> Option<PcurveNurbsPoles> {
-    PcurveNurbsPoles::from_lanes(pcurve.control_points(), Some(weights)).ok()
+fn pcurve_weights(pcurve: &PcurveNurbs, weights: Vec<f64>) -> Result<PcurveNurbsPoles, crate::geometry::NurbsError> {
+    PcurveNurbsPoles::from_lanes(pcurve.control_points(), Some(weights))
 }
 
-fn polar_weights(polar: &PolarPcurveNurbs, weights: Vec<f64>) -> Option<PolarNurbsPoles> {
-    PolarNurbsPoles::from_lanes(polar.poles(), Some(weights)).ok()
+fn polar_weights(polar: &PolarPcurveNurbs, weights: Vec<f64>) -> Result<PolarNurbsPoles, crate::geometry::NurbsError> {
+    PolarNurbsPoles::from_lanes(polar.poles(), Some(weights))
 }
 
 #[test]
@@ -189,13 +189,13 @@ fn weight_rules_preserve_signed_3d_and_positive_parameter_space_carriers() {
         .set_poles(polar_weights(&polar, vec![1e-200; 2]).unwrap())
         .unwrap();
     for invalid in [0.0, -0.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-        assert!(curve_weights(&curve, vec![invalid, 1.0]).is_none());
-        assert!(surface_weights(&surface, vec![vec![invalid; 2]; 2]).is_none());
-        assert!(pcurve_weights(&pcurve, vec![invalid, 1.0]).is_none());
-        assert!(polar_weights(&polar, vec![invalid, 1.0]).is_none());
+        assert!(curve_weights(&curve, vec![invalid, 1.0]).is_err());
+        assert!(surface_weights(&surface, vec![vec![invalid; 2]; 2]).is_err());
+        assert!(pcurve_weights(&pcurve, vec![invalid, 1.0]).is_err());
+        assert!(polar_weights(&polar, vec![invalid, 1.0]).is_err());
     }
-    assert!(pcurve_weights(&pcurve, vec![-1.0, 1.0]).is_none());
-    assert!(polar_weights(&polar, vec![-1.0, 1.0]).is_none());
+    assert!(pcurve_weights(&pcurve, vec![-1.0, 1.0]).is_err());
+    assert!(polar_weights(&polar, vec![-1.0, 1.0]).is_err());
     assert_eq!(
         serde_json::from_value::<NurbsCurve>(serde_json::to_value(&curve).unwrap()).unwrap(),
         curve
@@ -241,8 +241,8 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
     assert!(curve
         .edit_control_points(|point| point.x = f64::INFINITY)
         .is_err());
-    assert!(curve_weights(&curve, vec![0.0, 1.0]).is_none());
-    assert!(curve_weights(&curve, vec![1.0]).is_none());
+    assert!(curve_weights(&curve, vec![0.0, 1.0]).is_err());
+    assert!(curve_weights(&curve, vec![1.0]).is_err());
     assert_eq!(curve, original);
 
     let mut surface = surface();
@@ -252,8 +252,8 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
     assert!(surface
         .edit_control_points(|point| point.y = f64::NEG_INFINITY)
         .is_err());
-    assert!(surface_weights(&surface, vec![vec![0.0, 1.0], vec![1.0, 1.0]]).is_none());
-    assert!(surface_weights(&surface, vec![vec![1.0]]).is_none());
+    assert!(surface_weights(&surface, vec![vec![0.0, 1.0], vec![1.0, 1.0]]).is_err());
+    assert!(surface_weights(&surface, vec![vec![1.0]]).is_err());
     assert_eq!(surface, original);
 
     let mut pcurve = pcurve();
@@ -262,8 +262,8 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
     assert!(pcurve
         .edit_control_points(|point| point.u = f64::NAN)
         .is_err());
-    assert!(pcurve_weights(&pcurve, vec![1.0, -1.0]).is_none());
-    assert!(pcurve_weights(&pcurve, vec![1.0]).is_none());
+    assert!(pcurve_weights(&pcurve, vec![1.0, -1.0]).is_err());
+    assert!(pcurve_weights(&pcurve, vec![1.0]).is_err());
     assert_eq!(pcurve, original);
 
     let mut polar = polar();
@@ -273,8 +273,8 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
         .edit_poles(|radial, _| radial.v = f64::INFINITY)
         .is_err());
     assert!(polar.edit_poles(|_, axial| *axial = f64::NAN).is_err());
-    assert!(polar_weights(&polar, vec![1.0, -1.0]).is_none());
-    assert!(polar_weights(&polar, vec![1.0]).is_none());
+    assert!(polar_weights(&polar, vec![1.0, -1.0]).is_err());
+    assert!(polar_weights(&polar, vec![1.0]).is_err());
     assert_eq!(polar, original);
 }
 
