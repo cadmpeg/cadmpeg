@@ -1952,3 +1952,49 @@ fn transfers_sketch_pad_and_pocket_design_history() {
         .collect::<Vec<_>>();
     assert!(design_findings.is_empty(), "{design_findings:#?}");
 }
+
+/// `TaperAngle2` states the draft of a second, independent side. A one-sided
+/// pad has no second side, so a malformed value there maps nowhere and the
+/// feature decodes; a two-sided pad carries it, so the same value refuses.
+#[test]
+fn a_second_side_draft_is_read_only_by_the_extent_that_carries_one() {
+    let document = |side_type: u32| {
+        format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="PartDesign::Pad" name="Pad" id="3"/>
+ <Object type="Sketcher::SketchObject" name="Profile" id="1"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Profile"><Properties Count="0"/></Object>
+ <Object name="Pad"><Properties Count="6">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Profile"/></Property>
+  <Property name="SideType" type="App::PropertyEnumeration"><Integer value="{side_type}"/></Property>
+  <Property name="Type" type="App::PropertyEnumeration"><Integer value="0"/></Property>
+  <Property name="Length" type="App::PropertyLength"><Float value="5"/></Property>
+  <Property name="Type2" type="App::PropertyEnumeration"><Integer value="0"/></Property>
+  <Property name="TaperAngle2" type="App::PropertyAngle"><Float value="120"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#
+        )
+    };
+
+    let one_sided = FcstdCodec.decode(
+        &mut Cursor::new(archive(&document(0))),
+        &DecodeOptions::default(),
+    );
+    assert!(
+        one_sided.is_ok(),
+        "a one-sided pad states no second side to receive TaperAngle2"
+    );
+
+    let two_sided = FcstdCodec.decode(
+        &mut Cursor::new(archive(&document(1))),
+        &DecodeOptions::default(),
+    );
+    let error = two_sided
+        .err()
+        .expect("a two-sided pad carries the second side's draft")
+        .to_string();
+    assert!(error.contains("TaperAngle2"), "{error}");
+}
