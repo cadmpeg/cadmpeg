@@ -426,6 +426,7 @@ mod tests {
                 "geometry.face-support-surface-untyped",
                 "geometry.edge-support-curve-untyped",
                 "geometry.pcurve-ambiguous",
+                "geometry.spline-lanes-unpaired",
                 "appearance.face-color-unresolved",
                 "appearance.assignment-unresolved",
                 "tessellation.face-ownership-unresolved",
