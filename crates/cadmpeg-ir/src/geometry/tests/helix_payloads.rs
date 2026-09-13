@@ -14,7 +14,7 @@ fn curve(radius: f64) -> HelixCurveConstruction {
         Vector3::new(0.0, 0.0, 1.0),
         0.0,
         Vector3::new(0.0, 0.0, 1.0),
-    )
+    None,)
     .unwrap()
 }
 
@@ -30,12 +30,12 @@ fn helix_curve_admission_rejects_the_validator_numeric_states() {
     let axis = *valid.axis();
     for range in [[1.0, 0.0], [f64::NAN, 1.0], [0.0, f64::INFINITY]] {
         assert!(
-            HelixCurveConstruction::try_new(range, center, major, minor, pitch, apex, axis)
+            HelixCurveConstruction::try_new(range, center, major, minor, pitch, apex, axis, None)
                 .is_err()
         );
     }
     assert!(
-        HelixCurveConstruction::try_new([0.0, 0.0], center, major, minor, pitch, apex, axis)
+        HelixCurveConstruction::try_new([0.0, 0.0], center, major, minor, pitch, apex, axis, None)
             .is_ok()
     );
     for vector in [
@@ -43,11 +43,11 @@ fn helix_curve_admission_rejects_the_validator_numeric_states() {
         Vector3::new(f64::EPSILON, 0.0, 0.0),
     ] {
         assert!(
-            HelixCurveConstruction::try_new(range, center, vector, minor, pitch, apex, axis)
+            HelixCurveConstruction::try_new(range, center, vector, minor, pitch, apex, axis, None)
                 .is_err()
         );
         assert!(
-            HelixCurveConstruction::try_new(range, center, major, minor, pitch, apex, vector)
+            HelixCurveConstruction::try_new(range, center, major, minor, pitch, apex, vector, None)
                 .is_err()
         );
     }
@@ -59,7 +59,7 @@ fn helix_curve_admission_rejects_the_validator_numeric_states() {
         pitch,
         apex,
         axis
-    )
+    , None)
     .is_err());
     let wire = serde_json::to_value(ProceduralCurveDefinition::Helix(valid)).unwrap();
     assert_eq!(wire["kind"], "helix");
@@ -109,7 +109,7 @@ fn helix_surface_and_curve_keep_distinct_radius_tolerances() {
         HelixPathConstruction::try_new([0.0, 1.0], center, major, minor, pitch, 0.0, axis).is_ok()
     );
     assert!(
-        HelixCurveConstruction::try_new([0.0, 1.0], center, major, minor, pitch, 0.0, axis)
+        HelixCurveConstruction::try_new([0.0, 1.0], center, major, minor, pitch, 0.0, axis, None)
             .is_err()
     );
     assert!(HelixPathConstruction::try_new(

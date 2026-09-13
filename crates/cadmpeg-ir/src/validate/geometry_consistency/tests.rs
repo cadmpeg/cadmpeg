@@ -407,7 +407,7 @@ fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
     });
     let construction = procedural_surface! {
         id: ProceduralSurfaceId::mint("test:model:entity#trimmed-surface").expect("valid identity"),
-        definition: ProceduralSurfaceDefinition::Subset(crate::geometry::surface_payloads::SubsetSurfaceConstruction::try_new(base_id, [[2.0, 0.0], [0.0, 2.0]], Some(false), Some(true)).unwrap()),
+        definition: ProceduralSurfaceDefinition::Subset(crate::geometry::surface_payloads::SubsetSurfaceConstruction::try_new(base_id, [[2.0, 0.0], [0.0, 2.0]], Some(false), Some(true), None).unwrap()),
         cache_fit_tolerance: None,
         record_bounds: None,
     };
@@ -669,7 +669,7 @@ fn procedural_curve_carrier_requires_its_exact_owner() {
             Vector3::new(0.0, 0.0, 1.0),
             0.0,
             Vector3::new(0.0, 0.0, 1.0),
-        ).unwrap()),
+        None,).unwrap()),
         cache_fit_tolerance: None,
     });
     let report = validate_neutral(&ir, Vec::new());

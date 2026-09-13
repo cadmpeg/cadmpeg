@@ -293,7 +293,7 @@ fn generated_compound_loft_writes_every_tail_shape_source_less() {
             *definition_payload =
                 cadmpeg_ir::geometry::surface_payloads::CompoundLoftSurfacePayload::try_new(
                     edited_construction,
-                )
+                None,)
                 .unwrap();
             definition
                 .set_legacy_cache(restored_cache)
@@ -506,7 +506,7 @@ fn generated_scaled_compound_loft_writes_all_middle_branches_source_less() {
             *definition_payload =
                 cadmpeg_ir::geometry::surface_payloads::ScaledCompoundLoftSurfacePayload::try_new(
                     edited_construction,
-                )
+                None,)
                 .unwrap();
             definition
                 .set_legacy_cache(restored_cache)
@@ -1176,7 +1176,7 @@ fn source_less_writer_rejects_invalid_and_unframed_law_arities() {
         let restored_cache = definition_payload.legacy_cache();
         *definition_payload = cadmpeg_ir::geometry::surface_payloads::SkinSurfacePayload::try_new(
             edited_construction,
-        )
+        None,)
         .unwrap();
         definition
             .set_legacy_cache(restored_cache)
@@ -1205,7 +1205,7 @@ fn source_less_writer_rejects_invalid_and_unframed_law_arities() {
         let restored_cache = definition_payload.legacy_cache();
         *definition_payload = cadmpeg_ir::geometry::surface_payloads::SkinSurfacePayload::try_new(
             edited_construction,
-        )
+        None,)
         .unwrap();
         definition
             .set_legacy_cache(restored_cache)
@@ -1285,7 +1285,7 @@ fn generated_skin_surface_round_trips_set_compose_rotate_and_term_laws() {
         let restored_cache = definition_payload.legacy_cache();
         *definition_payload = cadmpeg_ir::geometry::surface_payloads::SkinSurfacePayload::try_new(
             edited_construction,
-        )
+        None,)
         .unwrap();
         definition
             .set_legacy_cache(restored_cache)

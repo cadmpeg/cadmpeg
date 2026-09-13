@@ -182,10 +182,12 @@ impl TryFrom<PresentationDocumentWire> for PresentationDocument {
     type Error = String;
 
     fn try_from(wire: PresentationDocumentWire) -> Result<Self, Self::Error> {
-        let mut document = Self::new(wire.id);
-        document.schema_version = wire.schema_version;
-        document.active_view = wire.active_view;
-        document.native_ref = wire.native_ref;
+        let mut document = Self {
+            schema_version: wire.schema_version,
+            active_view: wire.active_view,
+            native_ref: wire.native_ref,
+            ..Self::new(wire.id)
+        };
         document.set_states(wire.states)?;
         Ok(document)
     }

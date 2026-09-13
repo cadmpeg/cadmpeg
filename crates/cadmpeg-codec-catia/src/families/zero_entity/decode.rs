@@ -1419,7 +1419,7 @@ mod tests {
                 Vector3::new(0.0, 0.0, 1.0),
                 0.2,
                 Vector3::new(0.0, 0.0, 1.0),
-            )
+            None,)
             .unwrap(),
         );
         let mut ir = CadIr::empty();

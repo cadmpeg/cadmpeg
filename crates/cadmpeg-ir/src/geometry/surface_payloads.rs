@@ -754,9 +754,10 @@ impl SubsetSurfaceConstruction {
         parameter_ranges: [[f64; 2]; 2],
         u_sense: Option<bool>,
         v_sense: Option<bool>,
+        cache: Option<LegacyCache>,
     ) -> Result<Self, ProceduralGeometryError> {
         Ok(Self {
-            cache: None,
+            cache,
             support,
             parameter_ranges: [
                 DirectedParameterRange::new(parameter_ranges[0]).map_err(|_| {
@@ -795,14 +796,12 @@ impl SubsetSurfaceConstruction {
 impl TryFrom<SubsetSurfaceConstructionWire> for SubsetSurfaceConstruction {
     type Error = ProceduralGeometryError;
     fn try_from(wire: SubsetSurfaceConstructionWire) -> Result<Self, Self::Error> {
-        let mut payload = Self::try_new(
+        Self::try_new(
             wire.support,
             wire.parameter_ranges,
             wire.u_sense,
             wire.v_sense,
-        )?;
-        payload.cache = wire.cache;
-        Ok(payload)
+        wire.cache,)
     }
 }
 
@@ -1152,6 +1151,7 @@ impl CompoundSurfacePayload {
     /// Admit the construction parameters.
     pub fn try_new(
         components: Vec<CompoundComponent<SurfaceId>>,
+        cache: Option<LegacyCache>,
     ) -> Result<Self, ProceduralGeometryError> {
         if components.iter().any(|item| !item.parameter.is_finite()) {
             return Err(ProceduralGeometryError::Payload(
@@ -1160,7 +1160,7 @@ impl CompoundSurfacePayload {
         }
         Ok(Self {
             components,
-            cache: None,
+            cache,
         })
     }
     /// Return the components.
@@ -1171,9 +1171,7 @@ impl CompoundSurfacePayload {
 impl TryFrom<CompoundSurfacePayloadWire> for CompoundSurfacePayload {
     type Error = ProceduralGeometryError;
     fn try_from(wire: CompoundSurfacePayloadWire) -> Result<Self, Self::Error> {
-        let mut payload = Self::try_new(wire.components)?;
-        payload.cache = wire.cache;
-        Ok(payload)
+        Self::try_new(wire.components, wire.cache)
     }
 }
 
@@ -1341,6 +1339,7 @@ impl CompoundLoftSurfacePayload {
     /// Admit the construction parameters.
     pub fn try_new(
         construction: Box<CompoundLoftConstruction>,
+        cache: Option<LegacyCache>,
     ) -> Result<Self, ProceduralGeometryError> {
         let vector_finite =
             |vector: &Vector3| vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite();
@@ -1386,7 +1385,7 @@ impl CompoundLoftSurfacePayload {
         }
         Ok(Self {
             construction,
-            cache: None,
+            cache,
         })
     }
     /// Return the construction.
@@ -1397,9 +1396,7 @@ impl CompoundLoftSurfacePayload {
 impl TryFrom<CompoundLoftSurfacePayloadWire> for CompoundLoftSurfacePayload {
     type Error = ProceduralGeometryError;
     fn try_from(wire: CompoundLoftSurfacePayloadWire) -> Result<Self, Self::Error> {
-        let mut payload = Self::try_new(wire.construction)?;
-        payload.cache = wire.cache;
-        Ok(payload)
+        Self::try_new(wire.construction, wire.cache)
     }
 }
 
@@ -1429,6 +1426,7 @@ impl ScaledCompoundLoftSurfacePayload {
     /// Admit the construction parameters.
     pub fn try_new(
         construction: Box<ScaledCompoundLoftConstruction>,
+        cache: Option<LegacyCache>,
     ) -> Result<Self, ProceduralGeometryError> {
         let vector_finite =
             |vector: &Vector3| vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite();
@@ -1491,7 +1489,7 @@ impl ScaledCompoundLoftSurfacePayload {
         }
         Ok(Self {
             construction,
-            cache: None,
+            cache,
         })
     }
     /// Return the construction.
@@ -1502,9 +1500,7 @@ impl ScaledCompoundLoftSurfacePayload {
 impl TryFrom<ScaledCompoundLoftSurfacePayloadWire> for ScaledCompoundLoftSurfacePayload {
     type Error = ProceduralGeometryError;
     fn try_from(wire: ScaledCompoundLoftSurfacePayloadWire) -> Result<Self, Self::Error> {
-        let mut payload = Self::try_new(wire.construction)?;
-        payload.cache = wire.cache;
-        Ok(payload)
+        Self::try_new(wire.construction, wire.cache)
     }
 }
 
@@ -1600,6 +1596,7 @@ impl SkinSurfacePayload {
     /// Admit the construction parameters.
     pub fn try_new(
         construction: Box<SkinSurfaceConstruction>,
+        cache: Option<LegacyCache>,
     ) -> Result<Self, ProceduralGeometryError> {
         let vector_finite =
             |vector: &Vector3| vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite();
@@ -1635,7 +1632,7 @@ impl SkinSurfacePayload {
         }
         Ok(Self {
             construction,
-            cache: None,
+            cache,
         })
     }
     /// Return the construction.
@@ -1646,9 +1643,7 @@ impl SkinSurfacePayload {
 impl TryFrom<SkinSurfacePayloadWire> for SkinSurfacePayload {
     type Error = ProceduralGeometryError;
     fn try_from(wire: SkinSurfacePayloadWire) -> Result<Self, Self::Error> {
-        let mut payload = Self::try_new(wire.construction)?;
-        payload.cache = wire.cache;
-        Ok(payload)
+        Self::try_new(wire.construction, wire.cache)
     }
 }
 
@@ -1679,6 +1674,7 @@ impl NetSurfacePayload {
     /// Admit the construction parameters.
     pub fn try_new(
         construction: Box<NetSurfaceConstruction>,
+        cache: Option<LegacyCache>,
     ) -> Result<Self, ProceduralGeometryError> {
         let sections_valid = construction.sections.iter().all(|section| {
             section.entries.iter().all(|entry| {
@@ -1710,7 +1706,7 @@ impl NetSurfacePayload {
         }
         Ok(Self {
             construction,
-            cache: None,
+            cache,
         })
     }
     /// Return the construction.
@@ -1721,9 +1717,7 @@ impl NetSurfacePayload {
 impl TryFrom<NetSurfacePayloadWire> for NetSurfacePayload {
     type Error = ProceduralGeometryError;
     fn try_from(wire: NetSurfacePayloadWire) -> Result<Self, Self::Error> {
-        let mut payload = Self::try_new(wire.construction)?;
-        payload.cache = wire.cache;
-        Ok(payload)
+        Self::try_new(wire.construction, wire.cache)
     }
 }
 
@@ -2082,6 +2076,7 @@ impl G2BlendSurfacePayload {
     /// Admit the construction parameters.
     pub fn try_new(
         construction: Box<G2BlendConstruction>,
+        cache: Option<LegacyCache>,
     ) -> Result<Self, ProceduralGeometryError> {
         let direction_finite = |direction: &Vector3| {
             direction.x.is_finite() && direction.y.is_finite() && direction.z.is_finite()
@@ -2125,7 +2120,7 @@ impl G2BlendSurfacePayload {
         }
         Ok(Self {
             construction,
-            cache: None,
+            cache,
         })
     }
     /// Return the construction.
@@ -2136,9 +2131,7 @@ impl G2BlendSurfacePayload {
 impl TryFrom<G2BlendSurfacePayloadWire> for G2BlendSurfacePayload {
     type Error = ProceduralGeometryError;
     fn try_from(wire: G2BlendSurfacePayloadWire) -> Result<Self, Self::Error> {
-        let mut payload = Self::try_new(wire.construction)?;
-        payload.cache = wire.cache;
-        Ok(payload)
+        Self::try_new(wire.construction, wire.cache)
     }
 }
 

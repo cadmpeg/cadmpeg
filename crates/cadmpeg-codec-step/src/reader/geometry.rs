@@ -1004,7 +1004,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                     basis,
                     parameter_range,
                     sense,
-                )
+                None,)
                 .and_then(|admitted_payload| {
                     let mut definition = ProceduralCurveDefinition::Subset(admitted_payload);
                     definition
@@ -1587,7 +1587,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                     parameter_ranges,
                     Some(u_sense),
                     Some(v_sense),
-                )
+                None,)
                 .and_then(|admitted_payload| {
                     ProceduralSurface::new(
                         ProceduralSurfaceId::from(ids::construction(

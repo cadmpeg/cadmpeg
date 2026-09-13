@@ -603,9 +603,10 @@ impl TwoSidedOffsetCurveConstruction {
         context: IntcurveSupportContext,
         discontinuity_flag: bool,
         offsets: [f64; 2],
+        cache: Option<LegacyCache>,
     ) -> Result<Self, ProceduralGeometryError> {
         Ok(Self {
-            cache: None,
+            cache,
             context,
             discontinuity_flag,
             offsets: FiniteVector::new(offsets).ok_or(ProceduralGeometryError::Payload(
@@ -630,9 +631,7 @@ impl TwoSidedOffsetCurveConstruction {
 impl TryFrom<TwoSidedOffsetCurveConstructionWire> for TwoSidedOffsetCurveConstruction {
     type Error = ProceduralGeometryError;
     fn try_from(wire: TwoSidedOffsetCurveConstructionWire) -> Result<Self, Self::Error> {
-        let mut payload = Self::try_new(wire.context, wire.discontinuity_flag, wire.offsets)?;
-        payload.cache = wire.cache;
-        Ok(payload)
+        Self::try_new(wire.context, wire.discontinuity_flag, wire.offsets, wire.cache)
     }
 }
 
@@ -681,9 +680,10 @@ impl VectorOffsetCurveConstruction {
         parameter_range: [f64; 2],
         offset: Vector3,
         roles: VectorOffsetRoles,
+        cache: Option<LegacyCache>,
     ) -> Result<Self, ProceduralGeometryError> {
         Ok(Self {
-            cache: None,
+            cache,
             source,
             parameter_range: ParameterInterval::new(parameter_range)
                 .map_err(ProceduralGeometryError::Payload)?,
@@ -714,10 +714,13 @@ impl VectorOffsetCurveConstruction {
 impl TryFrom<VectorOffsetCurveConstructionWire> for VectorOffsetCurveConstruction {
     type Error = ProceduralGeometryError;
     fn try_from(wire: VectorOffsetCurveConstructionWire) -> Result<Self, Self::Error> {
-        let mut payload =
-            Self::try_new(wire.source, wire.parameter_range, wire.offset, wire.roles)?;
-        payload.cache = wire.cache;
-        Ok(payload)
+        Self::try_new(
+            wire.source,
+            wire.parameter_range,
+            wire.offset,
+            wire.roles,
+            wire.cache,
+        )
     }
 }
 
@@ -764,9 +767,10 @@ impl SubsetCurveConstruction {
         source: CurveId,
         parameter_range: [f64; 2],
         sense: bool,
+        cache: Option<LegacyCache>,
     ) -> Result<Self, ProceduralGeometryError> {
         Ok(Self {
-            cache: None,
+            cache,
             source,
             parameter_range: ParameterInterval::new(parameter_range)
                 .map_err(ProceduralGeometryError::Payload)?,
@@ -790,9 +794,7 @@ impl SubsetCurveConstruction {
 impl TryFrom<SubsetCurveConstructionWire> for SubsetCurveConstruction {
     type Error = ProceduralGeometryError;
     fn try_from(wire: SubsetCurveConstructionWire) -> Result<Self, Self::Error> {
-        let mut payload = Self::try_new(wire.source, wire.parameter_range, wire.sense)?;
-        payload.cache = wire.cache;
-        Ok(payload)
+        Self::try_new(wire.source, wire.parameter_range, wire.sense, wire.cache)
     }
 }
 /// Admitted silhouette curve parameters.

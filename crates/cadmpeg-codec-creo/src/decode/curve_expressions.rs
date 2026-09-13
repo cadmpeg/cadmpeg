@@ -120,7 +120,7 @@ pub(crate) fn curve_expression_helix_definition(
             ),
             0.0,
             axis,
-        )
+        None,)
         .ok()?,
     ))
 }

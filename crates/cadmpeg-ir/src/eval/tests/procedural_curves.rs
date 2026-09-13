@@ -32,7 +32,7 @@ fn cached_subset_retains_local_parameters_for_points_derivatives_and_inversion()
                             source.clone(),
                             [2.0, 5.0],
                             sense,
-                        )
+                        None,)
                         .unwrap(),
                     ),
                 )

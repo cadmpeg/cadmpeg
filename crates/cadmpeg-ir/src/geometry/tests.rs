@@ -641,7 +641,7 @@ fn vector_offset_roles_are_two_named_keys_of_one_nested_object() {
                 source: 7,
                 offset: 9,
             },
-        )
+        None,)
         .unwrap(),
     );
     let wire = serde_json::to_value(&definition).unwrap();

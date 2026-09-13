@@ -199,7 +199,7 @@ fn emit_carrier_surface(
                 ProceduralSurfaceDefinition::Compound(
                     cadmpeg_ir::geometry::surface_payloads::CompoundSurfacePayload::try_new(
                         component_ids,
-                    )
+                    None,)
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 )
             }
@@ -1029,7 +1029,7 @@ fn emit_compound_loft_surface(
                 flags: embedded.flags,
                 tail,
             },
-        ))
+        ), None)
         .map_err(cadmpeg_core::CodecError::malformed)?,
     ))
 }
@@ -1201,7 +1201,7 @@ fn emit_scaled_compound_loft_surface(
                 tail_singularity: embedded.tail_singularity,
                 tail_curve,
             }),
-        )
+        None,)
         .map_err(cadmpeg_core::CodecError::malformed)?,
     ))
 }
@@ -1442,7 +1442,7 @@ fn emit_skin_surface(
                 discontinuities: embedded.discontinuities,
                 discontinuity_flag: embedded.discontinuity_flag,
             },
-        ))
+        ), None)
         .map_err(cadmpeg_core::CodecError::malformed)?,
     ))
 }
@@ -1550,7 +1550,7 @@ fn emit_net_surface(
                 discontinuities: embedded.discontinuities,
                 discontinuity_flag: embedded.discontinuity_flag,
             },
-        ))
+        ), None)
         .map_err(cadmpeg_core::CodecError::malformed)?,
     ))
 }
@@ -1921,7 +1921,7 @@ fn emit_g2_blend_surface(
                 trailing_parameters: embedded.trailing_parameters,
                 discontinuities: embedded.discontinuities,
             },
-        ))
+        ), None)
         .map_err(cadmpeg_core::CodecError::malformed)?,
     ))
 }
@@ -2523,7 +2523,7 @@ fn emit_carrier_curve(
                                 parameter_range,
                                 offset,
                                 roles,
-                            )
+                            None,)
                             .map_err(|_| "vector-offset fields are not finite and ordered")?,
                         )
                     }
@@ -2541,7 +2541,7 @@ fn emit_carrier_curve(
                                 source_id,
                                 parameter_range,
                                 true,
-                            )
+                            None,)
                             .map_err(|_| "subset-curve range is not finite and ordered")?,
                         )
                     }
@@ -2583,7 +2583,7 @@ fn emit_carrier_curve(
                                 )?,
                                 embedded.discontinuity_flag,
                                 embedded.offsets,
-                            )
+                            None,)
                             .map_err(|_| "two-sided offset fields are not finite and ordered")?,
                         )
                     }
@@ -2821,7 +2821,7 @@ fn emit_carrier_curve(
                         cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(
                             cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
                                 parameters, components,
-                            )?,
+                            None,)?,
                         )
                     }
                     ProceduralCurveConstruction::Exact => {

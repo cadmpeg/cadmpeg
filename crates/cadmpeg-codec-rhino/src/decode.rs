@@ -4712,7 +4712,7 @@ fn stage_curve_tree(
                 Some(ProceduralCurveDefinition::Compound(
                     cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
                         parameters, components,
-                    )
+                    None,)
                     .map_err(|message| crate::curves::error(0, message))?,
                 )),
             )
@@ -5179,7 +5179,7 @@ fn commit_curve_tree(
                 Some(ProceduralCurveDefinition::Compound(
                     cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
                         parameters, components,
-                    )
+                    None,)
                     .map_err(str::to_owned)?,
                 )),
             )
