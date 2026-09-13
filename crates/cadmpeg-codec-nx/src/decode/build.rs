@@ -49,6 +49,7 @@ use cadmpeg_ir::ids::{
     ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::Point3;
+use crate::loss::NxLossCode;
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::{Body, BodyKind, Point, Region, Shell, Vertex};
 use cadmpeg_ir::unknown::UnknownRecord;
@@ -152,6 +153,7 @@ pub(crate) fn try_decode_geometry(
     let mut counts = Counts::default();
     let mut body_node_ids = BTreeMap::new();
     let mut parsed = crate::native::ParsedStreams::parse(scan);
+    let mut carrier_refusals: Vec<LossNote> = Vec::new();
     let rmfastload_ids = scan
         .container
         .rmfastload_object_id_table()
@@ -272,7 +274,14 @@ pub(crate) fn try_decode_geometry(
             surfaces: nurbs_surfaces,
             curves: nurbs_curves,
             pcurves: nurbs_pcurves,
+            refusals: nurbs_refusals,
         } = parsed.parse_nurbs(si);
+        for refusal in nurbs_refusals {
+            carrier_refusals.push(NxLossCode::CarrierLanesUnpaired.note(format!(
+                "parasolid#{si} {} at byte {} states no carrier: {}",
+                refusal.family, refusal.pos, refusal.error
+            )));
+        }
         let view = parsed.stream(si).view_for_geometry();
         let semantic = parsed.semantic_bytes(si);
         let stream_name = format!("parasolid#{si}:{}", stream.kind().label());
@@ -794,7 +803,7 @@ pub(crate) fn try_decode_geometry(
                     support_uv[0]
                         .as_deref()
                         .map(|uv| (uv, parameters.as_slice())),
-                );
+                )?;
                 let second = intersection_side(
                     &ir,
                     &surfaces_by_xmt,
@@ -802,7 +811,7 @@ pub(crate) fn try_decode_geometry(
                     support_uv[1]
                         .as_deref()
                         .map(|uv| (uv, parameters.as_slice())),
-                );
+                )?;
                 ProceduralCurveDefinition::Intersection {
                     context: IntcurveSupportContext::try_new(
                         [first, second],
@@ -1045,7 +1054,7 @@ pub(crate) fn try_decode_geometry(
             &mut ir,
             &pending_ext11_support_uv,
             &serialized_support_uv_geometry_budget,
-        );
+        )?;
         support_uv_geometry_budget.clear_blend_frame_cache();
         coupled_support_uv_geometry_budget.clear_blend_frame_cache();
         complete_parameterization_equivalent_support_uv(&mut ir);
@@ -1233,6 +1242,7 @@ pub(crate) fn try_decode_geometry(
         dialect_losses,
         notes,
     );
+    report.losses.extend(carrier_refusals);
     report_untransferred_streams(scan, &mut report, crate::native::TypedNative::Available);
     Ok(Some((ir, report, annotations, unknowns)))
 }

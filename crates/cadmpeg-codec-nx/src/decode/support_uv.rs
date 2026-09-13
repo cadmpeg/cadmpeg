@@ -557,16 +557,19 @@ fn serialized_support_uv_seed_for_side(
 }
 
 #[cfg(test)]
-pub(crate) fn complete_ext11_support_uv(ir: &mut CadIr, pending: &[PendingExt11SupportUv]) {
+pub(crate) fn complete_ext11_support_uv(
+    ir: &mut CadIr,
+    pending: &[PendingExt11SupportUv],
+) -> Result<(), cadmpeg_ir::geometry::NurbsError> {
     let geometry_budget = GeometryWorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
-    complete_ext11_support_uv_with_budget(ir, pending, &geometry_budget);
+    complete_ext11_support_uv_with_budget(ir, pending, &geometry_budget)
 }
 
 pub(crate) fn complete_ext11_support_uv_with_budget(
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
     geometry_budget: &GeometryWorkBudget<'_>,
-) {
+) -> Result<(), cadmpeg_ir::geometry::NurbsError> {
     let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let mut replacements = Vec::new();
     for (procedural_id, samples, fit_tolerance, serialized) in pending {
@@ -605,7 +608,7 @@ pub(crate) fn complete_ext11_support_uv_with_budget(
         ) else {
             continue;
         };
-        let side_replacements: [Option<PcurveGeometry>; 2] = std::array::from_fn(|side| {
+        let side_lanes: [Option<Vec<Point2>>; 2] = std::array::from_fn(|side| {
             if !missing[side] {
                 return None;
             }
@@ -620,25 +623,25 @@ pub(crate) fn complete_ext11_support_uv_with_budget(
             {
                 return None;
             }
-            let control_points = values
+            values
                 .iter()
                 .map(|uv| surface_parameters(surface_geometry, *uv))
-                .collect::<Option<Vec<_>>>()?;
-            Some(PcurveGeometry::Nurbs {
+                .collect::<Option<Vec<_>>>()
+        });
+        for (side, control_points) in side_lanes.into_iter().enumerate() {
+            let Some(control_points) = control_points else {
+                continue;
+            };
+            let replacement = PcurveGeometry::Nurbs {
                 nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
                     1,
                     linear_knots(parameters),
                     control_points,
                     None,
                     false,
-                )
-                .ok()?,
-            })
-        });
-        for (side, replacement) in side_replacements.into_iter().enumerate() {
-            if let Some(replacement) = replacement {
-                replacements.push((procedural_id.clone(), side, replacement));
-            }
+                )?,
+            };
+            replacements.push((procedural_id.clone(), side, replacement));
         }
     }
     drop(model_index);
@@ -657,6 +660,7 @@ pub(crate) fn complete_ext11_support_uv_with_budget(
 
         context.set_unmapped_pcurve(side, Some(replacement));
     }
+    Ok(())
 }
 
 #[cfg(test)]
