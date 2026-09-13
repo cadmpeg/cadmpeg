@@ -99,9 +99,14 @@ pub struct NonWhitespaceChar(char);
 impl NonWhitespaceChar {
     /// The character an ASCII literal byte names.
     ///
-    /// The assertion is a compile-time refusal: every caller states the byte
-    /// in a `const` initializer, so a whitespace or non-ASCII byte fails the
-    /// build rather than the run. `nonblank_literal!` is the caller.
+    /// Macro-only: [`nonblank_literal!`](crate::nonblank_literal) is the one
+    /// caller, and it evaluates this constructor inside a `const { … }`
+    /// block. The assertion is therefore a compile error at every use, and
+    /// there is no run-time path that can reach it. Call it nowhere else.
+    ///
+    /// [`NonWhitespaceChar::hex_digit`] is the total constructor for a value
+    /// computed at run time.
+    #[doc(hidden)]
     #[must_use]
     pub const fn from_ascii_literal(byte: u8) -> Self {
         assert!(
@@ -175,19 +180,26 @@ impl NonBlankString {
 
 /// Builds a [`NonBlankString`] from a format literal whose first character is
 /// literal, non-whitespace text.
+///
+/// The template is always a literal, so the leading byte is evaluated inside
+/// a `const { … }` block: a template that starts with whitespace, with a
+/// non-ASCII byte or with a `{` placeholder fails the build. Formatted
+/// arguments follow that literal prefix and cannot make the result blank.
 #[macro_export]
 macro_rules! nonblank_literal {
     ($template:literal $(, $argument:expr)* $(,)?) => {{
-        const PREFIX: $crate::products::NonWhitespaceChar = {
-            let bytes = $template.as_bytes();
-            assert!(
-                !bytes.is_empty() && bytes[0] != b'{',
-                "a nonblank literal must start with literal ASCII text",
-            );
-            $crate::products::NonWhitespaceChar::from_ascii_literal(bytes[0])
-        };
         let rendered = format!($template $(, $argument)*);
-        $crate::products::NonBlankString::prefixed(PREFIX, &rendered[1..])
+        $crate::products::NonBlankString::prefixed(
+            const {
+                let bytes = $template.as_bytes();
+                assert!(
+                    !bytes.is_empty() && bytes[0] != b'{',
+                    "a nonblank literal must start with literal ASCII text",
+                );
+                $crate::products::NonWhitespaceChar::from_ascii_literal(bytes[0])
+            },
+            &rendered[1..],
+        )
     }};
 }
 
@@ -1674,5 +1686,20 @@ impl AssemblyJoint {
         if let Some(kind) = self.pair_kind_mut() {
             kind.set_angular_limits(limits);
         }
+    }
+}
+
+#[cfg(test)]
+mod nonblank_literal_tests {
+    /// A whitespace-leading template fails the build, so the probe below is
+    /// the run-time reach the macro does not have: the `const { … }` block
+    /// evaluates the constructor at compile time at every use.
+    #[test]
+    fn a_formatted_literal_keeps_its_non_blank_prefix() {
+        assert_eq!(
+            crate::nonblank_literal!("sldprt:marker-relation:{}", 34).as_str(),
+            "sldprt:marker-relation:34"
+        );
+        assert_eq!(crate::nonblank_literal!("d6").as_str(), "d6");
     }
 }
