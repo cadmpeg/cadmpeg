@@ -108,7 +108,7 @@ pub(crate) struct MeshContainer {
     /// Source-classified feature edges as ascending vertex-index pairs.
     pub(crate) feature_edges: Vec<[u32; 2]>,
     /// One decoded unit normal per flattened triangle corner.
-    pub(crate) corner_normals: Vec<[f64; 3]>,
+    pub(crate) corner_normals: Option<Vec<[f64; 3]>>,
     /// Source face groups as an ordered partition of triangle ordinals.
     pub(crate) triangle_groups: Vec<MeshTriangleGroup>,
     /// One texture-table selector per triangle, when the `tid` channel exists.
@@ -1405,11 +1405,16 @@ fn decode_packed_direction(packed: [f32; 2]) -> Result<[f64; 3], CodecError> {
 
 /// Expand the role-0 packed-direction channel to one normal per triangle
 /// corner. Indexed channels use their per-vertex defaults and corner overrides.
+///
+/// The registry states an unshaded mesh by carrying no role-0
+/// packed-direction channel at all, so absence is `None` here. A channel that
+/// is present states one normal per corner and is never empty in place of
+/// absent.
 fn decode_corner_normals(
     attributes: &[MeshAttribute],
     vertices: usize,
     triangles: &[[u32; 3]],
-) -> Result<Vec<[f64; 3]>, CodecError> {
+) -> Result<Option<Vec<[f64; 3]>>, CodecError> {
     let mut channels = attributes
         .iter()
         .filter_map(|attribute| match &attribute.elements {
@@ -1419,7 +1424,7 @@ fn decode_corner_normals(
             _ => None,
         });
     let Some((attribute, values)) = channels.next() else {
-        return Ok(Vec::new());
+        return Ok(None);
     };
     if channels.next().is_some() {
         return Err(malformed(
@@ -1460,7 +1465,8 @@ fn decode_corner_normals(
                 .copied()
                 .ok_or_else(|| malformed("paramesh corner-normal selector is out of range"))
         })
-        .collect()
+        .collect::<Result<Vec<_>, _>>()
+        .map(Some)
 }
 
 /// Decode registry field 7 as source-classified mesh edges.
@@ -2419,7 +2425,7 @@ mod tests {
         .expect("mesh container");
         assert_eq!(
             mesh.corner_normals,
-            [[0.0, 0.0, 1.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]]
+            Some(vec![[0.0, 0.0, 1.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]])
         );
         assert!(matches!(
             &mesh.attributes[0].addressing,

@@ -101,7 +101,9 @@ fn compact_face_tessellation_header_places_table_at_plus_8() {
     payload.extend(1_u32.to_le_bytes());
     payload.extend(table());
     assert_eq!(descriptor_table_offset(&payload, 0), 8);
-    assert!(parse_table_sequence(&payload, 8, payload.len()).is_some());
+    assert!(parse_table_sequence(&payload, 8, payload.len())
+        .expect("a display-list table reads")
+        .is_some());
 }
 
 #[test]
@@ -112,7 +114,9 @@ fn extended_face_tessellation_header_places_table_at_plus_40() {
     }
     payload.extend(table());
     assert_eq!(descriptor_table_offset(&payload, 0), 40);
-    assert!(parse_table_sequence(&payload, 40, payload.len()).is_some());
+    assert!(parse_table_sequence(&payload, 40, payload.len())
+        .expect("a display-list table reads")
+        .is_some());
 }
 
 #[test]
@@ -172,7 +176,9 @@ fn inconsistent_auxiliary_count_invalidates_the_table() {
     let mut payload = table();
     let list_b_count = 20 + 52 + 52 + 12;
     payload[list_b_count..list_b_count + 4].copy_from_slice(&3_u32.to_le_bytes());
-    assert!(parse_table(&payload, 0).is_none());
+    assert!(parse_table(&payload, 0)
+        .expect("a probe miss is not a refusal")
+        .is_none());
 }
 
 #[test]
@@ -1971,4 +1977,26 @@ fn persistent_surface_source_sentinels_are_absent() {
         );
         assert!(references.is_empty());
     }
+}
+
+/// A display-list table whose normal lane does not cover its vertex lane
+/// states a shaded mesh it cannot fill. It is refused by name, not dropped.
+#[test]
+fn a_short_normal_lane_refuses_the_display_table() {
+    let mut payload = descriptor(4, 8, 1, &3_u32.to_le_bytes());
+    let positions = [0.0_f32, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0]
+        .into_iter()
+        .flat_map(f32::to_le_bytes)
+        .collect::<Vec<_>>();
+    payload.extend(descriptor(12, 100, 3, &positions));
+    // Two normals against three vertices.
+    payload.extend(descriptor(12, 100, 2, &[0; 24]));
+    payload.extend(descriptor(4, 8, 4, &[0; 16]));
+    payload.extend(descriptor(4, 8, 1, &4_u32.to_le_bytes()));
+    payload.extend(descriptor(1, 8, 4, &[0; 4]));
+
+    let error = parse_table(&payload, 0)
+        .expect_err("a short normal lane is refused")
+        .to_string();
+    assert!(error.contains("vertex normal(s)"), "{error}");
 }

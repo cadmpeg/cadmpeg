@@ -50,8 +50,9 @@ pub struct PrimitiveTriangleStrip {
     /// Consecutive model-space positions.
     pub positions: Vec<[f64; 3]>,
     /// Per-vertex normals when the primitive uses the interleaved normal and
-    /// position lane.
-    pub normals: Vec<[f64; 3]>,
+    /// position lane. A primitive that carries only the position lane states
+    /// an unshaded strip set and no normal lane at all.
+    pub normals: Option<Vec<[f64; 3]>>,
     /// Vertex count of each consecutive triangle strip.
     pub strip_lengths: Vec<u32>,
 }
@@ -74,7 +75,7 @@ enum TriangleStripGeometryError {
 #[derive(Debug, Clone, PartialEq)]
 struct TriangleStripGeometry {
     positions: Vec<[f64; 3]>,
-    normals: Vec<[f64; 3]>,
+    normals: Option<Vec<[f64; 3]>>,
 }
 
 fn triangle_strip_geometry(
@@ -150,7 +151,7 @@ fn triangle_strip_geometry(
     }
     Ok(TriangleStripGeometry {
         positions: positions.ok_or(TriangleStripGeometryError::Missing)?,
-        normals: normals.unwrap_or_default(),
+        normals,
     })
 }
 
@@ -383,7 +384,7 @@ mod tests {
         let strips = scan.strips;
         assert_eq!(strips.len(), 1);
         assert_eq!(strips[0].positions.len(), 3);
-        assert!(strips[0].normals.is_empty());
+        assert!(strips[0].normals.is_none());
         assert_eq!(strips[0].strip_lengths, [3]);
     }
 
@@ -406,7 +407,7 @@ mod tests {
             strips[0].positions,
             [[0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
         );
-        assert_eq!(strips[0].normals, [[0.0, 1.0, 0.0]; 3]);
+        assert_eq!(strips[0].normals, Some(vec![[0.0, 1.0, 0.0]; 3]));
         assert_eq!(strips[0].strip_lengths, [3]);
     }
 
@@ -428,7 +429,7 @@ mod tests {
 
         let expected = TriangleStripGeometry {
             positions: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
-            normals: vec![[0.0, 0.0, 1.0]; 3],
+            normals: Some(vec![[0.0, 0.0, 1.0]; 3]),
         };
         assert_eq!(
             triangle_strip_geometry(&[xyz.clone(), normal_xyz.clone()], 3),

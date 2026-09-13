@@ -398,11 +398,11 @@ fn transfer_display_tessellations(
                         .iter()
                         .map(|point| Point3::new(point[0], point[1], point[2]))
                         .collect(),
-                    // The native strip record states no normal lane by
-                    // carrying none.
-                    (!strip.normals.is_empty()).then(|| {
-                        strip
-                            .normals
+                    // A primitive that carries only `mv_p_xyz` states an
+                    // unshaded strip set: the normal lane is absent, never
+                    // empty.
+                    strip.normals.as_ref().map(|normals| {
+                        normals
                             .iter()
                             .map(|normal| Vector3::new(normal[0], normal[1], normal[2]))
                             .collect()

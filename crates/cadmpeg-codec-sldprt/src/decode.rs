@@ -2218,7 +2218,7 @@ fn build_geometry_ir(
         configuration_bodies,
     } = decoded;
     let appearance_definitions = crate::appearance::definitions(scan);
-    let mut ir = CadIr::decoded(source_meta(scan, classification, header));
+    let mut ir = CadIr::decoded(source_meta(scan, classification, header)?);
     let mut annotations = std::mem::take(&mut brep.annotations);
     let mut histories = crate::history::histories(scan, &mut annotations);
     let mut lanes = crate::resolved_features::assembly::lanes(scan, &mut annotations);
@@ -2751,7 +2751,7 @@ fn build_geometry_ir(
     let mut conflicting_display_references = Vec::new();
     let mut persistent_face_bindings = Vec::new();
     for display in scan.sections() {
-        let display_faces = crate::tessellation::section_display_faces(display);
+        let display_faces = crate::tessellation::section_display_faces(display)?;
         if display_faces.is_empty() {
             continue;
         }
@@ -2994,13 +2994,13 @@ fn source_meta(
     scan: &ContainerScan,
     classification: &crate::dialect::LayerClassification,
     header: Option<&StreamHeader>,
-) -> SourceMeta {
+) -> Result<SourceMeta, CodecError> {
     let mut attributes = BTreeMap::new();
     attributes.insert(
         "outer_version".to_string(),
         format!("0x{:08x}", scan.version),
     );
-    let display = crate::tessellation::summary(scan);
+    let display = crate::tessellation::summary(scan)?;
     if display.vertices > 0 {
         attributes.insert(
             "displaylist_vertices".to_string(),
@@ -3034,7 +3034,10 @@ fn source_meta(
     }
     add_preview_metadata(scan, &mut attributes);
     add_solidworks_xml_metadata(scan, &mut attributes);
-    SourceMeta::classified(classification.layers().clone(), attributes)
+    Ok(SourceMeta::classified(
+        classification.layers().clone(),
+        attributes,
+    ))
 }
 
 fn add_preview_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<String, String>) {

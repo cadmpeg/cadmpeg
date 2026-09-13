@@ -3340,14 +3340,14 @@ fn project_mesh_bodies(
             &body.triangles,
             &mut unresolved,
         );
-        // The paramesh record states no corner-normal lane by carrying none.
-        let corner_normals = body.corner_normals;
+        // The paramesh registry states an unshaded mesh by carrying no
+        // corner-normal channel, so the lane arrives absent, never empty.
         let tessellation = cadmpeg_ir::tessellation::Tessellation::new(
             id,
             cadmpeg_ir::tessellation::TessellationMesh::from_corner_lanes(
                 body.vertices,
                 body.triangles,
-                (!corner_normals.is_empty()).then_some(corner_normals),
+                body.corner_normals,
             )?,
             channels,
         )

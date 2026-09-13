@@ -11,7 +11,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::FaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::tessellation::{
-    ShadedVertex, Strip, Strips, TessellationChannel, TessellationMesh,
+    TessellationChannel, TessellationMesh,
 };
 use cadmpeg_ir::topology::Sense;
 use std::collections::HashMap;
@@ -36,21 +36,6 @@ pub(crate) struct Summary {
     pub(crate) triangles: usize,
 }
 
-/// Split a flat display-list vertex lane into the strips its run lengths name.
-fn split_strips<V>(vertices: Vec<V>, lengths: &[u32]) -> Option<Vec<Strip<V>>> {
-    let mut remaining = vertices.into_iter();
-    let mut strips = Vec::with_capacity(lengths.len());
-    for length in lengths {
-        let span = usize::try_from(*length).ok()?;
-        let run: Vec<V> = remaining.by_ref().take(span).collect();
-        if run.len() != span {
-            return None;
-        }
-        strips.push(Strip::new(run)?);
-    }
-    remaining.next().is_none().then_some(strips)
-}
-
 #[derive(Debug, Clone)]
 pub(crate) struct Mesh {
     mesh: TessellationMesh,
@@ -70,39 +55,6 @@ impl Default for Mesh {
 }
 
 impl Mesh {
-    /// Pair the display list's three lanes into strip rows.
-    ///
-    /// A `SolidWorks` display list states strip run lengths, vertex positions
-    /// and vertex normals as three descriptor channels, so the codec pairs
-    /// them here: the run lengths cut the vertex lane into strips, and a
-    /// normal lane that does not cover the vertices refuses the mesh. The IR
-    /// carries the rows only.
-    fn new(
-        vertices: Vec<Point3>,
-        strip_lengths: &[u32],
-        normals: Vec<Vector3>,
-        channels: Vec<TessellationChannel>,
-    ) -> Option<Self> {
-        let mesh = if normals.is_empty() {
-            TessellationMesh::Strips {
-                strips: Strips::new(split_strips(vertices, strip_lengths)?)?,
-            }
-        } else {
-            if normals.len() != vertices.len() {
-                return None;
-            }
-            let rows = vertices
-                .into_iter()
-                .zip(normals)
-                .map(|(position, normal)| ShadedVertex { position, normal })
-                .collect();
-            TessellationMesh::ShadedStrips {
-                strips: Strips::new(split_strips(rows, strip_lengths)?)?,
-            }
-        };
-        Some(Self { mesh, channels })
-    }
-
     /// Number of vertices the strips span.
     pub(crate) fn vertex_count(&self) -> usize {
         self.mesh.vertex_count()
@@ -377,7 +329,19 @@ pub(crate) fn auxiliary_channels_are_consistent(
             .all(|bytes| View::f32_le_at(bytes, 0).is_some_and(f32::is_finite))
 }
 
-fn parse_table(bytes: &[u8], mut at: usize) -> Option<(Mesh, usize)> {
+/// The six descriptor channels of one display-list table, read as lanes.
+struct ProbedTable {
+    strips: Vec<usize>,
+    vertices: Vec<Point3>,
+    normals: Vec<Vector3>,
+    channels: Vec<TessellationChannel>,
+}
+
+/// Read the six descriptors at `at` as display-list lanes.
+///
+/// `None` is a probe miss: the descriptors at this byte position do not state
+/// the display-list grammar.
+fn probe_table(bytes: &[u8], mut at: usize) -> Option<(ProbedTable, usize)> {
     let mut strips = Vec::new();
     let mut vertices = Vec::new();
     let mut normals = Vec::new();
@@ -447,20 +411,58 @@ fn parse_table(bytes: &[u8], mut at: usize) -> Option<(Mesh, usize)> {
         return None;
     }
     Some((
-        Mesh::new(
+        ProbedTable {
+            strips,
             vertices,
-            &strips
-                .into_iter()
-                .map(|length| length as u32)
-                .collect::<Vec<_>>(),
             normals,
             channels,
-        )?,
+        },
         at,
     ))
 }
 
-pub(crate) fn section_display_faces(section: Section<'_>) -> Vec<DisplayFace> {
+/// Pair one display-list table's lanes into mesh rows.
+///
+/// `Ok(None)` is a probe miss: this byte position states no table, or its
+/// strip spans do not cut its vertex lane, so the position is not a table
+/// start. `Err` is a table the codec recognizes whose normal lane does not
+/// cover its vertex lane. The display-list grammar states a normal descriptor
+/// for every table, so the lane is always present and `None` is never the
+/// reading of an empty one: a normal lane that does not cover the vertices is
+/// a record that states a shaded mesh it cannot fill, and it is refused.
+fn parse_table(
+    bytes: &[u8],
+    at: usize,
+) -> Result<Option<(Mesh, usize)>, cadmpeg_core::CodecError> {
+    let Some((
+        ProbedTable {
+            strips,
+            vertices,
+            normals,
+            channels,
+        },
+        end,
+    )) = probe_table(bytes, at)
+    else {
+        return Ok(None);
+    };
+    let spans: Vec<u32> = strips.into_iter().map(|length| length as u32).collect();
+    match TessellationMesh::from_strip_lanes(vertices, Some(normals), &spans) {
+        Ok(mesh) => Ok(Some((Mesh { mesh, channels }, end))),
+        Err(error @ cadmpeg_ir::tessellation::TessellationLaneError::VertexNormalLane { .. }) => {
+            Err(cadmpeg_core::CodecError::Malformed(format!(
+                "sldprt display-list table at byte {at}: {error}"
+            )))
+        }
+        // The strip spans are what the probe recognizes: spans that do not cut
+        // the vertex lane mean this position is not a table start.
+        Err(_) => Ok(None),
+    }
+}
+
+pub(crate) fn section_display_faces(
+    section: Section<'_>,
+) -> Result<Vec<DisplayFace>, cadmpeg_core::CodecError> {
     let payload = section.payload();
     let markers = payload
         .windows(FACE_TESSELLATION_CLASS.len())
@@ -485,7 +487,7 @@ pub(crate) fn section_display_faces(section: Section<'_>) -> Vec<DisplayFace> {
             .copied()
             .unwrap_or(payload.len());
         let start = header + descriptor_table_offset(payload, header);
-        let Some(tables) = parse_table_sequence(payload, start, limit) else {
+        let Some(tables) = parse_table_sequence(payload, start, limit)? else {
             continue;
         };
         if !tables.first().is_some_and(|(_, _, mesh)| {
@@ -517,14 +519,16 @@ pub(crate) fn section_display_faces(section: Section<'_>) -> Vec<DisplayFace> {
         faces[index].surface_references =
             persistent_surface_references(payload, faces[index].metadata);
     }
-    faces
+    Ok(faces)
 }
 
-pub(crate) fn section_meshes(section: Section<'_>) -> Vec<Mesh> {
-    section_display_faces(section)
+pub(crate) fn section_meshes(
+    section: Section<'_>,
+) -> Result<Vec<Mesh>, cadmpeg_core::CodecError> {
+    Ok(section_display_faces(section)?
         .into_iter()
         .map(|face| face.mesh)
-        .collect()
+        .collect())
 }
 
 /// Offset of the first descriptor after a face-tessellation class name.
@@ -551,14 +555,16 @@ fn parse_table_sequence(
     payload: &[u8],
     at: usize,
     limit: usize,
-) -> Option<Vec<(usize, usize, Mesh)>> {
+) -> Result<Option<Vec<(usize, usize, Mesh)>>, cadmpeg_core::CodecError> {
     let first_start = at;
-    let (mesh, mut at) = parse_table(payload, at)?;
+    let Some((mesh, mut at)) = parse_table(payload, at)? else {
+        return Ok(None);
+    };
     if at > limit {
-        return None;
+        return Ok(None);
     }
     if mesh.vertex_count() == 0 {
-        return None;
+        return Ok(None);
     }
     let mut meshes = vec![(first_start, at, mesh)];
     while at + 16 <= limit {
@@ -570,7 +576,7 @@ fn parse_table_sequence(
         };
         at += relative;
         let start = at;
-        if let Some((next, end)) = parse_table(payload, at) {
+        if let Some((next, end)) = parse_table(payload, at)? {
             if end <= limit && next.vertex_count() > 0 {
                 meshes.push((start, end, next));
                 at = end;
@@ -581,7 +587,7 @@ fn parse_table_sequence(
             at += 4;
         }
     }
-    Some(meshes)
+    Ok(Some(meshes))
 }
 
 fn persistent_surface_references(
@@ -676,22 +682,25 @@ fn persistent_surface_references(
     references
 }
 
-pub(crate) fn section_summary(section: Section<'_>) -> Option<Summary> {
-    let meshes = section_meshes(section);
-    (!meshes.is_empty()).then(|| Summary {
+pub(crate) fn section_summary(
+    section: Section<'_>,
+) -> Result<Option<Summary>, cadmpeg_core::CodecError> {
+    let meshes = section_meshes(section)?;
+    Ok((!meshes.is_empty()).then(|| Summary {
         vertices: meshes.iter().map(Mesh::vertex_count).sum(),
         triangles: meshes.iter().map(Mesh::triangle_count).sum(),
-    })
+    }))
 }
 
-pub(crate) fn summary(scan: &ContainerScan) -> Summary {
-    scan.sections()
-        .filter_map(section_summary)
-        .fold(Summary::default(), |mut total, next| {
+pub(crate) fn summary(scan: &ContainerScan) -> Result<Summary, cadmpeg_core::CodecError> {
+    let mut total = Summary::default();
+    for section in scan.sections() {
+        if let Some(next) = section_summary(section)? {
             total.vertices += next.vertices;
             total.triangles += next.triangles;
-            total
-        })
+        }
+    }
+    Ok(total)
 }
 
 struct SurfaceCandidate<'a> {
