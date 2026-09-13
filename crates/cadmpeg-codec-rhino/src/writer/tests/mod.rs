@@ -141,7 +141,7 @@ pub(crate) fn polygon_sheet(points: &[Point3]) -> CadIr {
         shell,
         surface: surface.clone(),
         sense: Sense::Forward,
-        loops: vec![loop_id.clone()].into(),
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![loop_id.clone()]),
         name: None,
         color: None,
         tolerance: None,
@@ -257,7 +257,13 @@ pub(crate) fn add_polygon_hole(ir: &mut CadIr, points: &[Point3]) {
                 .expect("identity grammar")
         })
         .collect::<Vec<_>>();
-    ir.model.faces[0].loops.push(loop_id.clone());
+    let face_loops = ir.model.faces[0]
+        .loops
+        .iter()
+        .cloned()
+        .chain(std::iter::once(loop_id.clone()))
+        .collect();
+    ir.model.faces[0].loops = cadmpeg_ir::topology::FaceLoops::unspecified(face_loops);
     ir.model.loops.push(Loop {
         id: loop_id.clone(),
         face,
@@ -415,7 +421,7 @@ pub(crate) fn adjacent_quad_sheet() -> CadIr {
             shell: shell.clone(),
             surface: surface_ids[index].clone(),
             sense: Sense::Forward,
-            loops: vec![loop_ids[index].clone()].into(),
+            loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![loop_ids[index].clone()]),
             name: None,
             color: None,
             tolerance: None,
@@ -708,7 +714,7 @@ pub(crate) fn planar_tetrahedron() -> CadIr {
             shell: shell.clone(),
             surface: surface_ids[face].clone(),
             sense: Sense::Forward,
-            loops: vec![loop_ids[face].clone()].into(),
+            loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![loop_ids[face].clone()]),
             name: None,
             color: None,
             tolerance: None,
