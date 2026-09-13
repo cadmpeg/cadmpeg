@@ -68,7 +68,8 @@ fn revolution_cache_preserves_native_profile_and_arc_length_chart() {
         [0.0, 0.0, 1.0],
         2.0,
         [[-1.0, 1.0], [0.0, 2.0 * std::f64::consts::PI]],
-     &mut None,)
+        &mut None,
+    )
     .expect("exact revolution cache");
     assert_eq!(plan.parameter_interval, [-1.0, 1.0]);
     assert_eq!(plan.angular_interval, [0.0, std::f64::consts::PI]);
@@ -91,7 +92,8 @@ fn revolution_cache_preserves_native_profile_and_arc_length_chart() {
         [0.0, 0.0, 1.0],
         2.0,
         [[-0.5, 1.0], [0.0, 2.0 * std::f64::consts::PI]],
-     &mut None,)
+        &mut None,
+    )
     .is_none());
 }
 
@@ -207,7 +209,8 @@ fn revolution_isocurve_keeps_its_native_trim_range() {
         &graph,
         &UnknownId::mint("catia:test:unknown#catia:test-payload".to_string())
             .expect("identity grammar"),
-     &mut None,)
+        &mut None,
+    )
     .expect("closed revolution graph");
     let curve = plan.edge_curve_plan.get(&30).expect("revolution isocurve");
     assert_eq!(curve.parameter_range, Some(angular_range));
@@ -715,7 +718,8 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
         control_points: vec![[0.0, -4.0], [2.0, -4.0]],
         ..reversed_pcurve
     };
-    let cone_geometry = lifted_curve_geometry(&cone_pcurve, &cone, &mut None).expect("signed cone latitude");
+    let cone_geometry =
+        lifted_curve_geometry(&cone_pcurve, &cone, &mut None).expect("signed cone latitude");
     let cone_point = |angle: f64| {
         [
             -4.0 * half_angle.sin() * angle.cos(),
@@ -1042,7 +1046,8 @@ fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
         &mut AnnotationBuilder::new(),
         graph,
         &payload,
-     &mut None,));
+        &mut None,
+    ));
     assert_eq!(ir.model.pcurves.len(), 1);
     assert!(matches!(
         ir.model.pcurves[0].geometry,
@@ -1216,7 +1221,8 @@ fn decimal_object_id_keys_transfer_to_an_admissible_model() {
         &mut AnnotationBuilder::new(),
         graph,
         &UnknownId::mint("catia:payload:unknown#test".to_string()).expect("identity grammar"),
-     &mut None,));
+        &mut None,
+    ));
 
     // Native traversal order, which the arena-order check reads as unsorted.
     assert_eq!(
@@ -1334,7 +1340,8 @@ fn tensor_surface_contraction_preserves_exact_isocurve() {
         false,
     )
     .expect("valid tensor surface");
-    let curve = crate::nurbs::nurbs_surface_isocurve(&surface, 0.25, true, &mut None).expect("u isocurve");
+    let curve =
+        crate::nurbs::nurbs_surface_isocurve(&surface, 0.25, true, &mut None).expect("u isocurve");
     assert_eq!(curve.degree(), 1);
     assert_eq!(curve.knots(), surface.v_knots());
     assert_eq!(curve.control_points()[0], Point3::new(0.5, 0.0, 0.0));
@@ -1367,7 +1374,14 @@ fn affine_cylinder_pcurve_preserves_exact_helix_construction() {
         chart_origin: 0.0,
     };
     let end = [2.0 * 2.0_f64.cos(), 2.0 * 2.0_f64.sin(), 7.0];
-    let Some(plan) = cylinder_helix(&pcurve, &cylinder, [0.0, 1.0], [2.0, 0.0, 3.0], end, &mut None) else {
+    let Some(plan) = cylinder_helix(
+        &pcurve,
+        &cylinder,
+        [0.0, 1.0],
+        [2.0, 0.0, 3.0],
+        end,
+        &mut None,
+    ) else {
         panic!("degree-one cylinder helix");
     };
     let ProceduralCurveDefinition::Helix(helix_payload) = &plan.definition else {
@@ -1390,14 +1404,29 @@ fn affine_cylinder_pcurve_preserves_exact_helix_construction() {
     );
 
     assert!(
-        cylinder_helix(&pcurve, &cylinder, [0.0, 1.0], end, [2.0, 0.0, 3.0], &mut None).is_none(),
+        cylinder_helix(
+            &pcurve,
+            &cylinder,
+            [0.0, 1.0],
+            end,
+            [2.0, 0.0, 3.0],
+            &mut None
+        )
+        .is_none(),
         "the native edge endpoint order is authoritative"
     );
 
     let trimmed_start = [2.0 * 0.5_f64.cos(), 2.0 * 0.5_f64.sin(), 4.0];
     let trimmed_end = [2.0 * 1.5_f64.cos(), 2.0 * 1.5_f64.sin(), 6.0];
-    let trimmed = cylinder_helix(&pcurve, &cylinder, [0.25, 0.75], trimmed_start, trimmed_end, &mut None)
-        .expect("trimmed physical edge helix");
+    let trimmed = cylinder_helix(
+        &pcurve,
+        &cylinder,
+        [0.25, 0.75],
+        trimmed_start,
+        trimmed_end,
+        &mut None,
+    )
+    .expect("trimmed physical edge helix");
     let ProceduralCurveDefinition::Helix(helix_payload) = trimmed.definition else {
         unreachable!();
     };
@@ -1421,7 +1450,8 @@ fn affine_cylinder_pcurve_preserves_exact_helix_construction() {
         [0.0, 1.0],
         [2.0, 0.0, 0.0],
         tiny_end,
-     &mut None,)
+        &mut None,
+    )
     .expect("tiny helix sweep");
     let ProceduralCurveDefinition::Helix(helix_payload) = tiny_plan.definition else {
         unreachable!();

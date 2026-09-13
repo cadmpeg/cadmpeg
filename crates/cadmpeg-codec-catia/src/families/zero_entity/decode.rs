@@ -429,10 +429,12 @@ fn transfer_closed_wire_loops(
                                         Some((definition, procedural.cache_fit_tolerance)),
                                     )
                                 }),
-                                None => {
-                                    crate::nurbs::reverse_curve_geometry(&geometry, source_range, refusal)
-                                        .map(|(geometry, edge_range)| (geometry, edge_range, None))
-                                }
+                                None => crate::nurbs::reverse_curve_geometry(
+                                    &geometry,
+                                    source_range,
+                                    refusal,
+                                )
+                                .map(|(geometry, edge_range)| (geometry, edge_range, None)),
                             }
                         } else {
                             Some((
@@ -758,7 +760,8 @@ pub(crate) fn try_decode_zero_entity(
                         crate::families::zero_entity::records::zero_entity_neutral_pcurve(
                             surface_geometry,
                             &pcurve,
-                         refusal,)
+                            refusal,
+                        )
                     else {
                         continue;
                     };
@@ -854,7 +857,8 @@ pub(crate) fn try_decode_zero_entity(
             &support_curve_ids,
             ownership_root.as_ref(),
             &topology_budget,
-         refusal,);
+            refusal,
+        );
         match counts {
             Some(counts) if neutral_model_is_admissible(&mut candidate_ir, &unknowns) => {
                 ir = candidate_ir;
@@ -873,7 +877,8 @@ pub(crate) fn try_decode_zero_entity(
             &support_runs,
             &support_curve_ids,
             ownership_root.as_ref(),
-         refusal,)
+            refusal,
+        )
         .ok()?
     };
 
@@ -1119,7 +1124,8 @@ mod tests {
             &support_runs,
             &support_curve_ids,
             None,
-         &mut None,)
+            &mut None,
+        )
         .expect("valid exactness fields");
 
         assert_eq!(counts.edges, 2);
@@ -1240,7 +1246,8 @@ mod tests {
             &support_runs,
             &support_curve_ids,
             Some(&ownership_root),
-         &mut None,)
+            &mut None,
+        )
         .expect("valid exactness fields");
 
         assert_eq!(counts.bodies, 1);
@@ -1385,7 +1392,8 @@ mod tests {
             &support_runs,
             &support_curve_ids,
             None,
-         &mut None,)
+            &mut None,
+        )
         .expect("valid exactness fields");
 
         assert_eq!(counts.loops, 1);
@@ -1482,7 +1490,8 @@ mod tests {
             &support_runs,
             &support_curve_ids,
             None,
-         &mut None,)
+            &mut None,
+        )
         .expect("valid exactness fields");
 
         assert_eq!(counts.bodies, 1);
@@ -1576,7 +1585,8 @@ mod tests {
             &support_runs,
             &HashMap::new(),
             None,
-         &mut None,)
+            &mut None,
+        )
         .expect("valid exactness fields");
 
         assert_eq!(counts, WireTransferCounts::default());

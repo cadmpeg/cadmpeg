@@ -1426,8 +1426,8 @@ fn spline_extrusion_preserves_directrix_basis_and_weights() {
         false,
     )
     .expect("valid directrix");
-    let surface =
-        extruded_nurbs_surface(&directrix, [0.0, 0.0, 4.0], &mut None).expect("valid extrusion surface");
+    let surface = extruded_nurbs_surface(&directrix, [0.0, 0.0, 4.0], &mut None)
+        .expect("valid extrusion surface");
 
     assert_eq!((surface.u_degree(), surface.v_degree()), (2, 1));
     assert_eq!((surface.u_count(), surface.v_count()), (3, 2));
@@ -1474,7 +1474,8 @@ fn extrusion_arc_pcurve_is_exact_in_both_directions() {
         (0.0, std::f64::consts::PI, Point2::new(2.0, 5.0)),
         (std::f64::consts::PI, 0.0, Point2::new(2.0, 5.0)),
     ] {
-        let pcurve = circular_pcurve([2.0, 2.0], 3.0, start, end, &mut None).expect("circular pcurve fixture");
+        let pcurve = circular_pcurve([2.0, 2.0], 3.0, start, end, &mut None)
+            .expect("circular pcurve fixture");
         let first = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.0).expect("first endpoint");
         let middle = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.5).expect("arc midpoint");
         let last = cadmpeg_ir::eval::pcurve_uv(&pcurve, 1.0).expect("last endpoint");

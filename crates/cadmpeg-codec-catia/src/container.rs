@@ -1297,9 +1297,7 @@ fn identify_fbb_variant(brep: &[u8], census: &Census) -> Variant {
 }
 
 /// Identify a whole `.CATPart` byte image.
-pub fn scan_bytes<'a>(
-    data: impl Into<Cow<'a, [u8]>>,
-) -> ContainerScan<'a> {
+pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     let data = data.into();
     let outer_dir_offset = View::u32_be_at(&data, outer_hdr::DIRECTORY_OFFSET).unwrap_or(0);
     let outer_dir_length = View::u32_be_at(&data, outer_hdr::DIRECTORY_LENGTH).unwrap_or(0);

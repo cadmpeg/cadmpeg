@@ -22,7 +22,8 @@ fn reversed_nurbs_pcurve_preserves_the_selected_interval() {
     };
     let range = [0.25, 1.75];
     let reversed = reverse_pcurve_over_range(&pcurve, range)
-        .expect("reversed lanes pair").expect("reversible NURBS pcurve");
+        .expect("reversed lanes pair")
+        .expect("reversible NURBS pcurve");
     for parameter in [range[0], 0.5, 1.0, 1.5, range[1]] {
         let expected =
             cadmpeg_ir::eval::pcurve_uv(&pcurve, range[0] + range[1] - parameter).unwrap();
@@ -68,7 +69,7 @@ fn reversed_symmetric_analytic_pcurves_preserve_the_selected_interval() {
     let range = [-1.5, 1.5];
     for carrier in carriers {
         let reversed = reverse_pcurve_over_range(&carrier, range)
-        .expect("reversed lanes pair")
+            .expect("reversed lanes pair")
             .expect("symmetric analytic pcurve is exactly reversible");
         for parameter in [-1.5, -0.75, 0.0, 0.75, 1.5] {
             let expected = cadmpeg_ir::eval::pcurve_uv(&carrier, -parameter).unwrap();
@@ -106,7 +107,7 @@ fn reversed_analytic_conics_preserve_arbitrary_selected_intervals() {
     let range = [0.25, 1.75];
     for carrier in carriers {
         let reversed = reverse_pcurve_over_range(&carrier, range)
-        .expect("reversed lanes pair")
+            .expect("reversed lanes pair")
             .expect("a finite conic interval has an exact coefficient reflection");
         assert!(matches!(
             (&carrier, &reversed),
@@ -122,7 +123,7 @@ fn reversed_analytic_conics_preserve_arbitrary_selected_intervals() {
         }
 
         let reflected_twice = reverse_pcurve_over_range(&reversed, range)
-        .expect("reversed lanes pair")
+            .expect("reversed lanes pair")
             .expect("general conic coefficients remain exactly reversible");
         for parameter in [0.25, 0.75, 1.25, 1.75] {
             let expected = cadmpeg_ir::eval::pcurve_uv(&carrier, parameter).unwrap();
@@ -256,7 +257,7 @@ fn reversed_offset_pcurve_reverses_its_basis_and_signed_side() {
         ],
         1.0e-12,
     )
-        .expect("reversed lanes pair")
+    .expect("reversed lanes pair")
     .expect("offset endpoints select the reversed terminal branch");
     for parameter in [2.0, 3.0, 5.0, 6.0] {
         let expected = cadmpeg_ir::eval::pcurve_uv(&pcurve, 8.0 - parameter).unwrap();

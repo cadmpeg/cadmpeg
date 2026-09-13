@@ -299,22 +299,32 @@ pub(super) fn profile_nurbs(
     match profile {
         B5Profile::Line {
             point, direction, ..
-        } => crate::nurbs::note_refusal(NurbsCurve::from_lanes(
-            1,
-            vec![interval[0], interval[0], interval[1], interval[1]],
-            interval
-                .map(|parameter| point3(add(*point, scale(*direction, parameter))))
-                .to_vec(),
-            None,
-            false,
-        ), refusal),
+        } => crate::nurbs::note_refusal(
+            NurbsCurve::from_lanes(
+                1,
+                vec![interval[0], interval[0], interval[1], interval[1]],
+                interval
+                    .map(|parameter| point3(add(*point, scale(*direction, parameter))))
+                    .to_vec(),
+                None,
+                false,
+            ),
+            refusal,
+        ),
         B5Profile::Arc {
             center,
             direction_x,
             direction_y,
             radius,
             ..
-        } => rational_arc(*center, *direction_x, *direction_y, *radius, interval, refusal),
+        } => rational_arc(
+            *center,
+            *direction_x,
+            *direction_y,
+            *radius,
+            interval,
+            refusal,
+        ),
     }
 }
 
@@ -374,7 +384,10 @@ pub(super) fn rational_arc(
         weights.push(1.0);
         append_quadratic_span_knots(&mut knots, interval, span, span_count);
     }
-    crate::nurbs::note_refusal(NurbsCurve::from_lanes(2, knots, control_points, Some(weights), false), refusal)
+    crate::nurbs::note_refusal(
+        NurbsCurve::from_lanes(2, knots, control_points, Some(weights), false),
+        refusal,
+    )
 }
 
 pub(super) fn revolve_nurbs(
@@ -448,17 +461,20 @@ pub(super) fn revolve_nurbs(
         }
     }
     let row_len = angular_count;
-    crate::nurbs::note_refusal(NurbsSurface::from_lanes(
-        profile.degree(),
-        2,
-        profile.knots().to_vec(),
-        v_knots,
-        control_points.chunks(row_len).map(<[_]>::to_vec).collect(),
-        Some(weights).map(|values| values.chunks(row_len).map(<[_]>::to_vec).collect()),
-        false,
-        false,
-        false,
-    ), refusal)
+    crate::nurbs::note_refusal(
+        NurbsSurface::from_lanes(
+            profile.degree(),
+            2,
+            profile.knots().to_vec(),
+            v_knots,
+            control_points.chunks(row_len).map(<[_]>::to_vec).collect(),
+            Some(weights).map(|values| values.chunks(row_len).map(<[_]>::to_vec).collect()),
+            false,
+            false,
+            false,
+        ),
+        refusal,
+    )
 }
 
 pub(super) fn append_quadratic_span_knots(

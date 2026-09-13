@@ -830,7 +830,9 @@ pub fn parse(
     bytes: &[u8],
     refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<B5Graph> {
-    let mut graphs = topology_runs(bytes, refusal).into_iter().map(|(_, graph)| graph);
+    let mut graphs = topology_runs(bytes, refusal)
+        .into_iter()
+        .map(|(_, graph)| graph);
     let graph = graphs.next()?;
     graphs.next().is_none().then_some(graph)
 }
@@ -865,7 +867,8 @@ fn parse_flat(
 }
 
 pub(crate) fn parse_from_frames(
-    bytes: &[u8], frames: &[ObjectFrame],
+    bytes: &[u8],
+    frames: &[ObjectFrame],
     refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>,
 ) -> Option<B5Graph> {
     let records = records_from_frames(bytes, frames);
@@ -1621,9 +1624,7 @@ fn parse_a8_class21_pcurve(object_id: u32, payload: &[u8]) -> Option<B5Pcurve> {
 /// Return native start/end vertex identities for every framed `b5 03 5e`
 /// edge, keyed by the edge object id.
 #[must_use]
-pub fn edge_vertex_references(
-    bytes: &[u8],
-) -> BTreeMap<u32, [u32; 2]> {
+pub fn edge_vertex_references(bytes: &[u8]) -> BTreeMap<u32, [u32; 2]> {
     let mut edges = BTreeMap::new();
     let mut ambiguous = HashSet::new();
     for frame in object_stream_frames(bytes) {
@@ -4864,9 +4865,7 @@ fn framed_records(bytes: &[u8], frames: &[ObjectFrame]) -> Vec<B5Record> {
 
 /// Return complete byte ranges for length-closed object-stream records.
 #[must_use]
-pub(crate) fn framed_ranges(
-    bytes: &[u8],
-) -> Vec<std::ops::Range<usize>> {
+pub(crate) fn framed_ranges(bytes: &[u8]) -> Vec<std::ops::Range<usize>> {
     object_stream_frames(bytes)
         .into_iter()
         .map(|frame| frame.start..frame.end)
@@ -4975,9 +4974,7 @@ pub(crate) fn object_stream_run_ranges(bytes: &[u8]) -> Vec<Range<usize>> {
 }
 
 /// Return runs that declare at least one face or loop topology root.
-pub(crate) fn topology_root_run_ranges(
-    bytes: &[u8],
-) -> Vec<Range<usize>> {
+pub(crate) fn topology_root_run_ranges(bytes: &[u8]) -> Vec<Range<usize>> {
     object_stream_run_ranges(bytes)
         .into_iter()
         .filter(|range| {
@@ -4994,9 +4991,7 @@ fn is_topology_root_frame(frame: ObjectFrame) -> bool {
 }
 
 /// Partition one logical stream into independently resolved object populations.
-pub(crate) fn object_stream_populations(
-    stream: &[u8],
-) -> Vec<Vec<u8>> {
+pub(crate) fn object_stream_populations(stream: &[u8]) -> Vec<Vec<u8>> {
     let runs = object_stream_run_ranges(stream);
     let topology_runs = topology_root_run_ranges(stream);
     let mut owned_populations = HashMap::new();

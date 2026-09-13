@@ -11,8 +11,7 @@ use crate::kernel_header::RefWidth;
 use crate::nurbs::reader::{
     construction_marker_positions, is_periodic, marker_at, marker_positions,
     owned_marker_positions, read_control_points, read_knots, take_tagged_int, BsplineMarker,
-    ReadPoles3,
-    KnotLayout, INT_WIDTHS, LEN_TO_MM,
+    KnotLayout, ReadPoles3, INT_WIDTHS, LEN_TO_MM,
 };
 use crate::nurbs::subtypes::{decode_cache_resolving_refs, SubtypeTables};
 use crate::nurbs::toks;
@@ -404,7 +403,13 @@ pub(crate) fn decode_curve_block(
     let control_start = pos;
     let poles = read_control_points(b, &mut pos, n_poles, marker)?;
 
-    let curve = NurbsCurve::new(degree as u32, knots, poles.into_lane(), is_periodic(closure)).ok()?;
+    let curve = NurbsCurve::new(
+        degree as u32,
+        knots,
+        poles.into_lane(),
+        is_periodic(closure),
+    )
+    .ok()?;
     Some(CurvePatchLayout {
         curve,
         control_start,

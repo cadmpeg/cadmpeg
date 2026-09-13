@@ -333,9 +333,7 @@ pub fn e5_surfaces(
                     .all(f64::is_finite)
                     .then_some((geometry, parameter_scale))
             }),
-            0xe7 => {
-                e5_nurbs_surface(data, record, refusal).map(|geometry| (geometry, [1.0, 1.0]))
-            }
+            0xe7 => e5_nurbs_surface(data, record, refusal).map(|geometry| (geometry, [1.0, 1.0])),
             _ => None,
         };
         if let Some((geometry, uv_scale)) = decoded {
@@ -647,17 +645,20 @@ fn e5_nurbs_surface(
     let row_len = v_count;
     view.is_empty()
         .then(|| {
-            crate::nurbs::note_refusal(NurbsSurface::from_lanes(
-                u_degree,
-                v_degree,
-                u_knots,
-                v_knots,
-                control_points.chunks(row_len).map(<[_]>::to_vec).collect(),
-                weights.map(|values| values.chunks(row_len).map(<[_]>::to_vec).collect()),
-                false,
-                false,
-                false,
-            ), refusal)
+            crate::nurbs::note_refusal(
+                NurbsSurface::from_lanes(
+                    u_degree,
+                    v_degree,
+                    u_knots,
+                    v_knots,
+                    control_points.chunks(row_len).map(<[_]>::to_vec).collect(),
+                    weights.map(|values| values.chunks(row_len).map(<[_]>::to_vec).collect()),
+                    false,
+                    false,
+                    false,
+                ),
+                refusal,
+            )
             .map(SolvedSurfaceGeometry::Nurbs)
             .map(SurfaceGeometry::Solved)
         })

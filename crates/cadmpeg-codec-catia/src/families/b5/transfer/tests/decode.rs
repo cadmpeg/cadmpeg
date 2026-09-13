@@ -133,7 +133,8 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
 #[test]
 fn decode_float_packed_stream_transfers_a_complete_native_vertex_chain() {
     let stream = b5_closed_triangle_stream_with_native_vertex_chain();
-    let graph = crate::families::b5::graph::parse(&stream, &mut None).expect("generated B5 topology");
+    let graph =
+        crate::families::b5::graph::parse(&stream, &mut None).expect("generated B5 topology");
     assert!(graph.complete);
     assert_eq!(graph.vertex_incidence_links.len(), 3);
     assert_eq!(graph.parameter_incidences.len(), 3);

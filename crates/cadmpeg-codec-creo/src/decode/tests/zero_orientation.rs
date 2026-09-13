@@ -1037,7 +1037,8 @@ fn tensor_product_collocation_preserves_position_and_derivative_order() {
         [zero, zero, zero, zero],
     )
     .expect("complete interpolation grid");
-    let nurbs = interpolation_spline_surface(&grid, &mut None).expect("bicubic tensor-product surface");
+    let nurbs =
+        interpolation_spline_surface(&grid, &mut None).expect("bicubic tensor-product surface");
 
     assert_eq!((nurbs.u_count(), nurbs.v_count()), (4, 4));
     assert_eq!(nurbs.u_knots(), [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]);
@@ -1175,8 +1176,8 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
     );
     let segment = crate::decode::sweep::profiles::ProfileEntity::new(spline.clone(), false)
         .expect("valid profile entity");
-    let surface =
-        revolved_brep_surface(&transform, &spline, false, &axis, &mut None).expect("revolved spline surface");
+    let surface = revolved_brep_surface(&transform, &spline, false, &axis, &mut None)
+        .expect("revolved spline surface");
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = &surface else {
         panic!("spline revolution must retain a NURBS surface");
     };
@@ -1537,8 +1538,8 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
         false,
     )
     .expect("valid second extrusion surface");
-    let shared =
-        shared_extrusion_generator_curve(&first, &second, &mut None).expect("shared generator boundary");
+    let shared = shared_extrusion_generator_curve(&first, &second, &mut None)
+        .expect("shared generator boundary");
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(shared)) = shared else {
         panic!("shared extrusion generator must retain its NURBS representation");
     };

@@ -418,17 +418,20 @@ fn build_plan(
             let surface = graph.surfaces.get(&loop_.surface)?;
             let cylinder_reparameterized = matches!(surface, B5Surface::Cylinder { .. });
             let geometry = PcurveGeometry::Nurbs {
-                nurbs: crate::nurbs::note_refusal(PcurveNurbs::from_lanes(
-                    pcurve.degree,
-                    knots,
-                    pcurve
-                        .control_points
-                        .iter()
-                        .map(|point| neutral_pcurve_point(*point, surface))
-                        .collect(),
-                    pcurve.weights.clone(),
-                    false,
-                ), refusal)?,
+                nurbs: crate::nurbs::note_refusal(
+                    PcurveNurbs::from_lanes(
+                        pcurve.degree,
+                        knots,
+                        pcurve
+                            .control_points
+                            .iter()
+                            .map(|point| neutral_pcurve_point(*point, surface))
+                            .collect(),
+                        pcurve.weights.clone(),
+                        false,
+                    ),
+                    refusal,
+                )?,
             };
             pcurve_plan.entry(pcurve_id).or_insert((
                 geometry,
@@ -505,16 +508,14 @@ fn build_plan(
                     edge_ids.insert(edge_id);
                     continue;
                 };
-                let Some(helix) =
-                    cylinder_helix(
-                        pcurve,
-                        surface,
-                        endpoint_parameters,
-                        edge_start,
-                        edge_end,
-                        refusal,
-                    )
-                else {
+                let Some(helix) = cylinder_helix(
+                    pcurve,
+                    surface,
+                    endpoint_parameters,
+                    edge_start,
+                    edge_end,
+                    refusal,
+                ) else {
                     edge_ids.insert(edge_id);
                     continue;
                 };
@@ -773,16 +774,19 @@ pub(crate) fn resolved_object_stream_pcurve(
         surface_object_id: pcurve.support_id,
         carrier,
         geometry: PcurveGeometry::Nurbs {
-            nurbs: crate::nurbs::note_refusal(PcurveNurbs::from_lanes(
-                crate::families::a5a8::records::A8Pcurve::DEGREE,
-                knots,
-                control_points
-                    .into_iter()
-                    .map(|point| pcurves::neutral_pcurve_point(point, surface))
-                    .collect(),
-                None,
-                false,
-            ), refusal)?,
+            nurbs: crate::nurbs::note_refusal(
+                PcurveNurbs::from_lanes(
+                    crate::families::a5a8::records::A8Pcurve::DEGREE,
+                    knots,
+                    control_points
+                        .into_iter()
+                        .map(|point| pcurves::neutral_pcurve_point(point, surface))
+                        .collect(),
+                    None,
+                    false,
+                ),
+                refusal,
+            )?,
         },
         parameter_range: pcurve.range,
     })
@@ -921,17 +925,20 @@ pub(crate) fn resolved_extrusion_surface(
             let domain = pcurve_parameter_domain(pcurve)?;
             bounded_occurrence_range(pcurve_parameter_range, domain)?;
             let pcurve_geometry = PcurveGeometry::Nurbs {
-                nurbs: crate::nurbs::note_refusal(PcurveNurbs::from_lanes(
-                    pcurve.degree,
-                    knots,
-                    pcurve
-                        .control_points
-                        .iter()
-                        .map(|point| neutral_pcurve_point(*point, source_surface))
-                        .collect(),
-                    pcurve.weights.clone(),
-                    false,
-                ), refusal)?,
+                nurbs: crate::nurbs::note_refusal(
+                    PcurveNurbs::from_lanes(
+                        pcurve.degree,
+                        knots,
+                        pcurve
+                            .control_points
+                            .iter()
+                            .map(|point| neutral_pcurve_point(*point, source_surface))
+                            .collect(),
+                        pcurve.weights.clone(),
+                        false,
+                    ),
+                    refusal,
+                )?,
             };
             let curve = lifted_curve_geometry(pcurve, source_surface, refusal);
             Some(ResolvedExtrusionSupport {
@@ -1045,22 +1052,25 @@ fn curve_on_parameter_range(
             let origin = *line_curve.origin();
             let direction = *line_curve.direction();
             if source_per_target != 1.0 {
-                return crate::nurbs::note_refusal(NurbsCurve::from_lanes(
-                    1,
-                    vec![target[0], target[0], target[1], target[1]],
-                    source
-                        .into_iter()
-                        .map(|parameter| {
-                            Point3::new(
-                                origin.x + parameter * direction.x,
-                                origin.y + parameter * direction.y,
-                                origin.z + parameter * direction.z,
-                            )
-                        })
-                        .collect(),
-                    None,
-                    false,
-                ), refusal)
+                return crate::nurbs::note_refusal(
+                    NurbsCurve::from_lanes(
+                        1,
+                        vec![target[0], target[0], target[1], target[1]],
+                        source
+                            .into_iter()
+                            .map(|parameter| {
+                                Point3::new(
+                                    origin.x + parameter * direction.x,
+                                    origin.y + parameter * direction.y,
+                                    origin.z + parameter * direction.z,
+                                )
+                            })
+                            .collect(),
+                        None,
+                        false,
+                    ),
+                    refusal,
+                )
                 .map(SolvedCurveGeometry::Nurbs)
                 .map(CurveGeometry::Solved);
             }

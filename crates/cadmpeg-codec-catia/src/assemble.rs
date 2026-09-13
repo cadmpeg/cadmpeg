@@ -783,8 +783,13 @@ pub(crate) fn rational_pcurve_arc(
     {
         return None;
     }
-    match cadmpeg_ir::geometry::PcurveNurbs::from_lanes(2, knots, control_points, Some(weights), false)
-    {
+    match cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+        2,
+        knots,
+        control_points,
+        Some(weights),
+        false,
+    ) {
         Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),
         Err(error) => {
             *refusal = Some(error);
@@ -843,7 +848,8 @@ mod route_tests {
     #[test]
     fn rational_pcurve_arc_preserves_tiny_nonzero_sweep() {
         let range = [0.0, 1e-200];
-        let pcurve = rational_pcurve_arc([0.0, 0.0], 2.0, range, &mut None).expect("tiny circular arc");
+        let pcurve =
+            rational_pcurve_arc([0.0, 0.0], 2.0, range, &mut None).expect("tiny circular arc");
         let PcurveGeometry::Nurbs { nurbs } = pcurve else {
             panic!("rational arc must produce NURBS");
         };

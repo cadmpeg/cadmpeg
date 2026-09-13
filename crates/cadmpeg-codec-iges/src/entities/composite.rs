@@ -1059,14 +1059,8 @@ fn bounded_nurbs_for_id(
     if let Some(SolvedCurveGeometry::Composite { segments, .. }) = curve.geometry.solved() {
         let mut children = Vec::with_capacity(segments.len());
         for segment in segments {
-            let Some(child) = bounded_nurbs_for_id(
-                ir,
-                &segment.curve,
-                depth + 1,
-                join_tolerance,
-                ctx,
-                index,
-            )?
+            let Some(child) =
+                bounded_nurbs_for_id(ir, &segment.curve, depth + 1, join_tolerance, ctx, index)?
             else {
                 return Ok(None);
             };
@@ -1707,8 +1701,7 @@ fn project_with_type_130_policy(
             match bounded_nurbs(ir, &index, curve_id, join_tolerance, ctx) {
                 Ok(Some((curve, range))) => children.push((curve, range, curve_id.clone())),
                 Ok(None) => {
-                    child_refusal =
-                        Some("a child has no bounded line or NURBS carrier".to_owned());
+                    child_refusal = Some("a child has no bounded line or NURBS carrier".to_owned());
                     break;
                 }
                 Err(error) => {

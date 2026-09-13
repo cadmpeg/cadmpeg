@@ -857,7 +857,8 @@ mod tests {
             .expect("valid LinePcurve fixture"),
         );
         let range = [5.0, 9.0];
-        let reversed = reverse_pcurve_geometry(&geometry, range, &mut None).expect("reversible line");
+        let reversed =
+            reverse_pcurve_geometry(&geometry, range, &mut None).expect("reversible line");
         for (parameter, source_parameter) in [(5.0, 9.0), (9.0, 5.0)] {
             let actual = pcurve_uv(&reversed, parameter).expect("reversed evaluation");
             let expected = pcurve_uv(&geometry, source_parameter).expect("source evaluation");
@@ -887,8 +888,8 @@ mod tests {
             .expect("valid CircleCurve fixture"),
         ));
         for (geometry, range) in [(line, [5.0, 9.0]), (circle, [0.25, 2.0])] {
-            let (reversed, reversed_range) =
-                reverse_curve_geometry(&geometry, range, &mut None).expect("reversible model curve");
+            let (reversed, reversed_range) = reverse_curve_geometry(&geometry, range, &mut None)
+                .expect("reversible model curve");
             for (parameter, source_parameter) in
                 [(reversed_range[0], range[1]), (reversed_range[1], range[0])]
             {
@@ -1022,7 +1023,8 @@ mod tests {
             ),
             0.5,
             true,
-         &mut None,)
+            &mut None,
+        )
         .is_none());
     }
 
@@ -1073,16 +1075,24 @@ mod tests {
             )
         };
 
-        assert!(
-            circular_helix_cache(&definition(Vector3::new(0.0, radius, 0.0)), 1.0e-4, &mut None).is_some()
-        );
-        assert!(
-            circular_helix_cache(&definition(Vector3::new(0.0, 2.0 * radius, 0.0)), 1.0e-4, &mut None)
-                .is_none()
-        );
-        assert!(
-            circular_helix_cache(&definition(Vector3::new(radius, 0.0, 0.0)), 1.0e-4, &mut None).is_none()
-        );
+        assert!(circular_helix_cache(
+            &definition(Vector3::new(0.0, radius, 0.0)),
+            1.0e-4,
+            &mut None
+        )
+        .is_some());
+        assert!(circular_helix_cache(
+            &definition(Vector3::new(0.0, 2.0 * radius, 0.0)),
+            1.0e-4,
+            &mut None
+        )
+        .is_none());
+        assert!(circular_helix_cache(
+            &definition(Vector3::new(radius, 0.0, 0.0)),
+            1.0e-4,
+            &mut None
+        )
+        .is_none());
     }
 
     #[test]
@@ -1163,7 +1173,9 @@ mod tests {
             cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
                 .unwrap(),
         );
-        assert!(reverse_pcurve_geometry(&pcurve_line, [f64::MAX / 2.0, f64::MAX], &mut None).is_none());
+        assert!(
+            reverse_pcurve_geometry(&pcurve_line, [f64::MAX / 2.0, f64::MAX], &mut None).is_none()
+        );
 
         let model_line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::LineCurve::try_new(

@@ -281,7 +281,8 @@ fn topology_parse_does_not_join_records_across_object_stream_runs() {
     let mut separated = original.clone();
     separated.insert(split, 0xff);
 
-    let merged = parse_flat(&separated, &mut None).expect("flat scan can join the separated records");
+    let merged =
+        parse_flat(&separated, &mut None).expect("flat scan can join the separated records");
     assert!(merged.complete);
     assert_ne!(parse(&separated, &mut None), Some(merged));
 }
@@ -379,7 +380,10 @@ fn indexed_frame_parse_matches_one_shot_parse() {
     let frames = object_stream_frames(&bytes);
     let records = records_from_frames(&bytes, &frames);
 
-    assert_eq!(parse(&bytes, &mut None), parse_from_frames(&bytes, &frames, &mut None));
+    assert_eq!(
+        parse(&bytes, &mut None),
+        parse_from_frames(&bytes, &frames, &mut None)
+    );
     assert_eq!(
         parse(&bytes, &mut None),
         parse_from_records(&bytes, &records, &frames, true, &mut None)
@@ -1397,7 +1401,8 @@ fn edge_record_retains_references_and_each_admitted_terminal_control() {
 
 #[test]
 fn referenced_edge_vertex_references_excludes_unreferenced_allocations() {
-    let mut graph = parse(&crate::test_support::b5_closed_triangle_stream(), &mut None).expect("B5 graph");
+    let mut graph =
+        parse(&crate::test_support::b5_closed_triangle_stream(), &mut None).expect("B5 graph");
     assert!(graph.complete);
     graph.edges.insert(
         301,

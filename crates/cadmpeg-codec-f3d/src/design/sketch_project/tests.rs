@@ -80,8 +80,8 @@ fn sketch_container_visibility_projects_to_the_neutral_sketch() {
         paired_class_tag: crate::records::DesignClassTag::try_from("257".to_owned()).unwrap(),
     };
 
-    let (sketches, entities) = project_sketch_design(&[placement], &[], &[], &[], &[], 1.0e-6)
-        .expect("sketch lanes pair");
+    let (sketches, entities) =
+        project_sketch_design(&[placement], &[], &[], &[], &[], 1.0e-6).expect("sketch lanes pair");
     assert!(entities.is_empty());
     assert_eq!(sketches.len(), 1);
     assert_eq!(sketches[0].visible, Some(false));

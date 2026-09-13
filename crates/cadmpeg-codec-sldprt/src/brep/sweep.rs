@@ -630,8 +630,8 @@ mod tests {
             false,
         )
         .expect("valid line profile");
-        let surface =
-            swept_nurbs(&profile, Vector3::new(0.0, 1.0, 0.0), -2.0, 3.0, &mut None).expect("swept surface");
+        let surface = swept_nurbs(&profile, Vector3::new(0.0, 1.0, 0.0), -2.0, 3.0, &mut None)
+            .expect("swept surface");
         let p = eval_surface(&surface, 0.5, 1.5);
         assert!((p.x - 0.5).abs() < 1.0e-12);
         assert!((p.y - 1.5).abs() < 1.0e-12);

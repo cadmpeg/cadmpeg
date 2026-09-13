@@ -1531,7 +1531,7 @@ fn closed_serialized_pcurve_uses_carrier_tangent_for_orientation() {
         [endpoint, endpoint],
         1.0e-12,
     )
-        .expect("reversed lanes pair")
+    .expect("reversed lanes pair")
     .expect("carrier tangent selects one closed-branch orientation");
     let uv = cadmpeg_ir::eval::pcurve_uv(&oriented, std::f64::consts::FRAC_PI_2).unwrap();
     assert!((uv.u - 0.0).abs() < 1.0e-12);

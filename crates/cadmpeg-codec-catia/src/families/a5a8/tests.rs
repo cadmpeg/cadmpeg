@@ -61,7 +61,8 @@ fn selected_nested_a8_surface_frame_decodes_without_a_flat_rescan() {
         inner_start,
         inner_end,
         inner_object_id,
-     &mut None,)
+        &mut None,
+    )
     .expect("selected nested surface");
     let surface = surface.geometry;
     assert_eq!(surface.poles().into_iter().nth(8).unwrap().x, 8.0);
@@ -71,15 +72,18 @@ fn selected_nested_a8_surface_frame_decodes_without_a_flat_rescan() {
             inner_start,
             inner_end - 1,
             inner_object_id,
-         &mut None,)
+            &mut None,
+        )
         .is_none()
     );
 }
 
 #[test]
 fn a8_surface_parser_accepts_frame_bounded_knot_and_pole_counts() {
-    let surfaces =
-        crate::families::a5a8::records::a8_surfaces(&a8_surface_stream_with_u_count(20_001), &mut None);
+    let surfaces = crate::families::a5a8::records::a8_surfaces(
+        &a8_surface_stream_with_u_count(20_001),
+        &mut None,
+    );
     assert_eq!(surfaces.len(), 1);
     let surface = &surfaces[0].geometry;
     assert_eq!((surface.u_count(), surface.v_count()), (20_002, 3));
@@ -109,7 +113,10 @@ fn a8_surface_parser_accepts_a_closed_nested_b5_run() {
     let payload_len = u32::try_from(bytes.len() - 11).unwrap();
     bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
 
-    assert_eq!(crate::families::a5a8::records::a8_surfaces(&bytes, &mut None).len(), 1);
+    assert_eq!(
+        crate::families::a5a8::records::a8_surfaces(&bytes, &mut None).len(),
+        1
+    );
 }
 
 #[test]
@@ -352,8 +359,9 @@ fn a8_elided_surface_resolves_one_external_pole_grid_gap() {
     let [header] = crate::families::a5a8::records::a8_surface_headers(&bytes)
         .try_into()
         .expect("one elided header");
-    let surface = crate::families::a5a8::records::a8_surface_from_external_grid(&bytes, &header, &mut None)
-        .expect("unique external pole allocation");
+    let surface =
+        crate::families::a5a8::records::a8_surface_from_external_grid(&bytes, &header, &mut None)
+            .expect("unique external pole allocation");
     let surface = surface.geometry;
     assert_eq!(surface.poles().len(), 9);
     assert_eq!(
@@ -392,8 +400,10 @@ fn a8_elided_surface_uses_the_pcurve_support_reference_to_disambiguate_equal_gri
         [100, 101]
     );
     for header in &headers {
-        let surface = crate::families::a5a8::records::a8_surface_from_external_grid(&bytes, header, &mut None)
-            .expect("support reference selects one equal-sized grid");
+        let surface = crate::families::a5a8::records::a8_surface_from_external_grid(
+            &bytes, header, &mut None,
+        )
+        .expect("support reference selects one equal-sized grid");
         assert_eq!(surface.object_id(), Some(header.object_id));
     }
 }
@@ -639,7 +649,8 @@ fn a5_pcurve_parser_accepts_frame_bounded_site_count() {
 
 #[test]
 fn a8_surface_parser_reads_rational_weight_grid() {
-    let surfaces = crate::families::a5a8::records::a8_surfaces(&a8_rational_surface_stream(), &mut None);
+    let surfaces =
+        crate::families::a5a8::records::a8_surfaces(&a8_rational_surface_stream(), &mut None);
     assert_eq!(surfaces[0].geometry.pole_weights(), Some(vec![2.0; 9]));
 }
 
@@ -786,7 +797,8 @@ fn consolidated_surface_parser_reads_width2_frame() {
 
 #[test]
 fn a5_surface_parser_reads_rational_weight_program() {
-    let surfaces = crate::families::a5a8::records::a5_surfaces(&a5_rational_surface_stream(), &mut None);
+    let surfaces =
+        crate::families::a5a8::records::a5_surfaces(&a5_rational_surface_stream(), &mut None);
     assert_eq!(surfaces[0].geometry.pole_weights(), Some(vec![2.0; 4]));
 }
 
@@ -819,8 +831,10 @@ fn a5_surface_parser_accepts_each_structured_tail_variant() {
         a5_surface_extrapolated_short_tail(),
         a5_surface_extrapolated_tail(),
     ] {
-        let surfaces =
-            crate::families::a5a8::records::a5_surfaces(&a5_surface_stream_with_tail(&tail), &mut None);
+        let surfaces = crate::families::a5a8::records::a5_surfaces(
+            &a5_surface_stream_with_tail(&tail),
+            &mut None,
+        );
         assert_eq!(surfaces.len(), 1, "tail length {}", tail.len());
     }
 }
@@ -968,8 +982,9 @@ fn rolling_ball_limit_curves_reproduce_stored_endpoint_sites() {
         .try_into()
         .expect("one rolling-ball jet");
     for second_limit in [false, true] {
-        let curve = crate::families::a5a8::records::rolling_ball_limit_curve(&jet, second_limit, &mut None)
-            .expect("exact limiting curve");
+        let curve =
+            crate::families::a5a8::records::rolling_ball_limit_curve(&jet, second_limit, &mut None)
+                .expect("exact limiting curve");
         let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve));
         let expected = [jet.sites.first().unwrap(), jet.sites.last().unwrap()].map(|sample| {
             let point = if second_limit {
@@ -1298,7 +1313,8 @@ fn decode_geometry_fallback_transfers_an_external_a8_pole_grid() {
 #[test]
 fn decode_float_packed_stream_transfers_an_elided_a8_surface_with_native_topology() {
     let stream = a8_elided_surface_stream_with_native_vertex_chain();
-    let graph = crate::families::b5::graph::parse(&stream, &mut None).expect("generated A8 topology");
+    let graph =
+        crate::families::b5::graph::parse(&stream, &mut None).expect("generated A8 topology");
     assert!(graph.complete);
     assert_eq!(graph.faces.len(), 1);
     assert_eq!(graph.loops.len(), 1);

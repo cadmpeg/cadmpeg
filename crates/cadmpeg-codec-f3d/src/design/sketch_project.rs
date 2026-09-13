@@ -543,117 +543,122 @@ pub fn project_spatial_sketch_design(
         let Some(placement) = placements_by_suffix.get(&(scope, owner)) else {
             continue;
         };
-        let geometry = if let Some([start, end]) = spline_segments
-            .get(&(scope, curve.record_index))
-            .copied()
-            .flatten()
-        {
-            let Ok(geometry) =
-                SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
-                    start: transform_point(placement, &start),
-                    end: transform_point(placement, &end),
-                })
-            else {
-                continue;
-            };
-            geometry
-        } else {
-            let Some(source) = curve.geometry.as_ref() else {
-                continue;
-            };
-            match source {
-                SketchCurveGeometry::Line { start, end, .. } => {
-                    let Ok(geometry) =
-                        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
-                            start: transform_point(placement, start),
-                            end: transform_point(placement, end),
-                        })
-                    else {
-                        continue;
-                    };
-                    geometry
-                }
-                SketchCurveGeometry::Arc {
-                    center,
-                    normal,
-                    reference_direction,
-                    radius,
-                    start_angle,
-                    end_angle,
-                } if *radius > 0.0 => {
-                    let center = transform_point(placement, center);
-                    let normal = transform_vector(placement, normal);
-                    let reference_direction = transform_vector(placement, reference_direction);
-                    let Some(radius) = Length::new(*radius) else {
-                        continue;
-                    };
-                    let definition = if (end_angle - start_angle).abs()
-                        >= std::f64::consts::TAU
-                            - EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_DESIGN_E9
-                    {
-                        SpatialSketchGeometryDefinition::Circle {
-                            center,
-                            normal,
-                            reference_direction,
-                            radius,
-                        }
-                    } else {
-                        let (Some(start_angle), Some(end_angle)) =
-                            (Angle::new(*start_angle), Angle::new(*end_angle))
-                        else {
+        let geometry =
+            if let Some([start, end]) = spline_segments
+                .get(&(scope, curve.record_index))
+                .copied()
+                .flatten()
+            {
+                let Ok(geometry) =
+                    SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
+                        start: transform_point(placement, &start),
+                        end: transform_point(placement, &end),
+                    })
+                else {
+                    continue;
+                };
+                geometry
+            } else {
+                let Some(source) = curve.geometry.as_ref() else {
+                    continue;
+                };
+                match source {
+                    SketchCurveGeometry::Line { start, end, .. } => {
+                        let Ok(geometry) = SpatialSketchGeometry::try_from(
+                            SpatialSketchGeometryDefinition::Line {
+                                start: transform_point(placement, start),
+                                end: transform_point(placement, end),
+                            },
+                        ) else {
                             continue;
                         };
-                        SpatialSketchGeometryDefinition::Arc {
-                            center,
-                            normal,
-                            reference_direction,
-                            radius,
-                            start_angle,
-                            end_angle,
-                        }
-                    };
-                    let Ok(geometry) = SpatialSketchGeometry::try_from(definition) else {
-                        continue;
-                    };
-                    geometry
+                        geometry
+                    }
+                    SketchCurveGeometry::Arc {
+                        center,
+                        normal,
+                        reference_direction,
+                        radius,
+                        start_angle,
+                        end_angle,
+                    } if *radius > 0.0 => {
+                        let center = transform_point(placement, center);
+                        let normal = transform_vector(placement, normal);
+                        let reference_direction = transform_vector(placement, reference_direction);
+                        let Some(radius) = Length::new(*radius) else {
+                            continue;
+                        };
+                        let definition = if (end_angle - start_angle).abs()
+                            >= std::f64::consts::TAU
+                                - EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_DESIGN_E9
+                        {
+                            SpatialSketchGeometryDefinition::Circle {
+                                center,
+                                normal,
+                                reference_direction,
+                                radius,
+                            }
+                        } else {
+                            let (Some(start_angle), Some(end_angle)) =
+                                (Angle::new(*start_angle), Angle::new(*end_angle))
+                            else {
+                                continue;
+                            };
+                            SpatialSketchGeometryDefinition::Arc {
+                                center,
+                                normal,
+                                reference_direction,
+                                radius,
+                                start_angle,
+                                end_angle,
+                            }
+                        };
+                        let Ok(geometry) = SpatialSketchGeometry::try_from(definition) else {
+                            continue;
+                        };
+                        geometry
+                    }
+                    SketchCurveGeometry::Nurbs {
+                        degree,
+                        knots,
+                        poles,
+                        ..
+                    } => {
+                        let curve3d = cadmpeg_ir::geometry::NurbsCurve::from_lanes(
+                            *degree,
+                            knots.clone(),
+                            poles
+                                .points()
+                                .map(|point| transform_point(placement, point))
+                                .collect(),
+                            poles
+                                .weights()
+                                .next()
+                                .is_some()
+                                .then(|| poles.weights().copied().collect()),
+                            false,
+                        )?;
+                        let Ok(curve3d) = curve3d.try_into() else {
+                            continue;
+                        };
+                        let Ok(geometry) = SpatialSketchGeometry::try_from(
+                            SpatialSketchGeometryDefinition::Nurbs { curve: curve3d },
+                        ) else {
+                            continue;
+                        };
+                        geometry
+                    }
+                    SketchCurveGeometry::Arc { .. } => continue,
                 }
-                SketchCurveGeometry::Nurbs {
-                    degree,
-                    knots,
-                    poles,
-                    ..
-                } => {
-                    let curve3d = cadmpeg_ir::geometry::NurbsCurve::from_lanes(
-                        *degree,
-                        knots.clone(),
-                        poles
-                            .points()
-                            .map(|point| transform_point(placement, point))
-                            .collect(),
-                        poles
-                            .weights()
-                            .next()
-                            .is_some()
-                            .then(|| poles.weights().copied().collect()),
-                        false,
-                    )?;
-                    let Ok(curve3d) = curve3d.try_into() else {
-                        continue;
-                    };
-                    let Ok(geometry) = SpatialSketchGeometry::try_from(
-                        SpatialSketchGeometryDefinition::Nurbs { curve: curve3d },
-                    ) else {
-                        continue;
-                    };
-                    geometry
-                }
-                SketchCurveGeometry::Arc { .. } => continue,
-            }
-        };
+            };
         let sketch = neutral_spatial_sketch_id(placement);
         entities.push(
             SpatialSketchEntity::new(
-                neutral_spatial_sketch_curve_id(&sketch, curve.primary_id.get(), curve.secondary_id),
+                neutral_spatial_sketch_curve_id(
+                    &sketch,
+                    curve.primary_id.get(),
+                    curve.secondary_id,
+                ),
                 sketch,
                 geometry,
             )

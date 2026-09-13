@@ -335,19 +335,18 @@ impl<'a> Builder<'a> {
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 });
                 if let Some(secondary) = secondary {
-                    let secondary_read =
-                        match pcurve_geometry(&self.tables.curve2ds[secondary - 1]) {
-                            Ok(geometry) => geometry,
-                            Err(error) => {
-                                self.losses.push(FreecadLossCode::PcurveNotTransferred.note(format!(
+                    let secondary_read = match pcurve_geometry(&self.tables.curve2ds[secondary - 1])
+                    {
+                        Ok(geometry) => geometry,
+                        Err(error) => {
+                            self.losses.push(FreecadLossCode::PcurveNotTransferred.note(format!(
                                     "payload {} curve2ds index {secondary} could not enter neutral geometry: {error}", self.payload.id
                                 )));
-                                continue;
-                            }
-                        };
-                    let Some(secondary_geometry) = secondary_read.map(|geometry| {
-                        transformed_pcurve_geometry(geometry, parameter_affine)
-                    })
+                            continue;
+                        }
+                    };
+                    let Some(secondary_geometry) = secondary_read
+                        .map(|geometry| transformed_pcurve_geometry(geometry, parameter_affine))
                     else {
                         self.losses.push(FreecadLossCode::PcurveNotTransferred.note(format!(
                             "payload {} curve2ds index {secondary} could not enter neutral geometry", self.payload.id

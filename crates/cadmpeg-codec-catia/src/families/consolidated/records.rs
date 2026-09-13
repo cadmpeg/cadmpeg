@@ -1722,9 +1722,7 @@ fn pcurve_endpoints_match_vertices(
 /// A/B or B5/A8 record. Marker-like bytes inside record payloads are not
 /// vertices.
 #[must_use]
-pub(crate) fn object_stream_vertices(
-    data: &[u8],
-) -> Vec<Point3> {
+pub(crate) fn object_stream_vertices(data: &[u8]) -> Vec<Point3> {
     let records = consolidated_records(data);
     object_stream_vertices_from_records(data, &records)
 }
