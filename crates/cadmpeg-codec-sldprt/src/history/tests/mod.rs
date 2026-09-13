@@ -10,7 +10,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::Face;
 use cadmpeg_ir::{
     features::{
-        AngularTermination, BooleanOp, ChamferSpec, ConfigurationBodies, ConfigurationId,
+        AngularTermination, BooleanOp, ChamferSpec, ConfigurationId,
         CosmeticThreadExtent, DatumPlaneReference, DesignConfiguration, DesignParameter,
         EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition, FeatureId,
         FeatureSourceContent, FeatureTreeNodeRole, HoleBottom, HoleKind, LinearTermination,
@@ -30,7 +30,7 @@ fn feature(id: &str, source_id: Option<&str>, ordinal: u32) -> Feature {
         source_id: source_id
             .map(|source_id| FeatureSource::try_from(source_id).expect("test feature source id")),
         ordinal,
-        name: id.into(),
+        name: id.to_string(),
         kind: "Custom".into(),
         input_class: None,
         suppressed: false,
@@ -72,10 +72,10 @@ fn design_configuration(
         ordinal,
         active: false,
         source_index,
-        name: id.into(),
+        name: Some(id.to_string()),
         material: None,
         properties: BTreeMap::new(),
-        bodies: ConfigurationBodies::Resolved(cadmpeg_ir::features::DistinctMembers::default()),
+        bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
         parameter_values: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),
@@ -89,7 +89,7 @@ fn native_configuration(id: &str, ordinal: u32, source_index: Option<u32>) -> Co
         parent: "history".into(),
         ordinal,
         source_index,
-        name: id.into(),
+        name: id.to_string(),
         material: None,
         properties: BTreeMap::new(),
     }

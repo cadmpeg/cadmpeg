@@ -42,11 +42,11 @@ fn configuration_body_membership_round_trips_and_validates() {
         ordinal: 0,
         active: false,
         source_index: Some(7),
-        name: "Default".into(),
+        name: Some("Default".to_string()),
         material: None,
         properties: BTreeMap::new(),
         parameter_overrides: BTreeMap::from([(parameter_id.clone(), "25 mm".into())]),
-        bodies: crate::features::ConfigurationBodies::Resolved(
+        bodies: Some(
             (vec![body.clone()]).try_into().unwrap(),
         ),
         parameter_values: BTreeMap::new(),
@@ -57,8 +57,8 @@ fn configuration_body_membership_round_trips_and_validates() {
     assert!(validate_neutral(&ir, Vec::new()).is_ok());
     let round_trip = CadIr::from_json(&serde_json::to_string(&ir).unwrap()).unwrap();
     assert_eq!(
-        round_trip.model.configurations[0].bodies,
-        vec![body.clone()]
+        round_trip.model.configurations[0].bodies.as_deref(),
+        Some([body.clone()].as_slice())
     );
     assert_eq!(
         round_trip.model.configurations[0].parameter_overrides[&parameter_id],
@@ -249,7 +249,7 @@ fn configuration_body_membership_round_trips_and_validates() {
     assert!(validate_neutral(&ir, Vec::new()).is_ok());
     ir.model.configurations[0].feature_states.clear();
 
-    ir.model.configurations[0].bodies = crate::features::ConfigurationBodies::Resolved(
+    ir.model.configurations[0].bodies = Some(
         (vec![BodyId::mint("synthetic:test:body#missing").expect("valid identity")])
             .try_into()
             .unwrap(),
@@ -265,11 +265,11 @@ fn configuration_body_membership_round_trips_and_validates() {
         ordinal: 0,
         active: false,
         source_index: Some(7),
-        name: "Alternate".into(),
+        name: Some("Alternate".to_string()),
         material: None,
         properties: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
-        bodies: crate::features::ConfigurationBodies::Resolved(DistinctMembers::default()),
+        bodies: Some(DistinctMembers::default()),
         parameter_values: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: None,
@@ -293,13 +293,13 @@ fn configuration_body_membership_round_trips_and_validates() {
 
 #[test]
 fn configuration_name_preserves_resolution_state() {
-    use crate::features::{ConfigurationName, DesignConfiguration};
+    use crate::features::DesignConfiguration;
 
     let configuration: DesignConfiguration = serde_json::from_value(serde_json::json!({
         "id": "synthetic:test:configuration#0"
     }))
     .expect("legacy configuration");
-    assert_eq!(configuration.name, ConfigurationName::Unresolved);
+    assert_eq!(configuration.name, None);
     assert!(!configuration.active);
 
     let encoded = serde_json::to_value(&configuration).expect("unresolved configuration");
@@ -307,14 +307,29 @@ fn configuration_name_preserves_resolution_state() {
     assert!(encoded.get("active").is_none());
     let round_trip: DesignConfiguration =
         serde_json::from_value(encoded).expect("round-trip unresolved configuration");
-    assert_eq!(round_trip.name, ConfigurationName::Unresolved);
+    assert_eq!(round_trip.name, None);
     assert!(!round_trip.active);
+
+    // The absent key is the one spelling of an unresolved name; a stated null
+    // is refused by name, and so is a stated null body list.
+    for key in ["name", "bodies"] {
+        let error = serde_json::from_value::<DesignConfiguration>(serde_json::json!({
+            "id": "synthetic:test:configuration#0",
+            key: serde_json::Value::Null
+        }))
+        .expect_err("a stated null is not a second spelling of absence")
+        .to_string();
+        assert!(
+            error.contains("does not state null"),
+            "{key}: {error}"
+        );
+    }
 }
 
 #[test]
 fn configuration_suppression_is_read_from_feature_states_and_refuses_the_deleted_key() {
     use crate::features::{
-        ConfigurationBodies, ConfigurationFeatureState, ConfigurationId, DesignConfiguration,
+        ConfigurationFeatureState, ConfigurationId, DesignConfiguration,
         Feature, FeatureDefinition, FeatureId, FeatureOperation,
     };
     use std::collections::BTreeMap;
@@ -335,11 +350,11 @@ fn configuration_suppression_is_read_from_feature_states_and_refuses_the_deleted
         ordinal: 0,
         active: false,
         source_index: None,
-        name: "Suppressed".into(),
+        name: Some("Suppressed".to_string()),
         material: None,
         properties: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
-        bodies: ConfigurationBodies::Unresolved,
+        bodies: None,
         parameter_values: BTreeMap::new(),
         feature_states: BTreeMap::from([(
             feature.id.clone(),

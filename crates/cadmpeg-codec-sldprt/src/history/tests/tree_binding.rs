@@ -25,7 +25,10 @@ fn decode_extracts_parametric_history() {
     assert_eq!(history.part_name.as_deref(), Some("Bracket"));
     assert_eq!(history.configurations[0].material.as_deref(), Some("Steel"));
     assert_eq!(result.ir().model.configurations.len(), 1);
-    assert_eq!(result.ir().model.configurations[0].name, "Default");
+    assert_eq!(
+        result.ir().model.configurations[0].name.as_deref(),
+        Some("Default")
+    );
     assert_eq!(
         result.ir().model.configurations[0].material.as_deref(),
         Some("Steel")

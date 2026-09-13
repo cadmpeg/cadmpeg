@@ -1668,7 +1668,7 @@ fn semantic_writer_removes_deleted_history_records() {
         .ir_mut()
         .model
         .configurations
-        .retain(|configuration| configuration.name == "Keep");
+        .retain(|configuration| configuration.name.as_deref() == Some("Keep"));
 
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(
@@ -1686,7 +1686,7 @@ fn semantic_writer_removes_deleted_history_records() {
         Some("Keep")
     );
     assert_eq!(regenerated.ir().model.configurations.len(), 1);
-    assert_eq!(regenerated.ir().model.configurations[0].name, "Keep");
+    assert_eq!(regenerated.ir().model.configurations[0].name.as_deref(), Some("Keep"));
 }
 
 #[test]

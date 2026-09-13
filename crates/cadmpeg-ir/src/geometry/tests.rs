@@ -222,7 +222,11 @@ struct RevisionCompoundLoftDirectionWireTest {
 struct VariableBlendShapeWireTest {
     radii: crate::geometry::VariableBlendRadii,
     u_range: [f64; 2],
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     v_lower: Option<f64>,
 }
 

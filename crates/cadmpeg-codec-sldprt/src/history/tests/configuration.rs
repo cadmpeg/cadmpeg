@@ -52,7 +52,7 @@ fn unresolved_configuration_body_membership_reuses_model_surface_carriers() {
         source_object: None,
     });
     ir.model.configurations.push(DesignConfiguration {
-        bodies: ConfigurationBodies::Unresolved,
+        bodies: None,
         ..design_configuration("unresolved", 0, Some(0), None)
     });
 
@@ -332,10 +332,10 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
         ordinal: 0,
         active: true,
         source_index: Some(0),
-        name: "Default".into(),
+        name: Some("Default".to_string()),
         material: None,
         properties: BTreeMap::new(),
-        bodies: ConfigurationBodies::Resolved(cadmpeg_ir::features::DistinctMembers::default()),
+        bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
         parameter_values: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::from([
@@ -596,7 +596,7 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
             name: format!("Configuration {ordinal}").into(),
             material: None,
             properties: BTreeMap::new(),
-            bodies: ConfigurationBodies::Resolved(cadmpeg_ir::features::DistinctMembers::default()),
+            bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
             parameter_values: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::from([
@@ -770,10 +770,10 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
         ordinal: 0,
         active: true,
         source_index: Some(1),
-        name: "Default".into(),
+        name: Some("Default".to_string()),
         material: None,
         properties: BTreeMap::from([("id".into(), "1".into())]),
-        bodies: ConfigurationBodies::Resolved(cadmpeg_ir::features::DistinctMembers::default()),
+        bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
         parameter_values: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::from([
@@ -1521,10 +1521,10 @@ fn configuration_numeric_override_inherits_parameter_dimension() {
         ordinal: 0,
         active: true,
         source_index: Some(0),
-        name: "Default".into(),
+        name: Some("Default".to_string()),
         material: None,
         properties: BTreeMap::new(),
-        bodies: ConfigurationBodies::Resolved(cadmpeg_ir::features::DistinctMembers::default()),
+        bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
         parameter_values: BTreeMap::from([
             (parameter_id.clone(), ParameterValue::Integer(7)),
             (
@@ -1701,7 +1701,7 @@ fn configuration_frame_alias_binds_without_body_membership() {
     use cadmpeg_ir::topology::{Face, Sense};
     use cadmpeg_ir::{
         features::{
-            ConfigurationBodies, DatumPlaneReference, FaceSelection, Feature as NeutralFeature,
+            DatumPlaneReference, FaceSelection, Feature as NeutralFeature,
             FeatureDefinition, FeatureId, FeatureOperation,
         },
         scalar::Length,
@@ -1763,7 +1763,7 @@ fn configuration_frame_alias_binds_without_body_membership() {
         tolerance: None,
     });
     let mut configuration = design_configuration("config", 0, None, None);
-    configuration.bodies = ConfigurationBodies::Unresolved;
+    configuration.bodies = None;
     configuration.properties.insert("id".into(), "3".into());
     ir.model.configurations.push(configuration);
     ir.model.configurations[0].feature_states.insert(

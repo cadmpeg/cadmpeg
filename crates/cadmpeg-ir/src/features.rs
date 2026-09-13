@@ -724,7 +724,11 @@ pub struct DraftPull {
     /// Pull direction used to measure the draft angle.
     pub direction: FeatureDirection3,
     /// Datum-plane feature that supplied the direction, when retained.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub plane: Option<FeatureId>,
 }
 
@@ -738,7 +742,11 @@ pub enum DraftAnchor {
         /// Neutral-plane selection.
         plane: FaceSelection,
         /// Explicit pull frame, when the source retains one.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         pull: Option<DraftPull>,
     },
     /// A parting tool and its pull frame define a parting-line draft.
@@ -780,123 +788,6 @@ crate::ids::id_type!(
     ConfigurationId
 );
 
-/// Resolution state of a configuration's source display name.
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(untagged)]
-pub enum ConfigurationName {
-    /// Source display name.
-    Resolved(String),
-    /// Source configuration exists but its display name is not established.
-    #[default]
-    Unresolved,
-}
-
-impl ConfigurationName {
-    /// Return the source display name when resolved.
-    pub fn resolved(&self) -> Option<&str> {
-        match self {
-            Self::Resolved(value) => Some(value),
-            Self::Unresolved => None,
-        }
-    }
-
-    /// Return the mutable source display name when resolved.
-    pub fn resolved_mut(&mut self) -> Option<&mut String> {
-        match self {
-            Self::Resolved(value) => Some(value),
-            Self::Unresolved => None,
-        }
-    }
-
-    /// Whether the source display name remains unresolved.
-    pub fn is_unresolved(&self) -> bool {
-        matches!(self, Self::Unresolved)
-    }
-}
-
-impl From<String> for ConfigurationName {
-    fn from(value: String) -> Self {
-        Self::Resolved(value)
-    }
-}
-
-impl From<&str> for ConfigurationName {
-    fn from(value: &str) -> Self {
-        Self::Resolved(value.to_string())
-    }
-}
-
-impl PartialEq<str> for ConfigurationName {
-    fn eq(&self, other: &str) -> bool {
-        self.resolved() == Some(other)
-    }
-}
-
-impl PartialEq<&str> for ConfigurationName {
-    fn eq(&self, other: &&str) -> bool {
-        self == *other
-    }
-}
-
-impl PartialEq<String> for ConfigurationName {
-    fn eq(&self, other: &String) -> bool {
-        self == other.as_str()
-    }
-}
-
-#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(untagged)]
-/// Resolution state of one configuration's complete body membership.
-pub enum ConfigurationBodies {
-    /// Complete ordered body membership.
-    Resolved(DistinctMembers<BodyId>),
-    /// Source configuration exists but its body membership is not established.
-    #[default]
-    Unresolved,
-}
-
-impl ConfigurationBodies {
-    /// Return complete body membership when resolved.
-    pub fn resolved(&self) -> Option<&[BodyId]> {
-        match self {
-            Self::Resolved(value) => Some(value),
-            Self::Unresolved => None,
-        }
-    }
-    /// Whether body membership remains unresolved.
-    pub fn is_unresolved(&self) -> bool {
-        matches!(self, Self::Unresolved)
-    }
-    /// Iterate over resolved membership; unresolved membership yields no values.
-    pub fn iter(&self) -> std::slice::Iter<'_, BodyId> {
-        self.resolved().unwrap_or_default().iter()
-    }
-    /// Number of resolved members; zero when unresolved.
-    pub fn len(&self) -> usize {
-        self.resolved().map_or(0, <[BodyId]>::len)
-    }
-    /// Whether resolved membership is empty; false when unresolved.
-    pub fn is_empty(&self) -> bool {
-        self.resolved().is_some_and(<[BodyId]>::is_empty)
-    }
-}
-
-impl PartialEq<Vec<BodyId>> for ConfigurationBodies {
-    fn eq(&self, other: &Vec<BodyId>) -> bool {
-        self.resolved() == Some(other.as_slice())
-    }
-}
-
-impl<'a> IntoIterator for &'a ConfigurationBodies {
-    type Item = &'a BodyId;
-    type IntoIter = std::slice::Iter<'a, BodyId>;
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
-    }
-}
-
 /// A named parametric model variant.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -911,13 +802,25 @@ pub struct DesignConfiguration {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub active: bool,
     /// Format-native configuration slot, when distinct from list order.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub source_index: Option<u32>,
     /// Source display name, when established.
-    #[serde(default, skip_serializing_if = "ConfigurationName::is_unresolved")]
-    pub name: ConfigurationName,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
+    pub name: Option<String>,
     /// Material override, when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub material: Option<String>,
     /// Configuration-local named values not otherwise represented.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -928,8 +831,12 @@ pub struct DesignConfiguration {
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub parameter_overrides: BTreeMap<ParameterId, String>,
     /// Bodies present when this configuration is active.
-    #[serde(default, skip_serializing_if = "ConfigurationBodies::is_unresolved")]
-    pub bodies: ConfigurationBodies,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
+    pub bodies: Option<DistinctMembers<BodyId>>,
     /// Evaluated parameter state when this configuration is active.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
@@ -939,7 +846,11 @@ pub struct DesignConfiguration {
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub feature_states: BTreeMap<FeatureId, ConfigurationFeatureState>,
     /// Identifier of the full-fidelity record in a native namespace.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub native_ref: Option<String>,
 }
 
@@ -1041,7 +952,11 @@ pub struct DesignParameter {
     /// Globally unique parameter id.
     pub id: ParameterId,
     /// Feature that consumes this parameter; absent for a document parameter.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub owner: Option<FeatureId>,
     /// Position among parameters in the same ownership scope.
     #[serde(default)]
@@ -1051,10 +966,18 @@ pub struct DesignParameter {
     /// Literal or expression text used by the source system.
     pub expression: String,
     /// Geometric display semantics carried by the dimension expression.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub display: Option<DimensionDisplay>,
     /// Evaluated scalar when available.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub value: Option<ParameterValue>,
     /// Parameters referenced by `expression`, in source expression order.
     #[serde(
@@ -1068,10 +991,18 @@ pub struct DesignParameter {
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub properties: BTreeMap<String, String>,
     /// Product-manufacturing dimension semantics, when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub pmi: Option<ParameterPmi>,
     /// Identifier of the full-fidelity source parameter record.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub native_ref: Option<String>,
 }
 
@@ -1085,7 +1016,11 @@ pub struct ParameterPmi {
     /// Display precision carried by the semantic annotation.
     pub precision: i64,
     /// Native formatted dimension text.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub display_text: Option<String>,
     /// Basic-dimension flag.
     pub basic: bool,
@@ -1511,7 +1446,11 @@ pub struct FeatureInputTopology {
     #[serde(default, skip_serializing_if = "DistinctMembers::is_empty")]
     pub vertices: DistinctMembers<HistoricalVertexId>,
     /// Full-fidelity source state reference.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub native_ref: Option<String>,
 }
 
@@ -1657,7 +1596,11 @@ pub struct FeatureResultTopology {
     #[cfg_attr(feature = "schema", schemars(with = "Vec<SelectionMember>"))]
     members: FeatureResultMembers,
     /// Full-fidelity source state reference.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub native_ref: Option<String>,
 }
 
@@ -2429,10 +2372,18 @@ pub enum FeatureOperation {
         /// Cylindrical face carrying the annotation.
         face: FaceSelection,
         /// Nominal thread diameter, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         diameter: Option<PositiveLength>,
         /// Axial extent of the annotation, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         extent: Option<CosmeticThreadExtent>,
     },
     /// Raster reference image placed in model space.
@@ -2453,7 +2404,11 @@ pub enum FeatureOperation {
         /// Opposite corners with nonzero extent in both coordinates.
         bounds: FeatureImageBounds,
         /// Normalized image opacity.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         opacity: Option<Fraction>,
     },
     /// Raster image applied to model faces.
@@ -2465,7 +2420,11 @@ pub enum FeatureOperation {
         /// Rule relating image coordinates to the selected faces.
         mapping: DecalMapping,
         /// Normalized image opacity, or the source format's default when absent.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         opacity: Option<Fraction>,
     },
     /// Built-in world-origin reference plane.
@@ -2488,7 +2447,11 @@ pub enum FeatureOperation {
     /// Reference plane offset from another datum plane.
     DatumOffsetPlane {
         /// Source plane or planar face, when its identity is available.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         reference: Option<DatumPlaneReference>,
         /// Signed normal offset from the source plane.
         distance: Length,
@@ -2505,7 +2468,11 @@ pub enum FeatureOperation {
         /// Point position in model space.
         position: FinitePoint3,
         /// Rule that derives the point from preceding construction geometry.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         construction: Option<Box<DatumPointConstruction>>,
     },
     /// Standalone model vertex constructed at one point.
@@ -2585,7 +2552,11 @@ pub enum FeatureOperation {
         #[serde(default)]
         direction: CurveProjectionDirection,
         /// Whether projection proceeds in both directions, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         bidirectional: Option<bool>,
     },
     /// Shapes projected along a direction onto one support surface.
@@ -2630,10 +2601,18 @@ pub enum FeatureOperation {
         /// Whether angular travel is clockwise when viewed along the axis.
         clockwise: bool,
         /// Number of turns per generated curve subdivision, when requested.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         segment_turns: Option<PositiveReal>,
         /// Persisted construction algorithm generation, when selectable.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         construction_style: Option<HelixConstructionStyle>,
     },
     /// Circular helix with retained native axis placement.
@@ -2700,22 +2679,38 @@ pub enum FeatureOperation {
     /// Solved spatial-sketch node in the construction history.
     SpatialSketch {
         /// Neutral model-space sketch geometry owned by this history node, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         sketch: Option<crate::sketches::SpatialSketchId>,
     },
     /// Reusable planar sketch geometry.
     SketchBlockDefinition {
         /// Neutral sketch geometry owned by the block, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         sketch: Option<crate::sketches::SketchId>,
     },
     /// Placement of one reusable sketch-block definition.
     SketchBlockInstance {
         /// Referenced block definition, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         block: Option<FeatureId>,
         /// Affine placement in the owning sketch space, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         placement: Option<crate::transform::Transform>,
     },
     /// Directly stored geometry with no replayable parametric construction.
@@ -2758,16 +2753,32 @@ pub enum FeatureOperation {
         /// Cross-sections and their compatible result mode.
         shape: SweepShape,
         /// Trajectory followed by the profile, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         path: Option<PathRef>,
         /// Rule used to orient cross-sections along the path.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         orientation: Option<SweepOrientation>,
         /// Corner continuation used where path segments meet.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         transition: Option<SweepTransition>,
         /// Interpolation law used between multiple cross-sections.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         transformation: Option<SweepTransformation>,
         /// Whether tangent-connected edges are included in the primary path.
         #[serde(default)]
@@ -2776,22 +2787,46 @@ pub enum FeatureOperation {
         #[serde(default)]
         linearize: bool,
         /// Total profile twist along the path, when specified.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         twist: Option<Angle>,
         /// Fractions of the selected path swept on either side of the profile.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         path_extent: Option<SweepPathExtent>,
         /// Guide rail and its independently consumed extent, when present.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         guide_rail: Option<SweepGuideRail>,
         /// Profile taper angle over the swept extent, when specified.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         taper: Option<Angle>,
         /// End-to-start profile scale ratio, when specified.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         scale: Option<PositiveReal>,
         /// Whether a profile containing multiple faces is accepted as one operation.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         allow_multi_profile_faces: Option<bool>,
     },
     /// Solid sweep of a profile along a parametrically defined helix or spiral.
@@ -2883,28 +2918,56 @@ pub enum FeatureOperation {
     /// Thin-wall shell operation.
     Shell {
         /// Bodies explicitly selected as shell inputs, when the source names them.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         bodies: Option<BodySelection>,
         /// Faces removed to open the shell.
         removed_faces: FaceSelection,
         /// Wall thickness left after shelling, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         thickness: Option<PositiveLength>,
         /// Whether the wall is grown outward from the original boundary,
         /// as opposed to inward, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         outward: Option<bool>,
         /// Offset construction used to generate the wall.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         mode: Option<ShellMode>,
         /// Corner continuation law used between offset faces.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         join: Option<ShellJoin>,
         /// Whether intersecting offset regions are resolved during construction.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         resolve_intersections: Option<bool>,
         /// Whether self-intersecting offset regions may be retained.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         allow_self_intersections: Option<bool>,
     },
     /// Offsets an entire source shape without removing opening faces.
@@ -2955,7 +3018,11 @@ pub enum FeatureOperation {
         /// Disjoint operand selections and their operation arity.
         operands: SectionOperands,
         /// Whether the resulting section edges are approximated, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         approximate: Option<bool>,
     },
     /// Reflects one source shape across a model-space plane.
@@ -2967,7 +3034,11 @@ pub enum FeatureOperation {
         /// Unit normal of the persisted resolved mirror plane.
         plane_normal: FeatureDirection3,
         /// Native plane, face, or circle reference that supplied the resolved plane.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         plane_reference: Option<FaceSelection>,
     },
     /// Adds material normal to selected faces.
@@ -2975,10 +3046,18 @@ pub enum FeatureOperation {
         /// Faces offset by the operation.
         faces: FaceSelection,
         /// Finished added thickness, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         thickness: Option<PositiveLength>,
         /// Distribution of thickness relative to the selected faces, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         side: Option<ThickenSide>,
     },
     /// Surface copied at a signed normal offset from selected support faces.
@@ -2997,7 +3076,11 @@ pub enum FeatureOperation {
         /// Whether a closed result is converted to a solid body.
         create_solid: Option<bool>,
         /// Maximum boundary gap accepted by the operation.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         gap_tolerance: Option<NonNegativeLength>,
     },
     /// Joins sheet or solid bodies along coincident boundaries.
@@ -3021,7 +3104,11 @@ pub enum FeatureOperation {
         continuity: FilledSurfaceContinuityState,
         /// Whether the generated patch is merged into adjacent surface bodies,
         /// when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         merge_result: Option<bool>,
     },
     /// Restricts selected surface faces to one side of a trimming path.
@@ -3051,13 +3138,25 @@ pub enum FeatureOperation {
         /// Direction law and extension distance.
         mode: RuledSurfaceMode,
         /// Signed rotation from the selected ruled-surface law.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         angle: Option<Angle>,
         /// Whether the opposite incident face supplies the angle reference.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         alternate_face: Option<bool>,
         /// Boundary-corner construction law.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         corner: Option<RuledSurfaceCorner>,
     },
     /// Taper applied to selected faces about a neutral plane.
@@ -3097,7 +3196,11 @@ pub enum FeatureOperation {
         tools: FaceSelection,
         /// Whether the side opposite the default tool orientation is removed,
         /// when the native side flag is present.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         reverse: Option<bool>,
     },
     /// Removes one side of target bodies using ordered tool bodies.
@@ -3156,7 +3259,11 @@ pub enum FeatureOperation {
         /// Model-space translation vector in canonical millimeters.
         translation: FiniteVector3,
         /// Axis-angle rotation applied with the translation.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         rotation: Option<AxisAngle>,
         /// Number of transformed copies; zero moves the selected bodies.
         #[serde(default)]
@@ -3167,19 +3274,35 @@ pub enum FeatureOperation {
         /// Faces that bound the dome base.
         faces: FaceSelection,
         /// Dome height measured normal to the base, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         height: Option<PositiveLength>,
         /// Whether the profile is elliptical rather than spherical, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         elliptical: Option<bool>,
         /// Whether growth opposes the selected-face normal, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         reverse: Option<bool>,
     },
     /// Deformation of existing geometry about a feature axis.
     Flex {
         /// Flex axis direction in model space, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         axis: Option<FeatureDirection3>,
         /// Applied deformation mode and magnitude.
         mode: FlexMode,
@@ -3189,7 +3312,11 @@ pub enum FeatureOperation {
         /// Bodies transformed by the operation.
         bodies: BodySelection,
         /// Fixed locus of the scale transform.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         center: Option<ScaleCenter>,
         /// Uniform, per-axis, or unresolved scale factors.
         factors: ScaleFactors,
@@ -3197,34 +3324,70 @@ pub enum FeatureOperation {
     /// Drilled or machined hole.
     Hole {
         /// Sketch or profile supplying one or more hole locations.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         profile: Option<PlanarProfileRef>,
         /// Geometry families in the profile that generate hole locations.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         profile_filter: Option<HoleProfileFilter>,
         /// Face the hole is placed on, when known.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         face: Option<FaceSelection>,
         /// Drilling direction carried independently of complete placements.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         direction: Option<Vector3>,
         /// Complete one-or-many hole placements, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         placements: Option<Vec<HolePlacement>>,
         /// Bore diameter and compatible entry, exit, and thread construction.
         shape: HoleShape,
         /// How deep the hole extends, when resolved. Holes travel on one side
         /// only, so the termination law needs no sidedness wrapper.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         extent: Option<LinearTermination>,
         /// Shape and depth convention at the blind end of the hole.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         bottom: Option<HoleBottom>,
         /// Included taper angle for a conical hole, when enabled.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         taper_angle: Option<InteriorAngle>,
         /// Whether a profile containing multiple faces is accepted as one operation.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         allow_multi_profile_faces: Option<bool>,
     },
     /// Repetition or reflection of existing features.
@@ -3263,19 +3426,39 @@ pub enum FeatureOperation {
         /// Boolean combination with existing bodies.
         op: BooleanOp,
         /// Whether the result is a solid (`true`) or sheet (`false`), when selectable.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         solid: Option<bool>,
         /// Native face-building policy used to turn closed wires into faces.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         face_maker: Option<FaceMaker>,
         /// Taper orientation used for inner wires, when selectable.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         inner_wire_taper: Option<InnerWireTaper>,
         /// Whether stored lengths are measured along the profile normal instead of the sweep axis.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         length_along_profile_normal: Option<bool>,
         /// Whether a profile containing multiple faces is accepted as one operation.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         allow_multi_profile_faces: Option<bool>,
     },
     /// Loft through an ordered sequence of profile or point sections.
@@ -3299,10 +3482,18 @@ pub enum FeatureOperation {
         #[serde(default)]
         linearize: bool,
         /// Maximum polynomial degree used to interpolate the sections, when constrained.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         max_degree: Option<std::num::NonZeroU32>,
         /// Whether profiles containing multiple faces are accepted as one operation.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         allow_multi_profile_faces: Option<bool>,
     },
 }
@@ -3530,7 +3721,11 @@ pub enum ExtrudeDirection {
         /// Directed model-space sweep vector.
         vector: FeatureDirection3,
         /// Persisted selection or rule used to resolve the vector, when retained.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         source: Option<ExtrusionDirectionSource>,
     },
 }
@@ -3895,18 +4090,34 @@ pub enum RevolveConstruction {
         /// Angular extent.
         extent: RevolveExtent,
         /// Whether a standalone revolution creates a solid rather than a sheet.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         solid: Option<bool>,
         /// Face-building algorithm used for a standalone solid revolution.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         #[serde(rename = "face_maker_class")]
         #[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
         face_maker: Option<FaceMaker>,
         /// Compatibility ordering for fusing a `PartDesign` revolution into its body.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         fuse_order: Option<RevolutionFuseOrder>,
         /// Whether a profile containing multiple faces is accepted as one operation.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         allow_multi_profile_faces: Option<bool>,
     },
 }
@@ -3920,24 +4131,48 @@ pub enum PartialRevolveConstruction {
     /// The profile is absent.
     Profile {
         /// Placed revolution axis, when decoded.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         axis: Option<RevolutionAxis>,
         /// Angular extent, when decoded.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         extent: Option<RevolveExtent>,
         /// Whether a standalone revolution creates a solid rather than a sheet.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         solid: Option<bool>,
         /// Face-building algorithm used for a standalone solid revolution.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         #[serde(rename = "face_maker_class")]
         #[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
         face_maker: Option<FaceMaker>,
         /// Compatibility ordering for fusing a `PartDesign` revolution into its body.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         fuse_order: Option<RevolutionFuseOrder>,
         /// Whether a profile containing multiple faces is accepted as one operation.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         allow_multi_profile_faces: Option<bool>,
     },
     /// The profile is present and the axis is absent.
@@ -3945,21 +4180,41 @@ pub enum PartialRevolveConstruction {
         /// Profile revolved about the axis.
         profile: PlanarProfileRef,
         /// Angular extent, when decoded.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         extent: Option<RevolveExtent>,
         /// Whether a standalone revolution creates a solid rather than a sheet.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         solid: Option<bool>,
         /// Face-building algorithm used for a standalone solid revolution.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         #[serde(rename = "face_maker_class")]
         #[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
         face_maker: Option<FaceMaker>,
         /// Compatibility ordering for fusing a `PartDesign` revolution into its body.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         fuse_order: Option<RevolutionFuseOrder>,
         /// Whether a profile containing multiple faces is accepted as one operation.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         allow_multi_profile_faces: Option<bool>,
     },
     /// The profile and the axis are present and the extent is absent.
@@ -3969,18 +4224,34 @@ pub enum PartialRevolveConstruction {
         /// Placed revolution axis and its optional native source.
         axis: RevolutionAxis,
         /// Whether a standalone revolution creates a solid rather than a sheet.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         solid: Option<bool>,
         /// Face-building algorithm used for a standalone solid revolution.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         #[serde(rename = "face_maker_class")]
         #[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
         face_maker: Option<FaceMaker>,
         /// Compatibility ordering for fusing a `PartDesign` revolution into its body.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         fuse_order: Option<RevolutionFuseOrder>,
         /// Whether a profile containing multiple faces is accepted as one operation.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         allow_multi_profile_faces: Option<bool>,
     },
 }
@@ -4388,7 +4659,11 @@ pub struct RevolutionAxis {
     /// Unit axis direction.
     pub direction: FeatureDirection3,
     /// Native edge, datum, or sketch-axis selection used to resolve the axis.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub reference: Option<PathRef>,
 }
 
@@ -4398,16 +4673,32 @@ pub struct RevolutionAxis {
 #[serde(deny_unknown_fields)]
 pub struct RibConstruction {
     /// Rib centerline or open profile, when resolved.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub profile: Option<PlanarProfileRef>,
     /// Rib growth direction, when resolved.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub direction: Option<FeatureDirection3>,
     /// Finished rib thickness, when resolved.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub thickness: Option<PositiveLength>,
     /// Distribution of thickness around the profile, when resolved.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub side: Option<RibSide>,
     /// Draft state applied to the rib walls.
     #[serde(default)]
@@ -4558,7 +4849,11 @@ impl SketchFeatureBinding {
 enum SketchFeatureBindingWire {
     Unresolved {},
     Planar {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         sketch: Option<crate::sketches::SketchId>,
     },
 }
@@ -6246,7 +6541,11 @@ pub enum ExtrudeStart {
         /// Face defining the start plane.
         face: FaceSelection,
         /// Signed displacement from the selected face.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         offset: Option<Length>,
     },
 }
@@ -6277,7 +6576,11 @@ pub enum LinearTermination {
         /// Face terminating the operation.
         face: FaceSelection,
         /// Signed displacement from the terminating face.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         offset: Option<Length>,
     },
     /// Extends until it reaches a target vertex.
@@ -6320,7 +6623,11 @@ pub enum AngularTermination {
         /// Face terminating the operation.
         face: FaceSelection,
         /// Signed displacement from the terminating face.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         offset: Option<Length>,
     },
     /// Extends until it reaches a target vertex.
@@ -6357,7 +6664,11 @@ pub struct ExtrudeSide {
     /// Where this side's travel terminates.
     pub termination: LinearTermination,
     /// Draft angle applied to this side's walls, when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub draft: Option<SlopeAngle>,
 }
 
@@ -7593,10 +7904,18 @@ pub struct HelicalSweepConstruction {
     /// Whether path travel runs opposite the declared axis direction.
     pub reversed: bool,
     /// Relative tolerance used while joining the generated sweep, when persisted.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub tolerance: Option<PositiveReal>,
     /// Whether a profile containing multiple faces is accepted as one operation.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub allow_multi_profile_faces: Option<bool>,
 }
 
@@ -7687,10 +8006,18 @@ pub enum BinderConstruction {
         /// Whether redundant edges are removed from the result.
         refine: bool,
         /// Optional two-dimensional offset construction.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         offset: Option<BinderOffset>,
         /// Context object used to interpret relative placement.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         context: Option<BinderTarget>,
     },
 }
@@ -8323,7 +8650,11 @@ pub enum FlexMode {
     /// Deformation family whose required magnitude remains unresolved.
     Unresolved {
         /// Deformation family, when the source named one.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         form: Option<FlexForm>,
     },
     /// Bend through a signed angle.

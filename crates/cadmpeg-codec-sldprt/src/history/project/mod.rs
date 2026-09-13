@@ -8,7 +8,7 @@ use cadmpeg_ir::ids::AttributeId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::{
     features::{
-        ConfigurationBodies, ConfigurationId, DatumPlaneReference, DesignConfiguration,
+        ConfigurationId, DatumPlaneReference, DesignConfiguration,
         FeatureDefinition, FeatureId, FeatureOperation, FeatureSourceContent, ParameterId, PathRef,
         PlanarProfileRef, ProfileRef, SplitFaceTool, UnresolvedFamily,
     },
@@ -980,7 +980,7 @@ pub(crate) fn project_configurations(histories: &[FeatureHistory]) -> Vec<Design
             name: configuration.name.clone().into(),
             material: configuration.material.clone(),
             properties: configuration.properties.clone(),
-            bodies: ConfigurationBodies::Unresolved,
+            bodies: None,
             parameter_values: BTreeMap::new(),
             feature_states: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),

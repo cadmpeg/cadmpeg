@@ -474,7 +474,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         id: ParameterId::mint(id).expect("identity grammar"),
         owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
         ordinal: 0,
-        name: id.into(),
+        name: id.to_string(),
         expression: String::new(),
         display,
         value: Some(ParameterValue::Length(Length::new(2.0).unwrap())),

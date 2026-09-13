@@ -136,16 +136,32 @@ pub struct SourceObjectAssociation {
     #[serde(deserialize_with = "deserialize_object_id")]
     pub object_id: crate::products::NonBlankString,
     /// Effective source object name, when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub name: Option<String>,
     /// Effective source object color, when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub color: Option<Color>,
     /// Effective source object visibility, when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub visible: Option<bool>,
     /// Native source layer identifier, when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub layer: Option<String>,
     /// Native instance identifiers from outermost to innermost.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -318,7 +334,11 @@ impl Provenance<SourceLocation> {
 struct AnnotationProvenanceWire {
     stream: StreamName,
     offset: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     tag: Option<String>,
 }
 
@@ -368,10 +388,18 @@ impl JsonSchema for Provenance<AnnotationLocation> {
 #[serde(deny_unknown_fields)]
 struct SourceProvenanceWire {
     format: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     stream: Option<StreamName>,
     offset: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     tag: Option<String>,
 }
 

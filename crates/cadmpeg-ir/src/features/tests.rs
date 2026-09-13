@@ -498,7 +498,7 @@ fn topology_membership_admission() {
     .is_err());
     assert!(DistinctMembers::<String>::try_from(vec!["a".into(), "a".into()]).is_err());
     assert!(
-        serde_json::from_value::<super::ConfigurationBodies>(serde_json::json!([
+        serde_json::from_value::<DistinctMembers<crate::ids::BodyId>>(serde_json::json!([
             "test:model:body#1",
             "test:model:body#1"
         ]))

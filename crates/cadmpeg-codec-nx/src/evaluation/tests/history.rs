@@ -498,7 +498,7 @@ fn empty_body_neutral_model_does_not_need_an_active_configuration_identity() {
     ));
     attach_complete_active_configuration(&mut ir);
     ir.model.configurations[0].active = false;
-    ir.model.configurations[0].bodies = ConfigurationBodies::Unresolved;
+    ir.model.configurations[0].bodies = None;
 
     assert_eq!(
         evaluate_saved_body_census(&ir),

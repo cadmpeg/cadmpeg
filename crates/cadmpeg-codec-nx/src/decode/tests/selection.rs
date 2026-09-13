@@ -1083,7 +1083,7 @@ fn container_only_retains_typed_saved_toggle_payload() {
 fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::features::{
-        BooleanOp, ConfigurationBodies, ConfigurationId, DesignConfiguration, Feature,
+        BooleanOp, ConfigurationId, DesignConfiguration, Feature,
         FeatureDefinition, FeatureId, FeatureOperation, UnresolvedFamily,
     };
 
@@ -1244,11 +1244,11 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
             ordinal: 0,
             active: true,
             source_index: Some(0),
-            name: "Model".into(),
+            name: Some("Model".to_string()),
             material: None,
             properties: Default::default(),
             parameter_overrides: Default::default(),
-            bodies: ConfigurationBodies::Resolved(Default::default()),
+            bodies: Some(Default::default()),
             parameter_values: Default::default(),
             feature_states: Default::default(),
             native_ref: None,
@@ -1258,11 +1258,11 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
             ordinal: 1,
             active: false,
             source_index: Some(1),
-            name: "Arrangement".into(),
+            name: Some("Arrangement".to_string()),
             material: None,
             properties: Default::default(),
             parameter_overrides: Default::default(),
-            bodies: ConfigurationBodies::Unresolved,
+            bodies: None,
             parameter_values: Default::default(),
             feature_states: Default::default(),
             native_ref: None,

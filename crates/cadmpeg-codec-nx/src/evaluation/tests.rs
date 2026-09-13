@@ -6,7 +6,7 @@ use cadmpeg_ir::features::FeatureOperation;
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::features::{
-    BodyRetentionMode, BodyTrimSide, ChamferGroup, ChamferSpec, ConfigurationBodies,
+    BodyRetentionMode, BodyTrimSide, ChamferGroup, ChamferSpec,
     ConfigurationFeatureState, ConfigurationId, CurveProjectionDirection,
     CurveProjectionDirectionState, DesignConfiguration, EdgeSelection, ExtrudeDirection,
     ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection, Feature, FilletGroup, HoleKind,
@@ -89,11 +89,11 @@ fn attach_complete_active_configuration(ir: &mut CadIr) {
         ordinal: 0,
         active: true,
         source_index: Some(0),
-        name: "Model".into(),
+        name: Some("Model".to_string()),
         material: None,
         properties: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
-        bodies: ConfigurationBodies::Resolved(
+        bodies: Some(
             (ir.model
                 .bodies
                 .iter()

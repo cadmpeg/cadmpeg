@@ -117,7 +117,7 @@ pub(crate) fn active_configuration_state_is_incomplete(
     }) {
         return true;
     }
-    let Some(bodies) = configuration.bodies.resolved() else {
+    let Some(bodies) = configuration.bodies.as_deref() else {
         return true;
     };
     let mut required_features = if ir.model.features.is_empty() {

@@ -420,7 +420,11 @@ pub struct NamespacedLossKind {
     #[serde(rename = "kind")]
     taxonomy: LossTaxonomy,
     /// Strict-mode severity floor pinned by this code; absent when it has none.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     strict_floor: Option<Severity>,
 }
 
@@ -535,7 +539,11 @@ pub struct LossNote {
     /// Human-readable explanation.
     pub message: String,
     /// Where in the source the loss occurred, when attributable.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub provenance: Option<SourceProvenance>,
 }
 

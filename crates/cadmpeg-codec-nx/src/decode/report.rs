@@ -359,10 +359,10 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .configurations
         .iter()
         .filter(|configuration| {
-            configuration.bodies.is_unresolved()
+            configuration.bodies.is_none()
                 || active_configuration_count != 1
                 || (configuration.active
-                    && configuration.bodies.resolved().is_none_or(|bodies| {
+                    && configuration.bodies.as_deref().is_none_or(|bodies| {
                         bodies.len() != current_bodies.len()
                             || bodies.iter().collect::<BTreeSet<_>>() != current_bodies
                     }))

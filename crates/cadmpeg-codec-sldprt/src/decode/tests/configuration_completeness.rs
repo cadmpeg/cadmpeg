@@ -163,7 +163,7 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
             name: format!("Configuration {ordinal}").into(),
             material: None,
             properties: BTreeMap::new(),
-            bodies: cadmpeg_ir::ConfigurationBodies::Resolved(
+            bodies: Some(
                 cadmpeg_ir::features::DistinctMembers::default(),
             ),
             parameter_values: BTreeMap::new(),
@@ -320,10 +320,10 @@ fn active_configuration_inherits_late_feature_resolutions() {
         ordinal: 0,
         active: true,
         source_index: Some(0),
-        name: "Configuration".into(),
+        name: Some("Configuration".to_string()),
         material: None,
         properties: BTreeMap::new(),
-        bodies: cadmpeg_ir::ConfigurationBodies::Resolved(
+        bodies: Some(
             cadmpeg_ir::features::DistinctMembers::default(),
         ),
         parameter_values: BTreeMap::new(),
@@ -486,10 +486,10 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
         ordinal: 0,
         active: true,
         source_index: Some(0),
-        name: "Configuration".into(),
+        name: Some("Configuration".to_string()),
         material: None,
         properties: BTreeMap::new(),
-        bodies: cadmpeg_ir::ConfigurationBodies::Resolved(
+        bodies: Some(
             cadmpeg_ir::features::DistinctMembers::default(),
         ),
         parameter_values: BTreeMap::new(),
@@ -572,7 +572,7 @@ fn active_configuration_snapshots_final_neutral_design_state() {
             name: format!("Configuration {ordinal}").into(),
             material: None,
             properties: BTreeMap::new(),
-            bodies: cadmpeg_ir::ConfigurationBodies::Resolved(
+            bodies: Some(
                 cadmpeg_ir::features::DistinctMembers::default(),
             ),
             parameter_values: BTreeMap::new(),
@@ -668,10 +668,10 @@ fn resolved_configuration_snapshots_inherit_only_independent_parameter_values() 
         ordinal: 0,
         active: false,
         source_index: Some(0),
-        name: id.into(),
+        name: Some(id.to_string()),
         material: None,
         properties: BTreeMap::new(),
-        bodies: cadmpeg_ir::ConfigurationBodies::Resolved(
+        bodies: Some(
             cadmpeg_ir::features::DistinctMembers::default(),
         ),
         parameter_values,

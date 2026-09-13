@@ -68,15 +68,27 @@ pub struct Asset {
     /// Stable asset identity.
     pub id: AssetId,
     /// Source display name or basename.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub name: Option<NonBlankString>,
     /// IANA media type when identified from the source container.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub media_type: Option<NonBlankString>,
     /// Embedded bytes or an external resource location.
     pub content: AssetContent,
     /// Full-fidelity source record or container-entry identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub native_ref: Option<String>,
 }
 

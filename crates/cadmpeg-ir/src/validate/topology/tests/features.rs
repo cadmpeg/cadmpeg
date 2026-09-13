@@ -589,7 +589,7 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
 #[test]
 fn generated_termination_vertices_require_declared_feature_dependencies() {
     use crate::features::{
-        BooleanOp, ConfigurationBodies, ConfigurationFeatureState, ConfigurationId,
+        BooleanOp, ConfigurationFeatureState, ConfigurationId,
         DesignConfiguration, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
         FeatureOperation, GeneratedVertexRef, LinearTermination, PlanarProfileRef, ProfileRef,
         VertexSelection,
@@ -668,11 +668,11 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         ordinal: 0,
         active: false,
         source_index: None,
-        name: "Vertex".into(),
+        name: Some("Vertex".to_string()),
         material: None,
         properties: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
-        bodies: ConfigurationBodies::Unresolved,
+        bodies: None,
         parameter_values: BTreeMap::new(),
         feature_states: BTreeMap::from([(
             extrude.clone(),
@@ -780,7 +780,7 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
 fn definition_references_must_be_declared_dependencies_in_every_configuration() {
     use crate::{
         features::{
-            BooleanOp, ConfigurationBodies, ConfigurationFeatureState, ConfigurationId,
+            BooleanOp, ConfigurationFeatureState, ConfigurationId,
             DatumPlaneReference, DesignConfiguration, ExtrudeDirection, ExtrudeExtent, ExtrudeSide,
             ExtrudeStart, Feature, FeatureDefinition, FeatureId, FeatureOperation,
             GeneratedCurveRef, LinearTermination, PatternKind, PatternSeed, PatternTransform,
@@ -907,11 +907,11 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
         ordinal: 0,
         active: false,
         source_index: None,
-        name: "Offset".into(),
+        name: Some("Offset".to_string()),
         material: None,
         properties: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
-        bodies: ConfigurationBodies::Unresolved,
+        bodies: None,
         parameter_values: BTreeMap::new(),
         feature_states: [
             (offset.clone(), 1),

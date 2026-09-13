@@ -2149,7 +2149,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 });
             }
         }
-        for body in &configuration.bodies {
+        for body in configuration.bodies.iter().flatten() {
             if ids.bodies(body.as_str()).is_none() {
                 ref_error(
                     findings,

@@ -150,17 +150,33 @@ pub struct Body {
     /// Constituent regions.
     pub regions: Vec<RegionId>,
     /// Optional world placement of the body's geometry.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub transform: Option<Transform>,
     /// Optional display name.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub name: Option<String>,
     /// Optional display color.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub color: Option<Color>,
     /// Whether the source document displays the body. `None` when the source
     /// format does not record body visibility.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub visible: Option<bool>,
 }
 
@@ -409,10 +425,18 @@ pub struct Face {
     /// with face membership.
     pub loops: FaceLoops,
     /// Optional display name.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub name: Option<String>,
     /// Optional display color.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub color: Option<Color>,
     /// Optional geometric tolerance in the document's length unit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -623,10 +647,18 @@ pub struct PcurveUse {
     /// Parameter-space curve carrier.
     pub pcurve: PcurveId,
     /// Whether the source declares this curve isoparametric on the face surface.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub isoparametric: Option<bool>,
     /// Interval on the pcurve's own parameterization used by this coedge.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub parameter_range: Option<crate::geometry::DirectedParameterRange>,
 }
 
@@ -904,7 +936,11 @@ pub struct Coedge {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pcurves: Vec<PcurveUse>,
     /// Optional coedge-local 3D carrier used instead of the shared edge curve.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub use_curve: Option<CoedgeUseCurve>,
 }
 
@@ -977,9 +1013,17 @@ pub struct EdgeCarrier {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct EdgeCarrierWire {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     curve: Option<CurveId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     param_range: Option<[f64; 2]>,
 }
 
@@ -1097,7 +1141,11 @@ pub struct Point {
     /// Coordinates in the document's length unit.
     pub position: Point3,
     /// Source object carrying this free point, when known.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub source_object: Option<crate::provenance::SourceObjectAssociation>,
 }
 

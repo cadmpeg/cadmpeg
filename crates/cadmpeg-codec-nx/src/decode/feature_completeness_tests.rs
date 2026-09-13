@@ -1120,7 +1120,7 @@ fn nx_body_operation_completeness_requires_distinct_members() {
 #[test]
 fn nx_configuration_completeness_requires_one_active_full_body_set() {
     use cadmpeg_ir::features::{
-        BodySelection, ConfigurationBodies, ConfigurationFeatureState, ConfigurationId,
+        BodySelection, ConfigurationFeatureState, ConfigurationId,
         DesignConfiguration, DesignParameter, Feature, FeatureDefinition, FeatureId,
         FeatureOperation, ParameterId, ParameterValue,
     };
@@ -1137,11 +1137,11 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
         ordinal: 0,
         active: true,
         source_index: Some(0),
-        name: "Model".into(),
+        name: Some("Model".to_string()),
         material: None,
         properties: Default::default(),
         parameter_overrides: Default::default(),
-        bodies: ConfigurationBodies::Resolved(Default::default()),
+        bodies: Some(Default::default()),
         parameter_values: Default::default(),
         feature_states: Default::default(),
         native_ref: None,
@@ -1152,7 +1152,7 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("1 NX design configuration"));
 
-    ir.model.configurations[0].bodies = ConfigurationBodies::Resolved((bodies).try_into().unwrap());
+    ir.model.configurations[0].bodies = Some((bodies).try_into().unwrap());
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());

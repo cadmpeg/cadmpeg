@@ -303,7 +303,7 @@ fn active_configuration_retains_complete_evaluated_parameter_state() {
         id: ParameterId::mint(id).expect("identity grammar"),
         owner: None,
         ordinal,
-        name: id.into(),
+        name: id.to_string(),
         expression: id.into(),
         display: None,
         value,
@@ -334,11 +334,11 @@ fn active_configuration_retains_complete_evaluated_parameter_state() {
         ordinal: 0,
         active: true,
         source_index: Some(0),
-        name: "Model".into(),
+        name: Some("Model".to_string()),
         material: None,
         properties: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
-        bodies: ConfigurationBodies::Resolved(cadmpeg_ir::features::DistinctMembers::default()),
+        bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
         parameter_values: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: None,
@@ -369,7 +369,7 @@ fn active_configuration_parameter_state_rejects_incomplete_sets_atomically() {
         id: ParameterId::mint(id).expect("identity grammar"),
         owner: None,
         ordinal: 0,
-        name: id.into(),
+        name: id.to_string(),
         expression: id.into(),
         display: None,
         value,
@@ -383,11 +383,11 @@ fn active_configuration_parameter_state_rejects_incomplete_sets_atomically() {
         ordinal: 0,
         active: true,
         source_index: Some(0),
-        name: "Model".into(),
+        name: Some("Model".to_string()),
         material: None,
         properties: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
-        bodies: ConfigurationBodies::Resolved(cadmpeg_ir::features::DistinctMembers::default()),
+        bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
         parameter_values: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: None,
@@ -475,7 +475,7 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
         ordinal: 0,
         active,
         source_index: Some(0),
-        name: "Model".into(),
+        name: Some("Model".to_string()),
         material: None,
         properties: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
@@ -501,7 +501,7 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
     }
     ir.model.configurations = vec![configuration(
         true,
-        ConfigurationBodies::Resolved((vec![body]).try_into().unwrap()),
+        Some((vec![body]).try_into().unwrap()),
     )];
     let mut annotations = AnnotationBuilder::new();
 
@@ -634,7 +634,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
         ordinal: 0,
         active,
         source_index: Some(0),
-        name: id.into(),
+        name: Some(id.to_string()),
         material: None,
         properties: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
@@ -648,7 +648,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
     missing_dependency.model.configurations = vec![configuration(
         "synthetic:test:id#active",
         true,
-        ConfigurationBodies::Resolved(
+        Some(
             (vec![BodyId::mint("test:model:entity#body").expect("identity grammar")])
                 .try_into()
                 .unwrap(),
@@ -668,7 +668,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
     unresolved_bodies.model.configurations = vec![configuration(
         "synthetic:test:id#active",
         true,
-        ConfigurationBodies::Unresolved,
+        None,
     )];
     super::attach_active_configuration_feature_states(&mut unresolved_bodies, &mut annotations)
         .expect("valid exactness fields");
@@ -684,7 +684,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
     contradicted.model.configurations = vec![configuration(
         "synthetic:test:id#active",
         true,
-        ConfigurationBodies::Resolved(
+        Some(
             (vec![BodyId::mint("test:model:entity#body").expect("identity grammar")])
                 .try_into()
                 .unwrap(),
@@ -704,7 +704,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
         configuration(
             "synthetic:test:id#first",
             true,
-            ConfigurationBodies::Resolved(
+            Some(
                 (vec![BodyId::mint("test:model:entity#body").expect("identity grammar")])
                     .try_into()
                     .unwrap(),
@@ -713,7 +713,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
         configuration(
             "synthetic:test:id#second",
             true,
-            ConfigurationBodies::Resolved(
+            Some(
                 (vec![BodyId::mint("test:model:entity#body").expect("identity grammar")])
                     .try_into()
                     .unwrap(),

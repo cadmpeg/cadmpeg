@@ -90,8 +90,8 @@ pub use document::{ArenaName, CadIr, CensusKey, SourceMeta, IR_VERSION};
 pub use draft::ModelDraft;
 pub use features::{
     BodyMember, BodyMembers, BodyRetentionMode, BodySelection, BodyTrimSide, CoilConstruction,
-    CoilExtent, CoilPlacement, CoilResult, CoilSection, CoilSectionPlacement, ConfigurationBodies,
-    ConfigurationEvaluation, ConfigurationId, ConfigurationName, CurveProjectionDirection,
+    CoilExtent, CoilPlacement, CoilResult, CoilSection, CoilSectionPlacement,
+    ConfigurationEvaluation, ConfigurationId, CurveProjectionDirection,
     CurveProjectionDirectionState, DesignConfiguration, DesignParameter, FaceMotion, Feature,
     FeatureDefinition, FeatureId, FeatureOperation, LoftGuidance, ParameterId, ParameterPmi,
     ParameterValue, PmiDimensionSubtype, ScaleCenter, ScaleFactors,

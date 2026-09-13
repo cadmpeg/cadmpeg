@@ -95,13 +95,25 @@ pub struct PresentationDocument {
 #[serde(deny_unknown_fields)]
 struct PresentationDocumentWire {
     id: PresentationId,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     schema_version: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     active_view: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     states: Vec<PresentationState>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     native_ref: Option<String>,
 }
 
@@ -202,21 +214,41 @@ pub struct ViewPresentation {
     /// Globally unique view-provider identity.
     pub id: PresentationId,
     /// Owning application object identity, if resolved.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub object: Option<String>,
     /// Source order in the provider table.
     pub order: u32,
     /// Persisted tree expansion state.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub expanded: Option<bool>,
     /// Persisted object visibility.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub visible: Option<bool>,
     /// Display mode name or numeric code.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub display_mode: Option<String>,
     /// Selection rendering mode.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub selection_style: Option<String>,
     /// Line width in persisted display units.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -231,7 +263,11 @@ pub struct ViewPresentation {
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub properties: BTreeMap<String, String>,
     /// Native view-provider record supplying this state.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub native_ref: Option<String>,
 }
 
@@ -321,10 +357,18 @@ pub struct PresentationLayer {
     /// Layer name.
     pub name: String,
     /// Optional layer description.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub description: Option<String>,
     /// Explicit layer visibility; `false` means the layer is hidden.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pub visible: Option<bool>,
     /// Assigned items in deterministic projection order; order has no semantic meaning.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

@@ -92,7 +92,11 @@ pub struct TaperSurfaceConstruction {
     /// Reference curve on the support.
     reference: CurveId,
     /// UV curve on the support, absent for `nullbs`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pcurve: Option<PcurveGeometry>,
     /// Native taper parameter or draft magnitude.
     parameter: FiniteReal,
@@ -113,7 +117,11 @@ struct TaperSurfaceConstructionWire {
     /// Reference curve on the support.
     reference: CurveId,
     /// UV curve on the support, absent for `nullbs`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     pcurve: Option<PcurveGeometry>,
     /// Native taper parameter or draft magnitude.
     parameter: f64,
@@ -259,12 +267,20 @@ struct ExtrusionSurfaceConstructionWire {
     /// Native source directrix parameter interval, when carried by the
     /// source. The neutral surface-carrier interval is in
     /// `ProceduralSurface::record_bounds`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     parameter_interval: Option<[f64; 2]>,
     /// Length-bearing sweep direction, in document length units.
     direction: Vector3,
     /// Native model-space position following the sweep direction, when carried.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     native_position: Option<Point3>,
     /// Cache contract: the revision-gated form, or the legacy
     /// solved-cache tolerance this construction states instead.
@@ -395,12 +411,20 @@ struct RevolutionSurfaceConstructionWire {
     /// Surface-parameter interval that maps affinely to
     /// `angular_interval`. Absence means the surface parameter is already
     /// the revolution angle in radians.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     angular_parameter_interval: Option<[f64; 2]>,
     /// Native source directrix parameter start and end values, when
     /// carried by the source representation. The neutral surface-carrier
     /// interval is in `ProceduralSurface::record_bounds`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     parameter_interval: Option<[f64; 2]>,
     /// Whether the source parameter directions are transposed.
     transposed: bool,
@@ -528,10 +552,18 @@ pub struct OffsetSurfaceConstruction {
     /// Signed offset distance, in document length units.
     distance: FiniteReal,
     /// Native U parameter-direction sense enum, when carried.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     u_sense: Option<i64>,
     /// Native V parameter-direction sense enum, when carried.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     v_sense: Option<i64>,
     /// Whether the support continues as ruled linear strips outside its
     /// active NURBS rectangle.
@@ -550,10 +582,18 @@ struct OffsetSurfaceConstructionWire {
     /// Signed offset distance, in document length units.
     distance: f64,
     /// Native U parameter-direction sense enum, when carried.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     u_sense: Option<i64>,
     /// Native V parameter-direction sense enum, when carried.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     v_sense: Option<i64>,
     /// Whether the support continues as ruled linear strips outside its
     /// active NURBS rectangle.
@@ -661,13 +701,25 @@ pub struct SubsetSurfaceConstruction {
     /// leave the sense fields absent and use increasing endpoints.
     parameter_ranges: [DirectedParameterRange; 2],
     /// Whether the trimmed surface U direction agrees with the support.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     u_sense: Option<bool>,
     /// Whether the trimmed surface V direction agrees with the support.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     v_sense: Option<bool>,
     /// Solved-cache fit contract this construction states itself.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     cache: Option<LegacyCache>,
 }
 
@@ -684,10 +736,18 @@ struct SubsetSurfaceConstructionWire {
     /// leave the sense fields absent and use increasing endpoints.
     parameter_ranges: [[f64; 2]; 2],
     /// Whether the trimmed surface U direction agrees with the support.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     u_sense: Option<bool>,
     /// Whether the trimmed surface V direction agrees with the support.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     v_sense: Option<bool>,
     #[serde(default)]
     cache: Option<LegacyCache>,
@@ -1086,7 +1146,11 @@ impl TryFrom<ExactSurfacePayloadWire> for ExactSurfacePayload {
 pub struct CompoundSurfacePayload {
     components: Vec<CompoundComponent<SurfaceId>>,
     /// Solved-cache fit contract this construction states itself.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     cache: Option<LegacyCache>,
 }
 #[derive(Deserialize)]
@@ -1273,7 +1337,11 @@ impl TryFrom<LoftSurfacePayloadWire> for LoftSurfacePayload {
 pub struct CompoundLoftSurfacePayload {
     construction: Box<CompoundLoftConstruction>,
     /// Solved-cache fit contract this construction states itself.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     cache: Option<LegacyCache>,
 }
 #[derive(Deserialize)]
@@ -1528,7 +1596,11 @@ impl TryFrom<LawSurfacePayloadWire> for LawSurfacePayload {
 pub struct SkinSurfacePayload {
     construction: Box<SkinSurfaceConstruction>,
     /// Solved-cache fit contract this construction states itself.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     cache: Option<LegacyCache>,
 }
 #[derive(Deserialize)]
@@ -1603,7 +1675,11 @@ impl TryFrom<SkinSurfacePayloadWire> for SkinSurfacePayload {
 pub struct NetSurfacePayload {
     construction: Box<NetSurfaceConstruction>,
     /// Solved-cache fit contract this construction states itself.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     cache: Option<LegacyCache>,
 }
 #[derive(Deserialize)]
@@ -1676,7 +1752,11 @@ pub struct SweepSurfacePayload {
 
     spine: CurveId,
 
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     native: Option<Box<SweepSurfaceConstruction>>,
 }
 #[derive(Deserialize)]
@@ -1687,7 +1767,11 @@ struct SweepSurfacePayloadWire {
 
     spine: CurveId,
 
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     native: Option<Box<SweepSurfaceConstruction>>,
 }
 impl SweepSurfacePayload {
@@ -1994,7 +2078,11 @@ impl TryFrom<DeformableSurfacePayloadWire> for DeformableSurfacePayload {
 pub struct G2BlendSurfacePayload {
     construction: Box<G2BlendConstruction>,
     /// Solved-cache fit contract this construction states itself.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     cache: Option<LegacyCache>,
 }
 #[derive(Deserialize)]
@@ -2238,7 +2326,11 @@ impl TryFrom<VertexBlendSurfacePayloadWire> for VertexBlendSurfacePayload {
 pub struct BlendSurfacePayload {
     supports: [Option<BlendSupport>; 2],
 
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     spine: Option<CurveId>,
 
     radius: BlendRadiusLaw,
@@ -2256,7 +2348,11 @@ pub struct BlendSurfacePayload {
 struct BlendSurfacePayloadWire {
     supports: [Option<BlendSupport>; 2],
 
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     spine: Option<CurveId>,
 
     radius: BlendRadiusLaw,

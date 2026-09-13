@@ -1003,7 +1003,7 @@ fn revolution_consumes_the_preceding_profile_object() {
         tree_parent: None,
         source_id: Some(FeatureSource::try_from(source).expect("test feature source id")),
         ordinal: 0,
-        name: id.into(),
+        name: id.to_string(),
         kind: String::new(),
         input_class: Some(class.into()),
         suppressed: false,

@@ -6,7 +6,11 @@ use serde_json::json;
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct SecondaryCurveWire {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     secondary_curve: Option<RollingBallSupportCurve>,
 }
 
