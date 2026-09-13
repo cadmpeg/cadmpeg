@@ -1211,11 +1211,9 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
     let mut replacements = Vec::new();
     for (candidate_index, (_, _, procedural_index)) in candidates.into_iter().enumerate() {
         let candidates_remaining = candidate_count.saturating_sub(candidate_index);
-        let candidate_geometry_budget =
-            geometry_budget.child_slice(opposite_chart_geometry_work_limit(
-                candidates_remaining,
-                geometry_budget.remaining(),
-            ));
+        let candidate_geometry_budget = geometry_budget.child_slice(
+            opposite_chart_geometry_work_limit(candidates_remaining, geometry_budget.remaining()),
+        );
         let replacement = (|| -> Result<Option<OppositeChartReplacement>, NurbsError> {
             let Some(procedural) = ir.model.procedural_curves.get(procedural_index) else {
                 return Ok(None);
@@ -1451,8 +1449,8 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                 else {
                     continue;
                 };
-                let [Some(start_point), Some(end_point)] = [&edge.start, &edge.end]
-                    .map(|vertex| vertex_points.get(vertex).copied())
+                let [Some(start_point), Some(end_point)] =
+                    [&edge.start, &edge.end].map(|vertex| vertex_points.get(vertex).copied())
                 else {
                     continue;
                 };
