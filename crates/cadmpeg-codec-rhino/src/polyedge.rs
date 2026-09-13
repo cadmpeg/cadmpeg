@@ -92,9 +92,9 @@ fn req_f64(view: &mut View<'_>) -> Result<f64, FramingError> {
 fn req_uuid(view: &mut View<'_>) -> Result<Uuid, FramingError> {
     let offset = view.position();
     let bytes = view
-        .req_take(16)
-        .map_err(|_| FramingError::structural(offset, "polyedge record truncated"))?;
-    Ok(Uuid::from_wire(bytes.try_into().expect("length checked")))
+        .array()
+        .ok_or_else(|| FramingError::structural(offset, "polyedge record truncated"))?;
+    Ok(Uuid::from_wire(bytes))
 }
 
 fn req_bool(view: &mut View<'_>) -> Result<bool, FramingError> {
