@@ -11,8 +11,8 @@ pub fn container_directory(data: &[u8]) {
 }
 
 /// Exercise `b5 03` object-stream graph parsing.
-pub fn b5_parse(data: &[u8], refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>) {
-    let _probe = crate::families::b5::graph::parse(data, refusal);
+pub fn b5_parse(data: &[u8]) {
+    let _probe = crate::families::b5::graph::parse(data, &mut None);
 }
 
 /// Exercise `e5 0d 03` topology parsing and orientation solving.
@@ -31,13 +31,13 @@ pub fn geometry_surface_prefixes(data: &[u8]) {
 }
 
 /// Exercise A5 freeform surface extraction.
-pub fn geometry_a5_surfaces(data: &[u8], refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>) {
-    let _probe = crate::families::a5a8::records::a5_surfaces(data, refusal);
+pub fn geometry_a5_surfaces(data: &[u8]) {
+    let _probe = crate::families::a5a8::records::a5_surfaces(data, &mut None);
 }
 
 /// Exercise A8 NURBS surface extraction.
-pub fn geometry_a8_surfaces(data: &[u8], refusal: &mut Option<cadmpeg_ir::geometry::NurbsError>) {
-    let _probe = crate::families::a5a8::records::a8_surfaces(data, refusal);
+pub fn geometry_a8_surfaces(data: &[u8]) {
+    let _probe = crate::families::a5a8::records::a8_surfaces(data, &mut None);
 }
 
 /// Exercise standard-nested and FBB topology parsing.

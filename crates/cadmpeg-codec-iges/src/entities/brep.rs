@@ -209,6 +209,9 @@ fn project_pcurve_uses(
 // load-bearing — `pcurve_geometry` can fuse the decode budget, so a later
 // use's geometry must not be resolved once an earlier use's evaluation has
 // already failed.
+/// One resolved pcurve use: its geometry and the parameter range it covers.
+type ResolvedPcurveUses = Vec<(PcurveGeometry, [f64; 2])>;
+
 #[allow(clippy::too_many_arguments)] // the lazily built model index rides along as the eighth argument
 fn resolve_pcurve_uses<'a>(
     source: &'a CadIr,
@@ -219,7 +222,7 @@ fn resolve_pcurve_uses<'a>(
     tolerance: f64,
     ctx: Option<&DecodeContext<'_>>,
     model_index: &mut Option<cadmpeg_ir::index::ModelIndex<'a>>,
-) -> Result<Option<Vec<(PcurveGeometry, [f64; 2])>>, cadmpeg_ir::geometry::NurbsError> {
+) -> Result<Option<ResolvedPcurveUses>, cadmpeg_ir::geometry::NurbsError> {
     if uses.is_empty() {
         return Ok(Some(Vec::new()));
     }
