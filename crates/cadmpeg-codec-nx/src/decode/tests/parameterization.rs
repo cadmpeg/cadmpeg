@@ -1331,7 +1331,7 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
                         signed_radius: radius,
                     },
                     BlendCrossSection::Circular,
-                    None,
+                    cadmpeg_ir::geometry::CacheContract::from_form(None),
                 )
                 .unwrap(),
             ),

@@ -281,7 +281,7 @@ fn loft_payload_admits_only_finite_entries_and_bridge_doubles() {
             [0; 2],
             0,
             vec![LoftBridgeToken::Double(bridge)],
-            None,
+            crate::geometry::CacheContract::from_form(None),
         )
     };
     let valid = ProceduralSurfaceDefinition::Loft(loft(-1.0, -2.0).unwrap());

@@ -817,7 +817,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     ]),
                     Vector3::new(sweep[0], sweep[1], sweep[2]),
                     None,
-                    None,
+                    cadmpeg_ir::geometry::CacheContract::from_form(None),
                 )
                 .and_then(|admitted_payload| {
                     ProceduralSurface::new(

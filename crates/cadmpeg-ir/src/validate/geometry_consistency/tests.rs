@@ -146,7 +146,7 @@ fn mapped_surface_offset() -> CadIr {
             false,
             [[0.0, 1.0], [0.0, 1.0]],
             (base, [2.0, 3.0], [Some(2.0), Some(3.0)]),
-            None,
+            crate::geometry::CacheContract::from_form(None),
             25.0,
             [0.0, 1.0],
         )
@@ -333,7 +333,7 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
                     *definition_payload.base_range(),
                     [None, None],
                 ),
-                definition_payload.cache_first().cloned(),
+                crate::geometry::CacheContract::from_form(definition_payload.cache_first().cloned()),
                 *definition_payload.distance(),
                 [*definition_payload.shift(), *definition_payload.scale()],
             )
@@ -918,7 +918,7 @@ fn pcurve_surface_mismatch_is_flagged() {
         .expect("coedge owner face");
     let construction = procedural_surface! {
     id: ProceduralSurfaceId::mint("synthetic:cube:procedural-surface#0").expect("valid identity"),
-    definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(procedural.model.curves[0].id.clone(), (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)), [0.0, std::f64::consts::TAU], None, Some([0.0, 1.0]), false, None).unwrap()),
+    definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(procedural.model.curves[0].id.clone(), (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)), [0.0, std::f64::consts::TAU], None, Some([0.0, 1.0]), false, crate::geometry::CacheContract::from_form(None)).unwrap()),
         cache_fit_tolerance: Some(0.01),
         record_bounds: None,
     };

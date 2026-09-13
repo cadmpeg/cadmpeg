@@ -2976,7 +2976,7 @@ impl<'a> DecodeContext<'a> {
                         None,
                         extrusion.direction,
                         None,
-                        None,
+                        cadmpeg_ir::geometry::CacheContract::from_form(None),
                     )
                     .and_then(|admitted_payload| {
                         ProceduralSurface::new(

@@ -666,7 +666,7 @@ pub(super) fn emit_surfaces(
                         Some(revolution.angular_parameter_interval),
                         Some(revolution.parameter_interval),
                         false,
-                        None,
+                        cadmpeg_ir::geometry::CacheContract::from_form(None),
                     )
                     .and_then(|admitted_payload| {
                         ProceduralSurface::new(
@@ -936,7 +936,7 @@ fn emit_extrusion_procedure(
             Some(extrusion.directrix_parameter_range),
             extrusion.direction,
             None,
-            None,
+            cadmpeg_ir::geometry::CacheContract::from_form(None),
         )
         .and_then(|admitted_payload| {
             ProceduralSurface::new(

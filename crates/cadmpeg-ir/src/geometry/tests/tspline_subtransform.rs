@@ -55,7 +55,7 @@ fn surface_admission_requires_ordered_ranges_and_resolved_subtransform() {
             0,
             Default::default(),
             false,
-            None,
+            crate::geometry::CacheContract::from_form(None),
         )
     };
     let valid = admit([[0.0, 1.0], [2.0, 2.0]], inline.clone()).unwrap();
@@ -108,7 +108,7 @@ fn a_tspline_construction_states_no_program_graph_on_its_wire() {
         4,
         Default::default(),
         false,
-        None,
+        crate::geometry::CacheContract::from_form(None),
     )
     .unwrap();
     assert_eq!(construction.program_graph().records().len(), 1);

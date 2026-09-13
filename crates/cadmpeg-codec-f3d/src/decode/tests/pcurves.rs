@@ -101,7 +101,7 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
                     base_range_value,
                     *definition_payload.base_endpoints(),
                 ),
-                definition_payload.cache_first().cloned(),
+                cadmpeg_ir::geometry::CacheContract::from_form(definition_payload.cache_first().cloned()),
                 distance_value,
                 [shift_value, scale_value],
             )

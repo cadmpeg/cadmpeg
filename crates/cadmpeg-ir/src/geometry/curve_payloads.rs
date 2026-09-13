@@ -101,7 +101,7 @@ impl SurfaceOffsetCurveConstruction {
         discontinuity_flag: bool,
         [base_u_range, base_v_range]: [[f64; 2]; 2],
         (base, base_range, base_endpoints): (CurveId, [f64; 2], [Option<f64>; 2]),
-        cache_first: Option<CacheFirstCurveForm>,
+        cache: CacheContract<CacheFirstCurveForm>,
         distance: f64,
         [shift, scale]: [f64; 2],
     ) -> Result<Self, ProceduralGeometryError> {
@@ -116,7 +116,7 @@ impl SurfaceOffsetCurveConstruction {
             base_range: ParameterInterval::new(base_range)
                 .map_err(ProceduralGeometryError::Payload)?,
             base_endpoints,
-            cache: CacheContract::from_form(cache_first),
+            cache,
             distance: FiniteReal::new(distance).ok_or(ProceduralGeometryError::Payload(
                 "SurfaceOffset.distance is not finite",
             ))?,
@@ -182,14 +182,10 @@ impl TryFrom<SurfaceOffsetCurveConstructionWire> for SurfaceOffsetCurveConstruct
             wire.discontinuity_flag,
             [wire.base_u_range, wire.base_v_range],
             (wire.base, wire.base_range, wire.base_endpoints),
-            wire.cache.form().cloned(),
+            wire.cache,
             wire.distance,
             [wire.shift, wire.scale],
         )
-        .map(|mut payload| {
-            payload.cache = wire.cache;
-            payload
-        })
     }
 }
 

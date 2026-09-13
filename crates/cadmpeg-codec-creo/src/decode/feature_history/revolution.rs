@@ -373,7 +373,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     ]
                     .into(),
                     false,
-                    None,
+                    cadmpeg_ir::geometry::CacheContract::from_form(None),
                 )
                 .and_then(|admitted_payload| {
                     ProceduralSurface::new(

@@ -1601,7 +1601,7 @@ pub(super) fn project(
                     Some(source_interval),
                     direction,
                     Some(target),
-                    None,
+                    cadmpeg_ir::geometry::CacheContract::from_form(None),
                 )
                 .and_then(|admitted_payload| {
                     ProceduralSurface::new(
@@ -1735,7 +1735,7 @@ pub(super) fn project(
                 Some(source_interval),
                 direction,
                 Some(target),
-                None,
+                cadmpeg_ir::geometry::CacheContract::from_form(None),
             )
             .and_then(|admitted_payload| {
                 ProceduralSurface::new(
@@ -1913,7 +1913,7 @@ pub(super) fn project(
                     None,
                     Some(source_interval),
                     false,
-                    None,
+                    cadmpeg_ir::geometry::CacheContract::from_form(None),
                 )
                 .and_then(|admitted_payload| {
                     ProceduralSurface::new(
@@ -2087,7 +2087,7 @@ pub(super) fn project(
                     None,
                     Some(source_interval),
                     false,
-                    None,
+                    cadmpeg_ir::geometry::CacheContract::from_form(None),
                 )
                 .and_then(|admitted_payload| {
                     ProceduralSurface::new(

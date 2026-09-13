@@ -95,7 +95,7 @@ fn cacheless_sum_surface_adds_independent_curve_parameters() {
                 CurveId::mint("test:model:entity#first").expect("valid identity"),
                 CurveId::mint("test:model:entity#second").expect("valid identity"),
                 Vector3::new(0.5, 1.0, 2.0),
-                None,
+                crate::geometry::CacheContract::from_form(None),
             )
             .expect("valid sum"),
         ),

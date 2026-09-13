@@ -22,7 +22,7 @@ fn revolution(
             Some(intervals[1]),
             Some(intervals[2]),
             false,
-            None,
+            crate::geometry::CacheContract::from_form(None),
         )?,
     ))
 }
@@ -56,7 +56,7 @@ fn revolution_requires_three_strict_finite_intervals_on_all_routes() {
             None,
             None,
             false,
-            None,
+            crate::geometry::CacheContract::from_form(None),
         )
         .unwrap(),
     );
@@ -125,7 +125,7 @@ fn axis_revolution_and_sum_reject_nonfinite_frames_and_basepoints() {
             curve(),
             curve(),
             basepoint,
-            None,
+            crate::geometry::CacheContract::from_form(None),
         )
         .map(ProceduralSurfaceDefinition::Sum)
     };

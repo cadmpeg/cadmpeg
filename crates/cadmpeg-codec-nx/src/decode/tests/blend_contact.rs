@@ -856,7 +856,7 @@ fn blend_contact_matches_concentric_blend_carriers() {
                             signed_radius: radius,
                         },
                         BlendCrossSection::Circular,
-                        None,
+                        cadmpeg_ir::geometry::CacheContract::from_form(None),
                     )
                     .unwrap(),
                 ),
@@ -893,7 +893,7 @@ fn blend_contact_matches_concentric_blend_carriers() {
             definition_payload.spine().clone(),
             definition_payload.radius().clone(),
             definition_payload.cross_section().clone(),
-            definition_payload.native().cloned().map(Box::new),
+            cadmpeg_ir::geometry::CacheContract::from_form(definition_payload.native().cloned().map(Box::new)),
         )
         .unwrap();
     });
@@ -1010,7 +1010,7 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
                     Some(spine.clone()),
                     BlendRadiusLaw::Constant { signed_radius: 1.0 },
                     BlendCrossSection::Circular,
-                    None,
+                    cadmpeg_ir::geometry::CacheContract::from_form(None),
                 )
                 .unwrap(),
             ),
@@ -1268,7 +1268,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                     Some(spine.clone()),
                     BlendRadiusLaw::Constant { signed_radius: 2.0 },
                     BlendCrossSection::Circular,
-                    None,
+                    cadmpeg_ir::geometry::CacheContract::from_form(None),
                 )
                 .unwrap(),
             ),
@@ -1741,7 +1741,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                     Some(outer_spine),
                     BlendRadiusLaw::Constant { signed_radius: 1.5 },
                     BlendCrossSection::Circular,
-                    None,
+                    cadmpeg_ir::geometry::CacheContract::from_form(None),
                 )
                 .unwrap(),
             ),
@@ -1800,7 +1800,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             definition_payload.spine().clone(),
             definition_payload.radius().clone(),
             definition_payload.cross_section().clone(),
-            definition_payload.native().cloned().map(Box::new),
+            cadmpeg_ir::geometry::CacheContract::from_form(definition_payload.native().cloned().map(Box::new)),
         )
         .unwrap();
     });

@@ -527,7 +527,7 @@ pub(crate) fn try_decode_geometry(
                                 signed_radius: blend.state.offsets()[0],
                             },
                             BlendCrossSection::Circular,
-                            None,
+                            cadmpeg_ir::geometry::CacheContract::from_form(None),
                         )
                         .map_err(cadmpeg_core::CodecError::malformed)?,
                     ),
