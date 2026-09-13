@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native owner-chart carriers, bridge references, and alias bindings.
 
-use cadmpeg_ir::products::NonEmptyString;
+use cadmpeg_ir::products::NonBlankString;
 
 use crate::checked::PositiveFinite;
 use serde::{Deserialize, Serialize};
@@ -34,13 +34,13 @@ pub enum CatiaOwnerChartCarrier {
 /// Outer alias row selected by a unique width-coded support tag.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CatiaOwnerChartAliasBinding {
-    row: NonEmptyString,
+    row: NonBlankString,
     canonical_tag: Option<u32>,
 }
 
 impl CatiaOwnerChartAliasBinding {
     /// Binds a non-empty outer alias row to its optional canonical surface tag.
-    pub fn new(row: NonEmptyString, canonical_tag: Option<u32>) -> Self {
+    pub fn new(row: NonBlankString, canonical_tag: Option<u32>) -> Self {
         Self { row, canonical_tag }
     }
 
@@ -166,7 +166,7 @@ impl TryFrom<CatiaOwnerChartBridgeReferenceWire> for CatiaOwnerChartBridgeRefere
                 return Err("owner-chart canonical_surface_tag requires alias_row".to_owned());
             }
             (Some(row), canonical_tag) => {
-                let row = NonEmptyString::new(row)
+                let row = NonBlankString::new(row)
                     .ok_or_else(|| "owner-chart alias_row must not be empty".to_owned())?;
                 Some(CatiaOwnerChartAliasBinding::new(row, canonical_tag))
             }

@@ -3,7 +3,7 @@
 
 use cadmpeg_container::ZipCompression;
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
-use cadmpeg_ir::products::NonEmptyString;
+use cadmpeg_ir::products::NonBlankString;
 use serde::{de::Error as _, Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -255,7 +255,7 @@ pub(crate) struct ProteinRejectionRecord {
     pub(crate) id: String,
     pub(crate) entry_name: InstancePropertiesEntry,
     pub(crate) ordinal: u64,
-    detail: NonEmptyString,
+    detail: NonBlankString,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -273,7 +273,7 @@ impl TryFrom<ProteinRejectionRecordWire> for ProteinRejectionRecord {
             id: wire.id,
             entry_name: InstancePropertiesEntry::try_from(wire.entry_name)?,
             ordinal: wire.ordinal,
-            detail: NonEmptyString::new(wire.detail).ok_or("detail must not be empty")?,
+            detail: NonBlankString::new(wire.detail).ok_or("detail must not be empty")?,
         })
     }
 }

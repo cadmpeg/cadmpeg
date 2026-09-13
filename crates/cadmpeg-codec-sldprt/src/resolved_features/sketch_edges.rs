@@ -233,7 +233,7 @@ pub(super) fn project_edge(
         ),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_))) | None => line(),
         Some(other) => Some(SketchGeometry::native(
-            cadmpeg_ir::products::NonEmptyString::new(format!("{other:?}"))?,
+            cadmpeg_ir::products::NonBlankString::new(format!("{other:?}"))?,
         )),
     }
 }

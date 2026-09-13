@@ -43,14 +43,14 @@ fn sketch_relation_runs_preserve_wire_and_reject_conflicting_resolved_indices() 
 
 #[test]
 fn sketch_relation_owner_preserves_absence_and_nonempty_ids_on_wire_round_trip() {
-    assert!(cadmpeg_ir::NonEmptyString::new("").is_none());
+    assert!(cadmpeg_ir::NonBlankString::new("").is_none());
     for (owner, field) in [
         (None, r#""owner_entity_id":"""#),
         (Some("owner"), r#""owner_entity_id":"owner""#),
         (Some(" owner "), r#""owner_entity_id":" owner ""#),
     ] {
         let mut relation: SketchRelation = serde_json::from_str(RELATION_WIRE).unwrap();
-        relation.owner_entity_id = owner.map(|id| cadmpeg_ir::NonEmptyString::new(id).unwrap());
+        relation.owner_entity_id = owner.map(|id| cadmpeg_ir::NonBlankString::new(id).unwrap());
         let expected = RELATION_WIRE.replace(r#""owner_entity_id":"owner""#, field);
         let wire = serde_json::to_string(&relation).unwrap();
         assert_eq!(wire, expected);

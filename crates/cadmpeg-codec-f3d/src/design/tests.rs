@@ -329,14 +329,14 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
         relations[0]
             .owner_entity_id
             .as_ref()
-            .map(cadmpeg_ir::NonEmptyString::as_str),
+            .map(cadmpeg_ir::NonBlankString::as_str),
         Some("A_100")
     );
     assert_eq!(
         relations[1]
             .owner_entity_id
             .as_ref()
-            .map(cadmpeg_ir::NonEmptyString::as_str),
+            .map(cadmpeg_ir::NonBlankString::as_str),
         Some("B_100")
     );
 

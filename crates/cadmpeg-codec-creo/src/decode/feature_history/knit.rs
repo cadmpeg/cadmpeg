@@ -483,12 +483,12 @@ pub(in super::super) fn feature_result_topology(
     let faces = feature_result_surface_ids(tables, surface_rows, feature_id)
         .unwrap_or_default()
         .into_iter()
-        .map(|surface_id| cadmpeg_ir::nonempty_literal!("surface#{surface_id}"))
+        .map(|surface_id| cadmpeg_ir::nonblank_literal!("surface#{surface_id}"))
         .collect::<Vec<_>>();
     let edges = feature_result_edge_ids(curve_rows, feature_id)
         .unwrap_or_default()
         .into_iter()
-        .map(|curve_id| cadmpeg_ir::nonempty_literal!("curve#{curve_id}"))
+        .map(|curve_id| cadmpeg_ir::nonblank_literal!("curve#{curve_id}"))
         .collect::<Vec<_>>();
     (!faces.is_empty() || !edges.is_empty()).then_some(())?;
     FeatureResultTopology::new(

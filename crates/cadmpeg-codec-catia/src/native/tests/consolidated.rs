@@ -1135,7 +1135,7 @@ fn owner_chart_width_coded_supports_select_unique_alias_rows() {
         &mut support_surfaces[0].address
     {
         *alias = crate::native::CatiaOwnerChartAliasBinding::new(
-            cadmpeg_ir::products::NonEmptyString::new(alias.row().to_owned())
+            cadmpeg_ir::products::NonBlankString::new(alias.row().to_owned())
                 .expect("alias row is non-empty"),
             Some(100),
         );

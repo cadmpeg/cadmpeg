@@ -133,7 +133,7 @@ fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
             Some("texture".into()),
             Some("image/png".into()),
             cadmpeg_ir::assets::AssetContent::External {
-                uri: cadmpeg_ir::products::NonEmptyString::new("urn:test:texture")
+                uri: cadmpeg_ir::products::NonBlankString::new("urn:test:texture")
                     .expect("nonempty uri"),
             },
             None,
@@ -1278,7 +1278,7 @@ fn edge_without_curve_is_reported_and_omitted() {
 fn subds_tessellations_and_source_associations_are_reported_as_losses() {
     let source_object = cadmpeg_ir::SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Rhino,
-        object_id: cadmpeg_ir::products::NonEmptyString::new("object-0")
+        object_id: cadmpeg_ir::products::NonBlankString::new("object-0")
             .expect("nonempty source identity"),
         name: None,
         color: None,

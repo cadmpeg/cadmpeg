@@ -893,9 +893,9 @@ pub(crate) fn parse_thread_payload(
     Some(DesignThreadConstruction {
         form,
         designation_offset: u64::try_from(designation_at).ok()?,
-        designation: cadmpeg_ir::NonEmptyString::new(designation)?,
+        designation: cadmpeg_ir::NonBlankString::new(designation)?,
         nominal_size,
-        profile: cadmpeg_ir::NonEmptyString::new(profile)?,
+        profile: cadmpeg_ir::NonBlankString::new(profile)?,
         pitch: crate::records::feature::DesignPositiveScalar::new(pitch)?,
         face_group_record_indices,
         diameters: crate::records::feature::DesignThreadDiameters::new(

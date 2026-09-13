@@ -123,7 +123,7 @@ pub(crate) fn transfer_native_sketch_entities(
             }
             let Some(native_kind) = geometry_field
                 .class_name()
-                .and_then(cadmpeg_ir::products::NonEmptyString::new)
+                .and_then(cadmpeg_ir::products::NonBlankString::new)
             else {
                 continue;
             };
@@ -394,7 +394,7 @@ pub(crate) fn transfer_native_sketch_constraints(
         }
         let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
             SketchConstraintDefinitionInput::Native {
-                native_kind: cadmpeg_ir::products::NonEmptyString::new(candidate.target_class)
+                native_kind: cadmpeg_ir::products::NonBlankString::new(candidate.target_class)
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("empty native sketch constraint kind")
                     })?,
@@ -404,10 +404,10 @@ pub(crate) fn transfer_native_sketch_constraints(
                 entities: candidate.entities,
                 parameter: None,
                 operands: vec![SketchNativeOperand {
-                    native_kind: cadmpeg_ir::products::NonEmptyString::new("ConstraintDYS")
+                    native_kind: cadmpeg_ir::products::NonBlankString::new("ConstraintDYS")
                         .expect("source operand kind is nonempty"),
                     field: Some(NativeOperandField {
-                        name: cadmpeg_ir::products::NonEmptyString::new(
+                        name: cadmpeg_ir::products::NonBlankString::new(
                             candidate.target_record.clone(),
                         )
                         .expect("source field name is nonempty"),
@@ -639,7 +639,7 @@ pub(crate) fn transfer_constraint_ranges(
         }
         let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
             SketchConstraintDefinitionInput::Native {
-                native_kind: cadmpeg_ir::products::NonEmptyString::new(
+                native_kind: cadmpeg_ir::products::NonBlankString::new(
                     range.constraint.value.clone(),
                 )
                 .ok_or_else(|| {
@@ -792,10 +792,10 @@ fn constraint_binding(
         sketch,
         source_object_record: source_record.id.clone(),
         operand: SketchNativeOperand {
-            native_kind: cadmpeg_ir::products::NonEmptyString::new(native_kind)
+            native_kind: cadmpeg_ir::products::NonBlankString::new(native_kind)
                 .expect("source operand kind is nonempty"),
             field: Some(NativeOperandField {
-                name: cadmpeg_ir::products::NonEmptyString::new(source_record.id.clone())
+                name: cadmpeg_ir::products::NonBlankString::new(source_record.id.clone())
                     .expect("source field name is nonempty"),
                 role: None,
             }),
@@ -1713,7 +1713,7 @@ mod tests {
                 entity_id.clone(),
                 SketchId::mint("synthetic:test:sketch#0".to_string()).expect("valid test fixture"),
                 SketchGeometry::native(
-                    cadmpeg_ir::products::NonEmptyString::new("2DPoint")
+                    cadmpeg_ir::products::NonBlankString::new("2DPoint")
                         .expect("nonempty source identity"),
                 ),
             )
@@ -1742,7 +1742,7 @@ mod tests {
                     SketchId::mint("synthetic:test:sketch#0".to_string())
                         .expect("valid test fixture"),
                     SketchGeometry::native(
-                        cadmpeg_ir::products::NonEmptyString::new("2DPoint")
+                        cadmpeg_ir::products::NonBlankString::new("2DPoint")
                             .expect("nonempty source identity"),
                     ),
                 )
@@ -1771,7 +1771,7 @@ mod tests {
                 SketchId::mint("synthetic:test:other-sketch#0".to_string())
                     .expect("valid test fixture"),
                 SketchGeometry::native(
-                    cadmpeg_ir::products::NonEmptyString::new("2DPoint")
+                    cadmpeg_ir::products::NonBlankString::new("2DPoint")
                         .expect("nonempty source identity"),
                 ),
             )

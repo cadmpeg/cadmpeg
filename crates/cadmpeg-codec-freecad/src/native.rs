@@ -8,7 +8,7 @@ use crate::attachment::MapModeIndex;
 use frame::{FiniteFrame, FiniteVec3};
 
 use cadmpeg_ir::hash::sha256_hex;
-use cadmpeg_ir::products::NonEmptyString;
+use cadmpeg_ir::products::NonBlankString;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -1540,7 +1540,7 @@ pub struct GuiViewProviderRecord {
     /// Stable native identity.
     pub id: String,
     /// Application object identity, or `None` for a GUI-only provider.
-    pub object: Option<NonEmptyString>,
+    pub object: Option<NonBlankString>,
     /// Persisted provider name.
     pub name: String,
     /// Persisted tree-expansion state.
@@ -2049,9 +2049,9 @@ pub struct DynamicPropertyMeta {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExternalDocument {
     /// Path carried by a `file` attribute.
-    File(NonEmptyString),
+    File(NonBlankString),
     /// Document identity carried without a `file` attribute.
-    Name(NonEmptyString),
+    Name(NonBlankString),
 }
 
 impl ExternalDocument {
@@ -2076,11 +2076,11 @@ impl ExternalDocument {
     ) -> Result<Option<Self>, String> {
         match (document, attribute) {
             (None, None | Some("file")) => Ok(None),
-            (Some(path), Some("file")) => NonEmptyString::new(path)
+            (Some(path), Some("file")) => NonBlankString::new(path)
                 .map(Self::File)
                 .map(Some)
                 .ok_or_else(|| "external document file path must not be empty".to_owned()),
-            (Some(name), None) => NonEmptyString::new(name)
+            (Some(name), None) => NonBlankString::new(name)
                 .map(Self::Name)
                 .map(Some)
                 .ok_or_else(|| "external document name must not be empty".to_owned()),
@@ -2098,7 +2098,7 @@ pub struct LinkTarget {
     /// External document, when the target is not local.
     document: Option<ExternalDocument>,
     /// Target object identity. Empty source names are absent.
-    object: Option<NonEmptyString>,
+    object: Option<NonBlankString>,
     /// Ordered subelement selectors.
     subelements: Vec<String>,
 }
@@ -2109,7 +2109,7 @@ impl LinkTarget {
     pub(crate) fn optional_from_wire(wire: LinkTargetWire) -> Result<Option<Self>, String> {
         let document =
             ExternalDocument::from_wire(wire.document, wire.document_attribute.as_deref())?;
-        let object = wire.object.and_then(NonEmptyString::new);
+        let object = wire.object.and_then(NonBlankString::new);
         if document.is_none() && object.is_none() && wire.subelements.is_empty() {
             return Ok(None);
         }
@@ -2119,7 +2119,7 @@ impl LinkTarget {
     /// Admits a target with a document, object, or subelement selection.
     pub fn try_new(
         document: Option<ExternalDocument>,
-        object: Option<NonEmptyString>,
+        object: Option<NonBlankString>,
         subelements: Vec<String>,
     ) -> Result<Self, String> {
         if document.is_none() && object.is_none() && subelements.is_empty() {
@@ -2143,7 +2143,7 @@ impl LinkTarget {
     }
 
     /// Sets a nonempty object identity.
-    pub(crate) fn set_object(&mut self, object: NonEmptyString) {
+    pub(crate) fn set_object(&mut self, object: NonBlankString) {
         self.object = Some(object);
     }
 
@@ -2159,7 +2159,7 @@ impl LinkTarget {
 
     /// Target object identity, omitting empty source names.
     pub fn object(&self) -> Option<&str> {
-        self.object.as_ref().map(NonEmptyString::as_str)
+        self.object.as_ref().map(NonBlankString::as_str)
     }
 }
 
@@ -2191,7 +2191,7 @@ impl From<LinkTarget> for LinkTargetWire {
                 value
                     .object
                     .as_ref()
-                    .map_or("", NonEmptyString::as_str)
+                    .map_or("", NonBlankString::as_str)
                     .to_owned(),
             ),
             subelements: value.subelements,
@@ -2205,7 +2205,7 @@ impl TryFrom<LinkTargetWire> for LinkTarget {
     fn try_from(wire: LinkTargetWire) -> Result<Self, Self::Error> {
         let document =
             ExternalDocument::from_wire(wire.document, wire.document_attribute.as_deref())?;
-        let object = wire.object.and_then(NonEmptyString::new);
+        let object = wire.object.and_then(NonBlankString::new);
         Self::try_new(document, object, wire.subelements)
     }
 }

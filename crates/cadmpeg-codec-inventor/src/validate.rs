@@ -1060,7 +1060,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
                 != result
                     .bodies()
                     .iter()
-                    .map(cadmpeg_ir::products::NonEmptyString::as_str)
+                    .map(cadmpeg_ir::products::NonBlankString::as_str)
                     .collect::<Vec<_>>()
         {
             findings.push(finding(

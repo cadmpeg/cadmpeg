@@ -334,8 +334,8 @@ pub fn project_sketch_design(
                 ),
                 sketch,
                 SketchGeometry::try_from(SketchGeometryDefinition::Text {
-                    text: cadmpeg_ir::products::NonEmptyString::new(text.text.clone())?,
-                    font_family: cadmpeg_ir::products::NonEmptyString::new(
+                    text: cadmpeg_ir::products::NonBlankString::new(text.text.clone())?,
+                    font_family: cadmpeg_ir::products::NonBlankString::new(
                         text.font_family.clone(),
                     )?,
                     font_weight: text.font_weight.try_into().ok()?,

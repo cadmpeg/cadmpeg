@@ -8692,7 +8692,7 @@ fn resolve_owner_chart_support_aliases(
     let resolve = |reference: &mut CatiaOwnerChartBridgeReference| {
         if let CatiaOwnerChartAddress::WidthCoded { alias } = &mut reference.address {
             *alias = unique_by_tag.get(&reference.value).and_then(|row| {
-                cadmpeg_ir::products::NonEmptyString::new(row.id.clone())
+                cadmpeg_ir::products::NonBlankString::new(row.id.clone())
                     .map(|id| CatiaOwnerChartAliasBinding::new(id, row.canonical_surface_tag))
             });
         }

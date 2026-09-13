@@ -16,7 +16,7 @@ fn graph_scopes_equal_names_by_native_unit_label() {
         value: value
             .map(|value| crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()),
         source_entry: "part".into(),
-        source_table: cadmpeg_ir::NonEmptyString::new("table").unwrap(),
+        source_table: cadmpeg_ir::NonBlankString::new("table").unwrap(),
         source_offset: 0,
     };
     let mut expressions = vec![

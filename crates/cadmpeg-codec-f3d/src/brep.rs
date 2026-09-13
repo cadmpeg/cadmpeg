@@ -492,7 +492,7 @@ pub(crate) fn persistent_subentity_tags(
         else {
             return Vec::new();
         };
-        let Some(token) = cadmpeg_ir::NonEmptyString::new(token.clone()) else {
+        let Some(token) = cadmpeg_ir::NonBlankString::new(token.clone()) else {
             return Vec::new();
         };
         if *reference_count < 0 {
@@ -942,7 +942,7 @@ mod tests {
                     id: "tag-retained".into(),
                     target: target(1),
                     selector: 1,
-                    token: cadmpeg_ir::NonEmptyString::new("97").unwrap(),
+                    token: cadmpeg_ir::NonBlankString::new("97").unwrap(),
                     design_references: vec![1],
                     ordinal: 0,
                 },
@@ -950,7 +950,7 @@ mod tests {
                     id: "tag-dropped".into(),
                     target: target(3),
                     selector: 1,
-                    token: cadmpeg_ir::NonEmptyString::new("97").unwrap(),
+                    token: cadmpeg_ir::NonBlankString::new("97").unwrap(),
                     design_references: vec![3],
                     ordinal: 0,
                 },

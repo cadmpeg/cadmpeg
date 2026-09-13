@@ -65,7 +65,7 @@ pub(super) fn transfer_section_entities(
                 .flatten()
                 .or_else(|| {
                     Some(SketchGeometry::native(
-                        cadmpeg_ir::products::NonEmptyString::new("line")?,
+                        cadmpeg_ir::products::NonBlankString::new("line")?,
                     ))
                 });
         }
@@ -172,7 +172,7 @@ pub(super) fn transfer_section_entities(
                 id,
                 sketch_id.clone(),
                 SketchGeometry::native(
-                    cadmpeg_ir::products::NonEmptyString::new(
+                    cadmpeg_ir::products::NonBlankString::new(
                         match segment.kind {
                             crate::feature::FeatureSegmentKind::Line(_) => "line",
                             crate::feature::FeatureSegmentKind::Arc(_) => "arc",
@@ -215,7 +215,7 @@ pub(super) fn transfer_section_entities(
             .map_or_else(
                 || {
                     Ok::<_, cadmpeg_core::CodecError>(SketchGeometry::native(
-                        cadmpeg_ir::products::NonEmptyString::new("circle".to_string())
+                        cadmpeg_ir::products::NonBlankString::new("circle".to_string())
                             .ok_or_else(|| {
                                 cadmpeg_core::CodecError::malformed("native_kind must not be empty")
                             })?,
@@ -274,7 +274,7 @@ pub(super) fn transfer_section_entities(
         let geometry = point_geometries.get(&segment.offset).cloned().map_or_else(
             || {
                 Ok::<_, cadmpeg_core::CodecError>(SketchGeometry::native(
-                    cadmpeg_ir::products::NonEmptyString::new("point".to_string()).ok_or_else(
+                    cadmpeg_ir::products::NonBlankString::new("point".to_string()).ok_or_else(
                         || cadmpeg_core::CodecError::malformed("native_kind must not be empty"),
                     )?,
                 ))
@@ -334,7 +334,7 @@ pub(super) fn transfer_section_entities(
             .map_or_else(
                 || {
                     Ok::<_, cadmpeg_core::CodecError>(SketchGeometry::native(
-                        cadmpeg_ir::products::NonEmptyString::new("line".to_string()).ok_or_else(
+                        cadmpeg_ir::products::NonBlankString::new("line".to_string()).ok_or_else(
                             || cadmpeg_core::CodecError::malformed("native_kind must not be empty"),
                         )?,
                     ))
@@ -397,7 +397,7 @@ pub(super) fn transfer_section_entities(
             .map_or_else(
                 || {
                     Ok::<_, cadmpeg_core::CodecError>(SketchGeometry::native(
-                        cadmpeg_ir::products::NonEmptyString::new("reference_line".to_string())
+                        cadmpeg_ir::products::NonBlankString::new("reference_line".to_string())
                             .ok_or_else(|| {
                                 cadmpeg_core::CodecError::malformed("native_kind must not be empty")
                             })?,
@@ -478,7 +478,7 @@ pub(super) fn transfer_section_entities(
                 id,
                 sketch_id.clone(),
                 SketchGeometry::native(
-                    cadmpeg_ir::products::NonEmptyString::new("bounded_curve".to_string())
+                    cadmpeg_ir::products::NonBlankString::new("bounded_curve".to_string())
                         .ok_or_else(|| {
                             cadmpeg_core::CodecError::malformed("native_kind must not be empty")
                         })?,
@@ -521,7 +521,7 @@ pub(super) fn transfer_section_entities(
                 id,
                 sketch_id.clone(),
                 SketchGeometry::native(
-                    cadmpeg_ir::products::NonEmptyString::new("conic".to_string()).ok_or_else(
+                    cadmpeg_ir::products::NonBlankString::new("conic".to_string()).ok_or_else(
                         || cadmpeg_core::CodecError::malformed("native_kind must not be empty"),
                     )?,
                 ),
@@ -556,13 +556,13 @@ pub(super) fn transfer_section_entities(
                     _ => format!("segment_type:{}", segment.kind),
                 };
             SketchGeometry::native(
-                cadmpeg_ir::products::NonEmptyString::new(native_kind).ok_or_else(|| {
+                cadmpeg_ir::products::NonBlankString::new(native_kind).ok_or_else(|| {
                     cadmpeg_core::CodecError::malformed("native_kind must not be empty")
                 })?,
             )
         } else {
             SketchGeometry::native(
-                cadmpeg_ir::products::NonEmptyString::new(format!("segment_type:{}", segment.kind))
+                cadmpeg_ir::products::NonBlankString::new(format!("segment_type:{}", segment.kind))
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("native_kind must not be empty")
                     })?,
@@ -805,7 +805,7 @@ pub(super) fn transfer_section_entities(
                 geometry,
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    object_id: cadmpeg_ir::products::NonBlankString::new(format!(
                         "FeatDefs:section#{}:{suffix}",
                         sketch_identity_scope(sketch_id)
                     ))
@@ -854,7 +854,7 @@ pub(super) fn transfer_section_entities(
                 geometry,
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    object_id: cadmpeg_ir::products::NonBlankString::new(format!(
                         "FeatDefs:section#{}:{suffix}",
                         sketch_identity_scope(sketch_id)
                     ))
@@ -904,7 +904,7 @@ pub(super) fn transfer_section_entities(
                 geometry,
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    object_id: cadmpeg_ir::products::NonBlankString::new(format!(
                         "FeatDefs:section#{}:{suffix}",
                         sketch_identity_scope(sketch_id)
                     ))
@@ -939,7 +939,7 @@ pub(super) fn transfer_section_entities(
                 geometry,
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_ir::products::NonEmptyString::new(external_id.map_or_else(
+                    object_id: cadmpeg_ir::products::NonBlankString::new(external_id.map_or_else(
                         || format!("FeatDefs:saved_entity#{internal_id}"),
                         |external_id| {
                             format!(

@@ -198,7 +198,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 geometry: surface,
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_ir::products::NonEmptyString::new(
+                    object_id: cadmpeg_ir::products::NonBlankString::new(
                         native_surface.map_or_else(
                             || {
                                 format!(
@@ -262,7 +262,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     geometry: surface,
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                        object_id: cadmpeg_ir::products::NonBlankString::new(format!(
                             "VisibGeom:{native_surface}"
                         ))
                         .ok_or_else(|| {
@@ -342,7 +342,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    object_id: cadmpeg_ir::products::NonBlankString::new(format!(
                         "VisibGeom:{native_surface}"
                     ))
                     .ok_or_else(|| {
@@ -469,7 +469,7 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
             geometry,
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_ir::products::NonEmptyString::new(object_id).ok_or_else(
+                object_id: cadmpeg_ir::products::NonBlankString::new(object_id).ok_or_else(
                     || cadmpeg_core::CodecError::malformed("source object_id must not be empty"),
                 )?,
                 name: None,
@@ -550,7 +550,7 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
             geometry,
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_ir::products::NonEmptyString::new(object_id).ok_or_else(
+                object_id: cadmpeg_ir::products::NonBlankString::new(object_id).ok_or_else(
                     || cadmpeg_core::CodecError::malformed("source object_id must not be empty"),
                 )?,
                 name: None,

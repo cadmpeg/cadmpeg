@@ -179,7 +179,7 @@ pub fn transfer_topology_bound_planes(
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                object_id: cadmpeg_ir::products::NonBlankString::new(format!(
                     "VisibGeom:{}",
                     row.id
                 ))
@@ -239,7 +239,7 @@ pub fn retain_unresolved_surface_carriers(
                 }),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    object_id: cadmpeg_ir::products::NonBlankString::new(format!(
                         "{}{}",
                         namespace.source_prefix(),
                         row.id
@@ -281,7 +281,7 @@ pub fn retain_unresolved_surface_carriers(
             }),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                object_id: cadmpeg_ir::products::NonBlankString::new(format!(
                     "VisibGeom:{}",
                     row.id
                 ))

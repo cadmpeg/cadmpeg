@@ -1572,7 +1572,7 @@ fn parse_sketch(
                     id.clone(),
                     SketchGeometry::try_from(SketchGeometryDefinition::ExternalReference {
                         document: reference.document_name().map(str::to_owned),
-                        object: cadmpeg_ir::products::NonEmptyString::new(target_object)
+                        object: cadmpeg_ir::products::NonBlankString::new(target_object)
                             .ok_or_else(|| {
                                 cadmpeg_core::CodecError::malformed("object must not be empty")
                             })?,
@@ -2258,7 +2258,7 @@ fn parse_constraints(
         };
         let midpoint =
             || type_code.and_then(|type_code| midpoint_constraint(type_code, &operands, entities));
-        let native_kind = cadmpeg_ir::products::NonEmptyString::new(native_kind)
+        let native_kind = cadmpeg_ir::products::NonBlankString::new(native_kind)
             .ok_or_else(|| CodecError::malformed("empty native constraint kind"))?;
         let definition = (type_code == Some(15) && all_resolved)
             .then(internal_alignment)
@@ -2282,7 +2282,7 @@ fn parse_constraints(
                     .filter_map(|(entity, position)| {
                         if *entity < 0 || resolve(*entity, *position).is_none() {
                             Some(SketchNativeOperand {
-                                native_kind: cadmpeg_ir::products::NonEmptyString::new(format!(
+                                native_kind: cadmpeg_ir::products::NonBlankString::new(format!(
                                     "position:{position}"
                                 ))
                                 .expect("source operand kind is nonempty"),
@@ -2889,7 +2889,7 @@ fn sketch_geometry(
     kind: &str,
     attributes: &BTreeMap<String, String>,
 ) -> Result<SketchGeometry, CodecError> {
-    let native_kind = cadmpeg_ir::products::NonEmptyString::new(kind)
+    let native_kind = cadmpeg_ir::products::NonBlankString::new(kind)
         .ok_or_else(|| CodecError::malformed("native_kind must not be empty"))?;
     let number = |name: &str| attributes.get(name).and_then(|value| value.parse().ok());
     let native = || SketchGeometryDefinition::Native {
@@ -5224,7 +5224,7 @@ fn hole_definition(
         None
     } else {
         let threaded = bool_selector(properties, "Threaded", false)?;
-        let standard = cadmpeg_ir::NonEmptyString::new(thread_standard(thread_type)?)?;
+        let standard = cadmpeg_ir::NonBlankString::new(thread_standard(thread_type)?)?;
         let designation = enumeration_label(properties, "ThreadSize");
         let modeled = if property(properties, "ModelThread").is_some() {
             bool_selector(properties, "ModelThread", false)?
@@ -5408,7 +5408,7 @@ fn binder_definition(
             Some(BinderSource {
                 target: binder_target(link, features)?,
                 subelements: link_selectors(link)
-                    .map(cadmpeg_ir::NonEmptyString::new)
+                    .map(cadmpeg_ir::NonBlankString::new)
                     .collect::<Option<Vec<_>>>()?,
             })
         })
@@ -5502,14 +5502,14 @@ fn binder_target(
     let object = link.object()?;
     if let Some(document) = link.document() {
         return Some(BinderTarget::External {
-            document: cadmpeg_ir::NonEmptyString::new(document.as_str())?,
-            object: cadmpeg_ir::NonEmptyString::new(object)?,
+            document: cadmpeg_ir::NonBlankString::new(document.as_str())?,
+            object: cadmpeg_ir::NonBlankString::new(object)?,
         });
     }
     Some(match features.get(object).cloned() {
         Some(feature) => BinderTarget::Feature { feature },
         None => BinderTarget::Native {
-            reference: cadmpeg_ir::NonEmptyString::new(object)?,
+            reference: cadmpeg_ir::NonBlankString::new(object)?,
         },
     })
 }

@@ -410,7 +410,7 @@ fn parse_document(
             if let Some(target) = link.object() {
                 if declared_names.contains(target) {
                     link.set_object(
-                        cadmpeg_ir::products::NonEmptyString::new(object_id(target)).ok_or_else(
+                        cadmpeg_ir::products::NonBlankString::new(object_id(target)).ok_or_else(
                             || CodecError::malformed("link object identity must not be empty"),
                         )?,
                     );

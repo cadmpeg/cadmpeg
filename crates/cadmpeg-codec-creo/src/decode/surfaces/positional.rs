@@ -124,7 +124,7 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    object_id: cadmpeg_ir::products::NonBlankString::new(format!(
                         "{}:{}",
                         section.name(),
                         row.id
@@ -252,7 +252,7 @@ pub(in super::super) fn transfer_positional_tori(
             geometry,
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                object_id: cadmpeg_ir::products::NonBlankString::new(format!(
                     "{}:{}",
                     section.name(),
                     row.id
@@ -378,7 +378,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                object_id: cadmpeg_ir::products::NonBlankString::new(format!(
                     "VisibGeom:surface_directrix#{}",
                     record.surface_id
                 ))
@@ -397,7 +397,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                object_id: cadmpeg_ir::products::NonBlankString::new(format!(
                     "VisibGeom:{}",
                     record.surface_id
                 ))
@@ -547,7 +547,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix)),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                object_id: cadmpeg_ir::products::NonBlankString::new(format!(
                     "VisibGeom:curve#{}",
                     replay.curve_id
                 ))
@@ -566,7 +566,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                object_id: cadmpeg_ir::products::NonBlankString::new(format!(
                     "VisibGeom:{}",
                     replay.surface_id
                 ))

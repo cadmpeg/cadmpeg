@@ -1412,7 +1412,7 @@ fn project_constraint(
             let members = [resolve(entity)?, resolve(center)?];
             (
                 SketchConstraintDefinitionInput::Native {
-                    native_kind: cadmpeg_ir::products::NonEmptyString::new(
+                    native_kind: cadmpeg_ir::products::NonBlankString::new(
                         "circle_center_alignment",
                     )?,
                     native_state: Some(constraint.header.state as u32 as u64),
@@ -1484,10 +1484,10 @@ fn native_operand(
     reference: PmDcReference,
 ) -> SketchNativeOperand {
     SketchNativeOperand {
-        native_kind: cadmpeg_ir::products::NonEmptyString::new("record_reference")
+        native_kind: cadmpeg_ir::products::NonBlankString::new("record_reference")
             .expect("source operand kind is nonempty"),
         field: Some(NativeOperandField {
-            name: cadmpeg_ir::products::NonEmptyString::new(field)
+            name: cadmpeg_ir::products::NonBlankString::new(field)
                 .expect("source field name is nonempty"),
             role: None,
         }),

@@ -88,21 +88,76 @@ pub enum PrototypeReference {
     Unresolved {},
 }
 
-/// A source string that is not empty.
+/// A character that is not whitespace.
+///
+/// The type exists so [`NonBlankString::prefixed`] is total: a prefix of this
+/// type makes the built string hold at least one non-whitespace character
+/// whatever the suffix renders to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct NonWhitespaceChar(char);
+
+impl NonWhitespaceChar {
+    /// The character an ASCII literal byte names.
+    ///
+    /// The assertion is a compile-time refusal: every caller states the byte
+    /// in a `const` initializer, so a whitespace or non-ASCII byte fails the
+    /// build rather than the run. `nonblank_literal!` is the caller.
+    #[must_use]
+    pub const fn from_ascii_literal(byte: u8) -> Self {
+        assert!(
+            byte.is_ascii() && !byte.is_ascii_whitespace(),
+            "a nonblank literal starts with a non-whitespace ASCII character",
+        );
+        Self(byte as char)
+    }
+
+    /// The lowercase hexadecimal digit naming the low four bits of `nibble`.
+    ///
+    /// Every hexadecimal digit is non-whitespace, and the mask makes the four
+    /// bits total over `u8`, so this constructor refuses nothing.
+    #[must_use]
+    pub const fn hex_digit(nibble: u8) -> Self {
+        const DIGITS: [char; 16] = [
+            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
+        ];
+        Self(DIGITS[(nibble & 0x0f) as usize])
+    }
+}
+
+impl std::fmt::Display for NonWhitespaceChar {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.0, formatter)
+    }
+}
+
+/// A source string that holds at least one non-whitespace character.
+///
+/// A selection id, an external document identity and a native name are read
+/// back and compared as text. A run of spaces names nothing, so it is refused
+/// here rather than by each reader.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
-pub struct NonEmptyString(String);
+pub struct NonBlankString(String);
 
-impl NonEmptyString {
-    /// Constructs a non-empty source string.
+impl NonBlankString {
+    /// Constructs a source string that is not blank.
+    ///
+    /// Absent when the value holds no non-whitespace character, the empty
+    /// string included.
     pub fn new(value: impl Into<String>) -> Option<Self> {
         let value = value.into();
-        (!value.is_empty()).then_some(Self(value))
+        value
+            .chars()
+            .any(|character| !character.is_whitespace())
+            .then_some(Self(value))
     }
 
-    /// Constructs a non-empty string from a leading character and a suffix.
-    pub fn prefixed(prefix: char, suffix: impl std::fmt::Display) -> Self {
+    /// Constructs a non-blank string from a leading character and a suffix.
+    ///
+    /// Total: the prefix is non-whitespace, so the result holds it whatever
+    /// the suffix renders to.
+    pub fn prefixed(prefix: NonWhitespaceChar, suffix: impl std::fmt::Display) -> Self {
         Self(format!("{prefix}{suffix}"))
     }
 
@@ -112,48 +167,51 @@ impl NonEmptyString {
     }
 }
 
-/// Builds a [`NonEmptyString`] from a format literal whose first character is literal text.
+/// Builds a [`NonBlankString`] from a format literal whose first character is
+/// literal, non-whitespace text.
 #[macro_export]
-macro_rules! nonempty_literal {
+macro_rules! nonblank_literal {
     ($template:literal $(, $argument:expr)* $(,)?) => {{
-        const FIRST: char = {
+        const PREFIX: $crate::products::NonWhitespaceChar = {
             let bytes = $template.as_bytes();
             assert!(
-                !bytes.is_empty() && bytes[0].is_ascii() && bytes[0] != b'{',
-                "a nonempty literal must start with literal ASCII text",
+                !bytes.is_empty() && bytes[0] != b'{',
+                "a nonblank literal must start with literal ASCII text",
             );
-            bytes[0] as char
+            $crate::products::NonWhitespaceChar::from_ascii_literal(bytes[0])
         };
         let rendered = format!($template $(, $argument)*);
-        $crate::products::NonEmptyString::prefixed(FIRST, &rendered[1..])
+        $crate::products::NonBlankString::prefixed(PREFIX, &rendered[1..])
     }};
 }
 
-impl PartialEq<str> for NonEmptyString {
+impl PartialEq<str> for NonBlankString {
     fn eq(&self, other: &str) -> bool {
         self.0 == other
     }
 }
 
-impl PartialEq<&str> for NonEmptyString {
+impl PartialEq<&str> for NonBlankString {
     fn eq(&self, other: &&str) -> bool {
         self == *other
     }
 }
 
-impl std::fmt::Display for NonEmptyString {
+impl std::fmt::Display for NonBlankString {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str(self.as_str())
     }
 }
 
-impl<'de> Deserialize<'de> for NonEmptyString {
+impl<'de> Deserialize<'de> for NonBlankString {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
         Self::new(String::deserialize(deserializer)?)
-            .ok_or_else(|| serde::de::Error::custom("external document identity must not be empty"))
+            .ok_or_else(|| {
+                serde::de::Error::custom("source identity must not be blank")
+            })
     }
 }
 
@@ -165,12 +223,12 @@ pub enum ExternalDocument {
     /// Non-empty file path stored by the source.
     Path {
         /// Persisted file path.
-        path: NonEmptyString,
+        path: NonBlankString,
     },
     /// Non-empty document identity stored by the source.
     DocumentId {
         /// Persisted document identity.
-        document_id: NonEmptyString,
+        document_id: NonBlankString,
     },
     /// Persisted reference was empty or structurally unusable.
     Missing {},
@@ -179,7 +237,7 @@ pub enum ExternalDocument {
 impl ExternalDocument {
     /// Constructs a path reference, or [`Self::Missing`] when the path is empty.
     pub fn path(path: impl Into<String>) -> Self {
-        match NonEmptyString::new(path) {
+        match NonBlankString::new(path) {
             Some(path) => Self::Path { path },
             None => Self::Missing {},
         }
@@ -187,7 +245,7 @@ impl ExternalDocument {
 
     /// Constructs a document-id reference, or [`Self::Missing`] when the id is empty.
     pub fn document_id(document_id: impl Into<String>) -> Self {
-        match NonEmptyString::new(document_id) {
+        match NonBlankString::new(document_id) {
             Some(document_id) => Self::DocumentId { document_id },
             None => Self::Missing {},
         }
@@ -542,13 +600,55 @@ mod tests {
     use super::*;
 
     #[test]
-    fn prefixes_preserve_nonempty_strings_and_wire_values() {
-        for (prefix, suffix, expected) in [('#', "42", "#42"), ('λ', "", "λ"), ('\0', "", "\0")] {
-            let value = NonEmptyString::prefixed(prefix, suffix);
+    fn prefixes_preserve_nonblank_strings_and_wire_values() {
+        for (prefix, suffix, expected) in [
+            (NonWhitespaceChar::from_ascii_literal(b'#'), "42", "#42"),
+            (NonWhitespaceChar::hex_digit(0x0a), "", "a"),
+            (NonWhitespaceChar::hex_digit(0xf0), "", "0"),
+        ] {
+            let value = NonBlankString::prefixed(prefix, suffix);
             assert_eq!(value.as_str(), expected);
             assert_eq!(serde_json::to_value(&value).unwrap(), expected);
         }
-        assert_eq!(NonEmptyString::prefixed('#', 42).as_str(), "#42");
+        assert_eq!(crate::nonblank_literal!("#{}", 42).as_str(), "#42");
+    }
+
+    #[test]
+    fn a_blank_selection_id_has_no_wire_spelling() {
+        assert!(serde_json::from_value::<crate::features::SelectionMember>(
+            serde_json::json!({"kind": "face", "id": "   "})
+        )
+        .is_err());
+        assert!(serde_json::from_value::<crate::features::SelectionMember>(
+            serde_json::json!({"kind": "face", "id": " a "})
+        )
+        .is_ok());
+        let topology = |id: &str| {
+            serde_json::json!({
+                "id": "test:model:feature-result#1",
+                "output_of": "test:test:feature#1",
+                "members": [{"kind": "face", "id": id}],
+            })
+        };
+        assert!(
+            serde_json::from_value::<crate::features::FeatureResultTopology>(topology("   "))
+                .is_err()
+        );
+        assert!(
+            serde_json::from_value::<crate::features::FeatureResultTopology>(topology(" a "))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn a_source_string_of_whitespace_alone_is_blank() {
+        assert!(NonBlankString::new("   ").is_none());
+        assert!(NonBlankString::new("").is_none());
+        assert!(NonBlankString::new("\t\n").is_none());
+        assert_eq!(
+            NonBlankString::new(" a ").map(|value| value.as_str().to_owned()),
+            Some(" a ".to_owned())
+        );
     }
 
     #[test]
@@ -591,7 +691,11 @@ mod tests {
         for (invalid, named) in [
             (
                 serde_json::json!({"resolution": "path", "path": ""}),
-                "must not be empty",
+                "must not be blank",
+            ),
+            (
+                serde_json::json!({"resolution": "path", "path": "   "}),
+                "must not be blank",
             ),
             (
                 serde_json::json!({

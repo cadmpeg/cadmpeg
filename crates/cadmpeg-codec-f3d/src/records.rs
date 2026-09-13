@@ -2,7 +2,7 @@
 #![deny(clippy::disallowed_methods)]
 //! Fusion parametric-design records and links to the solved B-rep.
 
-use cadmpeg_ir::NonEmptyString;
+use cadmpeg_ir::NonBlankString;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::BTreeMap;
 use std::num::{NonZeroU32, NonZeroU64};
@@ -637,7 +637,7 @@ pub struct PersistentSubentityTag {
     pub selector: i64,
     /// Native UTF-8 tag token. Numeric strings and `-1` retain their spelling.
     #[serde(deserialize_with = "deserialize_persistent_tag_token")]
-    pub token: cadmpeg_ir::NonEmptyString,
+    pub token: cadmpeg_ir::NonBlankString,
     /// Ordered signed Design-stream references carried by this group.
     pub design_references: Vec<i64>,
     /// Position of this group in the owning attribute record.
@@ -646,8 +646,8 @@ pub struct PersistentSubentityTag {
 
 fn deserialize_persistent_tag_token<'de, D: Deserializer<'de>>(
     deserializer: D,
-) -> Result<cadmpeg_ir::NonEmptyString, D::Error> {
-    cadmpeg_ir::NonEmptyString::new(String::deserialize(deserializer)?)
+) -> Result<cadmpeg_ir::NonBlankString, D::Error> {
+    cadmpeg_ir::NonBlankString::new(String::deserialize(deserializer)?)
         .ok_or_else(|| serde::de::Error::custom("token must not be empty"))
 }
 
@@ -869,7 +869,7 @@ const USER_PARAMETER_SOURCE_KIND: &str = "User Parameter";
 /// An owned source family. Its nonempty name cannot identify a user parameter.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OwnedDesignParameter {
-    source_kind: NonEmptyString,
+    source_kind: NonBlankString,
     owner_record_index: u32,
     family_discriminator: Option<Located<DesignParameterDiscriminator>>,
 }
@@ -880,7 +880,7 @@ impl DesignParameterSource {
         owner_record_index: Option<u32>,
         family_discriminator: Option<Located<DesignParameterDiscriminator>>,
     ) -> Result<Self, String> {
-        let Some(source_kind) = NonEmptyString::new(source_kind) else {
+        let Some(source_kind) = NonBlankString::new(source_kind) else {
             return Err("design parameter source_kind is empty".into());
         };
         match (
@@ -927,16 +927,16 @@ pub struct DesignParameter {
     /// parameters name their owning record.
     source: DesignParameterSource,
     /// Literal or symbolic source expression.
-    expression: NonEmptyString,
+    expression: NonBlankString,
     /// Byte offset of the expression's UTF-16LE code units.
     expression_offset: u64,
     /// Byte offset of the source-family UTF-16LE code units.
     source_kind_offset: u64,
     /// Declared unit token; absent for dimensionless and Boolean parameters.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    unit: Option<Located<NonEmptyString>>,
+    unit: Option<Located<NonBlankString>>,
     /// Source parameter name or dimension identifier.
-    name: NonEmptyString,
+    name: NonBlankString,
     /// Byte offset of the name's UTF-16LE code units.
     name_offset: u64,
     /// Evaluated scalar in the record's native unit convention.
@@ -970,13 +970,13 @@ impl TryFrom<DesignParameterDraft> for DesignParameter {
             return Err("evaluated_value must be finite".into());
         }
         let expression =
-            NonEmptyString::new(draft.expression).ok_or("expression must not be empty")?;
-        let name = NonEmptyString::new(draft.name).ok_or("name must not be empty")?;
+            NonBlankString::new(draft.expression).ok_or("expression must not be empty")?;
+        let name = NonBlankString::new(draft.name).ok_or("name must not be empty")?;
         let unit = draft
             .unit
             .map(|unit| {
                 Ok::<_, String>(Located {
-                    value: NonEmptyString::new(unit.value).ok_or("unit must not be empty")?,
+                    value: NonBlankString::new(unit.value).ok_or("unit must not be empty")?,
                     offset: unit.offset,
                 })
             })
@@ -1044,7 +1044,7 @@ impl DesignParameter {
     #[cfg(test)]
     /// Checked replacement of a present unit token.
     pub(crate) fn try_set_unit_value(&mut self, value: String) -> Result<(), String> {
-        let value = NonEmptyString::new(value).ok_or("unit must not be empty")?;
+        let value = NonBlankString::new(value).ok_or("unit must not be empty")?;
         let unit = self.unit.as_mut().ok_or("unit is absent")?;
         unit.value = value;
         Ok(())
@@ -1083,7 +1083,7 @@ impl DesignParameter {
         self.expression.as_str()
     }
     /// Located nonempty unit token, when present.
-    pub fn unit(&self) -> Option<&Located<NonEmptyString>> {
+    pub fn unit(&self) -> Option<&Located<NonBlankString>> {
         self.unit.as_ref()
     }
 
@@ -1120,10 +1120,10 @@ impl DesignParameter {
         }
     }
 
-    pub(crate) fn source_kind_name(&self) -> NonEmptyString {
+    pub(crate) fn source_kind_name(&self) -> NonBlankString {
         match &self.source {
             DesignParameterSource::User { .. } => {
-                cadmpeg_ir::nonempty_literal!("User Parameter")
+                cadmpeg_ir::nonblank_literal!("User Parameter")
             }
             DesignParameterSource::Owned(source) => source.source_kind.clone(),
         }
@@ -6583,7 +6583,7 @@ pub struct SketchRelation {
     pub owner_reference: u32,
     /// Full Design entity id resolved from `owner_reference`.
     #[serde(default)]
-    pub owner_entity_id: Option<cadmpeg_ir::NonEmptyString>,
+    pub owner_entity_id: Option<cadmpeg_ir::NonBlankString>,
     /// Nullable or role-specific references stored before the owner reference.
     auxiliary_references: ReferenceRun<u32, u32>,
     /// Serialized count of the rectangular class's reference run. Zero selects
@@ -6621,7 +6621,7 @@ pub struct SketchRelationDraft {
     /// Numeric design-entity suffix of the sketch container that owns this relation.
     pub owner_reference: u32,
     /// Full Design entity id resolved from `owner_reference`.
-    pub owner_entity_id: Option<cadmpeg_ir::NonEmptyString>,
+    pub owner_entity_id: Option<cadmpeg_ir::NonBlankString>,
     /// Nullable or role-specific references stored before the owner reference.
     pub auxiliary_references: ReferenceRun<u32, u32>,
     /// Serialized count of the rectangular class's reference run. Zero selects
@@ -7019,7 +7019,7 @@ impl TryFrom<SketchRelationSerde> for SketchRelation {
             byte_offset: wire.byte_offset,
             state_offset: wire.state_offset,
             owner_reference: wire.owner_reference,
-            owner_entity_id: cadmpeg_ir::NonEmptyString::new(wire.owner_entity_id),
+            owner_entity_id: cadmpeg_ir::NonBlankString::new(wire.owner_entity_id),
             auxiliary_references: ReferenceRun::located(
                 wire.auxiliary_references
                     .into_iter()

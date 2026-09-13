@@ -556,7 +556,7 @@ pub(crate) fn transfer_curve_expression_features(
                 let helix = helix?;
                 Some(IrFeatureDefinition::Operation(
                     IrFeatureOperation::HelixNativeAxis {
-                        axis_native_ref: cadmpeg_ir::NonEmptyString::new(
+                        axis_native_ref: cadmpeg_ir::NonBlankString::new(
                             curve_expression_record_id(record),
                         )?,
                         axial_rise: Length::new(helix.height)?,

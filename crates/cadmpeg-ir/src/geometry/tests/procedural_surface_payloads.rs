@@ -66,7 +66,7 @@ fn surface_law_admission_preserves_the_depth_boundary() {
     let construction = |expression| LawSurfaceConstruction {
         parameter_ranges: None,
         primary: LawFormula::Named {
-            name: crate::nonempty_literal!("test"),
+            name: crate::nonblank_literal!("test"),
             variables: vec![expression],
         },
         additional: Vec::new(),
@@ -86,15 +86,17 @@ fn surface_law_admission_preserves_the_depth_boundary() {
     };
     assert!(law(expression).is_err());
     // A blank law text has no spelling: the member type refuses it on the wire,
-    // so no construction can carry one.
-    assert!(serde_json::from_value::<LawExpression>(
-        serde_json::json!({"kind": "text", "value": ""})
-    )
-    .is_err());
+    // so no construction can carry one. Whitespace alone is blank too.
+    for blank in ["", " ", "\t"] {
+        assert!(serde_json::from_value::<LawExpression>(
+            serde_json::json!({"kind": "text", "value": blank})
+        )
+        .is_err());
+    }
     assert!(ProceduralSurface::new(
         id(),
         law(LawExpression::Text {
-            value: crate::nonempty_literal!(" ")
+            value: crate::nonblank_literal!("x ")
         })
         .unwrap(),
         None

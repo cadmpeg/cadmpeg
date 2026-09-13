@@ -1433,7 +1433,7 @@ pub(in super::super) fn transfer_native_brep(
             position: Point3::new(position[0], position[1], position[2]),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                object_id: cadmpeg_ir::products::NonBlankString::new(format!(
                     "topology:vertex#{vertex_id}"
                 ))
                 .ok_or_else(|| {
@@ -1612,7 +1612,7 @@ pub(in super::super) fn transfer_native_brep(
                 }),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    object_id: cadmpeg_ir::products::NonBlankString::new(format!(
                         "VisibGeom:{curve_id}"
                     ))
                     .ok_or_else(|| {
@@ -1826,7 +1826,7 @@ pub(in super::super) fn transfer_native_brep(
                     }),
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                        object_id: cadmpeg_ir::products::NonBlankString::new(format!(
                             "VisibGeom:{face_id}"
                         ))
                         .ok_or_else(|| {
@@ -2113,7 +2113,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                object_id: cadmpeg_ir::products::NonBlankString::new(format!(
                     "VisibGeom:{}",
                     pair.surface_id
                 ))
@@ -2187,7 +2187,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                    object_id: cadmpeg_ir::products::NonBlankString::new(format!(
                         "VisibGeom:{curve_id}"
                     ))
                     .ok_or_else(|| {

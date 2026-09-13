@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::deserialize_local_standard;
-use crate::products::NonEmptyString;
+use crate::products::NonBlankString;
 use crate::scalar::{InteriorAngle, Length, PositiveLength};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -557,7 +557,7 @@ pub enum HoleSpecification {
     Clearance {
         /// Named fastener standard family.
         #[serde(deserialize_with = "deserialize_local_standard")]
-        standard: NonEmptyString,
+        standard: NonBlankString,
         /// Nominal size designation within the standard.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         designation: Option<String>,
@@ -580,7 +580,7 @@ pub enum HoleSpecification {
     Threaded {
         /// Named thread standard family.
         #[serde(deserialize_with = "deserialize_local_standard")]
-        standard: NonEmptyString,
+        standard: NonBlankString,
         /// Nominal size designation within the standard.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         designation: Option<String>,

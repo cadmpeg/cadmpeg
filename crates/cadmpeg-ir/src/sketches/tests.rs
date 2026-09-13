@@ -374,7 +374,7 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
             && finding.check == Check::GeometricConsistency
     }));
     ir.model.sketch_entities[0].geometry = SketchGeometry::native(
-        crate::products::NonEmptyString::new("center-bearing-curve")
+        crate::products::NonBlankString::new("center-bearing-curve")
             .expect("nonempty source identity"),
     );
     let report = validate_neutral(&ir, Vec::new());
@@ -821,8 +821,8 @@ fn the_text_placement_is_one_nested_key_or_absent() {
     use crate::sketches::{SketchGeometry, SketchGeometryDefinition, TextPlacement};
 
     let geometry = SketchGeometry::try_from(SketchGeometryDefinition::Text {
-        text: crate::products::NonEmptyString::new("cadmpeg").unwrap(),
-        font_family: crate::products::NonEmptyString::new("sans").unwrap(),
+        text: crate::products::NonBlankString::new("cadmpeg").unwrap(),
+        font_family: crate::products::NonBlankString::new("sans").unwrap(),
         font_weight: crate::sketches::SketchFontWeight::Regular,
         height: Length::new(4.0).unwrap(),
         width_factor: None,
@@ -1573,7 +1573,7 @@ fn constraint_admission_rejects_local_arity_and_distinctness_on_every_route() {
             is_text_height: false,
         },
         Kind::Native {
-            native_kind: crate::products::NonEmptyString::new("native").unwrap(),
+            native_kind: crate::products::NonBlankString::new("native").unwrap(),
             native_state: None,
             native_flags: None,
             native_properties: std::collections::BTreeMap::default(),

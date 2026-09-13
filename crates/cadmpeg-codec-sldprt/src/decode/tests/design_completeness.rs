@@ -367,7 +367,7 @@ fn binder_completeness_requires_resolved_targets_and_shape_arity() {
             target: cadmpeg_ir::features::BinderTarget::Feature {
                 feature: source.clone(),
             },
-            subelements: vec![cadmpeg_ir::NonEmptyString::new("Face1").unwrap()],
+            subelements: vec![cadmpeg_ir::NonBlankString::new("Face1").unwrap()],
         }]),
     ));
     ir.model.features.push(feature(
@@ -376,7 +376,7 @@ fn binder_completeness_requires_resolved_targets_and_shape_arity() {
         Vec::new(),
         shape(vec![cadmpeg_ir::features::BinderSource {
             target: cadmpeg_ir::features::BinderTarget::Native {
-                reference: cadmpeg_ir::NonEmptyString::new("source").unwrap(),
+                reference: cadmpeg_ir::NonBlankString::new("source").unwrap(),
             },
             subelements: Vec::new(),
         }]),
@@ -388,15 +388,15 @@ fn binder_completeness_requires_resolved_targets_and_shape_arity() {
         shape(vec![
             cadmpeg_ir::features::BinderSource {
                 target: cadmpeg_ir::features::BinderTarget::External {
-                    document: cadmpeg_ir::NonEmptyString::new("a.FCStd").unwrap(),
-                    object: cadmpeg_ir::NonEmptyString::new("Body").unwrap(),
+                    document: cadmpeg_ir::NonBlankString::new("a.FCStd").unwrap(),
+                    object: cadmpeg_ir::NonBlankString::new("Body").unwrap(),
                 },
                 subelements: Vec::new(),
             },
             cadmpeg_ir::features::BinderSource {
                 target: cadmpeg_ir::features::BinderTarget::External {
-                    document: cadmpeg_ir::NonEmptyString::new("b.FCStd").unwrap(),
-                    object: cadmpeg_ir::NonEmptyString::new("Body").unwrap(),
+                    document: cadmpeg_ir::NonBlankString::new("b.FCStd").unwrap(),
+                    object: cadmpeg_ir::NonBlankString::new("Body").unwrap(),
                 },
                 subelements: Vec::new(),
             },

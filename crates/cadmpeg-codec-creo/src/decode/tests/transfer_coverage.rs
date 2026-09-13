@@ -56,7 +56,7 @@ fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
         )),
         source_object: Some(SourceObjectAssociation {
             format: cadmpeg_ir::CodecFormat::Creo,
-            object_id: cadmpeg_ir::products::NonEmptyString::new(format!("VisibGeom:{native_id}"))
+            object_id: cadmpeg_ir::products::NonBlankString::new(format!("VisibGeom:{native_id}"))
                 .expect("nonempty source identity"),
             name: None,
             color: None,
@@ -128,7 +128,7 @@ fn curve_coverage_excludes_unknown_carriers_and_ambiguous_ids() {
     let rows = vec![row(41, 0x05), row(42, 0x13), row(43, 0x05), row(43, 0x05)];
     let source = |native_id| SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Creo,
-        object_id: cadmpeg_ir::products::NonEmptyString::new(format!("VisibGeom:{native_id}"))
+        object_id: cadmpeg_ir::products::NonBlankString::new(format!("VisibGeom:{native_id}"))
             .expect("nonempty source identity"),
         name: None,
         color: None,
@@ -197,7 +197,7 @@ fn design_constraint_coverage_separates_typed_and_native_constraints() {
         constraint(
             "sketch:relation:2",
             SketchConstraintDefinitionInput::Native {
-                native_kind: cadmpeg_ir::products::NonEmptyString::new("creo:relation:9")
+                native_kind: cadmpeg_ir::products::NonBlankString::new("creo:relation:9")
                     .expect("nonempty native kind"),
                 entities: vec![entity.clone()],
                 parameter: None,
@@ -265,35 +265,35 @@ fn native_curve_families_accept_only_their_defined_loci() {
         (
             point.clone(),
             SketchGeometry::native(
-                cadmpeg_ir::products::NonEmptyString::new("point")
+                cadmpeg_ir::products::NonBlankString::new("point")
                     .expect("nonempty source identity"),
             ),
         ),
         (
             bounded.clone(),
             SketchGeometry::native(
-                cadmpeg_ir::products::NonEmptyString::new("bounded_curve")
+                cadmpeg_ir::products::NonBlankString::new("bounded_curve")
                     .expect("nonempty source identity"),
             ),
         ),
         (
             line.clone(),
             SketchGeometry::native(
-                cadmpeg_ir::products::NonEmptyString::new("line")
+                cadmpeg_ir::products::NonBlankString::new("line")
                     .expect("nonempty source identity"),
             ),
         ),
         (
             reference_line.clone(),
             SketchGeometry::native(
-                cadmpeg_ir::products::NonEmptyString::new("reference_line")
+                cadmpeg_ir::products::NonBlankString::new("reference_line")
                     .expect("nonempty source identity"),
             ),
         ),
         (
             circle.clone(),
             SketchGeometry::native(
-                cadmpeg_ir::products::NonEmptyString::new("circle")
+                cadmpeg_ir::products::NonBlankString::new("circle")
                     .expect("nonempty source identity"),
             ),
         ),

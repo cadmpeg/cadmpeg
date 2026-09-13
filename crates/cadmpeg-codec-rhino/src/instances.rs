@@ -5,7 +5,7 @@ use crate::loss::Diagnostics;
 use std::collections::HashSet;
 use std::ops::Range;
 
-use cadmpeg_ir::products::NonEmptyString;
+use cadmpeg_ir::products::NonBlankString;
 use cadmpeg_ir::transform::Transform;
 
 use crate::chunks::{
@@ -95,11 +95,11 @@ pub(crate) enum LinkSource {
     /// No linked path or structured file reference.
     None,
     /// Legacy full path without a relative-path alternative.
-    LegacyFull(NonEmptyString),
+    LegacyFull(NonBlankString),
     /// Preferred legacy relative path, with an optional full-path alternative.
     LegacyRelative {
-        relative_path: NonEmptyString,
-        full_path: Option<NonEmptyString>,
+        relative_path: NonBlankString,
+        full_path: Option<NonBlankString>,
     },
     /// Structured `ON_FileReference` payload.
     Structured(FileReference),
@@ -107,8 +107,8 @@ pub(crate) enum LinkSource {
 
 impl LinkSource {
     fn from_legacy(full_path: String, relative_path: String) -> Self {
-        let full_path = NonEmptyString::new(full_path);
-        if let Some(relative_path) = NonEmptyString::new(relative_path) {
+        let full_path = NonBlankString::new(full_path);
+        if let Some(relative_path) = NonBlankString::new(relative_path) {
             Self::LegacyRelative {
                 relative_path,
                 full_path,
@@ -987,7 +987,7 @@ fn apply_idef_alternative_path(
                 continue;
             }
         };
-        let Some(path) = NonEmptyString::new(path.trim()) else {
+        let Some(path) = NonBlankString::new(path.trim()) else {
             continue;
         };
         match &mut definition.link {

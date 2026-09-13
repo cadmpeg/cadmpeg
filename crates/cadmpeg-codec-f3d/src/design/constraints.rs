@@ -204,7 +204,7 @@ pub fn project_sketch_constraints(
         .or_else(|| exact_text_relation(relation, scope, &projected))
         .or_else(|| {
             Some(Definition::Native {
-                native_kind: cadmpeg_ir::products::NonEmptyString::new(relation_kind_name(
+                native_kind: cadmpeg_ir::products::NonBlankString::new(relation_kind_name(
                     relation,
                 ))?,
                 native_state: Some(relation.definition.state()),
@@ -1048,7 +1048,7 @@ mod tests {
             byte_offset: 0,
             state_offset: 0,
             owner_reference: 1,
-            owner_entity_id: Some(cadmpeg_ir::NonEmptyString::new("0_1").unwrap()),
+            owner_entity_id: Some(cadmpeg_ir::NonBlankString::new("0_1").unwrap()),
             auxiliary_references: crate::records::ReferenceRun::located(
                 auxiliary_references
                     .into_iter()
@@ -1299,7 +1299,7 @@ mod tests {
                 byte_offset: 0,
                 state_offset: 0,
                 owner_reference: 1,
-                owner_entity_id: Some(cadmpeg_ir::NonEmptyString::new("0_1").unwrap()),
+                owner_entity_id: Some(cadmpeg_ir::NonBlankString::new("0_1").unwrap()),
                 auxiliary_references: crate::records::ReferenceRun::located(
                     vec![20, 21]
                         .into_iter()
@@ -1430,7 +1430,7 @@ mod tests {
             byte_offset: 0,
             state_offset: 0,
             owner_reference: 1,
-            owner_entity_id: Some(cadmpeg_ir::NonEmptyString::new("0_1").unwrap()),
+            owner_entity_id: Some(cadmpeg_ir::NonBlankString::new("0_1").unwrap()),
             auxiliary_references: crate::records::ReferenceRun::located(
                 vec![20, 21]
                     .into_iter()
@@ -1503,8 +1503,8 @@ mod tests {
             SketchEntityId::mint("synthetic:test:id#text").unwrap(),
             sketch,
             SketchGeometry::try_from(SketchGeometryDefinition::Text {
-                text: cadmpeg_ir::products::NonEmptyString::new("A").unwrap(),
-                font_family: cadmpeg_ir::products::NonEmptyString::new("Arial").unwrap(),
+                text: cadmpeg_ir::products::NonBlankString::new("A").unwrap(),
+                font_family: cadmpeg_ir::products::NonBlankString::new("Arial").unwrap(),
                 font_weight: cadmpeg_ir::sketches::SketchFontWeight::Regular,
                 height: Length::new(10.0).unwrap(),
                 width_factor: Some(0.8),

@@ -61,20 +61,20 @@ pub(crate) fn is_reference_relation_parameter(
 
 fn relation_native_kind(
     family: FeatureInputRelationFamily,
-) -> cadmpeg_ir::products::NonEmptyString {
-    use cadmpeg_ir::nonempty_literal;
+) -> cadmpeg_ir::products::NonBlankString {
+    use cadmpeg_ir::nonblank_literal;
     match family {
-        FeatureInputRelationFamily::LineLineDistance => nonempty_literal!("sgLLDist"),
-        FeatureInputRelationFamily::PointPointDistance => nonempty_literal!("sgPntPntDist"),
-        FeatureInputRelationFamily::PointLineDistance => nonempty_literal!("sgPntLineDist"),
+        FeatureInputRelationFamily::LineLineDistance => nonblank_literal!("sgLLDist"),
+        FeatureInputRelationFamily::PointPointDistance => nonblank_literal!("sgPntPntDist"),
+        FeatureInputRelationFamily::PointLineDistance => nonblank_literal!("sgPntLineDist"),
         FeatureInputRelationFamily::PointPointHorizontalDistance => {
-            nonempty_literal!("sgPntPntHorDist")
+            nonblank_literal!("sgPntPntHorDist")
         }
         FeatureInputRelationFamily::PointPointVerticalDistance => {
-            nonempty_literal!("sgPntPntVertDist")
+            nonblank_literal!("sgPntPntVertDist")
         }
-        FeatureInputRelationFamily::Angle => nonempty_literal!("sgAnglDim"),
-        FeatureInputRelationFamily::CircleDiameter => nonempty_literal!("sgCircleDim"),
+        FeatureInputRelationFamily::Angle => nonblank_literal!("sgAnglDim"),
+        FeatureInputRelationFamily::CircleDiameter => nonblank_literal!("sgCircleDim"),
     }
 }
 

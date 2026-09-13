@@ -239,7 +239,7 @@ pub(crate) fn project_native_axis_helix(feature: &Feature) -> Option<FeatureDefi
         .unwrap_or(false);
     Some(FeatureDefinition::Operation(
         FeatureOperation::HelixNativeAxis {
-            axis_native_ref: cadmpeg_ir::NonEmptyString::new(feature.id.clone())?,
+            axis_native_ref: cadmpeg_ir::NonBlankString::new(feature.id.clone())?,
             axial_rise: Length::new(axial_rise)?,
             pitch: Length::new(pitch)?,
             revolutions: cadmpeg_ir::scalar::PositiveReal::new(revolutions)?,

@@ -63,7 +63,7 @@ pub enum PmiTarget {
     ShapeAspect {
         /// Stable source identity of the unresolved aspect.
         #[serde(deserialize_with = "deserialize_source_id")]
-        source_id: crate::products::NonEmptyString,
+        source_id: crate::products::NonBlankString,
     },
 }
 
@@ -438,7 +438,7 @@ pub struct PmiAnnotation {
 
 crate::units::named_field!(
     deserialize_source_id,
-    crate::products::NonEmptyString,
+    crate::products::NonBlankString,
     "source_id"
 );
 
@@ -458,7 +458,7 @@ mod tests {
             name: Some("datum A".into()),
             visible: None,
             targets: vec![PmiTarget::ShapeAspect {
-                source_id: crate::products::NonEmptyString::new("#10")
+                source_id: crate::products::NonBlankString::new("#10")
                     .expect("nonempty source identity"),
             }],
             definition: PmiDefinition::Datum {
@@ -728,7 +728,7 @@ mod tests {
         )
         .expect_err("empty source_id");
         assert!(error.to_string().contains("source_id"));
-        assert!(crate::products::NonEmptyString::new("").is_none());
+        assert!(crate::products::NonBlankString::new("").is_none());
     }
 
     #[test]

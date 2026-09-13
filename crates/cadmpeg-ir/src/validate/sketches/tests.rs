@@ -424,7 +424,7 @@ fn sketch_constraint_native_ref_must_resolve() {
             sketch: crate::sketches::SketchId::mint("synthetic:test:sketch#missing").unwrap(),
             definition: crate::sketches::SketchConstraintDefinition::try_from(
                 crate::sketches::SketchConstraintDefinitionInput::Native {
-                    native_kind: crate::products::NonEmptyString::new("test").unwrap(),
+                    native_kind: crate::products::NonBlankString::new("test").unwrap(),
                     native_state: None,
                     native_flags: Some(0x4000),
                     native_properties: std::collections::BTreeMap::from([(
@@ -434,7 +434,7 @@ fn sketch_constraint_native_ref_must_resolve() {
                     entities: Vec::new(),
                     parameter: None,
                     operands: vec![crate::sketches::SketchNativeOperand {
-                        native_kind: crate::products::NonEmptyString::new("test")
+                        native_kind: crate::products::NonBlankString::new("test")
                             .expect("source operand kind is nonempty"),
                         field: None,
                         object_index: Some(0),

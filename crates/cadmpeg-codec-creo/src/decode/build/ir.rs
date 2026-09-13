@@ -231,7 +231,7 @@ fn transfer_reference_lines(
             )),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                object_id: cadmpeg_ir::products::NonBlankString::new(format!(
                     "MdlRefInfo:{family}:{native_identity}"
                 ))
                 .ok_or_else(|| {
@@ -294,7 +294,7 @@ fn transfer_reference_circles(
             )),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                object_id: cadmpeg_ir::products::NonBlankString::new(format!(
                     "MdlRefInfo:arc_z:{native_identity}"
                 ))
                 .ok_or_else(|| {
@@ -357,7 +357,7 @@ fn transfer_reference_ellipses(
             )),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                object_id: cadmpeg_ir::products::NonBlankString::new(format!(
                     "MdlRefInfo:conic:{native_identity}"
                 ))
                 .ok_or_else(|| {
@@ -453,7 +453,7 @@ fn transfer_datum_plane_surfaces(
             )),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                object_id: cadmpeg_ir::products::NonBlankString::new(format!(
                     "ActDatums:{}",
                     plane.id
                 ))
@@ -519,7 +519,7 @@ fn transfer_placed_plane_surfaces_into_ir(
             )),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_ir::products::NonEmptyString::new(format!(
+                object_id: cadmpeg_ir::products::NonBlankString::new(format!(
                     "VisibGeom:{surface_id}"
                 ))
                 .ok_or_else(|| {

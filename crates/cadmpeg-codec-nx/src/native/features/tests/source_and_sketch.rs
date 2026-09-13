@@ -134,7 +134,7 @@ fn nx_block_dimensions_do_not_cross_expression_sections() {
             crate::native::om::finite_value::FiniteValue::try_from(f64::from(index)).unwrap(),
         ),
         source_entry: source_entry.into(),
-        source_table: cadmpeg_ir::NonEmptyString::new(source_table).unwrap(),
+        source_table: cadmpeg_ir::NonBlankString::new(source_table).unwrap(),
         source_offset: u64::from(index),
     };
     let mut expressions = [
@@ -167,7 +167,7 @@ fn nx_block_dimensions_do_not_cross_expression_sections() {
     .is_empty());
 
     expressions[2].source_entry = "section-a".into();
-    expressions[2].source_table = cadmpeg_ir::NonEmptyString::new("table-a").unwrap();
+    expressions[2].source_table = cadmpeg_ir::NonBlankString::new("table-a").unwrap();
     assert_eq!(
         super::feature_block_dimensions(
             std::slice::from_ref(&construction),

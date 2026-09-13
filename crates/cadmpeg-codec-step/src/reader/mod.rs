@@ -916,9 +916,9 @@ fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
     }
 }
 
-/// A non-empty STEP record reference.
-pub(super) fn step_source_id(id: u64) -> cadmpeg_ir::products::NonEmptyString {
-    cadmpeg_ir::products::NonEmptyString::prefixed('#', id)
+/// A non-blank STEP record reference.
+pub(super) fn step_source_id(id: u64) -> cadmpeg_ir::products::NonBlankString {
+    cadmpeg_ir::nonblank_literal!("#{id}")
 }
 
 /// A source association for a STEP record.

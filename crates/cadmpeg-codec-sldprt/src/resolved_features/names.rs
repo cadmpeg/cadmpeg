@@ -4,20 +4,16 @@ use super::{is_class_token, CLASS_MARKER, NAME_MARKER};
 use crate::records::ObjectId;
 use crate::records::{FeatureInputClass, FeatureInputName, FeatureInputOperandKind};
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::products::NonEmptyString;
+use cadmpeg_ir::products::NonBlankString;
 
-const HEX_DIGITS: [char; 16] = [
-    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
-];
-
-pub(super) fn operand_kind_name(kind: FeatureInputOperandKind) -> NonEmptyString {
+pub(super) fn operand_kind_name(kind: FeatureInputOperandKind) -> NonBlankString {
     match kind {
-        FeatureInputOperandKind::D6 => NonEmptyString::prefixed('d', 6),
-        FeatureInputOperandKind::E1 => NonEmptyString::prefixed('e', 1),
+        FeatureInputOperandKind::D6 => cadmpeg_ir::nonblank_literal!("d6"),
+        FeatureInputOperandKind::E1 => cadmpeg_ir::nonblank_literal!("e1"),
         FeatureInputOperandKind::Native(tag) => {
             let [first, second] = tag.value().to_le_bytes();
-            NonEmptyString::prefixed(
-                HEX_DIGITS[usize::from(first >> 4)],
+            NonBlankString::prefixed(
+                cadmpeg_ir::products::NonWhitespaceChar::hex_digit(first >> 4),
                 format_args!("{:x}{second:02x}", first & 0x0f),
             )
         }

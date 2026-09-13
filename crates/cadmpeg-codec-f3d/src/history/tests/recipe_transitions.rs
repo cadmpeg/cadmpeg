@@ -384,12 +384,12 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         *slot = Some(DesignThreadConstruction {
             form: DesignThreadForm::Standard,
             designation_offset: 0,
-            designation: cadmpeg_ir::NonEmptyString::new("M4x0.7").unwrap(),
+            designation: cadmpeg_ir::NonBlankString::new("M4x0.7").unwrap(),
             nominal_size: crate::records::feature::DesignThreadNominalSize::try_from(
                 "4.0".to_owned(),
             )
             .expect("nominal size"),
-            profile: cadmpeg_ir::NonEmptyString::new("ISO Metric profile").unwrap(),
+            profile: cadmpeg_ir::NonBlankString::new("ISO Metric profile").unwrap(),
             pitch: crate::records::feature::DesignPositiveScalar::new(0.07).unwrap(),
             face_group_record_indices: vec![100],
             diameters: crate::records::feature::DesignThreadDiameters::new(0.4, 0.2, 0.3).unwrap(),

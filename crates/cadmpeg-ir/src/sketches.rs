@@ -2,7 +2,7 @@
 //! Neutral planar sketches, solved entities, and geometric constraints.
 
 use crate::math::{Point2, Point3, Vector3};
-use crate::products::NonEmptyString;
+use crate::products::NonBlankString;
 use crate::transform::Transform;
 use crate::{
     features::ParameterId,
@@ -433,7 +433,7 @@ pub struct SketchGeometry(SketchGeometryDefinition);
 impl SketchGeometry {
     /// Retain source-native geometry without solved numeric fields.
     #[must_use]
-    pub fn native(native_kind: NonEmptyString) -> Self {
+    pub fn native(native_kind: NonBlankString) -> Self {
         Self(SketchGeometryDefinition::Native { native_kind })
     }
 
@@ -669,9 +669,9 @@ pub enum SketchGeometryDefinition {
     /// Text placed in sketch coordinates.
     Text {
         /// Unicode text content.
-        text: NonEmptyString,
+        text: NonBlankString,
         /// Source font-family name.
-        font_family: NonEmptyString,
+        font_family: NonBlankString,
         /// Font weight from the source text style.
         font_weight: SketchFontWeight,
         /// Nominal character height.
@@ -699,7 +699,7 @@ pub enum SketchGeometryDefinition {
         document: Option<String>,
         /// Referenced object identity.
         #[serde(deserialize_with = "deserialize_object")]
-        object: NonEmptyString,
+        object: NonBlankString,
         /// Ordered source subelement selectors.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         subelements: Vec<String>,
@@ -708,7 +708,7 @@ pub enum SketchGeometryDefinition {
     Native {
         /// Source geometry family.
         #[serde(deserialize_with = "deserialize_native_kind")]
-        native_kind: NonEmptyString,
+        native_kind: NonBlankString,
     },
 }
 
@@ -1080,7 +1080,7 @@ pub enum SpatialSketchConstraintDefinitionInput {
     Native {
         /// Source relation family.
         #[serde(deserialize_with = "deserialize_native_kind")]
-        native_kind: NonEmptyString,
+        native_kind: NonBlankString,
         /// Source relation state or subtype discriminator, when present.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         native_state: Option<u64>,
@@ -1420,7 +1420,7 @@ pub enum SpatialSketchGeometryDefinition {
     Native {
         /// Source geometry family.
         #[serde(deserialize_with = "deserialize_native_kind")]
-        native_kind: NonEmptyString,
+        native_kind: NonBlankString,
     },
 }
 
@@ -1501,7 +1501,7 @@ pub enum SketchCoordinateAxis {
 #[serde(deny_unknown_fields)]
 pub struct NativeOperandField {
     /// Non-empty source-native field name.
-    pub name: NonEmptyString,
+    pub name: NonBlankString,
     /// Source-native role code, when the field carries one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub role: Option<u32>,
@@ -1513,7 +1513,7 @@ pub struct NativeOperandField {
 #[serde(deny_unknown_fields)]
 pub struct SketchNativeOperand {
     /// Non-empty source-native operand family.
-    pub native_kind: NonEmptyString,
+    pub native_kind: NonBlankString,
     /// Source-native field and optional role containing this operand.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub field: Option<NativeOperandField>,
@@ -2799,7 +2799,7 @@ pub enum SketchConstraintDefinitionInput {
     Native {
         /// Source constraint family.
         #[serde(deserialize_with = "deserialize_native_kind")]
-        native_kind: NonEmptyString,
+        native_kind: NonBlankString,
         /// Source-native constraint-state mask, when the format carries one.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         native_state: Option<u64>,
@@ -2822,12 +2822,12 @@ pub enum SketchConstraintDefinitionInput {
 
 crate::units::named_field!(
     deserialize_object,
-    crate::products::NonEmptyString,
+    crate::products::NonBlankString,
     "object"
 );
 crate::units::named_field!(
     deserialize_native_kind,
-    crate::products::NonEmptyString,
+    crate::products::NonBlankString,
     "native_kind"
 );
 
