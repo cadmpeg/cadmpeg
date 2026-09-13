@@ -921,18 +921,22 @@ pub struct DesignConfiguration {
     pub material: Option<String>,
     /// Configuration-local named values not otherwise represented.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub properties: BTreeMap<String, String>,
     /// Configuration-specific source expressions keyed by the overridden parameter.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub parameter_overrides: BTreeMap<ParameterId, String>,
     /// Bodies present when this configuration is active.
     #[serde(default, skip_serializing_if = "ConfigurationBodies::is_unresolved")]
     pub bodies: ConfigurationBodies,
     /// Evaluated parameter state when this configuration is active.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub parameter_values: BTreeMap<ParameterId, ParameterValue>,
     /// Evaluated feature operation state when this configuration is active.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub feature_states: BTreeMap<FeatureId, ConfigurationFeatureState>,
     /// Identifier of the full-fidelity record in a native namespace.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1061,6 +1065,7 @@ pub struct DesignParameter {
     pub dependencies: DistinctMembers<ParameterId>,
     /// Source parameter properties not represented by another field.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub properties: BTreeMap<String, String>,
     /// Product-manufacturing dimension semantics, when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1359,6 +1364,7 @@ pub(crate) struct FeatureRowWire {
     #[serde(default, deserialize_with = "deserialize_dependencies")]
     dependencies: DistinctMembers<FeatureId>,
     #[serde(default)]
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     source_properties: BTreeMap<String, String>,
     #[serde(default)]
     source_tag: Option<String>,
@@ -1413,6 +1419,7 @@ struct FeatureReadWire {
     #[serde(default, deserialize_with = "deserialize_dependencies")]
     dependencies: DistinctMembers<FeatureId>,
     #[serde(default)]
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     source_properties: BTreeMap<String, String>,
     #[serde(default)]
     source_tag: Option<String>,
@@ -3230,6 +3237,7 @@ pub enum FeatureOperation {
         kind: NativeFeatureKind,
         /// Source parametric input values keyed by parameter name.
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
         parameters: BTreeMap<String, String>,
     },
     /// Linear extrusion of a profile.

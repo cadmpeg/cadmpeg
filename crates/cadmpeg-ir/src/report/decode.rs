@@ -88,6 +88,7 @@ struct DecodeReportWire {
     identity: FormatIdentity<DialectLayers>,
     transfer: DecodeTransfer,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     coverage: BTreeMap<String, usize>,
     losses: Vec<LossNote>,
     notes: Vec<String>,

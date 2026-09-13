@@ -44,6 +44,7 @@ pub struct Appearance {
     pub base_color: Option<Color>,
     /// Additional byte-decoded shader scalars keyed by schema property name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub properties: BTreeMap<String, f64>,
     /// Texture assets connected to shader input slots.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -172,6 +173,7 @@ pub struct AppearanceBinding {
     pub visible: Option<bool>,
     /// ACT change-version channel GUIDs for this assigned entity.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub channels: BTreeMap<String, String>,
 }
 

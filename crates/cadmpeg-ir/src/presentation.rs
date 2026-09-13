@@ -26,6 +26,7 @@ pub struct CameraState {
     pub orientation: Option<crate::units::NonzeroVector<4>>,
     /// Other camera fields retained by exact source name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub properties: BTreeMap<String, String>,
 }
 
@@ -63,6 +64,7 @@ pub struct PresentationState {
     pub order: u32,
     /// Exact root attributes.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub attributes: BTreeMap<String, String>,
     /// Referenced display assets as global native entry ids.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -226,6 +228,7 @@ pub struct ViewPresentation {
     pub point_size: Option<crate::scalar::NonNegativeReal>,
     /// Remaining view properties by exact source property name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub properties: BTreeMap<String, String>,
     /// Native view-provider record supplying this state.
     #[serde(default, skip_serializing_if = "Option::is_none")]

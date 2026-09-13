@@ -204,6 +204,7 @@ pub struct EntityCensus {
     /// Semantic basis of `counts`.
     pub basis: CensusBasis,
     /// Counts keyed by arena or target-record kind.
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub counts: BTreeMap<CensusKey, usize>,
 }
 

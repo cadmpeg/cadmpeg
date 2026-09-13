@@ -1347,6 +1347,7 @@ pub struct SourceMeta {
     identity: FormatIdentity<DialectLayers>,
     /// Format-specific attributes.
     #[serde(default)]
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub attributes: BTreeMap<String, String>,
 }
 

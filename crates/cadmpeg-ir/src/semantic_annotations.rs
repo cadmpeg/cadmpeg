@@ -53,6 +53,7 @@ pub struct SemanticAnnotation {
     pub text: Vec<String>,
     /// Ordered references grouped by exact source-property role.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub references: BTreeMap<String, Vec<crate::references::ReferenceSelection>>,
     /// Persisted numeric measurement, when explicitly carried.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -67,6 +68,7 @@ pub struct SemanticAnnotation {
     pub position: Option<crate::units::FiniteVector<3>>,
     /// Remaining typed or exactly framed parameters by source name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub parameters: BTreeMap<String, String>,
     /// Symbol, image, font, or other retained assets.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

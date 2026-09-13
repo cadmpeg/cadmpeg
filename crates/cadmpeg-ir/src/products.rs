@@ -56,6 +56,7 @@ pub struct ProductDefinition {
     pub part_number: Option<String>,
     /// Additional persisted BOM identity fields by exact property name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub bom_properties: BTreeMap<String, String>,
     /// Shape bodies owned by this reusable definition.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

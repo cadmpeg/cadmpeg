@@ -229,6 +229,7 @@ pub struct SourceFidelity {
     pub annotations: Annotations,
     /// Native records retained for recovery or replay, keyed by record id.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub retained_records: std::collections::BTreeMap<String, RetainedSourceRecord>,
 }
 
@@ -400,6 +401,40 @@ mod tests {
             assert_eq!(retained.sha256(), crate::hash::sha256_hex(&[1, 2, 3]));
             assert_eq!(retained.data(), Some([1, 2, 3].as_slice()));
         }
+    }
+
+    /// `serde_json` hands every object key to the visitor, duplicates
+    /// included, and a derived map keeps the last. An identity-keyed map that
+    /// a document states twice is refused by name, not silently reduced.
+    #[test]
+    fn a_restated_record_id_is_refused_by_name() {
+        let record = |stream: &str| {
+            serde_json::json!({
+                "stream": stream,
+                "offset": 0,
+                "bytes": {
+                    "retention": "digest",
+                    "byte_len": 3,
+                    "sha256": crate::hash::sha256_hex(&[1, 2, 3])
+                }
+            })
+        };
+        let one: SourceFidelity = serde_json::from_value(serde_json::json!({
+            "retained_records": {"a": record("s")}
+        }))
+        .expect("one record reads");
+        assert_eq!(one.retained_records.len(), 1);
+
+        let text = format!(
+            r#"{{"retained_records":{{"a":{},"a":{}}}}}"#,
+            record("s"),
+            record("t")
+        );
+        let text = text.as_str();
+        let error = serde_json::from_str::<SourceFidelity>(text)
+            .expect_err("a restated record id states two records under one identity")
+            .to_string();
+        assert!(error.contains("duplicate key a"), "{error}");
     }
 
     /// The sidecar is an IR document and takes the one finite write route.

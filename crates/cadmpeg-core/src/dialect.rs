@@ -294,6 +294,7 @@ pub struct DialectMatch {
     /// Declarations are evidence, never a control input: the dialect is what
     /// the bytes obey, not what they declare.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(deserialize_with = "crate::distinct_keys::btree_map")]
     declared: BTreeMap<String, String>,
     /// Instance of this format layer inside the containing document.
     ///
