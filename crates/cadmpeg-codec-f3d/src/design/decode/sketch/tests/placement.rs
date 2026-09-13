@@ -247,7 +247,8 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
         &[],
         &[],
         1.0e-6,
-    );
+    )
+    .expect("sketch lanes pair");
     assert_eq!(sketches.len(), 1);
     assert_eq!(
         sketches[0].resolved_placement(),
@@ -276,7 +277,8 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
         &[],
         &[],
         1.0e-6,
-    );
+    )
+    .expect("sketch lanes pair");
     assert_eq!(
         sketches[0]
             .resolved_placement()
