@@ -191,7 +191,9 @@ fn polyline_carriers_evaluate_in_both_parameter_directions() {
                     .into_iter()
                     .zip(vec![1.0, 3.0])
                     .map(|(point, parameter)| PolylineVertex { parameter, point })
-                    .collect(),
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .expect("nonempty polyline fixture"),
             },
             0.01,
         )
@@ -209,7 +211,9 @@ fn polyline_carriers_evaluate_in_both_parameter_directions() {
                     .into_iter()
                     .zip(vec![3.0, 1.0])
                     .map(|(point, parameter)| PolylineVertex { parameter, point })
-                    .collect(),
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .expect("nonempty polyline fixture"),
             },
             0.01,
         )

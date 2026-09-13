@@ -56,7 +56,11 @@ impl IndexedPolygon {
         deflection: f64,
     ) -> Result<Self, CodecError> {
         let samples = match parameters {
-            None => PolylineSamples::Unparameterized { points: nodes },
+            None => PolylineSamples::Unparameterized {
+                points: nodes.try_into().map_err(|error| {
+                    CodecError::Malformed(format!("polygon states no node: {error}"))
+                })?,
+            },
             Some(parameters) => {
                 if parameters.len() != nodes.len() {
                     return Err(CodecError::Malformed(
@@ -67,7 +71,11 @@ impl IndexedPolygon {
                 for (point, parameter) in nodes.into_iter().zip(parameters) {
                     vertices.push(PolylineVertex { parameter, point });
                 }
-                PolylineSamples::Parameterized { vertices }
+                PolylineSamples::Parameterized {
+                    vertices: vertices.try_into().map_err(|error| {
+                        CodecError::Malformed(format!("polygon states no node: {error}"))
+                    })?,
+                }
             }
         };
         Ok(Self {

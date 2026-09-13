@@ -2153,7 +2153,10 @@ fn decode_tessellated_curve_sets(
             } else {
                 format!("{id}-strip-{strip_index}")
             };
-            let points = indices.into_iter().map(|index| vertices[index]).collect();
+            let points: Vec<_> = indices.into_iter().map(|index| vertices[index]).collect();
+            let Ok(points) = points.try_into() else {
+                continue;
+            };
             let Some(polyline) =
                 PolylineCurve::new(PolylineSamples::Unparameterized { points }, 0.0).ok()
             else {

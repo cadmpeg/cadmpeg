@@ -929,13 +929,18 @@ fn sampled_carriers_admit_finite_numeric_payloads_and_preserve_failed_edits() {
             .copied()
             .zip(parameters)
             .map(|(point, parameter)| PolylineVertex { parameter, point })
-            .collect(),
+            .collect::<Vec<_>>()
+            .try_into()
+            .expect("nonempty polyline fixture"),
     };
     assert!(PolylineCurve::new(parameterized([1.0, 1.0]), 0.0).is_err());
     assert!(PolylineCurve::new(parameterized([0.0, f64::INFINITY]), 0.0).is_err());
     assert!(PolylineCurve::new(
         PolylineSamples::Unparameterized {
-            points: points.clone()
+            points: points
+                .clone()
+                .try_into()
+                .expect("nonempty polyline fixture")
         },
         -1.0
     )

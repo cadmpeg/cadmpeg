@@ -3051,6 +3051,19 @@ const NURBS_POLE_ROUNDOFF_FACTOR: f64 = 256.0 * f64::EPSILON;
 const NURBS_CACHE_SAMPLES_PER_SPAN: usize = 8;
 const NURBS_ENDPOINT_TOLERANCE_MM: f64 = 1.0e-6;
 
+/// The looser of two acceptance tolerances.
+///
+/// Two independently derived bounds gate the same acceptance, and the
+/// acceptance holds when either of them does, so the looser bound is the gate.
+/// This is not a floor under a value: both arguments are tolerances.
+fn looser_tolerance(left: f64, right: f64) -> f64 {
+    if left >= right {
+        left
+    } else {
+        right
+    }
+}
+
 fn inverse_coordinate_tolerance(points: impl IntoIterator<Item = cadmpeg_ir::math::Point3>) -> f64 {
     let scale = points.into_iter().fold(1.0_f64, |scale, point| {
         scale
@@ -3058,7 +3071,12 @@ fn inverse_coordinate_tolerance(points: impl IntoIterator<Item = cadmpeg_ir::mat
             .max(point.y.abs())
             .max(point.z.abs())
     });
-    INVERSE_ABSOLUTE_TOLERANCE_MM.max(scale * INVERSE_RELATIVE_TOLERANCE)
+    // The absolute inverse-projection tolerance against the coordinate-scaled
+    // relative one.
+    looser_tolerance(
+        INVERSE_ABSOLUTE_TOLERANCE_MM,
+        scale * INVERSE_RELATIVE_TOLERANCE,
+    )
 }
 
 fn golden_section_minimum<F>(mut left: f64, mut right: f64, objective: &mut F) -> Option<(f64, f64)>
@@ -4824,8 +4842,12 @@ fn nurbs_edge_endpoint_parameters(
     let [Some(first), Some(last)] = curve_points else {
         return None;
     };
-    let tolerance = inverse_coordinate_tolerance(surface.poles().into_iter().chain([first, last]))
-        .max(NURBS_ENDPOINT_TOLERANCE_MM);
+    // The inverse-projection tolerance of this surface's coordinates against
+    // the NURBS endpoint tolerance.
+    let tolerance = looser_tolerance(
+        inverse_coordinate_tolerance(surface.poles().into_iter().chain([first, last])),
+        NURBS_ENDPOINT_TOLERANCE_MM,
+    );
     let project = |point| {
         let parameters = nurbs_seeded_surface_projection(surface, point, None)?;
         let mapped = nurbs_surface_point(surface, parameters.u, parameters.v)?;
