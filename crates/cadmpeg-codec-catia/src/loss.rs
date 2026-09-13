@@ -38,6 +38,8 @@ pub enum CatiaLossCode {
     GeometryPlaneParametersInvalid,
     /// Analytic surface records had a non-finite or out-of-range payload.
     GeometryAnalyticPayloadInvalid,
+    /// A record stated a parameter range that is non-finite or not increasing.
+    GeometryParameterRangeInvalid,
     /// Equivalent support charts produce non-finite pcurve coordinates.
     GeometryPcurveRechartNonFinite,
     /// Face-local free-form carriers retain identity without aliased geometry.
@@ -95,6 +97,7 @@ impl CatiaLossCode {
         Self::GeometryBrepNotTransferred,
         Self::GeometryPlaneParametersInvalid,
         Self::GeometryAnalyticPayloadInvalid,
+        Self::GeometryParameterRangeInvalid,
         Self::GeometryPcurveRechartNonFinite,
         Self::GeometryFaceLocalFreeformNotTransferred,
         Self::GeometryRevolutionProfileUnbound,
@@ -130,6 +133,7 @@ impl CatiaLossCode {
             Self::GeometryBrepNotTransferred => "geometry.brep-not-transferred",
             Self::GeometryPlaneParametersInvalid => "geometry.plane-parameters-invalid",
             Self::GeometryAnalyticPayloadInvalid => "geometry.analytic-payload-invalid",
+            Self::GeometryParameterRangeInvalid => "geometry.parameter-range-invalid",
             Self::GeometryPcurveRechartNonFinite => "geometry.pcurve-rechart-non-finite",
             Self::GeometryFaceLocalFreeformNotTransferred => {
                 "geometry.face-local-freeform-not-transferred"
@@ -196,6 +200,7 @@ impl CatiaLossCode {
             | Self::GeometryBrepNotTransferred
             | Self::GeometryPlaneParametersInvalid
             | Self::GeometryAnalyticPayloadInvalid
+            | Self::GeometryParameterRangeInvalid
             | Self::GeometryPcurveRechartNonFinite
             | Self::GeometryFaceLocalFreeformNotTransferred
             | Self::GeometryRevolutionProfileUnbound
@@ -265,6 +270,7 @@ mod tests {
                 "geometry.brep-not-transferred",
                 "geometry.plane-parameters-invalid",
                 "geometry.analytic-payload-invalid",
+                "geometry.parameter-range-invalid",
                 "geometry.pcurve-rechart-non-finite",
                 "geometry.face-local-freeform-not-transferred",
                 "geometry.revolution-profile-unbound",
