@@ -183,9 +183,9 @@ mod tests {
         .is_err());
         for content in [
             serde_json::json!({"kind": "embedded", "data": "AA=="}),
-            serde_json::json!({"kind": "external", "uri": " "}),
+            serde_json::json!({"kind": "external", "uri": " u "}),
         ] {
-            let value = serde_json::json!({"id": "synthetic:test:asset#asset", "name": " ", "media_type": " ", "content": content});
+            let value = serde_json::json!({"id": "synthetic:test:asset#asset", "name": " n ", "media_type": " m ", "content": content});
             let asset: Asset = serde_json::from_value(value.clone()).expect("valid asset");
             assert_eq!(serde_json::to_value(asset).expect("serialize asset"), value);
         }

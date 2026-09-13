@@ -1239,7 +1239,7 @@ fn sketch_text_style_admits_only_nonempty_names_and_three_integer_weights() {
         assert!(SketchFontWeight::try_from(raw).is_err());
         assert!(serde_json::from_value::<SketchFontWeight>(serde_json::json!(raw)).is_err());
     }
-    let wire = serde_json::json!({"kind":"text", "text":" ", "font_family":" ", "font_weight":500, "height":1.0});
+    let wire = serde_json::json!({"kind":"text", "text":" t ", "font_family":" f ", "font_weight":500, "height":1.0});
     let geometry = serde_json::from_value::<SketchGeometry>(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(&geometry).unwrap(), wire);
     for field in ["text", "font_family"] {

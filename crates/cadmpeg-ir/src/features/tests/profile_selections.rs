@@ -162,7 +162,8 @@ fn path_selection_members_are_checked_at_construction_and_on_wire() {
     )
     .is_err());
     assert!(PathRef::historical_edges(state.clone(), vec![edge.clone()], String::new()).is_err());
-    assert!(PathRef::historical_edges(state, vec![edge], " ".into()).is_ok());
+    assert!(PathRef::historical_edges(state.clone(), vec![edge.clone()], " ".into()).is_err());
+    assert!(PathRef::historical_edges(state, vec![edge], " g ".into()).is_ok());
 }
 
 #[test]
