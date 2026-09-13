@@ -332,7 +332,7 @@ mod tests {
                 surface: SurfaceId::mint(format!("catia:test:surface#surface-{index}"))
                     .expect("identity grammar"),
                 sense: Sense::Forward,
-                loops: vec![].into(),
+                loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
                 name: None,
                 color: None,
                 tolerance: None,

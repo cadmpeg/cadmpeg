@@ -514,7 +514,7 @@ mod consolidated_revolution_binding_tests {
                     .expect("identity grammar"),
                 surface: surface.clone(),
                 sense: Sense::Forward,
-                loops: vec![loop_id.clone()].into(),
+                loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![loop_id.clone()]),
                 name: None,
                 color: None,
                 tolerance: None,
@@ -3225,7 +3225,7 @@ pub(crate) fn attach_standard_faces(
             } else {
                 Sense::Reversed
             },
-            loops: Vec::new().into(),
+            loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
             name: None,
             color: None,
             tolerance: None,
@@ -5094,51 +5094,60 @@ fn validate_standard_topology(
     Some(edge_vertices)
 }
 
-fn standard_boundary_roles(
+/// The face's loop ids and their classification, built once from the boundary
+/// rows the solved topology states for this face.
+fn standard_face_loops(
     ir: &CadIr,
     bindings: &[(SurfaceId, bool, usize)],
     surface_indices: &HashMap<SurfaceId, usize>,
     topology: &crate::families::standard::topology::StandardTopology,
     face_index: usize,
     point_assignment: &[usize],
-) -> Vec<LoopBoundaryRole> {
+) -> cadmpeg_ir::topology::FaceLoops {
     let Some(face_topology) = topology.faces().get(face_index) else {
-        return Vec::new();
+        return cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new());
     };
-    if face_topology.boundaries.len() <= 1 {
-        return if face_topology.boundaries.is_empty() {
-            Vec::new()
-        } else {
-            vec![LoopBoundaryRole::Outer]
-        };
+    let ids: Vec<LoopId> = (0..face_topology.boundaries.len())
+        .map(|loop_index| {
+            LoopId::mint(format!("catia:standard:loop#{face_index}:{loop_index}"))
+                .expect("identity grammar")
+        })
+        .collect();
+    let unspecified = || cadmpeg_ir::topology::FaceLoops::unspecified(ids.clone());
+    if let [single] = ids.as_slice() {
+        return cadmpeg_ir::topology::FaceLoops::classified(single.clone(), Vec::new());
     }
     let Some(surface_id) = bindings.get(face_index).map(|binding| &binding.0) else {
-        return vec![LoopBoundaryRole::Unspecified; face_topology.boundaries.len()];
+        return unspecified();
     };
     let Some(&surface_index) = surface_indices.get(surface_id) else {
-        return vec![LoopBoundaryRole::Unspecified; face_topology.boundaries.len()];
+        return unspecified();
     };
     let Some(surface) = ir.model.surfaces.get(surface_index) else {
-        return vec![LoopBoundaryRole::Unspecified; face_topology.boundaries.len()];
+        return unspecified();
     };
-    let Some(boundaries) = face_topology
+    let Some(rows) = face_topology
         .boundaries
         .iter()
-        .map(|boundary| {
-            boundary
-                .coedges
-                .iter()
-                .map(|coedge| {
-                    let point_index = *point_assignment.get(coedge.start_vertex)?;
-                    Some(ir.model.points.get(point_index)?.position)
-                })
-                .collect::<Option<Vec<_>>>()
+        .zip(&ids)
+        .map(|(boundary, id)| {
+            Some((
+                id.clone(),
+                boundary
+                    .coedges
+                    .iter()
+                    .map(|coedge| {
+                        let point_index = *point_assignment.get(coedge.start_vertex)?;
+                        Some(ir.model.points.get(point_index)?.position)
+                    })
+                    .collect::<Option<Vec<_>>>()?,
+            ))
         })
         .collect::<Option<Vec<_>>>()
     else {
-        return vec![LoopBoundaryRole::Unspecified; face_topology.boundaries.len()];
+        return unspecified();
     };
-    crate::boundary_roles::classify_planar_boundary_roles(&surface.geometry, &boundaries)
+    crate::boundary_roles::classify_planar_boundaries(&surface.geometry, &rows)
 }
 
 /// Emits the edge, loop, coedge, and pcurve IR layers for the solved topology.
@@ -5241,7 +5250,7 @@ fn emit_standard_topology(
         .collect::<HashMap<_, _>>();
     let mut edge_coedges = vec![Vec::new(); ir.model.edges.len()];
     for (face_index, face_topology) in topology.faces().iter().enumerate() {
-        let boundary_roles = standard_boundary_roles(
+        let face_loops = standard_face_loops(
             ir,
             bindings,
             surface_indices,
@@ -5252,7 +5261,6 @@ fn emit_standard_topology(
         for (loop_index, boundary) in face_topology.boundaries.iter().enumerate() {
             let loop_id = LoopId::mint(format!("catia:standard:loop#{face_index}:{loop_index}"))
                 .expect("identity grammar");
-            let boundary_role = boundary_roles.get(loop_index).copied().unwrap_or_default();
             let coedge_ids: Vec<CoedgeId> = (0..boundary.coedges.len())
                 .map(|coedge_index| {
                     CoedgeId::mint(format!(
@@ -5393,13 +5401,13 @@ fn emit_standard_topology(
                 .map_err(cadmpeg_core::CodecError::malformed)?
                 .derived(&loop_id, "vertex_uses")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
-            if boundary_role != LoopBoundaryRole::Unspecified {
+            if face_loops.role(&loop_id) != LoopBoundaryRole::Unspecified {
                 annotations
                     .derived(&loop_id, "boundary_role")
                     .map_err(cadmpeg_core::CodecError::malformed)?;
             }
             ir.model.loops.push(Loop {
-                id: loop_id.clone(),
+                id: loop_id,
                 face: FaceId::mint(format!("catia:standard:face#{face_index}"))
                     .expect("identity grammar"),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -5407,11 +5415,8 @@ fn emit_standard_topology(
                         .expect("valid loop ring"),
                 ),
             });
-            ir.model.faces[face_index].loops.push(loop_id);
         }
-        ir.model.faces[face_index]
-            .loops
-            .apply_roles(&boundary_roles);
+        ir.model.faces[face_index].loops = face_loops;
     }
     for uses in edge_coedges {
         for (position, current) in uses.iter().enumerate() {

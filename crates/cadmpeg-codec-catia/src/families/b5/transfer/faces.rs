@@ -274,40 +274,46 @@ fn b5_planar_loop_points(
     Some(points)
 }
 
-fn b5_boundary_roles(
+/// The face's loop ids and their classification, built once from the loop
+/// rows the graph states for this face.
+fn b5_face_loops(
     ir: &CadIr,
     graph: &B5Graph,
     face: &super::super::graph::B5Face,
     loop_orientation: &BTreeMap<u32, OrientedLoop>,
     surface_ids: &HashMap<u32, SurfaceId>,
     pcurve_uses: &PcurveUses,
-) -> Option<Vec<LoopBoundaryRole>> {
-    if face.loops.len() == 1 {
-        return Some(vec![LoopBoundaryRole::Outer]);
-    }
-    let unspecified = || {
-        alloc_filled(
-            face.loops.len(),
-            LoopBoundaryRole::Unspecified,
-            "catia b5 boundary roles",
-        )
-        .ok()
-    };
-    let Some(surface_id) = surface_ids.get(&face.surface) else {
-        return unspecified();
-    };
-    let Some(boundaries) = face
+) -> cadmpeg_ir::topology::FaceLoops {
+    let ids: Vec<LoopId> = face
         .loops
         .iter()
         .map(|loop_id| {
-            b5_planar_loop_points(
-                ir,
-                graph,
-                *loop_id,
-                loop_orientation.get(loop_id)?,
-                surface_id,
-                pcurve_uses,
-            )
+            LoopId::mint(format!("catia:b5:loop#{loop_id}")).expect("identity grammar")
+        })
+        .collect();
+    let unspecified = || cadmpeg_ir::topology::FaceLoops::unspecified(ids.clone());
+    if let [single] = ids.as_slice() {
+        return cadmpeg_ir::topology::FaceLoops::classified(single.clone(), Vec::new());
+    }
+    let Some(surface_id) = surface_ids.get(&face.surface) else {
+        return unspecified();
+    };
+    let Some(rows) = face
+        .loops
+        .iter()
+        .zip(&ids)
+        .map(|(loop_id, id)| {
+            Some((
+                id.clone(),
+                b5_planar_loop_points(
+                    ir,
+                    graph,
+                    *loop_id,
+                    loop_orientation.get(loop_id)?,
+                    surface_id,
+                    pcurve_uses,
+                )?,
+            ))
         })
         .collect::<Option<Vec<_>>>()
     else {
@@ -321,10 +327,7 @@ fn b5_boundary_roles(
     else {
         return unspecified();
     };
-    Some(crate::boundary_roles::classify_planar_boundary_roles(
-        &surface.geometry,
-        &boundaries,
-    ))
+    crate::boundary_roles::classify_planar_boundaries(&surface.geometry, &rows)
 }
 
 /// Emit the single body, its ownership-derived regions and shells, and every
@@ -443,11 +446,8 @@ pub(super) fn emit_faces(
             ownership.face_components[face_index]
         ))
         .expect("identity grammar");
-        let Some(boundary_roles) =
-            b5_boundary_roles(ir, graph, face, loop_orientation, surface_ids, pcurve_uses)
-        else {
-            return false;
-        };
+        let face_loops =
+            b5_face_loops(ir, graph, face, loop_orientation, surface_ids, pcurve_uses);
         annotate(
             annotations,
             &face_id,
@@ -468,19 +468,12 @@ pub(super) fn emit_faces(
             shell: shell_id.clone(),
             surface: surface_ids[&face.surface].clone(),
             sense: Sense::Forward,
-            loops: face
-                .loops
-                .iter()
-                .map(|loop_id| {
-                    LoopId::mint(format!("catia:b5:loop#{loop_id}")).expect("identity grammar")
-                })
-                .collect::<Vec<_>>()
-                .into(),
+            loops: face_loops.clone(),
             name: None,
             color: None,
             tolerance: None,
         });
-        for (loop_position, loop_id_value) in face.loops.iter().enumerate() {
+        for loop_id_value in &face.loops {
             let loop_ = &graph.loops[loop_id_value];
             let orientation = &loop_orientation[loop_id_value];
             let loop_id =
@@ -525,11 +518,7 @@ pub(super) fn emit_faces(
             {
                 return false;
             }
-            let boundary_role = boundary_roles
-                .get(loop_position)
-                .copied()
-                .unwrap_or_default();
-            if boundary_role != LoopBoundaryRole::Unspecified
+            if face_loops.role(&loop_id) != LoopBoundaryRole::Unspecified
                 && annotations.derived(&loop_id, "boundary_role").is_err()
             {
                 return false;
@@ -594,12 +583,6 @@ pub(super) fn emit_faces(
                 });
             }
         }
-        ir.model
-            .faces
-            .last_mut()
-            .expect("b5 face was just pushed")
-            .loops
-            .apply_roles(&boundary_roles);
     }
     for occurrences in coedges_by_edge.values() {
         for (position, &arena_index) in occurrences.iter().enumerate() {
@@ -618,12 +601,11 @@ mod tests {
     use cadmpeg_ir::geometry::{
         Pcurve, PcurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
     };
-    use cadmpeg_ir::ids::{PcurveId, SurfaceId};
+    use cadmpeg_ir::ids::{LoopId, PcurveId, SurfaceId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
-    use cadmpeg_ir::topology::LoopBoundaryRole;
 
     use super::super::super::graph::{B5Face, B5Graph, B5Loop, B5LoopMember, B5LoopMetadata};
-    use super::{b5_boundary_roles, OrientedLoop, OrientedLoopMember};
+    use super::{b5_face_loops, OrientedLoop, OrientedLoopMember};
 
     #[test]
     fn planar_line_pcurve_faces_derive_roles_from_containment() {
@@ -778,7 +760,7 @@ mod tests {
         ir.model.pcurves = pcurves;
 
         assert_eq!(
-            b5_boundary_roles(
+            b5_face_loops(
                 &ir,
                 &graph,
                 &graph.faces[0],
@@ -790,7 +772,10 @@ mod tests {
                 )]),
                 &pcurve_uses,
             ),
-            Some(vec![LoopBoundaryRole::Inner, LoopBoundaryRole::Outer])
+            cadmpeg_ir::topology::FaceLoops::classified(
+                LoopId::mint("catia:b5:loop#2".to_string()).expect("identity grammar"),
+                vec![LoopId::mint("catia:b5:loop#3".to_string()).expect("identity grammar")]
+            )
         );
     }
 }
