@@ -65,7 +65,7 @@ pub(crate) fn attach_test_body_surface(
         shell: shell_id,
         surface,
         sense: Sense::Forward,
-        loops: Vec::new().into(),
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
         name: None,
         color: None,
         tolerance: None,

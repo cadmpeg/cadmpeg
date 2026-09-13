@@ -3863,7 +3863,7 @@ mod tests {
             shell: ShellId::mint("nx:s1:shell#0").expect("identity grammar"),
             surface: completed_surface.clone(),
             sense: Sense::Forward,
-            loops: vec![loop_id.clone()].into(),
+            loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![loop_id.clone()]),
             name: None,
             color: None,
             tolerance: None,

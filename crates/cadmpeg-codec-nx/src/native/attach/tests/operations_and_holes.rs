@@ -1275,7 +1275,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
     intermediate_face.surface =
         cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#intermediate-plane")
             .expect("identity grammar");
-    intermediate_face.loops.clear();
+    intermediate_face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new());
     stepped.model.shells[0].add_face(intermediate_face.id.clone());
     stepped.model.faces.push(intermediate_face);
     assert_eq!(
@@ -1327,7 +1327,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
     curved_face.surface =
         cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#later-curved-surface")
             .expect("identity grammar");
-    curved_face.loops.clear();
+    curved_face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new());
     curved_feature.model.shells[0].add_face(curved_face.id.clone());
     curved_feature.model.faces.push(curved_face);
     assert_eq!(

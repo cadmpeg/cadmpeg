@@ -111,6 +111,8 @@ loss_codes! {
     CarrierLanesUnpaired => ("carrier.lanes-unpaired", Warning, ObjectRecordsUntransferred),
     /// No gate-passing analytic carrier was found in the Parasolid streams.
     GeometryNotTransferred => ("geometry.not-transferred", Blocking, GeometryNotTransferred),
+    /// A face loop states no resolvable coedge ring and is omitted from its face.
+    TopologyLoopRingUnresolved => ("topology.loop-ring-unresolved", Warning, TopologyNotTransferred),
 }
 
 impl NxLossCode {
@@ -180,6 +182,7 @@ mod tests {
                 "assembly.components-external",
                 "carrier.lanes-unpaired",
                 "geometry.not-transferred",
+                "topology.loop-ring-unresolved",
             ]
         );
     }
