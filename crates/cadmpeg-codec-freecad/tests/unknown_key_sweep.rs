@@ -37,7 +37,10 @@ fn every_decoded_shape_refuses_an_unknown_key() {
         let ir = serde_json::to_value(result.ir()).expect("serialize ir");
         let sweep = accepting_shapes(&ir)
             .unwrap_or_else(|error| panic!("{} does not read back: {error}", path.display()));
-        assert!(sweep.swept > 0, "a decoded document reads back as a document");
+        assert!(
+            sweep.swept > 0,
+            "a decoded document reads back as a document"
+        );
         swept += sweep.swept;
         fallbacks += sweep.fallbacks;
         accepting.extend(sweep.accepting);

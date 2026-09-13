@@ -102,7 +102,10 @@ fn every_golden_shape_refuses_an_unknown_key() {
     for (name, document) in hand_written_documents() {
         let sweep = accepting_shapes(&document)
             .unwrap_or_else(|error| panic!("the {name} document reads back as a CadIr: {error}"));
-        assert!(sweep.swept > 0, "the {name} document states a shape to sweep");
+        assert!(
+            sweep.swept > 0,
+            "the {name} document states a shape to sweep"
+        );
         accepting.extend(sweep.accepting);
     }
     let unreached = FREE_FORM_SHAPES

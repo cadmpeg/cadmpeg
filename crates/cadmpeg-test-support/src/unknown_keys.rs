@@ -125,11 +125,7 @@ pub fn accepting_shapes(ir: &Value) -> Result<SweptShapes, serde_json::Error> {
 /// The graft is `empty` carrying the shape's own array element, or its own
 /// top-level subtree when the shape sits in no array. `None` states a path the
 /// graft cannot carry.
-fn grafted_document(
-    ir: &Value,
-    empty: &Value,
-    path: &[Step],
-) -> Option<(Value, Vec<Step>)> {
+fn grafted_document(ir: &Value, empty: &Value, path: &[Step]) -> Option<(Value, Vec<Step>)> {
     if path.is_empty() {
         return Some((empty.clone(), Vec::new()));
     }
@@ -137,7 +133,11 @@ fn grafted_document(
     match path.iter().position(|step| matches!(step, Step::Index(_))) {
         Some(depth) => {
             let element = value_at(ir, &path[..=depth])?;
-            set_member(&mut graft, &path[..depth], Value::Array(vec![element.clone()]))?;
+            set_member(
+                &mut graft,
+                &path[..depth],
+                Value::Array(vec![element.clone()]),
+            )?;
             let mut probe_path = path.to_vec();
             let step = probe_path.get_mut(depth)?;
             *step = Step::Index(0);
