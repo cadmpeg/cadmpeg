@@ -895,14 +895,14 @@ fn body_selections_round_trip_through_json() {
             members: crate::features::BodyMembers::try_from_rows(vec![
                 crate::features::BodyMember::new(
                     BodyId::mint("synthetic:test:body#0").expect("valid identity"),
-                    "body:17".into(),
-                )
-                .expect("valid body selection row"),
+                    crate::products::NonBlankString::new("body:17")
+                        .expect("valid body selection row"),
+                ),
                 crate::features::BodyMember::new(
                     BodyId::mint("synthetic:test:body#1").expect("valid identity"),
-                    "body:18".into(),
-                )
-                .expect("valid body selection row"),
+                    crate::products::NonBlankString::new("body:18")
+                        .expect("valid body selection row"),
+                ),
             ])
             .expect("valid body selection rows"),
         },
@@ -920,15 +920,15 @@ fn body_selections_round_trip_through_json() {
                 crate::features::BodyMember::new(
                     HistoricalBodyId::mint("synthetic:history-input:body#0")
                         .expect("valid identity"),
-                    "body:16".into(),
-                )
-                .expect("valid historical body selection row"),
+                    crate::products::NonBlankString::new("body:16")
+                        .expect("valid historical body selection row"),
+                ),
                 crate::features::BodyMember::new(
                     HistoricalBodyId::mint("synthetic:history-input:body#1")
                         .expect("valid identity"),
-                    "body:17".into(),
-                )
-                .expect("valid historical body selection row"),
+                    crate::products::NonBlankString::new("body:17")
+                        .expect("valid historical body selection row"),
+                ),
             ])
             .expect("valid historical body selection rows"),
         },
@@ -944,12 +944,12 @@ fn body_selections_round_trip_through_json() {
 
 #[test]
 fn body_selection_members_reject_blank_native_rows() {
-    use crate::features::{BodyMember, BodyMembers};
+    use crate::features::BodyMembers;
     use crate::ids::BodyId;
 
     let body = BodyId::mint("synthetic:test:body#blank").expect("identity grammar");
-    assert!(BodyMember::new(body.clone(), " \t".into()).is_err());
-    assert!(BodyMember::new(body.clone(), "\n".into()).is_err());
+    assert!(crate::products::NonBlankString::new(" \t").is_none());
+    assert!(crate::products::NonBlankString::new("\n").is_none());
     assert!(
         serde_json::from_value::<BodyMembers<BodyId>>(serde_json::json!([
             {"body": body, "native": " "}

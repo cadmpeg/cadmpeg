@@ -5,7 +5,6 @@ use std::num::NonZeroU32;
 
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
-use serde::de::Error as _;
 use serde::{Deserialize, Serialize};
 
 use crate::ids::{
@@ -219,7 +218,6 @@ pub struct DatumReference {
     /// Referenced datum annotation.
     pub datum: PmiId,
     /// Precedence within the datum system, starting at one.
-    #[serde(deserialize_with = "deserialize_datum_precedence")]
     pub precedence: NonZeroU32,
     /// Identity of a common-datum group within this datum system. References
     /// with the same precedence and group form one simultaneous compartment.
@@ -290,15 +288,6 @@ impl TryFrom<Vec<DatumReference>> for DatumReferences {
         }
         Ok(Self(references))
     }
-}
-
-fn deserialize_datum_precedence<'de, D>(deserializer: D) -> Result<NonZeroU32, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let value = u32::deserialize(deserializer)?;
-    NonZeroU32::new(value)
-        .ok_or_else(|| D::Error::custom("DatumReference.precedence must start at one"))
 }
 
 /// ISO limits-and-fits tolerance class attached to a dimension.
@@ -783,5 +772,27 @@ mod tests {
             .replace(replacement.clone())
             .expect("valid replacement");
         assert_eq!(admitted.as_slice(), replacement);
+    }
+
+    /// The precedence starts at one by type, so the refusal is the
+    /// `NonZeroU32` carrier's own and no `deserialize_with` restates it.
+    #[test]
+    fn a_datum_precedence_of_zero_states_no_reference() {
+        let wire = serde_json::json!({
+            "datum": "test:model:pmi#0",
+            "precedence": 0
+        });
+        let error = serde_json::from_value::<super::DatumReference>(wire)
+            .expect_err("zero is not a precedence")
+            .to_string();
+        assert!(error.contains("nonzero"), "{error}");
+
+        let wire = serde_json::json!({
+            "datum": "test:model:pmi#0",
+            "precedence": 1
+        });
+        let reference =
+            serde_json::from_value::<super::DatumReference>(wire).expect("one is a precedence");
+        assert_eq!(reference.precedence.get(), 1);
     }
 }
