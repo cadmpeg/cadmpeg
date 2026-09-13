@@ -55,34 +55,134 @@ enum Step {
     Index(usize),
 }
 
-/// Every distinct shape of `ir` that accepts [`UNKNOWN_KEY`], by normalised
-/// path, together with the number of shapes swept.
+/// What one sweep of a document found.
+pub struct SweptShapes {
+    /// The normalised path of every distinct shape that accepts
+    /// [`UNKNOWN_KEY`].
+    pub accepting: BTreeSet<String>,
+    /// The number of distinct shapes probed.
+    pub swept: usize,
+    /// The number of shapes probed in the full document because their graft
+    /// did not read back on its own.
+    pub fallbacks: usize,
+}
+
+/// Every distinct shape of `ir` that accepts [`UNKNOWN_KEY`].
 ///
 /// `ir` is a serialized `CadIr`. A document that does not read back at all
 /// yields the serde error, which the caller accounts for; it is never a silent
 /// skip.
 ///
+/// Each shape is probed in a graft: an empty document carrying only the path
+/// that reaches the shape, with the array element the shape sits in as the one
+/// element of its array. Unknown-key refusal is a property of the node's
+/// `Deserialize` implementation, which reads no sibling context, so the verdict
+/// in the graft is the verdict in the full document. A graft that does not read
+/// back on its own states a document the shape cannot be lifted out of, and that
+/// shape is probed in the full document instead.
+///
 /// # Errors
 ///
 /// Returns the serde error when `ir` does not read back as a `CadIr`.
-pub fn accepting_shapes(ir: &Value) -> Result<(BTreeSet<String>, usize), serde_json::Error> {
+pub fn accepting_shapes(ir: &Value) -> Result<SweptShapes, serde_json::Error> {
     serde_json::from_value::<CadIr>(ir.clone())?;
     let mut shapes = Vec::new();
     let mut seen = BTreeSet::new();
     collect_shapes(ir, &mut Vec::new(), &mut seen, &mut shapes);
     let swept = shapes.len();
+    let empty = serde_json::to_value(CadIr::empty())?;
     let mut accepting = BTreeSet::new();
+    let mut fallbacks = 0;
     for shape in shapes {
+        let grafted = grafted_document(ir, &empty, &shape.concrete)
+            .filter(|(graft, _)| serde_json::from_value::<CadIr>(graft.clone()).is_ok());
+        let (document, path) = match grafted {
+            Some(grafted) => grafted,
+            None => {
+                fallbacks += 1;
+                (ir.clone(), shape.concrete.clone())
+            }
+        };
         for value in probe_values() {
-            let mut probe = ir.clone();
-            insert_unknown_key(&mut probe, &shape.concrete, value);
+            let mut probe = document.clone();
+            insert_unknown_key(&mut probe, &path, value);
             if serde_json::from_value::<CadIr>(probe).is_ok() {
                 accepting.insert(shape.normalised.clone());
                 break;
             }
         }
     }
-    Ok((accepting, swept))
+    Ok(SweptShapes {
+        accepting,
+        swept,
+        fallbacks,
+    })
+}
+
+/// The document one shape is probed in, with the path that reaches the shape
+/// inside it.
+///
+/// The graft is `empty` carrying the shape's own array element, or its own
+/// top-level subtree when the shape sits in no array. `None` states a path the
+/// graft cannot carry.
+fn grafted_document(
+    ir: &Value,
+    empty: &Value,
+    path: &[Step],
+) -> Option<(Value, Vec<Step>)> {
+    if path.is_empty() {
+        return Some((empty.clone(), Vec::new()));
+    }
+    let mut graft = empty.clone();
+    match path.iter().position(|step| matches!(step, Step::Index(_))) {
+        Some(depth) => {
+            let element = value_at(ir, &path[..=depth])?;
+            set_member(&mut graft, &path[..depth], Value::Array(vec![element.clone()]))?;
+            let mut probe_path = path.to_vec();
+            let step = probe_path.get_mut(depth)?;
+            *step = Step::Index(0);
+            Some((graft, probe_path))
+        }
+        None => {
+            let subtree = value_at(ir, &path[..1])?;
+            set_member(&mut graft, &path[..1], subtree.clone())?;
+            Some((graft, path.to_vec()))
+        }
+    }
+}
+
+/// The value `path` names, or `None` when the document does not carry it.
+fn value_at<'a>(value: &'a Value, path: &[Step]) -> Option<&'a Value> {
+    let mut node = value;
+    for step in path {
+        node = match (step, node) {
+            (Step::Key(key), Value::Object(fields)) => fields.get(key)?,
+            (Step::Index(index), Value::Array(items)) => items.get(*index)?,
+            _ => return None,
+        };
+    }
+    Some(node)
+}
+
+/// Writes `value` at `path`, which every step of names an object member, and
+/// creates the objects the path needs. `None` states a step the document
+/// carries as something other than an object.
+fn set_member(document: &mut Value, path: &[Step], value: Value) -> Option<()> {
+    let (Step::Key(member), parents) = path.split_last()? else {
+        return None;
+    };
+    let mut node = document;
+    for step in parents {
+        let Step::Key(key) = step else {
+            return None;
+        };
+        node = node
+            .as_object_mut()?
+            .entry(key.clone())
+            .or_insert_with(|| Value::Object(Map::new()));
+    }
+    node.as_object_mut()?.insert(member.clone(), value);
+    Some(())
 }
 
 /// Records one shape per distinct (normalised path, key set) pair.
