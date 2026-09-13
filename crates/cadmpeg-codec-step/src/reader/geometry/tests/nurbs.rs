@@ -262,3 +262,35 @@ fn unknown_recursive_curve_dependency_is_refused_without_panicking() {
     assert!(builder.emit_curve("composite").is_none());
     assert!(builder.active_curves.is_empty());
 }
+
+#[test]
+fn a_weight_lane_shorter_than_its_pole_lane_is_stated_as_a_loss() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=CARTESIAN_POINT('',(1.,1.,0.));
+#3=CARTESIAN_POINT('',(2.,0.,0.));
+#7=(BOUNDED_CURVE() B_SPLINE_CURVE(2,(#1,#2,#3),.UNSPECIFIED.,.F.,.F.) QUASI_UNIFORM_CURVE() RATIONAL_B_SPLINE_CURVE((1.,.5)) CURVE() GEOMETRIC_REPRESENTATION_ITEM() REPRESENTATION_ITEM('short'));
+#8=GEOMETRIC_SET('',(#7));
+#9=GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION('',(#8),#10);
+#10=(GEOMETRIC_REPRESENTATION_CONTEXT(3)REPRESENTATION_CONTEXT('',''));",
+    );
+    assert!(
+        result
+            .ir()
+            .model
+            .curves
+            .iter()
+            .all(|curve| curve.id.as_str() != "step:data:curve#7"),
+        "a refused carrier states no curve"
+    );
+    assert!(
+        result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("B_SPLINE_CURVE #7")
+                && loss.message.contains("pole(s) against")),
+        "the refusal names the record and both lane counts: {:#?}",
+        result.report().losses
+    );
+}

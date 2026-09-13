@@ -23,7 +23,9 @@ use crate::loss::StepLossCode;
 use crate::test_support::export;
 use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
 
-fn curve_geometry_for_sheet_pcurve(geometry: &PcurveGeometry) -> Option<CurveGeometry> {
+fn curve_geometry_for_sheet_pcurve(
+    geometry: &PcurveGeometry,
+) -> Result<Option<CurveGeometry>, cadmpeg_ir::geometry::NurbsError> {
     let point = |point: Point2| Point3::new(point.u, point.v, 0.0);
     let vector = |vector: Point2| Vector3::new(vector.u, vector.v, 0.0);
     let line = |origin: Point2, direction: Point2| {
@@ -38,7 +40,7 @@ fn curve_geometry_for_sheet_pcurve(geometry: &PcurveGeometry) -> Option<CurveGeo
             ))
         })
     };
-    match geometry {
+    Ok(match geometry {
         PcurveGeometry::Line(line_pcurve) => {
             let origin = line_pcurve.origin();
             let direction = line_pcurve.direction();
@@ -111,14 +113,13 @@ fn curve_geometry_for_sheet_pcurve(geometry: &PcurveGeometry) -> Option<CurveGeo
                 nurbs.control_points().iter().copied().map(point).collect(),
                 nurbs.weights(),
                 nurbs.periodic(),
-            )
-            .ok()?,
+            )?,
         ))),
         PcurveGeometry::Transformed { basis, transform } => {
-            let CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) =
+            let Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve))) =
                 curve_geometry_for_sheet_pcurve(basis)?
             else {
-                return None;
+                return Ok(None);
             };
             let origin = line_curve.origin();
             let direction = line_curve.direction();
@@ -152,15 +153,17 @@ fn curve_geometry_for_sheet_pcurve(geometry: &PcurveGeometry) -> Option<CurveGeo
         }
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
             let basis = trimmed_pcurve.basis();
-            curve_geometry_for_sheet_pcurve(basis)
+            curve_geometry_for_sheet_pcurve(basis)?
         }
         PcurveGeometry::Offset(offset_pcurve) => {
             let distance = offset_pcurve.distance();
             let basis = offset_pcurve.basis();
-            let (origin, direction) = basis.line_parameters()?;
+            let Some((origin, direction)) = basis.line_parameters() else {
+                return Ok(None);
+            };
             let length = direction.u.hypot(direction.v);
             if !length.is_finite() || length == 0.0 {
-                return None;
+                return Ok(None);
             }
             line(
                 Point2::new(
@@ -175,10 +178,13 @@ fn curve_geometry_for_sheet_pcurve(geometry: &PcurveGeometry) -> Option<CurveGeo
         PcurveGeometry::SphericalGreatCircle(_) => None,
         PcurveGeometry::Harmonic(_) => None,
         PcurveGeometry::Hyperbolic(_) => None,
-    }
+    })
 }
 
-fn align_sheet_edge_to_pcurve(ir: &mut CadIr, geometry: &PcurveGeometry) {
+fn align_sheet_edge_to_pcurve(
+    ir: &mut CadIr,
+    geometry: &PcurveGeometry,
+) -> Result<(), cadmpeg_ir::geometry::NurbsError> {
     let pcurve_id = ir.model.pcurves[0].id.clone();
     let (curve_id, point_ids) = {
         let edge_id = ir
@@ -205,7 +211,7 @@ fn align_sheet_edge_to_pcurve(ir: &mut CadIr, geometry: &PcurveGeometry) {
             [edge.start.clone(), edge.end.clone()],
         )
     };
-    if let Some(curve_geometry) = curve_geometry_for_sheet_pcurve(geometry) {
+    if let Some(curve_geometry) = curve_geometry_for_sheet_pcurve(geometry)? {
         ir.model
             .curves
             .iter_mut()
@@ -241,6 +247,7 @@ fn align_sheet_edge_to_pcurve(ir: &mut CadIr, geometry: &PcurveGeometry) {
             .expect("sheet edge point")
             .position = position;
     }
+    Ok(())
 }
 
 /// Emit a single surface carrier in isolation and return the DATA lines joined.
@@ -288,7 +295,8 @@ pub(crate) fn cylinder_surface_doc() -> CadIr {
 }
 
 #[test]
-pub(crate) fn writer_round_trips_rational_nurbs_pcurves() {
+pub(crate) fn writer_round_trips_rational_nurbs_pcurves(
+) -> Result<(), cadmpeg_ir::geometry::NurbsError> {
     let bytes = include_bytes!("../../../tests/fixtures/ap214_sheet.p21");
     let mut ir = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -309,7 +317,7 @@ pub(crate) fn writer_round_trips_rational_nurbs_pcurves() {
         .unwrap(),
     };
     let geometry = ir.model.pcurves[0].geometry.clone();
-    align_sheet_edge_to_pcurve(&mut ir, &geometry);
+    align_sheet_edge_to_pcurve(&mut ir, &geometry)?;
 
     let mut output = Vec::new();
     write_step(
@@ -330,10 +338,12 @@ pub(crate) fn writer_round_trips_rational_nurbs_pcurves() {
                 && nurbs.control_points().len() == 2
                 && nurbs.weights() == Some(vec![1.0, 2.0])
     ));
+    Ok(())
 }
 
 #[test]
-fn writer_round_trips_every_exact_step_pcurve_family() {
+fn writer_round_trips_every_exact_step_pcurve_family(
+) -> Result<(), cadmpeg_ir::geometry::NurbsError> {
     use cadmpeg_ir::geometry::PcurveGeometry;
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::transform::Transform2;
@@ -425,7 +435,7 @@ fn writer_round_trips_every_exact_step_pcurve_family() {
     for geometry in cases {
         let mut ir = template.clone();
         ir.model.pcurves[0].geometry = geometry.clone();
-        align_sheet_edge_to_pcurve(&mut ir, &geometry);
+        align_sheet_edge_to_pcurve(&mut ir, &geometry)?;
         let mut output = Vec::new();
         write_step(
             &ir,
@@ -453,6 +463,7 @@ fn writer_round_trips_every_exact_step_pcurve_family() {
             .iter()
             .all(|loss| !loss.message.contains("has no decoded surface or 2D curve")));
     }
+    Ok(())
 }
 
 #[test]
