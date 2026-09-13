@@ -4821,7 +4821,9 @@ fn decode_pcurves(
         ) {
             Ok(nurbs) => nurbs,
             Err(error) => {
-                warnings.push(format!("trim {index} C2 has an invalid NURBS shape: {error}"));
+                warnings.push(format!(
+                    "trim {index} C2 has an invalid NURBS shape: {error}"
+                ));
                 continue;
             }
         };

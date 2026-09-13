@@ -2109,9 +2109,7 @@ fn legacy_mesh(
     let triangles = crate::mesh::triangulate_faces(&faces, &vertices);
     Tessellation::new(
         id,
-        cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
-            vertices, triangles, normals,
-        )?,
+        cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(vertices, triangles, normals)?,
         Vec::new(),
     )
     .map_err(|err| CodecError::Malformed(err.to_string()))

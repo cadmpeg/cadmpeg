@@ -1951,7 +1951,9 @@ pub(super) fn project(
             Err(error) => {
                 losses.push(entity_loss(
                     entry,
-                    format!("surface-of-revolution carrier cardinalities are inconsistent: {error}"),
+                    format!(
+                        "surface-of-revolution carrier cardinalities are inconsistent: {error}"
+                    ),
                 ));
                 continue;
             }

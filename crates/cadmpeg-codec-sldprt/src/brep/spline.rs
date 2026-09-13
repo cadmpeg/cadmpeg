@@ -758,8 +758,7 @@ pub(crate) fn scan_curve_carriers(
         if knots.len() != expected {
             continue;
         }
-        let nurbs = match NurbsCurve::from_lanes(descriptor.degree, knots, points, weights, false)
-        {
+        let nurbs = match NurbsCurve::from_lanes(descriptor.degree, knots, points, weights, false) {
             Ok(nurbs) => nurbs,
             Err(error) => {
                 refusals.push(format!("curve carrier attribute {attr}: {error}"));
