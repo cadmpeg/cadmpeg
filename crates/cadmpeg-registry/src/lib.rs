@@ -50,8 +50,8 @@ pub use identify::{
     identify, identify_with, resolve_and_inspect_with, Identification, InspectError, Inspected,
     DETECTION_PREFIX_LEN,
 };
-pub use registry::{dialects, support, DialectEntry};
+pub use registry::{dialects, support, DialectEntry, RegistryLoadError};
 pub use views::{
-    dialect_provenance, dialect_table, format_rows, DialectProvenance, FormatDialects, FormatRow,
-    UnknownFormat,
+    dialect_provenance, dialect_table, format_rows, DialectProvenance, DialectTableError,
+    FormatDialects, FormatRow, UnknownFormat,
 };

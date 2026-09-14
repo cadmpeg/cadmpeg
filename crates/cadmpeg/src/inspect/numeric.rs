@@ -137,13 +137,12 @@ impl ScalarType {
 
     /// Returns the encoded width in bytes.
     pub const fn width(self) -> NonZeroUsize {
-        let width = match self {
-            Self::U8 | Self::I8 => 1,
-            Self::U16 | Self::I16 => 2,
-            Self::U32 | Self::I32 | Self::F32 => 4,
-            Self::U64 | Self::I64 | Self::F64 => 8,
-        };
-        NonZeroUsize::new(width).expect("every encoding is at least one byte wide")
+        match self {
+            Self::U8 | Self::I8 => NonZeroUsize::MIN,
+            Self::U16 | Self::I16 => NonZeroUsize::MIN.saturating_add(1),
+            Self::U32 | Self::I32 | Self::F32 => NonZeroUsize::MIN.saturating_add(3),
+            Self::U64 | Self::I64 | Self::F64 => NonZeroUsize::MIN.saturating_add(7),
+        }
     }
 
     /// Returns true when the encoding is one byte wide and byte order is moot.

@@ -41,7 +41,7 @@ fn exit_codes_distinguish_semantic_and_operational_failures() {
         .assert()
         .code(2);
 
-    let mut invalid = unit_cube();
+    let mut invalid = unit_cube().expect("unit cube fixture is admitted");
     invalid.model.faces[0].surface = cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#missing")
         .expect("valid identity for an absent surface");
     let invalid = fixture(dir.path(), "invalid.json", &invalid);
@@ -237,7 +237,11 @@ fn an_unwritable_output_format_refuses_before_reading_input() {
             "catia is not an output format of this build",
         ));
 
-    let input = fixture(dir.path(), "cube.cadir.json", &unit_cube());
+    let input = fixture(
+        dir.path(),
+        "cube.cadir.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
     let report = dir.path().join("unwritable-format-report.json");
     Command::cargo_bin("cadmpeg")
         .unwrap()
@@ -304,7 +308,11 @@ fn an_unwritable_output_format_refuses_before_reading_input() {
 #[test]
 fn an_unknown_dialect_is_refused_with_the_encoder_catalog() {
     let dir = tempdir().unwrap();
-    let input = fixture(dir.path(), "cube.cadir.json", &unit_cube());
+    let input = fixture(
+        dir.path(),
+        "cube.cadir.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
     let output = dir.path().join("cube.igs");
 
     Command::cargo_bin("cadmpeg")
@@ -438,7 +446,11 @@ fn an_unknown_dialect_is_refused_with_the_encoder_catalog() {
 #[test]
 fn rhino_word_5_is_refused_with_the_encoder_catalog() {
     let dir = tempdir().unwrap();
-    let input = fixture(dir.path(), "cube.cadir.json", &unit_cube());
+    let input = fixture(
+        dir.path(),
+        "cube.cadir.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
     let output = dir.path().join("cube.3dm");
 
     Command::cargo_bin("cadmpeg")
@@ -519,7 +531,11 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
     assert_eq!(report["export"]["identity"]["payload"], "native");
     assert_eq!(report["export"]["losses"].as_array().unwrap().len(), 1);
 
-    let lossless = fixture(dir.path(), "cube.cadir.json", &unit_cube());
+    let lossless = fixture(
+        dir.path(),
+        "cube.cadir.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
     for scope in [
         "--reject-lossy",
         "--reject-lossy=decode",
@@ -550,7 +566,7 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
 #[test]
 fn json_on_artifact_commands_is_a_teaching_error() {
     let dir = tempdir().unwrap();
-    let ir = unit_cube();
+    let ir = unit_cube().expect("unit cube fixture is admitted");
     let model = fixture(dir.path(), "cube.cadir.json", &ir);
     let path = model.to_str().unwrap();
 
@@ -577,7 +593,11 @@ fn json_on_artifact_commands_is_a_teaching_error() {
 #[test]
 fn report_to_an_unwritable_path_is_an_operational_error() {
     let dir = tempdir().unwrap();
-    let input = fixture(dir.path(), "cube.cadir.json", &unit_cube());
+    let input = fixture(
+        dir.path(),
+        "cube.cadir.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
     let report = dir.path().join("missing-subdir").join("report.json");
     Command::cargo_bin("cadmpeg")
         .unwrap()

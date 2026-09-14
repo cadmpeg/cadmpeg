@@ -15,7 +15,11 @@ use crate::support::*;
 #[test]
 fn convert_stdout_contains_only_json_artifact() {
     let dir = tempdir().unwrap();
-    let input = fixture(dir.path(), "cube.cadir.json", &unit_cube());
+    let input = fixture(
+        dir.path(),
+        "cube.cadir.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
     let output = Command::cargo_bin("cadmpeg")
         .unwrap()
         .args(["convert", input.to_str().unwrap(), "-f", "json"])
@@ -34,7 +38,11 @@ fn convert_stdout_contains_only_json_artifact() {
 #[test]
 fn step_artifact_starts_with_step_header() {
     let dir = tempdir().unwrap();
-    let input = fixture(dir.path(), "cube.json", &unit_cube());
+    let input = fixture(
+        dir.path(),
+        "cube.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
 
     let output = Command::cargo_bin("cadmpeg")
         .unwrap()
@@ -204,7 +212,7 @@ fn rhino_output_version_is_selected_explicitly() {
 #[test]
 fn check_blocks_conversion_unless_overridden() {
     let dir = tempdir().unwrap();
-    let mut invalid = unit_cube();
+    let mut invalid = unit_cube().expect("unit cube fixture is admitted");
     invalid.model.faces[0].surface = cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#missing")
         .expect("valid identity for an absent surface");
     let input = fixture(dir.path(), "invalid.json", &invalid);
@@ -247,7 +255,11 @@ fn check_blocks_conversion_unless_overridden() {
 #[test]
 fn output_cannot_replace_input_and_success_is_atomic() {
     let dir = tempdir().unwrap();
-    let input = fixture(dir.path(), "cube.json", &unit_cube());
+    let input = fixture(
+        dir.path(),
+        "cube.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
     let original = fs::read(&input).unwrap();
     Command::cargo_bin("cadmpeg")
         .unwrap()
@@ -282,7 +294,11 @@ fn output_cannot_replace_input_and_success_is_atomic() {
 #[test]
 fn format_is_required_when_stdout_has_no_extension() {
     let dir = tempdir().unwrap();
-    let input = fixture(dir.path(), "cube.json", &unit_cube());
+    let input = fixture(
+        dir.path(),
+        "cube.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args(["convert", input.to_str().unwrap()])
@@ -296,7 +312,11 @@ fn format_is_required_when_stdout_has_no_extension() {
 #[test]
 fn existing_output_requires_force() {
     let dir = tempdir().unwrap();
-    let input = fixture(dir.path(), "cube.cadir.json", &unit_cube());
+    let input = fixture(
+        dir.path(),
+        "cube.cadir.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
     let output = dir.path().join("cube.step");
     fs::write(&output, b"keep").unwrap();
 
@@ -361,7 +381,11 @@ fn existing_output_is_refused_before_decode() {
 #[test]
 fn input_named_tmp_survives_convert_and_temp_names_do_not_collide() {
     let dir = tempdir().unwrap();
-    let input = fixture(dir.path(), "part.tmp", &unit_cube());
+    let input = fixture(
+        dir.path(),
+        "part.tmp",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
     let original = fs::read(&input).unwrap();
     let cadir = dir.path().join("part.cadir.json");
     let step = dir.path().join("part.step");
@@ -397,7 +421,11 @@ fn input_named_tmp_survives_convert_and_temp_names_do_not_collide() {
 #[test]
 fn cadir_extension_is_inferred_and_decode_output_matches_stdout() {
     let dir = tempdir().unwrap();
-    let cube = fixture(dir.path(), "cube.json", &unit_cube());
+    let cube = fixture(
+        dir.path(),
+        "cube.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
     let inferred = dir.path().join("part.cadir");
     Command::cargo_bin("cadmpeg")
         .unwrap()
@@ -462,7 +490,7 @@ fn fidelity_sidecar_replays_native_bytes_and_missing_sidecar_refuses_prewrite() 
         let source_ir = if format == "sldprt" {
             sldprt_cube()
         } else {
-            unit_cube()
+            unit_cube().expect("unit cube fixture is admitted")
         };
         let cube = fixture(dir.path(), &format!("cube-{format}.cadir.json"), &source_ir);
         let native = dir.path().join(format!("source.{format}"));
@@ -528,7 +556,11 @@ fn fidelity_sidecar_replays_native_bytes_and_missing_sidecar_refuses_prewrite() 
 #[test]
 fn cadir_format_name_and_json_alias_both_work() {
     let dir = tempdir().unwrap();
-    let input = fixture(dir.path(), "cube.json", &unit_cube());
+    let input = fixture(
+        dir.path(),
+        "cube.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
     for format in ["cadir", "json"] {
         Command::cargo_bin("cadmpeg")
             .unwrap()
@@ -542,7 +574,11 @@ fn cadir_format_name_and_json_alias_both_work() {
 #[test]
 fn explicit_format_warns_when_known_extension_disagrees() {
     let dir = tempdir().unwrap();
-    let input = fixture(dir.path(), "cube.json", &unit_cube());
+    let input = fixture(
+        dir.path(),
+        "cube.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
     let output = dir.path().join("cube.cadir.json");
     Command::cargo_bin("cadmpeg")
         .unwrap()
@@ -564,7 +600,7 @@ fn explicit_format_warns_when_known_extension_disagrees() {
 #[test]
 fn convert_refuses_binary_output_to_stdout() {
     let dir = tempdir().unwrap();
-    let ir = unit_cube();
+    let ir = unit_cube().expect("unit cube fixture is admitted");
     let model = fixture(dir.path(), "cube.cadir.json", &ir);
     let path = model.to_str().unwrap();
 
@@ -632,7 +668,7 @@ fn convert_refuses_binary_output_to_stdout() {
 #[test]
 fn from_and_to_aliases_match_input_format_and_format() {
     let dir = tempdir().unwrap();
-    let ir = unit_cube();
+    let ir = unit_cube().expect("unit cube fixture is admitted");
     let model = fixture(dir.path(), "cube.cadir.json", &ir);
     let path = model.to_str().unwrap();
 

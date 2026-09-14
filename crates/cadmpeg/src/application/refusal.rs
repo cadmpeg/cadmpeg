@@ -61,6 +61,12 @@ impl From<std::io::Error> for ApplicationError {
     }
 }
 
+impl From<cadmpeg_registry::RegistryLoadError> for ApplicationError {
+    fn from(error: cadmpeg_registry::RegistryLoadError) -> Self {
+        Self::Operational(error.into())
+    }
+}
+
 impl From<serde_json::Error> for ApplicationError {
     fn from(error: serde_json::Error) -> Self {
         Self::Operational(error.into())
@@ -410,7 +416,15 @@ impl ConversionRefusal {
                 validation,
             } => RefusalEvidence {
                 code: RefusalCode::CheckFailed,
-                message: Cow::Owned(match operation { CheckOperation::Check => format!("check found {} error(s)", validation.error_count()), CheckOperation::Export => format!("check found {} error(s); refusing to export (use --allow-errors to override)", validation.error_count()) }),
+                message: Cow::Owned(match operation {
+                    CheckOperation::Check => {
+                        format!("check found {} error(s)", validation.error_count())
+                    }
+                    CheckOperation::Export => format!(
+                        "check found {} error(s); refusing to export (use --allow-errors to override)",
+                        validation.error_count()
+                    ),
+                }),
                 detail: None,
                 reports: RefusalReports {
                     decode: decode_report.as_ref(),
@@ -423,7 +437,11 @@ impl ConversionRefusal {
                 decode_report,
             } => RefusalEvidence {
                 code: RefusalCode::DecodeLossRejected,
-                message: Cow::Owned(format!("decode reported {} loss(es); refusing to write a lossy {} (omit --reject-lossy to allow)", decode_report.losses.len(), format.name())),
+                message: Cow::Owned(format!(
+                    "decode reported {} loss(es); refusing to write a lossy {} (omit --reject-lossy to allow)",
+                    decode_report.losses.len(),
+                    format.name()
+                )),
                 detail: None,
                 reports: RefusalReports {
                     decode: Some(decode_report),
@@ -437,7 +455,17 @@ impl ConversionRefusal {
                 export_report,
             } => RefusalEvidence {
                 code: RefusalCode::ExportLossRejected,
-                message: Cow::Owned(format!("export planning reported {} loss(es): {}; refusing to write a lossy {} (omit --reject-lossy to allow)", export_report.losses.len(), export_report.losses.iter().map(|loss| loss.message.as_str()).collect::<Vec<_>>().join("; "), export_report.format())),
+                message: Cow::Owned(format!(
+                    "export planning reported {} loss(es): {}; refusing to write a lossy {} (omit --reject-lossy to allow)",
+                    export_report.losses.len(),
+                    export_report
+                        .losses
+                        .iter()
+                        .map(|loss| loss.message.as_str())
+                        .collect::<Vec<_>>()
+                        .join("; "),
+                    export_report.format()
+                )),
                 detail: None,
                 reports: RefusalReports {
                     decode: decode_report.as_ref(),
@@ -451,7 +479,10 @@ impl ConversionRefusal {
                 validation,
             } => RefusalEvidence {
                 code: RefusalCode::EmptyGeometry,
-                message: Cow::Owned(format!("decode transferred no geometry; refusing to write an empty {} (use --allow-empty to override)", format.name())),
+                message: Cow::Owned(format!(
+                    "decode transferred no geometry; refusing to write an empty {} (use --allow-empty to override)",
+                    format.name()
+                )),
                 detail: None,
                 reports: RefusalReports {
                     decode: decode_report.as_ref(),
@@ -600,7 +631,10 @@ mod tests {
         assert_eq!(report_value(&refusal)["stage"], "plan");
         assert_eq!(refusal.exit_code(), 1);
         assert!(refusal.may_write_report());
-        assert_eq!(refusal.to_string(), "iges cannot write iges:9.9: not a target this encoder can synthesize; available targets: iges:5.3-fixed-ascii");
+        assert_eq!(
+            refusal.to_string(),
+            "iges cannot write iges:9.9: not a target this encoder can synthesize; available targets: iges:5.3-fixed-ascii"
+        );
         let report = report_value(&refusal);
         assert_eq!(report["code"], "unsupported_target");
         assert_eq!(report["stage"], "plan");

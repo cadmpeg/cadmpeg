@@ -219,7 +219,7 @@ pub(crate) fn emit_values(
     values: &[serde_json::Value],
 ) -> Result<()> {
     if output == Output::Json {
-        print_json(view, serde_json::Value::Array(values.to_vec()));
+        print_json(view, serde_json::Value::Array(values.to_vec()))?;
         return Ok(());
     }
     // Empty arena / no matches: empty stdout (no TSV header), exit 0 unless a

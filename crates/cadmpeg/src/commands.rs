@@ -183,13 +183,13 @@ pub fn inspect(
     ) {
         Ok(inspected) => inspected,
         Err(InspectError::Io(error)) => {
-            return Err(inspect_io_error(path, limits.max_input_bytes, error).into())
+            return Err(inspect_io_error(path, limits.max_input_bytes, error).into());
         }
         Err(InspectError::Unresolved(error)) => {
-            return Err(loader::detection_failure(&error).into())
+            return Err(loader::detection_failure(&error).into());
         }
         Err(InspectError::Cadir | InspectError::Unrecognized) => {
-            return Err(inspect_unrecognized(path).into())
+            return Err(inspect_unrecognized(path).into());
         }
         Err(InspectError::Codec {
             selection,
@@ -219,7 +219,7 @@ pub fn inspect(
         Err(InspectError::Codec { error, .. }) => {
             return Err(anyhow::Error::new(error)
                 .context(format!("inspecting {}", path.display()))
-                .into())
+                .into());
         }
     };
     let selection = InputSelection::from(selection);
@@ -239,7 +239,7 @@ pub fn inspect(
         summary.container_kind,
         summary.entries.len()
     );
-    for line in crate::registry_view::dialect_lines(summary.dialects()) {
+    for line in crate::registry_view::dialect_lines(summary.dialects())? {
         println!("{line}");
     }
     println!();
@@ -568,7 +568,7 @@ pub fn diff(
     if let Some((before, after)) = &result.tolerance_change {
         println!("  tolerances: {before:?} → {after:?}");
     }
-    print_source_diff(&result.source);
+    print_source_diff(&result.source)?;
     for arena in &result.per_arena {
         if arena.added.is_empty() && arena.removed.is_empty() && arena.modified.is_empty() {
             continue;

@@ -8,7 +8,8 @@
 //! should have to parse back out of a string.
 
 use cadmpeg_registry::{
-    dialect_provenance, dialect_table, format_rows, DialectProvenance, InputCatalog, UnknownFormat,
+    dialect_provenance, dialect_table, format_rows, DialectProvenance, DialectTableError,
+    InputCatalog, RegistryLoadError,
 };
 
 /// Prints the formats this build reads and writes.
@@ -16,19 +17,20 @@ use cadmpeg_registry::{
 /// Two columns, because reading and writing differ per format: Inventor,
 /// CATIA, Creo, NX, and SAT are read-only, and one column would have to
 /// misstate one half of each of them.
-pub fn print_formats(inputs: &InputCatalog) {
+pub fn print_formats(inputs: &InputCatalog) -> Result<(), RegistryLoadError> {
     println!("FORMAT     READ   WRITE  EXTENSIONS");
     for row in format_rows(inputs) {
         println!(
             "{:<10} {:<6} {:<6} {}",
             row.id,
             "yes",
-            yes_no(row.write()),
+            yes_no(row.write()?),
             row.extensions.join(", ")
         );
     }
     println!();
     println!("`cadmpeg dialects [FORMAT]` lists the dialects of each format.");
+    Ok(())
 }
 
 const fn yes_no(value: bool) -> &'static str {
@@ -40,7 +42,7 @@ const fn yes_no(value: bool) -> &'static str {
 }
 
 /// Prints the identity registry crossed with the capability registry.
-pub fn print_dialects(format: Option<&str>) -> Result<(), UnknownFormat> {
+pub fn print_dialects(format: Option<&str>) -> Result<(), DialectTableError> {
     for (index, section) in dialect_table(format)?.iter().enumerate() {
         if index > 0 {
             println!();
@@ -56,7 +58,9 @@ pub fn print_dialects(format: Option<&str>) -> Result<(), UnknownFormat> {
             Some(_) => println!("{name}  (this build writes it, with no dialect catalog)"),
             None => println!("{name}  (no encoder in this build)"),
         }
-        println!("  DIALECT                            READ                     WRITE                    TITLE");
+        println!(
+            "  DIALECT                            READ                     WRITE                    TITLE"
+        );
         for row in &section.rows {
             let is_target = section
                 .catalog
@@ -83,15 +87,17 @@ pub fn print_dialects(format: Option<&str>) -> Result<(), UnknownFormat> {
 /// disposition, and the write targets this build can synthesize. `None` when
 /// the codec reported no dialects at all, which is the honest output for a
 /// codec that does not classify.
-pub fn dialect_lines(dialects: Option<&cadmpeg_core::dialect::DialectLayers>) -> Vec<String> {
+pub fn dialect_lines(
+    dialects: Option<&cadmpeg_core::dialect::DialectLayers>,
+) -> Result<Vec<String>, RegistryLoadError> {
     let Some(dialects) = dialects else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let DialectProvenance {
         id,
         read,
         write_targets,
-    } = dialect_provenance(dialects);
+    } = dialect_provenance(dialects)?;
     let id = id.as_str().to_owned();
 
     let mut clauses = Vec::new();
@@ -111,14 +117,14 @@ pub fn dialect_lines(dialects: Option<&cadmpeg_core::dialect::DialectLayers>) ->
     } else {
         format!("dialect: {id} — {}", clauses.join(", "))
     };
-    std::iter::once(primary)
+    Ok(std::iter::once(primary)
         .chain(
             dialects
                 .iter()
                 .skip(1)
                 .map(|layer| format!("dialect: {}", layer.dialect())),
         )
-        .collect()
+        .collect())
 }
 
 /// The part of a dialect id after its format prefix.
@@ -141,7 +147,7 @@ mod tests {
         let dialects = DialectLayers::of(DialectMatch::admitted(cadmpeg_core::dialect_id!(
             "rhino:archive-50"
         )));
-        let lines = dialect_lines(Some(&dialects));
+        let lines = dialect_lines(Some(&dialects)).expect("embedded registry loads");
         let line = &lines[0];
         assert!(line.starts_with("dialect: rhino:archive-50 — "), "{line}");
         assert!(line.contains("read "), "{line}");
@@ -152,7 +158,9 @@ mod tests {
     /// A codec that classified nothing prints no dialect line.
     #[test]
     fn no_dialects_is_no_line() {
-        assert!(dialect_lines(None).is_empty());
+        assert!(dialect_lines(None)
+            .expect("embedded registry loads")
+            .is_empty());
     }
 
     #[test]
@@ -166,7 +174,15 @@ mod tests {
             "acis:sat-32"
         )))
         .expect("distinct dialect layer keys");
-        assert_eq!(dialect_lines(Some(&dialects)).len(), 2);
-        assert_eq!(dialect_lines(Some(&dialects))[1], "dialect: acis:sat-32");
+        assert_eq!(
+            dialect_lines(Some(&dialects))
+                .expect("embedded registry loads")
+                .len(),
+            2
+        );
+        assert_eq!(
+            dialect_lines(Some(&dialects)).expect("embedded registry loads")[1],
+            "dialect: acis:sat-32"
+        );
     }
 }

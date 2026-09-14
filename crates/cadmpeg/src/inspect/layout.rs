@@ -280,9 +280,11 @@ impl<'a> Record<'a> {
                             endian,
                         }
                     }
-                    FieldKind::Bytes(count) => {
-                        DecodedValue::Bytes(RawBytes::new(bytes, offset, count))
-                    }
+                    FieldKind::Bytes(count) => DecodedValue::Bytes(RawBytes {
+                        record: bytes,
+                        offset,
+                        count,
+                    }),
                 };
                 Some(DecodedField {
                     name,
@@ -295,25 +297,21 @@ impl<'a> Record<'a> {
 
 /// A run of raw bytes covering at least one byte.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RawBytes<'a>(&'a [u8]);
+pub struct RawBytes<'a> {
+    record: &'a [u8],
+    offset: usize,
+    count: NonZeroUsize,
+}
 
 impl<'a> RawBytes<'a> {
-    /// Returns the run of `count` bytes of `bytes` that starts at `offset`.
-    ///
-    /// The count is the field's own width, so the run covers at least one byte
-    /// and the length is read back off the slice.
-    pub fn new(bytes: &'a [u8], offset: usize, count: NonZeroUsize) -> Self {
-        Self(&bytes[offset..offset + count.get()])
+    /// Returns the field window within its admitted record.
+    pub fn as_slice(self) -> &'a [u8] {
+        &self.record[self.offset..self.offset + self.count.get()]
     }
 
-    /// Returns the bytes of the run.
-    pub const fn as_slice(self) -> &'a [u8] {
-        self.0
-    }
-
-    /// Returns how many bytes the run covers.
-    pub fn len(self) -> NonZeroUsize {
-        NonZeroUsize::new(self.0.len()).expect("a raw byte run covers at least one byte")
+    /// Returns the nonzero width carried by the layout field.
+    pub const fn len(self) -> NonZeroUsize {
+        self.count
     }
 }
 

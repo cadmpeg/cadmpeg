@@ -72,7 +72,7 @@ impl TargetSelection {
 
     fn resolve_value(value: &str, inferred: Option<Format>) -> Result<Self, ApplicationError> {
         if let Some((left, right)) = value.split_once(':') {
-            let format = Format::from_name(left).ok_or_else(|| {
+            let format = Format::from_name(left)?.ok_or_else(|| {
                 ConversionRefusal::UnsupportedOutputFormat {
                     message: format!(
                         "--to {value}: {left} is not an output format of this build; available: {}",
@@ -89,11 +89,11 @@ impl TargetSelection {
             warn_on_extension_disagreement(format, inferred);
             return Ok(Self::new(format, Some(right.to_owned())));
         }
-        if let Some(format) = Format::from_name(value) {
+        if let Some(format) = Format::from_name(value)? {
             warn_on_extension_disagreement(format, inferred);
             return Ok(Self::new(format, None));
         }
-        if Format::is_known_name(value) {
+        if Format::is_known_name(value)? {
             return Err(ConversionRefusal::UnsupportedOutputFormat {
                 message: format!(
                     "--to {value}: {value} is not an output format of this build; available: {}",
@@ -399,7 +399,7 @@ impl PreparedConversion {
                     error,
                     self.document.decode_report().cloned(),
                     self.validation,
-                ))
+                ));
             }
         };
         if self.loss_policy.rejects_export() && !plan.report().losses.is_empty() {

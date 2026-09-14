@@ -202,7 +202,7 @@ pub fn shell_quote(name: &str) -> String {
 ///
 /// Names are raw strings here — shell quoting belongs to the table
 /// rendering, not to JSON.
-pub fn render_json(listing: &Listing) -> String {
+pub fn render_json(listing: &Listing) -> Result<String> {
     let (container_kind, entries): (&str, Vec<serde_json::Value>) = match listing {
         Listing::Zip(entries) => (
             "zip",
@@ -249,10 +249,9 @@ pub fn render_json(listing: &Listing) -> String {
         "container_kind": container_kind,
         "entries": entries,
     });
-    let mut rendered = crate::commands::reporting::command_report_json("inspect", &payload)
-        .expect("the command report serializes");
+    let mut rendered = crate::commands::reporting::command_report_json("inspect", &payload)?;
     rendered.push('\n');
-    rendered
+    Ok(rendered)
 }
 
 /// Formats an entry listing as an aligned table.

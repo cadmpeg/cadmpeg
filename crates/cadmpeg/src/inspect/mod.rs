@@ -25,7 +25,6 @@ use std::process::ExitCode;
 use crate::application::artifact_store::OptionalFileDestination;
 use anyhow::{bail, Context, Result};
 use cadmpeg_core::decode::alloc_filled;
-use clap::builder::TypedValueParser;
 use clap::{Args, Subcommand, ValueEnum};
 
 use crate::LimitProfile;
@@ -56,31 +55,8 @@ pub struct SummaryArgs {
     #[arg(long, value_enum, default_value_t = LimitProfile::Desktop)]
     pub limits: LimitProfile,
     /// Treat the input as this native format.
-    #[arg(long, visible_alias = "from", value_parser = native_input_parser())]
+    #[arg(long, visible_alias = "from", value_parser = crate::input_format::native_input_parser())]
     pub input_format: Option<&'static cadmpeg_registry::NativeDescriptor>,
-}
-
-fn native_input_parser(
-) -> impl TypedValueParser<Value = &'static cadmpeg_registry::NativeDescriptor> {
-    let pairs = cadmpeg_registry::input_names()
-        .filter_map(|name| match cadmpeg_registry::forced_input(name) {
-            Some(cadmpeg_registry::ForcedInput::Codec(native)) => Some((name, native)),
-            Some(cadmpeg_registry::ForcedInput::Cadir) | None => None,
-        })
-        .collect::<Vec<_>>();
-    let parser = clap::builder::PossibleValuesParser::new(pairs.iter().map(|(name, _)| *name));
-    parser.try_map(move |name| {
-        pairs
-            .iter()
-            .find(|(candidate, _)| *candidate == name)
-            .map(|(_, native)| *native)
-            .ok_or_else(|| {
-                clap::Error::raw(
-                    clap::error::ErrorKind::InvalidValue,
-                    format!("`{name}` is not a native input format\n"),
-                )
-            })
-    })
 }
 
 impl clap::Args for InspectArgs {
@@ -339,19 +315,19 @@ impl clap::FromArgMatches for FindInput {
                 return Err(clap::Error::raw(
                     clap::error::ErrorKind::ArgumentConflict,
                     "--input cannot be used with a positional file",
-                ))
+                ));
             }
             (None, [_, _, _, ..]) => {
                 return Err(clap::Error::raw(
                     clap::error::ErrorKind::TooManyValues,
                     "expected only FILE and NEEDLE",
-                ))
+                ));
             }
             _ => {
                 return Err(clap::Error::raw(
                     clap::error::ErrorKind::MissingRequiredArgument,
                     "required arguments: FILE and NEEDLE",
-                ))
+                ));
             }
         };
         let needle = needle
@@ -746,7 +722,7 @@ fn container_list(args: &ContainerArgs) -> Result<()> {
         )
     })?;
     if args.json {
-        print!("{}", container::render_json(&listing));
+        print!("{}", container::render_json(&listing)?);
     } else {
         print!("{}", container::render(&listing));
     }
@@ -843,7 +819,7 @@ fn window(bytes: &[u8], start: u64, len: u64) -> String {
     hexdump::render(
         begin as u64,
         &bytes[begin..end],
-        const { NonZeroUsize::new(16).unwrap() },
+        const { NonZeroUsize::MIN.saturating_add(15) },
     )
 }
 
