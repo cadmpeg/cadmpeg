@@ -1653,14 +1653,17 @@ fn decode_graph(
                             ),
                         )
                     })
-                    .transpose()
-                    .map_err(cadmpeg_core::CodecError::malformed)?
-                    .unwrap_or_default();
+                    .transpose();
+                // The sink is drained before the `?` below: an error on that
+                // route must not drop a refusal the walk above already pushed.
                 out.stats.spline_lane_refusals.extend(
                     pcurve_refusal.take_records().into_iter().map(|record| {
                         format!("intersection pcurve for coedge {ce_attr}: {record}")
                     }),
                 );
+                let pcurves = pcurves
+                    .map_err(cadmpeg_core::CodecError::malformed)?
+                    .unwrap_or_default();
                 let mut sense = ce.sense;
                 if reversed_edge_orientation.contains(&edge_attr) {
                     sense = match sense {
