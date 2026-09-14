@@ -17,6 +17,7 @@ thread_local! {
 }
 
 /// Canonical neutral arena kind.
+#[repr(usize)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EntityKind {
     /// Body.
@@ -104,6 +105,11 @@ pub enum EntityKind {
 }
 
 impl EntityKind {
+    /// Position of this kind in the canonical arena registry.
+    pub(crate) const fn index(self) -> usize {
+        self as usize
+    }
+
     /// Every registered entity kind in canonical arena order.
     pub const ALL: [Self; 41] = [
         Self::Body,

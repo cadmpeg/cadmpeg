@@ -314,7 +314,7 @@ fn unclassified_reports_serialize_empty_dialect_keys() {
 #[test]
 fn a_native_export_report_states_its_payload_and_names_its_target() {
     let report = ExportReport::native(
-        DialectId::pinned("step:ap242-e3"),
+        cadmpeg_core::dialect_id!("step:ap242-e3"),
         EntityCensus {
             basis: CensusBasis::TargetRecords,
             counts: BTreeMap::new(),
@@ -374,7 +374,7 @@ fn an_export_payload_carries_only_the_target_key_its_own_arm_owns() {
 fn classified_report_wire_requires_its_primary_format() {
     let report = DecodeReport::classified(
         DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
-            DialectId::pinned("rhino:archive-80"),
+            cadmpeg_core::dialect_id!("rhino:archive-80"),
         )),
         DecodeTransfer::full(true),
         BTreeMap::new(),

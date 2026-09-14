@@ -596,7 +596,7 @@ mod tests {
 
     #[test]
     fn detects_changes_in_all_document_dimensions() {
-        let left = unit_cube();
+        let left = unit_cube().expect("valid unit cube fixture");
         let mut right = left.clone();
         right.model.points[0].position.x += 1.0;
         right.model.loops.pop();
@@ -662,7 +662,7 @@ mod tests {
     /// file decoded under two platforms' libm produces.
     #[test]
     fn a_last_place_coordinate_move_is_not_a_difference() {
-        let left = unit_cube();
+        let left = unit_cube().expect("valid unit cube fixture");
         let mut right = left.clone();
         let index = scaled_point(&left);
         let before = right.model.points[index].position.x;
@@ -686,7 +686,7 @@ mod tests {
     /// A tolerance declaration moved in the last place is the same declaration.
     #[test]
     fn a_last_place_tolerance_move_is_not_a_difference() {
-        let left = unit_cube();
+        let left = unit_cube().expect("valid unit cube fixture");
         let mut right = left.clone();
         right.tolerances.linear = crate::scalar::PositiveReal::new(f64::from_bits(
             left.tolerances.linear.get().to_bits() + 1,
@@ -704,7 +704,7 @@ mod tests {
     /// coordinate is six orders above the tolerance.
     #[test]
     fn a_genuine_coordinate_change_is_still_reported() {
-        let left = unit_cube();
+        let left = unit_cube().expect("valid unit cube fixture");
         let mut right = left.clone();
         let index = scaled_point(&left);
         let point = &mut right.model.points[index].position;
@@ -749,7 +749,7 @@ mod tests {
             source_object: None,
         };
 
-        let mut left = unit_cube();
+        let mut left = unit_cube().expect("valid unit cube fixture");
         let mut right = left.clone();
         left.model.curves.push(nurbs(1));
         right.model.curves.push(nurbs(2));
@@ -764,11 +764,11 @@ mod tests {
 
     /// A cube carrying source metadata with the given attributes.
     fn with_source(attributes: &[(&str, &str)]) -> crate::CadIr {
-        let mut ir = unit_cube();
+        let mut ir = unit_cube().expect("valid unit cube fixture");
         ir.source = Some(crate::document::SourceMeta::classified(
             cadmpeg_core::dialect::DialectLayers::of(
                 cadmpeg_core::dialect::DialectMatch::admitted(
-                    cadmpeg_core::dialect::DialectId::pinned("rhino:archive-80"),
+                    cadmpeg_core::dialect_id!("rhino:archive-80"),
                 ),
             ),
             cadmpeg_core::text::named_entries(
@@ -873,7 +873,7 @@ mod tests {
     /// without panicking in either order.
     #[test]
     fn absent_source_metadata_compares_without_panicking() {
-        let mut bare = unit_cube();
+        let mut bare = unit_cube().expect("valid unit cube fixture");
         bare.source = None;
         let populated = with_source(&[("object_count", "3")]);
 
@@ -893,7 +893,7 @@ mod tests {
 
     #[test]
     fn identical_documents_have_empty_diff() {
-        let ir = unit_cube();
+        let ir = unit_cube().expect("valid unit cube fixture");
         assert!(diff(&ir, &ir).is_empty());
     }
 
@@ -906,13 +906,13 @@ mod tests {
         classify_source(
             &mut left,
             cadmpeg_core::dialect::DialectMatch::admitted(
-                cadmpeg_core::dialect::DialectId::pinned("rhino:archive-70"),
+                cadmpeg_core::dialect_id!("rhino:archive-70"),
             ),
         );
         classify_source(
             &mut right,
             cadmpeg_core::dialect::DialectMatch::admitted(
-                cadmpeg_core::dialect::DialectId::pinned("rhino:archive-80"),
+                cadmpeg_core::dialect_id!("rhino:archive-80"),
             ),
         );
 
@@ -927,7 +927,7 @@ mod tests {
         classify_source(
             &mut declared_left,
             cadmpeg_core::dialect::DialectMatch::admitted(
-                cadmpeg_core::dialect::DialectId::pinned("rhino:archive-70"),
+                cadmpeg_core::dialect_id!("rhino:archive-70"),
             )
             .with_declared(BTreeMap::from([(
                 cadmpeg_core::nonblank_literal!("archive_version"),
@@ -937,7 +937,7 @@ mod tests {
         classify_source(
             &mut declared_right,
             cadmpeg_core::dialect::DialectMatch::admitted(
-                cadmpeg_core::dialect::DialectId::pinned("rhino:archive-70"),
+                cadmpeg_core::dialect_id!("rhino:archive-70"),
             )
             .with_declared(BTreeMap::from([(
                 cadmpeg_core::nonblank_literal!("archive_version"),
@@ -961,36 +961,37 @@ mod tests {
 
     #[test]
     fn admission_and_instance_divergence_are_differences() {
-        use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
+        use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
 
         let mut left = with_source(&[]);
         let mut right = left.clone();
         classify_source(
             &mut left,
-            DialectMatch::admitted(DialectId::pinned("rhino:archive-80")),
+            DialectMatch::admitted(cadmpeg_core::dialect_id!("rhino:archive-80")),
         );
         classify_source(
             &mut right,
-            DialectMatch::refused(DialectId::pinned("rhino:archive-80")),
+            DialectMatch::refused(cadmpeg_core::dialect_id!("rhino:archive-80")),
         );
         assert!(!diff(&left, &right).is_empty());
 
         classify_source(
             &mut right,
-            DialectMatch::admitted(DialectId::pinned("rhino:archive-80"))
+            DialectMatch::admitted(cadmpeg_core::dialect_id!("rhino:archive-80"))
                 .with_instance("embedded/model.3dm"),
         );
         assert!(!diff(&left, &right).is_empty());
 
         let source = right.source.take().unwrap();
         right.source = Some(crate::document::SourceMeta::classified(
-            DialectLayers::of(DialectMatch::admitted(DialectId::pinned(
+            DialectLayers::of(DialectMatch::admitted(cadmpeg_core::dialect_id!(
                 "rhino:archive-80",
             )))
             .with(
-                DialectMatch::residual(DialectId::pinned("acis:text-acis"))
+                DialectMatch::residual(cadmpeg_core::dialect_id!("acis:text-acis"))
                     .with_instance("body.sat"),
-            ),
+            )
+            .expect("the test dialect layers have distinct keys"),
             source.attributes,
         ));
         let result = diff(&left, &right);

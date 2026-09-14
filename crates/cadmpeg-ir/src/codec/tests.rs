@@ -51,7 +51,7 @@ impl CodecBackend for RejectFloorCodec {
         _ctx: &DecodeContext<'_>,
         _root: View<'_>,
     ) -> Result<Decoded, CodecError> {
-        let mut decoded = decoded(unit_cube());
+        let mut decoded = decoded(unit_cube().expect("valid unit cube fixture"));
         decoded
             .body
             .losses
@@ -88,9 +88,9 @@ impl CodecBackend for ForeignIdentityCodec {
         _ctx: &DecodeContext<'_>,
         _root: View<'_>,
     ) -> Result<Decoded, CodecError> {
-        let mut ir = unit_cube();
+        let mut ir = unit_cube().expect("valid unit cube fixture");
         ir.source = Some(crate::SourceMeta::classified(
-            DialectLayers::of(DialectMatch::admitted(DialectId::pinned("foreign:test"))),
+            DialectLayers::of(DialectMatch::admitted(cadmpeg_core::dialect_id!("foreign:test"))),
             BTreeMap::new(),
         ));
         Ok(decoded(ir))
@@ -186,13 +186,14 @@ fn a_container_only_strict_decode_keeps_its_losses_and_is_admitted() {
 
 #[test]
 fn a_decode_result_stamps_every_source_dialect_layer_onto_the_report() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let primary = dialect_layer("test:only").with_declared(BTreeMap::from([(
         cadmpeg_core::nonblank_literal!("version"),
         "only".into(),
     )]));
     let layers = DialectLayers::of(primary.clone())
-        .with(dialect_layer("acis:save-format-217").with_instance("body.sab"));
+        .with(dialect_layer("acis:save-format-217").with_instance("body.sab"))
+        .expect("the test dialect layers have distinct keys");
     ir.source = Some(crate::SourceMeta::classified(
         layers.clone(),
         BTreeMap::from([(
@@ -217,7 +218,7 @@ fn a_decode_result_stamps_every_source_dialect_layer_onto_the_report() {
 
 #[test]
 fn a_decode_result_with_unclassified_source_yields_an_unclassified_report() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.source = Some(
         serde_json::from_value(serde_json::json!({
             "identity": {"classification": "unclassified", "format": "test"},
@@ -234,7 +235,7 @@ fn a_decode_result_with_unclassified_source_yields_an_unclassified_report() {
 
 #[test]
 fn a_decode_result_without_source_metadata_reports_the_codec_format() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.source = None;
 
     let result = DecodeResult::new(decoded(ir), FormatId::new("test"), false);
@@ -251,7 +252,7 @@ fn a_decode_result_keeps_the_body_it_was_given() {
     body.coverage.record(crate::CoverageKey::new("entities"), 3);
     let result = DecodeResult::new(
         Decoded {
-            ir: unit_cube(),
+            ir: unit_cube().expect("valid unit cube fixture"),
             body,
             source_fidelity: SourceFidelity::default(),
         },
@@ -265,7 +266,7 @@ fn a_decode_result_keeps_the_body_it_was_given() {
 }
 
 fn dialect_layer(id: &'static str) -> DialectMatch {
-    DialectMatch::admitted(DialectId::pinned(id))
+    DialectMatch::admitted(DialectId::parse(id).expect("the test dialect id is valid"))
 }
 
 #[test]
@@ -276,7 +277,7 @@ fn wrapper_stamps_request_scope_for_each_backend_transfer() {
         crate::report::DecodeTransfer::full(true),
     ] {
         for container_only in [false, true] {
-            let mut decoded = decoded(unit_cube());
+            let mut decoded = decoded(unit_cube().expect("valid unit cube fixture"));
             decoded.body.transfer = transfer;
             let result = DecodeResult::new(decoded, FormatId::new("test"), container_only);
             assert_eq!(result.report().container_only(), container_only);

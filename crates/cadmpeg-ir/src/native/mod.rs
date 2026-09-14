@@ -60,6 +60,7 @@ impl From<NativeConvertError> for cadmpeg_core::CodecError {
 
 /// One source-native record with a stable identity and codec-owned fields.
 #[derive(Serialize)]
+#[cfg(feature = "schema")]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename = "NativeRecord")]
 struct RecordShape<'a> {
@@ -172,8 +173,9 @@ impl NativeRecord {
     /// [`field`](Self::field) when one field is all that is wanted.
     #[must_use]
     pub fn fields(&self) -> Map<String, Value> {
-        let mut fields: Map<String, Value> =
-            serde_json::from_str(&self.json).expect("a native record always holds a JSON object");
+        let Ok(mut fields) = serde_json::from_str::<Map<String, Value>>(&self.json) else {
+            return Map::new();
+        };
         fields.remove("id");
         fields
     }
@@ -197,9 +199,16 @@ impl NativeRecord {
 
     /// Render `id` and `fields` as canonical record text.
     fn canonical_json(id: &str, fields: &Map<String, Value>) -> Box<str> {
-        serde_json::to_string(&RecordShape { id, fields })
-            .expect("a JSON object of JSON values always serializes")
-            .into_boxed_str()
+        let mut json = String::from("{\"id\":");
+        json.push_str(&Value::String(id.to_owned()).to_string());
+        for (key, value) in fields {
+            json.push(',');
+            json.push_str(&Value::String(key.clone()).to_string());
+            json.push(':');
+            json.push_str(&value.to_string());
+        }
+        json.push('}');
+        json.into_boxed_str()
     }
 }
 

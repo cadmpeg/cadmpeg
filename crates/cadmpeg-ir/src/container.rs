@@ -199,7 +199,7 @@ impl ContainerSummary {
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
+    use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
 
     use super::{ContainerKind, ContainerSummary};
 
@@ -226,10 +226,12 @@ mod tests {
 
     #[test]
     fn a_classified_summary_carries_its_format_once() {
-        let primary = DialectMatch::admitted(DialectId::pinned("rhino:archive-80"));
-        let extra = DialectMatch::admitted(DialectId::pinned("acis:save-format-217"));
+        let primary = DialectMatch::admitted(cadmpeg_core::dialect_id!("rhino:archive-80"));
+        let extra = DialectMatch::admitted(cadmpeg_core::dialect_id!("acis:save-format-217"));
         let summary = ContainerSummary::classified(
-            DialectLayers::of(primary.clone()).with(extra.clone()),
+            DialectLayers::of(primary.clone())
+                .with(extra.clone())
+                .expect("the test dialect layers have distinct keys"),
             ContainerKind::Flat,
             Vec::new(),
             Vec::new(),

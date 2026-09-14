@@ -293,7 +293,7 @@ fn sketch_profiles_and_constraints_enforce_local_connectivity() {
         SketchId,
     };
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let first_sketch = SketchId::mint("synthetic:test:sketch#first").unwrap();
     let second_sketch = SketchId::mint("synthetic:test:sketch#second").unwrap();
     let first = SketchEntityId::mint("synthetic:test:entity#first").unwrap();
@@ -413,7 +413,7 @@ fn sketch_profiles_and_constraints_enforce_local_connectivity() {
 
 #[test]
 fn sketch_constraint_native_ref_must_resolve() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let id =
         crate::sketches::SketchConstraintId::mint("synthetic:test:sketch-constraint#native-ref")
             .unwrap();
@@ -510,7 +510,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
     };
     use crate::sketches::{Sketch, SketchId};
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let sketch_id = SketchId::mint("synthetic:test:sketch#ordered").unwrap();
     ir.model.sketches.push(Sketch {
         id: sketch_id.clone(),
@@ -598,7 +598,7 @@ fn sketch_profile_subselections_are_bounds_checked() {
     };
     use crate::sketches::{Sketch, SketchEntityId, SketchId};
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let sketch_id = SketchId::mint("synthetic:test:sketch#selection").unwrap();
     ir.model.sketches.push(Sketch {
         id: sketch_id.clone(),
@@ -693,7 +693,7 @@ fn spatial_sketch_feature_owns_spatial_geometry() {
     use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use crate::sketches::{SpatialSketch, SpatialSketchId};
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let sketch_id = SpatialSketchId::mint("synthetic:test:spatial-sketch#owned").unwrap();
     ir.model.spatial_sketches.push(SpatialSketch {
         id: sketch_id.clone(),

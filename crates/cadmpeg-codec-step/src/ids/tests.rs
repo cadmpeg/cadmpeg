@@ -16,14 +16,14 @@ fn data_and_opaque_preserve_existing_forms() {
         "step:data:surface#12"
     );
     assert!(is_valid_identity(
-        ids::data(kind!("edge"), "3-shell-4").as_str()
+        ids::data(kind!("edge"), key_word!("3-shell-4")).as_str()
     ));
 }
 
 #[test]
 fn scoped_builders_preserve_existing_forms() {
     assert_eq!(
-        ids::product(kind!("occurrence"), "definition-9").as_str(),
+        ids::product(kind!("occurrence"), key_word!("definition-9")).as_str(),
         "step:product:occurrence#definition-9"
     );
     assert_eq!(

@@ -296,7 +296,7 @@ fn generated_sweep_sections_round_trip_and_validate() {
     );
 
     let validate_definition = |definition| {
-        let mut ir = unit_cube();
+        let mut ir = unit_cube().expect("valid unit cube fixture");
         ir.model.features.push(Feature {
             id: FeatureId::mint("synthetic:test:feature#generated-sweep")
                 .expect("identity grammar"),
@@ -341,7 +341,7 @@ fn full_round_fillet_keeps_automatic_side_semantics() {
         FullRoundSideSelection,
     };
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let center = ir.model.faces[0].id.clone();
     let definition = FeatureDefinition::Operation(FeatureOperation::FullRoundFillet {
         groups: crate::features::NonEmptyMembers::one(

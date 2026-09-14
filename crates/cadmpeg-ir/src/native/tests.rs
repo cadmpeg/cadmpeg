@@ -83,7 +83,7 @@ fn rejected_typed_identity_does_not_replace_an_existing_arena() {
 
 #[test]
 fn native_records_use_own_ids_for_counts_diff_and_validation() {
-    let left = unit_cube();
+    let left = unit_cube().expect("valid unit cube fixture");
     let mut right = left.clone();
     right.native.namespace_mut("f3d").arenas_mut().insert(
         "act_guids".into(),

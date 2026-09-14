@@ -21,7 +21,7 @@ use super::*;
 
 #[test]
 fn cadir_encoder_streams_the_canonical_json_shape() {
-    let ir = unit_cube();
+    let ir = unit_cube().expect("valid unit cube fixture");
     let mut encoded = Vec::new();
     let plan = CadirEncoder
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
@@ -116,7 +116,7 @@ fn the_wrapper_stamps_the_resolved_target_on_a_catalog_plan() {
         .plan(EncodeInput::new(&ir, None), TargetRequest::Explicit("new"))
         .unwrap();
     assert_eq!(plan.report().format(), "test");
-    assert_eq!(plan.report().target(), Some(&DialectId::pinned("test:new")));
+    assert_eq!(plan.report().target(), Some(&cadmpeg_core::dialect_id!("test:new")));
     assert_eq!(plan.report().notes, vec!["resolved test:new".to_owned()]);
 }
 
@@ -204,11 +204,11 @@ fn an_empty_native_catalog_has_no_format_identity_request() {
 
 const CATALOG_WRITE_TARGETS: &[TargetDescriptor] = &[
     TargetDescriptor {
-        id: DialectId::pinned("test:old"),
+        id: cadmpeg_core::dialect_id!("test:old"),
         aliases: &["old"],
     },
     TargetDescriptor {
-        id: DialectId::pinned("test:new"),
+        id: cadmpeg_core::dialect_id!("test:new"),
         aliases: &["new"],
     },
 ];
@@ -218,7 +218,9 @@ fn catalog_write_ir(source: Option<(&str, Option<&'static str>)>) -> CadIr {
     let mut ir = CadIr::empty();
     ir.source = source.map(|(format, dialect)| match dialect {
         Some(id) => crate::document::SourceMeta::classified(
-            DialectLayers::of(DialectMatch::admitted(DialectId::pinned(id))),
+            DialectLayers::of(DialectMatch::admitted(
+                DialectId::parse(id).expect("the test dialect id is valid"),
+            )),
             BTreeMap::new(),
         ),
         None => serde_json::from_value(serde_json::json!({
@@ -352,7 +354,7 @@ fn catalog_write_explicit_difference_returns_the_displaced_dialect() {
         .displaced_source()
         .expect("the explicit target displaces the recorded source");
     assert_eq!(entry.id.as_str(), "test:new");
-    assert_eq!(displaced, &DialectId::pinned("test:old"));
+    assert_eq!(displaced, &cadmpeg_core::dialect_id!("test:old"));
     assert!(!resolved.source_preservation_eligible());
     assert_eq!(
         resolved.displacement_message().as_deref(),

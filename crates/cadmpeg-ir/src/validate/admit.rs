@@ -114,18 +114,18 @@ mod tests {
         assert!(super::super::validate_neutral(&accepted, Vec::new()).is_ok());
         assert!(admit(&accepted, DRAFT_CORE_CHECKS, Vec::new()).is_ok());
 
-        let missing_point = rejected_missing_point("test:model");
+        let missing_point = rejected_missing_point("test:model").expect("valid identity");
         assert!(!super::super::validate_neutral(&missing_point, Vec::new()).is_ok());
         assert!(!admit(&missing_point, DRAFT_CORE_CHECKS, Vec::new()).is_ok());
 
-        let missing_region = rejected_missing_region("test:model");
+        let missing_region = rejected_missing_region("test:model").expect("valid identity");
         assert!(!super::super::validate_neutral(&missing_region, Vec::new()).is_ok());
         assert!(!admit(&missing_region, DRAFT_CORE_CHECKS, Vec::new()).is_ok());
     }
 
     #[test]
     fn filter_checks_drops_out_of_set_findings() {
-        let ir = rejected_missing_point("test:model");
+        let ir = rejected_missing_point("test:model").expect("valid identity");
         let filtered = admit(&ir, &[Check::Identity], Vec::new());
         assert!(
             filtered.is_ok(),
@@ -170,7 +170,7 @@ mod tests {
         assert!(!RHINO_DRAFT_CHECKS.contains(&Check::ArenaOrder));
 
         let accepted = accepted_empty();
-        let rejected = rejected_missing_point("test:model");
+        let rejected = rejected_missing_point("test:model").expect("valid identity");
         for allowed in [
             DRAFT_CORE_CHECKS,
             RHINO_DRAFT_CHECKS,

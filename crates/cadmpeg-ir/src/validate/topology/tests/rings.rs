@@ -8,7 +8,7 @@ use crate::validate::validate_neutral;
 
 #[test]
 fn dangling_reference_is_flagged() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     // Point a coedge's edge at something that does not exist.
     ir.model.coedges[0].edge =
         EdgeId::mint("test:model:entity#does-not-exist").expect("valid identity");
@@ -22,7 +22,7 @@ fn dangling_reference_is_flagged() {
 
 #[test]
 fn coedge_use_curve_requires_a_resolved_carrier() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.model.coedges[0].use_curve = Some(crate::topology::CoedgeUseCurve {
         curve: CurveId::mint("missing:model:use-curve#0").expect("valid identity"),
         parameter_range: crate::topology::ParameterInterval::new([0.0, 1.0]).unwrap(),
@@ -39,7 +39,7 @@ fn coedge_use_curve_requires_a_resolved_carrier() {
 
 #[test]
 fn mismatched_partner_edge_is_flagged() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     // Force a coedge's partner to reference a coedge on a different edge by
     // repointing the partner's edge. Find coedge[0]'s partner and change it.
     let partner_id: CoedgeId = ir.model.coedges[0].radial_next.clone();
@@ -69,7 +69,7 @@ fn mismatched_partner_edge_is_flagged() {
 
 #[test]
 fn new_topology_references_are_validated() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.model.shells[0]
         .add_wire_edge(EdgeId::mint("test:model:entity#missing-wire").expect("valid identity"));
     ir.model.shells[0].add_free_vertex(
@@ -95,7 +95,7 @@ fn new_topology_references_are_validated() {
 
 #[test]
 fn two_member_radial_ring_with_equal_senses_warns() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let other_id = ir.model.coedges[0].radial_next.clone();
     let sense = ir.model.coedges[0].sense;
     ir.model
@@ -115,7 +115,7 @@ fn two_member_radial_ring_with_equal_senses_warns() {
 
 #[test]
 fn coedge_backed_edge_cannot_be_a_wire_edge() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.model.shells[0].add_wire_edge(ir.model.coedges[0].edge.clone());
     assert!(validate_neutral(&ir, Vec::new())
         .findings
@@ -125,7 +125,7 @@ fn coedge_backed_edge_cannot_be_a_wire_edge() {
 
 #[test]
 fn wire_and_free_topology_negative_cases_are_reported() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
 
     let mut unowned_edge = ir.model.edges[0].clone();
     unowned_edge.id = "synthetic:test:edge#unowned"
@@ -172,7 +172,7 @@ fn wire_and_free_topology_negative_cases_are_reported() {
 
 #[test]
 fn singular_loop_vertex_cannot_have_multiple_free_shell_owners() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let vertex = ir.model.vertices[0].id.clone();
     ir.model.loops[0].boundary = crate::topology::LoopBoundary::Vertex {
         vertex: vertex.clone(),
@@ -204,7 +204,7 @@ fn singular_loop_vertex_cannot_have_multiple_free_shell_owners() {
 
 #[test]
 fn carrierless_edge_range_requires_finite_values_but_not_ordering() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.model.edges[0].set_curve(None).unwrap();
     ir.model.edges[0].set_param_range(Some([1.0, 0.0])).unwrap();
     let report = validate_neutral(&ir, Vec::new());
@@ -220,7 +220,7 @@ fn carrierless_edge_range_requires_finite_values_but_not_ordering() {
 
 #[test]
 fn vertex_loop_is_valid_and_exclusive_with_coedges() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let face_id = ir.model.faces[0].id.clone();
     let vertex_id = ir.model.vertices[0].id.clone();
     let loop_id = crate::ids::LoopId::mint("synthetic:cube:vertex-loop#0").expect("valid identity");
@@ -251,7 +251,7 @@ fn spring_support_reference_findings_name_the_construction() {
     };
     use crate::ids::{ProceduralCurveId, SurfaceId};
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let owner = ProceduralCurveId::mint("test:model:procedural-curve#spring").unwrap();
     let missing = SurfaceId::mint("test:model:surface#missing").unwrap();
     ir.model.procedural_curves.push(

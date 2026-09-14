@@ -93,7 +93,7 @@ fn polygon_constraints_round_trip_and_require_distinct_members() {
         SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
     };
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let sketch = SketchId::mint("synthetic:test:sketch#polygon").unwrap();
     ir.model.sketches.push(Sketch {
         id: sketch.clone(),
@@ -318,7 +318,7 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
         definitions
     );
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let sketch = SketchId::mint("synthetic:test:sketch#locus").unwrap();
     ir.model.sketches.push(Sketch {
         id: sketch.clone(),
@@ -425,7 +425,7 @@ fn coordinate_equation_constraints_round_trip_and_validate_geometry() {
             },
         ),
     ];
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.model.sketches.push(Sketch {
         id: sketch.clone(),
         name: None,

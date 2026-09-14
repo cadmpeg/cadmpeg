@@ -160,7 +160,7 @@ fn schema_constrains_version_and_requires_subd_arena() {
         .contains(&serde_json::json!("subds")));
     assert!(schema.pointer("/properties/byte_ledger").is_none());
 
-    let mut value = serde_json::to_value(unit_cube()).unwrap();
+    let mut value = serde_json::to_value(unit_cube().expect("valid unit cube fixture")).unwrap();
     value
         .pointer_mut("/model")
         .unwrap()

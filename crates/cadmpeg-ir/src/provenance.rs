@@ -91,11 +91,82 @@ impl CodecFormat {
         }
     }
 
-    /// Construct from a generated `FORMAT` constant.
+    /// Check a generated `FORMAT` constant against the registry.
+    ///
+    /// The [`codec_format!`](crate::codec_format) macro evaluates this in a
+    /// const initializer and turns `None` into a compile error. Runtime text
+    /// must use [`CodecFormat::parse`], which returns `None` instead of
+    /// panicking.
     #[must_use]
-    pub fn from_registry(id: &str) -> Self {
-        Self::parse(id).unwrap_or_else(|| panic!("unknown registry format id {id}"))
+    pub const fn from_registry_id(id: &str) -> Option<Self> {
+        let bytes = id.as_bytes();
+        if registry_id_is(bytes, b"acis") {
+            Some(Self::Acis)
+        } else if registry_id_is(bytes, b"catia") {
+            Some(Self::Catia)
+        } else if registry_id_is(bytes, b"creo") {
+            Some(Self::Creo)
+        } else if registry_id_is(bytes, b"f3d") {
+            Some(Self::F3d)
+        } else if registry_id_is(bytes, b"fcstd") {
+            Some(Self::Fcstd)
+        } else if registry_id_is(bytes, b"iges") {
+            Some(Self::Iges)
+        } else if registry_id_is(bytes, b"inventor") {
+            Some(Self::Inventor)
+        } else if registry_id_is(bytes, b"nx") {
+            Some(Self::Nx)
+        } else if registry_id_is(bytes, b"parasolid") {
+            Some(Self::Parasolid)
+        } else if registry_id_is(bytes, b"rhino") {
+            Some(Self::Rhino)
+        } else if registry_id_is(bytes, b"sat") {
+            Some(Self::Sat)
+        } else if registry_id_is(bytes, b"sldprt") {
+            Some(Self::Sldprt)
+        } else if registry_id_is(bytes, b"step") {
+            Some(Self::Step)
+        } else {
+            None
+        }
     }
+}
+
+/// True when the registry id `bytes` spells exactly `expected`.
+const fn registry_id_is(bytes: &[u8], expected: &[u8]) -> bool {
+    if bytes.len() != expected.len() {
+        return false;
+    }
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] != expected[index] {
+            return false;
+        }
+        index += 1;
+    }
+    true
+}
+
+/// The [`CodecFormat`] a generated `FORMAT` constant names.
+///
+/// The id is read in the initializer of a `const` item, so a codec whose
+/// `FORMAT` is not a registry id fails `cargo check` with E0080 instead of
+/// panicking when the association is built.
+#[macro_export]
+macro_rules! codec_format {
+    ($id:expr) => {{
+        const CODEC_FORMAT: $crate::CodecFormat = match $crate::CodecFormat::from_registry_id($id) {
+            Some(format) => format,
+            None => {
+                assert!(
+                    false,
+                    "a registry format id names one of the generated FORMAT constants"
+                );
+                $crate::CodecFormat::Step
+            }
+        };
+        CODEC_FORMAT
+    }};
 }
 
 impl fmt::Display for CodecFormat {
@@ -191,11 +262,30 @@ pub struct Provenance<Location> {
 /// Name of a container stream inside a source format.
 ///
 /// The empty string is not a stream name; the root stream is the absence of
-/// one. Build a compile-time name with `const { StreamName::literal("…") }`.
+/// one. Build a compile-time name with [`stream_name!`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "String", into = "String")]
 pub struct StreamName(std::borrow::Cow<'static, str>);
+
+/// A static stream name whose non-empty invariant was admitted during const
+/// evaluation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StaticStreamName {
+    value: &'static str,
+}
+
+impl StaticStreamName {
+    /// Admit a static stream name, returning `None` for the empty string.
+    #[must_use]
+    pub const fn new(value: &'static str) -> Option<Self> {
+        if value.is_empty() {
+            None
+        } else {
+            Some(Self { value })
+        }
+    }
+}
 
 /// The empty string does not name a container stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -203,14 +293,10 @@ pub struct StreamName(std::borrow::Cow<'static, str>);
 pub struct EmptyStreamName;
 
 impl StreamName {
-    /// Names a stream from a non-empty literal.
-    ///
-    /// Call it inside a `const` block: an empty literal is then a compile
-    /// error rather than a run-time panic.
+    /// Construct a stream name from a static proof.
     #[must_use]
-    pub const fn literal(name: &'static str) -> Self {
-        assert!(!name.is_empty(), "a source stream name cannot be empty");
-        Self(std::borrow::Cow::Borrowed(name))
+    pub const fn from_static(proof: StaticStreamName) -> Self {
+        Self(std::borrow::Cow::Borrowed(proof.value))
     }
 
     /// Returns the stream name.
@@ -218,6 +304,20 @@ impl StreamName {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+}
+
+/// Build a checked stream name from a literal.
+#[macro_export]
+macro_rules! stream_name {
+    ($value:literal) => {{
+        const STATIC_STREAM_NAME: $crate::StaticStreamName = match
+            $crate::StaticStreamName::new($value)
+        {
+            Some(name) => name,
+            None => panic!("a source stream name cannot be empty"),
+        };
+        $crate::StreamName::from_static(STATIC_STREAM_NAME)
+    }};
 }
 
 impl TryFrom<String> for StreamName {
@@ -478,6 +578,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn registry_format_parser_is_total_for_runtime_text() {
+        const STEP: CodecFormat = crate::codec_format!("step");
+
+        assert_eq!(
+            CodecFormat::from_registry_id("step"),
+            Some(CodecFormat::Step)
+        );
+        assert_eq!(CodecFormat::from_registry_id("unknown"), None);
+        assert_eq!(STEP, CodecFormat::Step);
+    }
+
+    #[test]
     fn a_source_provenance_stream_is_named_or_absent() {
         let root = SourceProvenance::root("iges", 12);
         let wire = serde_json::to_value(&root).expect("serialize");
@@ -486,8 +598,7 @@ mod tests {
         assert_eq!(read.stream(), None);
         assert_eq!(read, root);
 
-        let named =
-            SourceProvenance::in_stream("fcstd", const { StreamName::literal("Document.xml") }, 0);
+        let named = SourceProvenance::in_stream("fcstd", crate::stream_name!("Document.xml"), 0);
         let wire = serde_json::to_value(&named).expect("serialize");
         assert_eq!(
             wire,

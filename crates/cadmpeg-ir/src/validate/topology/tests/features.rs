@@ -209,7 +209,7 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
         definitions
     );
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.model.features.push(Feature {
         id: FeatureId::mint("synthetic:test:feature#sketch-ref").expect("identity grammar"),
         ordinal: 0,
@@ -246,7 +246,7 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
     use crate::ids::{BodyId, FaceId};
     use std::collections::BTreeMap;
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let feature_id = FeatureId::mint("synthetic:test:feature#invalid").expect("identity grammar");
     ir.model.features.push(Feature {
         id: feature_id.clone(),
@@ -344,7 +344,7 @@ fn feature_parameters_require_unique_names_and_ordinals() {
     };
     use std::collections::BTreeMap;
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let owner = FeatureId::mint("synthetic:test:feature#parameters").expect("identity grammar");
     ir.model.features.push(Feature {
         id: owner.clone(),
@@ -400,7 +400,7 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
     };
     use std::collections::BTreeMap;
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let owner =
         FeatureId::mint("synthetic:test:feature#dependency-owner").expect("identity grammar");
     ir.model.features.push(Feature {
@@ -464,7 +464,7 @@ fn document_parameters_can_feed_feature_parameters() {
     };
     use std::collections::BTreeMap;
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let owner = FeatureId::mint("synthetic:test:feature#consumer").expect("identity grammar");
     ir.model.features.push(Feature {
         id: owner.clone(),
@@ -524,7 +524,7 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
         scalar::Length,
     };
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let principal = FeatureId::mint("synthetic:test:feature#principal").expect("identity grammar");
     let feature = |id: &str, ordinal: u64, definition: FeatureDefinition| Feature {
         id: FeatureId::mint(id).expect("identity grammar"),
@@ -595,7 +595,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
     };
     use std::collections::BTreeMap;
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let source =
         FeatureId::mint("synthetic:test:feature#0-vertex-source").expect("identity grammar");
     ir.model.features.push(Feature {
@@ -715,7 +715,7 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
         PatternTransform,
     };
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let seed = FeatureId::mint("synthetic:test:feature#pattern-seed").expect("identity grammar");
     ir.model.features.push(Feature {
         id: seed.clone(),
@@ -789,7 +789,7 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
     };
     use std::collections::{BTreeMap, HashSet};
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let source = FeatureId::mint("synthetic:test:feature#0-source").expect("identity grammar");
     let offset = FeatureId::mint("synthetic:test:feature#1-offset").expect("identity grammar");
     let derived = FeatureId::mint("synthetic:test:feature#2-derived").expect("identity grammar");
@@ -1150,7 +1150,7 @@ fn decals_require_valid_assets_faces_and_opacity() {
 
     let asset_id = AssetId::mint("synthetic:test:asset#decal").expect("identity grammar");
     let feature_id = FeatureId::mint("synthetic:test:feature#decal").expect("identity grammar");
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let face_id = ir.model.faces[0].id.clone();
     ir.model.assets.push(
         Asset::try_new(

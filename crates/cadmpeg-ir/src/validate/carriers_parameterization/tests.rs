@@ -40,7 +40,7 @@ fn make_first_face_surface_unknown(ir: &mut crate::CadIr, record: Option<Unknown
 
 #[test]
 fn face_on_unknown_surface_validates_clean() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     // Preserve a raw record and point the unknown surface at it.
     let rec = UnknownId::mint("synthetic:cube:unknown#0").expect("valid identity");
     ir.set_native_unknowns(
@@ -70,7 +70,7 @@ fn face_on_unknown_surface_validates_clean() {
 
 #[test]
 fn unknown_surface_without_record_is_legal() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     make_first_face_surface_unknown(&mut ir, None);
     let report = validate_neutral(&ir, Vec::new());
     assert!(
@@ -86,7 +86,7 @@ fn unknown_surface_without_record_is_legal() {
 
 #[test]
 fn unknown_surface_dangling_record_is_flagged() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     // Link a record id that is not in the unknowns arena.
     make_first_face_surface_unknown(
         &mut ir,
@@ -103,7 +103,7 @@ fn unknown_surface_dangling_record_is_flagged() {
 
 #[test]
 fn orphan_carrier_is_flagged() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let mut orphan = ir.model.curves[0].clone();
     orphan.id = CurveId::mint("test:model:entity#zz:orphan").expect("valid identity");
     ir.model.curves.push(orphan);
@@ -115,7 +115,7 @@ fn orphan_carrier_is_flagged() {
 
 #[test]
 fn periodic_curve_parameter_domain_is_checked() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let curve_id = ir.model.edges[0].curve().clone().unwrap();
     ir.model
         .curves

@@ -11,7 +11,7 @@ fn appearance_asset_and_binding_round_trip() {
     };
     use crate::ids::AppearanceId;
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let body = ir.model.bodies[0].id.clone();
     ir.model.appearances.push(Appearance {
         id: AppearanceId::mint("synthetic:test:appearance#prism-001").expect("valid identity"),

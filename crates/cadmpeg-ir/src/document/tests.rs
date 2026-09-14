@@ -48,7 +48,7 @@ fn entity_schema_registry_covers_arenas_and_unit_cube_references_resolve() {
         crate::schema::EntityKind::ALL.len(),
         Model::arena_names().len()
     );
-    let ir = unit_cube();
+    let ir = unit_cube().expect("valid unit cube fixture");
     let mut ids = std::collections::HashSet::new();
     collect_ids(&serde_json::to_value(&ir.model).unwrap(), &mut ids);
     let mut missing = Vec::new();
@@ -64,7 +64,7 @@ fn entity_schema_registry_covers_arenas_and_unit_cube_references_resolve() {
 
 #[test]
 fn arena_registry_drives_counts_and_diff_dispatch() {
-    let ir = unit_cube();
+    let ir = unit_cube().expect("valid unit cube fixture");
     let report = validate_neutral(&ir, Vec::new());
     let diff_kinds = diff(&ir, &ir)
         .per_arena
@@ -86,7 +86,7 @@ fn arena_registry_drives_counts_and_diff_dispatch() {
 
 #[test]
 fn current_json_without_configurations_defaults_to_empty() {
-    let ir = unit_cube();
+    let ir = unit_cube().expect("valid unit cube fixture");
     let mut value = serde_json::to_value(&ir).unwrap();
     value
         .get_mut("model")
@@ -317,7 +317,7 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
 
 #[test]
 fn current_json_without_parameters_defaults_to_empty() {
-    let ir = unit_cube();
+    let ir = unit_cube().expect("valid unit cube fixture");
     let mut value = serde_json::to_value(&ir).unwrap();
     value
         .get_mut("model")
@@ -331,7 +331,7 @@ fn current_json_without_parameters_defaults_to_empty() {
 
 #[test]
 fn current_json_without_sketch_arenas_defaults_to_empty() {
-    let ir = unit_cube();
+    let ir = unit_cube().expect("valid unit cube fixture");
     let mut value = serde_json::to_value(&ir).unwrap();
     let model = value
         .get_mut("model")
@@ -349,7 +349,7 @@ fn current_json_without_sketch_arenas_defaults_to_empty() {
 
 #[test]
 fn json_round_trips_and_is_deterministic() {
-    let ir = unit_cube();
+    let ir = unit_cube().expect("valid unit cube fixture");
     let json1 = ir.to_canonical_json().unwrap();
     let json2 = ir.to_canonical_json().unwrap();
     assert_eq!(json1, json2, "serialization must be deterministic");
@@ -365,7 +365,7 @@ fn json_round_trip_preserves_ulp_edge_scalars_exactly() {
     // exact f64 equality, so JSON parsing must be correctly rounded. The
     // values one to a few ULPs below 1.0 are the ones a fast non-roundtrip
     // float parser misparses by one ULP.
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let edge_values: Vec<f64> = (1..40)
         .map(|n| 1.0f64 - f64::from(n) * f64::EPSILON / 2.0)
         .collect();
@@ -386,7 +386,7 @@ fn json_round_trip_preserves_ulp_edge_scalars_exactly() {
 
 #[test]
 fn parser_rejects_unsupported_missing_and_non_string_versions() {
-    let canonical = serde_json::to_value(unit_cube()).unwrap();
+    let canonical = serde_json::to_value(unit_cube().expect("valid unit cube fixture")).unwrap();
     let expected_version = crate::IR_VERSION;
     for (version, found) in [
         (Some(serde_json::Value::String("0".into())), "Some(\"0\")"),
@@ -415,7 +415,7 @@ fn parser_rejects_unsupported_missing_and_non_string_versions() {
 
 #[test]
 fn direct_deserialization_accepts_current_version_and_canonical_round_trip() {
-    let ir = unit_cube();
+    let ir = unit_cube().expect("valid unit cube fixture");
     let json = ir.to_canonical_json().unwrap();
     let parsed = serde_json::from_str::<CadIr>(&json).unwrap();
     assert_eq!(parsed, ir);
@@ -464,7 +464,7 @@ fn an_unclassified_source_states_its_format_inside_the_identity() {
 #[test]
 fn a_classified_source_carries_its_format_once() {
     let matched = cadmpeg_core::dialect::DialectMatch::admitted(
-        cadmpeg_core::dialect::DialectId::pinned("rhino:archive-80"),
+        cadmpeg_core::dialect_id!("rhino:archive-80"),
     );
     let layers = cadmpeg_core::dialect::DialectLayers::of(matched.clone());
     let source = SourceMeta::classified(
@@ -568,13 +568,13 @@ fn parent_only_wire_preserves_regeneration_without_tree_membership() {
 
 #[test]
 fn a_document_holding_a_non_finite_coordinate_has_no_canonical_json() {
-    let finite = unit_cube();
+    let finite = unit_cube().expect("valid unit cube fixture");
     let text = finite
         .to_canonical_json()
         .expect("a finite document writes");
     assert!(text.contains("\"x\": 0.0") || text.contains("\"x\": 1.0"));
 
-    let mut non_finite = unit_cube();
+    let mut non_finite = unit_cube().expect("valid unit cube fixture");
     non_finite.model.points[0].position = Point3::new(f64::NAN, 0.0, 0.0);
     assert!(matches!(
         non_finite.to_canonical_json(),
@@ -601,7 +601,7 @@ fn a_document_holding_a_non_finite_coordinate_has_no_canonical_json() {
 fn a_stated_null_is_refused_on_every_feature_key_written_by_omission() {
     use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.model.features.push(Feature::new(
         FeatureId::mint("test:model:feature#0").expect("identity grammar"),
         0,

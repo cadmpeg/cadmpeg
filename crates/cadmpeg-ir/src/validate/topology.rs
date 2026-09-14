@@ -4731,7 +4731,9 @@ fn check_composite_cycle<'a>(
     while let Some((node, child_index)) = stack.last_mut() {
         let children = &segments[*node];
         if *child_index >= children.len() {
-            let (node, _) = stack.pop().expect("nonempty composite traversal stack");
+            let Some((node, _)) = stack.pop() else {
+                break;
+            };
             active.remove(node);
             complete.insert(node);
             continue;

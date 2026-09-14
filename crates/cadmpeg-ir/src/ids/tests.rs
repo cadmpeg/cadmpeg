@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use super::{format_identity, is_valid_identity, IdentityError};
+use super::{format_identity, is_valid_identity, IdentityError, IdentityKey, IdentityNamespace};
 
 #[test]
 fn three_component_ids_are_valid() {
@@ -174,4 +174,45 @@ fn checked_identity_admission_and_typed_conversion() {
             serde_json::from_str::<Identity>(&serde_json::to_string(invalid).unwrap()).is_err()
         );
     }
+}
+
+#[test]
+fn typed_namespace_composition_preserves_the_wire_identity() {
+    let namespace = crate::identity_namespace!("step", "file", "signature");
+    let identity = super::Identity::compose(&namespace, 7u64);
+    assert_eq!(identity.as_str(), "step:file:signature#7");
+
+    let body = crate::ids::BodyId::compose(&namespace, IdentityKey::from(7u64));
+    assert_eq!(body.as_str(), "step:file:signature#7");
+    assert_eq!(namespace.format(), "step");
+    assert_eq!(namespace.scope(), "file");
+    assert_eq!(namespace.kind(), "signature");
+}
+
+#[test]
+fn runtime_namespace_and_key_admission_reports_the_rejected_value() {
+    assert!(matches!(
+        IdentityNamespace::new("step", "bad scope", "signature"),
+        Err(IdentityError::InvalidComponent { label: "scope", .. })
+    ));
+    assert!(matches!(
+        IdentityKey::try_from("a b"),
+        Err(IdentityError::InvalidKey { .. })
+    ));
+    assert!(matches!(
+        IdentityKey::try_from("a#b"),
+        Err(IdentityError::InvalidKey { .. })
+    ));
+    assert!(matches!(
+        IdentityKey::try_from("a\u{00a0}b"),
+        Err(IdentityError::InvalidKey { .. })
+    ));
+}
+
+#[test]
+fn literal_helpers_reject_unicode_whitespace_without_a_runtime_panic() {
+    assert!(super::StaticIdentityKey::new("a\u{2003}b").is_none());
+    assert!(super::StaticIdentityComponent::new("a\u{3000}b").is_none());
+    assert!(super::StaticIdentityNamespace::new("step", "file", "signature").is_some());
+    assert!(super::StaticIdentityNamespace::new("step", "bad#scope", "signature").is_none());
 }

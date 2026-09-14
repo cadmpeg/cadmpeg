@@ -12,7 +12,7 @@ fn tessellation_counts_must_be_consistent() {
     use crate::ids::FaceId;
     use crate::math::Point3;
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.model.tessellations.push(
         Tessellation::new(
             "synthetic:test:tessellation#invalid-counts",
@@ -99,7 +99,7 @@ fn tessellation_triangle_groups_and_texture_assignments_validate() {
         .try_into()
         .unwrap();
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.model.assets.push(
         Asset::try_new(
             texture,
@@ -142,7 +142,7 @@ fn tessellation_triangle_groups_and_texture_assignments_validate() {
 
 #[test]
 fn finite_nonzero_signed_sphere_radius_is_valid_without_a_size_floor() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
         crate::geometry::SphereSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),

@@ -243,16 +243,11 @@ impl AnnotationBuilder {
         offset: u64,
     ) -> ProvenanceNote<'_> {
         let id = id.to_string();
-        self.annotations.provenance.insert(
-            id.clone(),
-            AnnotationProvenance::annotation(stream.0.clone(), offset, None),
-        );
+        let provenance = self.annotations.provenance.entry(id).or_insert_with(|| {
+            AnnotationProvenance::annotation(stream.0.clone(), offset, None)
+        });
         ProvenanceNote {
-            provenance: self
-                .annotations
-                .provenance
-                .get_mut(&id)
-                .expect("provenance was just inserted"),
+            provenance,
         }
     }
 
