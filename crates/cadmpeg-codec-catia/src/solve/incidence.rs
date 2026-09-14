@@ -1678,16 +1678,17 @@ pub(crate) fn advance_compact_boundary_domains<'a>(
         let alternatives = match domain {
             MeshFaceBoundaryDomain::Ordered(assignments) => assignments.clone(),
             MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => {
-                let Some([cycle]) = incidence_cycles(edges, &points)
-                    .and_then(|cycles| <[Vec<(usize, bool)>; 1]>::try_from(cycles).ok())
-                else {
+                let Some(cycles) = incidence_cycles(edges, &points) else {
+                    return CompactBoundaryAdvanceOutcome::Rejected;
+                };
+                let [cycle] = cycles.as_slice() else {
                     return CompactBoundaryAdvanceOutcome::Rejected;
                 };
                 vec![MeshFaceBoundaryAssignment {
                     boundaries: vec![cycle
                         .into_iter()
                         .map(|(edge, _)| MeshBoundaryEdgeCandidate {
-                            edge,
+                            edge: *edge,
                             start: 0,
                             end: 0,
                             reversed: None,
@@ -3449,12 +3450,13 @@ pub(crate) fn partial_face_orientability_viable(
             }
             component.sort_unstable();
             let trail = if points.iter().all(|point| degrees[point] == 2) {
-                let Some([cycle]) = incidence_cycles(&component, &edge_points)
-                    .and_then(|cycles| <[Vec<(usize, bool)>; 1]>::try_from(cycles).ok())
-                else {
+                let Some(cycles) = incidence_cycles(&component, &edge_points) else {
                     return false;
                 };
-                cycle
+                let [cycle] = cycles.as_slice() else {
+                    return false;
+                };
+                cycle.iter().copied().collect()
             } else {
                 let mut endpoints = points
                     .iter()

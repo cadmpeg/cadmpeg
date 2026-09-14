@@ -5727,6 +5727,16 @@ impl<T> NonEmptyMembers<T> {
         Self(vec![member])
     }
 
+    /// Append a member while retaining the nonempty witness.
+    pub fn push(&mut self, member: T) {
+        self.0.push(member);
+    }
+
+    /// Map the members in source order while retaining the nonempty witness.
+    pub fn map<U>(self, map: impl FnMut(T) -> U) -> NonEmptyMembers<U> {
+        NonEmptyMembers(self.0.into_iter().map(map).collect())
+    }
+
     /// The members in source order.
     pub fn as_slice(&self) -> &[T] {
         &self.0

@@ -214,14 +214,13 @@ fn two_handle_standard_rows_select_u8_complete_boundary_layout() {
 fn coordinate_rows_canonicalize_logical_vertex_labels() {
     let topology = |start_vertex, end_vertex| StandardTopology {
         faces: vec![FaceTopology {
-            boundaries: vec![Boundary {
-                coedges: vec![CoedgeUse {
-                    edge_row: 0,
-                    reversed: false,
-                    start_vertex,
-                    end_vertex,
-                }],
-            }],
+            boundaries: vec![Boundary::new(vec![CoedgeUse {
+                edge_row: 0,
+                reversed: false,
+                start_vertex,
+                end_vertex,
+            }])
+            .expect("nonempty topology boundary")],
         }],
         edge_rows: vec![EdgeRow {
             kind: 1,
@@ -256,22 +255,21 @@ fn coordinate_rows_canonicalize_logical_vertex_labels() {
 fn mesh_candidate_comparison_ignores_boundary_cycle_start() {
     let mut topology = StandardTopology {
         faces: vec![FaceTopology {
-            boundaries: vec![Boundary {
-                coedges: vec![
-                    CoedgeUse {
-                        edge_row: 0,
-                        reversed: false,
-                        start_vertex: 0,
-                        end_vertex: 1,
-                    },
-                    CoedgeUse {
-                        edge_row: 1,
-                        reversed: false,
-                        start_vertex: 1,
-                        end_vertex: 0,
-                    },
-                ],
-            }],
+            boundaries: vec![Boundary::new(vec![
+                CoedgeUse {
+                    edge_row: 0,
+                    reversed: false,
+                    start_vertex: 0,
+                    end_vertex: 1,
+                },
+                CoedgeUse {
+                    edge_row: 1,
+                    reversed: false,
+                    start_vertex: 1,
+                    end_vertex: 0,
+                },
+            ])
+            .expect("nonempty topology boundary")],
         }],
         edge_rows: vec![
             EdgeRow {
@@ -298,16 +296,19 @@ fn mesh_candidate_comparison_ignores_boundary_cycle_start() {
 
 #[test]
 fn mesh_candidate_comparison_ignores_boundary_direction_and_order() {
-    let boundary = |edges: &[(usize, usize, usize)]| Boundary {
-        coedges: edges
-            .iter()
-            .map(|&(edge_row, start_vertex, end_vertex)| CoedgeUse {
-                edge_row,
-                reversed: false,
-                start_vertex,
-                end_vertex,
-            })
-            .collect(),
+    let boundary = |edges: &[(usize, usize, usize)]| {
+        Boundary::new(
+            edges
+                .iter()
+                .map(|&(edge_row, start_vertex, end_vertex)| CoedgeUse {
+                    edge_row,
+                    reversed: false,
+                    start_vertex,
+                    end_vertex,
+                })
+                .collect(),
+        )
+        .expect("nonempty topology boundary")
     };
     let edge_rows = (0..4)
         .map(|edge| EdgeRow {
@@ -365,22 +366,20 @@ fn mesh_candidate_comparison_preserves_same_class_edge_row_interchange() {
     let topology = |swapped: bool| StandardTopology {
         faces: vec![FaceTopology {
             boundaries: vec![
-                Boundary {
-                    coedges: vec![CoedgeUse {
-                        edge_row: usize::from(swapped),
-                        reversed: false,
-                        start_vertex: 0,
-                        end_vertex: 1,
-                    }],
-                },
-                Boundary {
-                    coedges: vec![CoedgeUse {
-                        edge_row: usize::from(!swapped),
-                        reversed: false,
-                        start_vertex: 1,
-                        end_vertex: 2,
-                    }],
-                },
+                Boundary::new(vec![CoedgeUse {
+                    edge_row: usize::from(swapped),
+                    reversed: false,
+                    start_vertex: 0,
+                    end_vertex: 1,
+                }])
+                .expect("nonempty topology boundary"),
+                Boundary::new(vec![CoedgeUse {
+                    edge_row: usize::from(!swapped),
+                    reversed: false,
+                    start_vertex: 1,
+                    end_vertex: 2,
+                }])
+                .expect("nonempty topology boundary"),
             ],
         }],
         edge_rows: edge_rows.clone(),
@@ -409,39 +408,38 @@ fn mesh_candidate_comparison_collapses_unbound_observable_edge_gauge() {
     ];
     let topology = |swapped: bool| StandardTopology {
         faces: vec![FaceTopology {
-            boundaries: vec![Boundary {
-                coedges: if swapped {
-                    vec![
-                        CoedgeUse {
-                            edge_row: 1,
-                            reversed: false,
-                            start_vertex: 0,
-                            end_vertex: 1,
-                        },
-                        CoedgeUse {
-                            edge_row: 0,
-                            reversed: false,
-                            start_vertex: 1,
-                            end_vertex: 2,
-                        },
-                    ]
-                } else {
-                    vec![
-                        CoedgeUse {
-                            edge_row: 0,
-                            reversed: false,
-                            start_vertex: 0,
-                            end_vertex: 1,
-                        },
-                        CoedgeUse {
-                            edge_row: 1,
-                            reversed: false,
-                            start_vertex: 1,
-                            end_vertex: 2,
-                        },
-                    ]
-                },
-            }],
+            boundaries: vec![Boundary::new(if swapped {
+                vec![
+                    CoedgeUse {
+                        edge_row: 1,
+                        reversed: false,
+                        start_vertex: 0,
+                        end_vertex: 1,
+                    },
+                    CoedgeUse {
+                        edge_row: 0,
+                        reversed: false,
+                        start_vertex: 1,
+                        end_vertex: 2,
+                    },
+                ]
+            } else {
+                vec![
+                    CoedgeUse {
+                        edge_row: 0,
+                        reversed: false,
+                        start_vertex: 0,
+                        end_vertex: 1,
+                    },
+                    CoedgeUse {
+                        edge_row: 1,
+                        reversed: false,
+                        start_vertex: 1,
+                        end_vertex: 2,
+                    },
+                ]
+            })
+            .expect("nonempty topology boundary")],
         }],
         edge_rows: edge_rows.clone(),
         vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],

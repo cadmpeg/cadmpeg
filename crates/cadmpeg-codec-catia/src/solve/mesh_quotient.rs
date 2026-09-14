@@ -5756,9 +5756,10 @@ fn materialize_boundary_domains(
                 Some(vec![deferred_boundary_assignment(domain, edge_pairs)?])
             }
             MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => {
-                let [cycle] =
-                    <[Vec<(usize, bool)>; 1]>::try_from(incidence_cycles(edges, edge_pairs)?)
-                        .ok()?;
+                let cycles = incidence_cycles(edges, edge_pairs)?;
+                let [cycle] = cycles.as_slice() else {
+                    return None;
+                };
                 let length = cycle.len();
                 let boundary = cycle
                     .iter()
@@ -7867,7 +7868,7 @@ fn reconstruct_singleton_coordinate_topology(
                             })
                         })
                         .collect::<Option<Vec<_>>>()?;
-                    Some(Boundary { coedges })
+                    Boundary::new(coedges)
                 })
                 .collect::<Option<Vec<_>>>()?;
             Some(FaceTopology { boundaries })
@@ -9907,28 +9908,27 @@ mod direct_matching_tests {
             .collect::<Vec<_>>();
         let topology = StandardTopology {
             faces: vec![crate::families::standard::topology::FaceTopology {
-                boundaries: vec![crate::families::standard::topology::Boundary {
-                    coedges: vec![
-                        crate::families::standard::topology::CoedgeUse {
-                            edge_row: 0,
-                            reversed: false,
-                            start_vertex: 0,
-                            end_vertex: 1,
-                        },
-                        crate::families::standard::topology::CoedgeUse {
-                            edge_row: 1,
-                            reversed: false,
-                            start_vertex: 1,
-                            end_vertex: 2,
-                        },
-                        crate::families::standard::topology::CoedgeUse {
-                            edge_row: 2,
-                            reversed: false,
-                            start_vertex: 2,
-                            end_vertex: 0,
-                        },
-                    ],
-                }],
+                boundaries: vec![crate::families::standard::topology::Boundary::new(vec![
+                    crate::families::standard::topology::CoedgeUse {
+                        edge_row: 0,
+                        reversed: false,
+                        start_vertex: 0,
+                        end_vertex: 1,
+                    },
+                    crate::families::standard::topology::CoedgeUse {
+                        edge_row: 1,
+                        reversed: false,
+                        start_vertex: 1,
+                        end_vertex: 2,
+                    },
+                    crate::families::standard::topology::CoedgeUse {
+                        edge_row: 2,
+                        reversed: false,
+                        start_vertex: 2,
+                        end_vertex: 0,
+                    },
+                ])
+                .expect("nonempty topology boundary")],
             }],
             edge_rows,
             vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],

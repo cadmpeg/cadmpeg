@@ -1491,7 +1491,7 @@ fn cover_cycle_by_rows(cycle: &[u32], rows: &[EdgeRow], union: &mut UnionFind) -
             end_vertex: end_node,
         });
     }
-    Some(Boundary { coedges })
+    Boundary::new(coedges)
 }
 
 #[cfg(test)]
