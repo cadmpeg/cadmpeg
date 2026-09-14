@@ -37,6 +37,14 @@ impl PmDcReference {
             .collect())
     }
 
+    /// The zero-based record ordinal this reference names.
+    ///
+    /// A `PmDc` reference is one-based. Index 0 is the null reference: it names
+    /// no record, and it is not the record at ordinal 0.
+    pub(crate) fn record_ordinal(self) -> Option<u32> {
+        self.index.checked_sub(1)
+    }
+
     pub(crate) fn unzip(refs: &[Self]) -> (Vec<u32>, Vec<bool>) {
         refs.iter().map(|r| (r.index, r.qualified)).unzip()
     }

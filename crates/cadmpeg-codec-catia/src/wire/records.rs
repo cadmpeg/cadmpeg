@@ -403,7 +403,43 @@ pub(crate) fn records_are_contiguous(records: &[ConsolidatedRecord]) -> bool {
 /// cannot seed the inventory.
 #[must_use]
 pub fn consolidated_records(data: &[u8]) -> Vec<ConsolidatedRecord> {
-    consolidated_records_in_sources(data, std::iter::once(std::iter::once(0..data.len())))
+    consolidated_records_in_sources(
+        data,
+        std::iter::once(std::iter::once(SourceExtent::whole(data))),
+    )
+}
+
+/// A physical record-source extent proved to lie inside the image it indexes.
+///
+/// A source extent comes from a parsed stream descriptor. The record scanner
+/// reads every byte of the extent, so an extent the image does not hold cannot
+/// be shortened to fit it: [`SourceExtent::within`] refuses to build one, and
+/// the type has no other constructor from parsed values. The complete image is
+/// always its own extent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SourceExtent(Range<usize>);
+
+impl SourceExtent {
+    /// The complete image.
+    #[must_use]
+    pub(crate) fn whole(data: &[u8]) -> Self {
+        Self(0..data.len())
+    }
+
+    /// One declared extent of `data`.
+    ///
+    /// A declared end past the end of the image, or a start past its own end,
+    /// is not an extent of this image and states no record source.
+    #[must_use]
+    pub(crate) fn within(data: &[u8], start: usize, end: usize) -> Option<Self> {
+        (start <= end && end <= data.len()).then_some(Self(start..end))
+    }
+
+    /// The proved byte range within the image.
+    #[must_use]
+    pub(crate) fn range(&self) -> Range<usize> {
+        self.0.clone()
+    }
 }
 
 /// Inventory length-closed consolidated A/B records in disjoint physical
@@ -420,7 +456,39 @@ pub(crate) fn consolidated_records_in_ranges(
     data: &[u8],
     ranges: impl IntoIterator<Item = Range<usize>>,
 ) -> Vec<ConsolidatedRecord> {
-    consolidated_records_in_sources(data, ranges.into_iter().map(std::iter::once))
+    consolidated_records_in_sources(
+        data,
+        ranges
+            .into_iter()
+            .filter_map(|range| SourceExtent::within(data, range.start, range.end))
+            .map(std::iter::once),
+    )
+}
+
+/// Inventory records in descriptor-scoped logical sources stated as byte
+/// ranges of `data`.
+///
+/// A range the image does not hold is not an extent of it and states no record
+/// source. Fixture builders state ranges directly; container decode paths carry
+/// [`SourceExtent`] values proved at the directory.
+#[cfg(test)]
+pub(crate) fn consolidated_records_in_range_sources<S, R>(
+    data: &[u8],
+    sources: S,
+) -> Vec<ConsolidatedRecord>
+where
+    S: IntoIterator<Item = R>,
+    R: IntoIterator<Item = Range<usize>>,
+{
+    consolidated_records_in_sources(
+        data,
+        sources.into_iter().map(|ranges| {
+            ranges
+                .into_iter()
+                .filter_map(|range| SourceExtent::within(data, range.start, range.end))
+                .collect::<Vec<_>>()
+        }),
+    )
 }
 
 /// Inventory records in descriptor-scoped logical sources. Physical extents
@@ -434,17 +502,16 @@ pub(crate) fn consolidated_records_in_sources<S, R>(
 ) -> Vec<ConsolidatedRecord>
 where
     S: IntoIterator<Item = R>,
-    R: IntoIterator<Item = Range<usize>>,
+    R: IntoIterator<Item = SourceExtent>,
 {
     let mut records = Vec::new();
-    for (source_index, ranges) in sources.into_iter().enumerate() {
-        let source_ranges = ranges
+    for (source_index, extents) in sources.into_iter().enumerate() {
+        // Every extent is inside the image by construction. An empty extent
+        // holds no record, so it opens no logical source offset.
+        let source_ranges = extents
             .into_iter()
-            .filter_map(|range| {
-                let start = range.start.min(data.len());
-                let end = range.end.min(data.len());
-                (start < end).then_some(start..end)
-            })
+            .map(|extent| extent.range())
+            .filter(|range| range.start < range.end)
             .collect::<Vec<_>>();
         let mut source_records = Vec::new();
         let mut source_offset = 0usize;
@@ -835,7 +902,8 @@ mod tests {
         bytes.extend_from_slice(&[0x05, 0, 1, 2, 3, 4, 5, 6, 7]);
         let split = spanning_start + 10;
 
-        let records = consolidated_records_in_sources(&bytes, [[0..split, split..bytes.len()]]);
+        let records =
+            consolidated_records_in_range_sources(&bytes, [[0..split, split..bytes.len()]]);
 
         assert_eq!(records.len(), 2);
         assert_eq!(records[1].family, ConsolidatedFamily::A);

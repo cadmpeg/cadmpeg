@@ -276,16 +276,19 @@ fn face_tolerance_below_display_resolution_is_refused() {
         .find(|face| face.id == face_id)
         .expect("test face exists")
         .tolerance = Some(
-            cadmpeg_ir::scalar::PositiveReal::new(stated)
-                .expect("the test tolerance is positive and finite"),
-        );
+        cadmpeg_ir::scalar::PositiveReal::new(stated)
+            .expect("the test tolerance is positive and finite"),
+    );
 
     let error = assign_unique_surface_owners(&mut model)
         .expect_err("a display lane cannot evaluate a finer stated tolerance");
     let text = error.to_string();
     assert!(text.contains(face_id.as_str()), "{text}");
     assert!(text.contains(&stated.to_string()), "{text}");
-    assert!(text.contains(&EPS_DISPLAY_QUANTIZATION.to_string()), "{text}");
+    assert!(
+        text.contains(&EPS_DISPLAY_QUANTIZATION.to_string()),
+        "{text}"
+    );
 }
 
 fn test_nurbs_surface() -> NurbsSurface {

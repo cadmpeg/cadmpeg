@@ -30,6 +30,7 @@ use crate::layout::inner_header as inner_hdr;
 use crate::layout::outer_header as outer_hdr;
 use crate::layout::stream_descriptor_header as stream_desc;
 use crate::variant::Variant;
+use crate::wire::records::SourceExtent;
 
 /// The outer and inner container magic.
 pub const OUTER_MAGIC: &[u8; 8] = &outer_hdr::MAGIC_VALUE;
@@ -124,10 +125,67 @@ pub struct OuterContainerDeclaration {
     pub stream_name: String,
 }
 
-/// Split FINJPL segments within a bounded outer-body range.
+/// A body extent proved to lie inside the container image it indexes.
+///
+/// The outer directory declares where the body ends. A declared end past the
+/// end of the image is an inconsistency in bytes that are present, and no
+/// constructor of this type admits one: the type cannot state an overrun, so a
+/// scan over it never reads a silently shortened region.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BodyExtent<'a> {
+    image: &'a [u8],
+    range: Range<usize>,
+}
+
+impl<'a> BodyExtent<'a> {
+    /// The complete image.
+    #[must_use]
+    pub fn whole(image: &'a [u8]) -> Self {
+        Self {
+            range: 0..image.len(),
+            image,
+        }
+    }
+
+    /// The body between a declared outer-directory length and offset.
+    ///
+    /// `offset + length == image.len()` with `length <= offset` proves
+    /// `offset <= image.len()`, so an admitted pair states an extent the image
+    /// holds. Any other pair declares no outer body at all.
+    fn from_directory_pair(image: &'a [u8], offset: usize, length: usize) -> Option<Self> {
+        (offset.checked_add(length)? == image.len() && length <= offset).then_some(Self {
+            image,
+            range: length..offset,
+        })
+    }
+
+    /// The image from `start` through its end.
+    fn tail_from(image: &'a [u8], start: usize) -> Option<Self> {
+        (start <= image.len()).then_some(Self {
+            image,
+            range: start..image.len(),
+        })
+    }
+
+    /// The proved byte range within the image.
+    #[must_use]
+    pub fn range(&self) -> Range<usize> {
+        self.range.clone()
+    }
+
+    /// The bytes of the extent.
+    #[must_use]
+    pub fn bytes(&self) -> &'a [u8] {
+        &self.image[self.range.start..self.range.end]
+    }
+}
+
+/// Split FINJPL segments within a bounded outer-body extent.
 #[must_use]
-pub fn finjpl_segments(data: &[u8], body_start: usize, body_end: usize) -> Vec<FinjplSegment> {
-    let end = body_end.min(data.len());
+pub fn finjpl_segments(body: &BodyExtent<'_>) -> Vec<FinjplSegment> {
+    let data = body.image;
+    let body_start = body.range.start;
+    let end = body.range.end;
     if body_start >= end {
         return Vec::new();
     }
@@ -166,7 +224,7 @@ fn finjpl_primary_name(data: &[u8], pos: usize, end: usize) -> Option<String> {
 /// boundary; incidental JPEG signatures outside this segment family are ignored.
 #[must_use]
 pub fn preview_images(data: &[u8]) -> Vec<PreviewImage> {
-    let segments = finjpl_segments(data, 0, data.len());
+    let segments = finjpl_segments(&BodyExtent::whole(data));
     preview_images_in_segments(data, &segments)
 }
 
@@ -205,7 +263,7 @@ fn preview_images_in_segments(data: &[u8], segments: &[FinjplSegment]) -> Vec<Pr
 #[must_use]
 #[cfg(test)]
 pub fn last_save_version(data: &[u8]) -> Option<LastSaveVersion> {
-    let segments = finjpl_segments(data, 0, data.len());
+    let segments = finjpl_segments(&BodyExtent::whole(data));
     last_save_version_in_segments(data, &segments)
 }
 
@@ -226,7 +284,7 @@ fn last_save_version_in_segments(
 /// project-flags segments.
 #[must_use]
 pub fn external_references(data: &[u8]) -> Vec<ExternalReference> {
-    let segments = finjpl_segments(data, 0, data.len());
+    let segments = finjpl_segments(&BodyExtent::whole(data));
     external_references_in_segments(data, &segments)
 }
 
@@ -405,19 +463,17 @@ fn jpeg_extent(data: &[u8], start: usize) -> Option<(usize, u16, u16, u8)> {
 #[must_use]
 pub fn e5_record_stream(data: &[u8]) -> Option<Range<usize>> {
     let body = outer_body_range(data)?;
-    let segments = finjpl_segments(data, body.start, body.end);
-    e5_record_stream_in_segments(data, body, &segments)
+    let segments = finjpl_segments(&body);
+    e5_record_stream_in_segments(data, body.range(), &segments)
 }
 
-fn outer_body_range(data: &[u8]) -> Option<Range<usize>> {
+fn outer_body_range(data: &[u8]) -> Option<BodyExtent<'_>> {
     data.starts_with(OUTER_MAGIC).then_some(())?;
     let directory_offset =
         usize::try_from(View::u32_be_at(data, outer_hdr::DIRECTORY_OFFSET)?).ok()?;
     let directory_length =
         usize::try_from(View::u32_be_at(data, outer_hdr::DIRECTORY_LENGTH)?).ok()?;
-    (directory_offset.checked_add(directory_length)? == data.len()
-        && directory_length <= directory_offset)
-        .then_some(directory_length..directory_offset)
+    BodyExtent::from_directory_pair(data, directory_offset, directory_length)
 }
 
 /// Return the outer-preamble byte range before the first bounded FINJPL segment.
@@ -432,13 +488,16 @@ pub(crate) fn outer_preamble_range(data: &[u8]) -> Option<Range<usize>> {
         (data.starts_with(OUTER_MAGIC)
             && View::u32_be_at(data, outer_hdr::DIRECTORY_OFFSET) == Some(0)
             && View::u32_be_at(data, outer_hdr::DIRECTORY_LENGTH) == Some(0))
-        .then_some(outer_hdr::FILL_FF..data.len())
+        .then(|| BodyExtent::tail_from(data, outer_hdr::FILL_FF))
+        .flatten()
     })?;
-    let end = data[body.clone()]
+    let range = body.range();
+    let end = body
+        .bytes()
         .windows(FINJPL_MARKER.len())
         .position(|bytes| bytes == FINJPL_MARKER)
-        .map_or(body.end, |relative| body.start + relative);
-    Some(body.start..end)
+        .map_or(range.end, |relative| range.start + relative);
+    Some(range.start..end)
 }
 
 fn e5_record_stream_in_segments(
@@ -699,9 +758,9 @@ pub struct ContainerScan<'a> {
 /// source. The nested directory itself and all directory headers stay outside
 /// the inventory. Records can establish ordered relationships across extents
 /// of one descriptor, but never across descriptors.
-pub(crate) fn consolidated_record_sources(scan: &ContainerScan<'_>) -> Vec<Vec<Range<usize>>> {
+pub(crate) fn consolidated_record_sources(scan: &ContainerScan<'_>) -> Vec<Vec<SourceExtent>> {
     let mut sources = Vec::new();
-    let add_directory = |sources: &mut Vec<Vec<Range<usize>>>, directory: &InnerDir| {
+    let add_directory = |sources: &mut Vec<Vec<SourceExtent>>, directory: &InnerDir| {
         for descriptor in &directory.descriptors {
             let mut source = Vec::new();
             for extent in &descriptor.extents {
@@ -711,8 +770,11 @@ pub(crate) fn consolidated_record_sources(scan: &ContainerScan<'_>) -> Vec<Vec<R
                 let Some(end) = start.checked_add(extent.phys_len as usize) else {
                     continue;
                 };
-                if end <= scan.data.len() {
-                    source.push(start..end);
+                // A descriptor extent the image does not hold states no record
+                // source. The scanner reads every byte of an extent it accepts,
+                // so it never receives a shortened one.
+                if let Some(extent) = SourceExtent::within(&scan.data, start, end) {
+                    source.push(extent);
                 }
             }
             if !source.is_empty() && !sources.contains(&source) {
@@ -730,16 +792,22 @@ pub(crate) fn consolidated_record_sources(scan: &ContainerScan<'_>) -> Vec<Vec<R
             .map(|directory| directory.inner)
             .or_else(|| outer_stream_directory_range(&scan.data).map(|range| range.start))
             .unwrap_or(scan.data.len());
-        if outer_hdr::FILL_FF < outer_end {
-            sources.push(std::iter::once(outer_hdr::FILL_FF..outer_end).collect());
+        let preamble = (outer_hdr::FILL_FF < outer_end)
+            .then(|| SourceExtent::within(&scan.data, outer_hdr::FILL_FF, outer_end))
+            .flatten();
+        if let Some(preamble) = preamble {
+            sources.push(vec![preamble]);
         }
     }
     if let Some(inner) = scan.inner.as_ref() {
         add_directory(&mut sources, inner);
     }
 
-    if sources.is_empty() && scan.data.len() > outer_hdr::FILL_FF {
-        sources.push(std::iter::once(outer_hdr::FILL_FF..scan.data.len()).collect());
+    let whole = (sources.is_empty() && scan.data.len() > outer_hdr::FILL_FF)
+        .then(|| SourceExtent::within(&scan.data, outer_hdr::FILL_FF, scan.data.len()))
+        .flatten();
+    if let Some(whole) = whole {
+        sources.push(vec![whole]);
     }
     sources
 }
@@ -751,6 +819,7 @@ pub(crate) fn consolidated_record_ranges(scan: &ContainerScan<'_>) -> Vec<Range<
     consolidated_record_sources(scan)
         .into_iter()
         .flatten()
+        .map(|extent| extent.range())
         .collect()
 }
 
@@ -1307,9 +1376,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     let brep = inner.as_ref().and_then(|dir| brep_stream(&data, dir));
     let main_data_stream = inner.as_ref().and_then(|dir| main_data_stream(&data, dir));
     let outer_body = outer_body_range(&data);
-    let finjpl_segments = outer_body.as_ref().map_or_else(Vec::new, |body| {
-        finjpl_segments(&data, body.start, body.end)
-    });
+    let finjpl_segments = outer_body.as_ref().map_or_else(Vec::new, finjpl_segments);
     let previews = preview_images_in_segments(&data, &finjpl_segments);
     let last_save_version = last_save_version_in_segments(&data, &finjpl_segments);
     let external_references = external_references_in_segments(&data, &finjpl_segments);
@@ -1326,7 +1393,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         }),
         e5_markers: outer_body
             .as_ref()
-            .map_or(0, |body| count_subslice(&data[body.clone()], E5_MARKER)),
+            .map_or(0, |body| count_subslice(body.bytes(), E5_MARKER)),
         ..Default::default()
     };
     if let Some(b) = main_data_stream.as_deref() {
@@ -1346,7 +1413,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         main_data_stream.as_deref(),
         &census,
         outer_body.is_some_and(|body| {
-            e5_record_stream_in_segments(&data, body, &finjpl_segments).is_some()
+            e5_record_stream_in_segments(&data, body.range(), &finjpl_segments).is_some()
         }),
     );
     let surface_alias_tags = matches!(variant, Variant::StandardNested)
