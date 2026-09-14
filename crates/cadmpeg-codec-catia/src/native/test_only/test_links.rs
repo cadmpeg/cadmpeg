@@ -334,7 +334,7 @@ pub(super) fn validate_native_links(
         }
     }
     for (index, segment) in segments.iter().enumerate() {
-        let parsed = container::finjpl_segments(&segment.data, 0, segment.data.len());
+        let parsed = container::finjpl_segments(&container::BodyExtent::whole(&segment.data));
         let expected_id = format!("catia:outer:finjpl#{index}");
         if segment.id != expected_id
             || u64::try_from(segment.data.len()).ok() != Some(segment.byte_len)

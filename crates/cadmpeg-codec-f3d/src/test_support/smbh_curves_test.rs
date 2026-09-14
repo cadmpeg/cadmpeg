@@ -1037,7 +1037,9 @@ pub(crate) fn synthetic_geometry_with_deformable_curve_smbh(mode: i64) -> Vec<u8
                     t_dbl(curve, 5.5);
                     t_long(curve, 6);
                 }
-                _ => unreachable!(),
+                // The tail is mode-specific. A mode outside this set states no
+                // tail, and the decode assertion in the calling test then fails.
+                _ => {}
             }
         },
     )

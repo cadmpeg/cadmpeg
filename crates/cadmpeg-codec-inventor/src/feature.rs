@@ -1097,17 +1097,20 @@ pub(crate) fn project(
             })
             .collect(),
     };
+    // The label owner is a one-based reference. Keying on the optional record
+    // ordinal keeps the null reference out of the ordinal space, so a label
+    // with no owner never claims the feature at ordinal 0.
     let labels = unique_by(&inventory.labels, |label| {
         (
             label.identity.segment_token.as_str(),
-            label.header.owner.index.saturating_sub(1),
+            label.header.owner.record_ordinal(),
         )
     });
     let mut projected = Vec::new();
     for feature in &inventory.features {
         let Some(label) = labels.get(&(
             feature.identity.segment_token.as_str(),
-            feature.identity.record_ordinal,
+            Some(feature.identity.record_ordinal),
         )) else {
             continue;
         };

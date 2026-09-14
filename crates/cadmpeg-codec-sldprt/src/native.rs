@@ -204,6 +204,78 @@ const SLDPRT_FAMILIES: &[SldprtFamilyRow] = &[
 const SLDPRT_CATALOGUE: Catalogue<'static, SldprtNative, (), cadmpeg_ir::NativeNamespace, ()> =
     Catalogue::new(SLDPRT_FAMILIES);
 
+/// Byte-wise string equality, usable in a constant expression.
+const fn arena_name_eq(left: &str, right: &str) -> bool {
+    let (left, right) = (left.as_bytes(), right.as_bytes());
+    if left.len() != right.len() {
+        return false;
+    }
+    let mut index = 0;
+    while index < left.len() {
+        if left[index] != right[index] {
+            return false;
+        }
+        index += 1;
+    }
+    true
+}
+
+/// `true` when `name` is the arena of one declared family row.
+const fn family_declares(name: &str) -> bool {
+    let mut index = 0;
+    while index < SLDPRT_FAMILIES.len() {
+        if arena_name_eq(SLDPRT_FAMILIES[index].arena, name) {
+            return true;
+        }
+        index += 1;
+    }
+    false
+}
+
+/// `true` when `name` is one of the pinned arena names.
+const fn pinned_declares(name: &str) -> bool {
+    let mut index = 0;
+    while index < SLDPRT_ARENA_NAMES.len() {
+        if arena_name_eq(SLDPRT_ARENA_NAMES[index], name) {
+            return true;
+        }
+        index += 1;
+    }
+    false
+}
+
+/// The pinned arena list and the emitted family table state the same arenas.
+///
+/// `Catalogue::emit_all` runs every row and each row writes `row.arena`, so
+/// this agreement is exactly the statement that a store leaves every pinned
+/// arena present. The check is a constant expression, so a family added or
+/// removed without the matching pinned name fails the build.
+const fn arena_names_agree_with_families() -> bool {
+    if SLDPRT_ARENA_NAMES.len() != SLDPRT_FAMILIES.len() {
+        return false;
+    }
+    let mut index = 0;
+    while index < SLDPRT_ARENA_NAMES.len() {
+        if !family_declares(SLDPRT_ARENA_NAMES[index]) {
+            return false;
+        }
+        index += 1;
+    }
+    let mut index = 0;
+    while index < SLDPRT_FAMILIES.len() {
+        if !pinned_declares(SLDPRT_FAMILIES[index].arena) {
+            return false;
+        }
+        index += 1;
+    }
+    true
+}
+
+const _: () = assert!(
+    arena_names_agree_with_families(),
+    "SLDPRT_ARENA_NAMES and SLDPRT_FAMILIES state different arenas"
+);
+
 /// SOLIDWORKS records retained outside the format-neutral model.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -1053,9 +1125,6 @@ impl SldprtNative {
             ));
         }
         SLDPRT_CATALOGUE.emit_all(self, namespace)?;
-        debug_assert!(SLDPRT_ARENA_NAMES
-            .iter()
-            .all(|name| namespace.arenas().contains_key(*name)));
         Ok(())
     }
 }

@@ -1876,27 +1876,23 @@ fn current_revision_scopes(census: &Census, stream_len: usize) -> Vec<RevisionSc
     }
 
     let mut scopes = Vec::new();
-    for (run, &run_start) in run_starts.iter().enumerate() {
-        let run_end = run_starts
-            .get(run + 1)
-            .copied()
-            .unwrap_or(snapshot_revisions.len());
+    for run in 0..run_starts.len() {
+        let next_run_start = run_starts.get(run + 1).copied();
+        // `run_starts` opens at zero, ascends strictly, and every pushed
+        // element is under `snapshot_revisions.len()`, so each run holds at
+        // least one snapshot revision and `run_end` is never zero.
+        let run_end = next_run_start.unwrap_or(snapshot_revisions.len());
         let current_revision = &census.body_revisions[snapshot_revisions[run_end - 1]];
-        let end = run_starts
-            .get(run + 1)
-            .map_or(stream_len, |next_run_start| {
-                census.body_revisions[snapshot_revisions[*next_run_start]].offset
-            });
+        let end = next_run_start.map_or(stream_len, |next_run_start| {
+            census.body_revisions[snapshot_revisions[next_run_start]].offset
+        });
         if current_revision.offset < end {
             scopes.push(RevisionScope {
                 start: current_revision.offset,
                 end,
             });
         }
-        debug_assert!(run_start < run_end);
     }
-
-    debug_assert!(scopes.windows(2).all(|pair| pair[0].end <= pair[1].start));
     scopes
 }
 
@@ -1942,14 +1938,16 @@ pub fn semantic_residual(stream: &[u8]) -> Vec<u8> {
 /// full walk of a large delta stream while keeping this transformation
 /// byte-for-byte identical to `semantic_residual`.
 pub(crate) fn semantic_residual_with_census(stream: &[u8], census: &Census) -> Vec<u8> {
-    let mut residual = stream.to_vec();
     let current_scopes = current_revision_scopes(census, stream.len());
-    let mut cursor = 0;
+    // Mask the whole stream and restore each current-revision scope. Restoring
+    // the kept spans, rather than filling the gaps between them, needs no
+    // ordering or disjointness relation between the scopes: every byte outside
+    // every scope reads 0xff whatever order the scopes arrive in.
+    let mut residual = stream.to_vec();
+    residual.fill(0xff);
     for scope in &current_scopes {
-        residual[cursor..scope.start].fill(0xff);
-        cursor = scope.end;
+        residual[scope.start..scope.end].copy_from_slice(&stream[scope.start..scope.end]);
     }
-    residual[cursor..].fill(0xff);
     let canonical_residual_records = census
         .records
         .iter()

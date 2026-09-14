@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP representation units, placements, and geometry carriers.
 
-use crate::ids::kind;
+use crate::ids::{key_word, kind};
 use std::collections::{hash_map::Entry, BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 use cadmpeg_core::CodecError;
@@ -15,7 +15,7 @@ use cadmpeg_ir::geometry::{
     SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
-    CurveId, PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId,
+    CurveId, IdentityKey, PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::LossNote;
@@ -2152,9 +2152,11 @@ fn decode_tessellated_curve_sets(
             .filter(|name| !name.is_empty());
         for (strip_index, indices) in strips.into_iter().enumerate() {
             let curve_key = if strip_index == 0 {
-                id.to_string()
+                IdentityKey::from(id)
             } else {
-                format!("{id}-strip-{strip_index}")
+                IdentityKey::from(id)
+                    .dash(key_word!("strip"))
+                    .dash(strip_index)
             };
             let points: Vec<_> = indices.into_iter().map(|index| vertices[index]).collect();
             let Ok(points) = points.try_into() else {

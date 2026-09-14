@@ -1295,7 +1295,7 @@ pub(super) fn compact_extrusion_to_vertex_at(
     offset: usize,
     end: usize,
 ) -> Option<(usize, CompactPointReferenceKind)> {
-    let end = end.min(payload.len());
+    let end = super::DeclaredEnd::of(end, payload.len())?.get();
     let payload = payload.get(..end)?;
     if !compact_extrusion_end_spec_header(payload, offset, 3)
         || payload.get(offset + 22..offset + 30) != Some(&[0, 0, 0, 0, 0, 0, 0, 0])
@@ -1345,7 +1345,7 @@ pub(super) fn compact_extrusion_offset_from_face_at(
     offset: usize,
     end: usize,
 ) -> Option<usize> {
-    let end = end.min(payload.len());
+    let end = super::DeclaredEnd::of(end, payload.len())?.get();
     let payload = payload.get(..end)?;
     if !compact_extrusion_end_spec_header(payload, offset, 5)
         || payload.get(offset + 22..offset + 26) != Some(&[0, 0, 0, 0])
@@ -1390,7 +1390,7 @@ pub(super) fn compact_extrusion_to_face_at(
     offset: usize,
     end: usize,
 ) -> Option<usize> {
-    let end = end.min(payload.len());
+    let end = super::DeclaredEnd::of(end, payload.len())?.get();
     let payload = payload.get(..end)?;
     // Older end-spec streams encode the `moEndSpec_c` class as the fixed
     // two-byte token `03 00`; their remaining header and child grammar is
@@ -1469,7 +1469,10 @@ fn compact_termination_reference_candidates(
     end: usize,
     require_path: bool,
 ) -> Vec<usize> {
-    (start..end.min(payload.len()))
+    let Some(end) = super::DeclaredEnd::of(end, payload.len()).map(super::DeclaredEnd::get) else {
+        return Vec::new();
+    };
+    (start..end)
         .filter(|marker| {
             if require_path {
                 compact_termination_reference_at(payload, *marker)

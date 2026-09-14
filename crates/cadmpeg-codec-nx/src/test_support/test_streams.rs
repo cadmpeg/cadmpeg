@@ -76,17 +76,17 @@ pub(crate) fn parasolid_group_partition_stream() -> Vec<u8> {
 pub(crate) fn external_reference_stream() -> Vec<u8> {
     let mut p = b"EXTREFSTREAM".to_vec();
     p.extend_from_slice(&[0u8; 13]); // header; byte 24 must be zero
-    debug_assert_eq!(p.len(), 25);
+    assert_eq!(p.len(), 25);
     // Record directory (ascending offsets): empty record 7 at 45, handle-set 6 at 51.
     p.extend_from_slice(&7u32.to_le_bytes());
     p.extend_from_slice(&45u32.to_le_bytes());
     p.extend_from_slice(&6u32.to_le_bytes());
     p.extend_from_slice(&51u32.to_le_bytes());
     p.extend_from_slice(&0u32.to_le_bytes()); // terminator
-    debug_assert_eq!(p.len(), 45);
+    assert_eq!(p.len(), 45);
     // Empty record 7: the exact six-byte form.
     p.extend_from_slice(&[1, 0, 0, 0, 0, 1]);
-    debug_assert_eq!(p.len(), 51);
+    assert_eq!(p.len(), 51);
     // Handle-set record 6.
     p.extend_from_slice(&[1, 0, 0, 0]); // record marker
     p.extend_from_slice(&2u16.to_be_bytes()); // declared count
@@ -101,7 +101,7 @@ pub(crate) fn external_reference_stream() -> Vec<u8> {
     p.push(3); // prefix closing count
                // Tail: one adjacent persistent-handle / tagged-reference pair.
     p.extend_from_slice(&[0xe0, 0, 0, 0, 0x05, 0xc0, 0, 0, 0x01]);
-    debug_assert_eq!(p.len(), 96);
+    assert_eq!(p.len(), 96);
     // End-anchored string table: four strings, ordinals 0..3.
     p.push(1);
     p.extend_from_slice(&4u32.to_le_bytes());

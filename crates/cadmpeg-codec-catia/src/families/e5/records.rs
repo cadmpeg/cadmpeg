@@ -121,14 +121,26 @@ impl E5Record {
     }
 }
 
+/// The E5 record-family token from the layout table.
+///
+/// The container scanner finds E5 records with
+/// [`crate::container::E5_MARKER`]. The two constants state the same three
+/// bytes; the assertion below fails the build if they diverge.
 const MARKER: &[u8; 3] = &crate::layout::token::E5_RECORD_FAMILY;
+
+const _: () = assert!(
+    MARKER[0] == crate::container::E5_MARKER[0]
+        && MARKER[1] == crate::container::E5_MARKER[1]
+        && MARKER[2] == crate::container::E5_MARKER[2],
+    "the E5 layout token and the container E5 marker must state the same bytes"
+);
+
 const E5_NURBS_SURFACE_TAIL_BYTES: usize = 148;
 const E5_D8_TAIL_BYTES: usize = 63;
 const E5_D8_ARC_TOLERANCE: f64 = 1e-8;
 const E5_D8_RADIUS_TOLERANCE: f64 = 1e-8;
 
 fn e5_records(data: &[u8]) -> Vec<E5Record> {
-    debug_assert_eq!(MARKER, crate::container::E5_MARKER);
     crate::container::all_e5_record_spans(data)
         .into_iter()
         .filter_map(|range| {
@@ -391,12 +403,17 @@ fn parse_e5_rolling_ball_jet(data: &[u8], record: E5Record) -> Option<E5RollingB
         return None;
     }
     let multiplicities = view.read_counted(station_count_u64, 4, View::u32_le)?;
+    // `station_count < 2` is refused above, so the interior station count is
+    // the exact difference. The checked subtraction refuses a stated count this
+    // record cannot span instead of saturating it to an empty interior, which
+    // would admit any interior multiplicity.
+    let interior_station_count = station_count.checked_sub(2)?;
     if multiplicities.first() != Some(&6)
         || multiplicities.last() != Some(&6)
         || multiplicities
             .iter()
             .skip(1)
-            .take(station_count.saturating_sub(2))
+            .take(interior_station_count)
             .any(|multiplicity| *multiplicity != 3)
     {
         return None;

@@ -195,9 +195,11 @@ fn finish_decode(
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Decoded, CodecError> {
     // Drain before the first fallible step: every refusal a route stated is in
-    // the report even when the charge, the transfer, or the native store below
-    // answers `Err`. The fall-through statements say which route refused and
-    // where the decode went next.
+    // the `report` value. The `Ok` route returns that value, so the notes reach
+    // the caller. The `Err` route below drops the value and returns the bare
+    // `CodecError`: a refusal note is subordinate to a hard failure by design.
+    // The fall-through statements say which route refused and where the decode
+    // went next.
     for statement in fell_through {
         report
             .losses
@@ -268,7 +270,7 @@ fn finish_decode(
         standard_face_population
             .then_some(scan.main_data_stream.as_deref().or(scan.brep.as_deref()))
             .flatten(),
-    );
+    )?;
     let object_record_count: usize = native
         .object_graphs
         .iter()

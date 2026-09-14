@@ -14,6 +14,32 @@ const EPS_SKETCH_EDGES_PROJECT_EDGE_E9: f64 = 1.0e-9;
 const EPS_SKETCH_EDGES_CIRCLE_CONTAINS_POINT_E9: f64 = 1.0e-9;
 const EPS_SKETCH_EDGES_ELLIPSE_CONTAINS_POINT_E9: f64 = 1.0e-9;
 
+/// The projection tolerance of one edge projected onto a sketch plane.
+///
+/// The projection resolves to [`EPS_SKETCH_EDGES_PROJECT_EDGE_E9`], so an edge
+/// stating a finer tolerance states a resolution the projection does not
+/// carry. [`EdgeProjectionTolerance::of`] is the only constructor: a stated
+/// tolerance under that bound is refused, so no stated value is floored, and an
+/// edge that states no tolerance projects at the bound.
+#[derive(Debug, Clone, Copy)]
+struct EdgeProjectionTolerance(f64);
+
+impl EdgeProjectionTolerance {
+    /// The projection tolerance of `edge`, or `None` when the edge states a
+    /// tolerance finer than the projection resolves.
+    fn of(edge: &cadmpeg_ir::topology::Edge) -> Option<Self> {
+        let Some(stated) = edge.tolerance else {
+            return Some(Self(EPS_SKETCH_EDGES_PROJECT_EDGE_E9));
+        };
+        (stated.get() >= EPS_SKETCH_EDGES_PROJECT_EDGE_E9).then_some(Self(stated.get()))
+    }
+
+    /// The tolerance value.
+    fn get(self) -> f64 {
+        self.0
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn project_endpoint_constraints(
     sketch: &SketchId,
@@ -129,13 +155,7 @@ pub(super) fn project_edge(
         v_axis,
     );
     let line = || SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }).ok();
-    let tolerance = edge
-        .tolerance
-        .map_or(
-            EPS_SKETCH_EDGES_PROJECT_EDGE_E9,
-            cadmpeg_ir::scalar::PositiveReal::get,
-        )
-        .max(EPS_SKETCH_EDGES_PROJECT_EDGE_E9);
+    let tolerance = EdgeProjectionTolerance::of(edge)?.get();
     match edge.curve().as_ref().and_then(|id| curves.get(id).copied()) {
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))) => {
             let center = circle_curve.center();

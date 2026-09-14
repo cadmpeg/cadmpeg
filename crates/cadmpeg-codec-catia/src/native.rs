@@ -1525,6 +1525,17 @@ impl CatiaAliasRow {
     pub fn entity_record_ordinal(&self) -> u8 {
         self.f1[2]
     }
+
+    /// Byte offset of the 24-byte row frame.
+    ///
+    /// `byte_offset` names the four-byte marker, which sits at
+    /// `outer_alias_row::MARKER` inside the row. A marker inside the first
+    /// `MARKER` bytes of the image has no row frame, so this answers `None`
+    /// instead of aliasing the frame with the head of the file.
+    pub fn row_byte_offset(&self) -> Option<u64> {
+        self.byte_offset
+            .checked_sub(crate::layout::outer_alias_row::MARKER as u64)
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1586,6 +1597,9 @@ impl TryFrom<CatiaAliasRowWire> for CatiaAliasRow {
         }
         if wire.entity_record_ordinal != wire.f1[2] {
             return Err("entity_record_ordinal disagrees with source bytes");
+        }
+        if wire.byte_offset < crate::layout::outer_alias_row::MARKER as u64 {
+            return Err("byte_offset places the alias marker before its row frame");
         }
         Ok(Self {
             id: wire.id,
@@ -6651,6 +6665,11 @@ macro_rules! define_catia_arenas {
         ),+ $(,)?
     ) => {
         /// Complete CATIA native arena manifest in stable order.
+        ///
+        /// The manifest states what `native_store_paths_cover_every_declared_arena`
+        /// checks the store against, and nothing in the decode reads it, so it is
+        /// built for that test alone.
+        #[cfg(test)]
         pub(crate) const CATIA_ARENA_NAMES: &[&str] = &[
             $(stringify!($field)),+
         ];
@@ -7015,9 +7034,6 @@ fn store_projection(
     namespace: &mut cadmpeg_ir::NativeNamespace,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     CATIA_CATALOGUE.emit_all(projection, namespace)?;
-    debug_assert!(CATIA_ARENA_NAMES
-        .iter()
-        .all(|name| namespace.arenas().contains_key(*name)));
     Ok(())
 }
 
@@ -8770,7 +8786,7 @@ impl CatiaNative {
     #[must_use]
     pub(crate) fn decode_with_record_sources(
         bytes: &[u8],
-        sources: &[Vec<Range<usize>>],
+        sources: &[Vec<crate::wire::records::SourceExtent>],
         refusal: &mut crate::nurbs::LaneRefusals,
     ) -> Self {
         let consolidated_records =
@@ -8788,7 +8804,7 @@ impl CatiaNative {
             outer_directory.as_ref().map_or_else(Vec::new, |outer| {
                 container::outer_container_declarations(bytes, outer)
             });
-        let finjpl_segments = container::finjpl_segments(bytes, 0, bytes.len())
+        let finjpl_segments = container::finjpl_segments(&container::BodyExtent::whole(bytes))
             .into_iter()
             .enumerate()
             .map(|(index, segment)| CatiaFinjplSegment {
@@ -8975,7 +8991,12 @@ impl CatiaNative {
             &terminal_nulls_by_graph,
         );
         alias_rows.retain(|row| {
-            let row_start = row.byte_offset.saturating_sub(4);
+            // A marker inside the first four bytes of the image has no row
+            // frame, so the row is not an independent alias core. Refuse it
+            // here rather than aliasing its frame with the file head.
+            let Some(row_start) = row.row_byte_offset() else {
+                return false;
+            };
             !object_graphs
                 .iter()
                 .any(|graph| extents_overlap(row_start, 24, graph.byte_offset, graph.byte_len))

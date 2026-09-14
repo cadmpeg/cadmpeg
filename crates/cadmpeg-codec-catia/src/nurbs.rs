@@ -102,6 +102,20 @@ impl LaneRefusals {
         );
     }
 
+    /// Record one refusal a lane solver stated, against the record that stated
+    /// the lanes.
+    ///
+    /// This is the sink for a solver that answers "no representation" without
+    /// an IR carrier error, such as a jet whose stored samples do not lower to
+    /// a B-spline.
+    pub(crate) fn push_solver(&mut self, record: impl std::fmt::Display, detail: &str) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::GeometryAnalyticPayloadInvalid.note(format!(
+                "A CATIA carrier record states lanes the reader cannot lower: {record} {detail}"
+            )),
+        );
+    }
+
     /// Record a refused source-stated parameter range against the record that
     /// stated it.
     fn push_range(&mut self, record: impl std::fmt::Display, range: [f64; 2]) {

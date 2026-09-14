@@ -46,6 +46,22 @@ use vertices::transfer_vertex_tolerances;
 /// CATIA's object-stream on-carrier incidence tolerance, in millimetres.
 const POINT_TOLERANCE: f64 = 1e-3;
 
+/// Acceptance radius for matching one lifted support endpoint to its edge
+/// endpoint.
+///
+/// `vertex_tolerances` holds no source-stated tolerance. Every entry is an
+/// evaluation residual this decoder computed from lifted pcurve geometry, and a
+/// vertex with no entry produced no residual at all. The radius is therefore
+/// the larger of that residual and the object-stream incidence tolerance: the
+/// gate never runs tighter than the format's own incidence tolerance, and a
+/// stated tolerance is never floored, because none reaches here.
+fn endpoint_gate_radius(residual: Option<f64>) -> f64 {
+    match residual {
+        Some(residual) if residual > POINT_TOLERANCE => residual,
+        _ => POINT_TOLERANCE,
+    }
+}
+
 type B5Support = (u32, u32, [f64; 2]);
 type B5SupportPlan = HashMap<u32, Vec<B5Support>>;
 
@@ -557,11 +573,11 @@ fn build_plan(
         let vertices = graph.vertices.edges()[&edge];
         let [start, end] = graph.vertices.edge_points(edge)?;
         let tolerances = vertices.map(|vertex| {
-            vertex_tolerances
-                .get(&vertex.combined_index(graph.vertices.raw_points().len()))
-                .copied()
-                .unwrap_or(POINT_TOLERANCE)
-                .max(POINT_TOLERANCE)
+            endpoint_gate_radius(
+                vertex_tolerances
+                    .get(&vertex.combined_index(graph.vertices.raw_points().len()))
+                    .copied(),
+            )
         });
         orient_b5_supports_to_edge(
             supports,
@@ -577,11 +593,11 @@ fn build_plan(
             let vertices = *graph.vertices.edges().get(&edge)?;
             let [start, end] = graph.vertices.edge_points(edge)?;
             let tolerances = vertices.map(|vertex| {
-                vertex_tolerances
-                    .get(&vertex.combined_index(graph.vertices.raw_points().len()))
-                    .copied()
-                    .unwrap_or(POINT_TOLERANCE)
-                    .max(POINT_TOLERANCE)
+                endpoint_gate_radius(
+                    vertex_tolerances
+                        .get(&vertex.combined_index(graph.vertices.raw_points().len()))
+                        .copied(),
+                )
             });
             b5_supports_follow_edge(
                 supports,

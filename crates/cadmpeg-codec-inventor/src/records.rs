@@ -268,7 +268,12 @@ pub(crate) fn parse_meta_tables<'a>(
         section_1, section_2, section_3, section_4, section_5, section_6, section_7, section_8,
         section_9, section_10, section_11,
     ];
-    debug_assert_eq!(section_1_footer, meta_prefix::LEN + 4 + block_count * 4);
+    let section_1_end = meta_prefix::LEN + 4 + block_count * 4;
+    if section_1_footer != section_1_end {
+        return Err(CodecError::malformed(format_args!(
+            "RSe block-size table ends at {section_1_footer}, expected {section_1_end}"
+        )));
+    }
     Ok(MetaTables {
         prefix,
         blocks,

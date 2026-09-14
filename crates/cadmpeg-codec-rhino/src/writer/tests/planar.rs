@@ -370,3 +370,61 @@ fn open_planar_solid_is_rejected_before_output() {
     assert!(error.to_string().contains("incidence"));
     assert_eq!(output, [0xaa]);
 }
+
+/// A stated tolerance finer than the Rhino Brep write route resolves.
+const EPS_BELOW_WRITE_BOUND: f64 = 1.0e-12;
+
+/// Decimal rendering of `EPS_BELOW_WRITE_BOUND` in a refusal message.
+const EPS_BELOW_WRITE_BOUND_TEXT: &str = "0.000000000001";
+
+#[test]
+fn sub_resolution_edge_tolerance_is_refused_before_output() {
+    let mut ir = polygon_sheet(&[
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(2.0, 0.0, 0.0),
+        Point3::new(0.0, 2.0, 0.0),
+    ]);
+    ir.model.edges[0].tolerance = Some(
+        cadmpeg_ir::scalar::PositiveReal::new(EPS_BELOW_WRITE_BOUND)
+            .expect("positive finite tolerance"),
+    );
+    let mut output = vec![0xaa];
+    let error = RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .and_then(|plan| plan.write_to(&mut output))
+        .expect_err("a stated tolerance below the write bound must not be widened");
+    assert!(matches!(&error, cadmpeg_core::CodecError::InvalidInput(_)));
+    let message = error.to_string();
+    assert!(message.contains(EPS_BELOW_WRITE_BOUND_TEXT), "{message}");
+    assert!(message.contains("edge#polygon.0"), "{message}");
+    assert_eq!(output, [0xaa]);
+}
+
+#[test]
+fn sub_resolution_face_tolerance_is_refused_before_output() {
+    let mut ir = polygon_sheet(&[
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(2.0, 0.0, 0.0),
+        Point3::new(0.0, 2.0, 0.0),
+    ]);
+    ir.model.faces[0].tolerance = Some(
+        cadmpeg_ir::scalar::PositiveReal::new(EPS_BELOW_WRITE_BOUND)
+            .expect("positive finite tolerance"),
+    );
+    let mut output = vec![0xaa];
+    let error = RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .and_then(|plan| plan.write_to(&mut output))
+        .expect_err("a stated tolerance below the write bound must not be widened");
+    assert!(matches!(&error, cadmpeg_core::CodecError::InvalidInput(_)));
+    let message = error.to_string();
+    assert!(message.contains(EPS_BELOW_WRITE_BOUND_TEXT), "{message}");
+    assert!(message.contains("face#polygon"), "{message}");
+    assert_eq!(output, [0xaa]);
+}

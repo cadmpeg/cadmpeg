@@ -4867,6 +4867,23 @@ fn build_geometry_ir(
     Ok((ir, source_attributes, native, remainder))
 }
 
+/// Smallest linear tolerance, in millimeters, that the analytic sketch, profile
+/// and region comparisons in this crate act on.
+const MIN_ANALYTIC_LINEAR_TOLERANCE_MM: f64 = 1.0e-7;
+
+/// Admit the kernel header tolerances `resabs` and `resnor`. A stated `resabs`
+/// below the analytic floor cannot drive profile and region matching, so it is
+/// refused here and never floored at a comparison site.
+fn admit_kernel_tolerances(resabs: f64, resnor: f64) -> Result<Tolerances, CodecError> {
+    if resabs < MIN_ANALYTIC_LINEAR_TOLERANCE_MM {
+        return Err(CodecError::malformed(format!(
+            "kernel header resabs {resabs} is below the analytic linear \
+             tolerance floor {MIN_ANALYTIC_LINEAR_TOLERANCE_MM} mm"
+        )));
+    }
+    Tolerances::new(resabs, resnor).map_err(CodecError::Malformed)
+}
+
 /// Source metadata attributes and kernel tolerances from the primary model BREP header.
 fn source_attributes_and_tolerances(
     scan: &ContainerScan,
@@ -4912,7 +4929,7 @@ fn source_attributes_and_tolerances(
             attributes.insert("save_date".to_string(), sd.clone());
         }
         if let (Some(resabs), Some(resnor)) = (h.linear, h.angular) {
-            tolerances = Tolerances::new(resabs, resnor).map_err(CodecError::Malformed)?;
+            tolerances = admit_kernel_tolerances(resabs, resnor)?;
         }
     }
 
@@ -5060,7 +5077,7 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<MetadataIr, CodecError> {
                 attributes.insert("save_date".to_string(), sd.clone());
             }
             if let (Some(resabs), Some(resnor)) = (h.linear, h.angular) {
-                ir.tolerances = Tolerances::new(resabs, resnor).map_err(CodecError::Malformed)?;
+                ir.tolerances = admit_kernel_tolerances(resabs, resnor)?;
             }
         }
 

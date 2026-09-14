@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP presentation style and topology color decoding.
 
-use crate::ids::kind;
+use crate::ids::{key_word, kind};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{
-    AppearanceId, BodyId, CurveId, EdgeId, FaceId, LayerId, OccurrenceId, PmiId, PointId,
-    ProductDefinitionId, SurfaceId, VertexId,
+    AppearanceId, BodyId, CurveId, EdgeId, FaceId, IdentityKey, LayerId, OccurrenceId, PmiId,
+    PointId, ProductDefinitionId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
 use cadmpeg_ir::report::LossNote;
@@ -370,9 +370,11 @@ pub(super) fn decode(
             .entry((color_id, color.a().to_bits()))
             .or_insert_with(|| {
                 let key = if color.a() == 1.0 {
-                    color_id.to_string()
+                    IdentityKey::from(color_id)
                 } else {
-                    format!("{color_id}-alpha-{}", color.a().to_bits())
+                    IdentityKey::from(color_id)
+                        .dash(key_word!("alpha"))
+                        .dash(color.a().to_bits())
                 };
                 let id = AppearanceId::from(ids::presentation(kind!("appearance"), key));
                 ir.model.appearances.push(Appearance {
@@ -427,7 +429,9 @@ pub(super) fn decode(
                 ir.model.appearance_bindings.push(AppearanceBinding {
                     id: ids::presentation(
                         kind!("binding"),
-                        format!("{style_id}:{ordinal}-{target_ordinal}"),
+                        IdentityKey::from(style_id)
+                            .colon(ordinal)
+                            .dash(target_ordinal),
                     )
                     .into(),
                     target,

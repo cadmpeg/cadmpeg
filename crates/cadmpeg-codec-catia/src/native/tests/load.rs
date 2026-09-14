@@ -852,6 +852,20 @@ fn native_store_paths_cover_every_declared_arena() {
         crate::native::CatiaNative::load(&rich_borrowed).expect("reload populated namespace"),
         rich
     );
+
+    // The declared manifest and the emitter must agree on every build, not only
+    // on a debug build: a name in the manifest that `emit_all` never emits
+    // makes the stored namespace incomplete.
+    for name in crate::native::CATIA_ARENA_NAMES {
+        assert!(
+            rich_borrowed.arenas().contains_key(*name),
+            "store must emit the declared arena {name}"
+        );
+        assert!(
+            rich_owned.arenas().contains_key(*name),
+            "store_owned must emit the declared arena {name}"
+        );
+    }
 }
 
 #[test]

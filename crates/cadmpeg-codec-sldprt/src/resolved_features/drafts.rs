@@ -77,7 +77,7 @@ fn declared_draft_operands(
     object_end: usize,
 ) -> Option<DraftOperands> {
     let token = unique_declared_plane_reference_token(lane)?;
-    let end = object_end.min(lane.native_payload.len());
+    let end = super::DeclaredEnd::of(object_end, lane.native_payload.len())?.get();
     let final_record_start = end.checked_sub(draft_plane::LEN)?;
     let records = (object_start..=final_record_start)
         .filter(|offset| lane.native_payload.get(*offset..*offset + 2) == Some(token.as_slice()))
@@ -110,7 +110,7 @@ fn compact_parting_line_draft_operands(
     object_start: usize,
     object_end: usize,
 ) -> Option<DraftOperands> {
-    let end = object_end.min(lane.native_payload.len());
+    let end = super::DeclaredEnd::of(object_end, lane.native_payload.len())?.get();
     let final_marker = end.checked_sub(COMPACT_EDGE_VECTOR_MARKER.len())?;
     let records = (object_start.saturating_add(12)..=final_marker)
         .filter(|marker| {

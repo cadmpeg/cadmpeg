@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP product prototypes, occurrence identity, and relative placement.
 
-use crate::ids::kind;
+use crate::ids::{key_word, kind};
 use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::ids::{BodyId, OccurrenceId, ProductDefinitionId};
+use cadmpeg_ir::ids::{BodyId, IdentityKey, IdentityKeyTail, OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{
     Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
 };
@@ -313,7 +313,7 @@ pub(super) fn decode(
         };
         let id = OccurrenceId::from(ids::product(
             kind!("occurrence"),
-            format!("definition-{definition}"),
+            key_word!("definition").dash(definition),
         ));
         ir.model.occurrences.push(Occurrence {
             id: id.clone(),
@@ -413,13 +413,15 @@ pub(super) fn decode(
             let instance = usage_instances.entry(usage_id).or_default();
             *instance += 1;
             let suffix = if *instance == 1 {
-                String::new()
+                IdentityKeyTail::empty()
             } else {
-                format!("-instance-{instance}")
+                IdentityKeyTail::empty()
+                    .dash(key_word!("instance"))
+                    .dash(*instance)
             };
             let id = OccurrenceId::from(ids::product(
                 kind!("occurrence"),
-                format!("{usage_id}{suffix}"),
+                IdentityKey::from(usage_id).with_tail(&suffix),
             ));
             let occurrence_cap = occurrence_limit(ctx);
             if ir.model.occurrences.len() >= occurrence_cap {
@@ -1196,7 +1198,9 @@ fn product_definition_ir_id(
     } else {
         ProductDefinitionId::from(ids::product(
             kind!("product"),
-            format!("{product}-definition-{definition}"),
+            IdentityKey::from(product)
+                .dash(key_word!("definition"))
+                .dash(definition),
         ))
     }
 }

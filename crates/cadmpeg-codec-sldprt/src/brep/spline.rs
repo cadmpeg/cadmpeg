@@ -8,6 +8,7 @@ use cadmpeg_ir::geometry::{
     SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::report::LossNote;
 
 use cadmpeg_core::decode::View;
 
@@ -678,12 +679,12 @@ pub(crate) fn patch_nurbs_surface(
 ///
 /// A candidate offset whose bytes are not a spline record is not a refusal: the
 /// scan sweeps every offset. A record whose poles, knots and weights do parse
-/// but do not pair is one, and it is recorded in `refusals` with the attribute
-/// id it belongs to, so the decode reports it rather than deleting the carrier
-/// in silence.
+/// but do not pair is one, and it is recorded in `refusals` as a loss naming
+/// the attribute id it belongs to, so the decode reports it rather than
+/// deleting the carrier in silence.
 pub(crate) fn scan_curve_carriers(
     bytes: &[u8],
-    refusals: &mut Vec<String>,
+    refusals: &mut Vec<LossNote>,
 ) -> HashMap<u16, CurveCarrier> {
     let arrays = scan_arrays(bytes, None);
     let descriptors = scan_curve_descriptors(bytes);
@@ -761,7 +762,9 @@ pub(crate) fn scan_curve_carriers(
         let nurbs = match NurbsCurve::from_lanes(descriptor.degree, knots, points, weights, false) {
             Ok(nurbs) => nurbs,
             Err(error) => {
-                refusals.push(format!("curve carrier attribute {attr}: {error}"));
+                refusals.push(crate::loss::spline_lane_refusal(&format!(
+                    "curve carrier attribute {attr}: {error}"
+                )));
                 continue;
             }
         };
@@ -844,7 +847,7 @@ fn surface_knot_values(
 /// `refusals` carries the same meaning as in [`scan_curve_carriers`].
 pub(crate) fn scan_surface_carriers(
     bytes: &[u8],
-    refusals: &mut Vec<String>,
+    refusals: &mut Vec<LossNote>,
 ) -> HashMap<u16, SurfaceCarrier> {
     let descriptors = scan_surface_descriptors(bytes);
     let compact_attrs = descriptors
@@ -997,7 +1000,9 @@ pub(crate) fn scan_surface_carriers(
         ) {
             Ok(nurbs) => nurbs,
             Err(error) => {
-                refusals.push(format!("surface carrier attribute {attr}: {error}"));
+                refusals.push(crate::loss::spline_lane_refusal(&format!(
+                    "surface carrier attribute {attr}: {error}"
+                )));
                 continue;
             }
         };

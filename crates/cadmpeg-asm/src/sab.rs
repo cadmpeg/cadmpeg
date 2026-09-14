@@ -414,8 +414,9 @@ pub fn payload_token_offsets(
 /// Frame `bytes[start..limit]` into an indexed record table.
 ///
 /// `ref_width` is the stream's reference width (8 for `BinaryFile8`). Framing
-/// stops at `limit`, the end of the byte slice, or the `delta_state` history
-/// boundary.
+/// stops at `limit` or at the `delta_state` history boundary. A `limit` past
+/// the end of `bytes` is a truncated stream, and it is refused with both the
+/// declared end and the available length.
 pub fn frame(
     bytes: &[u8],
     start: usize,
@@ -443,7 +444,16 @@ fn frame_impl(
     ref_width: RefWidth,
     eof_terminates_final_record: bool,
 ) -> Result<Vec<Record>, StreamError> {
-    let limit = limit.min(bytes.len());
+    if limit > bytes.len() {
+        return Err(StreamError {
+            format: StreamFormat::Binary,
+            offset: start,
+            reason: format!(
+                "record stream declares its end at byte {limit}, but the stream holds {} bytes",
+                bytes.len()
+            ),
+        });
+    }
     let mut records = Vec::new();
     let mut pos = start;
     let mut index = 0usize;

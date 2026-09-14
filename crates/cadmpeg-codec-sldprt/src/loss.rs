@@ -373,6 +373,20 @@ impl SldprtLossCode {
     }
 }
 
+/// One refused spline lane, named by the record that stated it.
+///
+/// `record` names the instance: the attribute id, coedge id, edge id or face
+/// attribute of the record whose lanes do not pair, followed by the pairing's
+/// own refusal. The B-rep model carries the absence of one carrier, so the
+/// refusal is a loss and the decode continues.
+#[must_use]
+pub(crate) fn spline_lane_refusal(record: &str) -> LossNote {
+    SldprtLossCode::GeometrySplineLanesUnpaired.note(format!(
+        "{record}; the carrier is not emitted and the entities that reference it fall back \
+         to an untyped support."
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use cadmpeg_ir::report::{LossTaxonomy, StrictConsequence};

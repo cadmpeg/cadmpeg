@@ -78,9 +78,9 @@ pub fn write_semantic(
         .decode(&mut Cursor::new(source_image), &DecodeOptions::default())
         .map_err(|failure| match failure {
             DecodeFailure::Codec(error) => error,
-            _ => {
-                unreachable!("the fixed salvage decode cannot produce a strict refusal")
-            }
+            other => CodecError::malformed(format!(
+                "the salvage decode of the source image refused: {other}"
+            )),
         })?;
     let baseline_native = f3d_native(baseline.ir())?;
     let natives = PatchNatives {

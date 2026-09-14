@@ -569,12 +569,18 @@ fn append_directory_cards(
     append_card(output, &second, b'D', even_sequence)
 }
 
+/// Advances the parameter lexer across one card and states whether the record
+/// delimiter is on it.
+///
+/// A digit run is a Hollerith character count when an `H` closes it, so the
+/// accumulator holds a count. A run that leaves the `usize` range states no
+/// count that any record can carry, and this refuses it.
 fn parameter_record_terminator(
     line: &[u8],
     state: &mut ParameterLexState,
     parameter_delimiter: u8,
     record_delimiter: u8,
-) -> bool {
+) -> Result<bool, CodecError> {
     for byte in line.iter().copied() {
         match *state {
             ParameterLexState::Hollerith { remaining } => {
@@ -589,13 +595,18 @@ fn parameter_record_terminator(
                     continue;
                 }
                 if byte.is_ascii_digit() {
+                    let declared = digits
+                        .unwrap_or_default()
+                        .checked_mul(10)
+                        .and_then(|value| value.checked_add(usize::from(byte - b'0')))
+                        .ok_or_else(|| {
+                            malformed(format!(
+                                "Parameter Data decimal field exceeds {}",
+                                usize::MAX
+                            ))
+                        })?;
                     *state = ParameterLexState::FieldStart {
-                        digits: Some(
-                            digits
-                                .unwrap_or_default()
-                                .saturating_mul(10)
-                                .saturating_add(usize::from(byte - b'0')),
-                        ),
+                        digits: Some(declared),
                     };
                     continue;
                 }
@@ -614,10 +625,10 @@ fn parameter_record_terminator(
         if byte == parameter_delimiter {
             *state = ParameterLexState::FieldStart { digits: None };
         } else if byte == record_delimiter {
-            return true;
+            return Ok(true);
         }
     }
-    false
+    Ok(false)
 }
 
 fn parse_data_entity(
@@ -667,7 +678,7 @@ fn parse_data_entity(
                     &mut state,
                     parameter_delimiter,
                     record_delimiter,
-                )
+                )?
             {
                 terminated = true;
             }

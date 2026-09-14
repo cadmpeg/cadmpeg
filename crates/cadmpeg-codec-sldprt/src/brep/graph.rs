@@ -106,6 +106,10 @@ pub(crate) struct Brep {
     pub(crate) vertex_use_sequences: Vec<(u32, u16)>,
     /// Body-to-history ordinals resolved from Parasolid attributes.
     pub(crate) body_modifiers: Vec<attrib::BodyModifier>,
+    /// Refusals charged while building this B-rep, each naming the instance
+    /// whose lane the reader refused. The model carries the absence of each
+    /// refused carrier, so the decode continues and reports the loss.
+    pub(crate) losses: Vec<cadmpeg_ir::report::LossNote>,
     /// Loss accounting for this decode.
     pub(crate) stats: Stats,
 }
@@ -452,6 +456,43 @@ struct BodyRecord {
     regions: Vec<RegionRecord>,
 }
 
+/// How one `.sldprt` B-rep partitions its faces into bodies.
+///
+/// The source states body records, or it states none. `Stated` carries a
+/// non-empty slice; the private mint is the only constructor, so an empty
+/// slice cannot reach it. `Synthetic` carries no record and stands for the one
+/// derived body hierarchy the decoder emits when the source states no body.
+enum BodyGrouping<'a> {
+    /// Body records the source states. Non-empty by the mint.
+    Stated(&'a [BodyRecord]),
+    /// No body record was stated; one body hierarchy is derived.
+    Synthetic,
+}
+
+impl<'a> BodyGrouping<'a> {
+    /// The only constructor. An empty slice is `Synthetic`.
+    fn of(records: &'a [BodyRecord]) -> Self {
+        match records {
+            [] => Self::Synthetic,
+            stated => Self::Stated(stated),
+        }
+    }
+
+    /// True when the grouping is derived, not stated.
+    fn is_synthetic(&self) -> bool {
+        matches!(self, Self::Synthetic)
+    }
+
+    /// One entry per emitted body group, in source order. `Synthetic` yields
+    /// exactly one entry with no record.
+    fn groups(&self) -> Vec<Option<&'a BodyRecord>> {
+        match self {
+            Self::Stated(records) => records.iter().map(Some).collect(),
+            Self::Synthetic => vec![None],
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct RegionRecord {
     attr: u16,
@@ -490,9 +531,6 @@ pub(crate) struct Stats {
     pub(crate) off_surface_nurbs_pcurves: usize,
     /// No explicit body record was available, so one body hierarchy was derived.
     pub(crate) synthetic_body_grouping: bool,
-    /// Spline carriers whose pole and weight lanes do not pair, each naming its
-    /// attribute id and the pairing's own refusal.
-    pub(crate) spline_lane_refusals: Vec<String>,
 }
 
 fn id_face(a: u16) -> String {
@@ -1277,10 +1315,10 @@ fn decode_graph(
         edge_use_sequences,
         vertex_use_sequences,
         body_modifiers,
+        losses: carriers.lane_refusals.clone(),
         stats: Stats {
             source_entity_records: entity_facts.entity_count,
             unresolved_face_colors: entity_facts.unresolved_face_colors + conflicting_face_colors,
-            spline_lane_refusals: carriers.lane_refusals.clone(),
             ..Stats::default()
         },
         ..Brep::default()
@@ -1685,11 +1723,12 @@ fn decode_graph(
                     .transpose();
                 // The sink is drained before the `?` below: an error on that
                 // route must not drop a refusal the walk above already pushed.
-                out.stats.spline_lane_refusals.extend(
-                    pcurve_refusal.take_records().into_iter().map(|record| {
-                        format!("intersection pcurve for coedge {ce_attr}: {record}")
-                    }),
-                );
+                out.losses
+                    .extend(pcurve_refusal.take_records().into_iter().map(|record| {
+                        crate::loss::spline_lane_refusal(&format!(
+                            "intersection pcurve for coedge {ce_attr}: {record}"
+                        ))
+                    }));
                 let pcurves = pcurves
                     .map_err(cadmpeg_core::CodecError::malformed)?
                     .unwrap_or_default();
@@ -2007,11 +2046,13 @@ fn decode_graph(
                 } else if let Some((geometry, offset, tag, exactness)) = {
                     let mut sweep_refusal = crate::lane_refusal::LaneRefusals::new();
                     let resolved = resolve_sweep_surface(carriers, t, f, &mut sweep_refusal);
-                    out.stats.spline_lane_refusals.extend(
-                        sweep_refusal.take_records().into_iter().map(|record| {
-                            format!("swept surface for face attr {}: {record}", f.surface_attr)
-                        }),
-                    );
+                    out.losses
+                        .extend(sweep_refusal.take_records().into_iter().map(|record| {
+                            crate::loss::spline_lane_refusal(&format!(
+                                "swept surface for face attr {}: {record}",
+                                f.surface_attr
+                            ))
+                        }));
                     resolved
                 } {
                     annotations
@@ -2116,15 +2157,15 @@ fn decode_graph(
 
     if out.faces.is_empty() {
         return Ok(Brep {
+            losses: out.losses,
             stats: out.stats,
             ..Brep::default()
         });
     }
-    out.stats.synthetic_body_grouping = body_records.is_empty();
+    let grouping = BodyGrouping::of(&body_records);
+    out.stats.synthetic_body_grouping = grouping.is_synthetic();
 
-    let group_count = body_records.len().max(1);
-    for group in 0..group_count {
-        let body_record = body_records.get(group);
+    for (group, body_record) in grouping.groups().into_iter().enumerate() {
         let body_id = body_record.map_or_else(
             || "sldprt:brep:body#0".to_string(),
             |r| format!("sldprt:brep:body#{}", r.attr),
@@ -3013,7 +3054,10 @@ fn derive_cylindrical_pcurves(
                 ) {
                     Ok(polar) => polar,
                     Err(error) => {
-                        refusals.push(format!("cylindrical pcurve for edge {}: {error}", edge.id));
+                        refusals.push(crate::loss::spline_lane_refusal(&format!(
+                            "cylindrical pcurve for edge {}: {error}",
+                            edge.id
+                        )));
                         continue;
                     }
                 };
@@ -3063,7 +3107,7 @@ fn derive_cylindrical_pcurves(
         annotations.exactness(&id, Exactness::Derived);
         out.pcurves.push(pcurve);
     }
-    out.stats.spline_lane_refusals.extend(refusals);
+    out.losses.extend(refusals);
 }
 
 enum InverseResolution<T> {
@@ -3829,9 +3873,12 @@ fn derive_nurbs_isoparametric_pcurves(
         .collect::<HashMap<_, _>>();
     // The sink is drained before the `?` below: an error on that route must
     // not drop a refusal the walk above already pushed.
-    out.stats
-        .spline_lane_refusals
-        .extend(lane_refusals.take_records());
+    out.losses.extend(
+        lane_refusals
+            .take_records()
+            .iter()
+            .map(|record| crate::loss::spline_lane_refusal(record)),
+    );
     for (coedge_id, id, pcurve, cache) in derived {
         if let Some(index) = coedge_indices.get(&coedge_id) {
             out.coedges[*index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
@@ -4569,10 +4616,13 @@ fn insert_nurbs_homogeneous_knot(
     let mut inserted_controls = vec![[0.0; 4]; controls.len() + 1];
     let prefix_end = span - degree + 1;
     inserted_controls[..prefix_end].copy_from_slice(&controls[..prefix_end]);
-    let suffix_start = span.saturating_sub(multiplicity);
+    // The knot span never precedes the multiplicity of the inserted value: a
+    // refused subtraction states that, where a saturating one would alias an
+    // impossible span with span 0 and copy the wrong control run.
+    let middle_end = span.checked_sub(multiplicity)?;
+    let suffix_start = middle_end;
     inserted_controls[(suffix_start + 1)..].copy_from_slice(&controls[suffix_start..]);
-    let middle_start = span - degree + 1;
-    let middle_end = span - multiplicity;
+    let middle_start = prefix_end;
     if middle_start <= middle_end {
         for index in middle_start..=middle_end {
             let denominator = knots[index + degree] - knots[index];

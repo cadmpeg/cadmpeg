@@ -943,7 +943,7 @@ pub(super) fn step_source_id(id: u64) -> cadmpeg_core::text::NonBlankString {
 /// A source association for a STEP record.
 pub(super) fn step_source_association(id: u64, name: Option<String>) -> SourceObjectAssociation {
     SourceObjectAssociation {
-        format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
+        format: cadmpeg_ir::codec_format!(crate::dialect::FORMAT),
         object_id: step_source_id(id),
         name,
         color: None,
@@ -1008,7 +1008,7 @@ fn opaque_record_id(id: u64, record: &parse::RawRecord) -> UnknownId {
         .map(|partial| partial.name.to_ascii_lowercase())
         .collect::<Vec<_>>()
         .join("_");
-    let derived = crate::ids::IdentityKind::parse(&kind);
+    let derived = crate::ids::IdentityKind::new(kind);
     UnknownId::from(ids::data(derived.as_ref().unwrap_or(kind!("record")), id))
 }
 
@@ -1062,19 +1062,34 @@ fn byte_accounting(
         } else {
             ByteClass::Opaque
         };
-        claim_range(&mut classes, &record.span, class);
+        claim_range(
+            &mut classes,
+            &record.span,
+            class,
+            format_args!("record #{id}"),
+        )?;
     }
     for signature in &exchange.signatures {
-        claim_range(&mut classes, signature, ByteClass::Structural);
+        claim_range(
+            &mut classes,
+            signature,
+            ByteClass::Structural,
+            format_args!("file signature at byte {}", signature.start),
+        )?;
     }
     let mut lexer = crate::lex::Lexer::new(input);
     let mut cursor = 0;
     while let Ok(Some(token)) = lexer.next_token() {
-        claim_range(&mut classes, &token.span, ByteClass::Structural);
-        claim_trivia(input, cursor..token.span.start, &mut classes);
+        claim_range(
+            &mut classes,
+            &token.span,
+            ByteClass::Structural,
+            format_args!("token at byte {}", token.span.start),
+        )?;
+        claim_trivia(input, cursor..token.span.start, &mut classes)?;
         cursor = token.span.end;
     }
-    claim_trivia(input, cursor..input.len(), &mut classes);
+    claim_trivia(input, cursor..input.len(), &mut classes)?;
 
     Ok(classes
         .into_iter()
@@ -1089,44 +1104,99 @@ fn byte_accounting(
         }))
 }
 
-fn claim_range(classes: &mut [ByteClass], range: &std::ops::Range<usize>, class: ByteClass) {
-    let end = range.end.min(classes.len());
-    for claimed in &mut classes[range.start.min(end)..end] {
-        if *claimed == ByteClass::Unclassified {
-            *claimed = class;
+/// Mark every byte of `range` that no earlier claim took.
+///
+/// `owner` names the source construct that states the span. A span that ends
+/// past the classified input, or that ends before it starts, names bytes the
+/// input does not hold, so it is refused with the declared end and the
+/// available length.
+fn claim_range(
+    classes: &mut [ByteClass],
+    range: &std::ops::Range<usize>,
+    class: ByteClass,
+    owner: std::fmt::Arguments<'_>,
+) -> Result<(), CodecError> {
+    let available = classes.len();
+    let claimed = classes.get_mut(range.start..range.end).ok_or_else(|| {
+        CodecError::malformed(format_args!(
+            "STEP {owner} claims bytes {}..{}, but the input holds {available} bytes",
+            range.start, range.end
+        ))
+    })?;
+    for byte_class in claimed {
+        if *byte_class == ByteClass::Unclassified {
+            *byte_class = class;
         }
     }
+    Ok(())
 }
 
-fn claim_trivia(input: &[u8], range: std::ops::Range<usize>, classes: &mut [ByteClass]) {
-    let end = range.end.min(input.len());
-    let mut at = range.start.min(end);
+/// Mark the whitespace, comments and print-control directives of `range`.
+///
+/// The walk stops at the first byte that is none of those. A range that ends
+/// past the input, or a directive that ends past the range, states bytes the
+/// range does not hold, so both are refused with the declared end and the
+/// available length.
+fn claim_trivia(
+    input: &[u8],
+    range: std::ops::Range<usize>,
+    classes: &mut [ByteClass],
+) -> Result<(), CodecError> {
+    let end = range.end;
+    if end > input.len() || range.start > end {
+        return Err(CodecError::malformed(format_args!(
+            "STEP trivia claims bytes {}..{end}, but the input holds {} bytes",
+            range.start,
+            input.len()
+        )));
+    }
+    let mut at = range.start;
     while at < end {
-        if classes[at] != ByteClass::Unclassified {
+        let Some(&byte) = input.get(at) else {
+            return Ok(());
+        };
+        if classes.get(at) != Some(&ByteClass::Unclassified) {
             at += 1;
-        } else if input[at].is_ascii_control() || input[at] == b' ' {
-            classes[at] = ByteClass::Structural;
-            at += 1;
-        } else if let Some(after_print_control) = crate::lex::print_control_end(input, at) {
+        } else if byte.is_ascii_control() || byte == b' ' {
             claim_range(
                 classes,
-                &(at..after_print_control.min(end)),
+                &(at..at + 1),
                 ByteClass::Structural,
-            );
+                format_args!("trivia byte at {at}"),
+            )?;
+            at += 1;
+        } else if let Some(after_print_control) = crate::lex::print_control_end(input, at) {
+            if after_print_control > end {
+                return Err(CodecError::malformed(format_args!(
+                    "STEP print control directive at byte {at} ends at {after_print_control}, but its trivia run ends at {end}"
+                )));
+            }
+            claim_range(
+                classes,
+                &(at..after_print_control),
+                ByteClass::Structural,
+                format_args!("print control directive at byte {at}"),
+            )?;
             at = after_print_control;
         } else if input[at..end].starts_with(b"/*") {
             let Some(relative_end) = input[at + 2..end]
                 .windows(2)
                 .position(|window| window == b"*/")
             else {
-                return;
+                return Ok(());
             };
-            claim_range(classes, &(at..at + relative_end + 4), ByteClass::Structural);
+            claim_range(
+                classes,
+                &(at..at + relative_end + 4),
+                ByteClass::Structural,
+                format_args!("comment at byte {at}"),
+            )?;
             at += relative_end + 4;
         } else {
-            return;
+            return Ok(());
         }
     }
+    Ok(())
 }
 
 fn schema_name(exchange: &Exchange) -> String {

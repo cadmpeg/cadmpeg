@@ -29,7 +29,6 @@ use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::VecDeque;
 
-const EPS_BLEND_POSITION: f64 = 1.0e-8;
 const EPS_BLEND_EXACT_GEOMETRY: f64 = 1.0e-12;
 
 const BLEND_SECTION_CANONICAL_DOMAIN: [f64; 2] = [0.0, 1.0];
@@ -2771,8 +2770,6 @@ fn spine_contact_point_with_index_and_budget_and_options(
     )
 }
 
-const BLEND_CONTACT_ANGULAR_TOLERANCE_FLOOR: f64 = EPS_BLEND_POSITION;
-
 #[allow(clippy::too_many_arguments)]
 fn spine_contact_point_from_offset_side_with_index_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
@@ -2902,8 +2899,10 @@ fn spine_contact_point_from_offset_side_with_index_and_budget(
             let Some(radial) = unit_vector(radial) else {
                 continue;
             };
-            let angular_tolerance =
-                (contact_fit_tolerance / radius).max(BLEND_CONTACT_ANGULAR_TOLERANCE_FLOOR);
+            // The gate is the stated fit tolerance over the stated radius. A
+            // floor under it would admit a contact the source's own tolerance
+            // rejects, so a large radius states a strict gate and keeps it.
+            let angular_tolerance = contact_fit_tolerance / radius;
             if radial.dot(tangent).abs() > angular_tolerance {
                 continue;
             }

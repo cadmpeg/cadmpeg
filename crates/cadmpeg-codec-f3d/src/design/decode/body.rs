@@ -1373,7 +1373,6 @@ mod tests {
 
     fn push_snapshot_reference(out: &mut Vec<u8>, target: u64, target_type: &str, form: u8) {
         match form {
-            0 => push_reference(out, target),
             1 => {
                 out.push(1);
                 out.extend_from_slice(&target.to_le_bytes());
@@ -1385,7 +1384,8 @@ mod tests {
                 out.extend_from_slice(&[1, 1]);
                 out.extend_from_slice(&target.to_le_bytes());
             }
-            _ => unreachable!(),
+            // Form 0 and every other stated form write the plain reference.
+            _ => push_reference(out, target),
         }
     }
 

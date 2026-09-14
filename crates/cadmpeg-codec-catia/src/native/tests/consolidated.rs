@@ -1972,7 +1972,7 @@ fn native_namespace_withholds_duplicate_embedded_pcurve_support_identity() {
 fn cone_face_followed_by_spanning_parameter_point_terminates() {
     let bytes = b2_cone_face_parameter_point_stream();
     let split = b2_cone_face_stream().len() + 6;
-    let records = crate::wire::records::consolidated_records_in_sources(
+    let records = crate::wire::records::consolidated_records_in_range_sources(
         &bytes,
         [[0..split, split..bytes.len()]],
     );

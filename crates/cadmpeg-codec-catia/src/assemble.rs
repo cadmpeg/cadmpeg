@@ -38,7 +38,7 @@ pub(crate) fn cgm_source_key(
     key: impl std::fmt::Display,
 ) -> Result<SourceObjectAssociation, cadmpeg_core::CodecError> {
     Ok(SourceObjectAssociation {
-        format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
+        format: cadmpeg_ir::codec_format!(crate::dialect::FORMAT),
         object_id: cadmpeg_core::text::NonBlankString::new(format!("cgm-{kind}:{key}"))
             .ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed("source object_id must not be empty")
@@ -84,7 +84,11 @@ pub(crate) fn neutral_model_is_admissible(
     .is_ok()
 }
 
-pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
+/// Identities of the curve and surface carriers the transfer left unresolved.
+///
+/// A carrier is one record instance, so a report about them names the
+/// identities, not only how many there are.
+pub(crate) fn unresolved_carrier_ids(ir: &CadIr) -> (Vec<String>, Vec<String>) {
     let mut resolved_curves = ir
         .model
         .curves
@@ -193,12 +197,15 @@ pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
                     | CurveGeometry::Procedural { .. }
             ) && !resolved_curves.contains(&curve.id)
         })
-        .count()
-        + ir.model
-            .edges
-            .iter()
-            .filter(|edge| edge.curve().is_none())
-            .count();
+        .map(|curve| curve.id.to_string())
+        .chain(
+            ir.model
+                .edges
+                .iter()
+                .filter(|edge| edge.curve().is_none())
+                .map(|edge| edge.id.to_string()),
+        )
+        .collect::<Vec<_>>();
     let surfaces = ir
         .model
         .surfaces
@@ -210,21 +217,57 @@ pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
                     | SurfaceGeometry::Procedural { .. }
             ) && !resolved_surfaces.contains(&surface.id)
         })
-        .count();
+        .map(|surface| surface.id.to_string())
+        .collect::<Vec<_>>();
     (curves, surfaces)
 }
 
+/// How many curve and surface carriers the transfer left unresolved.
+#[cfg(test)]
+pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
+    let (curves, surfaces) = unresolved_carrier_ids(ir);
+    (curves.len(), surfaces.len())
+}
+
+/// Render an identity population for a loss note: every identity when the
+/// population is small, otherwise the leading identities and how many remain.
+fn identity_statement(ids: &[String]) -> String {
+    const LISTED: usize = 8;
+    let listed = ids
+        .iter()
+        .take(LISTED)
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join(", ");
+    match ids.len().checked_sub(LISTED) {
+        Some(rest) if rest > 0 => format!("{listed} and {rest} more"),
+        _ => listed,
+    }
+}
+
 pub(crate) fn insert_unresolved_carrier_loss(ir: &CadIr, losses: &mut Vec<LossNote>) {
-    let (unresolved_curves, unresolved_surfaces) = unresolved_carrier_counts(ir);
-    if unresolved_curves == 0 && unresolved_surfaces == 0 {
+    let (unresolved_curves, unresolved_surfaces) = unresolved_carrier_ids(ir);
+    if unresolved_curves.is_empty() && unresolved_surfaces.is_empty() {
         return;
     }
-    losses.insert(
-        0,
-        CatiaLossCode::GeometryUnresolvedCarriers.note(format!(
-            "The transferred model retains {unresolved_curves} unresolved curve carriers and {unresolved_surfaces} unresolved surface carriers without exact procedural constructions."
-        )),
+    let mut statement = String::from(
+        "The transferred model retains unresolved carriers without exact procedural constructions.",
     );
+    if !unresolved_curves.is_empty() {
+        statement.push_str(&format!(
+            " Curve carriers ({}): {}.",
+            unresolved_curves.len(),
+            identity_statement(&unresolved_curves)
+        ));
+    }
+    if !unresolved_surfaces.is_empty() {
+        statement.push_str(&format!(
+            " Surface carriers ({}): {}.",
+            unresolved_surfaces.len(),
+            identity_statement(&unresolved_surfaces)
+        ));
+    }
+    losses.insert(0, CatiaLossCode::GeometryUnresolvedCarriers.note(statement));
 }
 
 pub(crate) fn attach_free_vertices(

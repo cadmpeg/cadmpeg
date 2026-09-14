@@ -622,7 +622,7 @@ pub(crate) fn composed_feature_history_inputs() -> ComposedInputs {
     block5.push(0x03); // compact schema index
     block5.extend_from_slice(&[0xff, 0x02, 0x01]); // fixed separator
     block5.extend_from_slice(b"DPd"); // graphic label; pads block to 40 bytes
-    debug_assert_eq!(block5.len(), 40);
+    assert_eq!(block5.len(), 40);
 
     (operations, block1, block2, block3, block4, block5, block6)
 }
