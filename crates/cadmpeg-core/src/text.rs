@@ -281,6 +281,7 @@ mod tests {
         // in the initializer of a `const` item, which is compile-time. No test
         // reaches its assertion at run time.
         const HASH: NonWhitespaceChar = NonWhitespaceChar::from_ascii_literal(b'#');
+        const PINNED: &str = "pinned";
         for (prefix, suffix, expected) in [
             (HASH, "42", "#42"),
             (NonWhitespaceChar::hex_digit(0x0a), "", "a"),
@@ -291,7 +292,6 @@ mod tests {
             assert_eq!(serde_json::to_value(&value).unwrap(), expected);
         }
         assert_eq!(crate::nonblank_literal!("#{}", 42).as_str(), "#42");
-        const PINNED: &str = "pinned";
         assert_eq!(crate::nonblank_const!(PINNED).as_str(), "pinned");
     }
 
