@@ -823,6 +823,27 @@ fn generated_conic_sweep_uses_the_shared_angular_tolerance() {
 }
 
 #[test]
+fn revolution_sweep_within_the_angular_tolerance_states_a_full_turn() {
+    let start = 0.25_f64;
+    let inside = RevolutionSweep::classify(start, start + TAU + ANGULAR_TOLERANCE / 2.0)
+        .expect("a sweep within the angular tolerance of a full turn is a full turn");
+    assert!(matches!(inside, RevolutionSweep::Full));
+    assert_eq!(inside.terminate_angle(start), start + TAU);
+
+    let partial = RevolutionSweep::classify(start, start + TAU / 4.0).expect("partial sweep");
+    assert!(matches!(partial, RevolutionSweep::Partial(_)));
+    assert_eq!(partial.terminate_angle(start), start + TAU / 4.0);
+
+    let Err(error) = RevolutionSweep::classify(start, start + TAU + 2.0 * ANGULAR_TOLERANCE) else {
+        panic!("a sweep beyond the angular tolerance of a full turn must be refused");
+    };
+    assert!(matches!(error, CodecError::InvalidInput(_)));
+    let text = error.to_string();
+    assert!(text.contains("angular_interval"));
+    assert!(text.contains("outside (0, ") && text.contains(" + ") && text.ends_with(']'));
+}
+
+#[test]
 fn face_loop_order_places_the_explicit_outer_loop_first() {
     use cadmpeg_ir::ids::{FaceId, LoopId, ShellId, SurfaceId};
     use cadmpeg_ir::topology::Face;
