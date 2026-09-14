@@ -314,10 +314,22 @@ impl StaticIdentityKey {
 /// whitespace. A `:` is part of the grammar because the key follows the `#`
 /// that ends the namespace. A value of this type exists only because that
 /// check passed.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct IdentityKey(std::borrow::Cow<'static, str>);
 
 impl IdentityKey {
+    /// Copy this key with ASCII letters converted to lowercase.
+    #[must_use]
+    pub fn to_ascii_lowercase(&self) -> Self {
+        Self(std::borrow::Cow::Owned(self.0.to_ascii_lowercase()))
+    }
+
+    /// Consume this key into its text.
+    #[must_use]
+    pub fn into_string(self) -> String {
+        self.0.into_owned()
+    }
+
     /// Construct an unsigned decimal key with a minimum zero-padded width.
     #[must_use]
     pub fn zero_padded(value: u64, width: usize) -> Self {
@@ -549,6 +561,37 @@ macro_rules! identity_key {
 pub struct IdentityKeyTail(String);
 
 impl IdentityKeyTail {
+    /// Admit text with no key separator or Unicode whitespace; empty text is valid.
+    pub fn try_new(value: impl Into<String>) -> Result<Self, IdentityError> {
+        let value = value.into();
+        if value.is_empty() || valid_key_text(&value) {
+            Ok(Self(value))
+        } else {
+            Err(IdentityError::InvalidKey { value })
+        }
+    }
+
+    /// Escape identity separators, the escape byte, and Unicode whitespace
+    /// in one source component.
+    #[must_use]
+    pub fn percent_encode(value: &str) -> Self {
+        let mut encoded = String::with_capacity(value.len());
+        for character in value.chars() {
+            if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
+                let mut bytes = [0; 4];
+                for byte in character.encode_utf8(&mut bytes).as_bytes() {
+                    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+                    encoded.push('%');
+                    encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+                    encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+                }
+            } else {
+                encoded.push(character);
+            }
+        }
+        Self(encoded)
+    }
+
     /// The tail that appends nothing.
     #[must_use]
     pub fn empty() -> Self {
@@ -612,6 +655,15 @@ impl IdentityKey {
     pub fn with_tail(self, tail: &IdentityKeyTail) -> Self {
         let mut text = self.0.into_owned();
         text.push_str(tail.as_str());
+        Self(std::borrow::Cow::Owned(text))
+    }
+
+    /// Prepend admitted text, which may be empty, to this nonempty key.
+    #[must_use]
+    pub fn with_prefix(self, prefix: &IdentityKeyTail) -> Self {
+        let mut text = String::with_capacity(prefix.as_str().len() + self.0.len());
+        text.push_str(prefix.as_str());
+        text.push_str(self.as_str());
         Self(std::borrow::Cow::Owned(text))
     }
 }
@@ -846,6 +898,15 @@ macro_rules! local_id_type {
                     return Err($crate::ids::IdentityError::InvalidId { value });
                 }
                 Ok(Self(value))
+            }
+
+            /// Compose a local identity from an admitted namespace and key.
+            #[must_use]
+            pub fn compose(
+                namespace: &$crate::ids::IdentityNamespace,
+                key: impl Into<$crate::ids::IdentityKey>,
+            ) -> Self {
+                Self($crate::ids::Identity::compose(namespace, key).into_string())
             }
 
             /// Return the underlying id string.

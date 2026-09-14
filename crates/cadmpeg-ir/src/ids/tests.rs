@@ -222,6 +222,34 @@ fn typed_namespace_composition_preserves_the_wire_identity() {
 }
 
 #[test]
+fn encoded_components_preserve_empty_prefixes_and_unicode_bytes() {
+    use super::IdentityKeyTail;
+    let encoded = IdentityKeyTail::percent_encode("A B:#%\u{2003}é");
+    assert_eq!(encoded.as_str(), "A%20B%3A%23%25%E2%80%83é");
+    let suffix = crate::identity_key!("@7");
+    assert_eq!(
+        suffix
+            .clone()
+            .with_prefix(&IdentityKeyTail::percent_encode("")),
+        suffix
+    );
+    let key = suffix.with_prefix(&encoded);
+    assert_eq!(key.as_str(), "A%20B%3A%23%25%E2%80%83é@7");
+    assert_eq!(
+        crate::identity_key!("Aa:É/9").to_ascii_lowercase().as_str(),
+        "aa:É/9"
+    );
+}
+
+#[test]
+fn local_identity_composition_uses_the_admitted_wire_shape() {
+    let namespace = crate::identity_namespace!("f3d", "history-input", "edge");
+    let id = crate::ids::HistoricalEdgeId::compose(&namespace, 7u64);
+    assert_eq!(id.as_str(), "f3d:history-input:edge#7");
+    assert_eq!(crate::loss_namespace!("f3d").as_str(), "f3d");
+}
+
+#[test]
 // Standard formatting is an independent oracle for the complete byte alphabet.
 #[allow(clippy::format_collect)]
 fn hexadecimal_identity_keys_encode_every_byte_without_collisions() {
