@@ -243,12 +243,11 @@ impl AnnotationBuilder {
         offset: u64,
     ) -> ProvenanceNote<'_> {
         let id = id.to_string();
-        let provenance = self.annotations.provenance.entry(id).or_insert_with(|| {
-            AnnotationProvenance::annotation(stream.0.clone(), offset, None)
-        });
-        ProvenanceNote {
-            provenance,
-        }
+        let provenance =
+            self.annotations.provenance.entry(id).or_insert_with(|| {
+                AnnotationProvenance::annotation(stream.0.clone(), offset, None)
+            });
+        ProvenanceNote { provenance }
     }
 
     /// Set entity-level exactness. Byte-exact entries are removed to preserve

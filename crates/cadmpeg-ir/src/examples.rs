@@ -40,7 +40,10 @@ pub enum ExampleError {
 
 macro_rules! cube_id {
     ($type:ident, $kind:literal, $key:expr) => {
-        $type::compose(&crate::identity_namespace!("synthetic", "cube", $kind), $key)
+        $type::compose(
+            &crate::identity_namespace!("synthetic", "cube", $kind),
+            $key,
+        )
     };
 }
 
@@ -222,9 +225,10 @@ pub fn unit_cube() -> Result<CadIr, ExampleError> {
         ir.model.loops.push(Loop {
             id: loop_id.clone(),
             face: cube_id!(FaceId, "face", name.clone()),
-            boundary: crate::topology::LoopBoundary::Ring(
-                crate::topology::LoopRing::new(coedge_ids.clone(), Vec::new())?,
-            ),
+            boundary: crate::topology::LoopBoundary::Ring(crate::topology::LoopRing::new(
+                coedge_ids.clone(),
+                Vec::new(),
+            )?),
         });
         ir.model.faces.push(Face {
             id: cube_id!(FaceId, "face", name.clone()),
@@ -256,19 +260,16 @@ pub fn unit_cube() -> Result<CadIr, ExampleError> {
     }
 
     // Shell, region, body.
-    ir.model.shells.push(
-        Shell::new(
-            cube_id!(ShellId, "shell", 0_usize),
-            cube_id!(RegionId, "region", 0_usize),
-            face_defs
-                .iter()
-                .map(|(name, ..)| cube_id!(FaceId, "face", name.clone()))
-                .collect(),
-            Vec::new(),
-            Vec::new(),
-        )
-        ?,
-    );
+    ir.model.shells.push(Shell::new(
+        cube_id!(ShellId, "shell", 0_usize),
+        cube_id!(RegionId, "region", 0_usize),
+        face_defs
+            .iter()
+            .map(|(name, ..)| cube_id!(FaceId, "face", name.clone()))
+            .collect(),
+        Vec::new(),
+        Vec::new(),
+    )?);
     ir.model.regions.push(Region {
         id: cube_id!(RegionId, "region", 0_usize),
         body: cube_id!(BodyId, "body", 0_usize),
@@ -368,24 +369,27 @@ pub fn directed_subd_sum() -> Result<CadIr, crate::geometry::ProceduralGeometryE
         source_object: None,
         cage: crate::subd::SubdCage::new(
             vec![
-                SubdVertex::new(Point3::new(0.0, 0.0, 0.0), SubdVertexTag::Crease, None)
-                    .map_err(|_| {
+                SubdVertex::new(Point3::new(0.0, 0.0, 0.0), SubdVertexTag::Crease, None).map_err(
+                    |_| {
                         crate::geometry::ProceduralGeometryError::Payload(
                             "invalid directed SubD example vertex",
                         )
-                    })?,
-                SubdVertex::new(Point3::new(1.0, 0.0, 0.0), SubdVertexTag::Smooth, None)
-                    .map_err(|_| {
+                    },
+                )?,
+                SubdVertex::new(Point3::new(1.0, 0.0, 0.0), SubdVertexTag::Smooth, None).map_err(
+                    |_| {
                         crate::geometry::ProceduralGeometryError::Payload(
                             "invalid directed SubD example vertex",
                         )
-                    })?,
-                SubdVertex::new(Point3::new(0.0, 1.0, 0.0), SubdVertexTag::Corner, None)
-                    .map_err(|_| {
+                    },
+                )?,
+                SubdVertex::new(Point3::new(0.0, 1.0, 0.0), SubdVertexTag::Corner, None).map_err(
+                    |_| {
                         crate::geometry::ProceduralGeometryError::Payload(
                             "invalid directed SubD example vertex",
                         )
-                    })?,
+                    },
+                )?,
             ],
             vec![
                 SubdEdge::new(
@@ -406,12 +410,13 @@ pub fn directed_subd_sum() -> Result<CadIr, crate::geometry::ProceduralGeometryE
                             "invalid directed SubD example edge",
                         )
                     })?,
-                SubdEdge::new([2, 0], [1.0, 0.0], SubdEdgeTag::Smooth, None, [0.5, 0.5])
-                    .map_err(|_| {
+                SubdEdge::new([2, 0], [1.0, 0.0], SubdEdgeTag::Smooth, None, [0.5, 0.5]).map_err(
+                    |_| {
                         crate::geometry::ProceduralGeometryError::Payload(
                             "invalid directed SubD example edge",
                         )
-                    })?,
+                    },
+                )?,
             ],
             vec![SubdFace::new(vec![
                 SubdEdgeUse {
@@ -435,9 +440,7 @@ pub fn directed_subd_sum() -> Result<CadIr, crate::geometry::ProceduralGeometryE
             Vec::new(),
         )
         .map_err(|_| {
-            crate::geometry::ProceduralGeometryError::Payload(
-                "invalid directed SubD example cage",
-            )
+            crate::geometry::ProceduralGeometryError::Payload("invalid directed SubD example cage")
         })?,
     });
     ir.finalize();

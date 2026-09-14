@@ -116,7 +116,10 @@ fn the_wrapper_stamps_the_resolved_target_on_a_catalog_plan() {
         .plan(EncodeInput::new(&ir, None), TargetRequest::Explicit("new"))
         .unwrap();
     assert_eq!(plan.report().format(), "test");
-    assert_eq!(plan.report().target(), Some(&cadmpeg_core::dialect_id!("test:new")));
+    assert_eq!(
+        plan.report().target(),
+        Some(&cadmpeg_core::dialect_id!("test:new"))
+    );
     assert_eq!(plan.report().notes, vec!["resolved test:new".to_owned()]);
 }
 

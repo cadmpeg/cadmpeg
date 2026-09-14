@@ -463,9 +463,9 @@ fn an_unclassified_source_states_its_format_inside_the_identity() {
 
 #[test]
 fn a_classified_source_carries_its_format_once() {
-    let matched = cadmpeg_core::dialect::DialectMatch::admitted(
-        cadmpeg_core::dialect_id!("rhino:archive-80"),
-    );
+    let matched = cadmpeg_core::dialect::DialectMatch::admitted(cadmpeg_core::dialect_id!(
+        "rhino:archive-80"
+    ));
     let layers = cadmpeg_core::dialect::DialectLayers::of(matched.clone());
     let source = SourceMeta::classified(
         layers.clone(),

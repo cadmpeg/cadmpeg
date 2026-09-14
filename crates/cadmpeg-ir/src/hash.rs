@@ -609,9 +609,9 @@ mod tests {
         let mut ir = pinned_document();
         ir.source = Some(crate::document::SourceMeta::classified(
             cadmpeg_core::dialect::DialectLayers::of(
-                cadmpeg_core::dialect::DialectMatch::admitted(
-                    cadmpeg_core::dialect_id!("pin:test"),
-                ),
+                cadmpeg_core::dialect::DialectMatch::admitted(cadmpeg_core::dialect_id!(
+                    "pin:test"
+                )),
             ),
             [
                 (
@@ -739,9 +739,9 @@ mod tests {
         ir.model.surfaces.reverse();
         ir.source = Some(crate::SourceMeta::classified(
             cadmpeg_core::dialect::DialectLayers::of(
-                cadmpeg_core::dialect::DialectMatch::admitted(
-                    cadmpeg_core::dialect_id!("synthetic:test"),
-                ),
+                cadmpeg_core::dialect::DialectMatch::admitted(cadmpeg_core::dialect_id!(
+                    "synthetic:test"
+                )),
             ),
             [
                 (

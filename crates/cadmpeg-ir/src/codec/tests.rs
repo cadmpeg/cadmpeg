@@ -90,7 +90,9 @@ impl CodecBackend for ForeignIdentityCodec {
     ) -> Result<Decoded, CodecError> {
         let mut ir = unit_cube().expect("valid unit cube fixture");
         ir.source = Some(crate::SourceMeta::classified(
-            DialectLayers::of(DialectMatch::admitted(cadmpeg_core::dialect_id!("foreign:test"))),
+            DialectLayers::of(DialectMatch::admitted(cadmpeg_core::dialect_id!(
+                "foreign:test"
+            ))),
             BTreeMap::new(),
         ));
         Ok(decoded(ir))

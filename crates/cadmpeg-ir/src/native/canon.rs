@@ -10,8 +10,8 @@
 //! append as they are visited.
 #![deny(clippy::disallowed_methods)]
 
-use std::collections::BTreeMap;
 use serde::ser::{self, Serialize};
+use std::collections::BTreeMap;
 
 /// One serialized value: rendered text, or a buffered object kept apart so
 /// the record assembler can hoist its `id` member.
