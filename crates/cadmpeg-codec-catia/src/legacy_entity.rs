@@ -381,8 +381,10 @@ pub struct LegacyEntityRun {
     pub catalog_offset: usize,
     /// Complete compact schema program following the catalog opener.
     pub schema_program: Option<LegacySchemaProgram>,
-    /// Stored identities in source order.
-    pub identities: Vec<LegacyEntityIdentity>,
+    /// First stored identity in the run.
+    pub first_identity: LegacyEntityIdentity,
+    /// Remaining identities in source order.
+    following_identities: Vec<LegacyEntityIdentity>,
     /// Complete length-framed role selectors in identity-interval order.
     pub role_selectors: Vec<LegacyRoleSelector>,
     /// Complete schema text fields contained by the identity intervals.
@@ -401,6 +403,13 @@ pub struct LegacyEntityRun {
     pub string_values: Vec<LegacyStringValue>,
     /// Complete signed-integer packets.
     pub integer_values: Vec<LegacyIntegerValue>,
+}
+
+impl LegacyEntityRun {
+    /// Stored identities in source order.
+    pub fn identities(&self) -> impl Iterator<Item = &LegacyEntityIdentity> {
+        std::iter::once(&self.first_identity).chain(&self.following_identities)
+    }
 }
 
 /// Parse complete legacy identity runs terminated by the fixed schema-catalog opener.
@@ -439,13 +448,13 @@ fn parse_run_before(
             })
         })
         .collect::<Vec<_>>();
-    identities.last()?;
     let suffix_start = identities
         .windows(2)
         .rposition(|pair| pair[0].entity_id >= pair[1].entity_id)
         .map_or(0, |index| index + 1);
     identities.drain(..suffix_start);
-    if identities.first()?.entity_id != 1 {
+    let first_identity = *identities.first()?;
+    if first_identity.entity_id != 1 {
         return None;
     }
     let mut role_selectors = Vec::new();
@@ -519,7 +528,8 @@ fn parse_run_before(
     Some(LegacyEntityRun {
         catalog_offset,
         schema_program: parse_schema_program(data, catalog_offset, directory_offset),
-        identities,
+        first_identity,
+        following_identities: identities.into_iter().skip(1).collect(),
         role_selectors,
         text_fields,
         schema_fields,

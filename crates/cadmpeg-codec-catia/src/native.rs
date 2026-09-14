@@ -4193,7 +4193,7 @@ fn design_parallel_reference_table(
                 CatiaDesignReferenceColumn {
                     field: record.id.clone(),
                     field_class: design_class(record),
-                    list_payload_offset: u64::try_from(*list_offset).ok()?,
+                    list_payload_offset: *list_offset as u64,
                 },
                 references,
             ))
@@ -4217,8 +4217,7 @@ fn design_parallel_reference_table(
                         .get(&target_entity_id)
                         .and_then(|index| graph.records.get(*index));
                     CatiaDesignReferenceCell::from_parts(
-                        u64::try_from(payload_offset)
-                            .expect("bounded CATIA list-item offset fits u64"),
+                        payload_offset as u64,
                         target_entity_id,
                         Some(target_entity_id) == terminal_null_entity_id,
                         target.map(|record| record.id.clone()),
@@ -4288,10 +4287,8 @@ fn payload_references(
                     *value,
                     *offset,
                     CatiaObjectRecordReferenceSource::ListItem {
-                        list_payload_offset: u64::try_from(*list_offset)
-                            .expect("bounded CATIA list offset fits u64"),
-                        item_ordinal: u64::try_from(item_ordinal)
-                            .expect("bounded CATIA list item ordinal fits u64"),
+                        list_payload_offset: *list_offset as u64,
+                        item_ordinal: item_ordinal as u64,
                     },
                 )),
                 ListItem::Atom { .. } => None,
@@ -4319,7 +4316,7 @@ fn resolved_payload_references(
             let index = record_indices.get(&entity_id).copied();
             CatiaObjectRecordReference::from_parts(
                 entity_id,
-                u64::try_from(payload_offset).expect("bounded CATIA payload offset fits u64"),
+                payload_offset as u64,
                 source,
                 Some(entity_id) == terminal_null_entity_id,
                 index.and_then(|index| record_ids.get(index)).cloned(),
@@ -5027,7 +5024,7 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
         f64::from_bits(bits).is_finite().then_some(())?;
         (
             CatiaEntitySuffixPayload::Evaluation {
-                opcode_offset: u64::try_from(payload_offset + 4).ok()?,
+                opcode_offset: (payload_offset + 4) as u64,
                 evaluation: CatiaEntityEvaluation::Scalar { bits },
                 encoding: CatiaEntityEvaluationEncoding::ZeroPaddedScalar,
             },
@@ -5042,7 +5039,7 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
                 f64::from_bits(bits).is_finite().then_some(())?;
                 (
                     CatiaEntitySuffixSelectedValue::Evaluation {
-                        opcode_offset: u64::try_from(value_offset).ok()?,
+                        opcode_offset: value_offset as u64,
                         evaluation: CatiaEntityEvaluation::Scalar { bits },
                     },
                     value_offset + 9,
@@ -5050,7 +5047,7 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
             }
             0xe7 => (
                 CatiaEntitySuffixSelectedValue::Evaluation {
-                    opcode_offset: u64::try_from(value_offset).ok()?,
+                    opcode_offset: value_offset as u64,
                     evaluation: CatiaEntityEvaluation::Unset,
                 },
                 value_offset + 1,
@@ -5062,7 +5059,7 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
             ),
             0x32 => (
                 CatiaEntitySuffixSelectedValue::SchemaSelector {
-                    offset: u64::try_from(value_offset).ok()?,
+                    offset: value_offset as u64,
                     ordinal: View::u32_le_at(suffix, value_offset + 1)?,
                     resolution: None,
                 },
@@ -5078,7 +5075,7 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
         };
         (
             CatiaEntitySuffixPayload::SchemaSelected {
-                selector_offset: u64::try_from(at).ok()?,
+                selector_offset: at as u64,
                 selector,
                 value,
             },
@@ -5088,7 +5085,7 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
         match *suffix.get(payload_offset)? {
             0xe7 => (
                 CatiaEntitySuffixPayload::Evaluation {
-                    opcode_offset: u64::try_from(payload_offset).ok()?,
+                    opcode_offset: payload_offset as u64,
                     evaluation: CatiaEntityEvaluation::Unset,
                     encoding: CatiaEntityEvaluationEncoding::Direct,
                 },
@@ -5102,7 +5099,7 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
                 f64::from_bits(bits).is_finite().then_some(())?;
                 (
                     CatiaEntitySuffixPayload::Evaluation {
-                        opcode_offset: u64::try_from(payload_offset).ok()?,
+                        opcode_offset: payload_offset as u64,
                         evaluation: CatiaEntityEvaluation::Scalar { bits },
                         encoding: CatiaEntityEvaluationEncoding::Direct,
                     },
@@ -5288,19 +5285,17 @@ fn relation_program_instance(
             PayloadField::Reference { value, offset } => Some((*value, *offset)),
             _ => None,
         })
-        .map(|(value, offset)| {
-            Some(CatiaPayloadEntityReference {
-                payload_offset: u64::try_from(offset).ok()?,
-                reference: entity_reference(
-                    &object.parent,
-                    value,
-                    entity_references.entities,
-                    entity_references.classes,
-                    entity_references.terminal_nulls,
-                ),
-            })
+        .map(|(value, offset)| CatiaPayloadEntityReference {
+            payload_offset: offset as u64,
+            reference: entity_reference(
+                &object.parent,
+                value,
+                entity_references.entities,
+                entity_references.classes,
+                entity_references.terminal_nulls,
+            ),
         })
-        .collect::<Option<Vec<_>>>()?;
+        .collect();
     Some(CatiaRelationProgramInstance {
         framing,
         program_entity: entity_reference(
@@ -5502,12 +5497,12 @@ fn schema_configuration_record(
         return None;
     }
     Some(CatiaSchemaConfigurationRecord {
-        schema_payload_offset: u64::try_from(*schema_offset).ok()?,
+        schema_payload_offset: *schema_offset as u64,
         schema_ordinal: *schema_ordinal,
         schema_entry: selection.entry.clone(),
         schema_name: selection.name.clone(),
         entity_reference: CatiaPayloadEntityReference {
-            payload_offset: u64::try_from(*entity_offset).ok()?,
+            payload_offset: *entity_offset as u64,
             reference: entity_reference(
                 &object.parent,
                 *referenced_entity_id,
@@ -5550,7 +5545,7 @@ fn schema_configuration_row_link(
             entity_classes,
             terminal_nulls,
         ),
-        successor_payload_offset: u64::try_from(*successor_offset).ok()?,
+        successor_payload_offset: *successor_offset as u64,
         successor: entity_reference(
             &object.parent,
             *successor_entity_id,
@@ -5689,7 +5684,7 @@ fn formula_relation(
         relation_parameter_dependencies(source, &object.parent, parameter_bindings);
     Some(CatiaFormulaRelation {
         expression_entity: CatiaPayloadEntityReference {
-            payload_offset: u64::try_from(*expression_offset).ok()?,
+            payload_offset: *expression_offset as u64,
             reference: entity_reference(
                 &object.parent,
                 *expression_entity_id,
@@ -5699,7 +5694,7 @@ fn formula_relation(
             ),
         },
         output_entity: CatiaPayloadEntityReference {
-            payload_offset: u64::try_from(*parameter_offset).ok()?,
+            payload_offset: *parameter_offset as u64,
             reference: {
                 let resolved = entity_reference(
                     &object.parent,
@@ -6155,7 +6150,7 @@ impl CatiaLegacyRoleSelector {
             CatiaLegacyRoleSelectorEncoding::Paged => 2,
         };
         self.byte_offset
-            .checked_add(u64::try_from(self.name.byte_len()).ok()?)?
+            .checked_add(self.name.byte_len() as u64)?
             .checked_add(selector_len)
     }
 }
@@ -7064,11 +7059,15 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
         .enumerate()
         .map(|(index, run)| {
             let id = format!("catia:legacy:entity-run#{index:08}");
-            let byte_offset = run
-                .identities
-                .first()
-                .expect("legacy run has identity one")
-                .offset;
+            let byte_offset = run.first_identity.offset;
+            let identities = run
+                .identities()
+                .map(|identity| CatiaLegacyEntityIdentity {
+                    byte_offset: identity.offset as u64,
+                    entity_id: identity.entity_id,
+                    lead: identity.lead,
+                })
+                .collect();
             CatiaLegacyEntityRun {
                 id: id.clone(),
                 byte_offset: byte_offset as u64,
@@ -7096,15 +7095,7 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
                         .collect(),
                 }),
                 outer_container: None,
-                identities: run
-                    .identities
-                    .into_iter()
-                    .map(|identity| CatiaLegacyEntityIdentity {
-                        byte_offset: identity.offset as u64,
-                        entity_id: identity.entity_id,
-                        lead: identity.lead,
-                    })
-                    .collect(),
+                identities,
                 role_selectors: run
                     .role_selectors
                     .into_iter()
@@ -8621,7 +8612,7 @@ fn preview_views(segments: &[CatiaFinjplSegment]) -> Vec<CatiaPreviewImage> {
                     Some((
                         segment
                             .byte_offset
-                            .checked_add(u64::try_from(preview.range.start).ok()?)?,
+                            .checked_add(preview.range.start as u64)?,
                         preview,
                         segment,
                     ))
@@ -8650,9 +8641,7 @@ fn external_reference_views(segments: &[CatiaFinjplSegment]) -> Vec<CatiaExterna
                 .into_iter()
                 .filter_map(move |reference| {
                     Some((
-                        segment
-                            .byte_offset
-                            .checked_add(u64::try_from(reference.offset).ok()?)?,
+                        segment.byte_offset.checked_add(reference.offset as u64)?,
                         reference,
                         segment,
                     ))
@@ -9238,7 +9227,7 @@ fn value_schema_selections(
                 };
                 let byte_offset = block_byte_offset
                     .checked_add(6)?
-                    .checked_add(u64::try_from(*offset).ok()?)?;
+                    .checked_add(*offset as u64)?;
                 Some(CatiaValueSchemaSelection {
                     id: format!("catia:outer:value-selection#{byte_offset:010}"),
                     parent: block_id.to_string(),
@@ -9423,9 +9412,8 @@ fn native_object_graph(
                 id: format!("catia:outer:entity-record#{:010}", entity.pos),
                 object_graph: id.clone(),
                 object_record: object_record.id.clone(),
-                ordinal: u64::try_from(ordinal).expect("bounded entity-table ordinal fits u64"),
-                byte_offset: u64::try_from(entity.pos)
-                    .expect("bounded entity-table offset fits u64"),
+                ordinal: ordinal as u64,
+                byte_offset: entity.pos as u64,
                 lead: entity.lead,
                 body,
                 definition_schema_selections: Vec::new(),
