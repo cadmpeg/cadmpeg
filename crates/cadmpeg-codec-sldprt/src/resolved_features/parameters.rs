@@ -154,14 +154,19 @@ pub(crate) fn enrich_history_parameters<'a>(
         let source_dimension = feature.content.iter().any(|content| {
             matches!(content, crate::records::FeatureContent::Dimension(dimension) if dimension == &name)
         });
-        if unit == ScalarUnit::Native && source_dimension && feature.parameters.contains_key(&name)
+        if unit == ScalarUnit::Native
+            && source_dimension
+            && feature.parameters.contains_key(name.as_str())
         {
             continue;
         }
         if unit == ScalarUnit::Native
-            && feature.parameters.get(&name).is_some_and(|expression| {
-                !native_scalar_matches_discrete_parameter(feature, &name, expression, first)
-            })
+            && feature
+                .parameters
+                .get(name.as_str())
+                .is_some_and(|expression| {
+                    !native_scalar_matches_discrete_parameter(feature, &name, expression, first)
+                })
         {
             continue;
         }
@@ -170,22 +175,28 @@ pub(crate) fn enrich_history_parameters<'a>(
                 feature,
                 &name,
                 first,
-                feature.parameters.get(&name).map(String::as_str),
+                feature.parameters.get(name.as_str()).map(String::as_str),
             ),
             ScalarUnit::Length
-                if feature.parameters.get(&name).is_some_and(|expression| {
-                    crate::history::strip_diameter_modifier(expression).is_some()
-                }) =>
+                if feature
+                    .parameters
+                    .get(name.as_str())
+                    .is_some_and(|expression| {
+                        crate::history::strip_diameter_modifier(expression).is_some()
+                    }) =>
             {
                 crate::history::format_native_scalar(
                     feature,
                     &name,
                     first,
-                    feature.parameters.get(&name).map(String::as_str),
+                    feature.parameters.get(name.as_str()).map(String::as_str),
                 )
             }
             ScalarUnit::Length => crate::history::format_length_mm(first * 1000.0),
             ScalarUnit::Angle => crate::history::format_angle_rad(first),
+        };
+        let Some(name) = cadmpeg_core::text::NonBlankString::new(name) else {
+            continue;
         };
         if replace_existing {
             feature.parameters.insert(name, expression);
@@ -269,7 +280,7 @@ pub(super) fn native_scalar_matches_discrete_parameter(
 pub(crate) fn sync_changed_feature_scalars(
     histories: &[crate::records::FeatureHistory],
     lanes: &mut [FeatureInputLane],
-    changed: &HashSet<(String, String)>,
+    changed: &HashSet<(String, cadmpeg_core::text::NonBlankString)>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::ParameterValue;
 
@@ -321,14 +332,16 @@ pub(crate) fn sync_changed_feature_scalars(
                 let [(scalar_index, _)] = candidates.as_slice() else {
                     continue;
                 };
-                let value =
-                    match crate::history::parse_native_parameter_literal(feature, name, expression)
-                    {
-                        Some(ParameterValue::Length(value)) => value.get() / 1000.0,
-                        Some(ParameterValue::Angle(value)) => value.get(),
-                        Some(ParameterValue::Real(value)) => value.get(),
-                        _ => continue,
-                    };
+                let value = match crate::history::parse_native_parameter_literal(
+                    feature,
+                    name.as_str(),
+                    expression,
+                ) {
+                    Some(ParameterValue::Length(value)) => value.get() / 1000.0,
+                    Some(ParameterValue::Angle(value)) => value.get(),
+                    Some(ParameterValue::Real(value)) => value.get(),
+                    _ => continue,
+                };
                 updates.push((*scalar_index, value));
             }
         }

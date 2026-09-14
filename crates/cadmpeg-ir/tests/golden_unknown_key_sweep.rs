@@ -137,7 +137,12 @@ fn hand_written_documents() -> Vec<(&'static str, Value)> {
     use cadmpeg_ir::semantic_annotations::{SemanticAnnotation, SemanticAnnotationKind};
     use std::collections::BTreeMap;
 
-    let named = |value: &str| BTreeMap::from([("zz_source_name".to_string(), value.to_string())]);
+    let named = |value: &str| {
+        BTreeMap::from([(
+            cadmpeg_core::nonblank_literal!("zz_source_name"),
+            value.to_string(),
+        )])
+    };
 
     let mut presentation = CadIr::empty();
     let mut document = PresentationDocument::new(
@@ -204,7 +209,7 @@ fn hand_written_documents() -> Vec<(&'static str, Value)> {
             order: 0,
             text: Vec::new(),
             references: BTreeMap::from([(
-                "zz_source_role".to_string(),
+                cadmpeg_core::nonblank_literal!("zz_source_role"),
                 vec![ReferenceSelection::new(ReferenceTarget::Null, Vec::new())],
             )]),
             value: None,
@@ -535,7 +540,7 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
     ),
     ("crates/cadmpeg-ir/src/pmi.rs", "PmiMagnitude", "keyless"),
     (
-        "crates/cadmpeg-ir/src/products.rs",
+        "crates/cadmpeg-core/src/text.rs",
         "NonBlankString",
         "keyless",
     ),
@@ -624,13 +629,13 @@ const HAND_IMPL_NULL_REFUSALS: &[(&str, &str, &str, usize)] = &[
         "crates/cadmpeg-ir/src/features.rs",
         "SweepCircularRegion",
         "wall_thickness",
-        7283,
+        7284,
     ),
     (
         "crates/cadmpeg-ir/src/features.rs",
         "TreeChildren",
         "active_child",
-        2248,
+        2249,
     ),
     (
         "crates/cadmpeg-ir/src/features/holes.rs",

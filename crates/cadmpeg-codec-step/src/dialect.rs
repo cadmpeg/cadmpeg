@@ -268,19 +268,25 @@ impl StepDialect {
 
         let mut declared = BTreeMap::new();
         if let Some(identifier) = identifiers.first() {
-            declared.insert(DECLARED_FILE_SCHEMA_IDENTIFIER.into(), identifier.clone());
+            declared.insert(
+                cadmpeg_core::nonblank_const!(DECLARED_FILE_SCHEMA_IDENTIFIER),
+                identifier.clone(),
+            );
             if let Some((_, Some(arcs))) = split_schema_identifier(identifier) {
-                declared.insert(DECLARED_LONG_FORM_ARCS.into(), arcs.into());
+                declared.insert(
+                    cadmpeg_core::nonblank_const!(DECLARED_LONG_FORM_ARCS),
+                    arcs.into(),
+                );
             }
         }
         if identifiers.len() > 1 {
             declared.insert(
-                DECLARED_FILE_SCHEMA_IDENTIFIERS.into(),
+                cadmpeg_core::nonblank_const!(DECLARED_FILE_SCHEMA_IDENTIFIERS),
                 identifiers.join(","),
             );
         }
         declared.insert(
-            DECLARED_IMPLEMENTATION_LEVEL.into(),
+            cadmpeg_core::nonblank_const!(DECLARED_IMPLEMENTATION_LEVEL),
             exchange.implementation_level().into(),
         );
 

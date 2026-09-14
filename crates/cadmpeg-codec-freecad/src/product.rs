@@ -421,10 +421,15 @@ pub(crate) fn transfer_neutral(
                 .get(object.as_str())
                 .map(Vec::as_slice)
                 .unwrap_or_default();
-            let bom_properties = ["Label2", "StockCode", "Vendor", "Manufacturer"]
-                .into_iter()
-                .filter_map(|name| metadata_string(owned, name).map(|value| (name.into(), value)))
-                .collect();
+            let bom_properties = [
+                cadmpeg_core::nonblank_literal!("Label2"),
+                cadmpeg_core::nonblank_literal!("StockCode"),
+                cadmpeg_core::nonblank_literal!("Vendor"),
+                cadmpeg_core::nonblank_literal!("Manufacturer"),
+            ]
+            .into_iter()
+            .filter_map(|name| metadata_string(owned, name.as_str()).map(|value| (name, value)))
+            .collect();
             let id_part_number = source_object.and_then(|object| {
                 matches!(
                     object.type_name.as_str(),

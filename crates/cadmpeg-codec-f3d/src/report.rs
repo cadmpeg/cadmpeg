@@ -63,7 +63,7 @@ pub(crate) fn classify_document(
         }
         ReportScope::ArchiveMember(dialects) => dialects,
     };
-    SourceMeta::classified(dialects, attributes)
+    SourceMeta::classified(dialects, cadmpeg_core::text::named_entries(attributes))
 }
 
 /// Build a single-document inspection summary with the same dialect facts that

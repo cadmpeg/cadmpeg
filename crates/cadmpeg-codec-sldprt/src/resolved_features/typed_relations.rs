@@ -30,8 +30,8 @@ use super::{
 };
 use crate::records::{SketchInputEntity, SketchInputKind, SketchInputLink};
 use cadmpeg_core::decode::View;
+use cadmpeg_core::nonblank_literal;
 use cadmpeg_ir::math::Point2;
-use cadmpeg_ir::nonblank_literal;
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchEntity, SketchEntityId,
     SketchGeometryDefinition, SketchId, SketchLocus, SketchNativeOperand,

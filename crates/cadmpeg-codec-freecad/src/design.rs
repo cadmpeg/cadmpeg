@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::decode::{alloc_filled, View};
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -908,19 +909,22 @@ fn append_spreadsheet(
         })?;
         let content = cell.attribute("content").unwrap_or_default();
         let name = cell.attribute("alias").unwrap_or(address);
-        let mut retained = BTreeMap::from([("address".into(), address.to_owned())]);
+        let mut retained = BTreeMap::from([(
+            cadmpeg_core::nonblank_literal!("address"),
+            address.to_owned(),
+        )]);
         for attribute in [
-            "alias",
-            "alignment",
-            "style",
-            "foregroundColor",
-            "backgroundColor",
-            "displayUnit",
-            "rowSpan",
-            "colSpan",
+            cadmpeg_core::nonblank_literal!("alias"),
+            cadmpeg_core::nonblank_literal!("alignment"),
+            cadmpeg_core::nonblank_literal!("style"),
+            cadmpeg_core::nonblank_literal!("foregroundColor"),
+            cadmpeg_core::nonblank_literal!("backgroundColor"),
+            cadmpeg_core::nonblank_literal!("displayUnit"),
+            cadmpeg_core::nonblank_literal!("rowSpan"),
+            cadmpeg_core::nonblank_literal!("colSpan"),
         ] {
-            if let Some(value) = cell.attribute(attribute) {
-                retained.insert(attribute.into(), value.to_owned());
+            if let Some(value) = cell.attribute(attribute.as_str()) {
+                retained.insert(attribute, value.to_owned());
             }
         }
         let id = ParameterId::mint(format!(
@@ -1187,7 +1191,10 @@ fn append_operation_parameters(
         let is_angle = property.type_name.contains("Angle");
         let mut retained = BTreeMap::new();
         if let Some((native_ref, _)) = &expression {
-            retained.insert("expression_native_ref".into(), native_ref.clone());
+            retained.insert(
+                cadmpeg_core::nonblank_literal!("expression_native_ref"),
+                native_ref.clone(),
+            );
         }
         parameters.push(DesignParameter {
             id: ParameterId::mint(format!(
@@ -1582,10 +1589,9 @@ fn parse_sketch(
                     id.clone(),
                     SketchGeometry::try_from(SketchGeometryDefinition::ExternalReference {
                         document: reference.document_name().map(str::to_owned),
-                        object: cadmpeg_ir::products::NonBlankString::new(target_object)
-                            .ok_or_else(|| {
-                                cadmpeg_core::CodecError::malformed("object must not be empty")
-                            })?,
+                        object: cadmpeg_core::text::NonBlankString::new(target_object).ok_or_else(
+                            || cadmpeg_core::CodecError::malformed("object must not be empty"),
+                        )?,
                         subelements: reference.subelements().to_vec(),
                     })
                     .map_err(CodecError::malformed)?,
@@ -1968,7 +1974,7 @@ fn rotate_vector(quaternion: [f64; 4], vector: [f64; 3]) -> Vector3 {
     )
 }
 
-fn feature_state(properties: &[&PropertyRecord]) -> BTreeMap<String, String> {
+fn feature_state(properties: &[&PropertyRecord]) -> BTreeMap<NonBlankString, String> {
     const STATE_NAMES: &[&str] = &[
         "Active",
         "Frozen",
@@ -1980,7 +1986,7 @@ fn feature_state(properties: &[&PropertyRecord]) -> BTreeMap<String, String> {
         "Touched",
         "Visibility",
     ];
-    properties
+    let named = properties
         .iter()
         .filter(|property| STATE_NAMES.contains(&property.name.as_str()))
         .map(|property| {
@@ -1992,7 +1998,8 @@ fn feature_state(properties: &[&PropertyRecord]) -> BTreeMap<String, String> {
                 .unwrap_or_else(|| property.xml.text().to_owned());
             (property.name.clone(), value)
         })
-        .collect()
+        .collect::<Vec<_>>();
+    cadmpeg_core::text::named_entries(named)
 }
 
 fn bool_property(properties: &[&PropertyRecord], name: &str) -> Option<bool> {
@@ -2205,17 +2212,22 @@ fn parse_constraints(
                     let path = format!("Constraints[{index}]");
                     let expression = expression_binding(properties, &path);
                     let mut parameter_properties = [(
-                        "is_driving".into(),
+                        cadmpeg_core::nonblank_literal!("is_driving"),
                         node.attribute("IsDriving").unwrap_or("1").to_owned(),
                     )]
                     .into_iter()
                     .collect::<BTreeMap<_, _>>();
                     if let Some(name) = node.attribute("Name").filter(|name| !name.is_empty()) {
-                        parameter_properties.insert("source_name".into(), name.to_owned());
+                        parameter_properties.insert(
+                            cadmpeg_core::nonblank_literal!("source_name"),
+                            name.to_owned(),
+                        );
                     }
                     if let Some((native_ref, _)) = &expression {
-                        parameter_properties
-                            .insert("expression_native_ref".into(), native_ref.clone());
+                        parameter_properties.insert(
+                            cadmpeg_core::nonblank_literal!("expression_native_ref"),
+                            native_ref.clone(),
+                        );
                     }
                     parameters.push(DesignParameter {
                         id: id.clone(),
@@ -2294,7 +2306,7 @@ fn parse_constraints(
         };
         let midpoint =
             || type_code.and_then(|type_code| midpoint_constraint(type_code, &operands, entities));
-        let native_kind = cadmpeg_ir::products::NonBlankString::new(native_kind)
+        let native_kind = cadmpeg_core::text::NonBlankString::new(native_kind)
             .ok_or_else(|| CodecError::malformed("empty native constraint kind"))?;
         let definition = (type_code == Some(15) && all_resolved)
             .then(internal_alignment)
@@ -2318,7 +2330,7 @@ fn parse_constraints(
                     .filter_map(|(entity, position)| {
                         if *entity < 0 || resolve(*entity, *position).is_none() {
                             Some(SketchNativeOperand {
-                                native_kind: cadmpeg_ir::products::NonBlankString::new(format!(
+                                native_kind: cadmpeg_core::text::NonBlankString::new(format!(
                                     "position:{position}"
                                 ))
                                 .expect("source operand kind is nonempty"),
@@ -2925,7 +2937,7 @@ fn sketch_geometry(
     kind: &str,
     attributes: &BTreeMap<String, String>,
 ) -> Result<SketchGeometry, CodecError> {
-    let native_kind = cadmpeg_ir::products::NonBlankString::new(kind)
+    let native_kind = cadmpeg_core::text::NonBlankString::new(kind)
         .ok_or_else(|| CodecError::malformed("native_kind must not be empty"))?;
     let number = |name: &str| attributes.get(name).and_then(|value| value.parse().ok());
     let native = || SketchGeometryDefinition::Native {
@@ -4824,10 +4836,13 @@ fn scalar_text(property: &PropertyRecord) -> Option<String> {
     direct_root_attributes(property, tag)?.remove("value")
 }
 
-fn native_parameters(properties: &[&PropertyRecord]) -> BTreeMap<String, String> {
+fn native_parameters(properties: &[&PropertyRecord]) -> BTreeMap<NonBlankString, String> {
     properties
         .iter()
-        .filter_map(|property| scalar_text(property).map(|value| (property.name.clone(), value)))
+        .filter_map(|property| {
+            let name = NonBlankString::new(property.name.clone())?;
+            scalar_text(property).map(|value| (name, value))
+        })
         .collect()
 }
 
@@ -5320,7 +5335,7 @@ fn hole_definition(
         None
     } else {
         let threaded = bool_selector(properties, "Threaded", false)?;
-        let standard = cadmpeg_ir::NonBlankString::new(thread_standard(thread_type)?)?;
+        let standard = cadmpeg_core::text::NonBlankString::new(thread_standard(thread_type)?)?;
         let designation = enumeration_label(properties, "ThreadSize");
         let modeled = if property(properties, "ModelThread").is_some() {
             bool_selector(properties, "ModelThread", false)?
@@ -5504,7 +5519,7 @@ fn binder_definition(
             Some(BinderSource {
                 target: binder_target(link, features)?,
                 subelements: link_selectors(link)
-                    .map(cadmpeg_ir::NonBlankString::new)
+                    .map(cadmpeg_core::text::NonBlankString::new)
                     .collect::<Option<Vec<_>>>()?,
             })
         })
@@ -5598,14 +5613,14 @@ fn binder_target(
     let object = link.object()?;
     if let Some(document) = link.document() {
         return Some(BinderTarget::External {
-            document: cadmpeg_ir::NonBlankString::new(document.as_str())?,
-            object: cadmpeg_ir::NonBlankString::new(object)?,
+            document: cadmpeg_core::text::NonBlankString::new(document.as_str())?,
+            object: cadmpeg_core::text::NonBlankString::new(object)?,
         });
     }
     Some(match features.get(object).cloned() {
         Some(feature) => BinderTarget::Feature { feature },
         None => BinderTarget::Native {
-            reference: cadmpeg_ir::NonBlankString::new(object)?,
+            reference: cadmpeg_core::text::NonBlankString::new(object)?,
         },
     })
 }

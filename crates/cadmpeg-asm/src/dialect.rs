@@ -65,24 +65,30 @@ pub fn classify(header: KernelHeaderRef<'_>) -> DialectMatch {
     };
     if let Some(parsed) = parsed {
         if let Some(major) = parsed.save_format_major() {
-            declared.insert(DECLARED_SAVE_FORMAT_MAJOR.to_owned(), major.to_string());
+            declared.insert(
+                cadmpeg_core::nonblank_const!(DECLARED_SAVE_FORMAT_MAJOR),
+                major.to_string(),
+            );
         }
         if let Some(minor) = parsed.save_format_minor() {
-            declared.insert(DECLARED_SAVE_FORMAT_MINOR.to_owned(), minor.to_string());
+            declared.insert(
+                cadmpeg_core::nonblank_const!(DECLARED_SAVE_FORMAT_MINOR),
+                minor.to_string(),
+            );
         }
     }
 
     let matched = match header {
         KernelHeaderRef::Acis(header) => {
             declared.insert(
-                DECLARED_REFERENCE_WIDTH.to_owned(),
+                cadmpeg_core::nonblank_const!(DECLARED_REFERENCE_WIDTH),
                 header.width.to_string(),
             );
             acis_match(header.metadata.save_format_major())
         }
         KernelHeaderRef::Asm(header) => {
             declared.insert(
-                DECLARED_REFERENCE_WIDTH.to_owned(),
+                cadmpeg_core::nonblank_const!(DECLARED_REFERENCE_WIDTH),
                 header.width.to_string(),
             );
             DialectMatch::admitted(asm_binary_row(header.width))
@@ -113,7 +119,10 @@ pub fn classify_layer(
 ) -> DialectMatch {
     let matched = classify(header);
     let mut declared = matched.declared().clone();
-    declared.insert(DECLARED_CARRIER.to_owned(), carrier.to_owned());
+    declared.insert(
+        cadmpeg_core::nonblank_literal!("carrier"),
+        carrier.to_owned(),
+    );
     let matched = matched.with_declared(declared);
     match instance {
         LayerInstance::Sole => matched,
@@ -343,9 +352,18 @@ mod tests {
         assert_eq!(
             matched.declared().clone().into_iter().collect::<Vec<_>>(),
             [
-                ("reference_width".to_owned(), "4".to_owned()),
-                ("save_format_major".to_owned(), "217".to_owned()),
-                ("save_format_minor".to_owned(), "3".to_owned()),
+                (
+                    cadmpeg_core::nonblank_literal!("reference_width"),
+                    "4".to_owned()
+                ),
+                (
+                    cadmpeg_core::nonblank_literal!("save_format_major"),
+                    "217".to_owned()
+                ),
+                (
+                    cadmpeg_core::nonblank_literal!("save_format_minor"),
+                    "3".to_owned()
+                ),
             ]
         );
 
@@ -354,9 +372,18 @@ mod tests {
             classify(KernelHeaderRef::Asm(&asm)),
             DialectMatch::admitted(ACIS_ASM_BINARYFILE_8).with_declared(
                 [
-                    ("reference_width".to_owned(), "8".to_owned()),
-                    ("save_format_major".to_owned(), "700".to_owned()),
-                    ("save_format_minor".to_owned(), "1".to_owned()),
+                    (
+                        cadmpeg_core::nonblank_literal!("reference_width"),
+                        "8".to_owned()
+                    ),
+                    (
+                        cadmpeg_core::nonblank_literal!("save_format_major"),
+                        "700".to_owned()
+                    ),
+                    (
+                        cadmpeg_core::nonblank_literal!("save_format_minor"),
+                        "1".to_owned()
+                    ),
                 ]
                 .into_iter()
                 .collect(),

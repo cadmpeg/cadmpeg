@@ -52,7 +52,7 @@ fn fillet_display_placeholder_establishes_length_unit() {
         kind: "Fillet".into(),
         input_class: Some("Fillet_c".into()),
         suppressed: false,
-        parameters: BTreeMap::from([("D1".into(), "R0".into())]),
+        parameters: BTreeMap::from([(cadmpeg_core::nonblank_literal!("D1"), "R0".into())]),
         dimension_properties: BTreeMap::default(),
         properties: BTreeMap::default(),
         text: None,
@@ -67,7 +67,9 @@ fn fillet_display_placeholder_establishes_length_unit() {
         None
     );
     let mut numeric = feature;
-    numeric.parameters.insert("D1".into(), "0".into());
+    numeric
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "0".into());
     assert_eq!(scalar_unit_from_feature_parameter(&numeric, "D1"), None);
 
     let mut cosmetic_thread = numeric.clone();
@@ -76,7 +78,7 @@ fn fillet_display_placeholder_establishes_length_unit() {
     cosmetic_thread.parameters.clear();
     cosmetic_thread
         .parameters
-        .insert("D2".into(), "<MOD-DIAM>6".into());
+        .insert(cadmpeg_core::nonblank_literal!("D2"), "<MOD-DIAM>6".into());
     assert_eq!(
         scalar_unit_from_feature_parameter(&cosmetic_thread, "D2"),
         None
@@ -85,8 +87,12 @@ fn fillet_display_placeholder_establishes_length_unit() {
     let mut variable = numeric;
     variable.kind = "VarFillet".into();
     variable.input_class = Some("VarFillet_c".into());
-    variable.parameters.insert("D0".into(), "R0".into());
-    variable.parameters.insert("D01".into(), "R0".into());
+    variable
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D0"), "R0".into());
+    variable
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D01"), "R0".into());
     assert_eq!(
         scalar_unit_from_feature_parameter(&variable, "D0"),
         Some(super::ScalarUnit::Length)
@@ -112,9 +118,9 @@ fn thin_cut_native_dimensions_are_lengths() {
         input_class: None,
         suppressed: false,
         parameters: BTreeMap::from([
-            ("D5".into(), "0.3".into()),
-            ("D6".into(), "0.1".into()),
-            ("D7".into(), "0.2".into()),
+            (cadmpeg_core::nonblank_literal!("D5"), "0.3".into()),
+            (cadmpeg_core::nonblank_literal!("D6"), "0.1".into()),
+            (cadmpeg_core::nonblank_literal!("D7"), "0.2".into()),
         ]),
         dimension_properties: BTreeMap::default(),
         properties: BTreeMap::default(),
@@ -145,9 +151,9 @@ fn sketch_source_dimension_establishes_scalar_unit() {
         input_class: Some("moProfileFeature_c".into()),
         suppressed: false,
         parameters: BTreeMap::from([
-            ("depth".into(), "0.75".into()),
-            ("angle".into(), "90°".into()),
-            ("unowned".into(), "1".into()),
+            (cadmpeg_core::nonblank_literal!("depth"), "0.75".into()),
+            (cadmpeg_core::nonblank_literal!("angle"), "90°".into()),
+            (cadmpeg_core::nonblank_literal!("unowned"), "1".into()),
         ]),
         dimension_properties: BTreeMap::default(),
         properties: BTreeMap::default(),
@@ -185,7 +191,10 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
         kind: "Sketch".into(),
         input_class: Some("moProfileFeature_c".into()),
         suppressed: false,
-        parameters: BTreeMap::from([("D1".into(), "<MOD-DIAM>0.281".into())]),
+        parameters: BTreeMap::from([(
+            cadmpeg_core::nonblank_literal!("D1"),
+            "<MOD-DIAM>0.281".into(),
+        )]),
         dimension_properties: BTreeMap::default(),
         properties: BTreeMap::default(),
         text: None,
@@ -264,11 +273,11 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
     );
     histories[0].features[0]
         .parameters
-        .insert("D1".into(), "<MOD-DIAM>8".into());
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "<MOD-DIAM>8".into());
     sync_changed_feature_scalars(
         &histories,
         std::slice::from_mut(&mut lane),
-        &HashSet::from([("feature".into(), "D1".into())]),
+        &HashSet::from([("feature".into(), cadmpeg_core::nonblank_literal!("D1"))]),
     )
     .expect("explicit scalar owner is writable");
     assert_eq!(lane.scalars[0].value, 0.008);

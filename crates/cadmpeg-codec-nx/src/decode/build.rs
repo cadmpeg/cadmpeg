@@ -422,7 +422,7 @@ pub(crate) fn try_decode_geometry(
                         },
                         source_object: Some(SourceObjectAssociation {
                             format: cadmpeg_ir::CodecFormat::Nx,
-                            object_id: cadmpeg_ir::products::NonBlankString::new(format!(
+                            object_id: cadmpeg_core::text::NonBlankString::new(format!(
                                 "nx:s{si}:offset-surface-record#{}",
                                 offset.xmt
                             ))
@@ -494,7 +494,7 @@ pub(crate) fn try_decode_geometry(
                 },
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Nx,
-                    object_id: cadmpeg_ir::products::NonBlankString::new(format!(
+                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
                         "nx:s{si}:blend-surface-record#{}",
                         blend.xmt
                     ))
@@ -767,7 +767,7 @@ pub(crate) fn try_decode_geometry(
                 },
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Nx,
-                    object_id: cadmpeg_ir::products::NonBlankString::new(format!(
+                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
                         "nx:s{si}:intersection-record#{}",
                         construction.xmt
                     ))
@@ -1569,24 +1569,29 @@ fn apply_preselected_active_body_selection(
     }
     prune_inactive_topology(ir, selected);
     if let Some(source) = &mut ir.source {
-        source
-            .attributes
-            .insert("active_body_selector".to_string(), selector.to_string());
+        source.attributes.insert(
+            cadmpeg_core::nonblank_literal!("active_body_selector"),
+            selector.to_string(),
+        );
         let (hit_attribute, count_attribute) = match selector {
-            "rmfastload_object_id_membership" => {
-                (Some("rmfastload_hits"), "rmfastload_active_body_count")
-            }
-            "terminal_feature_body_lineage" => (None, "feature_terminal_body_count"),
-            _ => (None, "active_body_count"),
+            "rmfastload_object_id_membership" => (
+                Some(cadmpeg_core::nonblank_literal!("rmfastload_hits")),
+                cadmpeg_core::nonblank_literal!("rmfastload_active_body_count"),
+            ),
+            "terminal_feature_body_lineage" => (
+                None,
+                cadmpeg_core::nonblank_literal!("feature_terminal_body_count"),
+            ),
+            _ => (None, cadmpeg_core::nonblank_literal!("active_body_count")),
         };
         if let (Some(attribute), Some(selected_hits)) = (hit_attribute, selected_hits) {
             source
                 .attributes
-                .insert(attribute.to_string(), selected_hits.to_string());
+                .insert(attribute, selected_hits.to_string());
         }
         source
             .attributes
-            .insert(count_attribute.to_string(), selected.len().to_string());
+            .insert(count_attribute, selected.len().to_string());
     }
     true
 }

@@ -42,13 +42,17 @@ pub(crate) fn project_fillet(feature: &Feature) -> FeatureDefinition {
             .parameters
             .iter()
             .filter_map(|(name, radius)| {
-                let index = name.strip_prefix("Radius")?.parse::<usize>().ok()?;
+                let index = name
+                    .as_str()
+                    .strip_prefix("Radius")?
+                    .parse::<usize>()
+                    .ok()?;
                 Some((index, radius))
             })
             .map(|(index, radius)| {
                 let parameter = feature
                     .parameters
-                    .get(&format!("Position{index}"))?
+                    .get(format!("Position{index}").as_str())?
                     .trim()
                     .parse::<f64>()
                     .ok()?;
@@ -83,7 +87,7 @@ pub(crate) fn project_fillet(feature: &Feature) -> FeatureDefinition {
                     if feature
                         .parameters
                         .keys()
-                        .any(|name| indexed_name(name, "Radius"))
+                        .any(|name| indexed_name(name.as_str(), "Radius"))
                     {
                         RadiusSpec::Unresolved {
                             form: Some(cadmpeg_ir::features::RadiusForm::Variable),
@@ -564,7 +568,7 @@ pub(crate) fn project_chamfer(feature: &Feature) -> FeatureDefinition {
         .content
         .iter()
         .filter_map(|content| match content {
-            FeatureContent::Dimension(name) => feature.parameters.get(name),
+            FeatureContent::Dimension(name) => feature.parameters.get(name.as_str()),
             FeatureContent::Feature(_) | FeatureContent::Text(_) => None,
         })
         .collect::<Vec<_>>();

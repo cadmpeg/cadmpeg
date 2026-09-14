@@ -475,14 +475,17 @@ fn transfer_schema_one(
         let mut material_properties = BTreeMap::new();
         if let Some(material) = material {
             for (source, target) in [
-                ("shininess", "shininess"),
-                ("transparency", "material_transparency"),
+                ("shininess", cadmpeg_core::nonblank_literal!("shininess")),
+                (
+                    "transparency",
+                    cadmpeg_core::nonblank_literal!("material_transparency"),
+                ),
             ] {
                 if let Some(value) = material
                     .attribute(source)
                     .and_then(|value| value.parse::<f64>().ok())
                 {
-                    material_properties.insert(target.into(), value);
+                    material_properties.insert(target, value);
                 }
             }
         }
@@ -576,7 +579,7 @@ fn transfer_neutral_presentation(
                                 PresentationStateKind::Native(state.kind.clone())
                             },
                             order: order as u32,
-                            attributes: state.attributes.clone(),
+                            attributes: cadmpeg_core::text::named_entries(state.attributes.clone()),
                             assets: state
                                 .side_entries
                                 .iter()
@@ -648,16 +651,13 @@ fn transfer_neutral_presentation(
                 .map(str::to_owned),
             line_width,
             point_size,
-            properties: owned
-                .iter()
-                .map(|property| {
-                    (
-                        property.name.clone(),
-                        gui_property_value(property)
-                            .map_or_else(|| property.xml.text().to_owned(), str::to_owned),
-                    )
-                })
-                .collect(),
+            properties: cadmpeg_core::text::named_entries(owned.iter().map(|property| {
+                (
+                    property.name.clone(),
+                    gui_property_value(property)
+                        .map_or_else(|| property.xml.text().to_owned(), str::to_owned),
+                )
+            })),
             native_ref: Some(provider.id.clone()),
         });
     }
@@ -699,7 +699,7 @@ fn camera_state_value(state: &GuiStateRecord) -> Result<CameraState, CodecError>
     Ok(CameraState {
         position,
         orientation,
-        properties: state.attributes.clone(),
+        properties: cadmpeg_core::text::named_entries(state.attributes.clone()),
     })
 }
 
@@ -824,7 +824,7 @@ fn transfer_edge_appearance(
         textures: Vec::new(),
         properties: width
             .filter(|width| width.is_finite() && *width >= 0.0)
-            .map(|width| [("line_width".into(), width)].into())
+            .map(|width| [(cadmpeg_core::nonblank_literal!("line_width"), width)].into())
             .unwrap_or_default(),
     });
     for (index, edge) in edges.into_iter().enumerate() {
@@ -837,7 +837,11 @@ fn transfer_edge_appearance(
             source_entity_id: Some(object_id.to_owned()),
             object_type: Some("ViewProvider Edge".into()),
             visible: None,
-            channels: [("precedence".into(), "edge_over_object".into())].into(),
+            channels: [(
+                cadmpeg_core::nonblank_literal!("precedence"),
+                "edge_over_object".into(),
+            )]
+            .into(),
         });
     }
 }
@@ -885,7 +889,7 @@ fn transfer_vertex_appearance(
         textures: Vec::new(),
         properties: size
             .filter(|size| size.is_finite() && *size >= 0.0)
-            .map(|size| [("point_size".into(), size)].into())
+            .map(|size| [(cadmpeg_core::nonblank_literal!("point_size"), size)].into())
             .unwrap_or_default(),
     });
     for (index, vertex) in vertices.into_iter().enumerate() {
@@ -898,7 +902,11 @@ fn transfer_vertex_appearance(
             source_entity_id: Some(object_id.to_owned()),
             object_type: Some("ViewProvider Vertex".into()),
             visible: None,
-            channels: [("precedence".into(), "vertex_over_object".into())].into(),
+            channels: [(
+                cadmpeg_core::nonblank_literal!("precedence"),
+                "vertex_over_object".into(),
+            )]
+            .into(),
         });
     }
 }
@@ -987,7 +995,7 @@ fn append_native_provider(
         id: id.clone(),
         object: object
             .map(|object| {
-                cadmpeg_ir::products::NonBlankString::new(object).ok_or_else(|| {
+                cadmpeg_core::text::NonBlankString::new(object).ok_or_else(|| {
                     CodecError::Malformed("GUI provider object must not be empty".into())
                 })
             })
@@ -3608,7 +3616,7 @@ fn transfer_shape_appearances(
         let Some(object_id) = provider
             .object
             .as_ref()
-            .map(cadmpeg_ir::products::NonBlankString::as_str)
+            .map(cadmpeg_core::text::NonBlankString::as_str)
         else {
             continue;
         };
@@ -3822,11 +3830,26 @@ fn material_appearance(
         base_color: Some(decode_color(material.diffuse, Some(material.transparency))?),
         textures: Vec::new(),
         properties: [
-            ("ambient_packed".into(), f64::from(material.ambient)),
-            ("specular_packed".into(), f64::from(material.specular)),
-            ("emissive_packed".into(), f64::from(material.emissive)),
-            ("shininess".into(), f64::from(material.shininess)),
-            ("transparency".into(), f64::from(material.transparency)),
+            (
+                cadmpeg_core::nonblank_literal!("ambient_packed"),
+                f64::from(material.ambient),
+            ),
+            (
+                cadmpeg_core::nonblank_literal!("specular_packed"),
+                f64::from(material.specular),
+            ),
+            (
+                cadmpeg_core::nonblank_literal!("emissive_packed"),
+                f64::from(material.emissive),
+            ),
+            (
+                cadmpeg_core::nonblank_literal!("shininess"),
+                f64::from(material.shininess),
+            ),
+            (
+                cadmpeg_core::nonblank_literal!("transparency"),
+                f64::from(material.transparency),
+            ),
         ]
         .into(),
     })
@@ -3866,7 +3889,11 @@ fn bind_material_faces(
             source_entity_id: Some(object_id.to_owned()),
             object_type: Some("ViewProvider ShapeAppearance".into()),
             visible: None,
-            channels: [("precedence".into(), "face_over_object".into())].into(),
+            channels: [(
+                cadmpeg_core::nonblank_literal!("precedence"),
+                "face_over_object".into(),
+            )]
+            .into(),
         });
     }
 }
@@ -4032,7 +4059,11 @@ fn transfer_topology_colors(
                 source_entity_id: Some(object_id.to_owned()),
                 object_type: Some(format!("ViewProvider {}", kind.name())),
                 visible: None,
-                channels: [("precedence".into(), kind.precedence().into())].into(),
+                channels: [(
+                    cadmpeg_core::nonblank_literal!("precedence"),
+                    kind.precedence().into(),
+                )]
+                .into(),
             });
         }
     }

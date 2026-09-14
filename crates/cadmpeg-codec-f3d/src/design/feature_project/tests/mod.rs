@@ -9,6 +9,7 @@
 
 pub(super) use super::*;
 
+mod chamfer;
 mod coil;
 mod dispatcher;
 mod extrude;

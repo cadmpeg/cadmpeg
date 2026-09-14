@@ -604,42 +604,42 @@ fn definition_chain_parameter_candidate(
     // so do not publish the definition name as `catia_binding`.
     let mut properties = parameter_properties(parameter_type.as_str(), None);
     properties.insert(
-        "catia_definition_selector_entry".to_string(),
+        cadmpeg_core::nonblank_literal!("catia_definition_selector_entry"),
         chain.selector.entry.clone(),
     );
     properties.insert(
-        "catia_definition_selector_ordinal".to_string(),
+        cadmpeg_core::nonblank_literal!("catia_definition_selector_ordinal"),
         chain.selector.ordinal.to_string(),
     );
     properties.insert(
-        "catia_definition_selector_offset".to_string(),
+        cadmpeg_core::nonblank_literal!("catia_definition_selector_offset"),
         chain.selector.offset.to_string(),
     );
     properties.insert(
-        "catia_definition_role_entry".to_string(),
+        cadmpeg_core::nonblank_literal!("catia_definition_role_entry"),
         chain.role.entry.clone(),
     );
     properties.insert(
-        "catia_definition_role_ordinal".to_string(),
+        cadmpeg_core::nonblank_literal!("catia_definition_role_ordinal"),
         chain.role.ordinal.to_string(),
     );
     properties.insert(
-        "catia_definition_role_offset".to_string(),
+        cadmpeg_core::nonblank_literal!("catia_definition_role_offset"),
         chain.role.offset.to_string(),
     );
     if let Some(opcode_offset) = evaluation_opcode_offset {
         properties.insert(
-            "catia_definition_evaluation_opcode_offset".to_string(),
+            cadmpeg_core::nonblank_literal!("catia_definition_evaluation_opcode_offset"),
             opcode_offset.to_string(),
         );
     }
     if let Some(atom_value) = atom_value {
         properties.insert(
-            "catia_definition_value_kind".to_string(),
+            cadmpeg_core::nonblank_literal!("catia_definition_value_kind"),
             "atom".to_string(),
         );
         properties.insert(
-            "catia_definition_atom_value".to_string(),
+            cadmpeg_core::nonblank_literal!("catia_definition_atom_value"),
             atom_value.to_string(),
         );
     }
@@ -1464,10 +1464,16 @@ fn string_literal_expression(value: &str) -> Option<String> {
 fn parameter_properties(
     parameter_type: &'static str,
     binding: Option<&str>,
-) -> BTreeMap<String, String> {
-    let mut properties = BTreeMap::from([("value_type".to_string(), parameter_type.to_string())]);
+) -> BTreeMap<cadmpeg_core::text::NonBlankString, String> {
+    let mut properties = BTreeMap::from([(
+        cadmpeg_core::nonblank_literal!("value_type"),
+        parameter_type.to_string(),
+    )]);
     if let Some(binding) = binding {
-        properties.insert("catia_binding".to_string(), binding.to_string());
+        properties.insert(
+            cadmpeg_core::nonblank_literal!("catia_binding"),
+            binding.to_string(),
+        );
     }
     properties
 }

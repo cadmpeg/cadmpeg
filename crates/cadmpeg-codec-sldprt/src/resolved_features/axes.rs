@@ -993,9 +993,10 @@ pub(crate) fn enrich_history_revolution_inputs(
                             .get(&feature.id)
                             .is_some_and(|sources| sources.contains(first))
                     {
-                        feature
-                            .properties
-                            .insert("Profile".into(), first.to_string());
+                        feature.properties.insert(
+                            cadmpeg_core::nonblank_literal!("Profile"),
+                            first.to_string(),
+                        );
                     }
                 }
             }
@@ -1013,11 +1014,11 @@ pub(crate) fn enrich_history_revolution_inputs(
             && !feature.properties.contains_key("AxisDirection")
         {
             feature.properties.insert(
-                "AxisOrigin".into(),
+                cadmpeg_core::nonblank_literal!("AxisOrigin"),
                 format!("{}mm,{}mm,{}mm", first.0.x, first.0.y, first.0.z),
             );
             feature.properties.insert(
-                "AxisDirection".into(),
+                cadmpeg_core::nonblank_literal!("AxisDirection"),
                 format!("{},{},{}", first.1.x, first.1.y, first.1.z),
             );
         }

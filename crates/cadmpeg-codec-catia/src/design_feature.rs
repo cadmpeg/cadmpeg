@@ -346,15 +346,19 @@ fn assign_native_operation_parameter_values(
     ir: &mut CadIr,
     exact_feature_owners: &HashMap<ParameterId, FeatureId>,
 ) {
-    let mut values_by_feature = HashMap::<FeatureId, BTreeMap<String, String>>::new();
+    let mut values_by_feature =
+        HashMap::<FeatureId, BTreeMap<cadmpeg_core::text::NonBlankString, String>>::new();
     for parameter in &ir.model.parameters {
         let Some(feature_id) = exact_feature_owners.get(&parameter.id) else {
+            continue;
+        };
+        let Some(name) = cadmpeg_core::text::NonBlankString::new(parameter.name.clone()) else {
             continue;
         };
         values_by_feature
             .entry(feature_id.clone())
             .or_default()
-            .insert(parameter.name.clone(), parameter.expression.clone());
+            .insert(name, parameter.expression.clone());
     }
 
     for feature in &mut ir.model.features {
@@ -381,9 +385,10 @@ fn assign_native_operation_parameter_values(
                 | FeatureOperation::Sweep { .. },
             ) => {
                 for (name, expression) in values {
-                    feature
-                        .source_properties
-                        .insert(format!("catia_parameter_{name}"), expression);
+                    feature.source_properties.insert(
+                        cadmpeg_core::nonblank_literal!("catia_parameter_{name}"),
+                        expression,
+                    );
                 }
             }
             _ => {}
@@ -433,7 +438,7 @@ fn normalize_parameter_names(ir: &mut CadIr) {
         parameter.name = neutral_name;
         parameter
             .properties
-            .insert("source_name".to_string(), source_name);
+            .insert(cadmpeg_core::nonblank_literal!("source_name"), source_name);
     }
 }
 
@@ -875,8 +880,11 @@ fn transfer_native_operation(
 fn native_operation_definition(
     kind: NativeOperationClass,
     native_ref: &str,
-    properties: BTreeMap<String, String>,
-) -> (FeatureDefinition, BTreeMap<String, String>) {
+    properties: BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+) -> (
+    FeatureDefinition,
+    BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+) {
     let definition = match kind {
         NativeOperationClass::PrismEndLimitLength
         | NativeOperationClass::PrismThickThin1
@@ -926,7 +934,7 @@ fn native_operation_definition(
 
 /// Exact source properties and records retained for one native operation.
 struct NativeOperationDefinitionProperties {
-    source_properties: BTreeMap<String, String>,
+    source_properties: BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     definition_value_count: usize,
     definition_chain_value_count: usize,
     range_count: usize,
@@ -1078,7 +1086,7 @@ fn native_operation_definition_properties(
     }
 
     NativeOperationDefinitionProperties {
-        source_properties: properties,
+        source_properties: cadmpeg_core::text::named_entries(properties),
         definition_value_count,
         definition_chain_value_count,
         range_count,

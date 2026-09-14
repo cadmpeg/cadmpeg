@@ -74,7 +74,7 @@ fn a_version_only_drift_lands_on_the_recovery_row_and_charges_the_loss() {
 fn a_residual_match_charges_without_inventing_a_substituted_grammar() {
     let matched =
         DialectMatch::residual(F3dDialect::Unknown.id()).with_declared(BTreeMap::from([(
-            DECLARED_TOP_LEVEL_MANIFEST_VERSION.to_owned(),
+            cadmpeg_core::nonblank_const!(DECLARED_TOP_LEVEL_MANIFEST_VERSION),
             "unframed".to_owned(),
         )]));
 
@@ -141,7 +141,7 @@ fn a_carrier_collision_instance_is_not_presented_as_an_xref() {
         cadmpeg_core::dialect::Grammar::of(&cadmpeg_asm::dialect::ACIS_SAVE_FORMAT_218),
     )
     .with_declared(BTreeMap::from([(
-        cadmpeg_asm::dialect::DECLARED_CARRIER.to_owned(),
+        cadmpeg_core::nonblank_const!(cadmpeg_asm::dialect::DECLARED_CARRIER),
         "FusionAssetName[Active]/Breps.BlobParts/Body1.sat".to_owned(),
     )]))
     .with_instance("FusionAssetName[Active]/Breps.BlobParts/Body1.sat");

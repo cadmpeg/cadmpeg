@@ -198,17 +198,15 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 geometry: surface,
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_ir::products::NonBlankString::new(
-                        native_surface.map_or_else(
-                            || {
-                                format!(
-                                    "FeatDefs:revolution#{feature_id}:segment{}",
-                                    segment.external_id
-                                )
-                            },
-                            |id| format!("VisibGeom:{id}"),
-                        ),
-                    )
+                    object_id: cadmpeg_core::text::NonBlankString::new(native_surface.map_or_else(
+                        || {
+                            format!(
+                                "FeatDefs:revolution#{feature_id}:segment{}",
+                                segment.external_id
+                            )
+                        },
+                        |id| format!("VisibGeom:{id}"),
+                    ))
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
@@ -262,7 +260,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     geometry: surface,
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: cadmpeg_ir::products::NonBlankString::new(format!(
+                        object_id: cadmpeg_core::text::NonBlankString::new(format!(
                             "VisibGeom:{native_surface}"
                         ))
                         .ok_or_else(|| {
@@ -347,7 +345,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_ir::products::NonBlankString::new(format!(
+                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
                         "VisibGeom:{native_surface}"
                     ))
                     .ok_or_else(|| {
@@ -474,9 +472,9 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
             geometry,
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_ir::products::NonBlankString::new(object_id).ok_or_else(
-                    || cadmpeg_core::CodecError::malformed("source object_id must not be empty"),
-                )?,
+                object_id: cadmpeg_core::text::NonBlankString::new(object_id).ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,
@@ -555,9 +553,9 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
             geometry,
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_ir::products::NonBlankString::new(object_id).ok_or_else(
-                    || cadmpeg_core::CodecError::malformed("source object_id must not be empty"),
-                )?,
+                object_id: cadmpeg_core::text::NonBlankString::new(object_id).ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                })?,
                 name: None,
                 color: None,
                 visible: None,

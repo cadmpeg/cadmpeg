@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Format-neutral drawing sheets, resources, views, and annotations.
 
+use cadmpeg_core::text::NonBlankString;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -70,7 +71,7 @@ pub struct Drawing {
     /// Ordered relationships grouped by exact source-property role.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
-    pub relationships: BTreeMap<String, Vec<crate::references::ReferenceSelection>>,
+    pub relationships: BTreeMap<NonBlankString, Vec<crate::references::ReferenceSelection>>,
     /// Page template drawing identity.
     #[serde(
         default,
@@ -97,7 +98,7 @@ pub struct Drawing {
     /// Remaining typed or exactly framed parameters by source name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
-    pub parameters: BTreeMap<String, String>,
+    pub parameters: BTreeMap<NonBlankString, String>,
     /// Template, image, symbol, or other retained assets.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub assets: Vec<String>,
@@ -163,5 +164,46 @@ mod tests {
                 serde_json::from_value::<Drawing>(rejected).expect_err("invalid numeric field");
             assert!(error.to_string().contains(field));
         }
+    }
+
+    #[test]
+    fn a_free_form_map_refuses_a_blank_key() {
+        let wire = serde_json::json!({
+            "id": "synthetic:test:drawing#view",
+            "object": "source",
+            "kind": "view",
+            "runtime_type": "View",
+            "order": 0,
+            "native_ref": "native",
+            "parameters": {"   ": "value"},
+        });
+        let error = serde_json::from_value::<Drawing>(wire).expect_err("blank parameter role");
+        assert!(error.to_string().contains("must not be blank"), "{error}");
+
+        let relationships = serde_json::json!({
+            "id": "synthetic:test:drawing#view",
+            "object": "source",
+            "kind": "view",
+            "runtime_type": "View",
+            "order": 0,
+            "native_ref": "native",
+            "relationships": {"": []},
+        });
+        let error =
+            serde_json::from_value::<Drawing>(relationships).expect_err("blank relationship role");
+        assert!(error.to_string().contains("must not be blank"), "{error}");
+
+        let named = serde_json::json!({
+            "id": "synthetic:test:drawing#view",
+            "object": "source",
+            "kind": "view",
+            "runtime_type": "View",
+            "order": 0,
+            "native_ref": "native",
+            "parameters": {" scale ": "value"},
+        });
+        let drawing: Drawing =
+            serde_json::from_value(named).expect("a named role is kept verbatim");
+        assert!(drawing.parameters.contains_key(" scale "));
     }
 }

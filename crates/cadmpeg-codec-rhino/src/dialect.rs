@@ -112,9 +112,15 @@ impl ArchiveVersion {
     /// properties table, and `None` where it did not.
     pub(crate) fn classify(self, writer_version: Option<i64>) -> DialectMatch {
         let mut declared = BTreeMap::new();
-        declared.insert(DECLARED_ARCHIVE_VERSION.into(), self.value().to_string());
+        declared.insert(
+            cadmpeg_core::nonblank_const!(DECLARED_ARCHIVE_VERSION),
+            self.value().to_string(),
+        );
         if let Some(stamp) = writer_version {
-            declared.insert(DECLARED_OPENNURBS_WRITER_VERSION.into(), stamp.to_string());
+            declared.insert(
+                cadmpeg_core::nonblank_const!(DECLARED_OPENNURBS_WRITER_VERSION),
+                stamp.to_string(),
+            );
         }
         if matches!(self, Self::Other(_)) {
             DialectMatch::residual(self.id())

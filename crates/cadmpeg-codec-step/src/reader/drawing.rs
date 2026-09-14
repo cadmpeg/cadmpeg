@@ -211,13 +211,13 @@ pub(super) fn decode(
                 runtime_type: name.into(),
                 order: u32::try_from(order).unwrap_or(u32::MAX),
                 visible: hidden_drawing_ids.contains(&id).then_some(false),
-                relationships,
+                relationships: cadmpeg_core::text::named_entries(relationships),
                 template: None,
                 position: None,
                 scale: None,
                 direction: None,
                 rotation_degrees: None,
-                parameters: stored_parameters,
+                parameters: cadmpeg_core::text::named_entries(stored_parameters),
                 assets: Vec::new(),
                 native_ref: identity.into_string(),
             },
@@ -540,7 +540,7 @@ fn add_sheet_revision_usages(
             if let Some(target) = sheet_target {
                 sheet
                     .relationships
-                    .entry("drawing_revision".into())
+                    .entry(cadmpeg_core::nonblank_literal!("drawing_revision"))
                     .or_default()
                     .push(target);
             } else if let Some(identities) = target_context.ambiguous(revision_id) {
@@ -565,16 +565,17 @@ fn add_sheet_revision_usages(
                     "drawing sheet revision usage sequence",
                 )
             }) {
-                sheet
-                    .parameters
-                    .insert(format!("usage_{usage_id}_sequence"), sequence);
+                sheet.parameters.insert(
+                    cadmpeg_core::nonblank_literal!("usage_{usage_id}_sequence"),
+                    sequence,
+                );
             }
         }
         if let Some(revision) = drawings.get_mut(&revision_id) {
             if let Some(target) = revision_target {
                 revision
                     .relationships
-                    .entry("sheet_revision".into())
+                    .entry(cadmpeg_core::nonblank_literal!("sheet_revision"))
                     .or_default()
                     .push(target);
             } else if let Some(identities) = target_context.ambiguous(sheet_id) {
@@ -735,19 +736,19 @@ fn add_draughting_model_associations(
         if let Some(definition) = definition_target {
             model
                 .relationships
-                .entry("semantic_definition".into())
+                .entry(cadmpeg_core::nonblank_literal!("semantic_definition"))
                 .or_default()
                 .push(definition);
         }
         model
             .relationships
-            .entry("associated_items".into())
+            .entry(cadmpeg_core::nonblank_literal!("associated_items"))
             .or_default()
             .extend(item_targets);
         if let Some(placeholder) = placeholder_target {
             model
                 .relationships
-                .entry("annotation_placeholder".into())
+                .entry(cadmpeg_core::nonblank_literal!("annotation_placeholder"))
                 .or_default()
                 .push(placeholder);
         }

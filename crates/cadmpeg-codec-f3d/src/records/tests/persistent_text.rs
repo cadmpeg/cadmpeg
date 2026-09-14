@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::records::{DesignPersistentIdText, PersistentDesignLink, PersistentSubentityTag};
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::{
     attributes::AttributeTarget,
     ids::{BodyId, FaceId},
-    NonBlankString,
 };
 
 #[test]

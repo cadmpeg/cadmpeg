@@ -50,7 +50,7 @@ const SURFACE_COMPONENT_SELECTION_PREFIX: &str = "sldprt:feature-input:surface-c
 /// selection stores the resulting plane origin, so its support is one signed
 /// `D1` displacement along the stored normal.
 pub(crate) fn offset_plane_support_origin(
-    source_properties: &BTreeMap<String, String>,
+    source_properties: &BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     native: Option<&str>,
     fallback_origin: Point3,
     normal: Vector3,

@@ -34,6 +34,8 @@ use std::fmt;
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+use crate::text::NonBlankString;
+
 /// A registry dialect id, for example `"rhino:archive-80"`.
 ///
 /// Canonical form is `<format>:<name>`. The format contains lowercase ASCII
@@ -295,7 +297,7 @@ pub struct DialectMatch {
     /// the bytes obey, not what they declare.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "crate::distinct_keys::btree_map")]
-    declared: BTreeMap<String, String>,
+    declared: BTreeMap<NonBlankString, String>,
     /// Instance of this format layer inside the containing document.
     ///
     /// `None` when the layer occurs once or has no report-local identity. This
@@ -558,7 +560,7 @@ impl DialectMatch {
 
     /// Attaches source-declared version fields before the match enters a report.
     #[must_use]
-    pub fn with_declared(mut self, declared: BTreeMap<String, String>) -> Self {
+    pub fn with_declared(mut self, declared: BTreeMap<NonBlankString, String>) -> Self {
         self.declared = declared;
         self
     }
@@ -584,7 +586,7 @@ impl DialectMatch {
 
     /// Returns the source-declared version fields.
     #[must_use]
-    pub fn declared(&self) -> &BTreeMap<String, String> {
+    pub fn declared(&self) -> &BTreeMap<NonBlankString, String> {
         &self.declared
     }
 

@@ -635,8 +635,10 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             } if seeds == &[PatternSeed::Feature(features[2].id.clone())]
             && *x == -1.0 && *y == 0.0 && *z == 0.0)
     ));
-    derived_history.features[2].parameters =
-        BTreeMap::from([("z".into(), "3".into()), ("e".into(), "19".into())]);
+    derived_history.features[2].parameters = BTreeMap::from([
+        (cadmpeg_core::nonblank_literal!("z"), "3".into()),
+        (cadmpeg_core::nonblank_literal!("e"), "19".into()),
+    ]);
     derived_lane.classes.extend([
         FeatureInputClass {
             id: "count-dimension".into(),

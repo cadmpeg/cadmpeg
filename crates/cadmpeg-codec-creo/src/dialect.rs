@@ -138,14 +138,17 @@ pub(crate) fn classify(scan: &ContainerScan) -> DialectClassification {
     let layout = &scan.framing.layout;
     let mut declared = BTreeMap::new();
     declared.insert(
-        DECLARED_VERSION_LINE.into(),
+        cadmpeg_core::nonblank_const!(DECLARED_VERSION_LINE),
         scan.framing.version_line.clone(),
     );
     if let Some(legacy) = scan.framing.layout.legacy_ascii() {
-        declared.insert(DECLARED_LEGACY_ASCII_SCHEMA.into(), legacy.schema.clone());
+        declared.insert(
+            cadmpeg_core::nonblank_const!(DECLARED_LEGACY_ASCII_SCHEMA),
+            legacy.schema.clone(),
+        );
         if let Some(release) = &legacy.product_release {
             declared.insert(
-                DECLARED_LEGACY_ASCII_PRODUCT_RELEASE.into(),
+                cadmpeg_core::nonblank_const!(DECLARED_LEGACY_ASCII_PRODUCT_RELEASE),
                 release.clone(),
             );
         }

@@ -10,19 +10,31 @@ use cadmpeg_ir::features::FeatureOperation;
 fn offset_plane_frame_resolves_one_preceding_parallel_plane() {
     let mut reference = feature("sldprt:history:feature#0:0", None, 0);
     reference.input_class = Some("moRefPlane_c".into());
+    reference.properties.insert(
+        cadmpeg_core::nonblank_literal!("Origin"),
+        "0mm,0mm,0mm".into(),
+    );
     reference
         .properties
-        .insert("Origin".into(), "0mm,0mm,0mm".into());
-    reference.properties.insert("Normal".into(), "1,0,0".into());
-    reference.properties.insert("UAxis".into(), "0,0,-1".into());
+        .insert(cadmpeg_core::nonblank_literal!("Normal"), "1,0,0".into());
+    reference
+        .properties
+        .insert(cadmpeg_core::nonblank_literal!("UAxis"), "0,0,-1".into());
     let mut offset = feature("sldprt:history:feature#0:1", None, 1);
     offset.input_class = Some("moRefPlane_c".into());
-    offset.parameters.insert("D1".into(), "6mm".into());
+    offset
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "6mm".into());
+    offset.properties.insert(
+        cadmpeg_core::nonblank_literal!("Origin"),
+        "6mm,0mm,0mm".into(),
+    );
     offset
         .properties
-        .insert("Origin".into(), "6mm,0mm,0mm".into());
-    offset.properties.insert("Normal".into(), "1,0,0".into());
-    offset.properties.insert("UAxis".into(), "0,0,1".into());
+        .insert(cadmpeg_core::nonblank_literal!("Normal"), "1,0,0".into());
+    offset
+        .properties
+        .insert(cadmpeg_core::nonblank_literal!("UAxis"), "0,0,1".into());
     let history = FeatureHistory {
         id: "history".into(),
         part_name: None,
@@ -50,31 +62,47 @@ fn offset_plane_frame_resolves_one_preceding_parallel_plane() {
 fn unresolved_face_frame_resolves_one_preceding_parallel_plane() {
     let mut reference = feature("sldprt:history:feature#0:0", None, 0);
     reference.input_class = Some("moRefPlane_c".into());
+    reference.properties.insert(
+        cadmpeg_core::nonblank_literal!("Origin"),
+        "0mm,0mm,0mm".into(),
+    );
     reference
         .properties
-        .insert("Origin".into(), "0mm,0mm,0mm".into());
-    reference.properties.insert("Normal".into(), "1,0,0".into());
-    reference.properties.insert("UAxis".into(), "0,0,-1".into());
+        .insert(cadmpeg_core::nonblank_literal!("Normal"), "1,0,0".into());
+    reference
+        .properties
+        .insert(cadmpeg_core::nonblank_literal!("UAxis"), "0,0,-1".into());
     let mut offset = feature("sldprt:history:feature#0:1", None, 1);
     offset.input_class = Some("moRefPlane_c".into());
-    offset.parameters.insert("D1".into(), "6mm".into());
+    offset
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "6mm".into());
+    offset.properties.insert(
+        cadmpeg_core::nonblank_literal!("Reference"),
+        "missing".into(),
+    );
+    offset.properties.insert(
+        cadmpeg_core::nonblank_literal!("Origin"),
+        "6mm,0mm,0mm".into(),
+    );
     offset
         .properties
-        .insert("Reference".into(), "missing".into());
+        .insert(cadmpeg_core::nonblank_literal!("Normal"), "1,0,0".into());
     offset
         .properties
-        .insert("Origin".into(), "6mm,0mm,0mm".into());
-    offset.properties.insert("Normal".into(), "1,0,0".into());
-    offset.properties.insert("UAxis".into(), "0,0,1".into());
-    offset
-        .properties
-        .insert("ReferenceFaceOrigin".into(), "0mm,0mm,0mm".into());
-    offset
-        .properties
-        .insert("ReferenceFaceNormal".into(), "1,0,0".into());
-    offset
-        .properties
-        .insert("ReferenceFaceUAxis".into(), "0,0,-1".into());
+        .insert(cadmpeg_core::nonblank_literal!("UAxis"), "0,0,1".into());
+    offset.properties.insert(
+        cadmpeg_core::nonblank_literal!("ReferenceFaceOrigin"),
+        "0mm,0mm,0mm".into(),
+    );
+    offset.properties.insert(
+        cadmpeg_core::nonblank_literal!("ReferenceFaceNormal"),
+        "1,0,0".into(),
+    );
+    offset.properties.insert(
+        cadmpeg_core::nonblank_literal!("ReferenceFaceUAxis"),
+        "0,0,-1".into(),
+    );
     let history = FeatureHistory {
         id: "history".into(),
         part_name: None,
@@ -116,24 +144,28 @@ fn unresolved_face_frame_resolves_a_later_principal_plane_from_support_geometry(
         }),
     );
     offset.native_ref = Some("sldprt:history:feature#0:offset".into());
+    offset.source_properties.insert(
+        cadmpeg_core::nonblank_literal!("Origin"),
+        "6mm,0mm,0mm".into(),
+    );
     offset
         .source_properties
-        .insert("Origin".into(), "6mm,0mm,0mm".into());
+        .insert(cadmpeg_core::nonblank_literal!("Normal"), "1,0,0".into());
     offset
         .source_properties
-        .insert("Normal".into(), "1,0,0".into());
-    offset
-        .source_properties
-        .insert("UAxis".into(), "0,0,-1".into());
-    offset
-        .source_properties
-        .insert("ReferenceFaceOrigin".into(), "0mm,0mm,0mm".into());
-    offset
-        .source_properties
-        .insert("ReferenceFaceNormal".into(), "1,0,0".into());
-    offset
-        .source_properties
-        .insert("ReferenceFaceUAxis".into(), "0,0,-1".into());
+        .insert(cadmpeg_core::nonblank_literal!("UAxis"), "0,0,-1".into());
+    offset.source_properties.insert(
+        cadmpeg_core::nonblank_literal!("ReferenceFaceOrigin"),
+        "0mm,0mm,0mm".into(),
+    );
+    offset.source_properties.insert(
+        cadmpeg_core::nonblank_literal!("ReferenceFaceNormal"),
+        "1,0,0".into(),
+    );
+    offset.source_properties.insert(
+        cadmpeg_core::nonblank_literal!("ReferenceFaceUAxis"),
+        "0,0,-1".into(),
+    );
     let mut principal = cadmpeg_ir::features::Feature::new(
         FeatureId::mint("synthetic:test:id#right").expect("identity grammar"),
         1,
@@ -186,15 +218,16 @@ fn unresolved_face_frame_collapses_a_zero_offset_plane_alias() {
         }),
     );
     alias.native_ref = Some("sldprt:history:feature#0:alias".into());
+    alias.source_properties.insert(
+        cadmpeg_core::nonblank_literal!("Origin"),
+        "0mm,0mm,0mm".into(),
+    );
     alias
         .source_properties
-        .insert("Origin".into(), "0mm,0mm,0mm".into());
+        .insert(cadmpeg_core::nonblank_literal!("Normal"), "1,0,0".into());
     alias
         .source_properties
-        .insert("Normal".into(), "1,0,0".into());
-    alias
-        .source_properties
-        .insert("UAxis".into(), "0,0,-1".into());
+        .insert(cadmpeg_core::nonblank_literal!("UAxis"), "0,0,-1".into());
 
     let mut offset = cadmpeg_ir::features::Feature::new(
         FeatureId::mint("synthetic:test:id#offset").expect("identity grammar"),
@@ -212,24 +245,28 @@ fn unresolved_face_frame_collapses_a_zero_offset_plane_alias() {
         }),
     );
     offset.native_ref = Some("sldprt:history:feature#0:offset".into());
+    offset.source_properties.insert(
+        cadmpeg_core::nonblank_literal!("Origin"),
+        "6mm,0mm,0mm".into(),
+    );
     offset
         .source_properties
-        .insert("Origin".into(), "6mm,0mm,0mm".into());
+        .insert(cadmpeg_core::nonblank_literal!("Normal"), "1,0,0".into());
     offset
         .source_properties
-        .insert("Normal".into(), "1,0,0".into());
-    offset
-        .source_properties
-        .insert("UAxis".into(), "0,0,-1".into());
-    offset
-        .source_properties
-        .insert("ReferenceFaceOrigin".into(), "0mm,0mm,0mm".into());
-    offset
-        .source_properties
-        .insert("ReferenceFaceNormal".into(), "1,0,0".into());
-    offset
-        .source_properties
-        .insert("ReferenceFaceUAxis".into(), "0,0,-1".into());
+        .insert(cadmpeg_core::nonblank_literal!("UAxis"), "0,0,-1".into());
+    offset.source_properties.insert(
+        cadmpeg_core::nonblank_literal!("ReferenceFaceOrigin"),
+        "0mm,0mm,0mm".into(),
+    );
+    offset.source_properties.insert(
+        cadmpeg_core::nonblank_literal!("ReferenceFaceNormal"),
+        "1,0,0".into(),
+    );
+    offset.source_properties.insert(
+        cadmpeg_core::nonblank_literal!("ReferenceFaceUAxis"),
+        "0,0,-1".into(),
+    );
 
     let mut features = vec![base, alias, offset];
     bind_offset_plane_references(&mut features);
@@ -260,18 +297,20 @@ fn explicit_later_constructed_plane_survives_without_result_offset_frame() {
         }),
     );
     offset.native_ref = Some("sldprt:history:feature#0:offset".into());
+    offset.source_properties.insert(
+        cadmpeg_core::nonblank_literal!("Reference"),
+        "reference".into(),
+    );
+    offset.source_properties.insert(
+        cadmpeg_core::nonblank_literal!("Origin"),
+        "0mm,0mm,0mm".into(),
+    );
     offset
         .source_properties
-        .insert("Reference".into(), "reference".into());
+        .insert(cadmpeg_core::nonblank_literal!("Normal"), "1,0,0".into());
     offset
         .source_properties
-        .insert("Origin".into(), "0mm,0mm,0mm".into());
-    offset
-        .source_properties
-        .insert("Normal".into(), "1,0,0".into());
-    offset
-        .source_properties
-        .insert("UAxis".into(), "0,0,-1".into());
+        .insert(cadmpeg_core::nonblank_literal!("UAxis"), "0,0,-1".into());
     let mut reference = cadmpeg_ir::features::Feature::new(
         FeatureId::mint("synthetic:test:id#reference").expect("identity grammar"),
         1,
@@ -306,34 +345,50 @@ fn explicit_later_constructed_plane_survives_without_result_offset_frame() {
 fn unresolved_face_frame_does_not_resolve_ambiguous_parallel_planes() {
     let mut reference = feature("sldprt:history:feature#0:0", None, 0);
     reference.input_class = Some("moRefPlane_c".into());
+    reference.properties.insert(
+        cadmpeg_core::nonblank_literal!("Origin"),
+        "0mm,0mm,0mm".into(),
+    );
     reference
         .properties
-        .insert("Origin".into(), "0mm,0mm,0mm".into());
-    reference.properties.insert("Normal".into(), "1,0,0".into());
-    reference.properties.insert("UAxis".into(), "0,0,-1".into());
+        .insert(cadmpeg_core::nonblank_literal!("Normal"), "1,0,0".into());
+    reference
+        .properties
+        .insert(cadmpeg_core::nonblank_literal!("UAxis"), "0,0,-1".into());
     let mut duplicate = reference.clone();
     duplicate.id = "sldprt:history:feature#0:1".into();
     duplicate.ordinal = 1;
     let mut offset = feature("sldprt:history:feature#0:2", None, 2);
     offset.input_class = Some("moRefPlane_c".into());
-    offset.parameters.insert("D1".into(), "6mm".into());
+    offset
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "6mm".into());
+    offset.properties.insert(
+        cadmpeg_core::nonblank_literal!("Reference"),
+        "missing".into(),
+    );
+    offset.properties.insert(
+        cadmpeg_core::nonblank_literal!("Origin"),
+        "6mm,0mm,0mm".into(),
+    );
     offset
         .properties
-        .insert("Reference".into(), "missing".into());
+        .insert(cadmpeg_core::nonblank_literal!("Normal"), "1,0,0".into());
     offset
         .properties
-        .insert("Origin".into(), "6mm,0mm,0mm".into());
-    offset.properties.insert("Normal".into(), "1,0,0".into());
-    offset.properties.insert("UAxis".into(), "0,0,1".into());
-    offset
-        .properties
-        .insert("ReferenceFaceOrigin".into(), "0mm,0mm,0mm".into());
-    offset
-        .properties
-        .insert("ReferenceFaceNormal".into(), "1,0,0".into());
-    offset
-        .properties
-        .insert("ReferenceFaceUAxis".into(), "0,0,-1".into());
+        .insert(cadmpeg_core::nonblank_literal!("UAxis"), "0,0,1".into());
+    offset.properties.insert(
+        cadmpeg_core::nonblank_literal!("ReferenceFaceOrigin"),
+        "0mm,0mm,0mm".into(),
+    );
+    offset.properties.insert(
+        cadmpeg_core::nonblank_literal!("ReferenceFaceNormal"),
+        "1,0,0".into(),
+    );
+    offset.properties.insert(
+        cadmpeg_core::nonblank_literal!("ReferenceFaceUAxis"),
+        "0,0,-1".into(),
+    );
     let history = FeatureHistory {
         id: "history".into(),
         part_name: None,
@@ -358,19 +413,31 @@ fn unresolved_face_frame_does_not_resolve_ambiguous_parallel_planes() {
 fn coincident_plane_frame_does_not_infer_an_offset_reference() {
     let mut reference = feature("sldprt:history:feature#0:0", None, 0);
     reference.input_class = Some("moRefPlane_c".into());
+    reference.properties.insert(
+        cadmpeg_core::nonblank_literal!("Origin"),
+        "0mm,0mm,0mm".into(),
+    );
     reference
         .properties
-        .insert("Origin".into(), "0mm,0mm,0mm".into());
-    reference.properties.insert("Normal".into(), "1,0,0".into());
-    reference.properties.insert("UAxis".into(), "0,0,-1".into());
+        .insert(cadmpeg_core::nonblank_literal!("Normal"), "1,0,0".into());
+    reference
+        .properties
+        .insert(cadmpeg_core::nonblank_literal!("UAxis"), "0,0,-1".into());
     let mut offset = feature("sldprt:history:feature#0:1", None, 1);
     offset.input_class = Some("moRefPlane_c".into());
-    offset.parameters.insert("D1".into(), "0mm".into());
+    offset
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "0mm".into());
+    offset.properties.insert(
+        cadmpeg_core::nonblank_literal!("Origin"),
+        "0mm,0mm,0mm".into(),
+    );
     offset
         .properties
-        .insert("Origin".into(), "0mm,0mm,0mm".into());
-    offset.properties.insert("Normal".into(), "1,0,0".into());
-    offset.properties.insert("UAxis".into(), "0,0,-1".into());
+        .insert(cadmpeg_core::nonblank_literal!("Normal"), "1,0,0".into());
+    offset
+        .properties
+        .insert(cadmpeg_core::nonblank_literal!("UAxis"), "0,0,-1".into());
     let history = FeatureHistory {
         id: "history".into(),
         part_name: None,
@@ -539,14 +606,19 @@ fn native_face_offset_reference_uses_identity_without_a_duplicate_frame() {
     ] {
         let mut offset = feature("sldprt:history:feature#0:0", None, 0);
         offset.input_class = Some("moRefPlane_c".into());
-        offset.parameters.insert("D1".into(), distance_text.into());
+        offset
+            .parameters
+            .insert(cadmpeg_core::nonblank_literal!("D1"), distance_text.into());
         for (name, value) in [
-            ("Origin", source_origin),
-            ("Normal", "0,0,1"),
-            ("UAxis", "1,0,0"),
-            ("ReferenceFaceNative", native),
+            (cadmpeg_core::nonblank_literal!("Origin"), source_origin),
+            (cadmpeg_core::nonblank_literal!("Normal"), "0,0,1"),
+            (cadmpeg_core::nonblank_literal!("UAxis"), "1,0,0"),
+            (
+                cadmpeg_core::nonblank_literal!("ReferenceFaceNative"),
+                native,
+            ),
         ] {
-            offset.properties.insert(name.into(), value.into());
+            offset.properties.insert(name, value.into());
         }
 
         let definition = project_offset_plane(&offset, &HashMap::new()).unwrap();
@@ -566,12 +638,19 @@ fn native_face_offset_reference_uses_identity_without_a_duplicate_frame() {
 fn offset_plane_frame_does_not_bind_a_later_builtin_principal_plane() {
     let mut offset = feature("sldprt:history:feature#0:0", None, 0);
     offset.input_class = Some("moRefPlane_c".into());
-    offset.parameters.insert("D1".into(), "6mm".into());
+    offset
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "6mm".into());
+    offset.properties.insert(
+        cadmpeg_core::nonblank_literal!("Origin"),
+        "6mm,0mm,0mm".into(),
+    );
     offset
         .properties
-        .insert("Origin".into(), "6mm,0mm,0mm".into());
-    offset.properties.insert("Normal".into(), "1,0,0".into());
-    offset.properties.insert("UAxis".into(), "0,0,1".into());
+        .insert(cadmpeg_core::nonblank_literal!("Normal"), "1,0,0".into());
+    offset
+        .properties
+        .insert(cadmpeg_core::nonblank_literal!("UAxis"), "0,0,1".into());
     let mut principal = feature("sldprt:history:feature#0:1", Some("4"), 1);
     principal.name = "Right".into();
     principal.input_class = Some("moRefPlane_c".into());
@@ -599,13 +678,22 @@ fn offset_plane_frame_does_not_bind_a_later_builtin_principal_plane() {
 fn explicit_offset_plane_reference_cannot_bind_itself() {
     let mut offset = feature("sldprt:history:feature#0:0", Some("35"), 0);
     offset.input_class = Some("moRefPlane_c".into());
-    offset.parameters.insert("D1".into(), "0mm".into());
-    offset.properties.insert("Reference".into(), "35".into());
+    offset
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "0mm".into());
     offset
         .properties
-        .insert("Origin".into(), "0mm,0mm,0mm".into());
-    offset.properties.insert("Normal".into(), "0,0,1".into());
-    offset.properties.insert("UAxis".into(), "1,0,0".into());
+        .insert(cadmpeg_core::nonblank_literal!("Reference"), "35".into());
+    offset.properties.insert(
+        cadmpeg_core::nonblank_literal!("Origin"),
+        "0mm,0mm,0mm".into(),
+    );
+    offset
+        .properties
+        .insert(cadmpeg_core::nonblank_literal!("Normal"), "0,0,1".into());
+    offset
+        .properties
+        .insert(cadmpeg_core::nonblank_literal!("UAxis"), "1,0,0".into());
 
     let projected = project_features(&[FeatureHistory {
         id: "history".into(),
@@ -631,13 +719,22 @@ fn explicit_offset_plane_reference_cannot_bind_itself() {
 fn explicit_offset_plane_reference_orders_a_later_serialized_principal_first() {
     let mut offset = feature("sldprt:history:feature#0:0", Some("35"), 0);
     offset.input_class = Some("moRefPlane_c".into());
-    offset.parameters.insert("D1".into(), "6mm".into());
-    offset.properties.insert("Reference".into(), "4".into());
+    offset
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "6mm".into());
     offset
         .properties
-        .insert("Origin".into(), "6mm,0mm,0mm".into());
-    offset.properties.insert("Normal".into(), "1,0,0".into());
-    offset.properties.insert("UAxis".into(), "0,0,-1".into());
+        .insert(cadmpeg_core::nonblank_literal!("Reference"), "4".into());
+    offset.properties.insert(
+        cadmpeg_core::nonblank_literal!("Origin"),
+        "6mm,0mm,0mm".into(),
+    );
+    offset
+        .properties
+        .insert(cadmpeg_core::nonblank_literal!("Normal"), "1,0,0".into());
+    offset
+        .properties
+        .insert(cadmpeg_core::nonblank_literal!("UAxis"), "0,0,-1".into());
     let mut principal = feature("sldprt:history:feature#0:1", Some("4"), 1);
     principal.name = "Right".into();
     principal.input_class = Some("moRefPlane_c".into());
@@ -671,13 +768,22 @@ fn explicit_offset_plane_reference_orders_a_later_serialized_principal_first() {
 fn explicit_principal_reference_survives_a_coincident_result_frame() {
     let mut offset = feature("sldprt:history:feature#0:0", Some("35"), 0);
     offset.input_class = Some("moRefPlane_c".into());
-    offset.parameters.insert("D1".into(), "6mm".into());
-    offset.properties.insert("Reference".into(), "2".into());
+    offset
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "6mm".into());
     offset
         .properties
-        .insert("Origin".into(), "0mm,0mm,0mm".into());
-    offset.properties.insert("Normal".into(), "0,0,1".into());
-    offset.properties.insert("UAxis".into(), "1,0,0".into());
+        .insert(cadmpeg_core::nonblank_literal!("Reference"), "2".into());
+    offset.properties.insert(
+        cadmpeg_core::nonblank_literal!("Origin"),
+        "0mm,0mm,0mm".into(),
+    );
+    offset
+        .properties
+        .insert(cadmpeg_core::nonblank_literal!("Normal"), "0,0,1".into());
+    offset
+        .properties
+        .insert(cadmpeg_core::nonblank_literal!("UAxis"), "1,0,0".into());
     let mut principal = feature("sldprt:history:feature#0:1", Some("2"), 1);
     principal.name = "Front".into();
     principal.input_class = Some("moRefPlane_c".into());
@@ -707,22 +813,34 @@ fn explicit_principal_reference_survives_a_coincident_result_frame() {
 fn incompatible_later_principal_falls_back_to_the_serialized_face_frame() {
     let mut offset = feature("sldprt:history:feature#0:0", Some("35"), 0);
     offset.input_class = Some("moRefPlane_c".into());
-    offset.parameters.insert("D1".into(), "0mm".into());
-    offset.properties.insert("Reference".into(), "4".into());
+    offset
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "0mm".into());
     offset
         .properties
-        .insert("Origin".into(), "0mm,5mm,0mm".into());
-    offset.properties.insert("Normal".into(), "0,1,0".into());
-    offset.properties.insert("UAxis".into(), "1,0,0".into());
+        .insert(cadmpeg_core::nonblank_literal!("Reference"), "4".into());
+    offset.properties.insert(
+        cadmpeg_core::nonblank_literal!("Origin"),
+        "0mm,5mm,0mm".into(),
+    );
     offset
         .properties
-        .insert("ReferenceFaceOrigin".into(), "0mm,5mm,0mm".into());
+        .insert(cadmpeg_core::nonblank_literal!("Normal"), "0,1,0".into());
     offset
         .properties
-        .insert("ReferenceFaceNormal".into(), "0,1,0".into());
-    offset
-        .properties
-        .insert("ReferenceFaceUAxis".into(), "1,0,0".into());
+        .insert(cadmpeg_core::nonblank_literal!("UAxis"), "1,0,0".into());
+    offset.properties.insert(
+        cadmpeg_core::nonblank_literal!("ReferenceFaceOrigin"),
+        "0mm,5mm,0mm".into(),
+    );
+    offset.properties.insert(
+        cadmpeg_core::nonblank_literal!("ReferenceFaceNormal"),
+        "0,1,0".into(),
+    );
+    offset.properties.insert(
+        cadmpeg_core::nonblank_literal!("ReferenceFaceUAxis"),
+        "1,0,0".into(),
+    );
     let mut principal = feature("sldprt:history:feature#0:1", Some("4"), 1);
     principal.name = "Right".into();
     principal.input_class = Some("moRefPlane_c".into());
@@ -751,20 +869,34 @@ fn incompatible_later_principal_falls_back_to_the_serialized_face_frame() {
 fn explicit_offset_plane_reference_orders_a_later_derived_plane_first() {
     let mut offset = feature("sldprt:history:feature#0:0", Some("35"), 0);
     offset.input_class = Some("moRefPlane_c".into());
-    offset.parameters.insert("D1".into(), "6mm".into());
-    offset.properties.insert("Reference".into(), "40".into());
+    offset
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "6mm".into());
     offset
         .properties
-        .insert("Origin".into(), "6mm,0mm,0mm".into());
-    offset.properties.insert("Normal".into(), "1,0,0".into());
-    offset.properties.insert("UAxis".into(), "0,1,0".into());
+        .insert(cadmpeg_core::nonblank_literal!("Reference"), "40".into());
+    offset.properties.insert(
+        cadmpeg_core::nonblank_literal!("Origin"),
+        "6mm,0mm,0mm".into(),
+    );
+    offset
+        .properties
+        .insert(cadmpeg_core::nonblank_literal!("Normal"), "1,0,0".into());
+    offset
+        .properties
+        .insert(cadmpeg_core::nonblank_literal!("UAxis"), "0,1,0".into());
     let mut reference = feature("sldprt:history:feature#0:1", Some("40"), 1);
     reference.input_class = Some("moRefPlane_c".into());
+    reference.properties.insert(
+        cadmpeg_core::nonblank_literal!("Origin"),
+        "0mm,0mm,0mm".into(),
+    );
     reference
         .properties
-        .insert("Origin".into(), "0mm,0mm,0mm".into());
-    reference.properties.insert("Normal".into(), "1,0,0".into());
-    reference.properties.insert("UAxis".into(), "0,1,0".into());
+        .insert(cadmpeg_core::nonblank_literal!("Normal"), "1,0,0".into());
+    reference
+        .properties
+        .insert(cadmpeg_core::nonblank_literal!("UAxis"), "0,1,0".into());
     let history = FeatureHistory {
         id: "history".into(),
         part_name: None,

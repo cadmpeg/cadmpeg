@@ -1524,7 +1524,7 @@ fn design_intent_losses_accept_output_free_local_body_operations() {
         name: Some("Pattern Geometry".into()),
         suppressed: Some(false),
         dependencies: Default::default(),
-        source_properties,
+        source_properties: cadmpeg_core::text::named_entries(source_properties),
         source_tag: Some("Pattern Geometry".into()),
         source_text: None,
         source_content: Default::default(),
@@ -1585,9 +1585,10 @@ fn design_intent_losses_accept_pattern_construction_without_body_reference() {
         .contains("incomplete neutral construction fields"));
     assert!(losses[0].message.contains("pattern (1)"));
 
-    ir.model.features[0]
-        .source_properties
-        .insert("body_reference.0".into(), "42".into());
+    ir.model.features[0].source_properties.insert(
+        cadmpeg_core::nonblank_literal!("body_reference.0"),
+        "42".into(),
+    );
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
@@ -1634,9 +1635,10 @@ fn design_intent_losses_accept_unbound_trim_surface_construction() {
     append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());
 
-    ir.model.features[0]
-        .source_properties
-        .insert("body_reference.0".into(), "42".into());
+    ir.model.features[0].source_properties.insert(
+        cadmpeg_core::nonblank_literal!("body_reference.0"),
+        "42".into(),
+    );
     append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0]
@@ -1661,7 +1663,7 @@ fn output_free_local_body_construction_requires_unbound_primary_body() {
         name: Some("Pattern Geometry".into()),
         suppressed: Some(false),
         dependencies: Default::default(),
-        source_properties,
+        source_properties: cadmpeg_core::text::named_entries(source_properties),
         source_tag: Some("Pattern Geometry".into()),
         source_text: None,
         source_content: Default::default(),
@@ -1678,17 +1680,18 @@ fn output_free_local_body_construction_requires_unbound_primary_body() {
     assert!(output_free_local_body_construction(&feature));
 
     feature.source_properties.remove("primary_body_reference");
-    feature
-        .source_properties
-        .insert("body_reference.0".to_string(), "42".to_string());
+    feature.source_properties.insert(
+        cadmpeg_core::nonblank_literal!("body_reference.0"),
+        "42".to_string(),
+    );
     assert!(!output_free_local_body_construction(&feature));
 
     feature.source_properties.insert(
-        "primary_body_reference".to_string(),
+        cadmpeg_core::nonblank_literal!("primary_body_reference"),
         "reference".to_string(),
     );
     feature.source_properties.insert(
-        "primary_body_segment_use".to_string(),
+        cadmpeg_core::nonblank_literal!("primary_body_segment_use"),
         "segment-use".to_string(),
     );
     assert!(!output_free_local_body_construction(&feature));

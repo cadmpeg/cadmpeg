@@ -67,7 +67,7 @@ pub(crate) fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignPara
                 .into_iter()
                 .enumerate()
                 .map(move |(ordinal, name)| {
-                    let expression = &feature.parameters[&name];
+                    let expression = &feature.parameters[name.as_str()];
                     let display = dimension_display(expression);
                     let properties = feature
                         .dimension_properties
@@ -217,11 +217,11 @@ pub(crate) fn apply_evaluated_parameters(histories: &mut [FeatureHistory]) {
             .parameters
             .iter()
             .filter(|(name, expression)| {
-                parse_native_parameter_literal(feature, name, expression).is_none()
+                parse_native_parameter_literal(feature, name.as_str(), expression).is_none()
             })
             .filter_map(|(name, _)| {
                 evaluated
-                    .get(&(Some(owner.clone()), name.clone()))
+                    .get(&(Some(owner.clone()), name.as_str().to_owned()))
                     .map(|value| (name.clone(), format_parameter_value(value)))
             })
             .collect::<Vec<_>>();

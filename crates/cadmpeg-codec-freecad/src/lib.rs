@@ -786,29 +786,41 @@ impl CodecBackend for FcstdCodec {
         )?;
         let mut admitted_entities = 0_u64;
         let mut attributes = BTreeMap::new();
-        attributes.insert("document_root".into(), scan.document.root_name.clone());
         attributes.insert(
-            "object_count".into(),
+            cadmpeg_core::nonblank_literal!("document_root"),
+            scan.document.root_name.clone(),
+        );
+        attributes.insert(
+            cadmpeg_core::nonblank_literal!("object_count"),
             scan.document.object_count.to_string(),
         );
         attributes.insert(
-            "document_kind".into(),
+            cadmpeg_core::nonblank_literal!("document_kind"),
             scan.document.document_kind().as_str().to_owned(),
         );
         attributes.insert(
-            "application_domains".into(),
+            cadmpeg_core::nonblank_literal!("application_domains"),
             scan.document.domains.join(","),
         );
-        attributes.insert("archive_entry_count".into(), scan.entries.len().to_string());
         attributes.insert(
-            "physical_ledger_spans".into(),
+            cadmpeg_core::nonblank_literal!("archive_entry_count"),
+            scan.entries.len().to_string(),
+        );
+        attributes.insert(
+            cadmpeg_core::nonblank_literal!("physical_ledger_spans"),
             scan.ledger.len().to_string(),
         );
         if let Some(last) = scan.ledger.last() {
-            attributes.insert("physical_archive_bytes".into(), last.span.end().to_string());
+            attributes.insert(
+                cadmpeg_core::nonblank_literal!("physical_archive_bytes"),
+                last.span.end().to_string(),
+            );
         }
         if let Some(value) = &scan.document.program_version {
-            attributes.insert("program_version".into(), value.clone());
+            attributes.insert(
+                cadmpeg_core::nonblank_literal!("program_version"),
+                value.clone(),
+            );
         }
         let thumbnail = scan
             .data
@@ -820,7 +832,10 @@ impl CodecBackend for FcstdCodec {
                     .map(|view| ("Thumbnail.png", view.window()))
             });
         if let Some((_, thumbnail)) = thumbnail {
-            attributes.insert("thumbnail_bytes".into(), thumbnail.len().to_string());
+            attributes.insert(
+                cadmpeg_core::nonblank_literal!("thumbnail_bytes"),
+                thumbnail.len().to_string(),
+            );
         }
         let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
         let mut geometry_transferred = false;

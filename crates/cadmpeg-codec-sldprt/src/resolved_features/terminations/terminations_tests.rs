@@ -567,7 +567,10 @@ fn extrusion_termination_admits_retained_dimension_with_an_existing_depth() {
                 kind: "Boss-Extrude".into(),
                 input_class: Some("moICE_c".into()),
                 suppressed: false,
-                parameters: BTreeMap::from([(String::from("D1"), String::from("5mm"))]),
+                parameters: BTreeMap::from([(
+                    cadmpeg_core::nonblank_literal!("D1"),
+                    String::from("5mm"),
+                )]),
                 dimension_properties: BTreeMap::new(),
                 properties: BTreeMap::new(),
                 text: None,

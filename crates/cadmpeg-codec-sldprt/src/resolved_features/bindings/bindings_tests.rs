@@ -49,7 +49,9 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         content: Vec::new(),
     };
     let mut extrusion = native_feature("extrusion", "10", 0, "Cut-Extrude-Thin", "Extrusion", None);
-    extrusion.parameters.insert("D5".into(), "0.3".into());
+    extrusion
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D5"), "0.3".into());
     let mut child = native_feature(
         "profile-child",
         "11",
@@ -58,9 +60,10 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         "Sketch",
         Some("moProfileFeature_c"),
     );
-    child
-        .properties
-        .insert("Description".into(), child.name.clone());
+    child.properties.insert(
+        cadmpeg_core::nonblank_literal!("Description"),
+        child.name.clone(),
+    );
     let following = native_feature("following", "12", 2, "Following", "Feature", None);
     let attribute = native_feature(
         "attribute",
@@ -570,8 +573,8 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
         input_class: Some("moCirPattern_c".into()),
         suppressed: false,
         parameters: BTreeMap::from([
-            ("Angle".into(), "90deg".into()),
-            ("Count".into(), "4".into()),
+            (cadmpeg_core::nonblank_literal!("Angle"), "90deg".into()),
+            (cadmpeg_core::nonblank_literal!("Count"), "4".into()),
         ]),
         dimension_properties: BTreeMap::new(),
         properties: BTreeMap::new(),
@@ -810,10 +813,10 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         input_class: Some("mo3DProfileFeature_c".into()),
         suppressed: false,
         parameters: BTreeMap::from([
-            ("D1".into(), "10".into()),
-            ("D2".into(), "20".into()),
-            ("D3".into(), "30".into()),
-            ("Mode".into(), "authored".into()),
+            (cadmpeg_core::nonblank_literal!("D1"), "10".into()),
+            (cadmpeg_core::nonblank_literal!("D2"), "20".into()),
+            (cadmpeg_core::nonblank_literal!("D3"), "30".into()),
+            (cadmpeg_core::nonblank_literal!("Mode"), "authored".into()),
         ]),
         dimension_properties: BTreeMap::new(),
         properties: BTreeMap::new(),

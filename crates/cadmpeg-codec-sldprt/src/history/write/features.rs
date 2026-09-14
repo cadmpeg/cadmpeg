@@ -367,7 +367,7 @@ pub(crate) fn sync_neutral_features(
                         feature.id
                     ))
                 })?;
-            properties.insert("Scope".into(), scope.join(","));
+            properties.insert(cadmpeg_core::nonblank_literal!("Scope"), scope.join(","));
         }
         let ordinal = u32::try_from(feature.ordinal)
             .map_err(|_| CodecError::Malformed("feature ordinal exceeds u32".into()))?;

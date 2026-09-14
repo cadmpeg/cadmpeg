@@ -78,8 +78,8 @@ pub(crate) fn output_free_pattern_construction(feature: &cadmpeg_ir::features::F
             key == "primary_body_reference"
                 || key == "primary_body_object_index"
                 || key == "primary_body_data_block"
-                || key.starts_with("body_reference.")
-                || key.starts_with("body_reference_occurrence.")
+                || key.as_str().starts_with("body_reference.")
+                || key.as_str().starts_with("body_reference_occurrence.")
         })
 }
 
@@ -100,8 +100,8 @@ pub(crate) fn output_free_trim_surface_construction(
             key == "primary_body_reference"
                 || key == "primary_body_object_index"
                 || key == "primary_body_data_block"
-                || key.starts_with("body_reference.")
-                || key.starts_with("body_reference_occurrence.")
+                || key.as_str().starts_with("body_reference.")
+                || key.as_str().starts_with("body_reference_occurrence.")
         })
 }
 

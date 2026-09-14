@@ -382,14 +382,15 @@ pub(crate) fn enrich_history_extrusion_terminations(
         let Some(vote) = consensus_termination_vote(votes) else {
             continue;
         };
-        feature
-            .properties
-            .insert("EndCondition".into(), vote.condition().into());
+        feature.properties.insert(
+            cadmpeg_core::nonblank_literal!("EndCondition"),
+            vote.condition().into(),
+        );
         match vote {
             TerminationVote::ToVertex { reference } => {
                 feature
                     .properties
-                    .entry("Vertex".into())
+                    .entry(cadmpeg_core::nonblank_literal!("Vertex"))
                     .or_insert(reference);
             }
             TerminationVote::Face {
@@ -397,12 +398,16 @@ pub(crate) fn enrich_history_extrusion_terminations(
                     FaceReference::Lane { reference, .. } | FaceReference::Canonical(reference),
                 ..
             } => {
-                feature.properties.entry("Face".into()).or_insert(reference);
-            }
-            TerminationVote::BlindSecondThroughAll => {
                 feature
                     .properties
-                    .insert("EndCondition2".into(), "ThroughAll".into());
+                    .entry(cadmpeg_core::nonblank_literal!("Face"))
+                    .or_insert(reference);
+            }
+            TerminationVote::BlindSecondThroughAll => {
+                feature.properties.insert(
+                    cadmpeg_core::nonblank_literal!("EndCondition2"),
+                    "ThroughAll".into(),
+                );
             }
             TerminationVote::Blind {
                 depth_m: Some(depth_m),
@@ -410,7 +415,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                 && !feature.parameters.contains_key("Depth") =>
             {
                 feature.parameters.insert(
-                    "D1".into(),
+                    cadmpeg_core::nonblank_literal!("D1"),
                     crate::history::format_length_mm(depth_m * 1000.0),
                 );
             }
@@ -571,16 +576,16 @@ pub(crate) fn enrich_history_combine_selections(
         }
         feature
             .properties
-            .entry("Target".into())
+            .entry(cadmpeg_core::nonblank_literal!("Target"))
             .or_insert_with(|| first.0.clone());
         feature
             .properties
-            .entry("Tools".into())
+            .entry(cadmpeg_core::nonblank_literal!("Tools"))
             .or_insert_with(|| first.1.clone());
         if let Some(operation) = &first.2 {
             feature
                 .properties
-                .entry("Operation".into())
+                .entry(cadmpeg_core::nonblank_literal!("Operation"))
                 .or_insert_with(|| operation.clone());
         }
     }
@@ -727,7 +732,9 @@ pub(crate) fn enrich_history_sweep_paths(
             continue;
         };
         if votes.iter().all(|vote| vote.as_ref() == Some(first)) {
-            feature.properties.insert("Path".into(), first.clone());
+            feature
+                .properties
+                .insert(cadmpeg_core::nonblank_literal!("Path"), first.clone());
         }
     }
 }

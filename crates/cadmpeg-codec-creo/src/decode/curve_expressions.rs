@@ -492,7 +492,7 @@ pub(crate) fn transfer_curve_expression_features(
                     }
                 }),
                 dependencies: dependencies.into_iter().collect(),
-                properties,
+                properties: cadmpeg_core::text::named_entries(properties),
                 pmi: None,
                 native_ref: Some(curve_expression_record_id(record)),
             });
@@ -559,7 +559,7 @@ pub(crate) fn transfer_curve_expression_features(
                 let helix = helix?;
                 Some(IrFeatureDefinition::Operation(
                     IrFeatureOperation::HelixNativeAxis {
-                        axis_native_ref: cadmpeg_ir::NonBlankString::new(
+                        axis_native_ref: cadmpeg_core::text::NonBlankString::new(
                             curve_expression_record_id(record),
                         )?,
                         axial_rise: Length::new(helix.height)?,
@@ -574,9 +574,12 @@ pub(crate) fn transfer_curve_expression_features(
                 IrFeatureDefinition::Operation(IrFeatureOperation::Native {
                     kind: "CurveFromEquation".into(),
                     parameters: BTreeMap::from([
-                        ("entity_id".to_string(), record.entity_id.to_string()),
                         (
-                            "assignment_count".to_string(),
+                            cadmpeg_core::nonblank_literal!("entity_id"),
+                            record.entity_id.to_string(),
+                        ),
+                        (
+                            cadmpeg_core::nonblank_literal!("assignment_count"),
                             record.assignments.len().to_string(),
                         ),
                     ]),

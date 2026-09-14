@@ -2,8 +2,8 @@
 //! Protein state and its owned package entries on the native wire.
 
 use cadmpeg_container::ZipCompression;
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
-use cadmpeg_ir::products::NonBlankString;
 use serde::{de::Error as _, Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -75,7 +75,7 @@ fn hatch_record(archive: ArchiveVersion, userdata: &[u8]) -> Vec<u8> {
 
 fn hatch_parameters(
     result: &cadmpeg_ir::codec::DecodeResult,
-) -> &std::collections::BTreeMap<String, String> {
+) -> &std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String> {
     result
         .ir()
         .model

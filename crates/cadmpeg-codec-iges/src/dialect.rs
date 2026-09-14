@@ -162,15 +162,15 @@ pub(crate) fn classify(representation: Representation, global: &ResolvedGlobal) 
     let recovery = global.dialect_recovery();
     let mut declared = BTreeMap::new();
     declared.insert(
-        DECLARED_REPRESENTATION.into(),
+        cadmpeg_core::nonblank_const!(DECLARED_REPRESENTATION),
         representation.as_str().into(),
     );
     declared.insert(
-        DECLARED_VERSION_FLAG.into(),
+        cadmpeg_core::nonblank_const!(DECLARED_VERSION_FLAG),
         global.declared_version_flag().to_string(),
     );
     declared.insert(
-        DECLARED_EFFECTIVE_VERSION.into(),
+        cadmpeg_core::nonblank_const!(DECLARED_EFFECTIVE_VERSION),
         global.version_name().to_owned(),
     );
     if matches!(
@@ -178,12 +178,15 @@ pub(crate) fn classify(representation: Representation, global: &ResolvedGlobal) 
         DialectRecovery::Unverified(UnverifiedDialectRecovery::Clamped)
     ) {
         declared.insert(
-            DECLARED_EFFECTIVE_VERSION_FLAG.into(),
+            cadmpeg_core::nonblank_const!(DECLARED_EFFECTIVE_VERSION_FLAG),
             global.effective_version_flag().to_string(),
         );
     }
     if let Some(text) = global.unreadable_version_declaration() {
-        declared.insert(DECLARED_VERSION_FLAG_DECLARATION.into(), text.to_owned());
+        declared.insert(
+            cadmpeg_core::nonblank_const!(DECLARED_VERSION_FLAG_DECLARATION),
+            text.to_owned(),
+        );
     }
     if matches!(recovery, DialectRecovery::Verified) {
         DialectMatch::admitted(dialect)

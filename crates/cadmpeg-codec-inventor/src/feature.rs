@@ -7,10 +7,10 @@ use crate::pmdc::unique_by;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::FeatureResultTopologyId;
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::products::NonBlankString;
 use cadmpeg_ir::sketches::Sketch;
 use cadmpeg_ir::{
     features::{
@@ -1541,7 +1541,7 @@ fn feature_result(
         .map(|reference| {
             let body = resolve_property(&source.identity.segment_token, reference.index, index)?;
             matches!(body.kind, PmDcFeaturePropertyKind::SurfaceBody { .. })
-                .then(|| cadmpeg_ir::products::NonBlankString::new(body.id()))
+                .then(|| cadmpeg_core::text::NonBlankString::new(body.id()))
                 .flatten()
         })
         .collect::<Option<Vec<_>>>()?;
@@ -1708,12 +1708,16 @@ fn boolean_properties(
     source: &PmDcFeature,
     slots: &[usize],
     index: &ProjectionIndex<'_>,
-) -> BTreeMap<String, String> {
+) -> BTreeMap<cadmpeg_core::text::NonBlankString, String> {
     slots
         .iter()
         .filter_map(|slot| {
-            boolean(source, *slot, index)
-                .map(|value| (format!("property_{slot}_boolean"), value.to_string()))
+            boolean(source, *slot, index).map(|value| {
+                (
+                    cadmpeg_core::nonblank_literal!("property_{slot}_boolean"),
+                    value.to_string(),
+                )
+            })
         })
         .collect()
 }

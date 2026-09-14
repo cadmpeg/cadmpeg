@@ -112,7 +112,10 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
         name: None,
         suppressed: Some(false),
         dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-        source_properties: BTreeMap::from([("Scope".into(), "Body1".into())]),
+        source_properties: BTreeMap::from([(
+            cadmpeg_core::nonblank_literal!("Scope"),
+            "Body1".into(),
+        )]),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
@@ -504,7 +507,10 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
         cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
             cadmpeg_core::dialect::DialectId::pinned("sldprt:test"),
         )),
-        BTreeMap::from([("sw_configuration_0_needs_update".into(), "YES".into())]),
+        BTreeMap::from([(
+            cadmpeg_core::nonblank_literal!("sw_configuration_0_needs_update"),
+            "YES".into(),
+        )]),
     ));
     report.losses.clear();
     append_design_losses(&ir, &mut report);

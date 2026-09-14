@@ -126,7 +126,7 @@ fn encoder_writes_source_less_neutral_configurations() {
         source_index: None,
         name: Some("Metric".to_string()),
         material: Some("Steel".into()),
-        properties: BTreeMap::from([("Finish".into(), "Ground".into())]),
+        properties: BTreeMap::from([(cadmpeg_core::nonblank_literal!("Finish"), "Ground".into())]),
         bodies: Some((vec![ir.model.bodies[0].id.clone()]).try_into().unwrap()),
         parameter_values: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
@@ -651,7 +651,10 @@ fn encoder_writes_source_less_neutral_parameters() {
         name: Some("Equation".into()),
         suppressed: Some(false),
         dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-        source_properties: BTreeMap::from([("EquationSet".into(), "Global".into())]),
+        source_properties: BTreeMap::from([(
+            cadmpeg_core::nonblank_literal!("EquationSet"),
+            "Global".into(),
+        )]),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
@@ -659,7 +662,10 @@ fn encoder_writes_source_less_neutral_parameters() {
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "EquationDriven".into(),
-                parameters: BTreeMap::from([("Pitch".into(), "D1@Sketch1 * 2".into())]),
+                parameters: BTreeMap::from([(
+                    cadmpeg_core::nonblank_literal!("Pitch"),
+                    "D1@Sketch1 * 2".into(),
+                )]),
             }),
         ),
         native_ref: None,
@@ -1557,7 +1563,7 @@ fn semantic_writer_applies_neutral_configuration_edits() {
         configuration.material = Some("Aluminum".into());
         configuration
             .properties
-            .insert("Finish".into(), "Anodized".into());
+            .insert(cadmpeg_core::nonblank_literal!("Finish"), "Anodized".into());
     }
 
     let mut encoded = Vec::new();

@@ -1333,7 +1333,7 @@ fn bind_detached_spatial_relation_objects(
             let dimensions = feature
                 .parameters
                 .iter()
-                .filter(|(name, _)| is_dimension_name(name))
+                .filter(|(name, _)| is_dimension_name(name.as_str()))
                 .map(|(name, value)| {
                     Some((
                         name.as_str(),

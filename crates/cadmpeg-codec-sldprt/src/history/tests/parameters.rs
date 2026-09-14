@@ -9,10 +9,15 @@ use crate::records::FeatureSource;
 #[test]
 fn repeated_aliases_from_one_parameter_remain_unambiguous() {
     let mut owner = feature("owner", Some("1"), 0);
-    owner.parameters.insert("Width".into(), "4mm".into());
+    owner
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("Width"), "4mm".into());
     owner.dimension_properties.insert(
         "Width".into(),
-        BTreeMap::from([("EquationId".into(), "Width".into())]),
+        BTreeMap::from([(
+            cadmpeg_core::nonblank_literal!("EquationId"),
+            "Width".into(),
+        )]),
     );
     let parameters = project_parameters(&[FeatureHistory {
         id: "history".into(),
@@ -37,9 +42,15 @@ fn repeated_aliases_from_one_parameter_remain_unambiguous() {
 fn project_parameters_preserves_composite_txd_text_without_hiding_bad_equations() {
     let mut owner = feature("owner", Some("1"), 0);
     owner.parameters = BTreeMap::from([
-        ("TXD1".into(), "4X <MOD-DIAM> 12 <HOLE-DEPTH> 40".into()),
-        ("TXD2".into(), "<MOD-DIAM>4".into()),
-        ("D1".into(), "1 +".into()),
+        (
+            cadmpeg_core::nonblank_literal!("TXD1"),
+            "4X <MOD-DIAM> 12 <HOLE-DEPTH> 40".into(),
+        ),
+        (
+            cadmpeg_core::nonblank_literal!("TXD2"),
+            "<MOD-DIAM>4".into(),
+        ),
+        (cadmpeg_core::nonblank_literal!("D1"), "1 +".into()),
     ]);
     let parameters = project_parameters(&[FeatureHistory {
         id: "history".into(),
@@ -157,9 +168,12 @@ fn subtraction_separates_unquoted_parameter_references() {
 fn numeric_literals_do_not_bind_numeric_parameter_names() {
     let mut owner = feature("owner", Some("1"), 0);
     owner.parameters = BTreeMap::from([
-        ("4".into(), "3mm".into()),
-        ("Literal".into(), "4".into()),
-        ("Reference".into(), "\"4\" * 2".into()),
+        (cadmpeg_core::nonblank_literal!("4"), "3mm".into()),
+        (cadmpeg_core::nonblank_literal!("Literal"), "4".into()),
+        (
+            cadmpeg_core::nonblank_literal!("Reference"),
+            "\"4\" * 2".into(),
+        ),
     ]);
     let parameters = project_parameters(&[FeatureHistory {
         id: "history".into(),
@@ -195,9 +209,9 @@ fn numeric_literals_do_not_bind_numeric_parameter_names() {
 fn subtraction_projects_both_parameter_dependencies() {
     let mut owner = feature("owner", Some("1"), 0);
     owner.parameters = BTreeMap::from([
-        ("A".into(), "7".into()),
-        ("B".into(), "2".into()),
-        ("C".into(), "A-B".into()),
+        (cadmpeg_core::nonblank_literal!("A"), "7".into()),
+        (cadmpeg_core::nonblank_literal!("B"), "2".into()),
+        (cadmpeg_core::nonblank_literal!("C"), "A-B".into()),
     ]);
     let parameters = project_parameters(&[FeatureHistory {
         id: "history".into(),
@@ -218,9 +232,13 @@ fn subtraction_projects_both_parameter_dependencies() {
 #[test]
 fn unqualified_aliases_are_local_to_the_expression_owner() {
     let mut first = feature("first", Some("1"), 0);
-    first.parameters.insert("Width".into(), "4mm".into());
+    first
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("Width"), "4mm".into());
     let mut second = feature("second", Some("2"), 1);
-    second.parameters.insert("Width".into(), "5mm".into());
+    second
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("Width"), "5mm".into());
     let parameters = project_parameters(&[FeatureHistory {
         id: "history".into(),
         part_name: None,
@@ -264,11 +282,14 @@ fn unqualified_aliases_are_local_to_the_expression_owner() {
 fn equation_driven_parameters_are_global() {
     let mut equations = feature("equations", Some("1"), 0);
     equations.kind = "EquationDriven".into();
-    equations.parameters.insert("Width".into(), "4mm".into());
-    let mut consumer = feature("consumer", Some("2"), 1);
-    consumer
+    equations
         .parameters
-        .insert("Result".into(), "Width * 2".into());
+        .insert(cadmpeg_core::nonblank_literal!("Width"), "4mm".into());
+    let mut consumer = feature("consumer", Some("2"), 1);
+    consumer.parameters.insert(
+        cadmpeg_core::nonblank_literal!("Result"),
+        "Width * 2".into(),
+    );
 
     let parameters = project_parameters(&[FeatureHistory {
         id: "history".into(),
@@ -292,11 +313,14 @@ fn equation_driven_parameters_are_global() {
 #[test]
 fn ordinary_feature_parameters_do_not_leak_globally() {
     let mut source = feature("source", Some("1"), 0);
-    source.parameters.insert("Width".into(), "4mm".into());
-    let mut consumer = feature("consumer", Some("2"), 1);
-    consumer
+    source
         .parameters
-        .insert("Result".into(), "Width * 2".into());
+        .insert(cadmpeg_core::nonblank_literal!("Width"), "4mm".into());
+    let mut consumer = feature("consumer", Some("2"), 1);
+    consumer.parameters.insert(
+        cadmpeg_core::nonblank_literal!("Result"),
+        "Width * 2".into(),
+    );
 
     let parameters = project_parameters(&[FeatureHistory {
         id: "history".into(),
@@ -315,11 +339,16 @@ fn ordinary_feature_parameters_do_not_leak_globally() {
 fn local_parameter_precedes_same_named_global() {
     let mut equations = feature("equations", Some("1"), 0);
     equations.kind = "EquationDriven".into();
-    equations.parameters.insert("Width".into(), "4mm".into());
+    equations
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("Width"), "4mm".into());
     let mut consumer = feature("consumer", Some("2"), 1);
     consumer.parameters = BTreeMap::from([
-        ("Width".into(), "5mm".into()),
-        ("Result".into(), "Width * 2".into()),
+        (cadmpeg_core::nonblank_literal!("Width"), "5mm".into()),
+        (
+            cadmpeg_core::nonblank_literal!("Result"),
+            "Width * 2".into(),
+        ),
     ]);
 
     let parameters = project_parameters(&[FeatureHistory {
@@ -346,7 +375,9 @@ fn ambiguous_and_missing_history_references_do_not_bind_arbitrarily() {
     let first = feature("first", Some("1"), 0);
     let second = feature("second", Some("1"), 1);
     let mut dependent = feature("dependent", Some("2"), 2);
-    dependent.properties.insert("Dependency".into(), "1".into());
+    dependent
+        .properties
+        .insert(cadmpeg_core::nonblank_literal!("Dependency"), "1".into());
     let mut malformed = feature("malformed", Some("3"), 3);
     malformed.tree_parent = Some(crate::records::TreeParent::Source(
         FeatureSource::from_value(9_999).expect("test feature source id"),

@@ -119,7 +119,7 @@ mod tests {
                 DialectLayers::of(
                     DialectMatch::refused(DialectId::pinned("acis:save-format-binary-other"))
                         .with_declared(BTreeMap::from([(
-                            "save_format".to_owned(),
+                            crate::nonblank_literal!("save_format"),
                             "700".to_owned(),
                         )])),
                 )

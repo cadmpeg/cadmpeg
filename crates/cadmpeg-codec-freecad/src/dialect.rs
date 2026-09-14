@@ -153,13 +153,19 @@ impl FcstdDialect {
     pub(crate) fn classify(document: &DocumentFacts, schema_version: &str) -> DialectMatch {
         let dialect = Self::from_schema_version(schema_version);
         let mut declared = BTreeMap::new();
-        declared.insert(DECLARED_SCHEMA_VERSION.into(), schema_version.to_owned());
         declared.insert(
-            DECLARED_FILE_VERSION.into(),
+            cadmpeg_core::nonblank_const!(DECLARED_SCHEMA_VERSION),
+            schema_version.to_owned(),
+        );
+        declared.insert(
+            cadmpeg_core::nonblank_const!(DECLARED_FILE_VERSION),
             document.file_version.as_str().to_owned(),
         );
         if let Some(version) = &document.program_version {
-            declared.insert(DECLARED_PROGRAM_VERSION.into(), version.clone());
+            declared.insert(
+                cadmpeg_core::nonblank_const!(DECLARED_PROGRAM_VERSION),
+                version.clone(),
+            );
         }
         if dialect == Self::Unknown {
             DialectMatch::unverified(dialect.id(), Grammar::of(&Self::NEAREST_VERIFIED.id()))

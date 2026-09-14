@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native owner-chart carriers, bridge references, and alias bindings.
 
-use cadmpeg_ir::products::NonBlankString;
+use cadmpeg_core::text::NonBlankString;
 
 use crate::checked::PositiveFinite;
 use serde::{Deserialize, Serialize};

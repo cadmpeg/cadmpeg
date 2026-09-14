@@ -39,7 +39,7 @@ pub(crate) fn cgm_source_key(
 ) -> Result<SourceObjectAssociation, cadmpeg_core::CodecError> {
     Ok(SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
-        object_id: cadmpeg_ir::products::NonBlankString::new(format!("cgm-{kind}:{key}"))
+        object_id: cadmpeg_core::text::NonBlankString::new(format!("cgm-{kind}:{key}"))
             .ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed("source object_id must not be empty")
             })?,
@@ -440,63 +440,87 @@ pub(crate) struct GeometryReportCounts {
 
 pub(crate) fn source_meta(scan: &ContainerScan, matched: &DialectMatch) -> SourceMeta {
     let mut attributes = BTreeMap::new();
-    attributes.insert("file_size".to_string(), scan.data.len().to_string());
     attributes.insert(
-        "outer_dir_offset".to_string(),
+        cadmpeg_core::nonblank_literal!("file_size"),
+        scan.data.len().to_string(),
+    );
+    attributes.insert(
+        cadmpeg_core::nonblank_literal!("outer_dir_offset"),
         scan.outer_dir_offset.to_string(),
     );
     if let Some(dir) = &scan.inner {
-        attributes.insert("inner_offset".to_string(), dir.inner.to_string());
         attributes.insert(
-            "stream_count".to_string(),
+            cadmpeg_core::nonblank_literal!("inner_offset"),
+            dir.inner.to_string(),
+        );
+        attributes.insert(
+            cadmpeg_core::nonblank_literal!("stream_count"),
             dir.descriptors.len().to_string(),
         );
     }
     if let Some(brep) = &scan.brep {
-        attributes.insert("brep_stream_len".to_string(), brep.len().to_string());
-        attributes.insert("brep_stream_sha256".to_string(), sha256_hex(brep));
-        attributes.insert("fbb_runs".to_string(), scan.census.fbb_runs.to_string());
         attributes.insert(
-            "fbb_face_rows".to_string(),
+            cadmpeg_core::nonblank_literal!("brep_stream_len"),
+            brep.len().to_string(),
+        );
+        attributes.insert(
+            cadmpeg_core::nonblank_literal!("brep_stream_sha256"),
+            sha256_hex(brep),
+        );
+        attributes.insert(
+            cadmpeg_core::nonblank_literal!("fbb_runs"),
+            scan.census.fbb_runs.to_string(),
+        );
+        attributes.insert(
+            cadmpeg_core::nonblank_literal!("fbb_face_rows"),
             scan.census.fbb_face_rows.to_string(),
         );
         attributes.insert(
-            "vertex_records".to_string(),
+            cadmpeg_core::nonblank_literal!("vertex_records"),
             scan.census.vertex_markers.to_string(),
         );
     }
-    attributes.insert("preview_count".to_string(), scan.previews.len().to_string());
+    attributes.insert(
+        cadmpeg_core::nonblank_literal!("preview_count"),
+        scan.previews.len().to_string(),
+    );
     for (index, preview) in scan.previews.iter().enumerate() {
-        attributes.insert(format!("preview_{index}_width"), preview.width.to_string());
         attributes.insert(
-            format!("preview_{index}_height"),
+            cadmpeg_core::nonblank_literal!("preview_{index}_width"),
+            preview.width.to_string(),
+        );
+        attributes.insert(
+            cadmpeg_core::nonblank_literal!("preview_{index}_height"),
             preview.height.to_string(),
         );
         attributes.insert(
-            format!("preview_{index}_components"),
+            cadmpeg_core::nonblank_literal!("preview_{index}_components"),
             preview.components.to_string(),
         );
     }
     attributes.insert(
-        "external_reference_count".to_string(),
+        cadmpeg_core::nonblank_literal!("external_reference_count"),
         scan.external_references.len().to_string(),
     );
     for (index, reference) in scan.external_references.iter().enumerate() {
         attributes.insert(
-            format!("external_reference_{index}"),
+            cadmpeg_core::nonblank_literal!("external_reference_{index}"),
             reference.target.clone(),
         );
     }
     attributes.insert(
-        "finjpl_segment_count".to_string(),
+        cadmpeg_core::nonblank_literal!("finjpl_segment_count"),
         scan.finjpl_segments.len().to_string(),
     );
     for (index, segment) in scan.finjpl_segments.iter().enumerate() {
         if let Some(name) = &segment.name {
-            attributes.insert(format!("finjpl_segment_{index}_name"), name.clone());
+            attributes.insert(
+                cadmpeg_core::nonblank_literal!("finjpl_segment_{index}_name"),
+                name.clone(),
+            );
         }
         attributes.insert(
-            format!("finjpl_segment_{index}_type"),
+            cadmpeg_core::nonblank_literal!("finjpl_segment_{index}_type"),
             format!("0x{:08x}", segment.type_word),
         );
     }

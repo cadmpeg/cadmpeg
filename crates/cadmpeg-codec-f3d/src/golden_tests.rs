@@ -521,7 +521,7 @@ fn generated_container_snapshot(bytes: &[u8]) -> String {
     };
     if let Some(source) = ir.source.as_mut() {
         for (key, value) in &mut source.attributes {
-            if key.ends_with("_sha256") {
+            if key.as_str().ends_with("_sha256") {
                 cadmpeg_test_support::golden::ELIDED_DIGEST.clone_into(value);
             }
         }

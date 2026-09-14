@@ -446,9 +446,11 @@ pub const ELIDED_DIGEST: &str = "<elided: digest over tolerantly compared geomet
 ///
 /// `_local_sha256` digests cover decoded content and are machine-local. Digests
 /// over retained source bytes omit the suffix and stay pinned.
-pub fn elide_local_digests(attributes: &mut std::collections::BTreeMap<String, String>) {
+pub fn elide_local_digests(
+    attributes: &mut std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+) {
     for (key, value) in attributes.iter_mut() {
-        if is_local_digest_attribute(key) {
+        if is_local_digest_attribute(key.as_str()) {
             ELIDED_DIGEST.clone_into(value);
         }
     }

@@ -187,13 +187,18 @@ fn a_container_only_strict_decode_keeps_its_losses_and_is_admitted() {
 #[test]
 fn a_decode_result_stamps_every_source_dialect_layer_onto_the_report() {
     let mut ir = unit_cube();
-    let primary = dialect_layer("test:only")
-        .with_declared(BTreeMap::from([("version".into(), "only".into())]));
+    let primary = dialect_layer("test:only").with_declared(BTreeMap::from([(
+        cadmpeg_core::nonblank_literal!("version"),
+        "only".into(),
+    )]));
     let layers = DialectLayers::of(primary.clone())
         .with(dialect_layer("acis:save-format-217").with_instance("body.sab"));
     ir.source = Some(crate::SourceMeta::classified(
         layers.clone(),
-        BTreeMap::from([("attribute".into(), "retained".into())]),
+        BTreeMap::from([(
+            cadmpeg_core::nonblank_literal!("attribute"),
+            "retained".into(),
+        )]),
     ));
 
     let result = decode_result(ir);

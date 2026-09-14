@@ -2,12 +2,12 @@
 //! Neutral planar sketches, solved entities, and geometric constraints.
 
 use crate::math::{Point2, Point3, Vector3};
-use crate::products::NonBlankString;
 use crate::transform::Transform;
 use crate::{
     features::ParameterId,
     scalar::{Angle, Length},
 };
+use cadmpeg_core::text::NonBlankString;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -3023,12 +3023,12 @@ pub enum SketchConstraintDefinitionInput {
 
 crate::units::named_field!(
     deserialize_object,
-    crate::products::NonBlankString,
+    cadmpeg_core::text::NonBlankString,
     "object"
 );
 crate::units::named_field!(
     deserialize_native_kind,
-    crate::products::NonBlankString,
+    cadmpeg_core::text::NonBlankString,
     "native_kind"
 );
 

@@ -4696,7 +4696,7 @@ fn display_jt_tessellation_rows(
                 .ok()?
                 .with_source_object(Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Nx,
-                    object_id: cadmpeg_ir::products::NonBlankString::new(shape_node.id.clone())?,
+                    object_id: cadmpeg_core::text::NonBlankString::new(shape_node.id.clone())?,
                     name: None,
                     color,
                     visible: None,

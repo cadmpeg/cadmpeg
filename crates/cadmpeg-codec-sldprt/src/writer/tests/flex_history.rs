@@ -1011,7 +1011,10 @@ fn encoder_writes_source_less_native_features() {
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "BossExtrude".into(),
-                parameters: BTreeMap::from([("Depth".into(), "25mm".into())]),
+                parameters: BTreeMap::from([(
+                    cadmpeg_core::nonblank_literal!("Depth"),
+                    "25mm".into(),
+                )]),
             }),
         ),
         native_ref: None,

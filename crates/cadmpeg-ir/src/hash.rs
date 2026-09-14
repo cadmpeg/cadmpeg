@@ -615,10 +615,13 @@ mod tests {
             ),
             [
                 (
-                    DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.to_owned(),
+                    cadmpeg_core::nonblank_const!(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
                     "stale".to_owned(),
                 ),
-                ("file_size".to_owned(), "4096".to_owned()),
+                (
+                    cadmpeg_core::nonblank_literal!("file_size"),
+                    "4096".to_owned(),
+                ),
             ]
             .into_iter()
             .collect(),
@@ -742,10 +745,13 @@ mod tests {
             ),
             [
                 (
-                    DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.to_owned(),
+                    cadmpeg_core::nonblank_const!(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
                     "stale".to_owned(),
                 ),
-                ("active_brep".to_owned(), "body#0".to_owned()),
+                (
+                    cadmpeg_core::nonblank_literal!("active_brep"),
+                    "body#0".to_owned(),
+                ),
             ]
             .into_iter()
             .collect(),
@@ -807,12 +813,10 @@ mod tests {
         let hash = crate::hash::document_local_sha256(&ir, "synthetic", source_image).unwrap();
 
         let (mut recorded, _source_fidelity) = local_digest_fixture();
-        recorded
-            .source
-            .as_mut()
-            .unwrap()
-            .attributes
-            .insert(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(), hash.clone());
+        recorded.source.as_mut().unwrap().attributes.insert(
+            cadmpeg_core::nonblank_const!(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
+            hash.clone(),
+        );
         assert_eq!(
             crate::hash::document_local_sha256(&recorded, "synthetic", source_image).unwrap(),
             hash

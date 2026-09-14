@@ -402,7 +402,7 @@ pub fn project_configurations(
                 source_index: None,
                 name: name.clone().into(),
                 material,
-                properties,
+                properties: cadmpeg_core::text::named_entries(properties),
                 parameter_overrides: BTreeMap::new(),
                 parameter_values: BTreeMap::new(),
                 feature_states: BTreeMap::new(),
@@ -439,7 +439,7 @@ pub fn project_configurations(
             continue;
         }
         configuration.properties.insert(
-            format!("activation_rule:{}", rule.entry_name()),
+            cadmpeg_core::nonblank_literal!("activation_rule:{}", rule.entry_name()),
             condition.to_owned(),
         );
     }
@@ -457,7 +457,7 @@ pub fn bind_configuration_parameter_overrides(
         let override_names = configuration
             .properties
             .keys()
-            .filter_map(|key| key.strip_prefix("parameter:"))
+            .filter_map(|key| key.as_str().strip_prefix("parameter:"))
             .map(str::to_owned)
             .collect::<Vec<_>>();
         for name in override_names {
@@ -471,7 +471,7 @@ pub fn bind_configuration_parameter_overrides(
             let key = format!("parameter:{name}");
             let expression = configuration
                 .properties
-                .remove(&key)
+                .remove(key.as_str())
                 .expect("configuration override key came from this map");
             configuration
                 .parameter_overrides
@@ -490,7 +490,7 @@ pub fn bind_configuration_suppressed_features(
         let names = configuration
             .properties
             .keys()
-            .filter_map(|key| key.strip_prefix("suppressed:"))
+            .filter_map(|key| key.as_str().strip_prefix("suppressed:"))
             .map(str::to_owned)
             .collect::<Vec<_>>();
         for name in names {
@@ -505,7 +505,7 @@ pub fn bind_configuration_suppressed_features(
             }
             configuration
                 .properties
-                .remove(&format!("suppressed:{name}"));
+                .remove(format!("suppressed:{name}").as_str());
             configuration.feature_states.insert(
                 feature.id.clone(),
                 cadmpeg_ir::features::ConfigurationFeatureState {
@@ -524,7 +524,7 @@ pub(crate) fn unresolved_configuration_parameter_override_count(
     projected
         .iter()
         .flat_map(|configuration| configuration.properties.keys())
-        .filter(|key| key.starts_with("parameter:"))
+        .filter(|key| key.as_str().starts_with("parameter:"))
         .count()
 }
 
@@ -534,7 +534,7 @@ pub(crate) fn unresolved_configuration_suppressed_feature_count(
     projected
         .iter()
         .flat_map(|configuration| configuration.properties.keys())
-        .filter(|key| key.starts_with("suppressed:"))
+        .filter(|key| key.as_str().starts_with("suppressed:"))
         .count()
 }
 
@@ -549,7 +549,7 @@ pub(crate) fn unresolved_configuration_rule_count(
             !projected.iter().any(|configuration| {
                 configuration
                     .properties
-                    .contains_key(&format!("activation_rule:{}", rule.entry_name()))
+                    .contains_key(format!("activation_rule:{}", rule.entry_name()).as_str())
             })
         })
         .count()

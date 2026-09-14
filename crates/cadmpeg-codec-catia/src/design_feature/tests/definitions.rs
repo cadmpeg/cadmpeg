@@ -94,43 +94,43 @@ fn transfers_exact_definition_values_as_typed_feature_properties() {
         &ir.model.features[0].source_properties,
         &BTreeMap::from([
             (
-                "catia_definition_value_0_definition_entry".to_string(),
+                cadmpeg_core::nonblank_literal!("catia_definition_value_0_definition_entry"),
                 "definition-entry".to_string(),
             ),
             (
-                "catia_definition_value_0_definition_offset".to_string(),
+                cadmpeg_core::nonblank_literal!("catia_definition_value_0_definition_offset"),
                 "4".to_string(),
             ),
             (
-                "catia_definition_value_0_definition_ordinal".to_string(),
+                cadmpeg_core::nonblank_literal!("catia_definition_value_0_definition_ordinal"),
                 "2".to_string(),
             ),
             (
-                "catia_definition_value_0_definition_value".to_string(),
+                cadmpeg_core::nonblank_literal!("catia_definition_value_0_definition_value"),
                 "Mirror".to_string(),
             ),
             (
-                "catia_definition_value_0_entity".to_string(),
+                cadmpeg_core::nonblank_literal!("catia_definition_value_0_entity"),
                 "definition-entity".to_string(),
             ),
             (
-                "catia_definition_value_0_payload_encoding".to_string(),
+                cadmpeg_core::nonblank_literal!("catia_definition_value_0_payload_encoding"),
                 "direct".to_string(),
             ),
             (
-                "catia_definition_value_0_payload_evaluation".to_string(),
+                cadmpeg_core::nonblank_literal!("catia_definition_value_0_payload_evaluation"),
                 "scalar".to_string(),
             ),
             (
-                "catia_definition_value_0_payload_evaluation_bits".to_string(),
+                cadmpeg_core::nonblank_literal!("catia_definition_value_0_payload_evaluation_bits"),
                 format!("{:016x}", 12.5_f64.to_bits()),
             ),
             (
-                "catia_definition_value_0_payload_kind".to_string(),
+                cadmpeg_core::nonblank_literal!("catia_definition_value_0_payload_kind"),
                 "evaluation".to_string(),
             ),
             (
-                "catia_definition_value_0_payload_opcode_offset".to_string(),
+                cadmpeg_core::nonblank_literal!("catia_definition_value_0_payload_opcode_offset"),
                 "8".to_string(),
             ),
         ])
@@ -240,55 +240,59 @@ fn transfers_exact_definition_chains_as_typed_feature_properties() {
         &ir.model.features[0].source_properties,
         &BTreeMap::from([
             (
-                "catia_definition_chain_value_0_entity".to_string(),
+                cadmpeg_core::nonblank_literal!("catia_definition_chain_value_0_entity"),
                 "definition-chain-entity".to_string(),
             ),
             (
-                "catia_definition_chain_value_0_role_entry".to_string(),
+                cadmpeg_core::nonblank_literal!("catia_definition_chain_value_0_role_entry"),
                 "role-entry".to_string(),
             ),
             (
-                "catia_definition_chain_value_0_role_offset".to_string(),
+                cadmpeg_core::nonblank_literal!("catia_definition_chain_value_0_role_offset"),
                 "8".to_string(),
             ),
             (
-                "catia_definition_chain_value_0_role_ordinal".to_string(),
+                cadmpeg_core::nonblank_literal!("catia_definition_chain_value_0_role_ordinal"),
                 "3".to_string(),
             ),
             (
-                "catia_definition_chain_value_0_role_value".to_string(),
+                cadmpeg_core::nonblank_literal!("catia_definition_chain_value_0_role_value"),
                 "UnsupportedRole".to_string(),
             ),
             (
-                "catia_definition_chain_value_0_selector_entry".to_string(),
+                cadmpeg_core::nonblank_literal!("catia_definition_chain_value_0_selector_entry"),
                 "selector-entry".to_string(),
             ),
             (
-                "catia_definition_chain_value_0_selector_offset".to_string(),
+                cadmpeg_core::nonblank_literal!("catia_definition_chain_value_0_selector_offset"),
                 "4".to_string(),
             ),
             (
-                "catia_definition_chain_value_0_selector_ordinal".to_string(),
+                cadmpeg_core::nonblank_literal!("catia_definition_chain_value_0_selector_ordinal"),
                 "2".to_string(),
             ),
             (
-                "catia_definition_chain_value_0_selector_value".to_string(),
+                cadmpeg_core::nonblank_literal!("catia_definition_chain_value_0_selector_value"),
                 "Length".to_string(),
             ),
             (
-                "catia_definition_chain_value_0_value_evaluation".to_string(),
+                cadmpeg_core::nonblank_literal!("catia_definition_chain_value_0_value_evaluation"),
                 "scalar".to_string(),
             ),
             (
-                "catia_definition_chain_value_0_value_evaluation_bits".to_string(),
+                cadmpeg_core::nonblank_literal!(
+                    "catia_definition_chain_value_0_value_evaluation_bits"
+                ),
                 format!("{:016x}", 12.5_f64.to_bits()),
             ),
             (
-                "catia_definition_chain_value_0_value_kind".to_string(),
+                cadmpeg_core::nonblank_literal!("catia_definition_chain_value_0_value_kind"),
                 "evaluation".to_string(),
             ),
             (
-                "catia_definition_chain_value_0_value_opcode_offset".to_string(),
+                cadmpeg_core::nonblank_literal!(
+                    "catia_definition_chain_value_0_value_opcode_offset"
+                ),
                 "12".to_string(),
             ),
         ])
@@ -388,47 +392,47 @@ fn transfers_definition_chains_from_exact_operation_owner_descendants() {
         &ir.model.features[0].source_properties,
         &BTreeMap::from([
             (
-                "catia_definition_chain_value_0_entity".to_string(),
+                cadmpeg_core::nonblank_literal!("catia_definition_chain_value_0_entity"),
                 "descendant-chain-entity".to_string(),
             ),
             (
-                "catia_definition_chain_value_0_role_entry".to_string(),
+                cadmpeg_core::nonblank_literal!("catia_definition_chain_value_0_role_entry"),
                 "role-entry".to_string(),
             ),
             (
-                "catia_definition_chain_value_0_role_offset".to_string(),
+                cadmpeg_core::nonblank_literal!("catia_definition_chain_value_0_role_offset"),
                 "7".to_string(),
             ),
             (
-                "catia_definition_chain_value_0_role_ordinal".to_string(),
+                cadmpeg_core::nonblank_literal!("catia_definition_chain_value_0_role_ordinal"),
                 "5".to_string(),
             ),
             (
-                "catia_definition_chain_value_0_role_value".to_string(),
+                cadmpeg_core::nonblank_literal!("catia_definition_chain_value_0_role_value"),
                 "UnsupportedRole".to_string(),
             ),
             (
-                "catia_definition_chain_value_0_selector_entry".to_string(),
+                cadmpeg_core::nonblank_literal!("catia_definition_chain_value_0_selector_entry"),
                 "selector-entry".to_string(),
             ),
             (
-                "catia_definition_chain_value_0_selector_offset".to_string(),
+                cadmpeg_core::nonblank_literal!("catia_definition_chain_value_0_selector_offset"),
                 "2".to_string(),
             ),
             (
-                "catia_definition_chain_value_0_selector_ordinal".to_string(),
+                cadmpeg_core::nonblank_literal!("catia_definition_chain_value_0_selector_ordinal"),
                 "4".to_string(),
             ),
             (
-                "catia_definition_chain_value_0_selector_value".to_string(),
+                cadmpeg_core::nonblank_literal!("catia_definition_chain_value_0_selector_value"),
                 "Length".to_string(),
             ),
             (
-                "catia_definition_chain_value_0_value_kind".to_string(),
+                cadmpeg_core::nonblank_literal!("catia_definition_chain_value_0_value_kind"),
                 "atom".to_string(),
             ),
             (
-                "catia_definition_chain_value_0_value_atom".to_string(),
+                cadmpeg_core::nonblank_literal!("catia_definition_chain_value_0_value_atom"),
                 "3".to_string(),
             ),
         ])

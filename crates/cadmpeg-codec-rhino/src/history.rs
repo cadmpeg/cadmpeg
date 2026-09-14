@@ -1366,7 +1366,7 @@ pub(crate) fn project(
             name: None,
             suppressed: Some(false),
             dependencies,
-            source_properties: properties,
+            source_properties: cadmpeg_core::text::named_entries(properties),
             source_tag: Some("HistoryRecord".to_string()),
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
@@ -1374,7 +1374,7 @@ pub(crate) fn project(
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: record.command_id.to_string().into(),
-                    parameters,
+                    parameters: cadmpeg_core::text::named_entries(parameters),
                 }),
             ),
             native_ref: Some(native_ids[index].clone()),

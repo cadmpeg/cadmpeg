@@ -522,7 +522,10 @@ fn decode_container<'a>(
     }
     attributes.insert("document_kind".into(), document_kind.label().into());
     metadata.apply_attributes(&mut attributes);
-    ir.source = Some(SourceMeta::classified(dialects, attributes));
+    ir.source = Some(SourceMeta::classified(
+        dialects,
+        cadmpeg_core::text::named_entries(attributes),
+    ));
     if matches!(document_kind, DocumentKind::Part | DocumentKind::Assembly) {
         ir.model.product_definitions.push(ProductDefinition {
             id: ProductDefinitionId::mint("inventor:document:product#root")
@@ -536,7 +539,7 @@ fn decode_container<'a>(
             label: metadata.title.clone(),
             description: metadata.description.clone(),
             part_number: metadata.part_number.clone(),
-            bom_properties: metadata.bom_properties.clone(),
+            bom_properties: cadmpeg_core::text::named_entries(metadata.bom_properties.clone()),
             bodies: Vec::new(),
             native_ref: None,
         });
@@ -1794,36 +1797,42 @@ fn apply_kernel_header(
         return Ok(());
     };
     if let Some(version) = header.save_format_version {
-        source
-            .attributes
-            .insert("kernel_save_format_version".into(), version.to_string());
+        source.attributes.insert(
+            cadmpeg_core::nonblank_literal!("kernel_save_format_version"),
+            version.to_string(),
+        );
     }
     if let Some(count) = header.entity_count {
-        source
-            .attributes
-            .insert("kernel_entity_count".into(), count.to_string());
+        source.attributes.insert(
+            cadmpeg_core::nonblank_literal!("kernel_entity_count"),
+            count.to_string(),
+        );
     }
     if let Some(flags) = header.flags {
-        source
-            .attributes
-            .insert("kernel_flags".into(), flags.to_string());
+        source.attributes.insert(
+            cadmpeg_core::nonblank_literal!("kernel_flags"),
+            flags.to_string(),
+        );
     }
     if let Some(family) = &header.product_family {
-        source
-            .attributes
-            .insert("kernel_product_family".into(), family.clone());
+        source.attributes.insert(
+            cadmpeg_core::nonblank_literal!("kernel_product_family"),
+            family.clone(),
+        );
     }
     if let Some(version) = &header.product_version {
-        source
-            .attributes
-            .insert("kernel_product_version".into(), version.clone());
+        source.attributes.insert(
+            cadmpeg_core::nonblank_literal!("kernel_product_version"),
+            version.clone(),
+        );
     }
     if let (Some(linear), Some(angular)) = (header.linear, header.angular) {
         ir.tolerances = Tolerances::new(linear, angular).map_err(CodecError::Malformed)?;
     }
-    source
-        .attributes
-        .insert("kernel_family".into(), family.label().into());
+    source.attributes.insert(
+        cadmpeg_core::nonblank_literal!("kernel_family"),
+        family.label().into(),
+    );
     Ok(())
 }
 

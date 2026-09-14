@@ -345,7 +345,10 @@ pub(crate) fn attach(
                 material: None,
                 properties: active_attribute_use
                     .map(|relation| {
-                        BTreeMap::from([("active_attribute_use".to_string(), relation.id.clone())])
+                        BTreeMap::from([(
+                            cadmpeg_core::nonblank_literal!("active_attribute_use"),
+                            relation.id.clone(),
+                        )])
                     })
                     .unwrap_or_default(),
                 parameter_overrides: BTreeMap::new(),
@@ -1132,7 +1135,12 @@ fn attach_initial_segment_bodies(
         .values()
         .flatten()
         .enumerate()
-        .map(|(ordinal, binding)| (format!("segment_body_binding.{ordinal}"), binding.clone()))
+        .map(|(ordinal, binding)| {
+            (
+                cadmpeg_core::nonblank_literal!("segment_body_binding.{ordinal}"),
+                binding.clone(),
+            )
+        })
         .collect();
     annotations
         .note(&id, stream, 0)
@@ -3647,7 +3655,7 @@ fn attach_feature_operations(
                             .outputs
                             .contains_key(label.id.as_str()),
                     },
-                    native_parameters,
+                    cadmpeg_core::text::named_entries(native_parameters),
                 )?
             };
             if let FeatureDefinition::Operation(FeatureOperation::Block { op, .. }) =
@@ -3715,7 +3723,7 @@ fn attach_feature_operations(
             name: Some(label.value.clone()),
             suppressed: None,
             dependencies: (dependencies).into_iter().collect(),
-            source_properties,
+            source_properties: cadmpeg_core::text::named_entries(source_properties),
             source_tag: Some(label.value.clone()),
             source_text: None,
             source_content,
@@ -3742,7 +3750,7 @@ fn attach_feature_operations(
                             format_args!("{key}-{:010}", write.ordinal),
                         ),
                         id.clone(),
-                        vec![cadmpeg_ir::nonblank_literal!(
+                        vec![cadmpeg_core::nonblank_literal!(
                             "nx:feature-history:body-identity#{:010}",
                             write.frame.body_identity()
                         )],
@@ -3794,7 +3802,7 @@ fn attach_feature_operations(
                 .find(|feature| feature.id == *initial_body_id)
             {
                 initial_feature.source_properties.insert(
-                    NATIVE_PRIMARY_BODY_CLOSURE_WITNESS.to_string(),
+                    cadmpeg_core::nonblank_const!(NATIVE_PRIMARY_BODY_CLOSURE_WITNESS),
                     "primary-body-relations".to_string(),
                 );
                 annotations
@@ -3821,9 +3829,9 @@ fn attach_feature_operations(
 
 #[derive(Clone, Default, PartialEq, Eq)]
 struct FeatureResultGroupMembers {
-    faces: Vec<cadmpeg_ir::products::NonBlankString>,
-    edges: Vec<cadmpeg_ir::products::NonBlankString>,
-    vertices: Vec<cadmpeg_ir::products::NonBlankString>,
+    faces: Vec<cadmpeg_core::text::NonBlankString>,
+    edges: Vec<cadmpeg_core::text::NonBlankString>,
+    vertices: Vec<cadmpeg_core::text::NonBlankString>,
 }
 
 fn operation_body_write_result_group_members(
@@ -3896,13 +3904,13 @@ fn feature_result_group_members(
             continue;
         };
         match family {
-            GroupNodeFamily::Face => result.faces.push(cadmpeg_ir::nonblank_literal!(
+            GroupNodeFamily::Face => result.faces.push(cadmpeg_core::nonblank_literal!(
                 "nx:s{partition_stream_ordinal}:face#{xmt}"
             )),
-            GroupNodeFamily::Edge => result.edges.push(cadmpeg_ir::nonblank_literal!(
+            GroupNodeFamily::Edge => result.edges.push(cadmpeg_core::nonblank_literal!(
                 "nx:s{partition_stream_ordinal}:edge#{xmt}"
             )),
-            GroupNodeFamily::Vertex => result.vertices.push(cadmpeg_ir::nonblank_literal!(
+            GroupNodeFamily::Vertex => result.vertices.push(cadmpeg_core::nonblank_literal!(
                 "nx:s{partition_stream_ordinal}:vertex#{xmt}"
             )),
             _ => {}
@@ -3917,15 +3925,13 @@ fn feature_result_group_members(
 fn native_result_body_identity(
     primary: Option<&crate::native::features::FeatureBodyReference>,
     boolean: Option<&crate::native::features::FeatureBooleanOperation>,
-) -> Option<(cadmpeg_ir::products::NonBlankString, String)> {
+) -> Option<(cadmpeg_core::text::NonBlankString, String)> {
     primary
         .map(|writer| (writer.id.clone(), writer.id.clone()))
         .or_else(|| {
             boolean.map(|operation| (format!("{}:target", operation.id), operation.id.clone()))
         })
-        .and_then(|(local, native)| {
-            Some((cadmpeg_ir::products::NonBlankString::new(local)?, native))
-        })
+        .and_then(|(local, native)| Some((cadmpeg_core::text::NonBlankString::new(local)?, native)))
 }
 
 /// Return primary body fields that are proven to use the segment-object
@@ -4024,7 +4030,7 @@ fn attach_sketch_graph(
                         format_args!("coordinate-pair-{pair_key}"),
                     )?,
                     sketch_id.clone(),
-                    SketchGeometry::native(cadmpeg_ir::products::NonBlankString::new(
+                    SketchGeometry::native(cadmpeg_core::text::NonBlankString::new(
                         "nx-coordinate-pair",
                     )?),
                 )
@@ -4299,9 +4305,7 @@ fn native_fixed_point_entities(
                     format_args!("fixed-point-{point_key}"),
                 )?,
                 sketch_id.clone(),
-                SketchGeometry::native(cadmpeg_ir::products::NonBlankString::new(
-                    "nx-fixed-point",
-                )?),
+                SketchGeometry::native(cadmpeg_core::text::NonBlankString::new("nx-fixed-point")?),
             )
             .with_native_ref(Some(point.id.clone())),
         ));
@@ -5077,7 +5081,10 @@ fn text_semantic_annotation(
         value: None,
         format: None,
         position: None,
-        parameters: BTreeMap::from([("font_family".to_string(), (*font_family).to_string())]),
+        parameters: BTreeMap::from([(
+            cadmpeg_core::nonblank_literal!("font_family"),
+            (*font_family).to_string(),
+        )]),
         assets: Vec::new(),
         native_ref: native_ref.to_string(),
     })
@@ -6150,7 +6157,7 @@ fn non_boolean_feature_definition_with_parameters(
     block_dimensions: Option<[f64; 3]>,
     block_placement: Option<Transform>,
     hole: HoleProjection,
-    native_parameters: BTreeMap<String, String>,
+    native_parameters: BTreeMap<cadmpeg_core::text::NonBlankString, String>,
 ) -> Result<FeatureDefinition, CodecError> {
     let hole_template = unique_simple_hole_template(payload_strings);
     if matches!(kind, "BLEND" | "FACE_BLEND") {
@@ -9132,7 +9139,7 @@ pub(crate) fn attach_expression_parameters(
                 display: None,
                 value,
                 dependencies: dependencies.into_iter().collect(),
-                properties,
+                properties: cadmpeg_core::text::named_entries(properties),
                 pmi: None,
                 native_ref: Some(expression.id.clone()),
             });
@@ -9218,7 +9225,7 @@ fn attach_block_dimension_parameter_consumers(
                 continue;
             };
             parameter.properties.insert(
-                format!("block_dimension.{ordinal}"),
+                cadmpeg_core::nonblank_literal!("block_dimension.{ordinal}"),
                 dimension_set.id.clone(),
             );
             if !parameter
@@ -9230,12 +9237,13 @@ fn attach_block_dimension_parameter_consumers(
                     .find(|candidate| {
                         !parameter
                             .properties
-                            .contains_key(&format!("consumer.{candidate}"))
+                            .contains_key(format!("consumer.{candidate}").as_str())
                     })
                     .expect("finite parameter properties have a free consumer ordinal");
-                parameter
-                    .properties
-                    .insert(format!("consumer.{consumer_ordinal}"), consumer.clone());
+                parameter.properties.insert(
+                    cadmpeg_core::nonblank_literal!("consumer.{consumer_ordinal}"),
+                    consumer.clone(),
+                );
             }
             annotations
                 .derived(parameter.id.as_str(), "properties")

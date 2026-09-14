@@ -467,7 +467,10 @@ fn a_classified_source_carries_its_format_once() {
     let layers = cadmpeg_core::dialect::DialectLayers::of(matched.clone());
     let source = SourceMeta::classified(
         layers.clone(),
-        std::collections::BTreeMap::from([("object_count".into(), "3".into())]),
+        std::collections::BTreeMap::from([(
+            cadmpeg_core::nonblank_literal!("object_count"),
+            "3".into(),
+        )]),
     );
 
     assert_eq!(source.format(), "rhino");

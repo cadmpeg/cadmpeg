@@ -5,7 +5,7 @@ use crate::loss::Diagnostics;
 use std::collections::HashSet;
 use std::ops::Range;
 
-use cadmpeg_ir::products::NonBlankString;
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::transform::Transform;
 
 use crate::chunks::{

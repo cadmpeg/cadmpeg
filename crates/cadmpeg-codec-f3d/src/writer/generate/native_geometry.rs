@@ -6898,7 +6898,7 @@ mod null_law_token_tests {
         );
 
         let named = cadmpeg_ir::geometry::LawFormula::Named {
-            name: cadmpeg_ir::products::NonBlankString::new(NULL_LAW_TOKEN.to_string())
+            name: cadmpeg_core::text::NonBlankString::new(NULL_LAW_TOKEN.to_string())
                 .expect("the token is a non-blank string"),
             variables: Vec::new(),
         };
@@ -6909,7 +6909,7 @@ mod null_law_token_tests {
         assert!(error.contains(NULL_LAW_TOKEN), "{error}");
 
         let text = cadmpeg_ir::geometry::LawExpression::Text {
-            value: cadmpeg_ir::products::NonBlankString::new(NULL_LAW_TOKEN.to_string())
+            value: cadmpeg_core::text::NonBlankString::new(NULL_LAW_TOKEN.to_string())
                 .expect("the token is a non-blank string"),
         };
         let Err(error) = native_law_expression(&mut Vec::new(), &target, &text, 0) else {

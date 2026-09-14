@@ -10,6 +10,7 @@ pub mod distinct_keys;
 pub mod error;
 pub mod io;
 pub mod target;
+pub mod text;
 
 pub use container::ContainerEntry;
 pub use error::CodecError;

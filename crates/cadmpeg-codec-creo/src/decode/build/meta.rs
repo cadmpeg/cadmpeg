@@ -940,7 +940,7 @@ pub(in super::super) fn source_meta(
     (
         SourceMeta::classified(
             DialectLayers::of(classification.matched().clone()),
-            attributes,
+            cadmpeg_core::text::named_entries(attributes),
         ),
         coverage,
     )

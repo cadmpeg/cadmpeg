@@ -24,7 +24,7 @@ fn ordered_members_reject_empty_sets_and_duplicates() {
             .map(|(body, native)| {
                 BodyMember::new(
                     body,
-                    crate::products::NonBlankString::new(native.to_owned())
+                    cadmpeg_core::text::NonBlankString::new(native.to_owned())
                         .expect("non-blank native fixture"),
                 )
             })
@@ -51,23 +51,23 @@ fn historical_body_members_refuse_the_deleted_parallel_arrays() {
             .map(|(body, native)| {
                 BodyMember::new(
                     body,
-                    crate::products::NonBlankString::new(native.to_owned())
+                    cadmpeg_core::text::NonBlankString::new(native.to_owned())
                         .expect("non-blank native fixture"),
                 )
             })
             .collect::<Vec<_>>();
         assert!(BodyMembers::try_from_rows(rows).is_err());
     }
-    assert!(crate::products::NonBlankString::new(" ").is_none());
+    assert!(cadmpeg_core::text::NonBlankString::new(" ").is_none());
 
     let members = BodyMembers::try_from_rows(vec![
         BodyMember::new(
             b.clone(),
-            crate::products::NonBlankString::new("native-first").expect("non-blank fixture"),
+            cadmpeg_core::text::NonBlankString::new("native-first").expect("non-blank fixture"),
         ),
         BodyMember::new(
             a.clone(),
-            crate::products::NonBlankString::new("native-second").expect("non-blank fixture"),
+            cadmpeg_core::text::NonBlankString::new("native-second").expect("non-blank fixture"),
         ),
     ])
     .unwrap();

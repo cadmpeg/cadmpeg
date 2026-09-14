@@ -310,7 +310,7 @@ fn object_model_pipeline_projects_composed_feature_history_and_inputs() {
                 assert_eq!(
                     feature
                         .source_properties
-                        .get(&format!("{property_prefix}.{ordinal}"))
+                        .get(format!("{property_prefix}.{ordinal}").as_str())
                         .map(String::as_str),
                     Some(record.id())
                 );

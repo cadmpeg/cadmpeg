@@ -118,10 +118,13 @@ fn inferred_partition_does_not_fabricate_active_configuration_identity() {
         )),
         BTreeMap::from([
             (
-                "active_parasolid_block".into(),
+                cadmpeg_core::nonblank_literal!("active_parasolid_block"),
                 "Contents/Config-3-Partition".into(),
             ),
-            ("sw_configuration_name".into(), "Default".into()),
+            (
+                cadmpeg_core::nonblank_literal!("sw_configuration_name"),
+                "Default".into(),
+            ),
         ]),
     ));
     let body = BodyId::mint("test:model:entity#body:active").expect("identity grammar");
@@ -152,10 +155,13 @@ fn active_configuration_name_binds_partition_without_fabricating_body_membership
         )),
         BTreeMap::from([
             (
-                "active_parasolid_block".into(),
+                cadmpeg_core::nonblank_literal!("active_parasolid_block"),
                 "Contents/Config-3-Partition".into(),
             ),
-            ("sw_configuration_name".into(), "Default".into()),
+            (
+                cadmpeg_core::nonblank_literal!("sw_configuration_name"),
+                "Default".into(),
+            ),
         ]),
     ));
     ir.model.configurations.push(DesignConfiguration {
@@ -258,7 +264,7 @@ fn active_configuration_partition_disagreement_is_reported() {
             cadmpeg_core::dialect::DialectId::pinned("sldprt:test"),
         )),
         BTreeMap::from([(
-            "active_parasolid_block".into(),
+            cadmpeg_core::nonblank_literal!("active_parasolid_block"),
             "Contents/Config-3-Partition".into(),
         )]),
     ));

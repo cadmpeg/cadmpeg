@@ -413,7 +413,10 @@ fn project_face_bindings(
             )),
             object_type: Some("Face".into()),
             visible: None,
-            channels: BTreeMap::from([("precedence".into(), "face_over_body".into())]),
+            channels: BTreeMap::from([(
+                cadmpeg_core::nonblank_literal!("precedence"),
+                "face_over_body".into(),
+            )]),
         });
     }
 }

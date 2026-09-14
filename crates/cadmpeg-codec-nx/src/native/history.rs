@@ -208,7 +208,7 @@ pub(crate) fn active_feature_closure(
         ) && feature
             .source_properties
             .keys()
-            .any(|key| key.starts_with("segment_body_binding."))
+            .any(|key| key.as_str().starts_with("segment_body_binding."))
     });
     if !has_neutral_body_writer && has_retained_history_input && !has_native_body_witness {
         return Err(ActiveFeatureClosureRejection::NoSelectedBodyWriter);
@@ -291,7 +291,7 @@ mod tests {
             name: Some(id.into()),
             suppressed: None,
             dependencies: (dependencies).try_into().unwrap(),
-            source_properties,
+            source_properties: cadmpeg_core::text::named_entries(source_properties),
             source_tag: native.then(|| "NX_OPERATION".to_string()),
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
@@ -609,7 +609,7 @@ mod tests {
             ),
         ];
         ir.model.features[0].source_properties.insert(
-            NATIVE_PRIMARY_BODY_CLOSURE_WITNESS.into(),
+            cadmpeg_core::nonblank_const!(NATIVE_PRIMARY_BODY_CLOSURE_WITNESS),
             "primary-body-relations".into(),
         );
 
@@ -643,7 +643,7 @@ mod tests {
             suppressed: Some(false),
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::from([(
-                "segment_body_binding.0".into(),
+                cadmpeg_core::nonblank_literal!("segment_body_binding.0"),
                 "nx:segment-body-bindings:binding#0".into(),
             )]),
             source_tag: None,

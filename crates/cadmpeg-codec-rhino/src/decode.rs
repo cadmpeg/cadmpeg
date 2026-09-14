@@ -1261,7 +1261,7 @@ impl<'a> DecodeContext<'a> {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "hatch".into(),
-                    parameters,
+                    parameters: cadmpeg_core::text::named_entries(parameters),
                 }),
             ),
             native_ref: Some(self.unknowns[source_order].id().to_string()),
@@ -1343,7 +1343,10 @@ impl<'a> DecodeContext<'a> {
             name,
             suppressed: Some(false),
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-            source_properties: BTreeMap::from([("construction".to_string(), construction)]),
+            source_properties: BTreeMap::from([(
+                cadmpeg_core::nonblank_literal!("construction"),
+                construction,
+            )]),
             source_tag: Some("RhinoPolyEdgeReference".to_string()),
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
@@ -1351,7 +1354,7 @@ impl<'a> DecodeContext<'a> {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "polyedge_reference".into(),
-                    parameters,
+                    parameters: cadmpeg_core::text::named_entries(parameters),
                 }),
             ),
             native_ref: Some(Self::mint_unknown_id(source_order).to_string()),
@@ -1414,8 +1417,14 @@ impl<'a> DecodeContext<'a> {
             suppressed: Some(false),
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::from([
-                ("view_bytes".to_string(), view.len().to_string()),
-                ("view_sha256".to_string(), sha256_hex(view)),
+                (
+                    cadmpeg_core::nonblank_literal!("view_bytes"),
+                    view.len().to_string(),
+                ),
+                (
+                    cadmpeg_core::nonblank_literal!("view_sha256"),
+                    sha256_hex(view),
+                ),
             ]),
             source_tag: Some("RhinoDetailView".to_string()),
             source_text: None,
@@ -1425,9 +1434,12 @@ impl<'a> DecodeContext<'a> {
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "detail_view".into(),
                     parameters: BTreeMap::from([
-                        ("boundary".to_string(), curve_id.clone()),
                         (
-                            "page_per_model_ratio".to_string(),
+                            cadmpeg_core::nonblank_literal!("boundary"),
+                            curve_id.clone(),
+                        ),
+                        (
+                            cadmpeg_core::nonblank_literal!("page_per_model_ratio"),
                             detail.page_per_model_ratio.to_string(),
                         ),
                     ]),
@@ -1544,7 +1556,7 @@ impl<'a> DecodeContext<'a> {
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
             suppressed: Some(false),
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-            source_properties: properties,
+            source_properties: cadmpeg_core::text::named_entries(properties),
             source_tag: Some("RhinoNurbsCage".to_string()),
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
@@ -1553,14 +1565,20 @@ impl<'a> DecodeContext<'a> {
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "nurbs_cage".into(),
                     parameters: BTreeMap::from([
-                        ("dimension".to_string(), cage.dimension.to_string()),
-                        ("rational".to_string(), cage.rational().to_string()),
                         (
-                            "orders".to_string(),
+                            cadmpeg_core::nonblank_literal!("dimension"),
+                            cage.dimension.to_string(),
+                        ),
+                        (
+                            cadmpeg_core::nonblank_literal!("rational"),
+                            cage.rational().to_string(),
+                        ),
+                        (
+                            cadmpeg_core::nonblank_literal!("orders"),
                             format!("{},{},{}", cage.orders[0], cage.orders[1], cage.orders[2]),
                         ),
                         (
-                            "counts".to_string(),
+                            cadmpeg_core::nonblank_literal!("counts"),
                             format!("{},{},{}", cage.counts[0], cage.counts[1], cage.counts[2]),
                         ),
                     ]),
@@ -1703,7 +1721,9 @@ impl<'a> DecodeContext<'a> {
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: model_id
                 .as_ref()
-                .map(|id| BTreeMap::from([("model_curve".to_string(), id.clone())]))
+                .map(|id| {
+                    BTreeMap::from([(cadmpeg_core::nonblank_literal!("model_curve"), id.clone())])
+                })
                 .unwrap_or_default(),
             source_tag: Some("RhinoCurveOnSurface".to_string()),
             source_text: None,
@@ -1713,8 +1733,14 @@ impl<'a> DecodeContext<'a> {
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "curve_on_surface".into(),
                     parameters: BTreeMap::from([
-                        ("parameter_curve".to_string(), parameter_id.clone()),
-                        ("support_surface".to_string(), surface_id.to_string()),
+                        (
+                            cadmpeg_core::nonblank_literal!("parameter_curve"),
+                            parameter_id.clone(),
+                        ),
+                        (
+                            cadmpeg_core::nonblank_literal!("support_surface"),
+                            surface_id.to_string(),
+                        ),
                     ]),
                 }),
             ),
@@ -2490,7 +2516,7 @@ impl<'a> DecodeContext<'a> {
             primary,
             crate::container::SourceMetaDetail::Full {
                 scan: self.scan,
-                attributes,
+                attributes: cadmpeg_core::text::named_entries(attributes),
             },
         ));
         Decoded {
@@ -4464,7 +4490,7 @@ pub(crate) fn embedded_brep_json(
     };
     let association = SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Rhino,
-        object_id: cadmpeg_ir::products::NonBlankString::new("embedded-history-brep".to_string())?,
+        object_id: cadmpeg_core::text::NonBlankString::new("embedded-history-brep".to_string())?,
         name: None,
         color: None,
         visible: None,

@@ -313,7 +313,7 @@ pub(in super::super) fn transfer_feature_dimensions(
             display: feature_dimension_display(dimension.dimension_type),
             value,
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-            properties,
+            properties: cadmpeg_core::text::named_entries(properties),
             pmi: None,
             native_ref: Some(feature_sketch_record_id_in_scan(scan, definition)),
         });

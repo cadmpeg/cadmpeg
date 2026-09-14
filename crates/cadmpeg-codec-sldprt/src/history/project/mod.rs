@@ -869,7 +869,9 @@ pub(crate) fn incomplete_history_reference_features(histories: &[FeatureHistory]
                         });
                     let incomplete_content = feature.content.iter().any(|item| match item {
                         FeatureContent::Feature(child) => !native_ids.contains(child.as_str()),
-                        FeatureContent::Dimension(name) => !feature.parameters.contains_key(name),
+                        FeatureContent::Dimension(name) => {
+                            !feature.parameters.contains_key(name.as_str())
+                        }
                         FeatureContent::Text(_) => false,
                     });
                     let unresolved_dependency = FEATURE_REFERENCE_PROPERTIES
@@ -1161,7 +1163,7 @@ pub(crate) fn parameter_names(feature: &Feature) -> Vec<String> {
         .content
         .iter()
         .filter_map(|content| match content {
-            FeatureContent::Dimension(name) if feature.parameters.contains_key(name) => {
+            FeatureContent::Dimension(name) if feature.parameters.contains_key(name.as_str()) => {
                 Some(name.clone())
             }
             _ => None,
@@ -1170,8 +1172,8 @@ pub(crate) fn parameter_names(feature: &Feature) -> Vec<String> {
     let missing = feature
         .parameters
         .keys()
-        .filter(|name| !names.contains(name))
-        .cloned()
+        .filter(|name| !names.iter().any(|known| known == name.as_str()))
+        .map(|name| name.as_str().to_owned())
         .collect::<Vec<_>>();
     names.extend(missing);
     names

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Format-neutral semantic dimensions, notes, symbols, and callouts.
 
+use cadmpeg_core::text::NonBlankString;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -54,7 +55,7 @@ pub struct SemanticAnnotation {
     /// Ordered references grouped by exact source-property role.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
-    pub references: BTreeMap<String, Vec<crate::references::ReferenceSelection>>,
+    pub references: BTreeMap<NonBlankString, Vec<crate::references::ReferenceSelection>>,
     /// Persisted numeric measurement, when explicitly carried.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(deserialize_with = "deserialize_value")]
@@ -73,7 +74,7 @@ pub struct SemanticAnnotation {
     /// Remaining typed or exactly framed parameters by source name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
-    pub parameters: BTreeMap<String, String>,
+    pub parameters: BTreeMap<NonBlankString, String>,
     /// Symbol, image, font, or other retained assets.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub assets: Vec<String>,

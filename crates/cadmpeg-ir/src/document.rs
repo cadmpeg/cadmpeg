@@ -42,6 +42,7 @@ use crate::tessellation::Tessellation;
 use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
 use crate::units::{CanonicalUnitsWire, Tolerances};
 use crate::unknown::NativeUnknownRecord;
+use cadmpeg_core::text::NonBlankString;
 
 #[derive(Debug, Clone, Default, PartialEq)]
 struct FeatureRegenerationParents(BTreeMap<crate::features::FeatureId, crate::features::FeatureId>);
@@ -1348,13 +1349,16 @@ pub struct SourceMeta {
     /// Format-specific attributes.
     #[serde(default)]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
-    pub attributes: BTreeMap<String, String>,
+    pub attributes: BTreeMap<NonBlankString, String>,
 }
 
 impl SourceMeta {
     /// Constructs metadata with dialect layers whose primary format is authoritative.
     #[must_use]
-    pub fn classified(dialects: DialectLayers, attributes: BTreeMap<String, String>) -> Self {
+    pub fn classified(
+        dialects: DialectLayers,
+        attributes: BTreeMap<NonBlankString, String>,
+    ) -> Self {
         Self {
             identity: FormatIdentity::classified(dialects),
             attributes,

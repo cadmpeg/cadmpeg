@@ -21,23 +21,26 @@ fn source_meta(
     primary: cadmpeg_core::dialect::DialectMatch,
 ) -> SourceMeta {
     let mut attributes = BTreeMap::new();
-    attributes.insert("representation".into(), representation.as_str().into());
     attributes.insert(
-        "parameter_delimiter".into(),
+        cadmpeg_core::nonblank_literal!("representation"),
+        representation.as_str().into(),
+    );
+    attributes.insert(
+        cadmpeg_core::nonblank_literal!("parameter_delimiter"),
         char::from(global.parameter_delimiter).to_string(),
     );
     attributes.insert(
-        "record_delimiter".into(),
+        cadmpeg_core::nonblank_literal!("record_delimiter"),
         char::from(global.record_delimiter).to_string(),
     );
     if let Some(value) = global.units_name() {
-        attributes.insert("native_units".into(), value);
+        attributes.insert(cadmpeg_core::nonblank_literal!("native_units"), value);
     }
     if let Some(value) = global.sender_product() {
-        attributes.insert("sender_product".into(), value);
+        attributes.insert(cadmpeg_core::nonblank_literal!("sender_product"), value);
     }
     if let Some(value) = global.native_file_name() {
-        attributes.insert("native_file_name".into(), value);
+        attributes.insert(cadmpeg_core::nonblank_literal!("native_file_name"), value);
     }
     SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(primary),
@@ -561,9 +564,10 @@ fn decode_with_occurrence_limits(
             ctx.charge_work(bytes, "iges_document_digest")
         })?;
     if let Some(source) = &mut ir.source {
-        source
-            .attributes
-            .insert(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(), document_digest);
+        source.attributes.insert(
+            cadmpeg_core::nonblank_const!(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
+            document_digest,
+        );
     }
     let mut body = DecodeBody::new(if ctx.container_only() {
         cadmpeg_ir::report::DecodeTransfer::ContainerOnly {}

@@ -1019,40 +1019,7 @@ fn localized_fillet_scope() -> DesignParameterScope {
     .unwrap()
 }
 
-fn localized_chamfer_scope() -> DesignParameterScope {
-    DesignParameterScope::try_new(
-        crate::records::feature::DesignParameterScopeDraft {
-            id: "f3d:native/BulkStream.dat:scope#12".into(),
-            byte_offset: 100,
-            class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
-            record_index: 12,
-            frame_length: 200,
-            kind_offset: 210,
-            feature_ordinal: std::num::NonZeroU32::MIN,
-            feature_ordinal_offset: 0,
-            history_state_id: None,
-            previous_history_state_id: None,
-            previous_history_state_id_offset: None,
-            reference_count_offset: 180,
-            reference_members: crate::records::ReferenceRun::from_columns(
-                vec![100, 101],
-                vec![185, 196],
-                "reference_members",
-            )
-            .unwrap(),
-            payload: crate::records::feature::DesignFeatureKind::Chamfer
-                .try_into()
-                .unwrap(),
-            unclosed_construction_operand_groups: Vec::new(),
-            paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
-            paired_byte_offset: 300,
-        }
-        .with_fixture_layout(),
-    )
-    .unwrap()
-}
-
-fn localized_fillet_group(
+pub(super) fn localized_fillet_group(
     record_index: u32,
     ordinal: u32,
     members: Vec<u32>,
@@ -1114,7 +1081,7 @@ fn localized_fillet_operand_groups() -> [DesignConstructionOperandGroup; 2] {
     ]
 }
 
-fn localized_fillet_parameter(
+pub(super) fn localized_fillet_parameter(
     owner_index: u32,
     record_index: u32,
     source_kind: &str,
@@ -1135,7 +1102,7 @@ fn localized_fillet_parameter(
     parameter
 }
 
-fn localized_fillet_owner(
+pub(super) fn localized_fillet_owner(
     record_index: u32,
     parameter_record_index: u32,
     local_ordinal: u32,
@@ -2005,51 +1972,4 @@ fn fillet_unit_conversion_rejects_finite_overflow() {
     assert!(
         crate::design::feature_project::variable_fillet_law(&[(0, &start), (1, &end)]).is_none()
     );
-}
-
-#[test]
-fn a_chamfer_that_states_no_edge_group_refuses_a_one_element_distance_lane() {
-    use cadmpeg_ir::features::{ChamferGroup, ChamferSpec, EdgeSelection};
-
-    let scope = localized_chamfer_scope();
-    let parameters = [localized_fillet_parameter(10, 11, "Distance", Some("mm"), 0.1)];
-    let owners = [localized_fillet_owner(10, 11, 0)];
-
-    let (refused, _) = project_parameter_design(
-        &parameters,
-        &owners,
-        std::slice::from_ref(&scope),
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-    );
-    assert!(matches!(
-        refused[0].evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Native {
-            kind: cadmpeg_ir::features::NativeFeatureKind::Chamfer,
-            parameters,
-        }) if parameters.len() == 1
-    ));
-
-    let group = localized_fillet_group(100, 0, vec![200]);
-    let (accepted, _) = project_parameter_design(
-        &parameters,
-        &owners,
-        std::slice::from_ref(&scope),
-        std::slice::from_ref(&group),
-        &[],
-        &[],
-        &[],
-        &[],
-    );
-    assert!(matches!(
-        accepted[0].evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })
-            if matches!(groups.as_slice(), [ChamferGroup {
-                edges: EdgeSelection::Native(selection),
-                spec: ChamferSpec::Distance { distance },
-            }] if selection == &group.id && distance.get() == 1.0)
-    ));
 }

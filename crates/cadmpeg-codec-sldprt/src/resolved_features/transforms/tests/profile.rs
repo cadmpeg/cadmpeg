@@ -773,7 +773,7 @@ fn connected_marker_arcs_use_their_shared_endpoint_circle() {
             SketchEntityId::mint(format!("synthetic:test:id#entity-{id}")).unwrap(),
             sketch.clone(),
             SketchGeometry::native(
-                cadmpeg_ir::products::NonBlankString::new("sldprt:marker-geometry:2")
+                cadmpeg_core::text::NonBlankString::new("sldprt:marker-geometry:2")
                     .expect("nonempty source identity"),
             ),
         )
@@ -802,7 +802,7 @@ fn connected_marker_arcs_use_their_shared_endpoint_circle() {
     for entity in &mut entities[3..] {
         entity.endpoint_refs.reverse();
         entity.geometry = SketchGeometry::native(
-            cadmpeg_ir::products::NonBlankString::new("sldprt:marker-geometry:2")
+            cadmpeg_core::text::NonBlankString::new("sldprt:marker-geometry:2")
                 .expect("nonempty source identity"),
         );
     }
@@ -941,7 +941,7 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
         SketchEntityId::mint("synthetic:test:id#carrier").unwrap(),
         sketch_id.clone(),
         SketchGeometry::native(
-            cadmpeg_ir::products::NonBlankString::new("sldprt:marker-geometry:0")
+            cadmpeg_core::text::NonBlankString::new("sldprt:marker-geometry:0")
                 .expect("nonempty source identity"),
         ),
     )
@@ -1034,7 +1034,12 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
         parameters: BTreeMap::new(),
         dimension_properties: BTreeMap::new(),
         properties: description
-            .map(|description| BTreeMap::from([("Description".into(), description.into())]))
+            .map(|description| {
+                BTreeMap::from([(
+                    cadmpeg_core::nonblank_literal!("Description"),
+                    description.into(),
+                )])
+            })
             .unwrap_or_default(),
         text: None,
         content: Vec::new(),

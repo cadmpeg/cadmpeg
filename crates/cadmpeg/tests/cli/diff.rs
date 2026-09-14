@@ -76,16 +76,18 @@ fn diff_reports_dialect_admission_and_declaration_changes() {
     let mut left = unit_cube();
     left.source = Some(cadmpeg_ir::SourceMeta::classified(
         DialectLayers::of(
-            DialectMatch::admitted(DialectId::pinned("synthetic:v1"))
-                .with_declared(BTreeMap::from([("version".into(), "1".into())])),
+            DialectMatch::admitted(DialectId::pinned("synthetic:v1")).with_declared(
+                BTreeMap::from([(cadmpeg_core::nonblank_literal!("version"), "1".into())]),
+            ),
         ),
         BTreeMap::new(),
     ));
     let mut right = unit_cube();
     right.source = Some(cadmpeg_ir::SourceMeta::classified(
         DialectLayers::of(
-            DialectMatch::residual(DialectId::pinned("synthetic:v1"))
-                .with_declared(BTreeMap::from([("version".into(), "2".into())])),
+            DialectMatch::residual(DialectId::pinned("synthetic:v1")).with_declared(
+                BTreeMap::from([(cadmpeg_core::nonblank_literal!("version"), "2".into())]),
+            ),
         ),
         BTreeMap::new(),
     ));

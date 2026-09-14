@@ -44,8 +44,11 @@ fn generated_source_less_writes_unassigned_protein_appearance() {
         category: Some("Plastic/Generated".into()),
         base_color: Some(Color::new(0.15, 0.35, 0.75, 1.0).expect("valid color")),
         properties: BTreeMap::from([
-            ("reflectivity_at_0deg".into(), 0.25),
-            ("refraction_index".into(), 1.5),
+            (
+                cadmpeg_core::nonblank_literal!("reflectivity_at_0deg"),
+                0.25,
+            ),
+            (cadmpeg_core::nonblank_literal!("refraction_index"), 1.5),
         ]),
         textures: Vec::new(),
     }];
@@ -196,7 +199,7 @@ fn generated_f3d_rejects_invalid_or_structural_protein_property_edits() {
     let mut invalid = decoded.ir().clone();
     invalid.model.appearances[0]
         .properties
-        .insert("refraction_index".into(), 0.5);
+        .insert(cadmpeg_core::nonblank_literal!("refraction_index"), 0.5);
     let error = crate::test_support::plan_inherited_write(
         &invalid,
         decoded.source_fidelity(),
@@ -208,9 +211,10 @@ fn generated_f3d_rejects_invalid_or_structural_protein_property_edits() {
     );
 
     let (mut structural, _, fidelity) = decoded.into_parts();
-    structural.model.appearances[0]
-        .properties
-        .insert("unserialized_property".into(), 0.5);
+    structural.model.appearances[0].properties.insert(
+        cadmpeg_core::nonblank_literal!("unserialized_property"),
+        0.5,
+    );
     let error = crate::test_support::plan_inherited_write(&structural, &fidelity, &mut Vec::new())
         .expect_err("new Protein property must be refused");
     assert!(
@@ -271,7 +275,9 @@ fn generated_f3d_rewrites_prism_scalar_properties() {
         .iter_mut()
         .find(|appearance| appearance.schema.as_deref() == Some("PrismOpaqueSchema"))
         .expect("opaque appearance");
-    opaque.properties.insert("surface_roughness".into(), 0.75);
+    opaque
+        .properties
+        .insert(cadmpeg_core::nonblank_literal!("surface_roughness"), 0.75);
     let transparent = edited
         .model
         .appearances
@@ -280,7 +286,7 @@ fn generated_f3d_rewrites_prism_scalar_properties() {
         .expect("transparent appearance");
     transparent
         .properties
-        .insert("refraction_index".into(), 2.25);
+        .insert(cadmpeg_core::nonblank_literal!("refraction_index"), 2.25);
 
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)

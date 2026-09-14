@@ -4932,7 +4932,7 @@ pub(crate) fn transfer_text_curves(
             );
         let association = SourceObjectAssociation {
             format: cadmpeg_ir::CodecFormat::Fcstd,
-            object_id: cadmpeg_ir::products::NonBlankString::new(object_id)
+            object_id: cadmpeg_core::text::NonBlankString::new(object_id)
                 .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
             name: None,
             color: None,
@@ -5126,7 +5126,7 @@ pub(crate) fn transfer_text_surfaces(
             );
         let association = SourceObjectAssociation {
             format: cadmpeg_ir::CodecFormat::Fcstd,
-            object_id: cadmpeg_ir::products::NonBlankString::new(object_id)
+            object_id: cadmpeg_core::text::NonBlankString::new(object_id)
                 .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
             name: None,
             color: None,
@@ -6242,7 +6242,7 @@ pub(crate) mod tests {
         };
         let association = cadmpeg_ir::SourceObjectAssociation {
             format: cadmpeg_ir::CodecFormat::Fcstd,
-            object_id: cadmpeg_ir::products::NonBlankString::new("object")
+            object_id: cadmpeg_core::text::NonBlankString::new("object")
                 .expect("nonempty source identity"),
             name: None,
             color: None,
@@ -6282,7 +6282,7 @@ pub(crate) mod tests {
         };
         let association = cadmpeg_ir::SourceObjectAssociation {
             format: cadmpeg_ir::CodecFormat::Fcstd,
-            object_id: cadmpeg_ir::products::NonBlankString::new("fcstd:native:object#Surface")
+            object_id: cadmpeg_core::text::NonBlankString::new("fcstd:native:object#Surface")
                 .expect("nonempty source identity"),
             name: None,
             color: None,

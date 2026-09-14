@@ -74,9 +74,18 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }
             require_same_family(existing, &feature.id, &["ReferencePlane"])?;
             let mut properties = feature.source_properties.clone();
-            properties.insert("Origin".into(), format_point3_mm(frame.origin()));
-            properties.insert("Normal".into(), format_vector3(frame.normal()));
-            properties.insert("UAxis".into(), format_vector3(frame.u_axis()));
+            properties.insert(
+                cadmpeg_core::nonblank_literal!("Origin"),
+                format_point3_mm(frame.origin()),
+            );
+            properties.insert(
+                cadmpeg_core::nonblank_literal!("Normal"),
+                format_vector3(frame.normal()),
+            );
+            properties.insert(
+                cadmpeg_core::nonblank_literal!("UAxis"),
+                format_vector3(frame.u_axis()),
+            );
             NeutralFeatureEncoding {
                 kind: existing
                     .map_or_else(|| "ReferencePlane".into(), |record| record.kind.clone()),
@@ -121,11 +130,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     let key = if properties.contains_key("Plane")
                         && !properties.contains_key("Reference")
                     {
-                        "Plane"
+                        cadmpeg_core::nonblank_literal!("Plane")
                     } else {
-                        "Reference"
+                        cadmpeg_core::nonblank_literal!("Reference")
                     };
-                    properties.insert(key.into(), source.clone());
+                    properties.insert(key, source.clone());
                 }
                 Some(
                     DatumPlaneReference::Face { .. } | DatumPlaneReference::ResolvedPlane { .. },
@@ -150,7 +159,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 .map(|record| record.parameters.clone())
                 .unwrap_or_default();
             parameters.insert(
-                "D1".into(),
+                cadmpeg_core::nonblank_literal!("D1"),
                 format_length_like(
                     distance.get(),
                     existing
@@ -191,8 +200,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }
             require_same_family(existing, &feature.id, &["ReferenceAxis"])?;
             let mut properties = feature.source_properties.clone();
-            properties.insert("Origin".into(), format_point3_mm(*origin));
-            properties.insert("Direction".into(), format_vector3(*direction));
+            properties.insert(
+                cadmpeg_core::nonblank_literal!("Origin"),
+                format_point3_mm(*origin),
+            );
+            properties.insert(
+                cadmpeg_core::nonblank_literal!("Direction"),
+                format_vector3(*direction),
+            );
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(|| "ReferenceAxis".into(), |record| record.kind.clone()),
                 parameters: existing
@@ -221,7 +236,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }
             require_same_family(existing, &feature.id, &["ReferencePoint"])?;
             let mut properties = feature.source_properties.clone();
-            properties.insert("Position".into(), format_point3_mm(*position));
+            properties.insert(
+                cadmpeg_core::nonblank_literal!("Position"),
+                format_point3_mm(*position),
+            );
             NeutralFeatureEncoding {
                 kind: existing
                     .map_or_else(|| "ReferencePoint".into(), |record| record.kind.clone()),
@@ -246,10 +264,22 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 &["CoordinateSystem", "ReferenceCoordinateSystem"],
             )?;
             let mut properties = feature.source_properties.clone();
-            properties.insert("Origin".into(), format_point3_mm(frame.origin()));
-            properties.insert("XAxis".into(), format_vector3(frame.x_axis()));
-            properties.insert("YAxis".into(), format_vector3(frame.y_axis()));
-            properties.insert("ZAxis".into(), format_vector3(frame.z_axis()));
+            properties.insert(
+                cadmpeg_core::nonblank_literal!("Origin"),
+                format_point3_mm(frame.origin()),
+            );
+            properties.insert(
+                cadmpeg_core::nonblank_literal!("XAxis"),
+                format_vector3(frame.x_axis()),
+            );
+            properties.insert(
+                cadmpeg_core::nonblank_literal!("YAxis"),
+                format_vector3(frame.y_axis()),
+            );
+            properties.insert(
+                cadmpeg_core::nonblank_literal!("ZAxis"),
+                format_vector3(frame.z_axis()),
+            );
             NeutralFeatureEncoding {
                 kind: existing
                     .map_or_else(|| "CoordinateSystem".into(), |record| record.kind.clone()),

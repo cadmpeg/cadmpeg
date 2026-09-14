@@ -2,7 +2,7 @@
 //! `UFRx` document states and their owned child records.
 
 use crate::native::digest::Sha256Hex;
-use cadmpeg_ir::products::NonBlankString;
+use cadmpeg_core::text::NonBlankString;
 
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
 use serde::{de::Error as _, Deserialize, Serialize};

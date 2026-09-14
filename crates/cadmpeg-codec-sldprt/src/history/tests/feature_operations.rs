@@ -297,9 +297,10 @@ fn decode_dispatches_typed_features_by_xml_family() {
         };
         *radius = cadmpeg_ir::scalar::PositiveLength::new(2.5).unwrap();
         updated_ir_evaluation.set_definition(updated_ir_definition);
-        ir.model.features[2]
-            .source_properties
-            .insert("Algorithm".into(), "FaceBlend".into());
+        ir.model.features[2].source_properties.insert(
+            cadmpeg_core::nonblank_literal!("Algorithm"),
+            "FaceBlend".into(),
+        );
     }
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(
