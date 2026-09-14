@@ -13,8 +13,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, Model};
 use cadmpeg_ir::geometry::{
     knots_nondecreasing, BlendRadiusLaw, Curve, NurbsCurve, NurbsSurface, PcurveGeometry,
-    ProceduralCurve, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
-    Surface,
+    PcurveNurbs, ProceduralCurve, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Body, Coedge, Color, Edge, Face, Sense};
@@ -755,7 +755,7 @@ pub(crate) struct NurbsCurveEdit {
 
 pub(crate) enum PcurveEdit {
     Inline {
-        native_geometry: PcurveGeometry,
+        native_geometry: PcurveNurbs,
         periodic: Option<bool>,
         wrapper_reversed: Option<bool>,
         native_tail_flags: Option<[bool; 4]>,
@@ -763,7 +763,7 @@ pub(crate) enum PcurveEdit {
         fit_tolerance: Option<f64>,
     },
     Ref {
-        native_geometry: PcurveGeometry,
+        native_geometry: PcurveNurbs,
         periodic: Option<bool>,
         parameter_range: Option<[f64; 2]>,
     },
