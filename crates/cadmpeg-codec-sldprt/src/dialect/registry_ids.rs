@@ -6,8 +6,8 @@
 pub(crate) const FORMAT: &str = "sldprt";
 
 /// Registry-owned dialect id `sldprt:sw-version-pre-12000`.
-pub(crate) const SLDPRT_SW_VERSION_PRE_12000: DialectId = DialectId::pinned("sldprt:sw-version-pre-12000");
+pub(crate) const SLDPRT_SW_VERSION_PRE_12000: DialectId = cadmpeg_core::dialect_id!("sldprt:sw-version-pre-12000");
 /// Registry-owned dialect id `sldprt:sw-version-12000-plus`.
-pub(crate) const SLDPRT_SW_VERSION_12000_PLUS: DialectId = DialectId::pinned("sldprt:sw-version-12000-plus");
+pub(crate) const SLDPRT_SW_VERSION_12000_PLUS: DialectId = cadmpeg_core::dialect_id!("sldprt:sw-version-12000-plus");
 /// Registry-owned dialect id `sldprt:unknown`.
-pub(crate) const SLDPRT_UNKNOWN: DialectId = DialectId::pinned("sldprt:unknown");
+pub(crate) const SLDPRT_UNKNOWN: DialectId = cadmpeg_core::dialect_id!("sldprt:unknown");

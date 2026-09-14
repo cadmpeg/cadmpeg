@@ -18,7 +18,7 @@
 //! codec, and orderings are codec-local where they are real at all. Outside its
 //! owning codec the id is comparable and printable; only the owner parses it.
 //!
-//! Producers use [`DialectId::pinned`] for checked static ids. Wire readers use
+//! Producers use [`dialect_id!`](crate::dialect_id) for checked static ids. Wire readers use
 //! [`DialectId::parse`] for checked owned ids. A codec backs its dialects with
 //! its own enum and returns registry-generated pinned constants from it — the
 //! `*LossCode` template: enum inside, pinned string at the boundary, one
@@ -47,35 +47,63 @@ use crate::text::NonBlankString;
 /// [`DialectId::as_str`] or print it; there is no other access to the raw
 /// string.
 #[derive(Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct DialectId(Cow<'static, str>);
+#[cfg_attr(feature = "schema", derive(JsonSchema), schemars(with = "String"))]
+pub struct DialectId {
+    value: Cow<'static, str>,
+    /// The separator found by admission. Both parts are non-empty ASCII.
+    namespace_len: usize,
+}
+
+/// A dialect id admitted from static storage.
+///
+/// This copyable proof lets a const initializer reject invalid text before
+/// constructing the borrowed-or-owned [`DialectId`].
+#[derive(Debug, Clone, Copy)]
+pub struct StaticDialectId {
+    value: &'static str,
+    namespace_len: usize,
+}
+
+impl StaticDialectId {
+    /// Admit a static id, returning `None` for noncanonical text.
+    #[must_use]
+    pub const fn new(id: &'static str) -> Option<Self> {
+        match dialect_separator(id) {
+            Some(namespace_len) => Some(Self {
+                value: id,
+                namespace_len,
+            }),
+            None => None,
+        }
+    }
+}
 
 impl DialectId {
-    /// Pins a dialect id from a static string.
-    ///
-    /// The only construction path for a producer. A codec's dialect enum maps
-    /// each of its variants through here, which keeps the vocabulary closed and
-    /// the ids greppable.
+    /// Construct an id from admitted static text.
     #[must_use]
-    pub const fn pinned(id: &'static str) -> Self {
-        assert!(valid_dialect_id(id), "invalid pinned dialect id");
-        Self(Cow::Borrowed(id))
+    pub const fn from_static(id: StaticDialectId) -> Self {
+        Self {
+            value: Cow::Borrowed(id.value),
+            namespace_len: id.namespace_len,
+        }
     }
 
     /// Parses and validates an owned dialect id.
     pub fn parse(id: impl Into<String>) -> Result<Self, DialectIdError> {
         let id = id.into();
-        if valid_dialect_id(&id) {
-            Ok(Self(Cow::Owned(id)))
-        } else {
-            Err(DialectIdError(id))
+        match dialect_separator(&id) {
+            Some(namespace_len) => Ok(Self {
+                value: Cow::Owned(id),
+                namespace_len,
+            }),
+            None => Err(DialectIdError(id)),
         }
     }
 
     /// Returns the id as a string slice.
     #[must_use]
     pub const fn as_str(&self) -> &str {
-        match &self.0 {
+        match &self.value {
             Cow::Borrowed(id) => id,
             Cow::Owned(id) => id.as_str(),
         }
@@ -92,37 +120,57 @@ impl DialectId {
     }
 
     fn parts(&self) -> (&str, &str) {
-        self.as_str()
-            .split_once(':')
-            .expect("DialectId validation guarantees a namespace")
+        let (namespace, qualified_name) = self.as_str().split_at(self.namespace_len);
+        (namespace, &qualified_name[1..])
     }
 }
 
-const fn valid_dialect_id(id: &str) -> bool {
+/// Construct a static dialect id whose grammar is checked during compilation.
+///
+/// ```compile_fail
+/// let _ = cadmpeg_core::dialect_id!("rhino:");
+/// ```
+#[macro_export]
+macro_rules! dialect_id {
+    ($literal:literal $(,)?) => {{
+        const STATIC_DIALECT_ID: $crate::dialect::StaticDialectId =
+            match $crate::dialect::StaticDialectId::new($literal) {
+                Some(id) => id,
+                None => panic!("invalid pinned dialect id"),
+            };
+        $crate::dialect::DialectId::from_static(STATIC_DIALECT_ID)
+    }};
+}
+
+const fn dialect_separator(id: &str) -> Option<usize> {
     let bytes = id.as_bytes();
     let mut index = 0;
     let mut colon = None;
     while index < bytes.len() {
         if bytes[index] == b':' {
             if colon.is_some() || index == 0 || index + 1 == bytes.len() {
-                return false;
+                return None;
             }
             colon = Some(index);
         }
         index += 1;
     }
     let Some(colon) = colon else {
-        return false;
+        return None;
     };
     index = 0;
     while index < colon {
         let byte = bytes[index];
         if !byte.is_ascii_lowercase() && !byte.is_ascii_digit() {
-            return false;
+            return None;
         }
         index += 1;
     }
-    valid_grammar_bytes(bytes, colon + 1)
+    if valid_grammar_bytes(bytes, colon + 1) {
+        Some(colon)
+    } else {
+        None
+    }
 }
 
 /// States whether `bytes[start..]` is a format-local name.
@@ -390,20 +438,10 @@ impl DialectLayers {
         Ok(())
     }
 
-    /// Adds a layer and panics when its `(format, instance)` key is occupied.
-    ///
-    /// A duplicate in builder code is a programming error. Fallible producer
-    /// paths use [`Self::insert`] to report the rejected layer.
-    #[must_use]
-    pub fn with(mut self, layer: DialectMatch) -> Self {
-        if let Err(rejected) = self.insert(layer) {
-            let existing = self
-                .iter()
-                .find(|existing| Self::same_key(existing, &rejected))
-                .expect("insert rejected an occupied dialect-layer key");
-            panic!("duplicate dialect layer: existing {existing:?}; rejected {rejected:?}");
-        }
-        self
+    /// Adds a layer, returning it unchanged when its key is occupied.
+    pub fn with(mut self, layer: DialectMatch) -> Result<Self, DialectMatch> {
+        self.insert(layer)?;
+        Ok(self)
     }
 
     fn same_key(existing: &DialectMatch, layer: &DialectMatch) -> bool {
@@ -615,11 +653,11 @@ impl DialectMatch {
     /// Return the full grammar identity in this match’s format namespace.
     #[must_use]
     pub fn grammar_id(&self, grammar: &Grammar) -> DialectId {
-        DialectId(Cow::Owned(format!(
-            "{}:{}",
-            self.format(),
-            grammar.as_str()
-        )))
+        let namespace = self.format();
+        DialectId {
+            value: Cow::Owned(format!("{namespace}:{}", grammar.as_str())),
+            namespace_len: namespace.len(),
+        }
     }
 }
 
@@ -642,7 +680,7 @@ mod tests {
 
     #[test]
     fn a_pinned_id_prints_and_serializes_as_the_plain_string() {
-        let id = DialectId::pinned("rhino:archive-80");
+        let id = crate::dialect_id!("rhino:archive-80");
 
         assert_eq!(id.to_string(), "rhino:archive-80");
         assert_eq!(id.as_str(), "rhino:archive-80");
@@ -651,6 +689,25 @@ mod tests {
             serde_json::from_str::<DialectId>("\"rhino:archive-80\"").unwrap(),
             id
         );
+    }
+
+    #[test]
+    fn static_dialect_admission_returns_none_for_invalid_runtime_text() {
+        for text in [
+            "",
+            "rhino",
+            "rhino:",
+            ":known",
+            "Rhino:known",
+            "a:b:c",
+            "a:é",
+        ] {
+            assert!(StaticDialectId::new(text).is_none(), "{text:?}");
+        }
+        let admitted = DialectId::from_static(StaticDialectId::new("rhino:archive-80").unwrap());
+        assert_eq!(admitted.namespace(), "rhino");
+        assert_eq!(admitted.local(), "archive-80");
+        assert_eq!(admitted, DialectId::parse("rhino:archive-80").unwrap());
     }
 
     #[test]
@@ -673,7 +730,9 @@ mod tests {
         let cases: DialectIdConformance =
             toml::from_str(include_str!("../../../docs/dialect-id-conformance.toml")).unwrap();
         for id in cases.valid {
-            DialectId::parse(id.clone()).unwrap_or_else(|_| panic!("valid dialect id {id:?}"));
+            let admitted =
+                DialectId::parse(id.clone()).unwrap_or_else(|_| panic!("valid dialect id {id:?}"));
+            assert_eq!(format!("{}:{}", admitted.namespace(), admitted.local()), id);
         }
         for id in cases.invalid {
             assert!(
@@ -686,7 +745,7 @@ mod tests {
     #[test]
     fn an_admitted_match_serializes_its_identity() {
         let admitted = DialectMatch {
-            dialect: DialectId::pinned("rhino:archive-80"),
+            dialect: crate::dialect_id!("rhino:archive-80"),
             declared: BTreeMap::new(),
             instance: None,
             admission: Admission::Admitted,
@@ -713,14 +772,14 @@ mod tests {
             "{error}"
         );
         assert_eq!(
-            DialectMatch::admitted(DialectId::pinned("rhino:archive-80")).format(),
+            DialectMatch::admitted(crate::dialect_id!("rhino:archive-80")).format(),
             "rhino"
         );
     }
 
     #[test]
     fn residual_constructor_records_the_absence_of_a_declared_grammar() {
-        let residual = DialectMatch::residual(DialectId::pinned("rhino:unknown"));
+        let residual = DialectMatch::residual(crate::dialect_id!("rhino:unknown"));
 
         assert_eq!(residual.admission(), &Admission::Residual);
         assert_eq!(residual.using(), None);
@@ -733,19 +792,19 @@ mod tests {
     #[test]
     fn an_unverified_admission_names_the_grammar_in_use_by_full_id() {
         let unverified = DialectMatch::unverified(
-            DialectId::pinned("acis:save-format-217"),
-            Grammar::of(&DialectId::pinned("acis:save-format-218")),
+            crate::dialect_id!("acis:save-format-217"),
+            Grammar::of(&crate::dialect_id!("acis:save-format-218")),
         );
 
         assert_eq!(
             unverified.admission(),
             &Admission::Unverified {
-                using: Grammar::of(&DialectId::pinned("acis:save-format-218")),
+                using: Grammar::of(&crate::dialect_id!("acis:save-format-218")),
             }
         );
         assert_eq!(
             unverified.using(),
-            Some(DialectId::pinned("acis:save-format-218"))
+            Some(crate::dialect_id!("acis:save-format-218"))
         );
         let serialized = serde_json::to_string(&unverified).unwrap();
         assert_eq!(
@@ -771,7 +830,7 @@ mod tests {
         assert_eq!(
             matched.admission(),
             &Admission::Unverified {
-                using: Grammar::of(&DialectId::pinned("rhino:unknown")),
+                using: Grammar::of(&crate::dialect_id!("rhino:unknown")),
             }
         );
     }
@@ -810,13 +869,13 @@ mod tests {
         }
         assert_eq!(
             Grammar::parse("save-format-218").unwrap(),
-            Grammar::of(&DialectId::pinned("acis:save-format-218"))
+            Grammar::of(&crate::dialect_id!("acis:save-format-218"))
         );
     }
 
     #[test]
     fn identity_does_not_encode_whether_an_unverified_path_used_a_grammar() {
-        let dialect = DialectId::pinned("rhino:archive-80");
+        let dialect = crate::dialect_id!("rhino:archive-80");
         let without_grammar = DialectMatch::residual(dialect.clone());
         assert_eq!(without_grammar.admission(), &Admission::Residual);
 
@@ -824,7 +883,7 @@ mod tests {
         assert_eq!(
             self_named.admission(),
             &Admission::Unverified {
-                using: Grammar::of(&DialectId::pinned("rhino:archive-80")),
+                using: Grammar::of(&crate::dialect_id!("rhino:archive-80")),
             }
         );
         assert_eq!(self_named.using(), Some(dialect));
@@ -833,7 +892,9 @@ mod tests {
     #[test]
     fn dialect_layers_accept_a_same_format_extra_with_an_instance() {
         let member = layer("rhino").with_instance("components/member.3dm");
-        let layers = DialectLayers::of(layer("rhino")).with(member.clone());
+        let layers = DialectLayers::of(layer("rhino"))
+            .with(member.clone())
+            .expect("distinct dialect layer keys");
 
         let serialized = serde_json::to_value(&layers).unwrap();
         assert_eq!(
@@ -847,8 +908,10 @@ mod tests {
     fn dialect_layers_insert_keeps_the_first_extra_layer_for_a_key() {
         let first = layer("acis").with_instance("body");
         let replacement =
-            DialectMatch::residual(DialectId::pinned("acis:other")).with_instance("body");
-        let mut layers = DialectLayers::of(layer("rhino")).with(first.clone());
+            DialectMatch::residual(crate::dialect_id!("acis:other")).with_instance("body");
+        let mut layers = DialectLayers::of(layer("rhino"))
+            .with(first.clone())
+            .expect("distinct dialect layer keys");
 
         assert_eq!(layers.insert(replacement.clone()), Err(replacement));
         assert_eq!(layers.into_parts().1, [first]);
@@ -856,8 +919,10 @@ mod tests {
 
     #[test]
     fn dialect_layers_insert_keeps_the_primary_on_its_own_key() {
-        let replacement = DialectMatch::residual(DialectId::pinned("rhino:other"));
-        let mut layers = DialectLayers::of(layer("rhino")).with(layer("acis"));
+        let replacement = DialectMatch::residual(crate::dialect_id!("rhino:other"));
+        let mut layers = DialectLayers::of(layer("rhino"))
+            .with(layer("acis"))
+            .expect("distinct dialect layer keys");
 
         assert_eq!(layers.insert(replacement.clone()), Err(replacement));
         assert_eq!(layers.primary(), &layer("rhino"));
@@ -865,24 +930,14 @@ mod tests {
     }
 
     #[test]
-    fn dialect_layers_builder_panics_with_both_colliding_layers() {
+    fn dialect_layers_builder_returns_the_colliding_layer() {
         let first = layer("acis").with_instance("body");
         let replacement =
-            DialectMatch::residual(DialectId::pinned("acis:other")).with_instance("body");
-
-        let panic = std::panic::catch_unwind(|| {
-            let _layers = DialectLayers::of(layer("rhino"))
-                .with(first)
-                .with(replacement);
-        })
-        .expect_err("the builder must reject a duplicate layer key");
-        let message = panic
-            .downcast_ref::<String>()
-            .map(String::as_str)
-            .or_else(|| panic.downcast_ref::<&str>().copied())
-            .expect("builder panic carries a string message");
-        assert!(message.contains("acis:known"), "{message}");
-        assert!(message.contains("acis:other"), "{message}");
+            DialectMatch::residual(crate::dialect_id!("acis:other")).with_instance("body");
+        let layers = DialectLayers::of(layer("rhino"))
+            .with(first)
+            .expect("distinct dialect layer keys");
+        assert_eq!(layers.with(replacement.clone()), Err(replacement));
     }
 
     #[test]
@@ -900,7 +955,7 @@ mod tests {
     fn dialect_layers_deserialization_rejects_a_repeated_key() {
         let serialized = serde_json::json!({
             "primary": layer("rhino"),
-            "extra": [layer("acis"), DialectMatch::residual(DialectId::pinned("acis:other"))],
+            "extra": [layer("acis"), DialectMatch::residual(crate::dialect_id!("acis:other"))],
         });
 
         let error = serde_json::from_value::<DialectLayers>(serialized)
@@ -915,7 +970,7 @@ mod tests {
     fn dialect_layers_deserialization_rejects_an_extra_on_the_primary_key() {
         let serialized = serde_json::json!({
             "primary": layer("rhino"),
-            "extra": [DialectMatch::residual(DialectId::pinned("rhino:other"))],
+            "extra": [DialectMatch::residual(crate::dialect_id!("rhino:other"))],
         });
 
         let error = serde_json::from_value::<DialectLayers>(serialized)
@@ -928,7 +983,9 @@ mod tests {
 
     #[test]
     fn dialect_layers_serialize_with_an_explicit_primary() {
-        let layers = DialectLayers::of(layer("rhino")).with(layer("acis"));
+        let layers = DialectLayers::of(layer("rhino"))
+            .with(layer("acis"))
+            .expect("distinct dialect layer keys");
         let serialized = serde_json::to_value(&layers).unwrap();
 
         assert_eq!(

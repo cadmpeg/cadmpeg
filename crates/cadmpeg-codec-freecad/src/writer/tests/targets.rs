@@ -39,7 +39,7 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
     let mut step_source = cadmpeg_ir::CadIr::empty();
     step_source.source = Some(cadmpeg_ir::document::SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
-            cadmpeg_core::dialect::DialectId::pinned("step:ap242"),
+            cadmpeg_core::dialect_id!("step:ap242"),
         )),
         std::collections::BTreeMap::new(),
     ));

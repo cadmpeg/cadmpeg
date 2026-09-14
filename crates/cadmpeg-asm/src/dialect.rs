@@ -325,7 +325,7 @@ mod tests {
         .is_none());
         assert!(unverified_message(
             "the carrier",
-            &DialectMatch::admitted(DialectId::pinned("test:text"))
+            &DialectMatch::admitted(cadmpeg_core::dialect_id!("test:text"))
         )
         .is_none());
     }
@@ -422,6 +422,9 @@ mod tests {
         .into_iter()
         .map(|matched| matched.dialect().to_string())
         .collect();
-        assert_eq!(ids, cadmpeg_test_support::registry_ids(FORMAT));
+        assert_eq!(
+            ids,
+            cadmpeg_test_support::registry_ids(FORMAT).expect("identity registry parses")
+        );
     }
 }

@@ -136,9 +136,9 @@ impl LayerClassification {
 /// Embedded Parasolid schema rows this codec reads with their own declared
 /// grammar. Every other schema is recovered on the kernel's residual path.
 pub(crate) const VERIFIED_KERNELS: [DialectId; 3] = [
-    DialectId::pinned("parasolid:sch-sw-33103"),
-    DialectId::pinned("parasolid:sch-sw-32001"),
-    DialectId::pinned("parasolid:format-13006"),
+    cadmpeg_core::dialect_id!("parasolid:sch-sw-33103"),
+    cadmpeg_core::dialect_id!("parasolid:sch-sw-32001"),
+    cadmpeg_core::dialect_id!("parasolid:format-13006"),
 ];
 
 /// Classify the host document and every framed Parasolid stream it carries.

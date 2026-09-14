@@ -69,14 +69,14 @@ fn diff_reports_a_source_attribute_change_and_exits_one() {
 
 #[test]
 fn diff_reports_dialect_admission_and_declaration_changes() {
-    use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
+    use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
     use std::collections::BTreeMap;
 
     let dir = tempdir().unwrap();
     let mut left = unit_cube();
     left.source = Some(cadmpeg_ir::SourceMeta::classified(
         DialectLayers::of(
-            DialectMatch::admitted(DialectId::pinned("synthetic:v1")).with_declared(
+            DialectMatch::admitted(cadmpeg_core::dialect_id!("synthetic:v1")).with_declared(
                 BTreeMap::from([(cadmpeg_core::nonblank_literal!("version"), "1".into())]),
             ),
         ),
@@ -85,7 +85,7 @@ fn diff_reports_dialect_admission_and_declaration_changes() {
     let mut right = unit_cube();
     right.source = Some(cadmpeg_ir::SourceMeta::classified(
         DialectLayers::of(
-            DialectMatch::residual(DialectId::pinned("synthetic:v1")).with_declared(
+            DialectMatch::residual(cadmpeg_core::dialect_id!("synthetic:v1")).with_declared(
                 BTreeMap::from([(cadmpeg_core::nonblank_literal!("version"), "2".into())]),
             ),
         ),

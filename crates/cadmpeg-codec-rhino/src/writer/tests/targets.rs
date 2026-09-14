@@ -12,7 +12,7 @@ fn source_in(dialect: &'static str) -> CadIr {
     let mut ir = CadIr::empty();
     ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
-            cadmpeg_core::dialect::DialectId::pinned(dialect),
+            cadmpeg_core::dialect::DialectId::parse(dialect).expect("test id has dialect grammar"),
         )),
         std::collections::BTreeMap::new(),
     ));

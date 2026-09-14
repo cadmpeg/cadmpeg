@@ -173,7 +173,11 @@ pub(crate) fn inspect(
     };
     let losses = crate::dialect::dialect_loss(&kernel).into_iter().collect();
     Ok(ContainerSummary::classified(
-        cadmpeg_core::dialect::DialectLayers::of(matched).with(kernel),
+        cadmpeg_core::dialect::DialectLayers::of(matched)
+            .with(kernel)
+            .map_err(|rejected| {
+                CodecError::malformed(format!("SAT repeated dialect layer key: {rejected:?}"))
+            })?,
         cadmpeg_ir::ContainerKind::Stream,
         vec![ContainerEntry {
             name: "stream".to_string(),

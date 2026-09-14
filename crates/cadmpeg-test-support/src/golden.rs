@@ -359,12 +359,9 @@ fn stems(dir: &Path, extension: &str) -> Vec<String> {
                 .unwrap_or_else(|error| panic!("read entry: {error}"))
                 .path()
         })
-        .filter(|path| path.extension().is_some_and(|found| found == extension))
-        .map(|path| {
-            path.file_stem()
-                .expect("directory entry with an extension has a stem")
-                .to_string_lossy()
-                .into_owned()
+        .filter_map(|path| {
+            let (stem, found) = path.file_stem().zip(path.extension())?;
+            (found == extension).then(|| stem.to_string_lossy().into_owned())
         })
         .collect();
     names.sort();
@@ -429,8 +426,10 @@ fn first_line_diff(expected: &str, actual: &str) -> (usize, String, String) {
             (Some(left), Some(right)) if left == right => {}
             (left, right) => {
                 let truncate = |value: Option<&str>| match value {
-                    Some(text) if text.len() > 200 => format!("{}…", &text[..200]),
-                    Some(text) => text.to_owned(),
+                    Some(text) => match text.char_indices().nth(200) {
+                        Some((end, _)) => format!("{}…", &text[..end]),
+                        None => text.to_owned(),
+                    },
                     None => "<end of file>".to_owned(),
                 };
                 return (line, truncate(left), truncate(right));
@@ -461,22 +460,16 @@ pub fn elide_local_digests(
 ///
 /// Snapshots serialize through [`serde_json::Value`], whose maps order by key,
 /// so reordering a struct field does not rewrite every golden.
-///
-/// # Panics
-///
-/// Panics when the value cannot be serialized, which no codec output can cause.
 #[must_use]
 pub fn snapshot_text(value: &serde_json::Value) -> String {
-    let mut text = serde_json::to_string_pretty(value).expect("serialize snapshot");
-    text.push('\n');
-    text
+    format!("{value:#}\n")
 }
 
 #[cfg(test)]
 mod tests {
     use std::sync::{Mutex, MutexGuard};
 
-    use super::{compare_branch_snapshot, snapshots_agree};
+    use super::{compare_branch_snapshot, first_line_diff, snapshot_text, snapshots_agree};
     use cadmpeg_ir::compare::FLOAT_TOLERANCE;
 
     /// Serializes tests that mutate `GOLDEN_STRICT` so parallel workers cannot
@@ -520,6 +513,27 @@ mod tests {
                     None => std::env::remove_var("GOLDEN_STRICT"),
                 }
             }
+        }
+    }
+
+    #[test]
+    fn line_diff_truncates_at_a_character_boundary() {
+        let prefix = "a".repeat(199);
+        let (_, actual, _) = first_line_diff(&format!("{prefix}é-rest"), "different");
+        assert_eq!(actual, format!("{prefix}é…"));
+        let short = "é".repeat(110);
+        let (_, actual, _) = first_line_diff(&short, "different");
+        assert_eq!(actual, short);
+    }
+
+    #[test]
+    fn value_display_preserves_pretty_snapshot_bytes() {
+        for value in [
+            serde_json::Value::Null,
+            serde_json::json!({"z": [1.25, true, null], "a": "é\n\""}),
+        ] {
+            let expected = serde_json::to_string_pretty(&value).unwrap() + "\n";
+            assert_eq!(snapshot_text(&value), expected);
         }
     }
 

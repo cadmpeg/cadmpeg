@@ -195,8 +195,14 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
 /// frame. Inspection reports the same primary match.
 fn unsupported_unframed(evidence: &StreamEvidence<'_>, message: impl Into<String>) -> CodecError {
     let (matched, kernel) = layers(evidence);
+    let dialects = match DialectLayers::of(matched).with(kernel) {
+        Ok(dialects) => dialects,
+        Err(rejected) => {
+            return CodecError::malformed(format!("SAT repeated dialect layer key: {rejected:?}"));
+        }
+    };
     CodecError::UnsupportedDialect {
-        dialects: Box::new(DialectLayers::of(matched).with(kernel)),
+        dialects: Box::new(dialects),
         message: message.into(),
     }
 }
@@ -211,7 +217,11 @@ fn build_result(
     kernel: &DialectMatch,
 ) -> Result<Decoded, CodecError> {
     let mut ir = CadIr::decoded(SourceMeta::classified(
-        DialectLayers::of(matched).with(kernel.clone()),
+        DialectLayers::of(matched)
+            .with(kernel.clone())
+            .map_err(|rejected| {
+                CodecError::malformed(format!("SAT repeated dialect layer key: {rejected:?}"))
+            })?,
         cadmpeg_core::text::named_entries("the acis header", attributes)?,
     ));
     let mut losses = Vec::new();

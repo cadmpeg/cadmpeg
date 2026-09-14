@@ -114,7 +114,7 @@ fn inferred_partition_does_not_fabricate_active_configuration_identity() {
     let mut ir = CadIr::empty();
     ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
-            cadmpeg_core::dialect::DialectId::pinned("sldprt:test"),
+            cadmpeg_core::dialect_id!("sldprt:test"),
         )),
         BTreeMap::from([
             (
@@ -151,7 +151,7 @@ fn active_configuration_name_binds_partition_without_fabricating_body_membership
     let mut ir = CadIr::empty();
     ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
-            cadmpeg_core::dialect::DialectId::pinned("sldprt:test"),
+            cadmpeg_core::dialect_id!("sldprt:test"),
         )),
         BTreeMap::from([
             (
@@ -261,7 +261,7 @@ fn active_configuration_partition_disagreement_is_reported() {
     let mut ir = CadIr::empty();
     ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
-            cadmpeg_core::dialect::DialectId::pinned("sldprt:test"),
+            cadmpeg_core::dialect_id!("sldprt:test"),
         )),
         BTreeMap::from([(
             cadmpeg_core::nonblank_literal!("active_parasolid_block"),

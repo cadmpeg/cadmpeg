@@ -15,25 +15,14 @@ use std::collections::BTreeMap;
 pub struct NonWhitespaceChar(char);
 
 impl NonWhitespaceChar {
-    /// The character an ASCII literal byte names.
-    ///
-    /// Macro-only: [`nonblank_literal!`](crate::nonblank_literal) and
-    /// [`nonblank_const!`](crate::nonblank_const) are the two callers, and each
-    /// evaluates this constructor in the initializer of a `const` item. The
-    /// assertion is therefore an E0080 at every use, under `cargo check` as
-    /// well as a build, and no caller reaches it at run time. Call it nowhere
-    /// else, and never outside a `const` item initializer.
-    ///
-    /// [`NonWhitespaceChar::hex_digit`] is the total constructor for a value
-    /// computed at run time.
-    #[doc(hidden)]
+    /// Admit an ASCII byte that is not whitespace.
     #[must_use]
-    pub const fn from_ascii_literal(byte: u8) -> Self {
-        assert!(
-            byte.is_ascii() && !byte.is_ascii_whitespace(),
-            "a nonblank literal starts with a non-whitespace ASCII character",
-        );
-        Self(byte as char)
+    pub const fn from_ascii(byte: u8) -> Option<Self> {
+        if byte.is_ascii() && !byte.is_ascii_whitespace() {
+            Some(Self(byte as char))
+        } else {
+            None
+        }
     }
 
     /// The lowercase hexadecimal digit naming the low four bits of `nibble`.
@@ -107,6 +96,10 @@ impl NonBlankString {
 /// codegen build. (An inline `const { … }` block is evaluated at codegen, so
 /// `check` would pass a whitespace literal.) Formatted arguments follow that
 /// literal prefix and cannot make the result blank.
+///
+/// ```compile_fail
+/// let _ = cadmpeg_core::nonblank_literal!(" {}", "name");
+/// ```
 #[macro_export]
 macro_rules! nonblank_literal {
     ($template:literal $(, $argument:expr)* $(,)?) => {{
@@ -116,7 +109,10 @@ macro_rules! nonblank_literal {
                 !bytes.is_empty() && bytes[0] != b'{',
                 "a nonblank literal must start with literal ASCII text",
             );
-            $crate::text::NonWhitespaceChar::from_ascii_literal(bytes[0])
+            match $crate::text::NonWhitespaceChar::from_ascii(bytes[0]) {
+                Some(character) => character,
+                None => panic!("a nonblank literal starts with a non-whitespace ASCII character"),
+            }
         };
         let rendered = format!($template $(, $argument)*);
         $crate::text::NonBlankString::prefixed(NONBLANK_LITERAL_LEADING, &rendered[1..])
@@ -264,7 +260,10 @@ macro_rules! nonblank_const {
                 !bytes.is_empty(),
                 "a nonblank constant must hold at least one character",
             );
-            $crate::text::NonWhitespaceChar::from_ascii_literal(bytes[0])
+            match $crate::text::NonWhitespaceChar::from_ascii(bytes[0]) {
+                Some(character) => character,
+                None => panic!("a nonblank literal starts with a non-whitespace ASCII character"),
+            }
         };
         $crate::text::NonBlankString::prefixed(NONBLANK_CONST_LEADING, &$constant[1..])
     }};
@@ -306,10 +305,10 @@ mod tests {
 
     #[test]
     fn prefixes_preserve_nonblank_strings_and_wire_values() {
-        // The literal constructor is evaluated where its callers evaluate it:
-        // in the initializer of a `const` item, which is compile-time. No test
-        // reaches its assertion at run time.
-        const HASH: NonWhitespaceChar = NonWhitespaceChar::from_ascii_literal(b'#');
+        const HASH: NonWhitespaceChar = match NonWhitespaceChar::from_ascii(b'#') {
+            Some(character) => character,
+            None => panic!("the literal is an ASCII non-whitespace character"),
+        };
         const PINNED: &str = "pinned";
         for (prefix, suffix, expected) in [
             (HASH, "42", "#42"),
@@ -322,6 +321,20 @@ mod tests {
         }
         assert_eq!(crate::nonblank_literal!("#{}", 42).as_str(), "#42");
         assert_eq!(crate::nonblank_const!(PINNED).as_str(), "pinned");
+    }
+
+    #[test]
+    fn ascii_character_admission_is_total_over_every_byte() {
+        for byte in u8::MIN..=u8::MAX {
+            let admitted = NonWhitespaceChar::from_ascii(byte);
+            assert_eq!(
+                admitted.is_some(),
+                byte.is_ascii() && !byte.is_ascii_whitespace()
+            );
+            if let Some(character) = admitted {
+                assert_eq!(character.to_string(), char::from(byte).to_string());
+            }
+        }
     }
 
     #[test]

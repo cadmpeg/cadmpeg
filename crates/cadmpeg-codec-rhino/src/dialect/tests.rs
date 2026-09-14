@@ -7,11 +7,12 @@
 use super::*;
 
 #[test]
-fn enum_and_registry_rows_are_closed_bidirectionally() {
+fn enum_and_registry_rows_are_closed_bidirectionally() -> Result<(), Box<dyn std::error::Error>> {
     cadmpeg_test_support::assert_dialect_rows_closed(
         &ArchiveVersion::ALL.map(ArchiveVersion::id),
         FORMAT,
-    );
+    )?;
+    Ok(())
 }
 
 /// Every archive word with a row of its own, beside the row it must reach.

@@ -13,7 +13,8 @@ use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use std::io::Cursor;
 
 #[test]
-fn representation_version_products_and_registry_rows_are_closed_bidirectionally() {
+fn representation_version_products_and_registry_rows_are_closed_bidirectionally(
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut ids = VersionFlag::ALL
         .map(|flag| dialect_id(Representation::FixedAscii, Some(flag)))
         .to_vec();
@@ -26,7 +27,8 @@ fn representation_version_products_and_registry_rows_are_closed_bidirectionally(
         );
     }
     ids.push(IGES_UNKNOWN);
-    cadmpeg_test_support::assert_dialect_rows_closed(&ids, FORMAT);
+    cadmpeg_test_support::assert_dialect_rows_closed(&ids, FORMAT)?;
+    Ok(())
 }
 
 #[test]
@@ -265,7 +267,7 @@ fn each_declaration_classifies_into_the_row_its_discriminants_match() {
             } else {
                 assert_eq!(
                     matched.using(),
-                    Some(DialectId::pinned(nearest_id)),
+                    Some(DialectId::parse(nearest_id).expect("test id has dialect grammar")),
                     "{context}"
                 );
             }
@@ -325,7 +327,7 @@ fn a_legacy_fixed_ascii_declaration_decodes_into_its_own_row_unverified() {
     );
     assert_eq!(
         matched.using(),
-        Some(DialectId::pinned("iges:5.3-fixed-ascii"))
+        Some(cadmpeg_core::dialect_id!("iges:5.3-fixed-ascii"))
     );
     assert_eq!(matched.declared()["version_flag"], "2");
     assert_eq!(matched.declared()["effective_version"], "ANSI-Y14.26M-1981");
@@ -363,7 +365,7 @@ fn a_version_flag_outside_the_table_decodes_into_the_totality_row() {
     assert_eq!(matched.dialect().as_str(), "iges:unknown");
     assert_eq!(
         matched.using(),
-        Some(DialectId::pinned("iges:5.3-fixed-ascii"))
+        Some(cadmpeg_core::dialect_id!("iges:5.3-fixed-ascii"))
     );
     assert_eq!(matched.declared()["version_flag"], "99");
     assert_eq!(matched.declared()["effective_version"], "5.3");

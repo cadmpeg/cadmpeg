@@ -106,12 +106,12 @@ impl<T> Drop for FinalizingEdit<'_, T> {
 }
 
 /// Assert that a codec enum and its reportable identity-registry rows are equal.
-pub fn assert_dialect_rows_closed(ids: &[DialectId], format: &str) {
+pub fn assert_dialect_rows_closed(ids: &[DialectId], format: &str) -> Result<(), toml::de::Error> {
     let enum_ids = ids
         .iter()
         .map(|id| id.as_str().to_owned())
         .collect::<BTreeSet<_>>();
-    let registry_ids = registry_ids(format);
+    let registry_ids = registry_ids(format)?;
 
     assert_eq!(
         enum_ids.len(),
@@ -122,6 +122,7 @@ pub fn assert_dialect_rows_closed(ids: &[DialectId], format: &str) {
         enum_ids, registry_ids,
         "the codec enum and identity registry disagree"
     );
+    Ok(())
 }
 
 /// Reportable dialect ids under one format prefix in the identity registry.
@@ -131,23 +132,27 @@ pub fn assert_dialect_rows_closed(ids: &[DialectId], format: &str) {
 /// Rows marked `detect-unreachable` describe identification failures that
 /// cannot produce a [`cadmpeg_core::dialect::DialectMatch`], so codec enums do
 /// not own variants for them.
-#[must_use]
-pub fn registry_ids(prefix: &str) -> BTreeSet<String> {
-    let registry: toml::Value = toml::from_str(include_str!("../../../docs/dialects.toml"))
-        .expect("docs/dialects.toml parses as TOML");
+pub fn registry_ids(prefix: &str) -> Result<BTreeSet<String>, toml::de::Error> {
+    #[derive(serde::Deserialize)]
+    struct Registry {
+        dialect: Vec<Row>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct Row {
+        id: String,
+        unknown_kind: Option<String>,
+    }
+
+    let registry: Registry = toml::from_str(include_str!("../../../docs/dialects.toml"))?;
     let prefix = format!("{prefix}:");
     let ids = registry
-        .get("dialect")
-        .and_then(toml::Value::as_array)
-        .expect("docs/dialects.toml declares dialect rows")
-        .iter()
-        .filter(|row| {
-            row.get("unknown_kind").and_then(toml::Value::as_str) != Some("detect-unreachable")
-        })
-        .filter_map(|row| row.get("id").and_then(toml::Value::as_str))
+        .dialect
+        .into_iter()
+        .filter(|row| row.unknown_kind.as_deref() != Some("detect-unreachable"))
+        .map(|row| row.id)
         .filter(|id| id.starts_with(&prefix))
-        .map(str::to_owned)
         .collect::<BTreeSet<_>>();
     assert!(!ids.is_empty(), "the registry declares no {prefix} rows");
-    ids
+    Ok(ids)
 }

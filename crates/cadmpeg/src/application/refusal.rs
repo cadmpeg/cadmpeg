@@ -562,13 +562,13 @@ mod tests {
     use std::collections::BTreeMap;
     use std::path::PathBuf;
 
-    use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
+    use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
     use cadmpeg_core::target::{TargetCatalog, TargetDescriptor};
 
     use super::*;
 
     const IGES_TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
-        id: DialectId::pinned("iges:5.3-fixed-ascii"),
+        id: cadmpeg_core::dialect_id!("iges:5.3-fixed-ascii"),
         aliases: &[],
     }];
     const IGES_CATALOG: TargetCatalog = TargetCatalog::new(IGES_TARGETS, Some(0));
@@ -615,7 +615,7 @@ mod tests {
 
     #[test]
     fn unsupported_decode_keeps_the_identification() {
-        let matched = DialectMatch::refused(DialectId::pinned("step:part-28-xml"));
+        let matched = DialectMatch::refused(cadmpeg_core::dialect_id!("step:part-28-xml"));
         let refusal = ConversionRefusal::UnsupportedDialect {
             dialects: Box::new(DialectLayers::of(matched.clone())),
             reason: "the XML encoding has no decode grammar".into(),
@@ -633,10 +633,13 @@ mod tests {
 
     #[test]
     fn unsupported_decode_serializes_every_identified_layer() {
-        let layers = DialectLayers::of(DialectMatch::refused(DialectId::pinned("sldprt:sw-2024")))
-            .with(DialectMatch::residual(DialectId::pinned(
-                "parasolid:unknown",
-            )));
+        let layers = DialectLayers::of(DialectMatch::refused(cadmpeg_core::dialect_id!(
+            "sldprt:sw-2024"
+        )))
+        .with(DialectMatch::residual(cadmpeg_core::dialect_id!(
+            "parasolid:unknown"
+        )))
+        .expect("distinct dialect layer keys");
         let refusal = ConversionRefusal::UnsupportedDialect {
             dialects: Box::new(layers),
             reason: "no decoder admits the host dialect".into(),
@@ -663,7 +666,7 @@ mod tests {
 
     #[test]
     fn decode_classifier_preserves_an_unsupported_dialect_variant() {
-        let matched = DialectMatch::refused(DialectId::pinned("step:part-28-xml"));
+        let matched = DialectMatch::refused(cadmpeg_core::dialect_id!("step:part-28-xml"));
         let classified = classify(DecodeFailure::Codec(
             cadmpeg_core::CodecError::UnsupportedDialect {
                 dialects: Box::new(DialectLayers::of(matched.clone())),

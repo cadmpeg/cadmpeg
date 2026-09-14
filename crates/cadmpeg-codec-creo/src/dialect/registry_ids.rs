@@ -6,10 +6,10 @@
 pub(crate) const FORMAT: &str = "creo";
 
 /// Registry-owned dialect id `creo:depdb`.
-pub(crate) const CREO_DEPDB: DialectId = DialectId::pinned("creo:depdb");
+pub(crate) const CREO_DEPDB: DialectId = cadmpeg_core::dialect_id!("creo:depdb");
 /// Registry-owned dialect id `creo:nd`.
-pub(crate) const CREO_ND: DialectId = DialectId::pinned("creo:nd");
+pub(crate) const CREO_ND: DialectId = cadmpeg_core::dialect_id!("creo:nd");
 /// Registry-owned dialect id `creo:legacy-ascii`.
-pub(crate) const CREO_LEGACY_ASCII: DialectId = DialectId::pinned("creo:legacy-ascii");
+pub(crate) const CREO_LEGACY_ASCII: DialectId = cadmpeg_core::dialect_id!("creo:legacy-ascii");
 /// Registry-owned dialect id `creo:unknown`.
-pub(crate) const CREO_UNKNOWN: DialectId = DialectId::pinned("creo:unknown");
+pub(crate) const CREO_UNKNOWN: DialectId = cadmpeg_core::dialect_id!("creo:unknown");

@@ -411,7 +411,7 @@ class TestGeneratedIds(unittest.TestCase):
         content = outputs[self.OWNER["demo"].path]
         self.assertIn('pub(crate) const FORMAT: &str = "demo";', content)
         self.assertIn(
-            'pub(crate) const DEMO_ONE: DialectId = DialectId::pinned("demo:one");',
+            'pub(crate) const DEMO_ONE: DialectId = cadmpeg_core::dialect_id!("demo:one");',
             content,
         )
 
