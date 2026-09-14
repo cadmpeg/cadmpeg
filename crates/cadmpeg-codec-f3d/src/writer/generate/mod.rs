@@ -115,7 +115,7 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
                 )));
             }
             let payload =
-                crate::design::configurations::encode_configuration_payload(configuration)?;
+                crate::records::configuration::encode_configuration_payload(configuration)?;
             archive
                 .start_file(configuration.entry_name(), options)
                 .map_err(|error| {

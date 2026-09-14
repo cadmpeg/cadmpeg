@@ -5,13 +5,11 @@
 use cadmpeg_core::container::ContainerRole;
 
 use crate::container::ContainerScan;
-use crate::design::dimensions::json_scalar_text;
 use crate::ids::neutral_configuration_id;
-use crate::records::{DesignConfiguration, DesignConfigurationKind};
+use crate::records::configuration::{DesignConfiguration, DesignConfigurationKind};
 use cadmpeg_core::CodecError;
 use serde::de::{IgnoredAny, MapAccess, Visitor};
-use serde::ser::SerializeMap;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer};
 use std::collections::HashSet;
 use std::fmt;
 
@@ -119,224 +117,6 @@ pub fn decode_configurations(scan: &ContainerScan) -> Result<Vec<DesignConfigura
     Ok(configurations)
 }
 
-/// Validate the typed fields of one configuration document while permitting
-/// unrecognized object members for forward-compatible native retention.
-pub(crate) fn validate_configuration_payload(
-    entry_name: &str,
-    kind: DesignConfigurationKind,
-    object: &serde_json::Map<String, serde_json::Value>,
-) -> Result<(), CodecError> {
-    if kind == DesignConfigurationKind::Rule {
-        // Rules need typed `when` and `activate` strings; other shapes stay native JSON.
-        return Ok(());
-    }
-    let configurations = match object.get("configurations") {
-        Some(value) => Some(value.as_object().ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "F3D configuration table `configurations` must be an object: {entry_name}"
-            ))
-        })?),
-        None => None,
-    };
-    if let Some(active) = object.get("active") {
-        let active = active.as_str().ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "F3D configuration table `active` must be a string: {entry_name}"
-            ))
-        })?;
-        if !configurations.is_some_and(|variants| variants.contains_key(active)) {
-            return Err(CodecError::malformed(format_args!(
-                "F3D active configuration `{active}` is not a named variant: {entry_name}"
-            )));
-        }
-    }
-    for (name, value) in configurations.into_iter().flatten() {
-        let definition = value.as_object().ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "F3D configuration variant `{name}` must be an object: {entry_name}"
-            ))
-        })?;
-        if definition
-            .get("parameters")
-            .is_some_and(|value| !value.is_object())
-        {
-            return Err(CodecError::malformed(format_args!(
-                "F3D configuration variant `{name}` parameters must be an object: {entry_name}"
-            )));
-        }
-        if definition
-            .get("parameters")
-            .and_then(serde_json::Value::as_object)
-            .is_some_and(|parameters| {
-                parameters
-                    .values()
-                    .any(|value| value.is_array() || value.is_object())
-            })
-        {
-            return Err(CodecError::malformed(format_args!(
-                "F3D configuration variant `{name}` parameter overrides must be JSON scalars: {entry_name}"
-            )));
-        }
-        if let Some(suppressed) = definition.get("suppressed") {
-            let valid = suppressed
-                .as_array()
-                .is_some_and(|values| values.iter().all(serde_json::Value::is_string));
-            if !valid {
-                return Err(CodecError::malformed(format_args!(
-                    "F3D configuration variant `{name}` suppressed list must contain strings: {entry_name}"
-                )));
-            }
-        }
-        if definition
-            .get("material")
-            .is_some_and(|value| !value.is_string())
-        {
-            return Err(CodecError::malformed(format_args!(
-                "F3D configuration variant `{name}` material must be a string: {entry_name}"
-            )));
-        }
-    }
-    Ok(())
-}
-
-/// Validate that a native table's retained member order names every variant
-/// exactly once. A missing order remains valid for a legacy native record only
-/// when the table has at most one variant, whose position is unambiguous.
-pub(crate) fn validate_configuration_variant_order(
-    configuration: &DesignConfiguration,
-) -> Result<(), CodecError> {
-    if configuration.kind() == DesignConfigurationKind::Rule {
-        return configuration
-            .variant_order()
-            .is_empty()
-            .then_some(())
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "F3D configuration rule carries a variant order: {}",
-                    configuration.entry_name()
-                ))
-            });
-    }
-    let variants = configuration
-        .payload()
-        .get("configurations")
-        .and_then(serde_json::Value::as_object);
-    let count = variants.map_or(0, serde_json::Map::len);
-    if configuration.variant_order().is_empty() && count <= 1 {
-        return Ok(());
-    }
-    let mut unique = HashSet::with_capacity(configuration.variant_order().len());
-    let valid = variants.is_some_and(|variants| {
-        configuration.variant_order().len() == variants.len()
-            && configuration
-                .variant_order()
-                .iter()
-                .all(|name| unique.insert(name) && variants.contains_key(name))
-    });
-    valid.then_some(()).ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "F3D configuration variant order does not match its table: {}",
-            configuration.entry_name()
-        ))
-    })
-}
-
-fn ordered_configuration_variants(
-    configuration: &DesignConfiguration,
-) -> Result<Vec<(&String, &serde_json::Value)>, CodecError> {
-    let Some(variants) = configuration
-        .payload()
-        .get("configurations")
-        .and_then(serde_json::Value::as_object)
-    else {
-        return Ok(Vec::new());
-    };
-    if configuration.variant_order().is_empty() {
-        return Ok(variants.iter().collect());
-    }
-    configuration
-        .variant_order()
-        .iter()
-        .map(|name| {
-            variants
-                .get(name)
-                .map(|value| (name, value))
-                .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "F3D configuration order names missing table member: {name}"
-                    ))
-                })
-        })
-        .collect()
-}
-
-struct OrderedConfigurationVariants<'a> {
-    configuration: &'a DesignConfiguration,
-    variants: &'a serde_json::Map<String, serde_json::Value>,
-}
-
-impl Serialize for OrderedConfigurationVariants<'_> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut map = serializer.serialize_map(Some(self.variants.len()))?;
-        if self.configuration.variant_order().is_empty() {
-            for (name, value) in self.variants {
-                map.serialize_entry(name, value)?;
-            }
-        } else {
-            for name in self.configuration.variant_order() {
-                map.serialize_entry(name, &self.variants[name])?;
-            }
-        }
-        map.end()
-    }
-}
-
-struct OrderedConfigurationPayload<'a>(&'a DesignConfiguration);
-
-impl Serialize for OrderedConfigurationPayload<'_> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let object = self.0.payload();
-        let mut map = serializer.serialize_map(Some(object.len()))?;
-        for (name, value) in object {
-            if name == "configurations" && self.0.kind() == DesignConfigurationKind::Table {
-                let Some(variants) = value.as_object() else {
-                    return Err(serde::ser::Error::custom(
-                        "F3D configuration variants are not an object",
-                    ));
-                };
-                map.serialize_entry(
-                    name,
-                    &OrderedConfigurationVariants {
-                        configuration: self.0,
-                        variants,
-                    },
-                )?;
-            } else {
-                map.serialize_entry(name, value)?;
-            }
-        }
-        map.end()
-    }
-}
-
-/// Encode a configuration document while retaining authored variant order.
-pub(crate) fn encode_configuration_payload(
-    configuration: &DesignConfiguration,
-) -> Result<Vec<u8>, CodecError> {
-    serde_json::to_vec(&OrderedConfigurationPayload(configuration)).map_err(|error| {
-        CodecError::malformed(format_args!(
-            "cannot encode F3D configuration JSON {}: {error}",
-            configuration.entry_name()
-        ))
-    })
-}
-
 /// Project named variants from configuration-table JSON into the neutral
 /// configuration arena. Rule documents remain in the native arena because a
 /// rule is a selector, not a model variant.
@@ -348,14 +128,7 @@ pub fn project_configurations(
 
     if native
         .iter()
-        .filter(|configuration| configuration.kind() == DesignConfigurationKind::Table)
-        .filter(|configuration| {
-            configuration
-                .payload()
-                .get("configurations")
-                .and_then(serde_json::Value::as_object)
-                .is_some_and(|variants| !variants.is_empty())
-        })
+        .filter(|configuration| !configuration.variants().is_empty())
         .count()
         > 1
     {
@@ -365,37 +138,23 @@ pub fn project_configurations(
     }
 
     let mut projected = Vec::new();
-    for table in native
-        .iter()
-        .filter(|configuration| configuration.kind() == DesignConfigurationKind::Table)
-    {
-        let active = table
-            .payload()
-            .get("active")
-            .and_then(serde_json::Value::as_str);
-        for (name, definition) in ordered_configuration_variants(table)? {
+    for table in native {
+        let active = table.active();
+        for (name, definition) in table.variants() {
             let mut properties = BTreeMap::new();
-            let definition = definition.as_object();
-            if let Some(parameters) = definition
-                .and_then(|value| value.get("parameters"))
-                .and_then(serde_json::Value::as_object)
-            {
-                for (parameter, value) in parameters {
-                    properties.insert(format!("parameter:{parameter}"), json_scalar_text(value));
-                }
+            for (parameter, value) in definition.parameters() {
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("parameter:{}", parameter),
+                    value.text(),
+                );
             }
-            if let Some(suppressed) = definition
-                .and_then(|value| value.get("suppressed"))
-                .and_then(serde_json::Value::as_array)
-            {
-                for feature in suppressed.iter().filter_map(serde_json::Value::as_str) {
-                    properties.insert(format!("suppressed:{feature}"), "true".into());
-                }
+            for feature in definition.suppressed() {
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("suppressed:{}", feature),
+                    "true".into(),
+                );
             }
-            let material = definition
-                .and_then(|value| value.get("material"))
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned);
+            let material = definition.material().map(str::to_owned);
             let ordinal = u32::try_from(projected.len()).map_err(|_| {
                 CodecError::Malformed("F3D configuration ordinal exceeds u32".into())
             })?;
@@ -406,10 +165,7 @@ pub fn project_configurations(
                 source_index: None,
                 name: name.clone().into(),
                 material,
-                properties: cadmpeg_core::text::named_entries(
-                    format_args!("f3d configuration {name}"),
-                    properties,
-                )?,
+                properties,
                 parameter_overrides: BTreeMap::new(),
                 parameter_values: BTreeMap::new(),
                 feature_states: BTreeMap::new(),
@@ -418,22 +174,11 @@ pub fn project_configurations(
             });
         }
     }
-    for rule in native
-        .iter()
-        .filter(|configuration| configuration.kind() == DesignConfigurationKind::Rule)
-    {
-        let Some(condition) = rule
-            .payload()
-            .get("when")
-            .and_then(serde_json::Value::as_str)
-        else {
+    for (rule, payload) in native.iter().filter_map(|rule| Some((rule, rule.rule()?))) {
+        let Some(condition) = payload.get("when").and_then(serde_json::Value::as_str) else {
             continue;
         };
-        let Some(target) = rule
-            .payload()
-            .get("activate")
-            .and_then(serde_json::Value::as_str)
-        else {
+        let Some(target) = payload.get("activate").and_then(serde_json::Value::as_str) else {
             continue;
         };
         let mut matches = projected
@@ -539,7 +284,7 @@ pub(crate) fn unresolved_configuration_rule_count(
 ) -> usize {
     native
         .iter()
-        .filter(|rule| rule.kind() == DesignConfigurationKind::Rule && !rule.payload().is_empty())
+        .filter(|rule| rule.rule().is_some_and(|payload| !payload.is_empty()))
         .filter(|rule| {
             !projected.iter().any(|configuration| {
                 configuration
@@ -553,33 +298,7 @@ pub(crate) fn unresolved_configuration_rule_count(
 pub(crate) fn unresolved_configuration_member_count(native: &[DesignConfiguration]) -> usize {
     native
         .iter()
-        .map(|configuration| {
-            let object = configuration.payload();
-            match configuration.kind() {
-                DesignConfigurationKind::Rule => object
-                    .keys()
-                    .filter(|key| !matches!(key.as_str(), "when" | "activate"))
-                    .count(),
-                DesignConfigurationKind::Table => {
-                    let table_members = object
-                        .keys()
-                        .filter(|key| !matches!(key.as_str(), "configurations" | "active"))
-                        .count();
-                    let variant_members = object
-                        .get("configurations")
-                        .and_then(serde_json::Value::as_object)
-                        .into_iter()
-                        .flat_map(|variants| variants.values())
-                        .filter_map(serde_json::Value::as_object)
-                        .flat_map(|variant| variant.keys())
-                        .filter(|key| {
-                            !matches!(key.as_str(), "parameters" | "suppressed" | "material")
-                        })
-                        .count();
-                    table_members + variant_members
-                }
-            }
-        })
+        .map(DesignConfiguration::unknown_member_count)
         .sum()
 }
 
@@ -587,11 +306,13 @@ pub(crate) fn unresolved_configuration_member_count(native: &[DesignConfiguratio
 mod tests {
     use super::{
         bind_configuration_parameter_overrides, bind_configuration_suppressed_features,
-        encode_configuration_payload, parse_configuration_variant_order, project_configurations,
+        parse_configuration_variant_order, project_configurations,
         unresolved_configuration_member_count, unresolved_configuration_parameter_override_count,
         unresolved_configuration_rule_count, unresolved_configuration_suppressed_feature_count,
     };
-    use crate::records::{DesignConfiguration, DesignConfigurationKind};
+    use crate::records::configuration::{
+        encode_configuration_payload, DesignConfiguration, DesignConfigurationKind,
+    };
     use cadmpeg_ir::features::{
         DesignParameter as NeutralParameter, Feature, FeatureDefinition, FeatureId,
         FeatureOperation, ParameterId,

@@ -29,6 +29,7 @@ use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityVersion, AsmHistoricalTopology,
     AsmHistoricalTransition, AsmHistory, AsmTopologyCacheKind,
 };
+use crate::records::configuration::DesignConfiguration;
 use crate::records::dimension_locus_arenas::{
     DesignDimensionLocusPairs, DesignDimensionNullLocusPairs,
 };
@@ -45,7 +46,7 @@ use crate::records::topology::{
 use crate::records::{
     ActEntity, ActGuid, ActRegistryChannel, ActRootComponent, ActTableReference, BodyVisibility,
     ConstructionRecipe, CreationTimestamp, DesignBodyBinding, DesignBodyBounds, DesignBodyMember,
-    DesignCanvasImage, DesignComponentNamingSpace, DesignConfiguration, DesignDecalImage,
+    DesignCanvasImage, DesignComponentNamingSpace, DesignDecalImage,
     DesignDimensionAnnotationFrame, DesignDimensionLocusGroup, DesignDimensionPresentationFrame,
     DesignDimensionRecipeRecord, DesignEntityHeader, DesignFeatureTimeline,
     DesignMaterialAssignment, DesignMeshFeature, DesignParameter, DesignParameterCompanion,

@@ -7,6 +7,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::BTreeMap;
 use std::num::{NonZeroU32, NonZeroU64};
 
+pub(crate) mod configuration;
 pub(crate) mod feature;
 mod frame_chain;
 pub(crate) mod topology;
@@ -3576,120 +3577,6 @@ impl NativeRecordId {
     fn stream(&self) -> &str {
         &self.text[..self.stream_end]
     }
-}
-
-/// JSON configuration payload stored in a Fusion design-configuration entry.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "DesignConfigurationWire", into = "DesignConfigurationWire")]
-pub struct DesignConfiguration {
-    entry_name: String,
-    kind: DesignConfigurationKind,
-    variant_order: Vec<String>,
-    payload: serde_json::Map<String, serde_json::Value>,
-}
-
-/// Serialized configuration identity and payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignConfigurationWire {
-    /// Stable identity derived from the ZIP entry name.
-    pub id: String,
-    /// Complete ZIP entry name used for native regeneration.
-    pub entry_name: String,
-    /// Native configuration entry family.
-    pub kind: DesignConfigurationKind,
-    /// Variant names in authored order.
-    #[serde(default)]
-    pub variant_order: Vec<String>,
-    /// Complete decoded JSON payload.
-    pub payload: serde_json::Value,
-}
-
-impl DesignConfiguration {
-    /// Admit the entry identity, object payload, and authored variant order.
-    pub fn try_new(
-        entry_name: String,
-        kind: DesignConfigurationKind,
-        variant_order: Vec<String>,
-        payload: serde_json::Map<String, serde_json::Value>,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        let extension = match kind {
-            DesignConfigurationKind::Table => ".dsgcfg",
-            DesignConfigurationKind::Rule => ".dsgcfgrule",
-        };
-        if !entry_name.ends_with(extension) {
-            return Err(cadmpeg_core::CodecError::malformed(format_args!(
-                "configuration.entry_name must end with {extension} for {kind:?}"
-            )));
-        }
-        let value = Self {
-            entry_name,
-            kind,
-            variant_order,
-            payload,
-        };
-        crate::design::configurations::validate_configuration_payload(
-            &value.entry_name,
-            kind,
-            &value.payload,
-        )?;
-        crate::design::configurations::validate_configuration_variant_order(&value)?;
-        Ok(value)
-    }
-    /// Returns the admitted native identity.
-    pub(crate) fn id(&self) -> String {
-        crate::ids::configuration_entry_id(&self.entry_name)
-    }
-    /// Returns the configuration entry name.
-    pub(crate) fn entry_name(&self) -> &String {
-        &self.entry_name
-    }
-    /// Native configuration entry family.
-    pub fn kind(&self) -> DesignConfigurationKind {
-        self.kind
-    }
-    /// Variant names in authored order.
-    pub fn variant_order(&self) -> &[String] {
-        &self.variant_order
-    }
-    /// Complete object payload including unrecognized fields.
-    pub fn payload(&self) -> &serde_json::Map<String, serde_json::Value> {
-        &self.payload
-    }
-}
-
-impl TryFrom<DesignConfigurationWire> for DesignConfiguration {
-    type Error = String;
-    fn try_from(wire: DesignConfigurationWire) -> Result<Self, String> {
-        if wire.id != crate::ids::configuration_entry_id(&wire.entry_name) {
-            return Err("configuration.id must identify entry_name".into());
-        }
-        let serde_json::Value::Object(payload) = wire.payload else {
-            return Err("payload must be an object".into());
-        };
-        Self::try_new(wire.entry_name, wire.kind, wire.variant_order, payload)
-            .map_err(|error| error.to_string())
-    }
-}
-impl From<DesignConfiguration> for DesignConfigurationWire {
-    fn from(value: DesignConfiguration) -> Self {
-        Self {
-            id: value.id(),
-            entry_name: value.entry_name,
-            kind: value.kind,
-            variant_order: value.variant_order,
-            payload: serde_json::Value::Object(value.payload),
-        }
-    }
-}
-
-/// Native Fusion design-configuration entry family.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum DesignConfigurationKind {
-    /// A `.dsgcfg` configuration table.
-    Table,
-    /// A `.dsgcfgrule` configuration rule.
-    Rule,
 }
 
 /// The base-type-GUID field of a type-table entry.

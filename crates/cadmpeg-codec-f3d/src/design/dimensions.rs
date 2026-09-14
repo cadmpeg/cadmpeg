@@ -6240,15 +6240,5 @@ pub(crate) fn unresolved_parameter_expression_dependency_count(
         .sum()
 }
 
-pub(crate) fn json_scalar_text(value: &serde_json::Value) -> String {
-    match value {
-        serde_json::Value::String(value) => value.clone(),
-        serde_json::Value::Null => "null".into(),
-        serde_json::Value::Bool(value) => value.to_string(),
-        serde_json::Value::Number(value) => value.to_string(),
-        value => value.to_string(),
-    }
-}
-
 #[cfg(test)]
 mod tests;

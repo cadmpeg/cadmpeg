@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::records::configuration::{
+    DesignConfiguration, DesignConfigurationKind, DesignConfigurationWire,
+};
 use crate::records::{
     ActChannelGroup, ActEntity, ActGuid, ActRegistryChannel, ActRegistryFlag, ActRootComponent,
-    ActRootLayout, ActTableReference, DesignConfiguration, DesignConfigurationKind,
-    DesignConfigurationWire, DesignFeatureTimeline, DesignTimelineFrame, Located,
+    ActRootLayout, ActTableReference, DesignFeatureTimeline, DesignTimelineFrame, Located,
 };
 use serde::{de::DeserializeOwned, Serialize};
 use std::{collections::BTreeMap, num::NonZeroU64};

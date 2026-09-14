@@ -47,7 +47,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
     );
     assert_eq!(
         native.design_configurations[0].kind(),
-        crate::records::DesignConfigurationKind::Table
+        crate::records::configuration::DesignConfigurationKind::Table
     );
     assert_eq!(
         native.design_configurations[0].variant_order(),
@@ -88,13 +88,13 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
     let mut retained = decoded.ir().clone();
     update_f3d_native(&mut retained, |native| {
         let configuration = &mut native.design_configurations[0];
-        let mut payload = configuration.payload().clone();
+        let mut payload = configuration.payload();
         payload["active"] = "Narrow".into();
         payload["configurations"]["Narrow"] =
             serde_json::json!({"parameters":{"width":"12 mm"},"suppressed":[]});
-        let mut order = configuration.variant_order().to_vec();
+        let mut order = configuration.variant_order();
         order.push("Narrow".into());
-        *configuration = crate::records::DesignConfiguration::try_new(
+        *configuration = crate::records::configuration::DesignConfiguration::try_new(
             configuration.entry_name().clone(),
             configuration.kind(),
             order,
@@ -177,7 +177,10 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
             "configuration rule(s) were retained without an unambiguous neutral activation target"
         )));
     let rule = f3d_native(rule_result.ir()).design_configurations.remove(0);
-    assert_eq!(rule.kind(), crate::records::DesignConfigurationKind::Rule);
+    assert_eq!(
+        rule.kind(),
+        crate::records::configuration::DesignConfigurationKind::Rule
+    );
     assert_eq!(rule.payload()["activate"], "wide");
 
     let invalid = F3dCodec.decode(

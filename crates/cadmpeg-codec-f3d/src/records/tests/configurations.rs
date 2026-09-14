@@ -2,7 +2,7 @@
 
 #[test]
 fn configuration_admission_checks_wire_and_variant_order() {
-    use crate::records::DesignConfiguration;
+    use crate::records::configuration::DesignConfiguration;
     let wire = serde_json::json!({"id":crate::ids::configuration_entry_id("table.dsgcfg"), "entry_name":"table.dsgcfg", "kind":"table",
         "variant_order":["first","second"], "payload":{"configurations":{"first":{},"second":{}}}});
     let configuration: DesignConfiguration = serde_json::from_value(wire.clone()).unwrap();
@@ -23,7 +23,7 @@ fn configuration_admission_checks_wire_and_variant_order() {
 
 #[test]
 fn configuration_parameter_overrides_require_scalar_values() {
-    use crate::records::{DesignConfiguration, DesignConfigurationKind};
+    use crate::records::configuration::{DesignConfiguration, DesignConfigurationKind};
     let admit = |payload: serde_json::Value| {
         DesignConfiguration::try_new(
             "table.dsgcfg".into(),
@@ -54,7 +54,7 @@ fn configuration_parameter_overrides_require_scalar_values() {
 
 #[test]
 fn configuration_kind_requires_its_exact_entry_extension() {
-    use crate::records::{DesignConfiguration, DesignConfigurationKind};
+    use crate::records::configuration::{DesignConfiguration, DesignConfigurationKind};
     for (kind, valid, invalid) in [
         (
             DesignConfigurationKind::Table,
