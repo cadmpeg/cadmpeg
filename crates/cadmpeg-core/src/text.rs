@@ -17,11 +17,12 @@ pub struct NonWhitespaceChar(char);
 impl NonWhitespaceChar {
     /// The character an ASCII literal byte names.
     ///
-    /// Macro-only: [`nonblank_literal!`](crate::nonblank_literal) is the one
-    /// caller, and it evaluates this constructor in the initializer of a
-    /// `const` item. The assertion is therefore an E0080 at every use, under
-    /// `cargo check` as well as a build, and there is no run-time path that
-    /// can reach it. Call it nowhere else.
+    /// Macro-only: [`nonblank_literal!`](crate::nonblank_literal) and
+    /// [`nonblank_const!`](crate::nonblank_const) are the two callers, and each
+    /// evaluates this constructor in the initializer of a `const` item. The
+    /// assertion is therefore an E0080 at every use, under `cargo check` as
+    /// well as a build, and no caller reaches it at run time. Call it nowhere
+    /// else, and never outside a `const` item initializer.
     ///
     /// [`NonWhitespaceChar::hex_digit`] is the total constructor for a value
     /// computed at run time.
@@ -277,8 +278,12 @@ mod tests {
 
     #[test]
     fn prefixes_preserve_nonblank_strings_and_wire_values() {
+        // The literal constructor is evaluated where its callers evaluate it:
+        // in the initializer of a `const` item, which is compile-time. No test
+        // reaches its assertion at run time.
+        const HASH: NonWhitespaceChar = NonWhitespaceChar::from_ascii_literal(b'#');
         for (prefix, suffix, expected) in [
-            (NonWhitespaceChar::from_ascii_literal(b'#'), "42", "#42"),
+            (HASH, "42", "#42"),
             (NonWhitespaceChar::hex_digit(0x0a), "", "a"),
             (NonWhitespaceChar::hex_digit(0xf0), "", "0"),
         ] {
@@ -287,6 +292,8 @@ mod tests {
             assert_eq!(serde_json::to_value(&value).unwrap(), expected);
         }
         assert_eq!(crate::nonblank_literal!("#{}", 42).as_str(), "#42");
+        const PINNED: &str = "pinned";
+        assert_eq!(crate::nonblank_const!(PINNED).as_str(), "pinned");
     }
 
     #[test]
