@@ -531,7 +531,10 @@ fn e5_record_stream_in_segments(
     if preferred {
         best.retain(|(_, preferred, _)| *preferred);
     }
-    (best.len() == 1).then(|| best.pop().expect("one candidate remains").2)
+    match best.as_slice() {
+        [(_, _, range)] => Some(range.clone()),
+        _ => None,
+    }
 }
 
 fn coherent_e5_record_count(data: &[u8]) -> usize {
