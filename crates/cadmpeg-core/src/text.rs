@@ -134,86 +134,115 @@ impl std::borrow::Borrow<str> for NonBlankString {
     }
 }
 
-/// A source property whose key holds no non-whitespace character.
+/// A source property the reader could not key.
 ///
-/// A blank key names nothing, so the entry it carries cannot be asked for. The
-/// value it carries is still source content, so the reader states the property
-/// it could not key instead of dropping it without a word.
+/// A blank key names nothing, so the entry it carries cannot be asked for. A
+/// restated key names an entry that is already keyed, so the second value has
+/// nowhere to go. Either way the value is still source content, so the reader
+/// states the property it could not key instead of dropping it without a word.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BlankKey {
-    record: String,
+pub enum NamedEntryError {
+    /// The key holds no non-whitespace character.
+    Blank {
+        /// The record the reader named as the owner of the property set.
+        record: String,
+    },
+    /// The record states this key a second time.
+    Restated {
+        /// The record the reader named as the owner of the property set.
+        record: String,
+        /// The key the record states twice.
+        key: NonBlankString,
+    },
 }
 
-impl BlankKey {
+impl NamedEntryError {
     /// The record the reader named as the owner of the property set.
     pub fn record(&self) -> &str {
-        &self.record
+        match self {
+            Self::Blank { record } | Self::Restated { record, .. } => record,
+        }
     }
 }
 
-impl std::fmt::Display for BlankKey {
+impl std::fmt::Display for NamedEntryError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            formatter,
-            "{} states a property with a blank key",
-            self.record
-        )
+        match self {
+            Self::Blank { record } => {
+                write!(formatter, "{record} states a property with a blank key")
+            }
+            Self::Restated { record, key } => write!(
+                formatter,
+                "{record} states the property {key} a second time"
+            ),
+        }
     }
 }
 
-impl std::error::Error for BlankKey {}
+impl std::error::Error for NamedEntryError {}
 
-/// Keys a map by the entry names, and states every name that is blank.
+/// Keys a map by the entry names, and states every name it cannot key.
 ///
-/// Returns the entries whose keys name something, and one [`BlankKey`] per
-/// entry whose key does not, in the order the reader supplied. `record` names
-/// the owning record so a blank key can be reported against the record that
-/// states it; it is rendered only when a key is blank.
+/// Returns the entries whose keys name something and are stated once, and one
+/// [`NamedEntryError`] per entry whose key is blank or restated, in the order
+/// the reader supplied. `record` names the owning record so the refused
+/// property can be reported against the record that states it; it is rendered
+/// only when a key is refused.
 ///
-/// The blank key names its record and nothing else. The entries arrive as an
-/// iterator whose order this function does not know: most readers hand it an
-/// already-built `BTreeMap`, where the position of an entry is key order and a
-/// blank key sorts first, so a position counted here would name nothing in the
-/// source. A reader that does know where in its source the property sits puts
-/// that in `record`, which it builds.
+/// The first value a key states is the one that is kept, so a later restatement
+/// never overwrites what is already keyed. The blank key names its record and
+/// nothing else: the entries arrive as an iterator whose order this function
+/// does not know, so a position counted here would name nothing in the source.
+/// A reader that does know where in its source the property sits puts that in
+/// `record`, which it builds. A restated key names itself as well as the
+/// record, because the key is what the source states twice.
 ///
 /// This is the route for a reader that keeps the properties it can key and
 /// reports the rest. A reader that refuses the whole set uses
 /// [`named_entries`].
-pub fn named_entries_with_blank<V>(
+pub fn named_entries_reporting<V>(
     record: impl std::fmt::Display,
     entries: impl IntoIterator<Item = (String, V)>,
-) -> (BTreeMap<NonBlankString, V>, Vec<BlankKey>) {
+) -> (BTreeMap<NonBlankString, V>, Vec<NamedEntryError>) {
     let mut kept = BTreeMap::new();
-    let mut blank = Vec::new();
+    let mut refused = Vec::new();
     for (name, value) in entries {
         match NonBlankString::new(name) {
-            Some(key) => {
-                kept.insert(key, value);
-            }
-            None => blank.push(BlankKey {
+            Some(key) => match kept.entry(key) {
+                std::collections::btree_map::Entry::Vacant(slot) => {
+                    slot.insert(value);
+                }
+                std::collections::btree_map::Entry::Occupied(slot) => {
+                    refused.push(NamedEntryError::Restated {
+                        record: record.to_string(),
+                        key: slot.key().clone(),
+                    });
+                }
+            },
+            None => refused.push(NamedEntryError::Blank {
                 record: record.to_string(),
             }),
         }
     }
-    (kept, blank)
+    (kept, refused)
 }
 
-/// Keys a map by the entry names, refusing a name that is blank.
+/// Keys a map by the entry names, refusing a name that is blank or restated.
 ///
 /// Codecs that read an open set of native names route the whole set through
 /// here, so the rule is stated once instead of at each reader.
 ///
 /// # Errors
 ///
-/// Names the record that states the first blank key.
+/// Names the record that states the first key this function cannot key, and
+/// for a restated key the key itself.
 pub fn named_entries<V>(
     record: impl std::fmt::Display,
     entries: impl IntoIterator<Item = (String, V)>,
-) -> Result<BTreeMap<NonBlankString, V>, BlankKey> {
-    let (kept, blank) = named_entries_with_blank(record, entries);
-    match blank.into_iter().next() {
-        Some(key) => Err(key),
+) -> Result<BTreeMap<NonBlankString, V>, NamedEntryError> {
+    let (kept, refused) = named_entries_reporting(record, entries);
+    match refused.into_iter().next() {
+        Some(error) => Err(error),
         None => Ok(kept),
     }
 }
@@ -314,11 +343,11 @@ mod tests {
             ("depth".to_owned(), "4"),
         ];
 
-        let (kept, blank) = named_entries_with_blank("feature 7", entries.clone());
-        assert_eq!(blank.len(), 1);
-        assert_eq!(blank[0].record(), "feature 7");
+        let (kept, refused) = named_entries_reporting("feature 7", entries.clone());
+        assert_eq!(refused.len(), 1);
+        assert_eq!(refused[0].record(), "feature 7");
         assert_eq!(
-            blank[0].to_string(),
+            refused[0].to_string(),
             "feature 7 states a property with a blank key"
         );
         assert_eq!(
@@ -326,8 +355,36 @@ mod tests {
             ["depth", "width"]
         );
 
-        let refused = named_entries("feature 7", entries).unwrap_err();
-        assert_eq!(refused, blank[0]);
+        let error = named_entries("feature 7", entries).unwrap_err();
+        assert_eq!(error, refused[0]);
+    }
+
+    #[test]
+    fn a_restated_key_is_named_and_its_second_value_is_not_kept() {
+        let entries = [
+            ("k".to_owned(), "first"),
+            ("k".to_owned(), "second"),
+            ("depth".to_owned(), "4"),
+        ];
+
+        let (kept, refused) = named_entries_reporting("feature 7", entries.clone());
+        assert_eq!(kept.len(), 2);
+        assert_eq!(kept.get("k"), Some(&"first"));
+        assert_eq!(refused.len(), 1);
+        assert_eq!(
+            refused[0],
+            NamedEntryError::Restated {
+                record: "feature 7".to_owned(),
+                key: NonBlankString::new("k").unwrap(),
+            }
+        );
+        assert_eq!(
+            refused[0].to_string(),
+            "feature 7 states the property k a second time"
+        );
+
+        let error = named_entries("feature 7", entries).unwrap_err();
+        assert_eq!(error, refused[0]);
     }
 
     #[test]
@@ -336,6 +393,6 @@ mod tests {
 
         let kept = named_entries("feature 7", entries.clone()).unwrap();
         assert_eq!(kept.len(), 2);
-        assert!(named_entries_with_blank("feature 7", entries).1.is_empty());
+        assert!(named_entries_reporting("feature 7", entries).1.is_empty());
     }
 }
