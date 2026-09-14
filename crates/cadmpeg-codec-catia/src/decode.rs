@@ -247,7 +247,7 @@ fn finish_decode(
         &native,
         &design_feature_transfer,
         &modeling_graph_scope,
-    )?;
+    );
     let transferred_constraint_range_records = sketch::transfer_constraint_ranges(
         &mut ir,
         &native,
