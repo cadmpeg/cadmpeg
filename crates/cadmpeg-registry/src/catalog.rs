@@ -196,6 +196,23 @@ pub enum ResolveSourceError {
     Ambiguous(AmbiguousDetection),
 }
 
+/// States that every registered format descriptor declares one input extension
+/// or more. `InputDescriptor::extensions` reads the same list, so the built-in
+/// catalog carries no descriptor without an extension.
+const fn every_descriptor_states_an_extension() -> bool {
+    let descriptors = crate::descriptors::FORMAT_DESCRIPTORS;
+    let mut index = 0;
+    while index < descriptors.len() {
+        if descriptors[index].input_extensions().is_empty() {
+            return false;
+        }
+        index += 1;
+    }
+    true
+}
+
+const _: () = assert!(every_descriptor_states_an_extension());
+
 /// Source detection and codec lookup.
 pub struct InputCatalog {
     descriptors: Vec<InputDescriptor>,
@@ -204,7 +221,7 @@ pub struct InputCatalog {
 impl InputCatalog {
     /// Creates a catalog containing every input format shipped with the CLI.
     pub fn with_builtins() -> Self {
-        let catalog = Self {
+        Self {
             descriptors: crate::descriptors::FORMAT_DESCRIPTORS
                 .iter()
                 .map(|descriptor| InputDescriptor {
@@ -219,12 +236,7 @@ impl InputCatalog {
                     },
                 })
                 .collect(),
-        };
-        debug_assert!(catalog
-            .descriptors
-            .iter()
-            .all(|descriptor| !descriptor.extensions().is_empty()));
-        catalog
+        }
     }
 
     /// Every descriptor whose codec gives `prefix` more than
@@ -439,7 +451,11 @@ mod tests {
             let ResolvedSource::Native { codec, selection } = catalog
                 .resolve_source(
                     b"",
-                    Some(crate::forced_input("step").expect("step is registered")),
+                    Some(
+                        crate::forced_input("step")
+                            .expect("embedded registry loads")
+                            .expect("step is registered"),
+                    ),
                 )
                 .unwrap()
             else {
@@ -456,7 +472,9 @@ mod tests {
         let catalog = InputCatalog {
             descriptors: Vec::new(),
         };
-        let forced = crate::forced_input("step").expect("step is registered");
+        let forced = crate::forced_input("step")
+            .expect("embedded registry loads")
+            .expect("step is registered");
         assert!(matches!(catalog.resolve_source(b"", Some(forced)),
             Err(ResolveSourceError::Unregistered(id)) if id == FormatId::new("step")));
     }

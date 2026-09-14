@@ -611,26 +611,26 @@ impl<'a> Lexer<'a> {
     fn binary(&mut self) -> Result<TokenKind, LexError> {
         let start = self.at;
         self.at += 1;
-        let mut raw = Vec::new();
-        loop {
-            match self.input.get(self.at).copied() {
-                Some(byte) if byte.is_ascii_hexdigit() => {
-                    raw.push(byte);
-                    self.at += 1;
+        let mut raw: Vec<HexDigit> = Vec::new();
+        while let Some(byte) = self.input.get(self.at).copied() {
+            if let Some(digit) = HexDigit::new(byte) {
+                raw.push(digit);
+                self.at += 1;
+            } else if byte.is_ascii_control() {
+                self.at += 1;
+            } else if byte == b'\\' {
+                let Some(after_print_control) = self.print_control_end(self.at) else {
+                    break;
+                };
+                if !self.allow_print_controls {
+                    return Err(Self::error(
+                        self.at,
+                        "print control directive is not allowed in this section",
+                    ));
                 }
-                Some(byte) if byte.is_ascii_control() => self.at += 1,
-                Some(b'\\') if self.print_control_end(self.at).is_some() => {
-                    if !self.allow_print_controls {
-                        return Err(Self::error(
-                            self.at,
-                            "print control directive is not allowed in this section",
-                        ));
-                    }
-                    self.at = self
-                        .print_control_end(self.at)
-                        .expect("print control matched above");
-                }
-                _ => break,
+                self.at = after_print_control;
+            } else {
+                break;
             }
         }
         if self.input.get(self.at) != Some(&b'"') {
@@ -642,26 +642,19 @@ impl<'a> Lexer<'a> {
                 "binary literal has no unused-bit indicator",
             ));
         };
-        let unused_bits = match indicator {
-            b'0'..=b'3' => indicator - b'0',
-            _ => {
-                return Err(Self::error(
-                    start,
-                    "binary unused-bit indicator exceeds three",
-                ))
-            }
-        };
+        let unused_bits = indicator.nibble();
+        if unused_bits > 3 {
+            return Err(Self::error(
+                start,
+                "binary unused-bit indicator exceeds three",
+            ));
+        }
         if digits.is_empty() && unused_bits != 0 {
             return Err(Self::error(start, "empty binary payload has unused bits"));
         }
         let nibbles = digits
             .iter()
-            .map(|byte| match byte {
-                b'0'..=b'9' => byte - b'0',
-                b'a'..=b'f' => byte - b'a' + 10,
-                b'A'..=b'F' => byte - b'A' + 10,
-                _ => unreachable!("binary digits were validated as ASCII hexadecimal"),
-            })
+            .map(|digit| digit.nibble())
             .collect::<Vec<_>>();
         if unused_bits != 0
             && nibbles
@@ -762,6 +755,31 @@ impl<'a> Lexer<'a> {
             offset,
             message: message.into(),
         }
+    }
+}
+
+/// An ASCII hexadecimal digit, carrying the four bits it names.
+///
+/// The type makes the nibble map total: a value of this type exists only
+/// because the byte it came from names a hexadecimal digit, so the map from a
+/// scanned binary literal to its nibbles has no unreachable arm.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct HexDigit(u8);
+
+impl HexDigit {
+    /// The digit an ASCII byte names, or `None` when the byte names none.
+    const fn new(byte: u8) -> Option<Self> {
+        Some(Self(match byte {
+            b'0'..=b'9' => byte - b'0',
+            b'a'..=b'f' => byte - b'a' + 10,
+            b'A'..=b'F' => byte - b'A' + 10,
+            _ => return None,
+        }))
+    }
+
+    /// The four bits the digit names, 0 through 15.
+    const fn nibble(self) -> u8 {
+        self.0
     }
 }
 
