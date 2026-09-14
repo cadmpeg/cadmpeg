@@ -1,31 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::records::configuration::{
-    DesignConfiguration, DesignConfigurationKind, DesignConfigurationWire,
-};
 use crate::records::{
     ActChannelGroup, ActEntity, ActGuid, ActRegistryChannel, ActRegistryFlag, ActRootComponent,
     ActRootLayout, ActTableReference, DesignFeatureTimeline, DesignTimelineFrame, Located,
 };
-use serde::{de::DeserializeOwned, Serialize};
+use crate::test_support::native_test::reject_changed_id;
 use std::{collections::BTreeMap, num::NonZeroU64};
 
 const GUID: &str = "01234567-89ab-cdef-0123-456789abcdef";
-
-fn reject_changed_id<T: Serialize + DeserializeOwned + std::fmt::Debug>(
-    record: T,
-    alternatives: &[&str],
-) {
-    let wire = serde_json::to_value(record).unwrap();
-    let restored: T = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(restored).unwrap(), wire);
-    for id in alternatives {
-        let mut invalid = wire.clone();
-        invalid["id"] = serde_json::json!(id);
-        let error = serde_json::from_value::<T>(invalid).expect_err("invalid id");
-        assert!(error.to_string().contains("id"), "{error}");
-    }
-}
 
 fn group() -> ActChannelGroup {
     ActChannelGroup::try_new(
@@ -129,33 +111,6 @@ fn native_act_ids_bind_kind_and_key_at_each_admission_route() {
     reject_changed_id(
         root,
         &["id", "stream:act-root-component#21", "stream:act-guid#20"],
-    );
-}
-
-#[test]
-fn configuration_id_binds_the_escaped_entry_name() {
-    let name = "Design/Config #1.dsgcfg";
-    let wire = DesignConfigurationWire {
-        id: crate::ids::configuration_entry_id(name),
-        entry_name: name.into(),
-        kind: DesignConfigurationKind::Table,
-        variant_order: Vec::new(),
-        payload: serde_json::json!({}),
-    };
-    for id in ["id", "f3d:configuration:entry#Design/Config #1.dsgcfg"] {
-        assert!(DesignConfiguration::try_from(DesignConfigurationWire {
-            id: id.into(),
-            ..wire.clone()
-        })
-        .is_err());
-    }
-    let record = DesignConfiguration::try_from(wire).unwrap();
-    let mut changed_name = serde_json::to_value(&record).unwrap();
-    changed_name["entry_name"] = serde_json::json!("Other.dsgcfg");
-    assert!(serde_json::from_value::<DesignConfiguration>(changed_name).is_err());
-    reject_changed_id(
-        record,
-        &["id", "f3d:configuration:entry#Design/Config #1.dsgcfg"],
     );
 }
 

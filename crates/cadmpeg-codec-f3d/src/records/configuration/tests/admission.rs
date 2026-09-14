@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::records::configuration::{
+    DesignConfiguration, DesignConfigurationKind, DesignConfigurationWire,
+};
+use crate::test_support::native_test::reject_changed_id;
+
 #[test]
 fn configuration_admission_checks_wire_and_variant_order() {
     use crate::records::configuration::DesignConfiguration;
@@ -89,4 +94,31 @@ fn configuration_kind_requires_its_exact_entry_extension() {
             assert!(serde_json::from_value::<DesignConfiguration>(malformed).is_err());
         }
     }
+}
+
+#[test]
+fn configuration_id_binds_the_escaped_entry_name() {
+    let name = "Design/Config #1.dsgcfg";
+    let wire = DesignConfigurationWire {
+        id: crate::ids::configuration_entry_id(name),
+        entry_name: name.into(),
+        kind: DesignConfigurationKind::Table,
+        variant_order: Vec::new(),
+        payload: serde_json::json!({}),
+    };
+    for id in ["id", "f3d:configuration:entry#Design/Config #1.dsgcfg"] {
+        assert!(DesignConfiguration::try_from(DesignConfigurationWire {
+            id: id.into(),
+            ..wire.clone()
+        })
+        .is_err());
+    }
+    let record = DesignConfiguration::try_from(wire).unwrap();
+    let mut changed_name = serde_json::to_value(&record).unwrap();
+    changed_name["entry_name"] = serde_json::json!("Other.dsgcfg");
+    assert!(serde_json::from_value::<DesignConfiguration>(changed_name).is_err());
+    reject_changed_id(
+        record,
+        &["id", "f3d:configuration:entry#Design/Config #1.dsgcfg"],
+    );
 }

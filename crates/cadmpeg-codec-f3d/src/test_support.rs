@@ -61,7 +61,7 @@ pub(crate) use smbh_blends_test::*;
 mod smbh_bf4_test;
 pub(crate) use smbh_bf4_test::*;
 
-mod native_test;
+pub(crate) mod native_test;
 pub(crate) use native_test::*;
 
 mod manifest_test;

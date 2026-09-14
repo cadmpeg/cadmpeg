@@ -3,6 +3,7 @@
 #![allow(clippy::unwrap_used)]
 
 use cadmpeg_ir::codec::write::TargetRequest;
+use serde::{de::DeserializeOwned, Serialize};
 use std::io::Write;
 
 use cadmpeg_ir::codec::write::Encoder;
@@ -80,4 +81,19 @@ pub(crate) fn update_f3d_native<R>(
 ) -> R {
     let mut native = f3d_native_mut(ir);
     update(&mut native)
+}
+
+pub(crate) fn reject_changed_id<T: Serialize + DeserializeOwned + std::fmt::Debug>(
+    record: T,
+    alternatives: &[&str],
+) {
+    let wire = serde_json::to_value(record).unwrap();
+    let restored: T = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(restored).unwrap(), wire);
+    for id in alternatives {
+        let mut invalid = wire.clone();
+        invalid["id"] = serde_json::json!(id);
+        let error = serde_json::from_value::<T>(invalid).expect_err("invalid id");
+        assert!(error.to_string().contains("id"), "{error}");
+    }
 }
