@@ -2711,9 +2711,7 @@ fn point(reader: &mut BoundedReader<'_>) -> Result<Point3, GeometryError> {
 }
 
 fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, GeometryError> {
-    Ok(Uuid::from_wire(
-        reader.array::<16>()?,
-    ))
+    Ok(Uuid::from_wire(reader.array::<16>()?))
 }
 
 fn supported_mesh(uuid: Uuid) -> bool {

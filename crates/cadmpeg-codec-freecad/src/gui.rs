@@ -586,11 +586,10 @@ fn transfer_neutral_presentation(
                     .iter()
                     .enumerate()
                     .map(|(order, state)| {
-                        let (attributes, blank) =
-                            cadmpeg_core::text::named_entries_with_blank(
-                                format_args!("the gui {} state", state.kind),
-                                state.attributes.clone(),
-                            );
+                        let (attributes, blank) = cadmpeg_core::text::named_entries_with_blank(
+                            format_args!("the gui {} state", state.kind),
+                            state.attributes.clone(),
+                        );
                         charge_blank_gui_keys(&mut state_losses, &blank);
                         Ok(PresentationState {
                             kind: if state.kind == "Camera" {

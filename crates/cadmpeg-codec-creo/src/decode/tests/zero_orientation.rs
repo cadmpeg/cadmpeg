@@ -813,9 +813,11 @@ fn conflicting_section_sweep_names_remain_unresolved() {
             "conflicting section-sweep name projected: {kind}"
         );
     }
-    assert!(named_or_referenced_feature_definition(&scan, &ir, 822, "Native Feature")
-        .expect("a native feature states no blank key")
-        .is_none());
+    assert!(
+        named_or_referenced_feature_definition(&scan, &ir, 822, "Native Feature")
+            .expect("a native feature states no blank key")
+            .is_none()
+    );
 }
 
 #[test]
@@ -844,9 +846,11 @@ fn conflicting_display_states_do_not_select_reference_family() {
         });
     let ir = CadIr::empty();
 
-    assert!(named_or_referenced_feature_definition(&scan, &ir, 822, "Native Feature")
-        .expect("a native feature states no blank key")
-        .is_none());
+    assert!(
+        named_or_referenced_feature_definition(&scan, &ir, 822, "Native Feature")
+            .expect("a native feature states no blank key")
+            .is_none()
+    );
 }
 
 #[test]
