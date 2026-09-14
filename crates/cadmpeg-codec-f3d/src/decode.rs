@@ -4869,11 +4869,7 @@ fn build_geometry_ir(
         persistent_subentity_tags,
         creation_timestamps,
     } = brep;
-    let remainder = transfer_into_ir(ctx, &mut ir, "f3d", asm)?;
-    let namespace = ir
-        .native
-        .namespace("f3d")
-        .ok_or_else(|| CodecError::malformed("ASM transfer did not create the f3d namespace"))?;
+    let (namespace, remainder) = transfer_into_ir(ctx, &mut ir, "f3d", asm)?;
     let mut native = F3dNative::load(namespace)?;
     native.sketch_curve_links = sketch_curve_links;
     native.persistent_design_links = persistent_design_links;

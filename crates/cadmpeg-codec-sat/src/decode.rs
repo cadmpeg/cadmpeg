@@ -239,11 +239,14 @@ fn build_result(
         }
     }
 
-    let AsmTransferRemainder {
-        unknowns,
-        stats,
-        annotation_records: _,
-    } = transfer_into_ir(ctx, &mut ir, FORMAT, brep)?;
+    let (
+        _,
+        AsmTransferRemainder {
+            unknowns,
+            stats,
+            annotation_records: _,
+        },
+    ) = transfer_into_ir(ctx, &mut ir, FORMAT, brep)?;
 
     let geometry_transferred =
         !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());
