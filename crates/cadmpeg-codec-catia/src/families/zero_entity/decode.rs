@@ -373,6 +373,8 @@ fn transfer_closed_wire_loops(
                                 crate::nurbs::canonical_model_curve_range(
                                     geometry,
                                     raw_source_range,
+                                    refusal,
+                                    "zero-entity wire edge source parameter range",
                                 )
                             });
                     let source_range = canonical_source_range.unwrap_or(raw_source_range);
@@ -421,6 +423,8 @@ fn transfer_closed_wire_loops(
                                 Some(procedural) => crate::nurbs::reverse_helix_definition(
                                     &procedural.definition,
                                     source_range,
+                                    refusal,
+                                    "zero-entity helix edge reversed onto its coedge",
                                 )
                                 .map(|(definition, edge_range)| {
                                     (
@@ -519,7 +523,12 @@ fn transfer_closed_wire_loops(
                         .iter()
                         .find(|candidate| candidate.id == curve_id)
                         .and_then(|candidate| {
-                            crate::nurbs::canonical_model_curve_range(&candidate.geometry, range)
+                            crate::nurbs::canonical_model_curve_range(
+                                &candidate.geometry,
+                                range,
+                                refusal,
+                                "zero-entity standalone wire edge parameter range",
+                            )
                         })
                 });
                 annotate(

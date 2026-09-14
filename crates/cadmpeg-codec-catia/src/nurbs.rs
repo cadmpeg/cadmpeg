@@ -85,6 +85,14 @@ impl LaneRefusals {
         std::mem::take(&mut self.notes)
     }
 
+    /// How many refusals the sink holds.
+    ///
+    /// The router reads this before and after a route, so it can state how
+    /// many records a route refused before it transferred no model.
+    pub(crate) fn note_count(&self) -> usize {
+        self.notes.len()
+    }
+
     /// Record one refusal against the record that stated it.
     fn push(&mut self, record: impl std::fmt::Display, error: &cadmpeg_ir::geometry::NurbsError) {
         self.notes.push(
@@ -344,16 +352,30 @@ pub(crate) fn reverse_curve_geometry(
 }
 
 /// Normalize the parameter interval for a model-space carrier.
+///
+/// The interval is a value the record states, so a non-finite bound, a bound
+/// pair that does not increase, and a circular sweep this reader cannot
+/// normalize are each a refused record named in the sink, not a record of
+/// another kind. The remaining `None` exits re-read a domain the IR carrier
+/// already refined.
 pub(crate) fn canonical_model_curve_range(
     geometry: &CurveGeometry,
     range: [f64; 2],
+    refusal: &mut LaneRefusals,
+    record: &str,
 ) -> Option<[f64; 2]> {
-    if !range.into_iter().all(f64::is_finite) || range[0] > range[1] {
+    if !readable_range(range, false, refusal, record) {
         return None;
     }
     match geometry {
-        CurveGeometry::Solved(SolvedCurveGeometry::Circle(_)) => canonical_periodic_range(range),
-        CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_)) => canonical_periodic_range(range),
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))
+        | CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_)) => {
+            let normalized = canonical_periodic_range(range);
+            if normalized.is_none() {
+                refusal.push_range(record, range);
+            }
+            normalized
+        }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
             let [lower, upper] = cadmpeg_ir::eval::nurbs_curve_parameter_domain(nurbs)?;
             let tolerance = 1.0e-9_f64.max((upper - lower).abs() * EPS_NURBS_GEOMETRY);
@@ -380,10 +402,15 @@ pub(crate) fn canonical_model_curve_range(
 pub(crate) fn reverse_helix_definition(
     definition: &ProceduralCurveDefinition,
     range: [f64; 2],
+    refusal: &mut LaneRefusals,
+    record: &str,
 ) -> Option<(ProceduralCurveDefinition, [f64; 2])> {
     let ProceduralCurveDefinition::Helix(helix_payload) = definition else {
         return None;
     };
+    if !readable_range(range, true, refusal, record) {
+        return None;
+    }
     let angle_range = helix_payload.angle_range();
     let center = helix_payload.center();
     let major = helix_payload.major();
@@ -393,8 +420,6 @@ pub(crate) fn reverse_helix_definition(
     let axis = helix_payload.axis();
 
     if range != *angle_range
-        || !range.into_iter().all(f64::is_finite)
-        || range[0] >= range[1]
         || ![center.x, center.y, center.z]
             .into_iter()
             .chain(
@@ -481,8 +506,9 @@ pub(crate) struct CircularHelixCache {
 ///
 /// Every `return None` here states that the construction is not an exact
 /// circular helix this cache covers, not that the record is refused: the curve
-/// still transfers, without a solved cache. Only the lane refusal from
-/// `NurbsCurve::from_lanes` reaches the sink.
+/// still transfers, without a solved cache. Two answers are refusals and do
+/// reach the sink: the source-stated angle interval, which must be finite and
+/// increasing, and the lane refusal from `NurbsCurve::from_lanes`.
 pub(crate) fn circular_helix_cache(
     construction: &ProceduralCurveDefinition,
     requested_tolerance: f64,
@@ -493,6 +519,9 @@ pub(crate) fn circular_helix_cache(
         return None;
     };
     let angle_range = helix_payload.angle_range();
+    if !readable_range(*angle_range, true, refusal, record) {
+        return None;
+    }
     let center = helix_payload.center();
     let major = helix_payload.major();
     let minor = helix_payload.minor();
@@ -528,8 +557,6 @@ pub(crate) fn circular_helix_cache(
         || (axis_norm - 1.0).abs() > EPS_HELIX_FRAME
         || !pitch_norm.is_finite()
         || (radius - minor_radius).abs() > EPS_HELIX_RADIUS * radius.max(minor_radius)
-        || !angle_range.iter().copied().all(f64::is_finite)
-        || angle_range[0] >= angle_range[1]
         || apex_factor != 0.0
     {
         return None;
@@ -918,11 +945,32 @@ mod tests {
             .unwrap(),
         ));
 
+        let mut refusal = LaneRefusals::new();
         assert_eq!(
-            canonical_model_curve_range(&geometry, [-1.0e-12, 1.0 + 1.0e-12]),
+            canonical_model_curve_range(
+                &geometry,
+                [-1.0e-12, 1.0 + 1.0e-12],
+                &mut refusal,
+                "test curve"
+            ),
             Some([0.0, 1.0])
         );
-        assert_eq!(canonical_model_curve_range(&geometry, [-1.0e-4, 1.0]), None);
+        assert_eq!(
+            canonical_model_curve_range(&geometry, [-1.0e-4, 1.0], &mut refusal, "test curve"),
+            None
+        );
+        // Both answers re-read a domain the IR carrier refined, so neither is
+        // a refused source range.
+        assert!(refusal.take_notes().is_empty());
+
+        // A source-stated interval that does not increase is a refused record.
+        assert_eq!(
+            canonical_model_curve_range(&geometry, [1.0, 0.0], &mut refusal, "test curve"),
+            None
+        );
+        let notes = refusal.take_notes();
+        assert_eq!(notes.len(), 1);
+        assert!(notes[0].message.contains("test curve states [1, 0]"), "{:?}", notes[0]);
     }
 
     #[test]
@@ -1037,8 +1085,11 @@ mod tests {
             )
             .expect("valid HelixCurveConstruction fixture"),
         );
+        let mut refusal = LaneRefusals::new();
         let (reversed, reversed_range) =
-            reverse_helix_definition(&definition, range).expect("reversible helix");
+            reverse_helix_definition(&definition, range, &mut refusal, "test helix")
+                .expect("reversible helix");
+        assert!(refusal.take_notes().is_empty());
         let evaluate = |definition: &ProceduralCurveDefinition, angle: f64| {
             let ProceduralCurveDefinition::Helix(helix_payload) = definition else {
                 panic!("helix definition")

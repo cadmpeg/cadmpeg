@@ -1354,7 +1354,7 @@ fn zero_entity_support_pcurve(
         nurbs: crate::nurbs::note_refusal(
             PcurveNurbs::from_lanes(degree, knots, control_points, weights, false),
             refusal,
-            "zero-entity NURBS pcurve record",
+            format_args!("zero-entity NURBS pcurve record at byte {}", record.pos),
         )?,
     })
 }

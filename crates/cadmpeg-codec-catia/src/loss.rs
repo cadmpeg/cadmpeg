@@ -28,6 +28,9 @@ use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 pub enum CatiaLossCode {
     /// The storage layout matched no declared dialect's structural invariants.
     SourceDialectUnverified,
+    /// A decode route refused source records and then transferred no model, so
+    /// the decode continued to the next route or to the metadata fallback.
+    SourceRouteFellThrough,
     /// Verbatim vertex points and analytic surface carriers were decoded.
     GeometryCarrierSummary,
     /// Transferred model retains unresolved curve or surface carriers.
@@ -92,6 +95,7 @@ impl CatiaLossCode {
     /// Every code, in declaration order.
     pub const ALL: &'static [CatiaLossCode] = &[
         Self::SourceDialectUnverified,
+        Self::SourceRouteFellThrough,
         Self::GeometryCarrierSummary,
         Self::GeometryUnresolvedCarriers,
         Self::GeometryBrepNotTransferred,
@@ -128,6 +132,7 @@ impl CatiaLossCode {
     pub const fn code(self) -> &'static str {
         match self {
             Self::SourceDialectUnverified => "source.dialect-unverified",
+            Self::SourceRouteFellThrough => "source.route-fell-through",
             Self::GeometryCarrierSummary => "geometry.carrier-summary",
             Self::GeometryUnresolvedCarriers => "geometry.unresolved-carriers",
             Self::GeometryBrepNotTransferred => "geometry.brep-not-transferred",
@@ -195,6 +200,7 @@ impl CatiaLossCode {
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
+            Self::SourceRouteFellThrough => LossTaxonomy::DecodeDiagnostic,
             Self::GeometryCarrierSummary => LossTaxonomy::CarrierSummary,
             Self::GeometryUnresolvedCarriers
             | Self::GeometryBrepNotTransferred
@@ -265,6 +271,7 @@ mod tests {
             codes,
             [
                 "source.dialect-unverified",
+                "source.route-fell-through",
                 "geometry.carrier-summary",
                 "geometry.unresolved-carriers",
                 "geometry.brep-not-transferred",

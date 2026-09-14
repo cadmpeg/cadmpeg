@@ -32,6 +32,8 @@ pub(crate) struct FamilyOutput {
 /// any carrier refusal it read is already in the caller's lane-refusal sink, so
 /// the fall-through to the next route does not lose it.
 pub(crate) struct Route {
+    /// Name the decode report states when this route falls through.
+    pub(crate) name: &'static str,
     pub(crate) applicable: fn(Variant) -> bool,
     pub(crate) decode: fn(
         &DecodeContext<'_>,
@@ -49,21 +51,25 @@ pub(crate) struct Route {
 /// route (standard, then freeform). Every other variant matches exactly one.
 pub(crate) const ROUTES: &[Route] = &[
     Route {
+        name: "the standard route",
         applicable: |v| matches!(v, Variant::StandardNested | Variant::FbbOnly),
         decode: standard::decode::try_decode_standard,
         standard_face_population: true,
     },
     Route {
+        name: "the zero-entity route",
         applicable: |v| v == Variant::ZeroEntity,
         decode: zero_entity::decode::try_decode_zero_entity,
         standard_face_population: false,
     },
     Route {
+        name: "the E5 route",
         applicable: |v| v == Variant::E5Stream,
         decode: e5::decode::try_decode_e5,
         standard_face_population: false,
     },
     Route {
+        name: "the freeform route",
         applicable: |v| {
             matches!(
                 v,
