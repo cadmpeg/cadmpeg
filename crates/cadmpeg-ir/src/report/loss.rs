@@ -380,6 +380,23 @@ impl<'a> LossNamespace<'a> {
     }
 }
 
+/// Build a loss namespace from a literal checked during constant evaluation.
+///
+/// ```compile_fail
+/// let _ = cadmpeg_ir::loss_namespace!("shared");
+/// ```
+#[macro_export]
+macro_rules! loss_namespace {
+    ($value:literal $(,)?) => {{
+        const STATIC_LOSS_NAMESPACE: $crate::report::LossNamespace<'static> =
+            match $crate::report::LossNamespace::new($value) {
+                Ok(namespace) => namespace,
+                Err(_) => panic!("loss namespace literal is reserved"),
+            };
+        STATIC_LOSS_NAMESPACE
+    }};
+}
+
 /// An owned loss namespace other than the reserved shared namespace.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
