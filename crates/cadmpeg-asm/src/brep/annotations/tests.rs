@@ -28,7 +28,7 @@ fn synthetic_annotations_use_record_keys_independent_of_id_text() {
         &by_index,
         &carriers,
         "source",
-        IdFormat("f3d"),
+        crate::asm_format!("f3d"),
     )
     .unwrap();
     let annotations: Vec<_> = out

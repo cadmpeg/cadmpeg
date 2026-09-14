@@ -1008,7 +1008,7 @@ fn opaque_record_id(id: u64, record: &parse::RawRecord) -> UnknownId {
         .map(|partial| partial.name.to_ascii_lowercase())
         .collect::<Vec<_>>()
         .join("_");
-    let derived = crate::ids::IdentityKind::new(kind);
+    let derived = crate::ids::IdentityKind::try_new(kind).ok();
     UnknownId::from(ids::data(derived.as_ref().unwrap_or(kind!("record")), id))
 }
 

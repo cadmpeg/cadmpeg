@@ -70,7 +70,7 @@ fn face_sidedness_retains_the_decode_time_carrier_flip() {
             &by_index,
             &reach,
             &inward,
-            IdFormat("f3d"),
+            crate::asm_format!("f3d"),
         );
         assert_eq!(out.faces.len(), 1);
         assert_eq!(out.face_sidedness.len(), 1);
@@ -153,7 +153,7 @@ fn tolerant_coedge_extension_retains_the_release_band() {
             Some(major),
             &Carriers::default(),
             &reach,
-            IdFormat("f3d"),
+            crate::asm_format!("f3d"),
         )
         .unwrap();
         assert_eq!(out.tolerant_coedge_parameters.len(), 1);
@@ -209,8 +209,14 @@ fn tolerant_vertex_uses_the_third_double_for_evaluation_and_unset_state() {
                 ..Reachable::default()
             };
             let mut out = AsmBrep::default();
-            emit_vertices(&mut out, &records, &by_index, &reach, IdFormat("f3d"))
-                .expect("valid tolerant vertex fixture");
+            emit_vertices(
+                &mut out,
+                &records,
+                &by_index,
+                &reach,
+                crate::asm_format!("f3d"),
+            )
+            .expect("valid tolerant vertex fixture");
             assert_eq!(out.vertices.len(), 1);
             assert_eq!(
                 out.vertices[0]
@@ -308,7 +314,7 @@ fn reversed_intcurve_context_uses_the_parsed_cache_domain() {
             &mut carriers,
             &mut reach,
             super::super::DecodePurpose::Model,
-            IdFormat("f3d"),
+            crate::asm_format!("f3d"),
         );
         let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(normalized)) = &carriers.curve_geo[&4]
         else {
@@ -324,7 +330,7 @@ fn reversed_intcurve_context_uses_the_parsed_cache_domain() {
             &mut carriers,
             &HashSet::new(),
             &HashSet::new(),
-            IdFormat("f3d"),
+            crate::asm_format!("f3d"),
         );
         let ProceduralCurveDefinition::Spring(definition_payload) =
             out.procedural_curves[0].1.definition()
@@ -370,7 +376,14 @@ fn evaluated_and_absent_vertex_slots_have_distinct_native_tail_wires() {
             ..Reachable::default()
         };
         let mut out = AsmBrep::default();
-        emit_vertices(&mut out, &records, &by_index, &reach, IdFormat("f3d")).unwrap();
+        emit_vertices(
+            &mut out,
+            &records,
+            &by_index,
+            &reach,
+            crate::asm_format!("f3d"),
+        )
+        .unwrap();
         (
             serde_value::to_value(&out.tolerant_vertex_tails[0]).unwrap(),
             out.vertices[0].tolerance,
@@ -450,7 +463,7 @@ fn invalid_cache_first_context_keeps_the_decoded_curve() {
         &[],
         None,
         "context",
-        IdFormat("f3d"),
+        crate::asm_format!("f3d"),
         super::super::DecodePurpose::Model,
     );
     let out = result.expect("invalid construction must retain its cache");
@@ -514,7 +527,7 @@ fn procedural_curve_admission_failures_keep_the_carrier() {
             &mut carriers,
             &HashSet::new(),
             &HashSet::new(),
-            IdFormat("f3d"),
+            crate::asm_format!("f3d"),
         );
         assert_eq!(out.curves.len(), 1);
         assert_eq!(out.curves[0].id.as_str(), "f3d:brep:entity#4");
@@ -628,7 +641,7 @@ fn failed_procedural_curves_discard_only_their_candidate_children() {
             &mut carriers,
             &HashSet::from([4]),
             &HashSet::from([4]),
-            IdFormat("f3d"),
+            crate::asm_format!("f3d"),
         );
         assert_eq!(
             out.surfaces

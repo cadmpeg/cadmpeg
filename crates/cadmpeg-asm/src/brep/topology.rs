@@ -3,7 +3,7 @@
 //! classify edge curve senses.
 
 use super::records::{MeshSurfaceSentinel, WireMembers, WireSide, WireTopology};
-use crate::ids::IdFormat;
+use crate::ids::{brep_id, IdFormat};
 use crate::nurbs;
 use crate::sab::{Record, Token};
 use cadmpeg_ir::geometry::{
@@ -11,7 +11,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{
     CoedgeId, EdgeId, FaceId, LoopId, ProceduralCurveId, ProceduralSurfaceId, RegionId, ShellId,
-    SurfaceId, UnknownId, VertexId,
+    SurfaceId, VertexId,
 };
 use cadmpeg_ir::topology::Sense;
 use std::collections::{HashMap, HashSet};
@@ -63,8 +63,8 @@ pub(crate) fn keep_faces_and_carriers(
     carriers: &mut Carriers,
     reach: &mut Reachable,
     purpose: DecodePurpose,
-    format: IdFormat<'_>,
-) {
+    format: IdFormat,
+) -> Result<(), cadmpeg_core::CodecError> {
     let Carriers {
         surface_geo,
         procedural_surface_defs,
@@ -165,18 +165,17 @@ pub(crate) fn keep_faces_and_carriers(
                 surf_ref,
                 if construction_is_exact_carrier {
                     SurfaceGeometry::Procedural {
-                        construction: ProceduralSurfaceId::mint(format!(
-                            "{format}:brep:procedural_surface#{surf_ref}"
-                        ))
-                        .expect("identity grammar"),
+                        construction: brep_id!(
+                            format,
+                            ProceduralSurfaceId,
+                            "procedural_surface",
+                            surf_ref
+                        ),
                         cache: None,
                     }
                 } else {
                     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                        record: Some(
-                            UnknownId::mint(unknown_record_id(surf_rec, format))
-                                .expect("identity grammar"),
-                        ),
+                        record: Some(unknown_record_id(surf_rec, format)?),
                     })
                 },
             );
@@ -198,7 +197,7 @@ pub(crate) fn keep_faces_and_carriers(
                     out.mesh_surface_sentinels.push(MeshSurfaceSentinel {
                         source_namespace:
                             crate::brep::records::identity::NativeRecordNamespace::new(format),
-                        surface: SurfaceId::mint(id(format, surf_ref)).expect("identity grammar"),
+                        surface: SurfaceId::from(id(format, surf_ref)),
                         record_index: surf_rec.index as u32,
                     });
                 }
@@ -214,6 +213,7 @@ pub(crate) fn keep_faces_and_carriers(
             }
         }
     }
+    Ok(())
 }
 
 /// Pass 2 (topology): walk each kept face's loops and coedge rings, pulling in
@@ -226,7 +226,7 @@ pub(crate) fn walk_reachable_topology(
     carriers: &mut Carriers,
     reach: &mut Reachable,
     purpose: DecodePurpose,
-    format: IdFormat<'_>,
+    format: IdFormat,
 ) {
     let Carriers {
         curve_geo,
@@ -448,7 +448,12 @@ pub(crate) fn walk_reachable_topology(
                                                 curve_geo.insert(
                                                     cv,
                                                     CurveGeometry::Procedural {
-                                                        construction: ProceduralCurveId::mint(format!("{format}:brep:procedural_curve#{cv}")).expect("valid owning format and numeric record index"),
+                                                    construction: brep_id!(
+                                                        format,
+                                                        ProceduralCurveId,
+                                                        "procedural_curve",
+                                                        cv
+                                                    ),
                                                         cache: None,
                                                     },
                                                 );
@@ -497,7 +502,7 @@ pub(crate) fn collect_wire_topology(
     carriers: &mut Carriers,
     reach: &mut Reachable,
     purpose: DecodePurpose,
-    format: IdFormat<'_>,
+    format: IdFormat,
 ) -> WireShellTopology {
     let mut wire_edges_by_shell = HashMap::<i64, Vec<i64>>::new();
     let mut free_vertices_by_shell = HashMap::<i64, Vec<i64>>::new();
@@ -605,18 +610,14 @@ pub(crate) fn collect_wire_topology(
                     out.wire_topologies.push(WireTopology {
                         source_namespace:
                             crate::brep::records::identity::NativeRecordNamespace::new(format),
-                        shell: ShellId::mint(id(format, shell_index)).expect("identity grammar"),
+                        shell: ShellId::from(id(format, shell_index)),
                         record_index: wire.index as u32,
                         members: match free_vertex {
-                            Some(vertex) => WireMembers::Vertex(
-                                VertexId::mint(id(format, vertex)).expect("identity grammar"),
-                            ),
+                            Some(vertex) => WireMembers::Vertex(VertexId::from(id(format, vertex))),
                             None => WireMembers::Edges(
                                 wire_edges
                                     .into_iter()
-                                    .map(|edge| {
-                                        EdgeId::mint(id(format, edge)).expect("identity grammar")
-                                    })
+                                    .map(|edge| EdgeId::from(id(format, edge)))
                                     .collect(),
                             ),
                         },
@@ -643,7 +644,7 @@ fn keep_wire_edge(
     carriers: &mut Carriers,
     reach: &mut Reachable,
     purpose: DecodePurpose,
-    format: IdFormat<'_>,
+    format: IdFormat,
 ) {
     let Carriers {
         curve_geo,
@@ -731,10 +732,12 @@ fn keep_wire_edge(
                     reverse_procedural_curve_definition(&mut definition);
                 }
                 entry.insert(CurveGeometry::Procedural {
-                    construction: ProceduralCurveId::mint(format!(
-                        "{format}:brep:procedural_curve#{curve_index}"
-                    ))
-                    .expect("valid owning format and numeric record index"),
+                    construction: brep_id!(
+                        format,
+                        ProceduralCurveId,
+                        "procedural_curve",
+                        curve_index
+                    ),
                     cache: None,
                 });
                 procedural_curve_defs.insert(
@@ -783,10 +786,9 @@ pub(crate) fn ring_coedges(
     loop_rec: &Record,
     by_index: &HashMap<i64, &Record>,
     kept: &HashSet<i64>,
-    format: IdFormat<'_>,
+    format: IdFormat,
 ) -> Vec<CoedgeId> {
-    let id =
-        |i: i64| CoedgeId::mint(format!("{format}:brep:entity#{i}")).expect("identity grammar");
+    let id = |i: i64| CoedgeId::from(super::id(format, i));
     let mut out = Vec::new();
     let Some(first) = loop_rec.ref_at(4) else {
         return out;
@@ -811,9 +813,9 @@ pub(crate) fn loop_chain(
     face_rec: &Record,
     by_index: &HashMap<i64, &Record>,
     kept: &HashSet<i64>,
-    format: IdFormat<'_>,
+    format: IdFormat,
 ) -> Vec<LoopId> {
-    let id = |i: i64| LoopId::mint(format!("{format}:brep:entity#{i}")).expect("identity grammar");
+    let id = |i: i64| LoopId::from(super::id(format, i));
     let mut out = Vec::new();
     let mut cur = face_rec.ref_at(4);
     let mut guard = HashSet::new();
@@ -834,9 +836,9 @@ fn face_chain(
     shell_rec: &Record,
     by_index: &HashMap<i64, &Record>,
     kept: &HashSet<i64>,
-    format: IdFormat<'_>,
+    format: IdFormat,
 ) -> Vec<FaceId> {
-    let id = |i: i64| FaceId::mint(format!("{format}:brep:entity#{i}")).expect("identity grammar");
+    let id = |i: i64| FaceId::from(super::id(format, i));
     let mut out = Vec::new();
     let mut cur = shell_rec.ref_at(5);
     let mut guard = HashSet::new();
@@ -882,7 +884,7 @@ pub(crate) fn shell_faces(
     shell: &Record,
     by_index: &HashMap<i64, &Record>,
     kept: &HashSet<i64>,
-    format: IdFormat<'_>,
+    format: IdFormat,
 ) -> Vec<FaceId> {
     let mut out = face_chain(shell, by_index, kept, format);
     let mut pending = shell.ref_at(4).into_iter().collect::<Vec<_>>();
@@ -933,15 +935,13 @@ fn face_chain_from(
     mut current: Option<i64>,
     by_index: &HashMap<i64, &Record>,
     kept: &HashSet<i64>,
-    format: IdFormat<'_>,
+    format: IdFormat,
 ) -> Vec<FaceId> {
     let mut out = Vec::new();
     let mut guard = HashSet::new();
     while let Some(index) = current.filter(|index| guard.insert(*index)) {
         if kept.contains(&index) {
-            out.push(
-                FaceId::mint(format!("{format}:brep:entity#{index}")).expect("identity grammar"),
-            );
+            out.push(FaceId::from(id(format, index)));
         }
         let Some(face) = by_index.get(&index) else {
             break;
@@ -954,9 +954,9 @@ fn face_chain_from(
 pub(crate) fn shell_chain(
     region_rec: &Record,
     by_index: &HashMap<i64, &Record>,
-    format: IdFormat<'_>,
+    format: IdFormat,
 ) -> Vec<ShellId> {
-    let id = |i: i64| ShellId::mint(format!("{format}:brep:entity#{i}")).expect("identity grammar");
+    let id = |i: i64| ShellId::from(super::id(format, i));
     let mut out = Vec::new();
     let mut cur = region_rec.ref_at(4);
     let mut guard = HashSet::new();
@@ -974,10 +974,9 @@ pub(crate) fn shell_chain(
 pub(crate) fn region_chain(
     body_rec: &Record,
     by_index: &HashMap<i64, &Record>,
-    format: IdFormat<'_>,
+    format: IdFormat,
 ) -> Vec<RegionId> {
-    let id =
-        |i: i64| RegionId::mint(format!("{format}:brep:entity#{i}")).expect("identity grammar");
+    let id = |i: i64| RegionId::from(super::id(format, i));
     let mut out = Vec::new();
     let mut cur = body_rec.ref_at(3);
     let mut guard = HashSet::new();

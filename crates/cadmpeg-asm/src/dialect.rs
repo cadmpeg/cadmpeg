@@ -239,7 +239,7 @@ mod tests {
     };
     use crate::kernel_header::RefWidth;
     use crate::kernel_header::{BinaryHeader, KernelHeader};
-    use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch, LayerInstance};
+    use cadmpeg_core::dialect::{Admission, DialectMatch, LayerInstance};
     use std::collections::BTreeSet;
 
     fn header(width: RefWidth, save_format_version: Option<u32>) -> BinaryHeader {

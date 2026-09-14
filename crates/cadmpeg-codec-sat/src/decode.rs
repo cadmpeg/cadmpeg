@@ -5,7 +5,6 @@ use cadmpeg_asm::acis_header;
 use cadmpeg_asm::asm_header;
 use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
 use cadmpeg_asm::brep::{decode_with_header, AsmBrep, DecodePurpose};
-use cadmpeg_asm::ids::IdFormat;
 use cadmpeg_asm::kernel_header::{BinaryHeader, KernelHeader};
 use cadmpeg_asm::{sab, sat};
 use cadmpeg_core::decode::DecodeContext;
@@ -65,7 +64,7 @@ fn decode_asm_binary(
         bytes,
         Some(header.metadata.clone()),
         "stream",
-        IdFormat(FORMAT),
+        cadmpeg_asm::asm_format!("sat"),
         DecodePurpose::Model,
     )?;
     let mut attributes = BTreeMap::new();
@@ -128,7 +127,7 @@ fn decode_acis_binary(
         bytes,
         Some(header.metadata.clone()),
         "stream",
-        IdFormat(FORMAT),
+        cadmpeg_asm::asm_format!("sat"),
         DecodePurpose::Model,
     )?;
     let mut attributes = BTreeMap::new();
@@ -177,7 +176,7 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
         bytes,
         Some(header.clone()),
         "stream",
-        IdFormat(FORMAT),
+        cadmpeg_asm::asm_format!("sat"),
         DecodePurpose::Model,
     )?;
     build_result(

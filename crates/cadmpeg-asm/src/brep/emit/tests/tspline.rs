@@ -85,7 +85,7 @@ fn emit(record: &Record) -> Result<(), cadmpeg_core::CodecError> {
         0,
         &mut carriers,
         &Reachable::default(),
-        IdFormat("f3d"),
+        crate::asm_format!("f3d"),
     )
 }
 

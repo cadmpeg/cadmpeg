@@ -108,7 +108,7 @@ fn revision_sum_solved_cache_remains_a_nurbs_face_carrier() {
             let mut out = AsmBrep::default();
             let mut carriers = Carriers::default();
             let mut reach = Reachable::default();
-            let format = IdFormat("f3d");
+            let format = crate::asm_format!("f3d");
             keep_faces_and_carriers(
                 &mut out,
                 &records,
@@ -118,7 +118,8 @@ fn revision_sum_solved_cache_remains_a_nurbs_face_carrier() {
                 &mut reach,
                 DecodePurpose::Model,
                 format,
-            );
+            )
+            .expect("generated identities are valid");
             assert_eq!(out.stats.nurbs_surfaces, 1);
             crate::brep::emit::emit_carrier_records(
                 &mut out,
@@ -170,7 +171,7 @@ fn history_pcurve_use_has_no_invented_parameter_interval() {
         &mut carriers,
         &mut reach,
         DecodePurpose::History,
-        IdFormat("f3d"),
+        crate::asm_format!("f3d"),
     );
     super::super::emit::emit_coedges(
         &mut out,
@@ -179,7 +180,7 @@ fn history_pcurve_use_has_no_invented_parameter_interval() {
         None,
         &carriers,
         &reach,
-        IdFormat("f3d"),
+        crate::asm_format!("f3d"),
     )
     .unwrap();
     assert_eq!(out.coedges.len(), 1);

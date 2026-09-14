@@ -4,9 +4,10 @@
 use super::attributes::unknown_record_id;
 use super::geometry::is_edge_record;
 use super::{id, AsmBrep, Carriers};
-use crate::ids::IdFormat;
+use crate::ids::{brep_id, IdFormat};
 use crate::sab::Record;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+use cadmpeg_ir::ids::{AttributeId, ProceduralCurveId, ProceduralSurfaceId};
 use std::collections::{HashMap, HashSet};
 
 /// Provenance tag for a source record or a synthetic procedural entity.
@@ -59,7 +60,7 @@ pub(crate) fn emit_annotation_records(
     by_index: &HashMap<i64, &Record>,
     carriers: &Carriers,
     stream: &str,
-    format: IdFormat<'_>,
+    format: IdFormat,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let curve_geometries = out
         .curves
@@ -103,7 +104,7 @@ pub(crate) fn emit_annotation_records(
         )
         .collect::<HashSet<_>>();
     for record in records {
-        let entity_id = id(format, record.index as i64);
+        let entity_id = id(format, record.index as i64).into_string();
         if emitted_ids.contains(entity_id.as_str()) {
             let mut derived_fields = Vec::new();
             match record.head() {
@@ -149,7 +150,7 @@ pub(crate) fn emit_annotation_records(
                 derived_fields,
             });
         }
-        let attribute_id = format!("{format}:brep:attribute#{}", record.index);
+        let attribute_id = brep_id!(format, AttributeId, "attribute", record.index).into_string();
         if attribute_ids.contains(attribute_id.as_str()) {
             out.annotation_records.push(AnnotationRecord {
                 id: attribute_id,
@@ -159,10 +160,10 @@ pub(crate) fn emit_annotation_records(
                 derived_fields: Vec::new(),
             });
         }
-        let unknown_id = unknown_record_id(record, format);
+        let unknown_id = unknown_record_id(record, format)?;
         if unknown_ids.contains(unknown_id.as_str()) {
             out.annotation_records.push(AnnotationRecord {
-                id: unknown_id,
+                id: unknown_id.into_string(),
                 stream: stream.to_owned(),
                 offset: record.offset as u64,
                 tag: AnnotationTag::Record(record.name.clone()),
@@ -171,11 +172,17 @@ pub(crate) fn emit_annotation_records(
         }
         for (synthetic_id, tag) in [
             (
-                format!("{format}:brep:procedural_surface#{}", record.index),
+                brep_id!(
+                    format,
+                    ProceduralSurfaceId,
+                    "procedural_surface",
+                    record.index
+                )
+                .into_string(),
                 AnnotationTag::ProceduralSurface,
             ),
             (
-                format!("{format}:brep:procedural_curve#{}", record.index),
+                brep_id!(format, ProceduralCurveId, "procedural_curve", record.index).into_string(),
                 AnnotationTag::ProceduralCurve,
             ),
         ] {

@@ -622,8 +622,8 @@ mod tests {
     #[test]
     fn body_native_key_requires_explicit_body_ordinal() {
         let key = super::BodyNativeKey {
-            source_namespace: super::identity::NativeRecordNamespace::new(crate::ids::IdFormat(
-                "f3d",
+            source_namespace: super::identity::NativeRecordNamespace::new(crate::asm_format!(
+                "f3d"
             )),
             record_index: 17,
             body: cadmpeg_ir::ids::BodyId::mint("f3d:brep:entity#17").unwrap(),
