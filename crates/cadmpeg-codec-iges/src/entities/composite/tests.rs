@@ -699,9 +699,12 @@ fn composite_flattening_over_its_depth_limit_fuses_the_decode_session() {
 
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &DecodePolicy::default()).unwrap();
-    assert!(bounded_nurbs_for_curve(&ir, &child_id, Some(&ctx), None)
-        .expect("carrier lanes pair")
-        .is_none());
+    // The depth refusal is the reader's answer, not an absent carrier: it names
+    // the limit it exceeds and the session carries the same refusal.
+    let error = bounded_nurbs_for_curve(&ir, &child_id, Some(&ctx), None)
+        .expect_err("a composite deeper than the limit is refused")
+        .to_string();
+    assert!(error.contains("iges_composite_depth"), "{error}");
     assert!(matches!(
         ctx.finish_session(),
         Err(CodecError::ResourceLimit(limit))
@@ -1454,9 +1457,8 @@ fn reversing_a_subrange_reflects_the_active_nurbs_domain() {
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
         None,
     );
-    let (reversed, range) = reverse_nurbs(curve, [2.0, 5.0])
-        .expect("carrier lanes pair")
-        .expect("a bounded subrange should have an exact reversed carrier");
+    let (reversed, range) =
+        reverse_nurbs(curve, [2.0, 5.0]).expect("a bounded subrange reverses exactly");
     assert_eq!(range, [5.0, 8.0]);
     assert_eq!(
         cadmpeg_ir::eval::nurbs_curve_point(
@@ -1488,9 +1490,13 @@ fn reversing_a_range_outside_the_active_nurbs_domain_is_rejected() {
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
         None,
     );
-    assert!(reverse_nurbs(curve, [-1.0, 5.0])
-        .expect("carrier lanes pair")
-        .is_none());
+    let error = reverse_nurbs(curve, [-1.0, 5.0])
+        .expect_err("an interval outside the child's own domain is refused")
+        .to_string();
+    assert!(
+        error.contains("outside its domain [0, 10]"),
+        "the refusal names the interval and the domain: {error}"
+    );
 }
 
 #[test]

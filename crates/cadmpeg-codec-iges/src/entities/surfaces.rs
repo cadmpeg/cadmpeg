@@ -744,25 +744,37 @@ fn same_basis_ruled_surface(
     )
 }
 
-fn admit_surface_pole_count(ctx: Option<&DecodeContext<'_>>, pole_count: usize) -> Option<()> {
+/// Refuses a pole count above the codec limit, naming the limit it exceeds.
+///
+/// The refusal is the caller's to carry: with a context it is the context's own
+/// budget refusal, and without one it is the same local limit error every other
+/// pole-count site in this file returns.
+fn admit_surface_pole_count(
+    ctx: Option<&DecodeContext<'_>>,
+    pole_count: usize,
+) -> Result<(), cadmpeg_core::CodecError> {
     if pole_count > MAX_SURFACE_POLES {
-        if let Some(ctx) = ctx {
-            let _ = ctx.refuse_codec_limit(
+        return Err(match ctx {
+            Some(ctx) => ctx.refuse_codec_limit(
                 "iges_surface_poles",
                 MAX_SURFACE_POLES as u64,
                 pole_count as u64,
-            );
-        }
-        return None;
+            ),
+            None => refuse_local_limit(
+                "iges_surface_poles",
+                MAX_SURFACE_POLES as u64,
+                pole_count as u64,
+            ),
+        });
     }
-    Some(())
+    Ok(())
 }
 
 fn ruled_surface_carrier(
     first: &NurbsCurve,
     second: &NurbsCurve,
     ctx: Option<&DecodeContext<'_>>,
-) -> Result<Option<NurbsSurface>, cadmpeg_ir::geometry::NurbsError> {
+) -> Result<Option<NurbsSurface>, cadmpeg_core::CodecError> {
     if first.degree() == second.degree()
         && first.knots() == second.knots()
         && first.control_points().len() == second.control_points().len()
@@ -771,15 +783,18 @@ fn ruled_surface_carrier(
             let Some(pole_count) = first.control_points().len().checked_mul(2) else {
                 return Ok(None);
             };
-            if admit_surface_pole_count(ctx, pole_count).is_none() {
-                return Ok(None);
-            }
-            return same_basis_ruled_surface(first, second, &weights).map(Some);
+            admit_surface_pole_count(ctx, pole_count)?;
+            return same_basis_ruled_surface(first, second, &weights)
+                .map(Some)
+                .map_err(cadmpeg_core::CodecError::malformed);
         }
     }
-    let Some((degree, u_knots, control_points, weights)) =
-        ruled_surface_span_lanes(first, second, ctx)
-    else {
+    let mut pole_refusal = None;
+    let lanes = ruled_surface_span_lanes(first, second, ctx, &mut pole_refusal);
+    if let Some(error) = pole_refusal {
+        return Err(error);
+    }
+    let Some((degree, u_knots, control_points, weights)) = lanes else {
         return Ok(None);
     };
     Ok(Some(NurbsSurface::from_lanes(
@@ -790,15 +805,22 @@ fn ruled_surface_carrier(
             weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
         ),
         false,
-    )?))
+    )
+    .map_err(cadmpeg_core::CodecError::malformed)?))
 }
 
 type RuledSpanLanes = (u32, Vec<f64>, Vec<Point3>, Option<Vec<f64>>);
 
+/// The span lanes of a ruled carrier, or `None` when the rails state none.
+///
+/// `pole_refusal` carries the one answer that is a refusal rather than an
+/// absent carrier: a pole count above the codec limit. The caller returns it,
+/// so the limit is not lost in the `None` that every other exit means.
 fn ruled_surface_span_lanes(
     first: &NurbsCurve,
     second: &NurbsCurve,
     ctx: Option<&DecodeContext<'_>>,
+    pole_refusal: &mut Option<cadmpeg_core::CodecError>,
 ) -> Option<RuledSpanLanes> {
     let degree = usize::try_from(first.degree())
         .ok()?
@@ -809,7 +831,10 @@ fn ruled_surface_span_lanes(
     let spans = aligned_homogeneous_spans(first, second)?;
     let u_count = spans.len().checked_mul(degree)?.checked_add(1)?;
     let pole_count = u_count.checked_mul(2)?;
-    admit_surface_pole_count(ctx, pole_count)?;
+    if let Err(error) = admit_surface_pole_count(ctx, pole_count) {
+        *pole_refusal = Some(error);
+        return None;
+    }
     let mut homogeneous = Vec::with_capacity(pole_count);
     let mut u_knots = Vec::with_capacity(u_count.checked_add(degree)?.checked_add(1)?);
     for (span_index, (first_span, second_span)) in spans.iter().enumerate() {
