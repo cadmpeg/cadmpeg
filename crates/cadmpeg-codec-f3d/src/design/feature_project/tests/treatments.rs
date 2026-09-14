@@ -166,6 +166,52 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         .unwrap()
     };
     let hole_face_operands = [hole_face_operand(370, 3), hole_face_operand(378, 5)];
+    let construction_group = |record_index, scope_reference_ordinal| {
+        DesignConstructionOperandGroup::try_from(
+            crate::records::topology::DesignConstructionOperandGroupDraft {
+                id: format!("f3d:native/BulkStream.dat:construction-group#{record_index}"),
+                scope_record_index: 22,
+                scope_reference_ordinal,
+                record_index,
+                byte_offset: 1_000 + u64::from(scope_reference_ordinal),
+                class_tag: crate::records::DesignClassTag::try_from("288".to_owned()).unwrap(),
+                members: vec![crate::records::Located {
+                    value: record_index + 100,
+                    offset: 1_026 + u64::from(scope_reference_ordinal),
+                }],
+                lost_edge_references: Vec::new(),
+                frame: DesignConstructionOperandGroupFrame::try_from(
+                    crate::records::topology::DesignConstructionOperandGroupFrameDraft {
+                        member_count_offset: 1_021 + u64::from(scope_reference_ordinal),
+                        auxiliary_records: Vec::new(),
+                        auxiliary_paths: Vec::new(),
+                        trailing_records: vec![crate::records::Located {
+                            value: record_index + 1,
+                            offset: 1_050 + u64::from(scope_reference_ordinal),
+                        }],
+                        trailing_transforms: Vec::new(),
+                        trailing_dual_transforms: Vec::new(),
+                        trailing_flags: Vec::new(),
+                        opaque_index: 100,
+                        opaque_index_offset: 1_078 + u64::from(scope_reference_ordinal),
+                        opaque_scalar: 0.5,
+                        opaque_scalar_offset: 1_082 + u64::from(scope_reference_ordinal),
+                        variant: false,
+                    },
+                )
+                .unwrap(),
+                operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
+                    DesignOperandRole::BODIES_B,
+                ),
+                role_offset: 1_060 + u64::from(scope_reference_ordinal),
+                paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned())
+                    .unwrap(),
+                paired_byte_offset: 1_100 + u64::from(scope_reference_ordinal),
+            },
+        )
+        .unwrap()
+    };
+    let chamfer_edge_group = construction_group(70, 1);
     let (features, _) = project_parameter_design(
         &[
             parameter(44, 45, "Radius", "d1", "5 mm", 0.5),
@@ -178,7 +224,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             owner(64, 22, 65, 1),
         ],
         &scopes,
-        &[],
+        std::slice::from_ref(&chamfer_edge_group),
         &[],
         &[],
         &[],
@@ -212,7 +258,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             if matches!(groups.as_slice(), [ChamferGroup {
                 edges: EdgeSelection::Native(selection),
                 spec: ChamferSpec::TwoDistances { first, second },
-            }] if selection == &scopes[1].id && first.get() == 1.0 && second.get() == 2.0)
+            }] if selection == &chamfer_edge_group.id && first.get() == 1.0 && second.get() == 2.0)
     ));
 
     let mut distance_angle_parameters = [
@@ -233,7 +279,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         &distance_angle_parameters,
         &[owner(54, 22, 55, 0), owner(64, 22, 65, 1)],
         std::slice::from_ref(&scopes[1]),
-        &[],
+        std::slice::from_ref(&chamfer_edge_group),
         &[],
         &[],
         &[],
@@ -272,7 +318,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         &distance_angle_parameters,
         &[owner(54, 22, 55, 0), owner(64, 22, 65, 1)],
         std::slice::from_ref(&scopes[1]),
-        &[],
+        std::slice::from_ref(&chamfer_edge_group),
         &[],
         &[],
         &[],
@@ -429,7 +475,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         ],
         &[owner(54, 22, 55, 0), owner(64, 22, 65, 1)],
         std::slice::from_ref(&scopes[1]),
-        &[],
+        std::slice::from_ref(&chamfer_edge_group),
         &[],
         &[],
         &[],
@@ -448,7 +494,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         &[parameter(54, 55, "leftDistance", "d2", "1 mm", 0.1)],
         &[owner(54, 22, 55, 0)],
         std::slice::from_ref(&scopes[1]),
-        &[],
+        std::slice::from_ref(&chamfer_edge_group),
         &[],
         &[],
         &[],
@@ -514,7 +560,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             owner(74, 22, 75, 2),
         ],
         std::slice::from_ref(&scopes[1]),
-        &[],
+        std::slice::from_ref(&chamfer_edge_group),
         &[],
         &[],
         &[],
@@ -535,7 +581,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         ],
         &[owner(54, 22, 55, 0), owner(64, 22, 65, 1)],
         std::slice::from_ref(&scopes[1]),
-        &[],
+        std::slice::from_ref(&chamfer_edge_group),
         &[],
         &[],
         &[],
@@ -549,51 +595,6 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         }) if parameters.len() == 2
     ));
 
-    let construction_group = |record_index, scope_reference_ordinal| {
-        DesignConstructionOperandGroup::try_from(
-            crate::records::topology::DesignConstructionOperandGroupDraft {
-                id: format!("f3d:native/BulkStream.dat:construction-group#{record_index}"),
-                scope_record_index: 22,
-                scope_reference_ordinal,
-                record_index,
-                byte_offset: 1_000 + u64::from(scope_reference_ordinal),
-                class_tag: crate::records::DesignClassTag::try_from("288".to_owned()).unwrap(),
-                members: vec![crate::records::Located {
-                    value: record_index + 100,
-                    offset: 1_026 + u64::from(scope_reference_ordinal),
-                }],
-                lost_edge_references: Vec::new(),
-                frame: DesignConstructionOperandGroupFrame::try_from(
-                    crate::records::topology::DesignConstructionOperandGroupFrameDraft {
-                        member_count_offset: 1_021 + u64::from(scope_reference_ordinal),
-                        auxiliary_records: Vec::new(),
-                        auxiliary_paths: Vec::new(),
-                        trailing_records: vec![crate::records::Located {
-                            value: record_index + 1,
-                            offset: 1_050 + u64::from(scope_reference_ordinal),
-                        }],
-                        trailing_transforms: Vec::new(),
-                        trailing_dual_transforms: Vec::new(),
-                        trailing_flags: Vec::new(),
-                        opaque_index: 100,
-                        opaque_index_offset: 1_078 + u64::from(scope_reference_ordinal),
-                        opaque_scalar: 0.5,
-                        opaque_scalar_offset: 1_082 + u64::from(scope_reference_ordinal),
-                        variant: false,
-                    },
-                )
-                .unwrap(),
-                operand_role: crate::records::topology::DesignConstructionOperandRole::Other(
-                    DesignOperandRole::BODIES_B,
-                ),
-                role_offset: 1_060 + u64::from(scope_reference_ordinal),
-                paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned())
-                    .unwrap(),
-                paired_byte_offset: 1_100 + u64::from(scope_reference_ordinal),
-            },
-        )
-        .unwrap()
-    };
     let mut construction_groups = [construction_group(90, 17), construction_group(80, 4)];
     construction_groups[1]
         .lost_edge_references
@@ -1007,6 +1008,39 @@ fn localized_fillet_scope() -> DesignParameterScope {
             )
             .unwrap(),
             payload: crate::records::feature::DesignFeatureKind::Conge
+                .try_into()
+                .unwrap(),
+            unclosed_construction_operand_groups: Vec::new(),
+            paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
+            paired_byte_offset: 300,
+        }
+        .with_fixture_layout(),
+    )
+    .unwrap()
+}
+
+fn localized_chamfer_scope() -> DesignParameterScope {
+    DesignParameterScope::try_new(
+        crate::records::feature::DesignParameterScopeDraft {
+            id: "f3d:native/BulkStream.dat:scope#12".into(),
+            byte_offset: 100,
+            class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
+            record_index: 12,
+            frame_length: 200,
+            kind_offset: 210,
+            feature_ordinal: std::num::NonZeroU32::MIN,
+            feature_ordinal_offset: 0,
+            history_state_id: None,
+            previous_history_state_id: None,
+            previous_history_state_id_offset: None,
+            reference_count_offset: 180,
+            reference_members: crate::records::ReferenceRun::from_columns(
+                vec![100, 101],
+                vec![185, 196],
+                "reference_members",
+            )
+            .unwrap(),
+            payload: crate::records::feature::DesignFeatureKind::Chamfer
                 .try_into()
                 .unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
@@ -1971,4 +2005,51 @@ fn fillet_unit_conversion_rejects_finite_overflow() {
     assert!(
         crate::design::feature_project::variable_fillet_law(&[(0, &start), (1, &end)]).is_none()
     );
+}
+
+#[test]
+fn a_chamfer_that_states_no_edge_group_refuses_a_one_element_distance_lane() {
+    use cadmpeg_ir::features::{ChamferGroup, ChamferSpec, EdgeSelection};
+
+    let scope = localized_chamfer_scope();
+    let parameters = [localized_fillet_parameter(10, 11, "Distance", Some("mm"), 0.1)];
+    let owners = [localized_fillet_owner(10, 11, 0)];
+
+    let (refused, _) = project_parameter_design(
+        &parameters,
+        &owners,
+        std::slice::from_ref(&scope),
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        refused[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Native {
+            kind: cadmpeg_ir::features::NativeFeatureKind::Chamfer,
+            parameters,
+        }) if parameters.len() == 1
+    ));
+
+    let group = localized_fillet_group(100, 0, vec![200]);
+    let (accepted, _) = project_parameter_design(
+        &parameters,
+        &owners,
+        std::slice::from_ref(&scope),
+        std::slice::from_ref(&group),
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        accepted[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })
+            if matches!(groups.as_slice(), [ChamferGroup {
+                edges: EdgeSelection::Native(selection),
+                spec: ChamferSpec::Distance { distance },
+            }] if selection == &group.id && distance.get() == 1.0)
+    ));
 }
