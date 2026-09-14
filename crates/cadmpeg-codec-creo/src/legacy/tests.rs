@@ -15,7 +15,8 @@ use super::*;
 #[test]
 fn unknown_declaration_codes_retain_scope_identity() {
     let data = b"@future 1 8\n@future 1 12\n0 1 value\n@next 2 255\n0 2 value\n";
-    let persistence = scan(data, std::iter::once(0..data.len()));
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
     assert_eq!(persistence.conflicting_declaration_count(), 1);
     assert_eq!(persistence.unresolved_value_count(), 1);
     assert_eq!(persistence.scopes[0].values.len(), 1);
@@ -32,7 +33,8 @@ fn scan_resolves_declarations_values_and_continuations() {
     let data = b"#P_OBJECT 6\n@root 1 0\n0 1 ->\n@matrix 2 2\n1 2 [2][2]\n\
                      $3FF,0\n$0,3FF\n#END_OF_UGC\n";
 
-    let persistence = scan(data, std::iter::once(0..data.len()));
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
     let scope = &persistence.scopes[0];
 
     assert_eq!(scope.declarations.len(), 2);
@@ -59,7 +61,8 @@ fn scan_resolves_identifiers_within_independent_scopes() {
         .position(|window| window == b"@other")
         .expect("second scope");
 
-    let persistence = scan(data, [0..second, second..data.len()]);
+    let persistence = scan(data, [0..second, second..data.len()])
+        .expect("the fixture states every scope inside its own bytes");
 
     assert_eq!(persistence.scopes.len(), 2);
     assert_eq!(persistence.declaration_count(), 2);
@@ -73,7 +76,8 @@ fn scan_resolves_identifiers_within_independent_scopes() {
 fn model_name_prefers_root_solid_over_null_view_placeholder() {
     let data = b"@Solid 1 0\n@model_name 2 10\n0 1 ->\n1 2 ROOT\n\
 @View 3 0\n@model_name 4 10\n0 3 ->\n1 4 NULL\n";
-    let persistence = scan(data, std::iter::once(0..data.len()));
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
     let expected_offset = data
         .windows(b"1 2 ROOT".len())
         .position(|window| window == b"1 2 ROOT")
@@ -93,7 +97,8 @@ fn model_name_withholds_conflicting_root_identities() {
         .windows(b"@Solid 3".len())
         .position(|window| window == b"@Solid 3")
         .expect("second scope");
-    let persistence = scan(data, [0..second_scope, second_scope..data.len()]);
+    let persistence = scan(data, [0..second_scope, second_scope..data.len()])
+        .expect("the fixture states every scope inside its own bytes");
 
     assert_eq!(persistence.model_name(), None);
 }
@@ -106,7 +111,8 @@ fn first_source_model_name_selects_root_row_for_scoped_sections() {
         .windows(b"@model_name 2".len())
         .position(|window| window == b"@model_name 2")
         .expect("second scope");
-    let persistence = scan(data, [0..second_scope, second_scope..data.len()]);
+    let persistence = scan(data, [0..second_scope, second_scope..data.len()])
+        .expect("the fixture states every scope inside its own bytes");
 
     assert_eq!(
         persistence.first_source_model_name(),
@@ -122,7 +128,8 @@ fn first_source_model_name_selects_root_row_for_scoped_sections() {
 #[test]
 fn principal_unit_requires_one_complete_known_type_10_scalar() {
     let millimeter = b"@principal_sys_units 25 10\n2 25 millimeter Newton Second (mmNs)\n";
-    let persistence = scan(millimeter, std::iter::once(0..millimeter.len()));
+    let persistence = scan(millimeter, std::iter::once(0..millimeter.len()))
+        .expect("the fixture states every scope inside its own bytes");
     assert_eq!(
         persistence.principal_unit_system(),
         Some(PrincipalUnitSystem::MillimeterNewtonSecond)
@@ -135,7 +142,8 @@ fn principal_unit_requires_one_complete_known_type_10_scalar() {
     );
 
     let inch = b"@principal_sys_units 25 10\n2 25 Inch lbm Second (Pro/E Default)\n";
-    let persistence = scan(inch, std::iter::once(0..inch.len()));
+    let persistence = scan(inch, std::iter::once(0..inch.len()))
+        .expect("the fixture states every scope inside its own bytes");
     assert_eq!(
         persistence.principal_unit_system(),
         Some(PrincipalUnitSystem::InchPoundMassSecond)
@@ -149,7 +157,8 @@ fn principal_unit_requires_one_complete_known_type_10_scalar() {
 
     let mut repeated = millimeter.to_vec();
     repeated.extend_from_slice(millimeter);
-    let persistence = scan(&repeated, std::iter::once(0..repeated.len()));
+    let persistence = scan(&repeated, std::iter::once(0..repeated.len()))
+        .expect("the fixture states every scope inside its own bytes");
     assert_eq!(persistence.principal_unit_system(), None);
 }
 
@@ -173,7 +182,8 @@ fn legacy_unit_array_supplies_length_scale_when_principal_scalar_is_absent() {
 ",
         factor_bits = factor.to_bits()
     );
-    let persistence = scan(data.as_bytes(), std::iter::once(0..data.len()));
+    let persistence = scan(data.as_bytes(), std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
 
     assert_eq!(
         persistence
@@ -205,7 +215,8 @@ fn legacy_unit_array_conflict_withholds_length_scale() {
         factor_bits = factor.to_bits(),
         other_factor_bits = (factor * 2.0).to_bits()
     );
-    let persistence = scan(data.as_bytes(), std::iter::once(0..data.len()));
+    let persistence = scan(data.as_bytes(), std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
 
     assert_eq!(persistence.principal_unit_system(), None);
 }
@@ -216,7 +227,8 @@ fn type_2_reals_decode_compact_bits_runs_and_child_rows() {
             @scale 2 2\n0 2 40396R\n\
             @matrix 3 2\n0 3 [2][2]\n$3FF,2*0,\n$3FF\n\
             @single 4 2\n0 4 [1]\n1 4 400\n";
-    let persistence = scan(data, std::iter::once(0..data.len()));
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
 
     assert_eq!(persistence.real_values.rows.len(), 4);
     assert_eq!(persistence.real_values.unresolved_count, 0);
@@ -272,7 +284,8 @@ fn type_2_reals_withhold_incomplete_or_nonfinite_values() {
     let data = b"@short 1 2\n0 1 [3]\n$2*0\n\
             @lower 2 2\n0 2 3ff\n\
             @infinite 3 2\n0 3 7FF\n";
-    let persistence = scan(data, std::iter::once(0..data.len()));
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
 
     assert!(persistence.real_values.rows.is_empty());
     assert_eq!(persistence.real_values.unresolved_count, 3);
@@ -283,7 +296,8 @@ fn type_1_integers_decode_signed_scalars_runs_and_child_rows() {
     let data = b"@minimum 1 1\n0 1 -2147483648\n\
             @array 2 1\n0 2 [4]\n$1,2*-1,0\n\
             @single 3 1\n0 3 [1]\n1 3 42\n";
-    let persistence = scan(data, std::iter::once(0..data.len()));
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
 
     assert_eq!(persistence.integer_values.rows.len(), 3);
     assert_eq!(persistence.integer_values.unresolved_count, 0);
@@ -323,7 +337,8 @@ fn type_1_integers_decode_signed_scalars_runs_and_child_rows() {
 fn type_1_integers_withhold_incomplete_arrays_and_overflow() {
     let data = b"@short 1 1\n0 1 [2]\n$0\n\
             @overflow 2 1\n0 2 2147483648\n";
-    let persistence = scan(data, std::iter::once(0..data.len()));
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
 
     assert!(persistence.integer_values.rows.is_empty());
     assert_eq!(persistence.integer_values.unresolved_count, 2);
@@ -340,7 +355,8 @@ fn remaining_numeric_types_decode_their_scalar_and_array_grammars() {
         .windows(b"0 1 ->".len())
         .position(|window| window == b"0 1 ->")
         .expect("root offset");
-    let persistence = scan(data, std::iter::once(0..data.len()));
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
 
     assert_eq!(persistence.type_5_values.rows.len(), 2);
     assert_eq!(persistence.type_5_values.unresolved_count, 0);
@@ -390,7 +406,8 @@ fn remaining_numeric_types_decode_their_scalar_and_array_grammars() {
 fn remaining_numeric_types_withhold_undefined_values() {
     let data = b"@negative 1 5\n0 1 -1\n@nonfinite 2 6\n0 2 7FF\n\
             @short 3 11\n0 3 [2]\n$1\n";
-    let persistence = scan(data, std::iter::once(0..data.len()));
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
 
     assert!(persistence.type_5_values.rows.is_empty());
     assert_eq!(persistence.type_5_values.unresolved_count, 1);
@@ -409,7 +426,8 @@ fn type_3_and_type_4_decode_exact_scalar_bytes() {
         .windows(b"0 1 ->".len())
         .position(|window| window == b"0 1 ->")
         .expect("root offset");
-    let persistence = scan(data, std::iter::once(0..data.len()));
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
 
     assert_eq!(persistence.type_3_values.rows.len(), 3);
     assert_eq!(persistence.type_3_values.unresolved_count, 1);
@@ -451,7 +469,8 @@ fn type_10_strings_decode_null_bytes_and_direct_element_arrays() {
         .windows(b"0 1 ->".len())
         .position(|window| window == b"0 1 ->")
         .expect("root offset");
-    let persistence = scan(data, std::iter::once(0..data.len()));
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
 
     assert_eq!(persistence.string_values.len(), 5);
     assert_eq!(persistence.incomplete_string_array_count, 0);
@@ -514,7 +533,8 @@ fn type_10_strings_decode_null_bytes_and_direct_element_arrays() {
 fn type_10_strings_retain_incomplete_arrays_and_withhold_continuations() {
     let data = b"@names 1 10\n0 1 [2]\n1 1 only\n\
             @continued 2 10\n0 2 first\n$second\n";
-    let persistence = scan(data, std::iter::once(0..data.len()));
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
 
     assert_eq!(persistence.string_values.len(), 1);
     assert_eq!(persistence.incomplete_string_array_count, 1);
@@ -536,7 +556,8 @@ fn type_10_strings_retain_incomplete_arrays_and_withhold_continuations() {
 fn array_completeness_wire_retains_continuation_failures() {
     let data = b"@names 1 10\n0 1 [1]\n$header\n1 1 value\n\
         @other 2 10\n0 2 [1]\n1 2 value\n$child\n";
-    let persistence = scan(data, std::iter::once(0..data.len()));
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
     assert_eq!(persistence.incomplete_string_array_count, 2);
     assert_eq!(persistence.unresolved_string_value_count, 2);
     assert_eq!(
@@ -582,7 +603,8 @@ fn type_0_objects_define_scoped_ownership_and_array_elements() {
         .windows(b"2 3 NULL".len())
         .position(|window| window == b"2 3 NULL")
         .expect("second child offset");
-    let persistence = scan(data, std::iter::once(0..data.len()));
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
 
     assert_eq!(persistence.objects.len(), 4);
     assert_eq!(persistence.incomplete_object_array_count, 0);
@@ -612,7 +634,8 @@ fn type_0_objects_define_scoped_ownership_and_array_elements() {
 #[test]
 fn type_0_objects_retain_incomplete_and_opaque_forms() {
     let data = b"@array 1 0\n0 1 [2]\n@future 2 0\n0 2 token\n";
-    let persistence = scan(data, std::iter::once(0..data.len()));
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
 
     assert_eq!(persistence.objects.len(), 2);
     assert_eq!(persistence.incomplete_object_array_count, 1);
@@ -634,7 +657,8 @@ fn type_0_objects_retain_incomplete_and_opaque_forms() {
 fn scan_withholds_ambiguous_and_undeclared_values() {
     let data = b"#P_OBJECT 6\n$orphan\n@field 7 1\n@other 7 2\n1 7 4\n2 99 5\n";
 
-    let persistence = scan(data, std::iter::once(0..data.len()));
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
     let scope = &persistence.scopes[0];
 
     assert!(scope.values.is_empty());
@@ -648,7 +672,7 @@ fn scan_decodes_active_principal_unit() {
     let mut payload = visibgeom_payload(5, 12);
     payload.extend_from_slice(b"_principal_sys_units_id\0\x33");
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let scan = container::scan_bytes(data);
+    let scan = container::scan_bytes_ok(data);
 
     assert_eq!(
         scan.framing
@@ -1000,7 +1024,7 @@ fn complete_header_adjacent_p_object_selects_legacy_ascii_layout() {
     let data = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n\
         #P_OBJECT 6\n@P_object 1 0\n0 1 ->\n@value #END_OF_P_OBJECT\n\
         #END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Version H-01-21\n";
-    let scan = container::scan_bytes(data);
+    let scan = container::scan_bytes_ok(data);
 
     assert!(matches!(scan.framing.layout, Layout::LegacyAscii(_)));
     assert_eq!(scan.framing.layout.token(), "LEGACY_ASCII");
@@ -1012,6 +1036,7 @@ fn complete_header_adjacent_p_object_selects_legacy_ascii_layout() {
     assert_eq!(legacy.persistence.value_count(), 1);
     let classification = crate::dialect::classify(&scan);
     assert!(container::summarize(&scan, &classification)
+        .expect("the fixture states in-range sections")
         .notes
         .iter()
         .any(|note| {
@@ -1037,7 +1062,7 @@ fn legacy_ascii_toc_is_authoritative_for_named_section_extents() {
     let section_offset = data.len();
     data.extend_from_slice(section);
 
-    let scan = container::scan_bytes(data);
+    let scan = container::scan_bytes_ok(data);
 
     assert!(matches!(scan.framing.layout, Layout::LegacyAscii(_)));
     assert_eq!(scan.framing.sections.len(), 1);
@@ -1059,7 +1084,7 @@ fn legacy_ascii_toc_is_authoritative_for_named_section_extents() {
 fn legacy_release_banner_and_unspecified_banner_preserve_framing_metadata() {
     let release = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 12\n\
         #END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Release 16.0  All Rights Reserved\n";
-    let scan = container::scan_bytes(release.as_slice());
+    let scan = container::scan_bytes_ok(release.as_slice());
     let legacy = scan.framing.layout.legacy_ascii().expect("legacy framing");
     assert_eq!(legacy.schema, "12");
     assert_eq!(legacy.product_release.as_deref(), Some("16.0"));
@@ -1080,13 +1105,13 @@ fn legacy_release_banner_and_unspecified_banner_preserve_framing_metadata() {
 
     let concatenated_release = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n\
         #END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Release18.0  All Rights Reserved\n";
-    let scan = container::scan_bytes(concatenated_release.as_slice());
+    let scan = container::scan_bytes_ok(concatenated_release.as_slice());
     let legacy = scan.framing.layout.legacy_ascii().expect("legacy framing");
     assert_eq!(legacy.product_release.as_deref(), Some("18.0"));
 
     let unspecified = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n\
         #END_OF_P_OBJECT\n#Pro/ENGINEER\n";
-    let scan = container::scan_bytes(unspecified.as_slice());
+    let scan = container::scan_bytes_ok(unspecified.as_slice());
     let legacy = scan.framing.layout.legacy_ascii().expect("legacy framing");
     assert_eq!(legacy.product_release, None);
 }
@@ -1095,13 +1120,13 @@ fn legacy_release_banner_and_unspecified_banner_preserve_framing_metadata() {
 fn incomplete_or_payload_embedded_p_object_does_not_select_legacy_ascii_layout() {
     let incomplete = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n@P_object 1 0\n".to_vec();
     assert_eq!(
-        container::scan_bytes(incomplete).framing.layout,
+        container::scan_bytes_ok(incomplete).framing.layout,
         Layout::Unknown(UnknownLayout::NoDiscriminant)
     );
     let empty_schema = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT \n\
         #END_OF_P_OBJECT\n#Pro/ENGINEER";
     assert_eq!(
-        container::scan_bytes(empty_schema).framing.layout,
+        container::scan_bytes_ok(empty_schema).framing.layout,
         Layout::Unknown(UnknownLayout::NoDiscriminant)
     );
 
@@ -1113,7 +1138,7 @@ fn incomplete_or_payload_embedded_p_object_does_not_select_legacy_ascii_layout()
         )],
     );
     assert_eq!(
-        container::scan_bytes(embedded).framing.layout,
+        container::scan_bytes_ok(embedded).framing.layout,
         Layout::Unknown(UnknownLayout::NoDiscriminant)
     );
 }
@@ -1123,7 +1148,8 @@ fn typed_value_results_keep_grammar_and_unresolved_counts_together() {
     let data = b"@nullable 1 3\n@bytes 2 4\n@unsigned 3 5\n@real 4 6\n\
         0 1 NULL\n0 1 text\n$continued\n0 1 other\n$continued\n\
         0 2 NULL\n0 3 7\n0 3 -1\n0 4 3FF\n";
-    let persistence = scan(data, std::iter::once(0..data.len()));
+    let persistence = scan(data, std::iter::once(0..data.len()))
+        .expect("the fixture states every scope inside its own bytes");
     assert_eq!(persistence.type_3_values.rows[0].payload, StringValue::Null);
     assert_eq!(persistence.type_3_values.unresolved_count, 2);
     assert_eq!(

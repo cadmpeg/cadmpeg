@@ -68,3 +68,38 @@ fn profile_joins_reject_duplicate_sketch_entity_ids() {
     assert!(super::connected_sketch_profile_vertices(&ir, &sketch_id).is_empty());
     assert!(super::resolved_sketch_profiles(&ir, &sketch_id, 1).is_none());
 }
+
+#[test]
+fn two_refused_circular_pcurves_state_two_records_each_naming_its_instance() {
+    let mut refusal = crate::lane_refusal::LaneRefusals::new();
+    let first = super::circular_pcurve(
+        [f64::MAX, f64::MAX],
+        f64::MAX,
+        0.0,
+        std::f64::consts::TAU,
+        &"extrusion feature 11 cap",
+        &mut refusal,
+    );
+    let second = super::circular_pcurve(
+        [f64::MAX, f64::MAX],
+        f64::MAX,
+        0.0,
+        std::f64::consts::TAU,
+        &"extrusion feature 12 cap",
+        &mut refusal,
+    );
+    assert!(first.is_none(), "the refused arc states no pcurve");
+    assert!(second.is_none(), "the refused arc states no pcurve");
+    let records = refusal.take_records();
+    assert_eq!(records.len(), 2, "one record per refused arc: {records:?}");
+    assert!(
+        records[0].starts_with("creo circular pcurve record for extrusion feature 11 cap: "),
+        "the record names the instance that stated the lanes: {}",
+        records[0]
+    );
+    assert!(
+        records[1].starts_with("creo circular pcurve record for extrusion feature 12 cap: "),
+        "the record names the instance that stated the lanes: {}",
+        records[1]
+    );
+}

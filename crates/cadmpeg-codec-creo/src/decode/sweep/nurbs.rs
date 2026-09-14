@@ -18,6 +18,20 @@ const EPS_TABULATED_ENDPOINT_ROUNDING: f64 = 1e-4;
 const EPS_TABULATED_FRAME_EXACT: f64 = 1.0e-9;
 const EPS_PLANAR_COORDINATE: f64 = 1.0e-12;
 
+/// Names one saved-section spline entity by its stored entity identifier and
+/// the byte offset of its entity label. A saved section states the entity
+/// identifier only for entities the solver kept, so the byte offset is the
+/// identity for the rest.
+fn saved_spline_record(spline: &crate::feature::FeatureSavedSpline) -> String {
+    match spline.entity_id {
+        Some(entity_id) => format!(
+            "creo saved-spline entity {entity_id} at offset {}",
+            spline.offset
+        ),
+        None => format!("creo saved-spline entity at offset {}", spline.offset),
+    }
+}
+
 pub(in super::super) fn extruded_geometry_surface(
     transform: &crate::placement::FeatureSectionTransform,
     geometry: &SketchGeometry,
@@ -232,7 +246,10 @@ pub(in super::super) fn saved_spline_nurbs(
     match NurbsCurve::from_lanes(3, knots, control_points, None, false) {
         Ok(curve) => Some(curve),
         Err(error) => {
-            refusal.note("creo saved-spline NURBS record", &error);
+            refusal.note(
+                format!("{} NURBS record", saved_spline_record(spline)),
+                &error,
+            );
             None
         }
     }
@@ -263,7 +280,10 @@ pub(in super::super) fn saved_spline_sketch_geometry(
     ) {
         Ok(pcurve) => Some(SketchGeometry::nurbs(pcurve)),
         Err(error) => {
-            refusal.note("creo saved-spline sketch geometry record", &error);
+            refusal.note(
+                format!("{} sketch geometry record", saved_spline_record(spline)),
+                &error,
+            );
             None
         }
     }
@@ -271,6 +291,7 @@ pub(in super::super) fn saved_spline_sketch_geometry(
 
 pub(in super::super) fn interpolation_spline_surface(
     grid: &crate::interpolation_grid::InterpolationGrid,
+    record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<NurbsSurface> {
     let points = grid.points();
@@ -368,7 +389,10 @@ pub(in super::super) fn interpolation_spline_surface(
     ) {
         Ok(surface) => Some(surface),
         Err(error) => {
-            refusal.note("creo interpolation-spline surface record", &error);
+            refusal.note(
+                format!("creo interpolation-spline surface record for {record}"),
+                &error,
+            );
             None
         }
     }
@@ -408,6 +432,7 @@ pub(in super::super) fn translated_nurbs_curve(
 pub(in super::super) fn extruded_nurbs_surface(
     directrix: &NurbsCurve,
     sweep: [f64; 3],
+    record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<NurbsSurface> {
     let mut control_points = Vec::with_capacity(directrix.control_points().len() * 2);
@@ -440,7 +465,10 @@ pub(in super::super) fn extruded_nurbs_surface(
     ) {
         Ok(surface) => Some(surface),
         Err(error) => {
-            refusal.note("creo extruded NURBS surface record", &error);
+            refusal.note(
+                format!("creo extruded NURBS surface record for {record}"),
+                &error,
+            );
             None
         }
     }
@@ -482,6 +510,7 @@ pub(in super::super) fn oriented_sketch_nurbs_curve(
 pub(in super::super) fn sketch_nurbs_pcurve(
     geometry: &SketchGeometry,
     reversed: bool,
+    record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<PcurveGeometry> {
     let nurbs = oriented_sketch_nurbs_curve(geometry, reversed)?;
@@ -498,7 +527,10 @@ pub(in super::super) fn sketch_nurbs_pcurve(
     ) {
         Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),
         Err(error) => {
-            refusal.note("creo sketch NURBS pcurve record", &error);
+            refusal.note(
+                format!("creo sketch NURBS pcurve record for {record}"),
+                &error,
+            );
             None
         }
     }
@@ -511,7 +543,7 @@ pub(in super::super) fn extrusion_brep_side_surface(
     start: [f64; 2],
     end: [f64; 2],
     span: ExtrusionSpan,
-    refusal: &mut crate::lane_refusal::LaneRefusals,
+    diagnostics: &mut crate::lane_refusal::LaneRefusalContext<'_, '_>,
 ) -> Option<SurfaceGeometry> {
     if matches!(
         geometry.definition(),
@@ -525,7 +557,7 @@ pub(in super::super) fn extrusion_brep_side_surface(
         let placed = placed_section_nurbs(transform, &directrix)?;
         let translated = translated_nurbs_curve(&placed, lower_translation)?;
         return Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-            extruded_nurbs_surface(&translated, sweep, refusal)?,
+            extruded_nurbs_surface(&translated, sweep, diagnostics.record, diagnostics.refusals)?,
         )));
     }
     let section_geometry = match geometry.definition() {
@@ -824,7 +856,13 @@ pub(in super::super) fn placed_tabulated_cylinder_directrix(
     ) {
         Ok(curve) => Some((curve, sweep)),
         Err(error) => {
-            refusal.note("creo placed tabulated-cylinder directrix record", &error);
+            refusal.note(
+                format!(
+                    "creo placed tabulated-cylinder directrix record for surface {} at offset {}",
+                    parameters.surface_id, parameters.offset
+                ),
+                &error,
+            );
             None
         }
     }
@@ -860,6 +898,28 @@ mod tests {
         assert_eq!(curve.control_points()[0], Point3::new(f64::MAX, 0.0, 0.0));
     }
     #[test]
+    fn saved_spline_records_name_the_entity_and_its_offset() {
+        let mut spline = crate::feature::FeatureSavedSpline {
+            entity_id: Some(7),
+            declared_point_count: Some(2),
+            interpolation_points: Vec::new(),
+            interpolation_points_body: Vec::new(),
+            endpoint_tangents: None,
+            parameters: None,
+            offset: 2048,
+        };
+        assert_eq!(
+            super::saved_spline_record(&spline),
+            "creo saved-spline entity 7 at offset 2048"
+        );
+        spline.entity_id = None;
+        assert_eq!(
+            super::saved_spline_record(&spline),
+            "creo saved-spline entity at offset 2048"
+        );
+    }
+
+    #[test]
     fn malformed_basis_knots_are_rejected() {
         for knots in [&[][..], &[0.0][..]] {
             assert_eq!(super::bspline_basis(0, 3, 0.5, knots, 4), None);
@@ -881,8 +941,18 @@ mod tests {
         )
         .expect("valid directrix");
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
-        let first = extruded_nurbs_surface(&directrix, [f64::MAX, 0.0, 0.0], &mut refusal);
-        let second = extruded_nurbs_surface(&directrix, [f64::MAX, 0.0, 0.0], &mut refusal);
+        let first = extruded_nurbs_surface(
+            &directrix,
+            [f64::MAX, 0.0, 0.0],
+            &"surface 11 at offset 64",
+            &mut refusal,
+        );
+        let second = extruded_nurbs_surface(
+            &directrix,
+            [f64::MAX, 0.0, 0.0],
+            &"surface 12 at offset 128",
+            &mut refusal,
+        );
         assert!(first.is_none(), "the refused ruling states no surface");
         assert!(second.is_none(), "the refused ruling states no surface");
         let records = refusal.take_records();
@@ -891,12 +961,18 @@ mod tests {
             2,
             "one record per refused ruling: {records:?}"
         );
-        for record in &records {
-            assert!(
-                record.starts_with("creo extruded NURBS surface record: "),
-                "the record names the carrier that stated the lanes: {record}"
-            );
-        }
+        assert!(
+            records[0]
+                .starts_with("creo extruded NURBS surface record for surface 11 at offset 64: "),
+            "the record names the instance that stated the lanes: {}",
+            records[0]
+        );
+        assert!(
+            records[1]
+                .starts_with("creo extruded NURBS surface record for surface 12 at offset 128: "),
+            "the record names the instance that stated the lanes: {}",
+            records[1]
+        );
         assert!(
             refusal.take_records().is_empty(),
             "the sink is empty once its records are taken"

@@ -13,7 +13,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 
 #[test]
 fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 6,
         kind: crate::surface::SurfaceKind::Plane,
@@ -73,7 +73,7 @@ fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
 }
 
 fn unbounded_plane_scan() -> crate::container::ContainerScan<'static> {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 6,
         kind: crate::surface::SurfaceKind::Plane,

@@ -54,7 +54,7 @@ fn decode_keeps_section_and_model_entity_admission_additive() {
         .decode(&mut Cursor::new(fixture), &DecodeOptions::default())
         .expect("decode named cylinder prototype");
     assert_eq!(
-        container::scan_bytes(fixture.as_slice())
+        container::scan_bytes_ok(fixture.as_slice())
             .framing
             .sections
             .len(),
@@ -133,13 +133,14 @@ fn decode_expands_and_retains_compressed_jpeg_thumbnail() {
     let jpeg = jpeg_payload();
     let compressed = unix_compress_literals(&jpeg);
     let data = build_toc_section_prt("THMB_IMG_MAIN", &compressed, jpeg.len());
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.framing.expanded_sections.len(), 1);
     assert_eq!(scan.framing.expanded_sections[0].data, jpeg);
-    assert!(container::has_thumbnail(&scan));
+    assert!(container::has_thumbnail(&scan).expect("the fixture states in-range sections"));
     let classification = crate::dialect::classify(&scan);
     assert!(container::summarize(&scan, &classification)
+        .expect("the fixture states in-range sections")
         .notes
         .iter()
         .any(|note| note.contains("THMB_IMG_MAIN carries a JPEG preview")));
@@ -316,7 +317,7 @@ fn decode_annotations_cover_every_emitted_entity() {
         ],
     );
     let datum_offset =
-        container::scan_bytes(data.clone()).planes.datums[0].offset_in_payload as u64;
+        container::scan_bytes_ok(data.clone()).planes.datums[0].offset_in_payload as u64;
     let mut reader = Cursor::new(data);
     let result = CreoCodec
         .decode(&mut reader, &DecodeOptions::default())
@@ -378,7 +379,7 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
                 .to_vec(),
         )],
     );
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
     assert_eq!(scan.features.operation_states.len(), 7);
     assert_eq!(scan.features.operation_states[0].feature_id, 40);
     assert_eq!(

@@ -15,7 +15,7 @@ fn scan_discovers_labeled_curve_prototypes() {
     let mut payload = visibgeom_payload(0, 1);
     payload.extend_from_slice(b"crv_array\0crv_id\0\x07type\0\x08feat_id\0\x04");
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.curves.prototypes.len(), 1);
     assert_eq!(scan.curves.prototypes[0].id, 7);
@@ -36,7 +36,7 @@ fn scan_discovers_curve_halfedge_topology() {
     payload
         .extend_from_slice(b"topol_ref_data\0\x07\x08\x04\x01\xf6\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.curves.topology_rows.len(), 1);
     assert_eq!(
@@ -98,7 +98,7 @@ fn repeated_curve_rows_receive_source_offset_native_keys() {
     payload.extend_from_slice(b"\x07\x08\x04\x01\xf6\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
     payload.extend_from_slice(b"\x07\x08\x04\x01\xf6\x0c\x0d\x07\x07\0\0\xe3\xe1\xe3");
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.curves.topology_rows.len(), 2);
     assert_eq!(
@@ -134,7 +134,7 @@ fn scan_decodes_long_terminated_rows_in_each_curve_namespace() {
     payload.extend_from_slice(b"crv_array\0topol_ref_data\0");
     payload.extend_from_slice(b"\x08\x08\x05\x01\xf6\x0c\x0d\x08\x08\0\0\xe3");
     payload.extend_from_slice(b"\xe1\xf5\x05\xf6\xe3");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert_eq!(scan.curves.topology_rows.len(), 2);
     assert_eq!(scan.curves.topology_rows[0].id, 7);
@@ -157,7 +157,7 @@ fn scan_bounds_curve_parameter_body_before_topology_suffix() {
     payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0, 0xff]);
     payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.curves.parameters.len(), 1);
     let parameters = &scan.curves.parameters[0];
@@ -211,7 +211,7 @@ fn scan_resolves_section_scalar_cache_in_curve_rows() {
     payload.extend_from_slice(b"topol_ref_data\0\x07\x08\x04\x01\xf6");
     payload.extend_from_slice(&[0x18, 0x00, 0xff]);
     payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert_eq!(scan.curves.parameters.len(), 1);
     assert_eq!(scan.curves.parameters[0].scalar_values(), vec![3.0]);
@@ -236,7 +236,7 @@ fn absent_pcurve_faces_remain_zero_in_native_records() {
             payload.extend_from_slice(b"\x00\x0b\x07\x07\0\0\xe3\xe1\xe3");
         }
         let data = build_prt("c", &[("VisibGeom", payload)]);
-        let scan = container::scan_bytes(data.clone());
+        let scan = container::scan_bytes_ok(data.clone());
         let faces = if prototype {
             scan.curves.bound_prototype_pcurves[0].faces
         } else {
@@ -267,7 +267,7 @@ fn scan_decodes_pcurve_endpoints_in_both_face_frames() {
     payload.push(0xe4);
     payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.curves.pcurves.len(), 1);
     let pcurve = &scan.curves.pcurves[0];
@@ -304,7 +304,7 @@ fn scan_decodes_positive_dict_pcurve_slots() {
     payload.extend_from_slice(&[0x2f, 0x43, 0]);
     payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
 
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
     let expected = f64::from_be_bytes([0x40, 0x0d, 1, 2, 3, 4, 5, 6]);
 
     assert_eq!(scan.curves.parameters.len(), 1);
@@ -334,7 +334,7 @@ fn scan_decodes_standalone_zero_slots_in_pcurve_endpoint_frames() {
     payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
     payload.extend_from_slice(&[0xe4]);
     payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert_eq!(scan.curves.parameters.len(), 1);
     assert_eq!(scan.curves.parameters[0].scalar_tokens.len(), 5);
@@ -363,7 +363,7 @@ fn scan_decodes_held_scalar_slots_in_pcurve_endpoint_frames() {
     payload.extend_from_slice(&held_value);
     payload.extend_from_slice(&[0x1e, 0x0f, 0xe4, 0x0f, 0xe4, 0x0f, 0xe4]);
     payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     let held = crate::psb::short_form_float(&held_value, 0)
         .expect("complete held scalar")
@@ -389,7 +389,7 @@ fn scan_withholds_nine_slot_pcurve_endpoint_frames() {
     payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
     payload.extend_from_slice(&[0xe4, 0x12]);
     payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert!(scan.curves.pcurves.is_empty());
 }
@@ -401,7 +401,7 @@ fn scan_withholds_pcurve_endpoints_with_unclaimed_body_bytes() {
     payload.extend([0x0f; 8]);
     payload.push(0xff);
     payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert_eq!(scan.curves.parameters.len(), 1);
     assert_eq!(scan.curves.parameters[0].scalar_tokens.len(), 8);
@@ -419,7 +419,7 @@ fn scan_decodes_fc_curve_world_coordinate_lane() {
     payload.extend_from_slice(&[0x2d, 0, 0, 0, 0, 0, 0, 0, 0xff]);
     payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.curves.fc_coordinates.len(), 1);
     let coordinates = &scan.curves.fc_coordinates[0];
@@ -473,7 +473,7 @@ fn scan_validates_fc05_circle_from_record_points() {
     payload.push(0xff);
     payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.curves.fc05_circles.len(), 1);
     let circle = &scan.curves.fc05_circles[0];
@@ -529,7 +529,7 @@ fn scan_decodes_labeled_prototype_pcurve_uvs() {
     payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
     payload.extend_from_slice(&[0xe4]);
     payload.extend_from_slice(b"topol_ref_data\0");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert_eq!(scan.curves.prototype_pcurves.len(), 1);
     let prototype = &scan.curves.prototype_pcurves[0];
@@ -553,7 +553,7 @@ fn scan_withholds_non_exact_labeled_prototype_pcurve_arrays() {
         payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
         payload.extend_from_slice(&tail);
         payload.extend_from_slice(b"topol_ref_data\0");
-        let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+        let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
         assert!(scan.curves.prototype_pcurves.is_empty());
     }
@@ -569,7 +569,7 @@ fn scan_withholds_displaced_labeled_prototype_pcurve_wrapper() {
     payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
     payload.extend_from_slice(&[0xe4]);
     payload.extend_from_slice(b"topol_ref_data\0");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert!(scan.curves.prototype_pcurves.is_empty());
 }
@@ -582,7 +582,7 @@ fn scan_withholds_duplicate_labeled_prototype_pcurve_arrays() {
     payload.extend_from_slice(b"crv_pnt_arr\0\xf9\x02\x04");
     payload.extend([0x0f; 8]);
     payload.extend_from_slice(b"topol_ref_data\0");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert!(scan.curves.prototype_pcurves.is_empty());
 }
@@ -601,7 +601,7 @@ fn scan_decodes_and_binds_labeled_prototype_topology() {
     payload.push(0xe4);
     payload.extend_from_slice(b"topol_ref_data\0");
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.curves.prototype_topology.len(), 1);
     assert_eq!(scan.curves.prototype_topology[0].curve_id, 44);
@@ -642,7 +642,7 @@ fn scan_withholds_duplicate_labeled_prototype_topology_fields() {
           crv_hdr_geom_ptr[1]\0\x0b next_crv_hdr_ptr[0]\0\x2c next_crv_hdr_ptr[1]\0\x2c",
     );
     payload.extend_from_slice(b"topol_ref_data\0");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert!(scan.curves.prototype_topology.is_empty());
 }

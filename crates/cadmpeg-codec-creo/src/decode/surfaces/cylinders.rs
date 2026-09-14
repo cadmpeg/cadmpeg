@@ -877,19 +877,20 @@ pub(in super::super) fn transfer_positional_cylinders(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> Result<PositionalCylinderTransferSummary, cadmpeg_core::CodecError> {
-    let constant_round_radii = scan
+    let round_feature_ids = scan
         .surfaces
         .rows
         .iter()
         .filter(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
         .map(|row| row.feature_id)
         .filter(|feature_id| feature_schema_class(scan, *feature_id) == Some(SchemaClass::Round))
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .filter_map(|feature_id| {
-            round_constant_radius(scan, ir, feature_id).map(|radius| (feature_id, radius))
-        })
-        .collect::<BTreeMap<_, _>>();
+        .collect::<BTreeSet<_>>();
+    let mut constant_round_radii = BTreeMap::new();
+    for feature_id in round_feature_ids {
+        if let Some(radius) = round_constant_radius(scan, ir, feature_id)? {
+            constant_round_radii.insert(feature_id, radius);
+        }
+    }
     let local_planes = placed_planes(scan);
     let unique_rows = crate::surface::uniquely_identified_rows(&scan.surfaces.rows)
         .into_iter()

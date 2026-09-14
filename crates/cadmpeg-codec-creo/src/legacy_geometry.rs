@@ -1098,7 +1098,9 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
     #[test]
     fn extracts_row_major_cylinder_carrier_from_active_namespace() {
         let data = fixture(2.0, false);
-        let persistence = crate::legacy::scan(&data, std::iter::once(0..data.len()));
+        let Ok(persistence) = crate::legacy::scan(&data, std::iter::once(0..data.len())) else {
+            panic!("the fixture states a persistence scope past its own end");
+        };
         let result = scan(&persistence);
 
         assert_eq!(result.rows.len(), 1);
@@ -1122,7 +1124,9 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
     #[test]
     fn conflicting_complete_scalar_fields_withhold_legacy_carrier() {
         let data = fixture(2.0, true);
-        let persistence = crate::legacy::scan(&data, std::iter::once(0..data.len()));
+        let Ok(persistence) = crate::legacy::scan(&data, std::iter::once(0..data.len())) else {
+            panic!("the fixture states a persistence scope past its own end");
+        };
         let result = scan(&persistence);
 
         assert_eq!(result.rows.len(), 1);
@@ -1136,7 +1140,9 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             .replace("Sld_VisGeom", "Sld_NonVisGeom")
             .replace("active_geom", "inactive_geom")
             .into_bytes();
-        let persistence = crate::legacy::scan(&data, std::iter::once(0..data.len()));
+        let Ok(persistence) = crate::legacy::scan(&data, std::iter::once(0..data.len())) else {
+            panic!("the fixture states a persistence scope past its own end");
+        };
         let result = scan(&persistence);
 
         assert!(result.rows.is_empty());

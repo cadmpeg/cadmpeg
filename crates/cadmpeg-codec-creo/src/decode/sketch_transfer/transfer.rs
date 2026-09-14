@@ -59,10 +59,16 @@ use cadmpeg_ir::sketches::{Sketch, SketchConstraint, SketchEntity, SketchGeometr
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// Transfer every sketch-design feature definition into model sketches.
+///
+/// A saved section entity whose lanes the IR carrier refuses is omitted from
+/// the sketch, which the model carries, so the refusal is a loss note naming
+/// the feature definition and the entity offset.
 pub(in super::super) fn transfer_sketches(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
+    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
 ) -> Result<SketchSegmentTransferCoverage, cadmpeg_core::CodecError> {
     let mut coverage = SketchSegmentTransferCoverage::default();
     let mut available_parameter_ids = ir
@@ -119,9 +125,26 @@ pub(in super::super) fn transfer_sketches(
             .is_some_and(crate::feature::FeatureSegmentTable::is_complete);
         if let Some(table) = &definition.segments {
             let decoded_rows = table.rows.len();
-            let expected_rows = usize::try_from(table.declared_count)
-                .expect("u32 segment count fits usize")
-                .saturating_sub(usize::from(table.has_elided_prototype));
+            let declared_count = usize::try_from(table.declared_count).map_err(|_| {
+                cadmpeg_core::CodecError::malformed(format!(
+                    "feature {} states segment table count {}, which exceeds the addressable row \
+                     range {}",
+                    definition.identity.id(),
+                    table.declared_count,
+                    usize::MAX
+                ))
+            })?;
+            let elided_prototype_rows = usize::from(table.has_elided_prototype);
+            let expected_rows = declared_count
+                .checked_sub(elided_prototype_rows)
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed(format!(
+                        "feature {} states segment table count {declared_count} and \
+                         {elided_prototype_rows} elided prototype row(s), so the ordinary row \
+                         count is below zero",
+                        definition.identity.id()
+                    ))
+                })?;
             coverage.record_table_rows(decoded_rows, expected_rows);
             for segment in table.rows.ordinary() {
                 let family = match segment.kind {
@@ -301,8 +324,14 @@ pub(in super::super) fn transfer_sketches(
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
         let materialized_saved_section_external_ids =
             materialized_saved_section_external_ids(definition, &mut refusal);
-        if let Some(error) = refusal.take_error() {
-            return Err(error);
+        for record in refusal.take_records() {
+            losses.push(
+                crate::loss::CreoLossCode::SectionSplineUnresolved.note(format!(
+                    "Feature {} states a saved section entity that materializes no sketch \
+                     geometry: {record}",
+                    definition.identity.id()
+                )),
+            );
         }
         coverage.record_resolved_geometry(resolved_segment_offsets.len());
         for segment in segments
@@ -473,6 +502,7 @@ pub(in super::super) fn transfer_sketches(
             &materialized_saved_section_external_ids,
             profiles,
             &profile_entities,
+            losses,
         )?;
         let profiles = cadmpeg_ir::sketches::SketchProfiles::try_from(profiles)
             .map_err(cadmpeg_core::CodecError::malformed)?;

@@ -20,7 +20,7 @@ fn decode_preserves_counted_curve_expression_programs() {
         \xe0\x0aexpression\0\xf8\x04r=5\0w=1\0theta=w*t*360\0z=71*t\0"
         .to_vec();
     let data = build_prt("c", &[("DEPDB_DATA", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
     assert_eq!(scan.curves.expressions.len(), 1);
     assert_eq!(scan.curves.expressions[0].entity_id, 0x094c);
     assert_eq!(scan.curves.expressions[0].lines.len(), 4);
@@ -145,7 +145,7 @@ fn decode_preserves_curve_expression_source_section() {
         \xe0\x0aexpression\0\xf8\x01value=5\0"
         .to_vec();
     let data = build_prt("c", &[("FeatDefs", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");

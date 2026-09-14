@@ -1287,22 +1287,10 @@ impl SurfaceParameterRecord {
             .any(|local| {
                 scalar::decode_inline_non_plane_local_system_prefix(local, &cache)
                     .into_iter()
-                    .any(|prefix| {
-                        if prefix.compact_axis.is_some() {
-                            scalar::decode_inline_non_plane_origin_prefix(
-                                local,
-                                prefix.cursor,
-                                &cache,
-                            )
-                            .into_iter()
-                            .any(|(_, cursor)| {
-                                decode_inline_surface_suffix_at(kind, local, cursor, &cache)
-                                    .is_some_and(|(_, end)| end == local.len())
-                            })
-                        } else {
-                            decode_inline_surface_suffix_at(kind, local, prefix.cursor, &cache)
-                                .is_some_and(|(_, end)| end == local.len())
-                        }
+                    .flat_map(|prefix| inline_resolved_frames(local, prefix, &cache))
+                    .any(|frame| {
+                        decode_inline_surface_suffix_at(kind, local, frame.cursor, &cache)
+                            .is_some_and(|(_, end)| end == local.len())
                     })
             })
     }
@@ -3946,35 +3934,17 @@ fn inline_surface_body(
             }
         }
         for prefix in scalar::decode_inline_non_plane_local_system_prefix(local, cache) {
-            if prefix.compact_axis.is_some() {
-                for (origin, cursor) in
-                    scalar::decode_inline_non_plane_origin_prefix(local, prefix.cursor, cache)
-                {
-                    let mut resolved = prefix;
-                    resolved.values[9..12].copy_from_slice(&origin);
-                    resolved.cursor = cursor;
-                    resolved.compact_axis = None;
-                    if inline_surface_suffix(kind, local, resolved.cursor, cache).is_some() {
-                        structurally_complete = true;
-                        if inline_frame_directions(resolved, envelope).is_some() {
-                            geometric_interpretation_count += 1;
-                            if let Some(carrier) =
-                                inline_surface_carrier(kind, envelope, local, resolved, cache)
-                            {
-                                carriers.push(carrier);
-                            }
-                        }
-                    }
+            for frame in inline_resolved_frames(local, prefix, cache) {
+                if inline_surface_suffix(kind, local, frame.cursor, cache).is_none() {
+                    continue;
                 }
-            } else if inline_surface_suffix(kind, local, prefix.cursor, cache).is_some() {
                 structurally_complete = true;
-                if inline_frame_directions(prefix, envelope).is_some() {
-                    geometric_interpretation_count += 1;
-                    if let Some(carrier) =
-                        inline_surface_carrier(kind, envelope, local, prefix, cache)
-                    {
-                        carriers.push(carrier);
-                    }
+                if inline_frame_directions(frame).is_none() {
+                    continue;
+                }
+                geometric_interpretation_count += 1;
+                if let Some(carrier) = inline_surface_carrier(kind, envelope, local, frame, cache) {
+                    carriers.push(carrier);
                 }
             }
         }
@@ -4014,23 +3984,13 @@ fn inline_surface_suffix_body(
         let local = body.get(local_start..)?;
         let mut terminal_closes = Vec::new();
         for prefix in scalar::decode_inline_non_plane_local_system_prefix(local, cache) {
-            if prefix.compact_axis.is_some() {
-                for (_, cursor) in
-                    scalar::decode_inline_non_plane_origin_prefix(local, prefix.cursor, cache)
+            for frame in inline_resolved_frames(local, prefix, cache) {
+                if let Some((_, end)) =
+                    decode_inline_surface_suffix_at(kind, local, frame.cursor, cache)
                 {
-                    if let Some((_, end)) =
-                        decode_inline_surface_suffix_at(kind, local, cursor, cache)
-                    {
-                        if local.get(end) == Some(&psb::token::COMPOUND_CLOSE) {
-                            terminal_closes.push(end);
-                        }
+                    if local.get(end) == Some(&psb::token::COMPOUND_CLOSE) {
+                        terminal_closes.push(end);
                     }
-                }
-            } else if let Some((_, end)) =
-                decode_inline_surface_suffix_at(kind, local, prefix.cursor, cache)
-            {
-                if local.get(end) == Some(&psb::token::COMPOUND_CLOSE) {
-                    terminal_closes.push(end);
                 }
             }
         }
@@ -4043,34 +4003,18 @@ fn inline_surface_suffix_body(
             let mut geometric_interpretation_count = 0;
             let mut carriers = Vec::new();
             for prefix in scalar::decode_inline_non_plane_local_system_prefix(local, cache) {
-                if prefix.compact_axis.is_some() {
-                    for (origin, cursor) in
-                        scalar::decode_inline_non_plane_origin_prefix(local, prefix.cursor, cache)
-                    {
-                        let mut resolved = prefix;
-                        resolved.values[9..12].copy_from_slice(&origin);
-                        resolved.cursor = cursor;
-                        if inline_surface_suffix(kind, local, resolved.cursor, cache).is_some() {
-                            structurally_complete = true;
-                            if inline_suffix_frame_directions(resolved).is_some() {
-                                geometric_interpretation_count += 1;
-                                if let Some(carrier) =
-                                    inline_surface_suffix_carrier(kind, local, resolved, cache)
-                                {
-                                    carriers.push(carrier);
-                                }
-                            }
-                        }
+                for frame in inline_resolved_frames(local, prefix, cache) {
+                    if inline_surface_suffix(kind, local, frame.cursor, cache).is_none() {
+                        continue;
                     }
-                } else if inline_surface_suffix(kind, local, prefix.cursor, cache).is_some() {
                     structurally_complete = true;
-                    if inline_suffix_frame_directions(prefix).is_some() {
-                        geometric_interpretation_count += 1;
-                        if let Some(carrier) =
-                            inline_surface_suffix_carrier(kind, local, prefix, cache)
-                        {
-                            carriers.push(carrier);
-                        }
+                    if inline_suffix_frame_directions(frame).is_none() {
+                        continue;
+                    }
+                    geometric_interpretation_count += 1;
+                    if let Some(carrier) = inline_surface_suffix_carrier(kind, local, frame, cache)
+                    {
+                        carriers.push(carrier);
                     }
                 }
             }
@@ -4427,17 +4371,43 @@ fn decode_inline_referenced_cylinder_envelope(
     })
 }
 
+/// Resolve one inline local-system image to the complete frames it can carry.
+///
+/// A compact image states the direction triples only, so each decode of the
+/// separate origin operand that follows it gives one complete frame. An
+/// explicit image is already complete and gives exactly one. Every downstream
+/// reader takes a complete frame, so the compact form cannot reach one.
+fn inline_resolved_frames(
+    local: &[u8],
+    prefix: scalar::InlineNonPlaneLocalSystemPrefix,
+    cache: &scalar::ScalarCache,
+) -> Vec<scalar::InlineLocalSystemFrame> {
+    match prefix {
+        scalar::InlineNonPlaneLocalSystemPrefix::Compact(compact) => {
+            scalar::decode_inline_non_plane_origin_prefix(local, compact.cursor, cache)
+                .into_iter()
+                .map(|(origin, cursor)| {
+                    let mut resolved = compact;
+                    resolved.values[9..12].copy_from_slice(&origin);
+                    resolved.cursor = cursor;
+                    resolved
+                })
+                .collect()
+        }
+        scalar::InlineNonPlaneLocalSystemPrefix::Explicit(frame) => vec![frame],
+    }
+}
+
 fn inline_surface_carrier(
     kind: SurfaceKind,
     envelope: InlineSurfaceEnvelope,
     local: &[u8],
-    prefix: scalar::InlineNonPlaneLocalSystemPrefix,
+    prefix: scalar::InlineLocalSystemFrame,
     cache: &scalar::ScalarCache,
 ) -> Option<InlineSurfaceCarrier> {
-    debug_assert!(prefix.compact_axis.is_none());
     let (suffix, _) = inline_surface_suffix(kind, local, prefix.cursor, cache)?;
 
-    let (axis_index, reference_direction) = inline_frame_directions(prefix, envelope)?;
+    let (axis_index, reference_direction) = inline_frame_directions(prefix)?;
     let axis_index = witnessed_inline_axis_index(envelope, axis_index)?;
     let stored_origin: [f64; 3] = prefix.values[9..12].try_into().ok()?;
     let stored_axis_sense = prefix.values[6 + axis_index];
@@ -4563,7 +4533,7 @@ fn decode_inline_surface_suffix_at(
 fn inline_surface_suffix_carrier(
     kind: SurfaceKind,
     local: &[u8],
-    prefix: scalar::InlineNonPlaneLocalSystemPrefix,
+    prefix: scalar::InlineLocalSystemFrame,
     cache: &scalar::ScalarCache,
 ) -> Option<InlineSurfaceCarrier> {
     let (suffix, _) = inline_surface_suffix(kind, local, prefix.cursor, cache)?;
@@ -4609,7 +4579,7 @@ fn inline_surface_suffix_carrier(
 }
 
 fn inline_suffix_frame_directions(
-    prefix: scalar::InlineNonPlaneLocalSystemPrefix,
+    prefix: scalar::InlineLocalSystemFrame,
 ) -> Option<([f64; 3], [f64; 3])> {
     let first: [f64; 3] = prefix.values[0..3].try_into().ok()?;
     let second: [f64; 3] = prefix.values[3..6].try_into().ok()?;
@@ -4642,10 +4612,12 @@ fn inline_suffix_frame_directions(
     Some((axis, reference_direction))
 }
 
-fn inline_frame_directions(
-    prefix: scalar::InlineNonPlaneLocalSystemPrefix,
-    envelope: InlineSurfaceEnvelope,
-) -> Option<(usize, [f64; 3])> {
+/// Recover the frame axis coordinate and the reference direction of a complete
+/// inline local system.
+///
+/// The axis coordinate is the one model axis the stored axis direction lies
+/// along; a stored axis that names no single coordinate has no reading here.
+fn inline_frame_directions(prefix: scalar::InlineLocalSystemFrame) -> Option<(usize, [f64; 3])> {
     let first: [f64; 3] = prefix.values[0..3].try_into().ok()?;
     let second: [f64; 3] = prefix.values[3..6].try_into().ok()?;
     let stored_axis: [f64; 3] = prefix.values[6..9].try_into().ok()?;
@@ -4672,25 +4644,17 @@ fn inline_frame_directions(
         && dot(first, stored_axis).abs() <= EPS_INLINE_FRAME * direction_scale
         && dot(second, stored_axis).abs() <= EPS_INLINE_FRAME * direction_scale)
         .then_some(())?;
-    let axis_index = prefix.compact_axis.or_else(|| {
-        let mut indices = (0..3).filter(|index| {
-            stored_axis[*index].abs() >= 1.0 - EPS_INLINE_FRAME
-                && (0..3)
-                    .filter(|other| *other != *index)
-                    .all(|other| stored_axis[other].abs() <= EPS_INLINE_FRAME)
-        });
-        let index = indices.next()?;
-        indices.next().is_none().then_some(index)
-    })?;
+    let mut indices = (0..3).filter(|index| {
+        stored_axis[*index].abs() >= 1.0 - EPS_INLINE_FRAME
+            && (0..3)
+                .filter(|other| *other != *index)
+                .all(|other| stored_axis[other].abs() <= EPS_INLINE_FRAME)
+    });
+    let axis_index = indices.next()?;
+    indices.next().is_none().then_some(())?;
     let mut reference_direction = first.map(|value| value / first_norm);
     if reference_direction[axis_index].abs() > EPS_INLINE_FRAME {
         return None;
-    }
-    if prefix.compact_axis.is_some() {
-        let span = envelope.corners[1][axis_index]? - envelope.corners[0][axis_index]?;
-        if span.abs() <= EPS_INLINE_WITNESS {
-            return None;
-        }
     }
     reference_direction[axis_index] = 0.0;
     let reference_norm = norm(reference_direction);

@@ -31,7 +31,7 @@ fn generated_edge_outputs_follow_producer_history_before_ir_feature_insertion() 
         next_edges: [id, id],
         offset: 0,
     };
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features
         .rows
         .extend([feature_row(50), feature_row(70)]);
@@ -72,7 +72,7 @@ fn generated_edge_outputs_follow_producer_history_before_ir_feature_insertion() 
 
 #[test]
 fn generated_face_outputs_follow_producer_history_after_feature_insertion() {
-    let scan = crate::container::scan_bytes(Vec::new());
+    let scan = crate::container::scan_bytes_ok(Vec::new());
     let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
         id: BodyId::mint("creo:feature:extrusion#50:body".to_string()).expect("identity grammar"),
@@ -117,7 +117,7 @@ fn generated_face_outputs_follow_producer_history_after_feature_insertion() {
 
 #[test]
 fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 7,
         kind: crate::surface::SurfaceKind::Plane,

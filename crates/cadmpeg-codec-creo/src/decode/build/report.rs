@@ -5,6 +5,7 @@ use crate::container::SectionRole;
 
 use std::collections::BTreeSet;
 
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     ProceduralCurveDefinition, ProceduralSurfaceDefinition, SolvedCurveGeometry,
@@ -78,7 +79,7 @@ pub(in super::super) fn build_report(
     coverage: cadmpeg_ir::Coverage,
     brep_diagnostics: &BrepTransferDiagnostics,
     container_only: bool,
-) -> DecodeBody {
+) -> Result<DecodeBody, CodecError> {
     let geom_sections = scan
         .framing
         .sections
@@ -162,7 +163,7 @@ pub(in super::super) fn build_report(
     push_structural_layer_notes(&mut losses, scan);
     push_coverage_drop_losses(&mut losses, &coverage);
 
-    DecodeBody {
+    Ok(DecodeBody {
         transfer: if container_only {
             cadmpeg_ir::report::DecodeTransfer::ContainerOnly {}
         } else {
@@ -170,7 +171,7 @@ pub(in super::super) fn build_report(
         },
         coverage,
         losses,
-        notes: container::notes(scan),
+        notes: container::notes(scan)?,
         transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
-    }
+    })
 }

@@ -38,14 +38,14 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
         return Ok(0);
     }
     let mut transferred = 0;
-    let associations = unique_surface_prototype_associations(scan)
-        .into_iter()
-        .filter_map(|(prototype, associated_row, section)| {
-            let prototype = prototype.record();
-            let frame = surface_prototype_frame_bounds(scan, section, prototype.offset)?;
-            Some((prototype, associated_row, section, frame))
-        })
-        .collect::<Vec<_>>();
+    let mut associations = Vec::new();
+    for (prototype, associated_row, section) in unique_surface_prototype_associations(scan)? {
+        let prototype = prototype.record();
+        let Some(frame) = surface_prototype_frame_bounds(scan, section, prototype.offset)? else {
+            continue;
+        };
+        associations.push((prototype, associated_row, section, frame));
+    }
     for (prototype, associated_row, section, (frame_start, frame_end)) in &associations {
         if !matches!(
             prototype.family,
@@ -153,17 +153,20 @@ pub(in super::super) fn transfer_positional_tori(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> Result<usize, cadmpeg_core::CodecError> {
-    let constant_round_feature_ids = scan
+    let round_feature_ids = scan
         .surfaces
         .rows
         .iter()
         .filter(|row| row.kind == crate::surface::SurfaceKind::TorusOrSphere)
         .map(|row| row.feature_id)
         .filter(|feature_id| feature_schema_class(scan, *feature_id) == Some(SchemaClass::Round))
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .filter(|feature_id| round_constant_radius(scan, ir, *feature_id).is_some())
         .collect::<BTreeSet<_>>();
+    let mut constant_round_feature_ids = BTreeSet::new();
+    for feature_id in round_feature_ids {
+        if round_constant_radius(scan, ir, feature_id)?.is_some() {
+            constant_round_feature_ids.insert(feature_id);
+        }
+    }
     let mut transferred = 0;
     for record in &scan.surfaces.parameters {
         let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, record.surface_id)
@@ -441,6 +444,24 @@ pub(in super::super) fn section_contains_offset(
     offset >= section.offset && offset < section.offset.saturating_add(section.length)
 }
 
+/// Report every refused tabulated-cylinder lane against the row that stated it.
+fn note_tabulated_cylinder_refusals(
+    surface_id: u32,
+    replay_offset: usize,
+    lane: &str,
+    refused: &[String],
+    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
+) {
+    for record in refused {
+        losses.push(
+            crate::loss::CreoLossCode::VisibGeomSurfaceUntransferred.note(format!(
+                "VisibGeom surface row {surface_id} states a tabulated-cylinder replay at offset \
+                 {replay_offset} whose {lane} lane forms no carrier: {record}"
+            )),
+        );
+    }
+}
+
 pub(in super::super) fn unique_tabulated_cylinder_prototype<'a>(
     scan: &'a ContainerScan<'_>,
     replay: &crate::surface::TabulatedCylinderCurveReplay,
@@ -457,10 +478,16 @@ pub(in super::super) fn unique_tabulated_cylinder_prototype<'a>(
     }))
 }
 
+/// Transfer one exact extrusion carrier per tabulated-cylinder spline replay.
+///
+/// A refused directrix or extrusion lane leaves the surface row without a
+/// carrier, which the model carries, so it is a loss note naming the
+/// `VisibGeom` surface row and the replay offset.
 pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
+    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut replay_counts = BTreeMap::<u32, usize>::new();
     for replay in &scan.curves.tabulated_cylinder_replays {
@@ -493,18 +520,36 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
         let directrix =
             placed_tabulated_cylinder_directrix(replay, parameters, chart_origin, &mut refusal);
-        if let Some(error) = refusal.take_error() {
-            return Err(error);
-        }
-        let Some((directrix, sweep)) = directrix else {
+        let refused = refusal.take_records();
+        let Some((directrix, sweep)) = directrix.filter(|_| refused.is_empty()) else {
+            note_tabulated_cylinder_refusals(
+                replay.surface_id,
+                replay.offset,
+                "directrix",
+                &refused,
+                losses,
+            );
             continue;
         };
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
-        let surface = extruded_nurbs_surface(&directrix, sweep, &mut refusal);
-        if let Some(error) = refusal.take_error() {
-            return Err(error);
-        }
-        let Some(surface) = surface else {
+        let surface = extruded_nurbs_surface(
+            &directrix,
+            sweep,
+            &format!(
+                "VisibGeom surface row {} tabulated-cylinder replay at offset {}",
+                replay.surface_id, replay.offset
+            ),
+            &mut refusal,
+        );
+        let refused = refusal.take_records();
+        let Some(surface) = surface.filter(|_| refused.is_empty()) else {
+            note_tabulated_cylinder_refusals(
+                replay.surface_id,
+                replay.offset,
+                "extrusion",
+                &refused,
+                losses,
+            );
             continue;
         };
         let curve_id = CurveId::mint(format!(

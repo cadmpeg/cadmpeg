@@ -731,7 +731,7 @@ fn drill_tip_cone_points_define_a_clipped_radial_coordinate() {
 
 #[test]
 fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features
         .entity_tables
         .push(simple_drilled_recipe_table(9));
@@ -871,7 +871,7 @@ fn counterbore_sources_require_materialized_table_membership() {
         next_surface: 0,
         offset: 0,
     };
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     let duplicate_productive_table = table.clone();
     scan.features.entity_tables.push(table);
     scan.features.entity_tables.push(
@@ -1429,6 +1429,7 @@ fn spline_extrusion_preserves_directrix_basis_and_weights() {
     let surface = extruded_nurbs_surface(
         &directrix,
         [0.0, 0.0, 4.0],
+        &"extrusion directrix fixture",
         &mut crate::lane_refusal::LaneRefusals::new(),
     )
     .expect("valid extrusion surface");
@@ -1483,6 +1484,7 @@ fn extrusion_arc_pcurve_is_exact_in_both_directions() {
             3.0,
             start,
             end,
+            &"circular pcurve fixture",
             &mut crate::lane_refusal::LaneRefusals::new(),
         )
         .expect("circular pcurve fixture");
@@ -1624,6 +1626,7 @@ fn circle_remains_a_closed_extrusion_profile() {
             reversed,
             seam,
             seam,
+            &"extrusion cap fixture",
             &mut crate::lane_refusal::LaneRefusals::new(),
         )
         .expect("extrusion cap pcurve fixture");

@@ -13,6 +13,22 @@ pub(crate) struct LaneRefusals {
     records: Vec<String>,
 }
 
+/// The source record and refusal sink shared by one carrier conversion.
+pub(crate) struct LaneRefusalContext<'record, 'sink> {
+    pub(crate) record: &'record dyn std::fmt::Display,
+    pub(crate) refusals: &'sink mut LaneRefusals,
+}
+
+impl<'record, 'sink> LaneRefusalContext<'record, 'sink> {
+    /// Pair a source record with the sink that owns its refusal report.
+    pub(crate) fn new(
+        record: &'record dyn std::fmt::Display,
+        refusals: &'sink mut LaneRefusals,
+    ) -> Self {
+        Self { record, refusals }
+    }
+}
+
 impl LaneRefusals {
     /// An empty sink.
     pub(crate) fn new() -> Self {
@@ -34,12 +50,5 @@ impl LaneRefusals {
     /// empty.
     pub(crate) fn take_records(&mut self) -> Vec<String> {
         std::mem::take(&mut self.records)
-    }
-
-    /// Take every refusal as one error naming each record it read, or `None`
-    /// when no record was refused.
-    pub(crate) fn take_error(&mut self) -> Option<cadmpeg_core::CodecError> {
-        let records = self.take_records();
-        (!records.is_empty()).then(|| cadmpeg_core::CodecError::malformed(records.join("; ")))
     }
 }

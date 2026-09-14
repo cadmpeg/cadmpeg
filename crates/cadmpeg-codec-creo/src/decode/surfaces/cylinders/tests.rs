@@ -87,7 +87,7 @@ fn support_tangent_frame_requires_a_matching_axis_aligned_support() {
 }
 
 fn slot_fillet_scan() -> crate::container::ContainerScan<'static> {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.rows.push(crate::feature::FeatureRow {
         feature_id: 913,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
@@ -198,7 +198,7 @@ fn model_cylinder(id: u32, radius: f64) -> cadmpeg_ir::geometry::Surface {
 }
 
 fn split_outline_scan() -> crate::container::ContainerScan<'static> {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.surfaces.rows.extend([
         crate::surface::SurfaceRow {
             id: 1,
@@ -351,7 +351,7 @@ fn split_outline_rejects_duplicate_surface_rows() {
 
 #[test]
 fn section_feature_type24_frame_is_not_admitted_as_round_cylinder() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.rows.push(crate::feature::FeatureRow {
         feature_id: 916,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Cut),
@@ -411,7 +411,7 @@ fn section_feature_type24_frame_is_not_admitted_as_round_cylinder() {
 
 #[test]
 fn unresolved_round_type24_frame_is_not_admitted_as_constant_cylinder() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.rows.push(crate::feature::FeatureRow {
         feature_id: 913,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
@@ -483,7 +483,7 @@ fn unresolved_round_type24_frame_is_not_admitted_as_constant_cylinder() {
 
 #[test]
 fn inline_type24_frame_is_admitted_in_a_round_feature() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.rows.push(crate::feature::FeatureRow {
         feature_id: 913,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
@@ -547,7 +547,7 @@ fn inline_type24_frame_is_admitted_in_a_round_feature() {
 
 #[test]
 fn positional_frame_reconciles_an_existing_model_cylinder() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.rows.push(crate::feature::FeatureRow {
         feature_id: 917,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Protrusion),
@@ -703,7 +703,7 @@ fn round_edge_support_frame_rejects_parallel_supports() {
 }
 
 fn counterbore_dimension_gate_scan(radius: f64) -> crate::container::ContainerScan<'static> {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.rows.push(crate::feature::FeatureRow {
         feature_id: 42,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Hole),
@@ -915,7 +915,7 @@ fn rowless_round_cylinder_rejects_duplicate_sibling_model_surfaces() {
         next_surface: 0,
         offset: 0,
     };
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.rows.push(crate::feature::FeatureRow {
         feature_id: 23,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),

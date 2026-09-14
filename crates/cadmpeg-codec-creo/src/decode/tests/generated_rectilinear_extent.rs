@@ -94,7 +94,7 @@ fn generated_fixture(
         )),
         source_object: None,
     };
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     let mut ir = CadIr::empty();
     for (id, coordinate, reversed) in axial_stations {
         scan.surfaces.rows.push(row(*id, *reversed));
@@ -279,7 +279,7 @@ fn rectilinear_extent_reconciles_native_and_transferred_planes() {
         )),
         source_object: None,
     };
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.surfaces.rows.extend([
         row(37, false),
         row(31, false),

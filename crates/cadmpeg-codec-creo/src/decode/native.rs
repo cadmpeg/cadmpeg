@@ -9,7 +9,8 @@ use serde::Serialize;
 
 /// Native arena keys `build_ir` and `attach_expanded_sections` may populate.
 ///
-/// [`store_arena`] asserts the key appears here.
+/// This list is the definition of the `creo` native namespace. [`store_arena`]
+/// refuses a key that is absent from it, on every build.
 const CREO_ARENAS: &[&str] = &[
     "expanded_sections",
     "legacy_integer_values",
@@ -116,6 +117,22 @@ pub(super) fn annotate(
     annotations.exactness(id, exactness);
 }
 
+/// Refuse a native arena key the `creo` namespace does not define.
+///
+/// The namespace is closed: [`CREO_ARENAS`] lists every key an emitter may
+/// write. A key outside that list names an arena no reader expects, so the
+/// emission is refused rather than written. The refusal is unconditional, so a
+/// release build states it as a debug build does.
+fn registered_arena(key: &str) -> Result<(), CodecError> {
+    if CREO_ARENAS.contains(&key) {
+        return Ok(());
+    }
+    Err(CodecError::malformed(format!(
+        "native arena `{key}` is not one of the {} keys the creo namespace defines",
+        CREO_ARENAS.len()
+    )))
+}
+
 /// Store `records` as native arena `key`, skipping empty input.
 ///
 /// An empty slice returns without touching the namespace, so an arena that was
@@ -127,10 +144,7 @@ pub(super) fn store_arena<T: Serialize>(
     key: &str,
     records: &[T],
 ) -> Result<(), CodecError> {
-    debug_assert!(
-        CREO_ARENAS.contains(&key),
-        "native arena {key} is not registered in CREO_ARENAS"
-    );
+    registered_arena(key)?;
     if records.is_empty() {
         return Ok(());
     }
@@ -180,4 +194,38 @@ pub(super) fn emit_uniform<T: Serialize>(
             exactness,
         );
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{registered_arena, CREO_ARENAS};
+
+    #[test]
+    fn registered_arena_accepts_every_declared_key() {
+        for key in CREO_ARENAS {
+            assert!(
+                registered_arena(key).is_ok(),
+                "declared arena {key} was refused"
+            );
+        }
+    }
+
+    #[test]
+    fn registered_arena_refuses_an_undeclared_key() {
+        let refusal = registered_arena("surface_row")
+            .expect_err("an arena key outside the namespace definition is refused");
+        assert!(
+            refusal.to_string().contains("surface_row"),
+            "the refusal names the rejected key: {refusal}"
+        );
+    }
+
+    #[test]
+    fn the_namespace_definition_names_each_arena_once() {
+        let mut seen = std::collections::BTreeSet::new();
+        for key in CREO_ARENAS {
+            assert!(seen.insert(*key), "arena {key} is declared twice");
+        }
+        assert_eq!(seen.len(), CREO_ARENAS.len());
+    }
 }

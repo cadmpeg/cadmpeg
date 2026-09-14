@@ -33,10 +33,17 @@ use cadmpeg_ir::sketches::SketchId;
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// Transfer one exact surface carrier per resolved revolution generator.
+///
+/// A saved spline whose revolved lanes the IR carrier refuses states no
+/// surface. The model carries the feature and its directrix curve without that
+/// surface, so the refusal is a loss note naming the feature and the spline
+/// offset.
 pub(in super::super) fn transfer_resolved_revolution_surfaces(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
+    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
     for transform in &scan.features.section_transforms {
@@ -300,11 +307,26 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 continue;
             };
             let mut refusal = crate::lane_refusal::LaneRefusals::new();
-            let surface = revolved_nurbs_surface(directrix, &axis, &mut refusal);
-            if let Some(error) = refusal.take_error() {
-                return Err(error);
-            }
-            let Some(surface) = surface else {
+            let surface = revolved_nurbs_surface(
+                directrix,
+                &axis,
+                &format!(
+                    "feature {feature_id} saved spline at offset {}",
+                    spline.offset
+                ),
+                &mut refusal,
+            );
+            let refused = refusal.take_records();
+            let Some(surface) = surface.filter(|_| refused.is_empty()) else {
+                for record in &refused {
+                    losses.push(
+                        crate::loss::CreoLossCode::FeatureSurfaceOperationIncomplete.note(format!(
+                            "Feature {feature_id} states a revolved saved spline at offset {} \
+                             that forms no surface carrier: {record}",
+                            spline.offset
+                        )),
+                    );
+                }
                 continue;
             };
             let native_surface = definition

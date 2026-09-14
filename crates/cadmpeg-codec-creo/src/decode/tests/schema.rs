@@ -1195,7 +1195,7 @@ fn decode_types_full_turn_revolution_from_positional_angle_choice() {
             ("MdlStatus", mdlstatus),
         ],
     );
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.features.revolution_extents.len(), 1);
     assert_eq!(scan.features.revolution_extents[0].feature_id, 40);

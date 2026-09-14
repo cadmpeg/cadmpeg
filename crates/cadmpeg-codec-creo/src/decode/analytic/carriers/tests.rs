@@ -117,7 +117,7 @@ fn existing_non_plane_carrier_conflicts_with_topology() {
 
 #[test]
 fn placed_carriers_reject_duplicate_model_surface_ids() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.surfaces
         .rows
         .push(carrier_row(7, crate::surface::SurfaceKind::Cylinder));
@@ -131,7 +131,7 @@ fn placed_carriers_reject_duplicate_model_surface_ids() {
 
 #[test]
 fn placed_carriers_prefers_unique_positional_cylinder_frame() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.surfaces
         .rows
         .push(carrier_row(7, crate::surface::SurfaceKind::Cylinder));
@@ -185,7 +185,7 @@ fn placed_carriers_prefers_unique_positional_cylinder_frame() {
 
 #[test]
 fn placed_carriers_keeps_non_inline_class913_model_carrier() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.rows.push(crate::feature::FeatureRow {
         feature_id: 913,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
@@ -240,7 +240,7 @@ fn placed_carriers_keeps_non_inline_class913_model_carrier() {
 
 #[test]
 fn duplicate_model_surface_ids_remove_native_carrier() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.surfaces
         .rows
         .push(carrier_row(7, crate::surface::SurfaceKind::Plane));
@@ -284,7 +284,7 @@ fn duplicate_model_surface_ids_remove_native_carrier() {
 
 #[test]
 fn placed_carriers_admits_unique_rowless_model_surface() {
-    let scan = crate::container::scan_bytes(Vec::new());
+    let scan = crate::container::scan_bytes_ok(Vec::new());
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(cylinder_surface(7, 2.0));
 
@@ -297,7 +297,7 @@ fn placed_carriers_admits_unique_rowless_model_surface() {
 
 #[test]
 fn placed_carriers_rejects_duplicate_rowless_model_surface_ids() {
-    let scan = crate::container::scan_bytes(Vec::new());
+    let scan = crate::container::scan_bytes_ok(Vec::new());
     let mut ir = CadIr::empty();
     ir.model
         .surfaces
@@ -414,7 +414,7 @@ fn parameter_loop_classifier_orders_unique_outer() {
 
 #[test]
 fn topology_bound_plane_rejects_duplicate_model_curve_ids() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.surfaces
         .rows
         .push(carrier_row(5, crate::surface::SurfaceKind::Plane));

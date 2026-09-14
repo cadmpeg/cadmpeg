@@ -13,7 +13,7 @@ use super::super::{planned_feature_dimension_parameter_ids, transfer_feature_dim
 
 #[test]
 fn dimension_transfer_rejects_duplicate_owner_feature_ids() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.rows.push(crate::feature::FeatureRow {
         feature_id: 40,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Section),

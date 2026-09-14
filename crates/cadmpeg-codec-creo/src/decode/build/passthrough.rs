@@ -16,16 +16,21 @@ use super::super::native::annotate;
 use super::super::native::emit_arena;
 use cadmpeg_ir::unknown::UnknownRecord;
 
+/// Retain every PSB geometry and thumbnail section as an unknown record.
+///
+/// A section whose declared extent runs past the scanned buffer is a refusal
+/// naming the section, its declared end, and the buffer length. The declared
+/// extent is the record, so a shortened region would retain bytes the source
+/// never stated.
 pub(in super::super) fn preserve_passthrough_sections(
     scan: &ContainerScan,
     annotations: &mut AnnotationBuilder,
-) -> Vec<UnknownRecord> {
+) -> Result<Vec<UnknownRecord>, CodecError> {
     let mut unknowns = Vec::new();
     for section in scan.framing.sections.iter().filter(|section| {
         section.role() == SectionRole::PsbGeometry || section.role() == SectionRole::Thumbnail
     }) {
-        let end = (section.offset + section.length).min(scan.framing.data.len());
-        let section_bytes = &scan.framing.data[section.offset..end];
+        let section_bytes = container::section_region(&scan.framing.data, section)?;
         let payload_start = section.raw_name.len().saturating_add(2);
         let raw_is_compressed = section_bytes
             .get(payload_start..)
@@ -71,7 +76,7 @@ pub(in super::super) fn preserve_passthrough_sections(
             )
         };
         let id = UnknownId::mint(format!("creo:{}:section#{}", section.name(), offset))
-            .expect("identity grammar");
+            .map_err(CodecError::malformed)?;
         annotate(
             annotations,
             &id,
@@ -87,7 +92,7 @@ pub(in super::super) fn preserve_passthrough_sections(
             Vec::new(),
         ));
     }
-    unknowns
+    Ok(unknowns)
 }
 
 pub(in super::super) fn legacy_source_stream<'a>(

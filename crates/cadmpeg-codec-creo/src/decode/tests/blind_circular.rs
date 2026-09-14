@@ -67,7 +67,7 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
         next_surface: 0,
         offset: id as usize,
     };
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.entity_tables.push(table);
     scan.surfaces.rows.extend([
         row(40, 46, crate::surface::SurfaceKind::Plane),
@@ -191,7 +191,7 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
 
 #[test]
 fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,
         kind,
@@ -603,7 +603,7 @@ fn unique_parallel_round_supports_define_constant_radius() {
 
 #[test]
 fn round_support_planes_define_radius_without_generated_surface_rows() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features
         .affected_ids
         .push(crate::feature::FeatureAffectedIds {
@@ -633,12 +633,15 @@ fn round_support_planes_define_radius_without_generated_surface_rows() {
         });
     }
 
-    assert_eq!(round_constant_radius(&scan, &ir, 913), Some(0.5));
+    assert_eq!(
+        round_constant_radius(&scan, &ir, 913).expect("round constant radius"),
+        Some(0.5)
+    );
 }
 
 #[test]
 fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.framing.layout = crate::container::Layout::Nd;
     scan.framing.sections.push(crate::container::Section {
         raw_name: "VisibGeom".to_string(),
@@ -739,7 +742,10 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
         });
     }
 
-    assert_eq!(round_constant_radius(&scan, &ir, 913), Some(0.5));
+    assert_eq!(
+        round_constant_radius(&scan, &ir, 913).expect("round constant radius"),
+        Some(0.5)
+    );
 
     if let Some(Surface {
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
@@ -755,12 +761,15 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
             cadmpeg_ir::geometry::CylinderSurface::try_new(*origin, *axis, *ref_direction, radius)
                 .expect("valid CylinderSurface fixture");
     }
-    assert_eq!(round_constant_radius(&scan, &ir, 913), None);
+    assert_eq!(
+        round_constant_radius(&scan, &ir, 913).expect("round constant radius"),
+        None
+    );
 }
 
 #[test]
 fn placed_cylinder_samples_identify_variable_radius_with_unresolved_siblings() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     for (id, kind) in [
         (11, crate::surface::SurfaceKind::Cylinder),
         (12, crate::surface::SurfaceKind::TorusOrSphere),
@@ -809,7 +818,7 @@ fn placed_cylinder_samples_identify_variable_radius_with_unresolved_siblings() {
 
 #[test]
 fn unequal_round_samples_are_not_hidden_by_support_radius() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     for (id, parameter) in [(11, Some(15.0)), (12, Some(1.0)), (13, None)] {
         scan.surfaces.rows.push(crate::surface::SurfaceRow {
             id,
@@ -921,7 +930,10 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
 
     assert_eq!(round_observed_radii(&scan, 5), [15.0, 1.0]);
     assert_eq!(round_support_radius(&scan, &ir, 5), Some(0.5));
-    assert_eq!(round_constant_radius(&scan, &ir, 5), None);
+    assert_eq!(
+        round_constant_radius(&scan, &ir, 5).expect("round constant radius"),
+        None
+    );
     assert!(matches!(
         schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::Round), "Round").expect("valid test fixture"),
         IrFeatureDefinition::Operation(IrFeatureOperation::Fillet {
@@ -938,7 +950,7 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
 
 #[test]
 fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     for id in [11, 12] {
         scan.surfaces.rows.push(crate::surface::SurfaceRow {
             id,
@@ -997,7 +1009,10 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
 
     assert_eq!(round_placed_cylinder_radii(&scan, &ir, 5), [15.0, 1.0]);
     assert_eq!(round_support_radius(&scan, &ir, 5), Some(0.5));
-    assert_eq!(round_constant_radius(&scan, &ir, 5), None);
+    assert_eq!(
+        round_constant_radius(&scan, &ir, 5).expect("round constant radius"),
+        None
+    );
     assert!(matches!(
         schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::Round), "Round").expect("valid test fixture"),
         IrFeatureDefinition::Operation(IrFeatureOperation::Fillet {
@@ -1014,7 +1029,7 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
 
 #[test]
 fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     for (id, kind) in [
         (11, crate::surface::SurfaceKind::Cylinder),
         (12, crate::surface::SurfaceKind::TorusOrSphere),
@@ -1077,7 +1092,10 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
 
     assert_eq!(round_placed_cylinder_radii(&scan, &ir, 5), [15.0, 1.0]);
     assert_eq!(round_support_radius(&scan, &ir, 5), Some(0.5));
-    assert_eq!(round_constant_radius(&scan, &ir, 5), None);
+    assert_eq!(
+        round_constant_radius(&scan, &ir, 5).expect("round constant radius"),
+        None
+    );
     assert!(matches!(
         schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::Round), "Round").expect("valid test fixture"),
         IrFeatureDefinition::Operation(IrFeatureOperation::Fillet {
@@ -1443,7 +1461,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         next_surface: 0,
         offset: id as usize,
     };
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.surfaces.rows.extend([
         row(31, crate::surface::SurfaceKind::Plane),
         row(32, crate::surface::SurfaceKind::Plane),

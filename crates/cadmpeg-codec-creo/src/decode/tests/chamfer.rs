@@ -55,7 +55,7 @@ fn equal_distance_chamfer_setback_uses_nearest_forward_parallel_support() {
 
 #[test]
 fn chamfer_requires_every_affected_support_plane_to_be_placed() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     let empty_ir = CadIr::empty();
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 10,

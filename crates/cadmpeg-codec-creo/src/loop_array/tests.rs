@@ -142,7 +142,7 @@ fn rejects_truncated_prototype_and_row() {
 fn container_and_native_arenas_retain_loop_roster() {
     let payload = frame(1, &row(1, &[0xe2, 0x10]));
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.loop_arrays.frames.len(), 1);
     assert_eq!(scan.loop_arrays.records.len(), 1);

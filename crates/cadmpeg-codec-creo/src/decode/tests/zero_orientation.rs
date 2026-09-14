@@ -412,7 +412,7 @@ fn revolution_axis_uses_the_unique_complete_section_centerline() {
 
 #[test]
 fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     for (id, kind) in [
         (31, crate::surface::SurfaceKind::Cylinder),
         (32, crate::surface::SurfaceKind::Cone),
@@ -683,7 +683,7 @@ fn named_revolve_transfers_profile_axis() {
         90,
     )
     .expect("valid section frame");
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.definitions.push(definition);
     scan.features.section_transforms.push(transform);
     scan.features
@@ -721,7 +721,7 @@ fn named_revolve_transfers_profile_axis() {
 
 #[test]
 fn named_extrude_with_evaluated_body_is_new_body() {
-    let scan = crate::container::scan_bytes(Vec::new());
+    let scan = crate::container::scan_bytes_ok(Vec::new());
     let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
         id: BodyId::mint("creo:feature:extrusion#822:body".to_string()).expect("identity grammar"),
@@ -746,7 +746,7 @@ fn named_extrude_with_evaluated_body_is_new_body() {
 
 #[test]
 fn schema_numbered_extrude_with_evaluated_body_is_new_body() {
-    let scan = crate::container::scan_bytes(Vec::new());
+    let scan = crate::container::scan_bytes_ok(Vec::new());
     let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
         id: BodyId::mint("creo:feature:extrusion#822:body".to_string()).expect("identity grammar"),
@@ -770,7 +770,7 @@ fn schema_numbered_extrude_with_evaluated_body_is_new_body() {
 
 #[test]
 fn conflicting_section_sweep_names_remain_unresolved() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features
         .operations
         .push(crate::feature::FeatureOperation {
@@ -822,7 +822,7 @@ fn conflicting_section_sweep_names_remain_unresolved() {
 
 #[test]
 fn conflicting_display_states_do_not_select_reference_family() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features
         .operations
         .push(crate::feature::FeatureOperation {
@@ -1070,8 +1070,12 @@ fn tensor_product_collocation_preserves_position_and_derivative_order() {
         [zero, zero, zero, zero],
     )
     .expect("complete interpolation grid");
-    let nurbs = interpolation_spline_surface(&grid, &mut crate::lane_refusal::LaneRefusals::new())
-        .expect("bicubic tensor-product surface");
+    let nurbs = interpolation_spline_surface(
+        &grid,
+        &"interpolation grid fixture",
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect("bicubic tensor-product surface");
 
     assert_eq!((nurbs.u_count(), nurbs.v_count()), (4, 4));
     assert_eq!(nurbs.u_knots(), [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]);
@@ -1146,6 +1150,7 @@ fn full_revolution_uses_exact_quadratic_circle_poles() {
                 .expect("valid direction fixture"),
             reference: None,
         },
+        &"revolution directrix fixture",
         &mut crate::lane_refusal::LaneRefusals::new(),
     )
     .expect("revolution surface");
@@ -1214,6 +1219,7 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         &spline,
         false,
         &axis,
+        &"revolved spline fixture",
         &mut crate::lane_refusal::LaneRefusals::new(),
     )
     .expect("revolved spline surface");
@@ -1241,6 +1247,11 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         0.75 * std::f64::consts::FRAC_1_SQRT_2
     );
 
+    let mut start_refusal = crate::lane_refusal::LaneRefusals::new();
+    let mut start_diagnostics = crate::lane_refusal::LaneRefusalContext::new(
+        &"revolution boundary fixture start",
+        &mut start_refusal,
+    );
     let start_pcurve = revolution_profile_boundary_pcurve(
         &transform,
         &segment,
@@ -1248,9 +1259,14 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         &axis,
         segment.start(),
         RevolutionBoundary::Start,
-        &mut crate::lane_refusal::LaneRefusals::new(),
+        &mut start_diagnostics,
     )
     .expect("start boundary pcurve");
+    let mut end_refusal = crate::lane_refusal::LaneRefusals::new();
+    let mut end_diagnostics = crate::lane_refusal::LaneRefusalContext::new(
+        &"revolution boundary fixture end",
+        &mut end_refusal,
+    );
     let end_pcurve = revolution_profile_boundary_pcurve(
         &transform,
         &segment,
@@ -1258,7 +1274,7 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         &axis,
         segment.end(),
         RevolutionBoundary::End,
-        &mut crate::lane_refusal::LaneRefusals::new(),
+        &mut end_diagnostics,
     )
     .expect("end boundary pcurve");
     for (pcurve, expected_u) in [(start_pcurve, 2.0), (end_pcurve, 5.0)] {
@@ -1278,6 +1294,7 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.clone())),
         &axis,
         1.0,
+        &"revolution face sense fixture forward",
         &mut crate::lane_refusal::LaneRefusals::new(),
     )
     .expect("forward face sense");
@@ -1287,6 +1304,7 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.clone())),
         &axis,
         -1.0,
+        &"revolution face sense fixture reverse",
         &mut crate::lane_refusal::LaneRefusals::new(),
     )
     .expect("reverse face sense");
@@ -1297,6 +1315,7 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         &spline,
         true,
         &axis,
+        &"reversed revolved spline fixture",
         &mut crate::lane_refusal::LaneRefusals::new(),
     )
     .expect("reversed revolved spline surface");
@@ -1471,6 +1490,7 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
     .expect("valid extrusion surface");
     let boundary = nurbs_plane_boundary_curve(
         &surface,
+        7,
         PlaneEquation {
             origin: [0.0, 1.0, 0.0],
             normal: [0.0, 1.0, 0.0],
@@ -1496,6 +1516,7 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
 
     let generator = nurbs_plane_boundary_curve(
         &surface,
+        7,
         PlaneEquation {
             origin: [3.0, 0.0, 0.0],
             normal: [1.0, 0.0, 0.0],
@@ -1516,6 +1537,7 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
 
     assert!(nurbs_plane_boundary_curve(
         &surface,
+        7,
         PlaneEquation {
             origin: [0.0, 0.5, 0.0],
             normal: [0.0, 1.0, 0.0],
@@ -1531,6 +1553,7 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
         .expect("finite fixture geometry preserves NURBS invariants");
     assert!(nurbs_plane_boundary_curve(
         &coplanar,
+        7,
         PlaneEquation {
             origin: [0.0, 0.0, 0.0],
             normal: [0.0, 0.0, 1.0],
@@ -1583,7 +1606,9 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
     .expect("valid second extrusion surface");
     let shared = shared_extrusion_generator_curve(
         &first,
+        7,
         &second,
+        9,
         &mut crate::lane_refusal::LaneRefusals::new(),
     )
     .expect("shared generator boundary");
@@ -1615,7 +1640,9 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
         .expect("finite fixture geometry preserves NURBS invariants");
     assert!(shared_extrusion_generator_curve(
         &first,
+        7,
         &reversed,
+        9,
         &mut crate::lane_refusal::LaneRefusals::new()
     )
     .is_some());
@@ -1633,7 +1660,9 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
         .expect("finite fixture geometry preserves NURBS invariants");
     assert!(shared_extrusion_generator_curve(
         &first,
+        7,
         &same_side,
+        9,
         &mut crate::lane_refusal::LaneRefusals::new()
     )
     .is_none());
@@ -1642,7 +1671,9 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
     periodic_transverse.set_u_periodic(true);
     assert!(shared_extrusion_generator_curve(
         &first,
+        7,
         &periodic_transverse,
+        9,
         &mut crate::lane_refusal::LaneRefusals::new()
     )
     .is_none());
@@ -1659,7 +1690,9 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
         .expect("finite fixture geometry preserves NURBS invariants");
     assert!(shared_extrusion_generator_curve(
         &first,
+        7,
         &different_boundary,
+        9,
         &mut crate::lane_refusal::LaneRefusals::new()
     )
     .is_none());
@@ -1692,10 +1725,12 @@ fn cubic_extrusion_plane_generator_requires_one_directrix_root() {
         cubic_extrusion_plane_generator_curve(
             ctx,
             &surface,
+            7,
             PlaneEquation {
                 origin: [0.0, 0.0, 0.0],
                 normal: [1.0, 0.0, 0.0],
             },
+            &mut Vec::new(),
         )
     })
     .expect("resource limits")
@@ -1719,20 +1754,24 @@ fn cubic_extrusion_plane_generator_requires_one_directrix_root() {
     assert!(with_decode_ctx(|ctx| cubic_extrusion_plane_generator_curve(
         ctx,
         &surface,
+        7,
         PlaneEquation {
             origin: [2.0, 0.0, 0.0],
             normal: [1.0, 0.0, 0.0],
         },
+        &mut Vec::new(),
     ))
     .expect("resource limits")
     .is_none());
     assert!(with_decode_ctx(|ctx| cubic_extrusion_plane_generator_curve(
         ctx,
         &surface,
+        7,
         PlaneEquation {
             origin: [0.0, 0.0, 1.0],
             normal: [0.0, 0.0, 1.0],
         },
+        &mut Vec::new(),
     ))
     .expect("resource limits")
     .is_none());

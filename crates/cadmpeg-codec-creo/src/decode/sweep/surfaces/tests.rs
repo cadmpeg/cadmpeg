@@ -98,7 +98,7 @@ fn saved_spline_definition() -> crate::feature::FeatureDefinition {
 
 #[test]
 fn malformed_saved_spline_reports_transfer_loss() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.definitions.push(saved_spline_definition());
     scan.features.section_transforms.push(
         crate::placement::FeatureSectionTransform::new(

@@ -26,7 +26,7 @@ fn detect_matches_ugc_magic_only() {
 fn scan_decodes_length_prefixed_native_model_name() {
     let data = b"#UGC:2 PART test \\\n#- CMNM 00bwidget.prt                                      \\\n#-END_OF_UGC_HEADER\n"
         .to_vec();
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(
         scan.framing
@@ -101,7 +101,7 @@ fn scan_withholds_repeated_native_model_names() {
     let data = b"#UGC:2 PART test \\\n+#- CMNM 00awidget.prt                                      \\\n+#- CMNM 00bwidget2.prt                                     \\\n+#-END_OF_UGC_HEADER\n"
         .to_vec();
 
-    let scan = container::scan_bytes(data);
+    let scan = container::scan_bytes_ok(data);
     assert!(scan.framing.model_name.is_none());
 }
 
@@ -115,7 +115,7 @@ fn scan_decodes_binary_model_name_field_without_cmnm_header() {
         )],
     );
 
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
     assert_eq!(
         scan.framing
             .model_name
@@ -156,7 +156,7 @@ fn scan_skips_empty_binary_model_name_fields() {
         )],
     );
 
-    let scan = container::scan_bytes(data);
+    let scan = container::scan_bytes_ok(data);
     assert_eq!(
         scan.framing
             .model_name
@@ -186,7 +186,7 @@ fn scan_enumerates_and_classifies_sections() {
             ("THMB_IMG_MAIN", jpeg_payload()),
         ],
     );
-    let scan = container::scan_bytes(data);
+    let scan = container::scan_bytes_ok(data);
 
     assert_eq!(scan.framing.version_line, "#UGC:2 P test");
     assert_eq!(scan.framing.sections.len(), 3);
@@ -195,7 +195,7 @@ fn scan_enumerates_and_classifies_sections() {
     assert_eq!(scan.framing.sections[1].name(), "AllFeatur");
     assert_eq!(scan.framing.sections[1].role(), SectionRole::ModelData);
     assert_eq!(scan.framing.sections[2].role(), SectionRole::Thumbnail);
-    assert!(container::has_thumbnail(&scan));
+    assert!(container::has_thumbnail(&scan).expect("the fixture states in-range sections"));
 }
 
 #[test]
@@ -203,7 +203,7 @@ fn scan_finds_curve_expression_in_feature_definition_section() {
     let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
         \xe0\x0aexpression\0\xf8\x01value=5\0"
         .to_vec();
-    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("FeatDefs", payload)]));
 
     assert_eq!(scan.curves.expressions.len(), 1);
     assert_eq!(scan.curves.expressions[0].entity_id, 7);
@@ -219,7 +219,7 @@ fn scan_enumerates_toc_backed_compound_close_section_boundaries() {
     data.extend_from_slice(b"\xf1#VisibGeom\npacked\xf1#not_in_toc\ninside");
     data.extend_from_slice(b"\xf1#AllFeatur\nfeatures");
 
-    let scan = container::scan_bytes(data);
+    let scan = container::scan_bytes_ok(data);
 
     assert_eq!(
         scan.framing
@@ -260,7 +260,7 @@ fn scan_uses_fixed_width_toc_offsets_for_adjacent_sections() {
     data.extend_from_slice(first);
     data.extend_from_slice(second);
 
-    let scan = container::scan_bytes(data);
+    let scan = container::scan_bytes_ok(data);
 
     assert_eq!(scan.framing.sections.len(), 2);
     assert_eq!(scan.framing.sections[0].name(), "SolidPrimdata");
@@ -288,12 +288,13 @@ fn scan_expands_toc_sized_unix_compress_payload() {
     data.extend_from_slice(b"#SolidPrimdata\n");
     data.extend_from_slice(&compressed);
 
-    let scan = container::scan_bytes(data);
+    let scan = container::scan_bytes_ok(data);
     let classification = crate::dialect::classify(&scan);
 
     assert_eq!(scan.framing.expanded_sections.len(), 1);
     assert_eq!(scan.framing.expanded_sections[0].data, b"ABC");
-    let summary = container::summarize(&scan, &classification);
+    let summary =
+        container::summarize(&scan, &classification).expect("the fixture states in-range sections");
     let cadmpeg_core::container::EntryStorage::Compressed {
         method,
         stored,
@@ -313,7 +314,7 @@ fn scan_expands_toc_sized_unix_compress_payload() {
 #[test]
 fn scan_reads_namespace_counts() {
     let data = build_prt("c", &[("VisibGeom", visibgeom_payload(5, 12))]);
-    let scan = container::scan_bytes(data);
+    let scan = container::scan_bytes_ok(data);
     assert_eq!(scan.framing.census.srf_array_count, Some(5));
     assert_eq!(scan.framing.census.crv_array_count, Some(12));
 }
@@ -322,7 +323,7 @@ fn scan_reads_namespace_counts() {
 fn scan_sums_concatenated_depdb_surface_namespaces() {
     let mut payload = visibgeom_payload(3, 4);
     payload.extend_from_slice(&visibgeom_payload(5, 6));
-    let scan = container::scan_bytes(build_prt("c", &[("DEPDB_DATA", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("DEPDB_DATA", payload)]));
 
     assert_eq!(scan.framing.layout, Layout::Depdb);
     assert_eq!(scan.framing.census.srf_array_count, Some(8));
@@ -332,7 +333,7 @@ fn scan_sums_concatenated_depdb_surface_namespaces() {
 #[test]
 fn scan_does_not_treat_unlabeled_depdb_bytes_as_geometry_rows() {
     let payload = vec![7, 0x22, 4, 0x01, 0, 8, 8, 0x24, 4, 0xf6, 0x01, 0];
-    let scan = container::scan_bytes(build_prt("c", &[("DEPDB_DATA", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("DEPDB_DATA", payload)]));
 
     assert!(scan.surfaces.rows.is_empty());
     assert!(scan.surfaces.parameters.is_empty());
@@ -340,7 +341,7 @@ fn scan_does_not_treat_unlabeled_depdb_bytes_as_geometry_rows() {
 
 #[test]
 fn scan_reads_declared_geomlists_body_count() {
-    let scan = container::scan_bytes(build_prt(
+    let scan = container::scan_bytes_ok(build_prt(
         "c",
         &[("Geomlists", b"n_bodies\0\x83\x01".to_vec())],
     ));
@@ -350,7 +351,7 @@ fn scan_reads_declared_geomlists_body_count() {
 
 #[test]
 fn scan_reads_geomlists_first_quilt_discriminator() {
-    let scan = container::scan_bytes(build_prt(
+    let scan = container::scan_bytes_ok(build_prt(
         "c",
         &[("Geomlists", b"first_quilt_ptr\0\x00".to_vec())],
     ));
@@ -366,7 +367,7 @@ fn scan_reads_legacy_geom_depend_first_quilt_discriminator() {
 #END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Version H-01-21\n"
         .to_vec();
 
-    let scan = container::scan_bytes(data);
+    let scan = container::scan_bytes_ok(data);
 
     assert!(matches!(scan.framing.layout, Layout::LegacyAscii(_)));
     assert_eq!(scan.framing.first_quilt_ptr, Some(0));
@@ -420,7 +421,7 @@ fn legacy_geom_depend_discriminator_withholds_distinct_values() {
 #[test]
 fn nd_decoration_selects_nd_layout() {
     let data = build_prt("c", &[("ND:0:VisibGeom:1", visibgeom_payload(3, 4))]);
-    let scan = container::scan_bytes(data);
+    let scan = container::scan_bytes_ok(data);
     assert_eq!(scan.framing.layout, Layout::Nd);
     // The decorated name is normalized for classification and census.
     assert_eq!(scan.framing.sections[0].name(), "VisibGeom");
@@ -437,7 +438,7 @@ fn depdb_root_record_overrides_embedded_nd_decoration() {
             ("ND:0:Model_L05P:1", Vec::new()),
         ],
     );
-    let scan = container::scan_bytes(data);
+    let scan = container::scan_bytes_ok(data);
     assert_eq!(scan.framing.layout, Layout::Depdb);
 }
 
@@ -450,7 +451,7 @@ fn depdb_layout_requires_root_record() {
             ("ND:0:Model_L05P:1", Vec::new()),
         ],
     );
-    let scan = container::scan_bytes(data);
+    let scan = container::scan_bytes_ok(data);
     assert_eq!(
         scan.framing.layout,
         Layout::Unknown(UnknownLayout::DepdbRootMissing)
@@ -473,7 +474,7 @@ fn visible_geometry_namespace_excludes_invisible_and_depdb_rows() {
     let mut depdb = visibgeom_payload(1, 0);
     depdb.extend_from_slice(&[9, 0x26, 6, 0x01, 0, 0, 0xe4, 0xe3]);
 
-    let scan = container::scan_bytes(build_prt(
+    let scan = container::scan_bytes_ok(build_prt(
         "c",
         &[
             ("VisibGeom", visible),
@@ -571,7 +572,7 @@ fn visible_geometry_namespace_excludes_invisible_and_depdb_rows() {
 fn depdb_data_with_sparse_sections_selects_depdb() {
     let depdb = b"srf_array\0geom_id\0\x07geom_type\0\x22feat_id\0\x04orient\0\x01boundary_type\0\0next_geom_ptr\0\0feat_defs_12\0protrevolve\0Revolve id 17\0".to_vec();
     let data = build_prt("c", &[("VisibGeom", vec![0x00]), ("DEPDB_DATA", depdb)]);
-    let scan = container::scan_bytes(data);
+    let scan = container::scan_bytes_ok(data);
     assert_eq!(scan.framing.layout, Layout::Depdb);
     assert!(scan
         .surfaces
@@ -594,7 +595,7 @@ fn depdb_data_with_sparse_sections_selects_depdb() {
 #[test]
 fn framing_names_are_not_mistaken_for_sections() {
     let data = build_prt("c", &[("VisibGeom", vec![0x00])]);
-    let scan = container::scan_bytes(data);
+    let scan = container::scan_bytes_ok(data);
     // Only VisibGeom — the header/TOC framing markers are excluded.
     assert_eq!(scan.framing.sections.len(), 1);
     assert_eq!(scan.framing.sections[0].name(), "VisibGeom");
@@ -614,4 +615,40 @@ fn inspect_summary_has_layout_and_census_notes() {
     assert_eq!(summary.container_kind, "psb");
     assert!(summary.notes.iter().any(|n| n.contains("layout: ND")));
     assert!(summary.notes.iter().any(|n| n.contains("srf_array=7")));
+}
+
+#[test]
+fn a_section_length_one_byte_past_the_file_is_refused() {
+    let data = b"#Geomlists\n0123";
+    let section = container::Section {
+        raw_name: "Geomlists".to_string(),
+        offset: 0,
+        length: data.len() + 1,
+        expanded_length: None,
+    };
+
+    let refusal = container::section_region(data, &section).unwrap_err();
+    let message = refusal.to_string();
+
+    // The refusal names the section and both extents, so a short file never
+    // decodes a shortened region.
+    assert!(message.contains("Geomlists"), "{message}");
+    assert!(message.contains(&(data.len() + 1).to_string()), "{message}");
+    assert!(message.contains(&data.len().to_string()), "{message}");
+}
+
+#[test]
+fn a_section_that_ends_on_the_last_byte_is_admitted() {
+    let data = b"#Geomlists\n0123";
+    let section = container::Section {
+        raw_name: "Geomlists".to_string(),
+        offset: 0,
+        length: data.len(),
+        expanded_length: None,
+    };
+
+    assert_eq!(
+        container::section_region(data, &section).unwrap(),
+        data.as_slice()
+    );
 }

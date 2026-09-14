@@ -295,7 +295,7 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
     payload.extend_from_slice(&[3, 6, 0x46, 0x10, 0, 0, 0, 0, 0, 0, 0x0f, 1, 0, 6, 0xe2]);
     let definition_length = payload.len();
     let data = build_prt("c", &[("FeatDefs", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
     let offset = scan.features.definitions[0].offset as u64;
     let variable_offset = scan.features.definitions[0]
         .variables
@@ -414,7 +414,7 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
             ),
         ],
     );
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
     assert_eq!(scan.features.definitions[0].identity.id(), 917);
     assert_eq!(
         scan.features.definitions[0].identity.owner_feature_id(),
@@ -527,7 +527,7 @@ fn decode_transfers_decoded_dimensions_from_an_incomplete_table() {
             ("MdlStatus", b"Extrude id 40\0".to_vec()),
         ],
     );
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
     let dimensions = scan.features.definitions[0]
         .dimensions
         .as_ref()
@@ -784,7 +784,7 @@ fn decode_retains_dimensions_from_repeated_feature_definition_ids() {
             ("MdlStatus", b"Extrude id 40\0".to_vec()),
         ],
     );
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
     assert_eq!(scan.features.definitions.len(), 2);
     assert!(scan
         .features
@@ -974,7 +974,7 @@ fn decode_promotes_unnamed_depdb_recipe_into_feature_history() {
         \xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 1\0\xf6\0protextrude\0"
         .to_vec();
     let data = build_prt("c", &[("DEPDB_DATA", depdb)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
     assert_eq!(scan.features.operations.len(), 2);
     assert_eq!(scan.features.depdb_recipe_rows.len(), 1);
     assert_eq!(scan.features.depdb_recipe_rows[0].feature_id, 8053);
@@ -1041,7 +1041,7 @@ fn decode_retains_conflicting_recipe_candidates_without_projecting_one() {
         \xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 2\0\xf6\0protrevolve\0"
         .to_vec();
     let data = build_prt("c", &[("DEPDB_DATA", depdb)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.features.operation_states.len(), 2);
     assert_eq!(scan.features.operations.len(), 1);
@@ -1102,7 +1102,7 @@ fn decode_retains_conflicting_recipe_candidates_without_projecting_one() {
 fn decode_preserves_unowned_depdb_section_instances_with_unique_native_ids() {
     let depdb = b"feat_defs_917\0template\xe3S2D0004\0first\xe3S2D0004\0second".to_vec();
     let data = build_prt("c", &[("DEPDB_DATA", depdb)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
     let positional = scan
         .features
         .definitions

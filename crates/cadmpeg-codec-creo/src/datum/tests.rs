@@ -364,7 +364,7 @@ fn scan_discovers_model_space_datum_planes() {
             datum.extend(bytes);
         }
     }
-    let scan = container::scan_bytes(build_prt("c", &[("ActDatums", datum)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("ActDatums", datum)]));
     assert_eq!(scan.planes.datums.len(), 1);
     assert_eq!(scan.planes.datums[0].plane.normal(), [0.0, 1.0, 0.0]);
 }
@@ -378,7 +378,7 @@ fn scan_discovers_complete_active_datum_cylinder_carrier() {
         0x48, 0x29, 0x00, 0x2f, 0x10, 0x00, 0x43, 0xe8, 0x00, 0x48, 0x27, 0x80, 0x2f, 0x43, 0x00,
         0x2a, 0xe8, 0x00,
     ]);
-    let scan = container::scan_bytes(build_prt("c", &[("ActDatums", datum)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("ActDatums", datum)]));
     assert_eq!(scan.planes.datum_cylinders.len(), 1);
     let cylinder = scan.planes.datum_cylinders[0];
     assert_eq!(cylinder.id, 8);

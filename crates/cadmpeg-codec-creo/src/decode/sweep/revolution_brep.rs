@@ -96,19 +96,35 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         let refusal = &mut refusal;
         let surface_geometries = profile
             .iter()
-            .map(|entity| {
+            .enumerate()
+            .map(|(index, entity)| {
                 let geometry = entity.geometry();
                 let reversed = entity.reversed();
 
-                revolved_brep_surface(transform, &geometry.to_sketch()?, reversed, &axis, refusal)
+                revolved_brep_surface(
+                    transform,
+                    &geometry.to_sketch()?,
+                    reversed,
+                    &axis,
+                    &format!("revolution feature {feature_id} profile segment {index}"),
+                    refusal,
+                )
             })
             .collect::<Option<Vec<_>>>();
         let Some(surface_geometries) = surface_geometries else {
-            for record in refusal.take_records() {
-                losses.push(crate::loss::CreoLossCode::BrepTransferIncomplete.note(format!(
-                    "Revolution feature {feature_id} states no revolved surface; its B-rep was skipped: {record}"
-                )));
-            }
+            let records = refusal.take_records();
+            losses.push(
+                crate::loss::CreoLossCode::BrepTransferIncomplete.note(if records.is_empty() {
+                    format!(
+                        "Revolution feature {feature_id} states no revolved surface; its B-rep was skipped."
+                    )
+                } else {
+                    format!(
+                        "Revolution feature {feature_id} states no revolved surface; its B-rep was skipped: {}",
+                        records.join("; ")
+                    )
+                }),
+            );
             continue;
         };
         let boundaries = profile
@@ -134,6 +150,12 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 .into_iter()
                 .filter(|(_, present, _)| *present)
                 .map(|(section_point, _, boundary)| {
+                    let record = format!(
+                        "revolution feature {feature_id} profile segment {index} boundary {}",
+                        boundary.key()
+                    );
+                    let mut diagnostics =
+                        crate::lane_refusal::LaneRefusalContext::new(&record, refusal);
                     PrevalidatedRevolutionBoundary::new(
                         transform,
                         segment,
@@ -141,7 +163,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                         &axis,
                         section_point,
                         boundary,
-                        refusal,
+                        &mut diagnostics,
                     )
                 })
                 .collect::<Option<Vec<_>>>()
@@ -166,16 +188,33 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         let face_senses = profile
             .iter()
             .zip(&surface_geometries)
-            .map(|(segment, surface)| {
-                revolution_face_sense(transform, segment, surface, &axis, area, refusal)
+            .enumerate()
+            .map(|(index, (segment, surface))| {
+                revolution_face_sense(
+                    transform,
+                    segment,
+                    surface,
+                    &axis,
+                    area,
+                    &format!("revolution feature {feature_id} profile segment {index} face sense"),
+                    refusal,
+                )
             })
             .collect::<Option<Vec<_>>>();
         let Some(face_senses) = face_senses else {
-            for record in refusal.take_records() {
-                losses.push(crate::loss::CreoLossCode::BrepTransferIncomplete.note(format!(
-                    "Revolution feature {feature_id} states no face sense; its B-rep was skipped: {record}"
-                )));
-            }
+            let records = refusal.take_records();
+            losses.push(
+                crate::loss::CreoLossCode::BrepTransferIncomplete.note(if records.is_empty() {
+                    format!(
+                        "Revolution feature {feature_id} states no face sense; its B-rep was skipped."
+                    )
+                } else {
+                    format!(
+                        "Revolution feature {feature_id} states no face sense; its B-rep was skipped: {}",
+                        records.join("; ")
+                    )
+                }),
+            );
             continue;
         };
         let prefix = format!("creo:feature:revolution#{feature_id}");
@@ -365,7 +404,7 @@ impl PrevalidatedRevolutionBoundary {
         axis: &cadmpeg_ir::features::RevolutionAxis,
         section_point: [f64; 2],
         boundary: RevolutionBoundary,
-        refusal: &mut crate::lane_refusal::LaneRefusals,
+        diagnostics: &mut crate::lane_refusal::LaneRefusalContext<'_, '_>,
     ) -> Option<Self> {
         Some(Self {
             boundary,
@@ -376,7 +415,7 @@ impl PrevalidatedRevolutionBoundary {
                 axis,
                 section_point,
                 boundary,
-                refusal,
+                diagnostics,
             )?,
         })
     }
