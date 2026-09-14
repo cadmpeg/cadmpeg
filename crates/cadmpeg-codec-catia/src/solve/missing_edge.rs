@@ -705,7 +705,12 @@ pub(crate) fn repeated_face_endpoint_closures(
     const MAX_STATES: usize = 65_536;
     const MAX_SOLUTIONS: usize = 4_096;
 
-    fn add_pair(degrees: &mut BTreeMap<usize, u8>, pair: [usize; 2]) -> Option<()> {
+    struct PairDegreeUndo {
+        start: (usize, Option<u8>),
+        end: Option<(usize, Option<u8>)>,
+    }
+
+    fn add_pair(degrees: &mut BTreeMap<usize, u8>, pair: [usize; 2]) -> Option<PairDegreeUndo> {
         let start_add = 1 + u8::from(pair[0] == pair[1]);
         if degrees
             .get(&pair[0])
@@ -723,25 +728,39 @@ pub(crate) fn repeated_face_endpoint_closures(
         {
             return None;
         }
+        let start_previous = degrees.get(&pair[0]).copied();
         *degrees.entry(pair[0]).or_default() += start_add;
-        if pair[0] != pair[1] {
+        let end_previous = if pair[0] == pair[1] {
+            None
+        } else {
+            let previous = degrees.get(&pair[1]).copied();
             *degrees.entry(pair[1]).or_default() += 1;
-        }
-        Some(())
+            Some((pair[1], previous))
+        };
+        Some(PairDegreeUndo {
+            start: (pair[0], start_previous),
+            end: end_previous,
+        })
     }
 
-    fn remove_pair(degrees: &mut BTreeMap<usize, u8>, pair: [usize; 2]) {
-        let start_add = 1 + u8::from(pair[0] == pair[1]);
-        let start = degrees.get_mut(&pair[0]).expect("assigned face endpoint");
-        *start -= start_add;
-        if *start == 0 {
-            degrees.remove(&pair[0]);
+    fn remove_pair(degrees: &mut BTreeMap<usize, u8>, undo: &PairDegreeUndo) {
+        let (start, previous) = undo.start;
+        match previous {
+            Some(degree) => {
+                degrees.insert(start, degree);
+            }
+            None => {
+                degrees.remove(&start);
+            }
         }
-        if pair[0] != pair[1] {
-            let end = degrees.get_mut(&pair[1]).expect("assigned face endpoint");
-            *end -= 1;
-            if *end == 0 {
-                degrees.remove(&pair[1]);
+        if let Some((end, previous)) = undo.end {
+            match previous {
+                Some(degree) => {
+                    degrees.insert(end, degree);
+                }
+                None => {
+                    degrees.remove(&end);
+                }
             }
         }
     }
@@ -765,7 +784,7 @@ pub(crate) fn repeated_face_endpoint_closures(
             if self.exhausted {
                 return;
             }
-            if used.iter().all(|used| *used) {
+            let Some(unassigned_branch) = used.iter().position(|used| !*used) else {
                 if degrees
                     .iter()
                     .all(|face| face.values().all(|degree| *degree == 2))
@@ -777,7 +796,7 @@ pub(crate) fn repeated_face_endpoint_closures(
                     }
                 }
                 return;
-            }
+            };
             let deficit = degrees.iter().enumerate().find_map(|(face, points)| {
                 points
                     .iter()
@@ -798,16 +817,12 @@ pub(crate) fn repeated_face_endpoint_closures(
                     );
                 }
             } else {
-                let branch = used
-                    .iter()
-                    .position(|used| !*used)
-                    .expect("unassigned branch");
                 choices.extend(
-                    self.branches[branch]
+                    self.branches[unassigned_branch]
                         .1
                         .iter()
                         .copied()
-                        .map(|face| (branch, face)),
+                        .map(|face| (unassigned_branch, face)),
                 );
             }
             for (branch, face) in choices {
@@ -819,17 +834,21 @@ pub(crate) fn repeated_face_endpoint_closures(
                 let (edge, _) = &self.branches[branch];
                 let owner = self.owners[branch];
                 let adds_incidence = face != owner;
-                if adds_incidence
-                    && add_pair(&mut degrees[face], self.endpoint_pairs[*edge]).is_none()
-                {
-                    continue;
-                }
+                let undo = if adds_incidence {
+                    let Some(undo) = add_pair(&mut degrees[face], self.endpoint_pairs[*edge])
+                    else {
+                        continue;
+                    };
+                    Some(undo)
+                } else {
+                    None
+                };
                 assignment[branch] = face;
                 used[branch] = true;
                 self.visit(degrees, assignment, used);
                 used[branch] = false;
-                if adds_incidence {
-                    remove_pair(&mut degrees[face], self.endpoint_pairs[*edge]);
+                if let Some(undo) = undo {
+                    remove_pair(&mut degrees[face], &undo);
                 }
                 if self.exhausted {
                     return;
@@ -1841,25 +1860,17 @@ fn standard_mesh_missing_edge_assignment_domains(
                         let next_points = self.edge_points.and_then(|edge_points| {
                             (!edge_points[edge].is_empty()).then(|| match &current_points {
                                 None => edge_points[edge].clone(),
-                                Some(current) if current.len() == 1 => {
-                                    let point = *current.iter().next().expect("singleton domain");
-                                    self.point_transitions
-                                        .and_then(|transitions| {
-                                            transitions[edge].get(&point).cloned()
-                                        })
-                                        .unwrap_or_default()
+                                Some(current) => {
+                                    let mut next = HashSet::new();
+                                    if let Some(transitions) = self.point_transitions {
+                                        for point in current.iter() {
+                                            if let Some(points) = transitions[edge].get(point) {
+                                                next.extend(points.iter().copied());
+                                            }
+                                        }
+                                    }
+                                    Arc::new(next)
                                 }
-                                Some(current) => Arc::new(
-                                    current
-                                        .iter()
-                                        .filter_map(|point| {
-                                            self.point_transitions.and_then(|transitions| {
-                                                transitions[edge].get(point)
-                                            })
-                                        })
-                                        .flat_map(|points| points.iter().copied())
-                                        .collect(),
-                                ),
                             })
                         });
                         if next_points.as_ref().is_some_and(|points| points.is_empty()) {
@@ -3476,21 +3487,18 @@ impl PortCandidateSearch<'_> {
                 let mut options = self.candidates[edge]
                     .iter()
                     .flat_map(|pair| self.compatible(edge, *pair));
-                let first = options.next();
-                let second = options.next();
-                if first.is_none() {
+                let Some(first) = options.next() else {
                     self.rollback(propagated);
                     return;
-                }
-                if second.is_some() {
+                };
+                if options.next().is_some() {
                     let count = 2 + options.count();
                     if best.is_none_or(|(stored, _)| count < stored) {
                         best = Some((count, edge));
                     }
                     continue;
                 }
-                let points = first.expect("one compatible endpoint assignment");
-                let inserted = self.assign(edge, points);
+                let inserted = self.assign(edge, first);
                 propagated.push((edge, inserted));
                 progress = true;
             }
