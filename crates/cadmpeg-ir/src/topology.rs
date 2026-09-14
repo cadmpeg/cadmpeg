@@ -1149,9 +1149,9 @@ pub struct Point {
     pub source_object: Option<crate::provenance::SourceObjectAssociation>,
 }
 
-crate::units::named_field!(
+crate::units::named_optional_field!(
     deserialize_tolerance,
-    Option<crate::scalar::PositiveReal>,
+    crate::scalar::PositiveReal,
     "tolerance"
 );
 

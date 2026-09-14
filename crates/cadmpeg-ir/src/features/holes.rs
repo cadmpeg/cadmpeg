@@ -57,9 +57,9 @@ pub struct HoleShape {
 #[serde(deny_unknown_fields)]
 struct HoleShapeWire {
     construction: HoleConstruction,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     exit_kind: Option<HoleKind>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     diameter: Option<PositiveLength>,
 }
 

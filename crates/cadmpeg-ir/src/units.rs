@@ -137,12 +137,42 @@ macro_rules! named_field {
 }
 pub(crate) use named_field;
 
+/// Define the concrete shim for an optional key whose absence is its only
+/// unstated spelling.
+///
+/// `$value` is the stated type, without the `Option`: the read goes through
+/// [`deserialize_named_optional`], so an explicit `null` is refused by name and
+/// absence reaches `None` through the field's own `default`.
+macro_rules! named_optional_field {
+    ($name:ident, $value:ty, $field:literal) => {
+        fn $name<'de, D: serde::Deserializer<'de>>(
+            deserializer: D,
+        ) -> Result<Option<$value>, D::Error> {
+            $crate::units::deserialize_named_optional(deserializer, $field)
+        }
+    };
+}
+pub(crate) use named_optional_field;
+
 pub(crate) fn deserialize_named<'de, D, T>(deserializer: D, field: &str) -> Result<T, D::Error>
 where
     D: serde::Deserializer<'de>,
     T: Deserialize<'de>,
 {
     T::deserialize(deserializer)
+        .map_err(|error| serde::de::Error::custom(format_args!("{field}: {error}")))
+}
+
+/// Read a stated optional key and name the field in whatever it refuses.
+pub(crate) fn deserialize_named_optional<'de, D, T>(
+    deserializer: D,
+    field: &str,
+) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    cadmpeg_core::absent_key::present(deserializer)
         .map_err(|error| serde::de::Error::custom(format_args!("{field}: {error}")))
 }
 

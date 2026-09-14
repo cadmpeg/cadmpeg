@@ -81,14 +81,14 @@ pub struct SemanticAnnotation {
     pub native_ref: String,
 }
 
-crate::units::named_field!(
+crate::units::named_optional_field!(
     deserialize_value,
-    Option<crate::scalar::FiniteReal>,
+    crate::scalar::FiniteReal,
     "value"
 );
 
-crate::units::named_field!(
+crate::units::named_optional_field!(
     deserialize_position,
-    Option<crate::units::FiniteVector<3>>,
+    crate::units::FiniteVector<3>,
     "position"
 );
