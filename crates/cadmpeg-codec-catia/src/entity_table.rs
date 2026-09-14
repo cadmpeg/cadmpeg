@@ -836,7 +836,8 @@ pub fn parse_runs(data: &[u8]) -> Vec<Vec<EntityRecord>> {
         .enumerate()
         .filter_map(|(pos, marker)| (marker == [0x7c, 0x05]).then_some(pos))
     {
-        let Some(total_len) = u32_le(data, pos + 2).and_then(|len| usize::try_from(len).ok())
+        let Some(total_len) =
+            View::u32_le_at(data, pos + 2).and_then(|len| usize::try_from(len).ok())
         else {
             continue;
         };
@@ -1000,7 +1001,7 @@ fn unique_monotone_run(records: &[EntityRecordCandidates]) -> Option<Vec<EntityI
 }
 
 fn parse_candidate_variants(data: &[u8], pos: usize) -> Option<EntityRecordCandidates> {
-    let total_len = usize::try_from(u32_le(data, pos.checked_add(2)?)?).ok()?;
+    let total_len = usize::try_from(View::u32_le_at(data, pos.checked_add(2)?)?).ok()?;
     let end = pos.checked_add(total_len)?;
     if total_len < 12 || end > data.len() {
         return None;
@@ -1023,14 +1024,14 @@ fn parse_candidate_variants(data: &[u8], pos: usize) -> Option<EntityRecordCandi
     {
         return None;
     }
-    let definition_len = u32_le(data, pos + 9)?;
+    let definition_len = View::u32_le_at(data, pos + 9)?;
     let definition_len_usize = usize::try_from(definition_len).ok()?;
     let definition_end = pos.checked_add(7)?.checked_add(definition_len_usize)?;
     if definition_len_usize < 11 || definition_end > end {
         return None;
     }
     let definition_start = pos + 13;
-    let value_len = u32_le(data, definition_end + 2)?;
+    let value_len = View::u32_le_at(data, definition_end + 2)?;
     let value_len_usize = usize::try_from(value_len).ok()?;
     let value_end = definition_end.checked_add(value_len_usize)?;
     if value_len_usize < 6 || value_end > end {
@@ -1067,7 +1068,7 @@ fn identity_candidates(
                     .checked_add(5)
                     .is_some_and(|candidate_end| candidate_end <= end)
                 {
-                    let Some(entity_id) = u32_le(data, at + 1) else {
+                    let Some(entity_id) = View::u32_le_at(data, at + 1) else {
                         break;
                     };
                     if entity_id != 0 {
@@ -1136,7 +1137,7 @@ pub(crate) fn parse_definition_schema_selectors(prefix: &[u8]) -> Vec<Definition
     let mut at = 0;
     while at < prefix.len() {
         let selector = match prefix.get(at) {
-            Some(0x32) => u32_le(prefix, at + 1),
+            Some(0x32) => View::u32_le_at(prefix, at + 1),
             _ => None,
         };
         if let Some(value) = selector {
@@ -1173,28 +1174,29 @@ pub(crate) fn parse_numeric_pair(payload: &[u8]) -> Option<NumericPair> {
     }
     at = next;
 
-    let mut slots = Vec::with_capacity(2);
-    let mut binary64_count = 0;
-    for _ in 0..2 {
+    let mut read_slot = || {
         let offset = at;
         match *payload.get(at)? {
             0xe6 => {
                 let end = at.checked_add(9)?;
                 let bits = View::u64_le_at(payload, at + 1)?;
-                slots.push(NumericPairSlot::Binary64 { bits, offset });
-                binary64_count += 1;
                 at = end;
+                Some(NumericPairSlot::Binary64 { bits, offset })
             }
             0xe8 => {
-                slots.push(NumericPairSlot::ControlE8 { offset });
                 at += 1;
+                Some(NumericPairSlot::ControlE8 { offset })
             }
-            _ => return None,
+            _ => None,
         }
-    }
-    (binary64_count != 0 && payload.get(at..) == Some(&[0xfe, 0xfe])).then_some(NumericPair {
+    };
+    let slots = [read_slot()?, read_slot()?];
+    let has_binary64 = slots
+        .iter()
+        .any(|slot| matches!(slot, NumericPairSlot::Binary64 { .. }));
+    (has_binary64 && payload.get(at..) == Some(&[0xfe, 0xfe])).then_some(NumericPair {
         prefix_atoms: [prefix0, prefix1],
-        slots: slots.try_into().ok()?,
+        slots,
     })
 }
 
@@ -1202,7 +1204,7 @@ pub(crate) fn parse_reference_signature(payload: &[u8]) -> Option<ReferenceSigna
     if payload.first() != Some(&0x32) {
         return None;
     }
-    let first_reference = u32_le(payload, 1)?;
+    let first_reference = View::u32_le_at(payload, 1)?;
     let (prefix_atom, mut at) = one_byte_atom(payload, 5)?;
     let prefix = match prefix_atom {
         2 => ReferenceSignaturePrefix::Atom2,
@@ -1249,7 +1251,7 @@ pub(crate) fn parse_reference_signature(payload: &[u8]) -> Option<ReferenceSigna
     if payload.get(at) != Some(&0x32) {
         return None;
     }
-    let second_reference = u32_le(payload, at + 1)?;
+    let second_reference = View::u32_le_at(payload, at + 1)?;
     let references = ConsecutiveReferences::new(first_reference)?;
     if references.second() != second_reference {
         return None;
@@ -1311,7 +1313,7 @@ pub fn parse_range_interval(payload: &[u8], start: usize, end: usize) -> Option<
     let (prefix, mut at) = if bytes.first() == Some(&0x80) && bytes.get(5) == Some(&0xe8) {
         (
             RangeIntervalPrefix::EscapedWord {
-                word: u32_le(bytes, 1)?,
+                word: View::u32_le_at(bytes, 1)?,
             },
             5,
         )
@@ -1341,27 +1343,24 @@ pub fn parse_range_interval(payload: &[u8], start: usize, end: usize) -> Option<
                 let (value, next) = one_byte_atom(bytes, at)?;
                 (value == 1).then_some(())?;
                 at = next;
-                let mut slots = Vec::with_capacity(2);
-                for _ in 0..2 {
+                let mut read_slot = || {
+                    let offset = start + at;
                     match *bytes.get(at)? {
                         0xe6 => {
                             let scalar_end = at.checked_add(9)?;
                             let bits = View::u64_le_at(bytes, at + 1)?;
                             f64::from_bits(bits).is_finite().then_some(())?;
-                            slots.push(RangeIntervalSlot::Binary64 {
-                                bits,
-                                offset: start + at,
-                            });
                             at = scalar_end;
+                            Some(RangeIntervalSlot::Binary64 { bits, offset })
                         }
                         0xe8 => {
-                            slots.push(RangeIntervalSlot::Unset { offset: start + at });
                             at += 1;
+                            Some(RangeIntervalSlot::Unset { offset })
                         }
-                        _ => return None,
+                        _ => None,
                     }
-                }
-                Some(slots.try_into().ok()?)
+                };
+                Some([read_slot()?, read_slot()?])
             }
             _ => return None,
         }
@@ -1380,10 +1379,6 @@ fn compact_atom(data: &[u8], at: usize) -> Option<(u32, usize)> {
         )),
         _ => None,
     }
-}
-
-fn u32_le(data: &[u8], at: usize) -> Option<u32> {
-    View::u32_le_at(data, at)
 }
 
 #[cfg(test)]
