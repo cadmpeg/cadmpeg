@@ -73,7 +73,7 @@ pub(crate) fn write_semantic_with_records(
     let retained_partition = retained_partition(&normalized, source_scan.as_ref())?;
     let feature_name_changes = crate::history::feature_name_changes(&normalized, native.as_ref());
     let feature_parameter_changes_authorized = !feature_name_changes.is_empty()
-        && crate::history::native_parameters_match_source(&normalized, native.as_ref());
+        && crate::history::native_parameters_match_source(&normalized, native.as_ref())?;
     crate::history::apply_feature_name_changes(
         &mut normalized.model.parameters,
         &feature_name_changes,

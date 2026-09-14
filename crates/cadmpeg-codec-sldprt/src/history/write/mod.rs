@@ -55,15 +55,16 @@ pub(crate) fn feature_name_changes(
 pub(crate) fn native_parameters_match_source(
     ir: &cadmpeg_ir::CadIr,
     native: Option<&crate::native::SldprtNative>,
-) -> bool {
-    native
+) -> Result<bool, CodecError> {
+    Ok(native
         .map(|native| native_parameter_hash(&native.feature_histories))
+        .transpose()?
         .zip(
             ir.source
                 .as_ref()
                 .and_then(|source| source.attributes.get("sldprt_native_parameter_sha256")),
         )
-        .is_some_and(|(current, baseline)| &current == baseline)
+        .is_some_and(|(current, baseline)| &current == baseline))
 }
 
 pub(crate) fn apply_feature_name_changes(
@@ -121,10 +122,11 @@ pub(crate) fn prepare_features_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
 ) -> Result<(), CodecError> {
-    let neutral_hash = feature_hash(&ir.model);
+    let neutral_hash = feature_hash(&ir.model)?;
     let native_hash = native
         .as_ref()
-        .map(|value| history_hash(&value.feature_histories));
+        .map(|value| history_hash(&value.feature_histories))
+        .transpose()?;
     let baseline_neutral = ir
         .source
         .as_ref()
@@ -157,7 +159,7 @@ pub(crate) fn prepare_features_for_write(
                 .transpose()?
                 .map(|projection| projection.into_model().0)
                 .unwrap_or_default();
-            if feature_hash(&projected_model) == neutral_hash {
+            if feature_hash(&projected_model)? == neutral_hash {
                 Ok(())
             } else {
                 Err(CodecError::Malformed(
