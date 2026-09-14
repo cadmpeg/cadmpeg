@@ -55,12 +55,17 @@ impl SourcedPacket {
 /// `03 R G B A` assigns a body color when singular. A population of `03`
 /// packets is positional; its authoritative face colors are the ABGR payloads
 /// in the standard FBB face rows.
+///
+/// Every decoded packet reaches exactly one of the transferred and the
+/// unresolved population. A decoded count the two populations do not add up to
+/// is an accounting inconsistency over packets that are present, so the
+/// transfer refuses instead of returning a result that states it.
 pub(crate) fn transfer(
     ir: &mut CadIr,
     native: &CatiaNative,
     graph_scope: &crate::decode::ModelingGraphScope,
     standard_fbb: Option<&[u8]>,
-) -> TransferResult {
+) -> Result<TransferResult, cadmpeg_core::CodecError> {
     let initial_assets = ir.model.appearances.len();
     let initial_bindings = ir.model.appearance_bindings.len();
     let packets = native
@@ -181,11 +186,18 @@ pub(crate) fn transfer(
     }
     result.emitted_assets = ir.model.appearances.len() - initial_assets;
     result.emitted_bindings = ir.model.appearance_bindings.len() - initial_bindings;
-    debug_assert_eq!(
-        result.decoded_packets,
-        result.transferred_packets + result.unresolved_packets
-    );
-    result
+    let accounted = result.transferred_packets + result.unresolved_packets;
+    if result.decoded_packets != accounted {
+        return Err(cadmpeg_core::CodecError::malformed(format!(
+            "CATIA appearance transfer decoded {} presentation packets but accounts for {} \
+             ({} transferred, {} unresolved)",
+            result.decoded_packets,
+            accounted,
+            result.transferred_packets,
+            result.unresolved_packets
+        )));
+    }
+    Ok(result)
 }
 
 fn same_color_multiset(left: &[[u8; 4]], right: &[[u8; 4]]) -> bool {
@@ -415,7 +427,8 @@ mod tests {
                 &CatiaNative::default(),
                 &crate::decode::ModelingGraphScope::Unscoped,
                 None
-            ),
+            )
+            .expect("empty appearance transfer accounts for zero packets"),
             TransferResult::default()
         );
         assert!(ir.model.appearances.is_empty());
@@ -426,7 +439,8 @@ mod tests {
             &native(vec![inline(&[3, 0xd1, 0x1a, 0x1f, 0xff])]),
             &crate::decode::ModelingGraphScope::Unscoped,
             None,
-        );
+        )
+        .expect("body appearance transfer accounts for its packet");
         assert_eq!(
             (
                 result.decoded_packets,
@@ -452,7 +466,8 @@ mod tests {
             &native(vec![inline(&[1, 0xd1, 0x1a, 0x1f])]),
             &crate::decode::ModelingGraphScope::Unscoped,
             None,
-        );
+        )
+        .expect("all-face appearance transfer accounts for its packet");
         assert_eq!(
             (
                 result.decoded_packets,
@@ -481,7 +496,8 @@ mod tests {
             ]),
             &crate::decode::ModelingGraphScope::Unscoped,
             None,
-        );
+        )
+        .expect("unbound appearance transfer accounts for both packets");
         assert_eq!(
             (
                 result.decoded_packets,
@@ -557,7 +573,8 @@ mod tests {
             &native(fields.clone()),
             &crate::decode::ModelingGraphScope::Unscoped,
             Some(&six_face_brep(rgba)),
-        );
+        )
+        .expect("matching face colors account for every packet");
         assert_eq!(
             (
                 result.decoded_packets,
@@ -585,7 +602,8 @@ mod tests {
             &native(fields),
             &crate::decode::ModelingGraphScope::Unscoped,
             Some(&six_face_brep([0x14, 0x3d, 0xe0, 0xff])),
-        );
+        )
+        .expect("mismatched face colors account for every packet");
         assert_eq!(
             (
                 result.decoded_packets,
@@ -614,7 +632,8 @@ mod tests {
             &native(fields),
             &crate::decode::ModelingGraphScope::Unscoped,
             None,
-        );
+        )
+        .expect("unproven positional colors account for every packet");
         assert_eq!(
             (
                 result.decoded_packets,
@@ -642,7 +661,8 @@ mod tests {
             &native(fields.clone()),
             &crate::decode::ModelingGraphScope::Unscoped,
             Some(&six_face_brep(rgba)),
-        );
+        )
+        .expect("positional face colors account for every packet");
         assert_eq!(
             (
                 result.decoded_packets,
@@ -665,7 +685,8 @@ mod tests {
             &native(fields),
             &crate::decode::ModelingGraphScope::Unscoped,
             Some(&six_face_brep([0x14, 0x3d, 0xe0, 0xff])),
-        );
+        )
+        .expect("unmatched positional colors account for every packet");
         assert_eq!(
             (
                 result.decoded_packets,
@@ -711,7 +732,8 @@ mod tests {
                 ]),
                 &crate::decode::ModelingGraphScope::Unscoped,
                 Some(&brep),
-            );
+            )
+            .expect("base and override colors account for every packet");
             assert_eq!(
                 (
                     result.decoded_packets,
@@ -760,7 +782,8 @@ mod tests {
             &native(fields.clone()),
             &crate::decode::ModelingGraphScope::Unscoped,
             Some(&brep),
-        );
+        )
+        .expect("distinct overrides account for every packet");
         assert_eq!(
             (
                 result.decoded_packets,
@@ -785,7 +808,8 @@ mod tests {
             &native(fields),
             &crate::decode::ModelingGraphScope::Unscoped,
             Some(&mismatched),
-        );
+        )
+        .expect("mismatched overrides account for every packet");
         assert_eq!(
             (
                 result.transferred_packets,
