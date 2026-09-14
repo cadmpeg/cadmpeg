@@ -70,15 +70,15 @@ pub(crate) fn histories(
                             .attribute("Material")
                             .filter(|value| !value.is_empty())
                             .map(str::to_string),
-                        properties: node
-                            .attributes()
-                            .filter(|attribute| {
-                                !matches!(attribute.name(), "Name" | "Material" | "SourceIndex")
-                            })
-                            .map(|attribute| {
-                                (attribute.name().to_string(), attribute.value().to_string())
-                            })
-                            .collect(),
+                        properties: cadmpeg_core::text::named_entries(
+                            node.attributes()
+                                .filter(|attribute| {
+                                    !matches!(attribute.name(), "Name" | "Material" | "SourceIndex")
+                                })
+                                .map(|attribute| {
+                                    (attribute.name().to_string(), attribute.value().to_string())
+                                }),
+                        ),
                     }
                 })
                 .collect();
@@ -148,7 +148,9 @@ pub(crate) fn histories(
                             })
                             .filter_map(|dimension| {
                                 Some((
-                                    dimension.attribute("Name")?.into(),
+                                    cadmpeg_core::text::NonBlankString::new(
+                                        dimension.attribute("Name")?,
+                                    )?,
                                     dimension.text().unwrap_or_default().trim().into(),
                                 ))
                             })
@@ -169,19 +171,23 @@ pub(crate) fn histories(
                                             attribute.value().to_string(),
                                         )
                                     })
-                                    .collect::<BTreeMap<_, _>>();
+                                    .collect::<Vec<_>>();
+                                let properties = cadmpeg_core::text::named_entries(properties);
                                 (!properties.is_empty()).then(|| (name.into(), properties))
                             })
                             .collect(),
-                        properties: node
-                            .attributes()
-                            .filter(|attribute| {
-                                !matches!(attribute.name(), "id" | "Name" | "Type" | "Suppressed")
-                            })
-                            .map(|attribute| {
-                                (attribute.name().to_string(), attribute.value().to_string())
-                            })
-                            .collect(),
+                        properties: cadmpeg_core::text::named_entries(
+                            node.attributes()
+                                .filter(|attribute| {
+                                    !matches!(
+                                        attribute.name(),
+                                        "id" | "Name" | "Type" | "Suppressed"
+                                    )
+                                })
+                                .map(|attribute| {
+                                    (attribute.name().to_string(), attribute.value().to_string())
+                                }),
+                        ),
                         text: (!node.children().any(|child| child.is_element()))
                             .then(|| node.text().map(str::trim).unwrap_or_default().to_string())
                             .filter(|value| !value.is_empty()),
@@ -258,11 +264,13 @@ pub(crate) fn histories(
                     .attribute("Name")
                     .filter(|value| !value.is_empty())
                     .map(str::to_string),
-                properties: root
-                    .attributes()
-                    .filter(|attribute| attribute.name() != "Name")
-                    .map(|attribute| (attribute.name().to_string(), attribute.value().to_string()))
-                    .collect(),
+                properties: cadmpeg_core::text::named_entries(
+                    root.attributes()
+                        .filter(|attribute| attribute.name() != "Name")
+                        .map(|attribute| {
+                            (attribute.name().to_string(), attribute.value().to_string())
+                        }),
+                ),
                 content,
                 configurations,
                 features,

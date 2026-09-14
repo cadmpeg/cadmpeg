@@ -269,7 +269,7 @@ pub(crate) fn project_revolve(
             .content
             .iter()
             .filter_map(|content| match content {
-                FeatureContent::Dimension(name) => feature.parameters.get(name),
+                FeatureContent::Dimension(name) => feature.parameters.get(name.as_str()),
                 FeatureContent::Feature(_) | FeatureContent::Text(_) => None,
             })
             .filter_map(|value| parse_positive_angle_rad(value))

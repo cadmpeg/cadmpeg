@@ -129,12 +129,14 @@ fn repeated_circle_dimension_binds_reference_display_run_by_radius() {
         pmi: None,
         native_ref: None,
     };
-    parameter
-        .properties
-        .insert("sldprt_relation_parameter_role".into(), "reference".into());
-    parameter
-        .properties
-        .insert("sldprt_relation_id".into(), relation.id.clone());
+    parameter.properties.insert(
+        cadmpeg_core::nonblank_literal!("sldprt_relation_parameter_role"),
+        "reference".into(),
+    );
+    parameter.properties.insert(
+        cadmpeg_core::nonblank_literal!("sldprt_relation_id"),
+        relation.id.clone(),
+    );
 
     assert_eq!(
         typed_relation_definition(

@@ -134,7 +134,7 @@ pub struct SourceObjectAssociation {
     pub format: CodecFormat,
     /// Native source object identifier.
     #[serde(deserialize_with = "deserialize_object_id")]
-    pub object_id: crate::products::NonBlankString,
+    pub object_id: cadmpeg_core::text::NonBlankString,
     /// Effective source object name, when present.
     #[serde(
         default,
@@ -170,7 +170,7 @@ pub struct SourceObjectAssociation {
 
 crate::units::named_field!(
     deserialize_object_id,
-    crate::products::NonBlankString,
+    cadmpeg_core::text::NonBlankString,
     "object_id"
 );
 

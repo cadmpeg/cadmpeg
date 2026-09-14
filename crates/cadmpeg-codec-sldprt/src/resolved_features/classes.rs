@@ -587,7 +587,9 @@ mod idless_history_binding_tests {
         let mut offset = feature(0, "offset plane");
         offset.source_id = FeatureSource::from_value(10);
         offset.input_class = Some("moRefPlane_c".into());
-        offset.parameters.insert("D1".into(), "0mm".into());
+        offset
+            .parameters
+            .insert(cadmpeg_core::nonblank_literal!("D1"), "0mm".into());
         let mut principal = feature(1, "principal plane");
         principal.source_id = FeatureSource::from_value(3);
         principal.input_class = Some("moRefPlane_c".into());
@@ -694,9 +696,10 @@ mod idless_history_binding_tests {
         extrusion.id = "extrusion-native".into();
         extrusion.xml_tag = "Extrusion".into();
         extrusion.source_id = FeatureSource::from_value(43);
-        extrusion
-            .properties
-            .insert("Dissectable".into(), "true".into());
+        extrusion.properties.insert(
+            cadmpeg_core::nonblank_literal!("Dissectable"),
+            "true".into(),
+        );
         let history = FeatureHistory {
             id: "history".into(),
             part_name: None,
@@ -827,7 +830,9 @@ mod idless_history_binding_tests {
     #[test]
     fn exact_dimension_schemas_bind_classless_thread_and_chamfer_features() {
         let mut thread = feature(1, "localized thread");
-        thread.parameters.insert("D2".into(), "<MOD-DIAM>8".into());
+        thread
+            .parameters
+            .insert(cadmpeg_core::nonblank_literal!("D2"), "<MOD-DIAM>8".into());
         thread.content.push(FeatureContent::Dimension("D2".into()));
         assert_eq!(
             classless_dimension_schema_class(&thread),
@@ -835,8 +840,12 @@ mod idless_history_binding_tests {
         );
 
         let mut chamfer = feature(2, "localized chamfer");
-        chamfer.parameters.insert("D1".into(), "0.57".into());
-        chamfer.parameters.insert("D2".into(), "45°".into());
+        chamfer
+            .parameters
+            .insert(cadmpeg_core::nonblank_literal!("D1"), "0.57".into());
+        chamfer
+            .parameters
+            .insert(cadmpeg_core::nonblank_literal!("D2"), "45°".into());
         chamfer.content.extend([
             FeatureContent::Dimension("D1".into()),
             FeatureContent::Dimension("D2".into()),
@@ -846,7 +855,9 @@ mod idless_history_binding_tests {
             Some("Chamfer_c")
         );
 
-        chamfer.parameters.insert("D2".into(), "1.25".into());
+        chamfer
+            .parameters
+            .insert(cadmpeg_core::nonblank_literal!("D2"), "1.25".into());
         assert_eq!(classless_dimension_schema_class(&chamfer), None);
         chamfer.content.pop();
         assert_eq!(classless_dimension_schema_class(&chamfer), None);
@@ -952,9 +963,10 @@ mod idless_history_binding_tests {
     fn dissectable_profile_owns_its_block_object_sequence() {
         let mut profile = feature(0, "sketch");
         profile.input_class = Some("moProfileFeature_c".into());
-        profile
-            .properties
-            .insert("DissectableChildren".into(), "23,27".into());
+        profile.properties.insert(
+            cadmpeg_core::nonblank_literal!("DissectableChildren"),
+            "23,27".into(),
+        );
         let mut definition_a = feature(1, "block");
         definition_a.input_class = Some("moSketchBlockDef_c".into());
         definition_a.source_id = FeatureSource::from_value(23);
@@ -978,9 +990,10 @@ mod idless_history_binding_tests {
         ));
         definition_b.input_class = Some("moSketchBlockDef_c".into());
         let objects = [&definition_a, &instance, &definition_b];
-        profile
-            .properties
-            .insert("DissectableChildren".into(), "23,23".into());
+        profile.properties.insert(
+            cadmpeg_core::nonblank_literal!("DissectableChildren"),
+            "23,23".into(),
+        );
         assert!(!profile_owns_intervening_sketch_blocks(
             &profile,
             objects.iter().copied()
@@ -993,9 +1006,10 @@ mod idless_history_binding_tests {
         let mut instance = feature(1, "block instance");
         instance.input_class = Some("moSketchBlockInst_c".into());
         instance.source_id = FeatureSource::from_value(25);
-        instance
-            .properties
-            .insert("BlockDefinition".into(), "23".into());
+        instance.properties.insert(
+            cadmpeg_core::nonblank_literal!("BlockDefinition"),
+            "23".into(),
+        );
         let mut definition = feature(2, "block");
         definition.input_class = Some("moSketchBlockDef_c".into());
         definition.source_id = FeatureSource::from_value(23);
@@ -1005,9 +1019,10 @@ mod idless_history_binding_tests {
             [&instance, &definition]
         ));
 
-        instance
-            .properties
-            .insert("BlockDefinition".into(), "24".into());
+        instance.properties.insert(
+            cadmpeg_core::nonblank_literal!("BlockDefinition"),
+            "24".into(),
+        );
         assert!(!profile_owns_intervening_sketch_blocks(
             &profile,
             [&instance, &definition]
@@ -1020,9 +1035,10 @@ mod idless_history_binding_tests {
         let mut instance = feature(1, "block instance");
         instance.input_class = Some("moSketchBlockInst_c".into());
         instance.source_id = FeatureSource::from_value(25);
-        instance
-            .properties
-            .insert("BlockDefinition".into(), "23".into());
+        instance.properties.insert(
+            cadmpeg_core::nonblank_literal!("BlockDefinition"),
+            "23".into(),
+        );
         let mut referenced = feature(2, "block");
         referenced.input_class = Some("moSketchBlockDef_c".into());
         referenced.source_id = FeatureSource::from_value(23);
@@ -1042,16 +1058,18 @@ mod idless_history_binding_tests {
         let mut second_instance = feature(4, "block instance");
         second_instance.input_class = Some("moSketchBlockInst_c".into());
         second_instance.source_id = FeatureSource::from_value(26);
-        second_instance
-            .properties
-            .insert("BlockDefinition".into(), "23".into());
+        second_instance.properties.insert(
+            cadmpeg_core::nonblank_literal!("BlockDefinition"),
+            "23".into(),
+        );
         assert!(profile_owns_intervening_sketch_blocks(
             &profile,
             [&instance, &second_instance, &referenced]
         ));
-        second_instance
-            .properties
-            .insert("BlockDefinition".into(), "24".into());
+        second_instance.properties.insert(
+            cadmpeg_core::nonblank_literal!("BlockDefinition"),
+            "24".into(),
+        );
         assert!(!profile_owns_intervening_sketch_blocks(
             &profile,
             [&instance, &second_instance, &referenced]
@@ -1068,8 +1086,12 @@ mod idless_history_binding_tests {
             feature(14, "localized sketch"),
             feature(15, "localized extrusion"),
         ];
-        features[4].parameters.insert("D1".into(), "88".into());
-        features[5].parameters.insert("D1".into(), "20".into());
+        features[4]
+            .parameters
+            .insert(cadmpeg_core::nonblank_literal!("D1"), "88".into());
+        features[5]
+            .parameters
+            .insert(cadmpeg_core::nonblank_literal!("D1"), "20".into());
         let mut histories = [FeatureHistory {
             id: "history".into(),
             part_name: None,
@@ -1278,13 +1300,18 @@ mod idless_history_binding_tests {
     fn diameter_parameter_schema_binds_a_repeated_cosmetic_thread_group() {
         let mut first = feature(0, "localized external thread");
         first.source_id = FeatureSource::from_value(11);
-        first.parameters.insert("D1".into(), "12".into());
-        first.parameters.insert("D2".into(), "<MOD-DIAM>8".into());
+        first
+            .parameters
+            .insert(cadmpeg_core::nonblank_literal!("D1"), "12".into());
+        first
+            .parameters
+            .insert(cadmpeg_core::nonblank_literal!("D2"), "<MOD-DIAM>8".into());
         let mut second = feature(1, "localized hole thread");
         second.source_id = FeatureSource::from_value(12);
-        second
-            .parameters
-            .insert("D2".into(), "&lt;MOD-DIAM&gt;6".into());
+        second.parameters.insert(
+            cadmpeg_core::nonblank_literal!("D2"),
+            "&lt;MOD-DIAM&gt;6".into(),
+        );
         let mut histories = [FeatureHistory {
             id: "history".into(),
             part_name: None,

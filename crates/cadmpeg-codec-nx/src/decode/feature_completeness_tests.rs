@@ -511,7 +511,9 @@ fn nx_selection_completeness_requires_nonempty_unique_identities() {
         curve
     ])));
     assert!(loft_section_is_incomplete(&LoftSection::Point(
-        LoftPointSection::Native(cadmpeg_ir::NonBlankString::new("nx:point-selection#0").unwrap(),)
+        LoftPointSection::Native(
+            cadmpeg_core::text::NonBlankString::new("nx:point-selection#0").unwrap(),
+        )
     )));
     assert!(!loft_section_is_incomplete(&LoftSection::Point(
         LoftPointSection::Point(
@@ -585,7 +587,7 @@ fn nx_loft_completeness_checks_native_point_sections_and_centerlines() {
     ir.model.features[0].evaluation.set_definition(definition(
         vec![
             LoftSection::Point(LoftPointSection::Native(
-                cadmpeg_ir::NonBlankString::new("nx:point#0").unwrap(),
+                cadmpeg_core::text::NonBlankString::new("nx:point#0").unwrap(),
             )),
             LoftSection::Point(LoftPointSection::Point(
                 cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 1.0)).unwrap(),
@@ -787,7 +789,7 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
             FeatureResultTopologyId::mint("test:model:feature-result#extrude")
                 .expect("identity grammar"),
             ir.model.features[0].id.clone(),
-            vec![cadmpeg_ir::nonblank_literal!("test:feature-local-body#0")],
+            vec![cadmpeg_core::nonblank_literal!("test:feature-local-body#0")],
             Vec::new(),
             Vec::new(),
             Vec::new(),
@@ -1064,7 +1066,7 @@ fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
         entity_id.clone(),
         sketch_id.clone(),
         SketchGeometry::native(
-            cadmpeg_ir::products::NonBlankString::new("test").expect("nonempty source identity"),
+            cadmpeg_core::text::NonBlankString::new("test").expect("nonempty source identity"),
         ),
     ));
     ir.model.sketch_constraints.push(SketchConstraint {
@@ -1072,7 +1074,7 @@ fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
         sketch: sketch_id,
         definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
             SketchConstraintDefinitionInput::Native {
-                native_kind: cadmpeg_ir::products::NonBlankString::new("test").unwrap(),
+                native_kind: cadmpeg_core::text::NonBlankString::new("test").unwrap(),
                 entities: vec![entity_id],
                 parameter: None,
                 operands: Vec::new(),
@@ -1658,7 +1660,7 @@ fn nx_master_snapshot_base_feature_is_an_output_free_replay_boundary() {
         suppressed: Some(false),
         dependencies: Default::default(),
         source_properties: BTreeMap::from([(
-            String::from("operation_record"),
+            cadmpeg_core::nonblank_literal!("operation_record"),
             String::from("record"),
         )]),
         source_tag: None,

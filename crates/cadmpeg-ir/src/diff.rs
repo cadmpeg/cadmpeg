@@ -34,6 +34,7 @@ use std::ops::Deref;
 use crate::compare::{floats_agree, is_local_digest_attribute, values_agree};
 use crate::document::ArenaName;
 use cadmpeg_core::dialect::DialectLayers;
+use cadmpeg_core::text::NonBlankString;
 
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -48,7 +49,7 @@ use crate::CadIr;
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct AttributeChange {
     /// Attribute key.
-    pub key: String,
+    pub key: NonBlankString,
     /// Value in the left-hand document, absent when only the right-hand document
     /// carries the key.
     pub left: Option<String>,
@@ -534,7 +535,7 @@ fn diff_source(left: &CadIr, right: &CadIr) -> SourceDiff {
         ..SourceDiff::default()
     };
     for change in attribute_changes(left_attributes, right_attributes) {
-        if is_local_digest_attribute(&change.key) {
+        if is_local_digest_attribute(change.key.as_str()) {
             result.local_digests.push(change);
         } else {
             result.attributes.push(change);
@@ -546,8 +547,8 @@ fn diff_source(left: &CadIr, right: &CadIr) -> SourceDiff {
 /// Compare two string maps by key, reporting one change per differing key in
 /// key order.
 fn attribute_changes(
-    left: &BTreeMap<String, String>,
-    right: &BTreeMap<String, String>,
+    left: &BTreeMap<NonBlankString, String>,
+    right: &BTreeMap<NonBlankString, String>,
 ) -> Vec<AttributeChange> {
     left.keys()
         .chain(right.keys())
@@ -770,10 +771,11 @@ mod tests {
                     cadmpeg_core::dialect::DialectId::pinned("rhino:archive-80"),
                 ),
             ),
-            attributes
-                .iter()
-                .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
-                .collect(),
+            cadmpeg_core::text::named_entries(
+                attributes
+                    .iter()
+                    .map(|(key, value)| ((*key).to_owned(), (*value).to_owned())),
+            ),
         ));
         ir
     }
@@ -799,7 +801,7 @@ mod tests {
         assert_eq!(
             result.source.attributes,
             [super::AttributeChange {
-                key: "program_version".to_owned(),
+                key: cadmpeg_core::nonblank_literal!("program_version"),
                 left: Some("1.0".to_owned()),
                 right: Some("1.1".to_owned()),
             }]
@@ -856,7 +858,7 @@ mod tests {
         let right = with_source(&[(&key, "b"), ("footer_fingerprint", "f")]);
         let result = diff(&left, &right);
         assert!(result.is_empty(), "{result:?}");
-        assert_eq!(result.source.local_digests[0].key, key);
+        assert_eq!(result.source.local_digests[0].key.as_str(), key);
 
         // Digests over retained source bytes have no suffix; a change stays a difference.
         let right = with_source(&[(&key, "b"), ("footer_fingerprint", "g")]);
@@ -925,14 +927,20 @@ mod tests {
             cadmpeg_core::dialect::DialectMatch::admitted(
                 cadmpeg_core::dialect::DialectId::pinned("rhino:archive-70"),
             )
-            .with_declared(BTreeMap::from([("archive_version".into(), "70".into())])),
+            .with_declared(BTreeMap::from([(
+                cadmpeg_core::nonblank_literal!("archive_version"),
+                "70".into(),
+            )])),
         );
         classify_source(
             &mut declared_right,
             cadmpeg_core::dialect::DialectMatch::admitted(
                 cadmpeg_core::dialect::DialectId::pinned("rhino:archive-70"),
             )
-            .with_declared(BTreeMap::from([("archive_version".into(), "80".into())])),
+            .with_declared(BTreeMap::from([(
+                cadmpeg_core::nonblank_literal!("archive_version"),
+                "80".into(),
+            )])),
         );
 
         let declared = diff(&declared_left, &declared_right);

@@ -1416,9 +1416,12 @@ fn source_intervals_supply_legacy_hole_profiles() {
         input_class: Some("moProfileFeature_c".into()),
         suppressed: false,
         parameters: [
-            ("bore".into(), "<MOD-DIAM>4.2".into()),
-            ("depth".into(), "6.8".into()),
-            ("tip".into(), "118°".into()),
+            (
+                cadmpeg_core::nonblank_literal!("bore"),
+                "<MOD-DIAM>4.2".into(),
+            ),
+            (cadmpeg_core::nonblank_literal!("depth"), "6.8".into()),
+            (cadmpeg_core::nonblank_literal!("tip"), "118°".into()),
         ]
         .into(),
         dimension_properties: BTreeMap::default(),
@@ -1517,8 +1520,11 @@ fn serialized_position_successor_owns_legacy_hole_profile() {
         input_class: Some("moProfileFeature_c".into()),
         suppressed: false,
         parameters: [
-            ("bore".into(), "<MOD-DIAM>9".into()),
-            ("depth".into(), "30".into()),
+            (
+                cadmpeg_core::nonblank_literal!("bore"),
+                "<MOD-DIAM>9".into(),
+            ),
+            (cadmpeg_core::nonblank_literal!("depth"), "30".into()),
         ]
         .into(),
         dimension_properties: BTreeMap::default(),
@@ -1626,8 +1632,11 @@ fn ordered_legacy_sketch_children_identify_the_unique_hole_profile() {
         input_class: Some("moProfileFeature_c".into()),
         suppressed: false,
         parameters: [
-            ("bore".into(), "<MOD-DIAM>4.2".into()),
-            ("depth".into(), "6.8".into()),
+            (
+                cadmpeg_core::nonblank_literal!("bore"),
+                "<MOD-DIAM>4.2".into(),
+            ),
+            (cadmpeg_core::nonblank_literal!("depth"), "6.8".into()),
         ]
         .into(),
         dimension_properties: BTreeMap::default(),

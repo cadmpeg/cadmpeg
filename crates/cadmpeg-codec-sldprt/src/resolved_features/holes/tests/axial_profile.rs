@@ -18,11 +18,11 @@ use crate::records::FeatureSource;
 fn axial_profile_resolves_counterbore_roles() {
     let mut profile = native_history().features.remove(0);
     profile.parameters = [
-        ("a".into(), "118°".into()),
-        ("b".into(), "5.7".into()),
-        ("c".into(), "<MOD-DIAM>10".into()),
-        ("d".into(), "15".into()),
-        ("e".into(), "<MOD-DIAM>5.5".into()),
+        (cadmpeg_core::nonblank_literal!("a"), "118°".into()),
+        (cadmpeg_core::nonblank_literal!("b"), "5.7".into()),
+        (cadmpeg_core::nonblank_literal!("c"), "<MOD-DIAM>10".into()),
+        (cadmpeg_core::nonblank_literal!("d"), "15".into()),
+        (cadmpeg_core::nonblank_literal!("e"), "<MOD-DIAM>5.5".into()),
     ]
     .into_iter()
     .collect();
@@ -30,7 +30,9 @@ fn axial_profile_resolves_counterbore_roles() {
         .into_iter()
         .map(|name| crate::records::FeatureContent::Dimension(name.into()))
         .collect();
-    profile.parameters.insert("display".into(), "101.6".into());
+    profile
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("display"), "101.6".into());
     let sketch = SketchId::mint("synthetic:test:id#profile").unwrap();
     let drill_length = 2.75 / (118_f64.to_radians() / 2.0).tan();
     let entities = [
@@ -115,7 +117,9 @@ fn axial_profile_resolves_counterbore_roles() {
         profiled_hole_construction(&profile, &sketch, &independently_translated_entities).is_none()
     );
 
-    profile.parameters.insert("a".into(), "180°".into());
+    profile
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("a"), "180°".into());
     let construction =
         profiled_hole_construction(&profile, &sketch, &entities[..3]).expect("flat-bottom profile");
     assert_eq!(
@@ -138,12 +142,15 @@ fn axial_profile_resolves_counterbore_roles() {
 fn axial_profile_resolves_counterdrill_roles() {
     let mut profile = native_history().features.remove(0);
     profile.parameters = [
-        ("a".into(), "<MOD-DIAM>2.9".into()),
-        ("b".into(), "15".into()),
-        ("c".into(), "<MOD-DIAM>5.5".into()),
-        ("d".into(), "2.9".into()),
-        ("e".into(), "<MOD-DIAM>5.55".into()),
-        ("f".into(), "90°".into()),
+        (cadmpeg_core::nonblank_literal!("a"), "<MOD-DIAM>2.9".into()),
+        (cadmpeg_core::nonblank_literal!("b"), "15".into()),
+        (cadmpeg_core::nonblank_literal!("c"), "<MOD-DIAM>5.5".into()),
+        (cadmpeg_core::nonblank_literal!("d"), "2.9".into()),
+        (
+            cadmpeg_core::nonblank_literal!("e"),
+            "<MOD-DIAM>5.55".into(),
+        ),
+        (cadmpeg_core::nonblank_literal!("f"), "90°".into()),
     ]
     .into_iter()
     .collect();
@@ -228,8 +235,11 @@ fn axial_profile_resolves_counterdrill_roles() {
 fn single_diameter_axial_profile_resolves_flat_and_drilled_holes() {
     let mut profile = native_history().features.remove(0);
     profile.parameters = [
-        ("diameter".into(), "<MOD-DIAM>14.5".into()),
-        ("depth".into(), "15".into()),
+        (
+            cadmpeg_core::nonblank_literal!("diameter"),
+            "<MOD-DIAM>14.5".into(),
+        ),
+        (cadmpeg_core::nonblank_literal!("depth"), "15".into()),
     ]
     .into_iter()
     .collect();
@@ -283,7 +293,9 @@ fn single_diameter_axial_profile_resolves_flat_and_drilled_holes() {
     assert_eq!(topology_proven.diameter, flat.diameter);
     assert_eq!(topology_proven.extent, flat.extent);
 
-    profile.parameters.insert("point".into(), "118°".into());
+    profile
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("point"), "118°".into());
     let drilled =
         profiled_hole_construction(&profile, &sketch, &[]).expect("exact drilled profile");
     assert!(matches!(
@@ -305,9 +317,15 @@ fn single_diameter_axial_profile_resolves_flat_and_drilled_holes() {
 fn closed_tapered_axial_profile_resolves_conical_hole() {
     let mut profile = native_history().features.remove(0);
     profile.parameters = [
-        ("entry".into(), "<MOD-DIAM>12.2".into()),
-        ("terminal".into(), "<MOD-DIAM>13.66623".into()),
-        ("depth".into(), "42".into()),
+        (
+            cadmpeg_core::nonblank_literal!("entry"),
+            "<MOD-DIAM>12.2".into(),
+        ),
+        (
+            cadmpeg_core::nonblank_literal!("terminal"),
+            "<MOD-DIAM>13.66623".into(),
+        ),
+        (cadmpeg_core::nonblank_literal!("depth"), "42".into()),
     ]
     .into_iter()
     .collect();
@@ -365,9 +383,15 @@ fn closed_tapered_axial_profile_resolves_conical_hole() {
 fn tapered_profile_reconstructs_missing_edges_from_endpoint_points() {
     let mut profile = native_history().features.remove(0);
     profile.parameters = [
-        ("entry".into(), "<MOD-DIAM>12.2".into()),
-        ("terminal".into(), "<MOD-DIAM>13.66623".into()),
-        ("depth".into(), "42".into()),
+        (
+            cadmpeg_core::nonblank_literal!("entry"),
+            "<MOD-DIAM>12.2".into(),
+        ),
+        (
+            cadmpeg_core::nonblank_literal!("terminal"),
+            "<MOD-DIAM>13.66623".into(),
+        ),
+        (cadmpeg_core::nonblank_literal!("depth"), "42".into()),
     ]
     .into_iter()
     .collect();
@@ -415,11 +439,14 @@ fn tapered_profile_reconstructs_missing_edges_from_endpoint_points() {
 fn axial_profile_resolves_countersink_and_drill_point_roles() {
     let mut profile = native_history().features.remove(0);
     profile.parameters = [
-        ("a".into(), "120°".into()),
-        ("b".into(), "5".into()),
-        ("c".into(), "<MOD-DIAM>4.134".into()),
-        ("d".into(), "<MOD-DIAM>5".into()),
-        ("e".into(), "90°".into()),
+        (cadmpeg_core::nonblank_literal!("a"), "120°".into()),
+        (cadmpeg_core::nonblank_literal!("b"), "5".into()),
+        (
+            cadmpeg_core::nonblank_literal!("c"),
+            "<MOD-DIAM>4.134".into(),
+        ),
+        (cadmpeg_core::nonblank_literal!("d"), "<MOD-DIAM>5".into()),
+        (cadmpeg_core::nonblank_literal!("e"), "90°".into()),
     ]
     .into_iter()
     .collect();
@@ -519,10 +546,13 @@ fn axial_profile_resolves_countersink_and_drill_point_roles() {
 fn axial_profile_resolves_open_countersink_with_optional_terminal_overrun() {
     let mut profile = native_history().features.remove(0);
     profile.parameters = [
-        ("a".into(), "6".into()),
-        ("b".into(), "<MOD-DIAM>6.4".into()),
-        ("c".into(), "<MOD-DIAM>13.2".into()),
-        ("d".into(), "90°".into()),
+        (cadmpeg_core::nonblank_literal!("a"), "6".into()),
+        (cadmpeg_core::nonblank_literal!("b"), "<MOD-DIAM>6.4".into()),
+        (
+            cadmpeg_core::nonblank_literal!("c"),
+            "<MOD-DIAM>13.2".into(),
+        ),
+        (cadmpeg_core::nonblank_literal!("d"), "90°".into()),
     ]
     .into_iter()
     .collect();
@@ -605,10 +635,10 @@ fn axial_profile_resolves_open_countersink_with_optional_terminal_overrun() {
 fn incomplete_axial_profile_does_not_assign_dimension_roles() {
     let mut profile = native_history().features.remove(0);
     profile.parameters = [
-        ("a".into(), "8.6".into()),
-        ("b".into(), "<MOD-DIAM>15".into()),
-        ("c".into(), "23".into()),
-        ("d".into(), "<MOD-DIAM>9".into()),
+        (cadmpeg_core::nonblank_literal!("a"), "8.6".into()),
+        (cadmpeg_core::nonblank_literal!("b"), "<MOD-DIAM>15".into()),
+        (cadmpeg_core::nonblank_literal!("c"), "23".into()),
+        (cadmpeg_core::nonblank_literal!("d"), "<MOD-DIAM>9".into()),
     ]
     .into_iter()
     .collect();
@@ -624,9 +654,10 @@ fn incomplete_axial_profile_does_not_assign_dimension_roles() {
 #[test]
 fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
     let mut history = native_history();
-    history.features[0]
-        .properties
-        .insert("DissectableChildren".into(), "6,9".into());
+    history.features[0].properties.insert(
+        cadmpeg_core::nonblank_literal!("DissectableChildren"),
+        "6,9".into(),
+    );
     let mut profile = history.features[0].clone();
     profile.id = "native-profile".into();
     profile.source_id = FeatureSource::from_value(9);
@@ -635,10 +666,10 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
     profile.kind = "Sketch".into();
     profile.input_class = Some("moProfileFeature_c".into());
     profile.parameters = [
-        ("a".into(), "8.6".into()),
-        ("b".into(), "<MOD-DIAM>15".into()),
-        ("c".into(), "23".into()),
-        ("d".into(), "<MOD-DIAM>9".into()),
+        (cadmpeg_core::nonblank_literal!("a"), "8.6".into()),
+        (cadmpeg_core::nonblank_literal!("b"), "<MOD-DIAM>15".into()),
+        (cadmpeg_core::nonblank_literal!("c"), "23".into()),
+        (cadmpeg_core::nonblank_literal!("d"), "<MOD-DIAM>9".into()),
     ]
     .into_iter()
     .collect();
@@ -650,9 +681,12 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
     position.xml_tag = "Sketch".into();
     position.kind = "Sketch".into();
     position.input_class = Some("moProfileFeature_c".into());
-    position.parameters = [("D1".into(), "50".into()), ("D2".into(), "35".into())]
-        .into_iter()
-        .collect();
+    position.parameters = [
+        (cadmpeg_core::nonblank_literal!("D1"), "50".into()),
+        (cadmpeg_core::nonblank_literal!("D2"), "35".into()),
+    ]
+    .into_iter()
+    .collect();
     history.features.push(position);
 
     let sketch = SketchId::mint("synthetic:test:id#profile").unwrap();
@@ -727,9 +761,10 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
     );
 
     let mut single_child_history = history.clone();
-    single_child_history.features[0]
-        .properties
-        .insert("DissectableChildren".into(), "9".into());
+    single_child_history.features[0].properties.insert(
+        cadmpeg_core::nonblank_literal!("DissectableChildren"),
+        "9".into(),
+    );
     single_child_history.features[1].ordinal = 2;
     single_child_history.features[2].ordinal = 1;
     assert_eq!(
@@ -784,9 +819,10 @@ fn ordered_profile_fallback_excludes_claimed_profiles() {
     claimed_hole.id = "claimed-hole".into();
     claimed_hole.source_id = FeatureSource::from_value(11);
     claimed_hole.ordinal = 2;
-    claimed_hole
-        .properties
-        .insert("DissectableChildren".into(), "9".into());
+    claimed_hole.properties.insert(
+        cadmpeg_core::nonblank_literal!("DissectableChildren"),
+        "9".into(),
+    );
     let profile = |id: &str, source: &str, ordinal, diameter: &str, depth: &str| {
         let mut profile = history.features[0].clone();
         profile.id = id.into();
@@ -796,8 +832,11 @@ fn ordered_profile_fallback_excludes_claimed_profiles() {
         profile.kind = "Sketch".into();
         profile.input_class = Some("moProfileFeature_c".into());
         profile.parameters = [
-            ("diameter".into(), format!("<MOD-DIAM>{diameter}")),
-            ("depth".into(), depth.into()),
+            (
+                cadmpeg_core::nonblank_literal!("diameter"),
+                format!("<MOD-DIAM>{diameter}"),
+            ),
+            (cadmpeg_core::nonblank_literal!("depth"), depth.into()),
         ]
         .into();
         profile

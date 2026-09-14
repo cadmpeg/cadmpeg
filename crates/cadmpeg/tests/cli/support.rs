@@ -202,10 +202,11 @@ pub fn cube_with_source(attributes: &[(&str, &str)]) -> cadmpeg_ir::CadIr {
         cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
             cadmpeg_core::dialect::DialectId::pinned("synthetic:test"),
         )),
-        attributes
-            .iter()
-            .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
-            .collect(),
+        cadmpeg_core::text::named_entries(
+            attributes
+                .iter()
+                .map(|(key, value)| ((*key).to_owned(), (*value).to_owned())),
+        ),
     ));
     ir
 }

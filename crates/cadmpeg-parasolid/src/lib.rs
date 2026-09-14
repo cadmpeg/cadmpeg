@@ -207,8 +207,14 @@ pub fn classify_layer(
 ) -> ClassifiedLayer {
     let id = schema_row(schema.value());
     let declared = BTreeMap::from([
-        (DECLARED_SCHEMA.to_owned(), schema.value().to_owned()),
-        (DECLARED_CARRIER.to_owned(), carrier.as_str().to_owned()),
+        (
+            cadmpeg_core::nonblank_literal!("schema"),
+            schema.value().to_owned(),
+        ),
+        (
+            cadmpeg_core::nonblank_literal!("carrier"),
+            carrier.as_str().to_owned(),
+        ),
     ]);
     let matched = if verified.contains(&id) {
         DialectMatch::admitted(id)

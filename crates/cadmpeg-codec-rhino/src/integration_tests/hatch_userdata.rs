@@ -102,7 +102,7 @@ fn gradient_userdata_with_payload(archive: ArchiveVersion, payload: &[u8]) -> Ve
 
 fn hatch_parameters(
     result: &cadmpeg_ir::codec::DecodeResult,
-) -> &std::collections::BTreeMap<String, String> {
+) -> &std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String> {
     result
         .ir()
         .model

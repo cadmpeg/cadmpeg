@@ -166,10 +166,16 @@ impl NxDialect {
     /// Construct this host row's identity and arm-owned declaration.
     fn matched(self, version: u8) -> DialectMatch {
         let (key, value) = match self {
-            Self::LegacyCfb => (DECLARED_UGII_VERSION, format_version_byte(version)),
-            Self::Splmsstr => (DECLARED_SPLMSSTR_VERSION, format_version_byte(version)),
+            Self::LegacyCfb => (
+                cadmpeg_core::nonblank_const!(DECLARED_UGII_VERSION),
+                format_version_byte(version),
+            ),
+            Self::Splmsstr => (
+                cadmpeg_core::nonblank_const!(DECLARED_SPLMSSTR_VERSION),
+                format_version_byte(version),
+            ),
         };
-        let declared = BTreeMap::from([(key.to_owned(), value)]);
+        let declared = BTreeMap::from([(key, value)]);
         DialectMatch::admitted(self.id()).with_declared(declared)
     }
 

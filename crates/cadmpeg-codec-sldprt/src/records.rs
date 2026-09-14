@@ -3,6 +3,7 @@
 #![deny(clippy::disallowed_methods)]
 
 use crate::brep::feature_source::FeatureSourceId;
+use cadmpeg_core::text::NonBlankString;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -135,7 +136,7 @@ pub(crate) struct Configuration {
     pub(crate) material: Option<String>,
     /// Source custom-property name/value pairs local to this configuration.
     #[serde(default)]
-    pub(crate) properties: BTreeMap<String, String>,
+    pub(crate) properties: BTreeMap<NonBlankString, String>,
 }
 
 fn default_feature_xml_tag() -> String {
@@ -322,13 +323,13 @@ pub(crate) struct Feature {
     pub(crate) suppressed: bool,
     /// Source parametric input values keyed by parameter name.
     #[serde(default)]
-    pub(crate) parameters: BTreeMap<String, String>,
+    pub(crate) parameters: BTreeMap<NonBlankString, String>,
     /// Source attributes on each named dimension, excluding its `Name` key.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub(crate) dimension_properties: BTreeMap<String, BTreeMap<String, String>>,
+    pub(crate) dimension_properties: BTreeMap<String, BTreeMap<NonBlankString, String>>,
     /// Source custom-property name/value pairs local to this feature.
     #[serde(default)]
-    pub(crate) properties: BTreeMap<String, String>,
+    pub(crate) properties: BTreeMap<NonBlankString, String>,
     /// Text content of a native leaf feature element.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) text: Option<String>,
@@ -371,7 +372,7 @@ pub(crate) struct FeatureHistory {
     pub(crate) part_name: Option<String>,
     /// Source attributes on the `Keywords` root, excluding its `Name` key.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub(crate) properties: BTreeMap<String, String>,
+    pub(crate) properties: BTreeMap<NonBlankString, String>,
     /// Source order of configurations, top-level features, and root text.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) content: Vec<HistoryContent>,

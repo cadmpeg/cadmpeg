@@ -59,10 +59,8 @@ pub(crate) fn is_reference_relation_parameter(
         == Some(RELATION_PARAMETER_ROLE_REFERENCE)
 }
 
-fn relation_native_kind(
-    family: FeatureInputRelationFamily,
-) -> cadmpeg_ir::products::NonBlankString {
-    use cadmpeg_ir::nonblank_literal;
+fn relation_native_kind(family: FeatureInputRelationFamily) -> cadmpeg_core::text::NonBlankString {
+    use cadmpeg_core::nonblank_literal;
     match family {
         FeatureInputRelationFamily::LineLineDistance => nonblank_literal!("sgLLDist"),
         FeatureInputRelationFamily::PointPointDistance => nonblank_literal!("sgPntPntDist"),

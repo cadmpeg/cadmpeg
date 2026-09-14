@@ -7,8 +7,8 @@ pub(crate) mod joint;
 use crate::attachment::MapModeIndex;
 use frame::{FiniteFrame, FiniteVec3};
 
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::hash::sha256_hex;
-use cadmpeg_ir::products::NonBlankString;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::num::NonZeroU64;

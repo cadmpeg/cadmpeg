@@ -176,17 +176,23 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
 /// Host-framing declarations, verbatim, under keys pinned above.
 ///
 /// Kernel save format belongs only to the separate `acis:` match.
-fn declared(evidence: &StreamEvidence<'_>) -> BTreeMap<String, String> {
+fn declared(evidence: &StreamEvidence<'_>) -> BTreeMap<cadmpeg_core::text::NonBlankString, String> {
     let mut declared = BTreeMap::new();
     match evidence {
         StreamEvidence::Binary { .. } => {
-            declared.insert(DECLARED_ENCODING.into(), "binary".into());
+            declared.insert(
+                cadmpeg_core::nonblank_const!(DECLARED_ENCODING),
+                "binary".into(),
+            );
         }
         StreamEvidence::Text(text) => {
-            declared.insert(DECLARED_ENCODING.into(), "text".into());
+            declared.insert(
+                cadmpeg_core::nonblank_const!(DECLARED_ENCODING),
+                "text".into(),
+            );
             let Some(text) = text else { return declared };
             declared.insert(
-                DECLARED_TERMINATOR.into(),
+                cadmpeg_core::nonblank_const!(DECLARED_TERMINATOR),
                 terminator_line(text.branch).into(),
             );
         }

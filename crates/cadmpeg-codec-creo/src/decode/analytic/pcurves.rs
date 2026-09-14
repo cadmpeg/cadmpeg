@@ -1454,12 +1454,10 @@ pub fn transfer_analytic_pcurve_carriers(
             geometry: geometry.clone(),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_ir::products::NonBlankString::new(format!(
-                    "VisibGeom:{curve_id}"
-                ))
-                .ok_or_else(|| {
-                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                })?,
+                object_id: cadmpeg_core::text::NonBlankString::new(format!("VisibGeom:{curve_id}"))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
                 name: None,
                 color: None,
                 visible: None,

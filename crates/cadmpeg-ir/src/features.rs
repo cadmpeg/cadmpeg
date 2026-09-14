@@ -10,12 +10,13 @@ use crate::ids::{
     VertexId,
 };
 use crate::math::{Point2, Point3, Vector3};
-use crate::products::{JointId, NonBlankString};
+use crate::products::JointId;
 use crate::scalar::{
     Angle, FiniteReal, Fraction, InteriorAngle, Length, NonNegativeLength, NonZeroLength,
     NonZeroReal, PositiveAngle, PositiveLength, PositiveReal, SlopeAngle,
 };
 use crate::transform::Transform;
+use cadmpeg_core::text::NonBlankString;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -825,7 +826,7 @@ pub struct DesignConfiguration {
     /// Configuration-local named values not otherwise represented.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
-    pub properties: BTreeMap<String, String>,
+    pub properties: BTreeMap<NonBlankString, String>,
     /// Configuration-specific source expressions keyed by the overridden parameter.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
@@ -989,7 +990,7 @@ pub struct DesignParameter {
     /// Source parameter properties not represented by another field.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
-    pub properties: BTreeMap<String, String>,
+    pub properties: BTreeMap<NonBlankString, String>,
     /// Product-manufacturing dimension semantics, when present.
     #[serde(
         default,
@@ -1194,7 +1195,7 @@ pub struct Feature {
     /// Earlier features consumed during regeneration, in source operand order.
     pub dependencies: DistinctMembers<FeatureId>,
     /// Source operation attributes not consumed by the neutral definition.
-    pub source_properties: BTreeMap<String, String>,
+    pub source_properties: BTreeMap<NonBlankString, String>,
     /// Source XML element name for the operation record.
     pub source_tag: Option<String>,
     /// Text payload of a source leaf operation.
@@ -1239,7 +1240,7 @@ pub(crate) struct FeatureWriteWire<'a> {
     #[serde(skip_serializing_if = "DistinctMembers::is_empty")]
     dependencies: &'a DistinctMembers<FeatureId>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    source_properties: &'a BTreeMap<String, String>,
+    source_properties: &'a BTreeMap<NonBlankString, String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     source_tag: &'a Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1300,7 +1301,7 @@ pub(crate) struct FeatureRowWire {
     dependencies: DistinctMembers<FeatureId>,
     #[serde(default)]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
-    source_properties: BTreeMap<String, String>,
+    source_properties: BTreeMap<NonBlankString, String>,
     #[serde(default)]
     source_tag: Option<String>,
     #[serde(default)]
@@ -1355,7 +1356,7 @@ struct FeatureReadWire {
     dependencies: DistinctMembers<FeatureId>,
     #[serde(default)]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
-    source_properties: BTreeMap<String, String>,
+    source_properties: BTreeMap<NonBlankString, String>,
     #[serde(default)]
     source_tag: Option<String>,
     #[serde(default)]
@@ -3409,7 +3410,7 @@ pub enum FeatureOperation {
         /// Source parametric input values keyed by parameter name.
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
-        parameters: BTreeMap<String, String>,
+        parameters: BTreeMap<NonBlankString, String>,
     },
     /// Linear extrusion of a profile.
     Extrude {
@@ -6229,7 +6230,7 @@ impl InsertedBodies {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct BodyMember<B> {
     body: B,
-    native: crate::products::NonBlankString,
+    native: cadmpeg_core::text::NonBlankString,
 }
 
 impl<B> BodyMember<B> {
@@ -6237,7 +6238,7 @@ impl<B> BodyMember<B> {
     ///
     /// The native member is non-blank by type; the caller mints it at the
     /// boundary where the source states it.
-    pub const fn new(body: B, native: crate::products::NonBlankString) -> Self {
+    pub const fn new(body: B, native: cadmpeg_core::text::NonBlankString) -> Self {
         Self { body, native }
     }
 
@@ -6275,7 +6276,7 @@ where
             native: String,
         }
         let wire = Wire::deserialize(deserializer)?;
-        let native = crate::products::NonBlankString::new(wire.native).ok_or_else(|| {
+        let native = cadmpeg_core::text::NonBlankString::new(wire.native).ok_or_else(|| {
             serde::de::Error::custom(BodySelectionError::BlankNativeMember.to_string())
         })?;
         Ok(Self::new(wire.body, native))

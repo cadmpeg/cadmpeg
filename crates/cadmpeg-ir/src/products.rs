@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::collections::{HashMap, HashSet};
 
+use cadmpeg_core::text::NonBlankString;
+
 use crate::features::NonEmptyMembers;
 use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
 use crate::scalar::FiniteReal;
@@ -73,7 +75,7 @@ pub struct ProductDefinition {
     /// Additional persisted BOM identity fields by exact property name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
-    pub bom_properties: BTreeMap<String, String>,
+    pub bom_properties: BTreeMap<NonBlankString, String>,
     /// Shape bodies owned by this reusable definition.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bodies: Vec<BodyId>,
@@ -111,150 +113,6 @@ pub enum PrototypeReference {
     },
     /// The source intentionally carries no resolvable prototype.
     Unresolved {},
-}
-
-/// A character that is not whitespace.
-///
-/// The type exists so [`NonBlankString::prefixed`] is total: a prefix of this
-/// type makes the built string hold at least one non-whitespace character
-/// whatever the suffix renders to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct NonWhitespaceChar(char);
-
-impl NonWhitespaceChar {
-    /// The character an ASCII literal byte names.
-    ///
-    /// Macro-only: [`nonblank_literal!`](crate::nonblank_literal) is the one
-    /// caller, and it evaluates this constructor in the initializer of a
-    /// `const` item. The assertion is therefore an E0080 at every use, under
-    /// `cargo check` as well as a build, and there is no run-time path that
-    /// can reach it. Call it nowhere else.
-    ///
-    /// [`NonWhitespaceChar::hex_digit`] is the total constructor for a value
-    /// computed at run time.
-    #[doc(hidden)]
-    #[must_use]
-    pub const fn from_ascii_literal(byte: u8) -> Self {
-        assert!(
-            byte.is_ascii() && !byte.is_ascii_whitespace(),
-            "a nonblank literal starts with a non-whitespace ASCII character",
-        );
-        Self(byte as char)
-    }
-
-    /// The lowercase hexadecimal digit naming the low four bits of `nibble`.
-    ///
-    /// Every hexadecimal digit is non-whitespace, and the mask makes the four
-    /// bits total over `u8`, so this constructor refuses nothing.
-    #[must_use]
-    pub const fn hex_digit(nibble: u8) -> Self {
-        const DIGITS: [char; 16] = [
-            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
-        ];
-        Self(DIGITS[(nibble & 0x0f) as usize])
-    }
-}
-
-impl std::fmt::Display for NonWhitespaceChar {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Display::fmt(&self.0, formatter)
-    }
-}
-
-/// A source string that holds at least one non-whitespace character.
-///
-/// A selection id, an external document identity and a native name are read
-/// back and compared as text. A run of spaces names nothing, so it is refused
-/// here rather than by each reader.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(transparent)]
-pub struct NonBlankString(String);
-
-impl NonBlankString {
-    /// Constructs a source string that is not blank.
-    ///
-    /// Absent when the value holds no non-whitespace character, the empty
-    /// string included.
-    pub fn new(value: impl Into<String>) -> Option<Self> {
-        let value = value.into();
-        value
-            .chars()
-            .any(|character| !character.is_whitespace())
-            .then_some(Self(value))
-    }
-
-    /// Constructs a non-blank string from a leading character and a suffix.
-    ///
-    /// Total: the prefix is non-whitespace, so the result holds it whatever
-    /// the suffix renders to.
-    pub fn prefixed(prefix: NonWhitespaceChar, suffix: impl std::fmt::Display) -> Self {
-        Self(format!("{prefix}{suffix}"))
-    }
-
-    /// Returns the source string.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-
-    /// Consumes the value and returns the source string.
-    #[must_use]
-    pub fn into_string(self) -> String {
-        self.0
-    }
-}
-
-/// Builds a [`NonBlankString`] from a format literal whose first character is
-/// literal, non-whitespace text.
-///
-/// The template is always a literal, so the leading byte is the initializer of
-/// a `const` *item*: a template that starts with whitespace, with a non-ASCII
-/// byte or with a `{` placeholder fails `cargo check` with E0080, not only a
-/// codegen build. (An inline `const { … }` block is evaluated at codegen, so
-/// `check` would pass a whitespace literal.) Formatted arguments follow that
-/// literal prefix and cannot make the result blank.
-#[macro_export]
-macro_rules! nonblank_literal {
-    ($template:literal $(, $argument:expr)* $(,)?) => {{
-        const NONBLANK_LITERAL_LEADING: $crate::products::NonWhitespaceChar = {
-            let bytes = $template.as_bytes();
-            assert!(
-                !bytes.is_empty() && bytes[0] != b'{',
-                "a nonblank literal must start with literal ASCII text",
-            );
-            $crate::products::NonWhitespaceChar::from_ascii_literal(bytes[0])
-        };
-        let rendered = format!($template $(, $argument)*);
-        $crate::products::NonBlankString::prefixed(NONBLANK_LITERAL_LEADING, &rendered[1..])
-    }};
-}
-
-impl PartialEq<str> for NonBlankString {
-    fn eq(&self, other: &str) -> bool {
-        self.0 == other
-    }
-}
-
-impl PartialEq<&str> for NonBlankString {
-    fn eq(&self, other: &&str) -> bool {
-        self == *other
-    }
-}
-
-impl std::fmt::Display for NonBlankString {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(self.as_str())
-    }
-}
-
-impl<'de> Deserialize<'de> for NonBlankString {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        Self::new(String::deserialize(deserializer)?)
-            .ok_or_else(|| serde::de::Error::custom("source identity must not be blank"))
-    }
 }
 
 /// Typed identity or explicit absence of an external document.
@@ -671,20 +529,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn prefixes_preserve_nonblank_strings_and_wire_values() {
-        for (prefix, suffix, expected) in [
-            (NonWhitespaceChar::from_ascii_literal(b'#'), "42", "#42"),
-            (NonWhitespaceChar::hex_digit(0x0a), "", "a"),
-            (NonWhitespaceChar::hex_digit(0xf0), "", "0"),
-        ] {
-            let value = NonBlankString::prefixed(prefix, suffix);
-            assert_eq!(value.as_str(), expected);
-            assert_eq!(serde_json::to_value(&value).unwrap(), expected);
-        }
-        assert_eq!(crate::nonblank_literal!("#{}", 42).as_str(), "#42");
-    }
-
-    #[test]
     fn a_blank_selection_id_has_no_wire_spelling() {
         assert!(serde_json::from_value::<crate::features::SelectionMember>(
             serde_json::json!({"kind": "face", "id": "   "})
@@ -708,17 +552,6 @@ mod tests {
         assert!(
             serde_json::from_value::<crate::features::FeatureResultTopology>(topology(" a "))
                 .is_ok()
-        );
-    }
-
-    #[test]
-    fn a_source_string_of_whitespace_alone_is_blank() {
-        assert!(NonBlankString::new("   ").is_none());
-        assert!(NonBlankString::new("").is_none());
-        assert!(NonBlankString::new("\t\n").is_none());
-        assert_eq!(
-            NonBlankString::new(" a ").map(|value| value.as_str().to_owned()),
-            Some(" a ".to_owned())
         );
     }
 
@@ -1876,9 +1709,9 @@ mod nonblank_literal_tests {
     #[test]
     fn a_formatted_literal_keeps_its_non_blank_prefix() {
         assert_eq!(
-            crate::nonblank_literal!("sldprt:marker-relation:{}", 34).as_str(),
+            cadmpeg_core::nonblank_literal!("sldprt:marker-relation:{}", 34).as_str(),
             "sldprt:marker-relation:34"
         );
-        assert_eq!(crate::nonblank_literal!("d6").as_str(), "d6");
+        assert_eq!(cadmpeg_core::nonblank_literal!("d6").as_str(), "d6");
     }
 }

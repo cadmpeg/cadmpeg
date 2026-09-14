@@ -280,7 +280,10 @@ pub(crate) fn enrich_history_reference_planes(
         if let [native] = native.as_slice() {
             histories[history_index].features[feature_index]
                 .properties
-                .insert("ReferenceFaceNative".into(), native.clone());
+                .insert(
+                    cadmpeg_core::nonblank_literal!("ReferenceFaceNative"),
+                    native.clone(),
+                );
         }
     }
     for ((history_index, feature_index), mut targets) in face_feature_candidates {
@@ -289,7 +292,10 @@ pub(crate) fn enrich_history_reference_planes(
         if let [target] = targets.as_slice() {
             histories[history_index].features[feature_index]
                 .properties
-                .insert("ReferenceFaceFeature".into(), target.clone());
+                .insert(
+                    cadmpeg_core::nonblank_literal!("ReferenceFaceFeature"),
+                    target.clone(),
+                );
         }
     }
     let unique_frames = candidates
@@ -460,20 +466,20 @@ pub(crate) fn enrich_history_reference_planes(
         };
         histories[history_index].features[feature_index]
             .properties
-            .insert("Reference".into(), source.clone());
+            .insert(cadmpeg_core::nonblank_literal!("Reference"), source.clone());
     }
     for ((history_index, feature_index), (origin, normal, u_axis)) in unique_reference_frames {
         let feature = &mut histories[history_index].features[feature_index];
         feature.properties.insert(
-            "ReferenceFaceOrigin".into(),
+            cadmpeg_core::nonblank_literal!("ReferenceFaceOrigin"),
             format!("{}mm,{}mm,{}mm", origin.x, origin.y, origin.z),
         );
         feature.properties.insert(
-            "ReferenceFaceNormal".into(),
+            cadmpeg_core::nonblank_literal!("ReferenceFaceNormal"),
             format!("{},{},{}", normal.x, normal.y, normal.z),
         );
         feature.properties.insert(
-            "ReferenceFaceUAxis".into(),
+            cadmpeg_core::nonblank_literal!("ReferenceFaceUAxis"),
             format!("{},{},{}", u_axis.x, u_axis.y, u_axis.z),
         );
     }
@@ -485,22 +491,22 @@ pub(crate) fn enrich_history_reference_planes(
         };
         let feature = &mut histories[history_index].features[feature_index];
         feature.properties.insert(
-            "Origin".into(),
+            cadmpeg_core::nonblank_literal!("Origin"),
             format!("{}mm,{}mm,{}mm", origin.x, origin.y, origin.z),
         );
         feature.properties.insert(
-            "Normal".into(),
+            cadmpeg_core::nonblank_literal!("Normal"),
             format!("{},{},{}", normal.x, normal.y, normal.z),
         );
         feature.properties.insert(
-            "UAxis".into(),
+            cadmpeg_core::nonblank_literal!("UAxis"),
             format!("{},{},{}", u_axis.x, u_axis.y, u_axis.z),
         );
         if unique_u_axis_sources.get(&(history_index, feature_index))
             == Some(&SketchPlaneUAxisSource::ConstructedMidPlane)
         {
             feature.properties.insert(
-                REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY.into(),
+                cadmpeg_core::nonblank_const!(REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY),
                 CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE.into(),
             );
         } else {
@@ -564,7 +570,7 @@ pub(crate) fn enrich_history_reference_points(
         histories[history_index].features[feature_index]
             .properties
             .insert(
-                "Position".into(),
+                cadmpeg_core::nonblank_literal!("Position"),
                 format!("{}mm,{}mm,{}mm", point.x, point.y, point.z),
             );
     }
@@ -701,13 +707,17 @@ pub(crate) fn enrich_history_coordinate_systems(
         };
         let feature = &mut histories[history_index].features[feature_index];
         feature.properties.insert(
-            "Origin".into(),
+            cadmpeg_core::nonblank_literal!("Origin"),
             format!("{}mm,{}mm,{}mm", origin.x, origin.y, origin.z),
         );
-        for (name, axis) in [("XAxis", x_axis), ("YAxis", y_axis), ("ZAxis", z_axis)] {
+        for (name, axis) in [
+            (cadmpeg_core::nonblank_literal!("XAxis"), x_axis),
+            (cadmpeg_core::nonblank_literal!("YAxis"), y_axis),
+            (cadmpeg_core::nonblank_literal!("ZAxis"), z_axis),
+        ] {
             feature
                 .properties
-                .insert(name.into(), format!("{},{},{}", axis.x, axis.y, axis.z));
+                .insert(name, format!("{},{},{}", axis.x, axis.y, axis.z));
         }
     }
 }
@@ -1418,9 +1428,10 @@ pub(crate) fn enrich_history_sketch_block_references(
             let [source] = sources.as_slice() else {
                 continue;
             };
-            history.features[feature_index]
-                .properties
-                .insert("BlockDefinition".into(), source.to_string());
+            history.features[feature_index].properties.insert(
+                cadmpeg_core::nonblank_literal!("BlockDefinition"),
+                source.to_string(),
+            );
         }
         for (feature_index, mut origins) in placement_candidates {
             origins
@@ -1430,7 +1441,7 @@ pub(crate) fn enrich_history_sketch_block_references(
                 continue;
             };
             history.features[feature_index].properties.insert(
-                "BlockOrigin".into(),
+                cadmpeg_core::nonblank_literal!("BlockOrigin"),
                 format!("{}mm,{}mm,{}mm", origin.x, origin.y, origin.z),
             );
         }
@@ -1630,11 +1641,11 @@ pub(crate) fn enrich_history_reference_axes(
             if let Some((origin, direction)) = explicit_frame {
                 let feature = &mut histories[history_index].features[feature_index];
                 feature.properties.insert(
-                    "Origin".into(),
+                    cadmpeg_core::nonblank_literal!("Origin"),
                     format!("{}mm,{}mm,{}mm", origin.x, origin.y, origin.z),
                 );
                 feature.properties.insert(
-                    "Direction".into(),
+                    cadmpeg_core::nonblank_literal!("Direction"),
                     format!("{},{},{}", direction.x, direction.y, direction.z),
                 );
                 continue;
@@ -1645,7 +1656,10 @@ pub(crate) fn enrich_history_reference_axes(
             };
             histories[history_index].features[feature_index]
                 .properties
-                .insert("Planes".into(), format!("{first},{second}"));
+                .insert(
+                    cadmpeg_core::nonblank_literal!("Planes"),
+                    format!("{first},{second}"),
+                );
         }
     }
 
@@ -1654,7 +1668,7 @@ pub(crate) fn enrich_history_reference_axes(
             for (axis_index, planes) in axes.into_iter().zip(pairs) {
                 let axis = &mut history.features[axis_index];
                 axis.properties
-                    .entry("Planes".into())
+                    .entry(cadmpeg_core::nonblank_literal!("Planes"))
                     .or_insert_with(|| format!("{},{}", planes[0], planes[1]));
             }
         }
@@ -1692,11 +1706,11 @@ pub(crate) fn enrich_history_reference_axes(
             continue;
         };
         feature.properties.insert(
-            "Origin".into(),
+            cadmpeg_core::nonblank_literal!("Origin"),
             format!("{}mm,{}mm,{}mm", frame.0.x, frame.0.y, frame.0.z),
         );
         feature.properties.insert(
-            "Direction".into(),
+            cadmpeg_core::nonblank_literal!("Direction"),
             format!("{},{},{}", frame.1.x, frame.1.y, frame.1.z),
         );
     }
@@ -1719,11 +1733,11 @@ pub(crate) fn enrich_history_reference_axes(
         for (index, (origin, direction)) in completions {
             let feature = &mut history.features[index];
             feature.properties.insert(
-                "Origin".into(),
+                cadmpeg_core::nonblank_literal!("Origin"),
                 format!("{}mm,{}mm,{}mm", origin.x, origin.y, origin.z),
             );
             feature.properties.insert(
-                "Direction".into(),
+                cadmpeg_core::nonblank_literal!("Direction"),
                 format!("{},{},{}", direction.x, direction.y, direction.z),
             );
         }

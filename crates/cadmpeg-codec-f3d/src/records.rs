@@ -2,7 +2,7 @@
 #![deny(clippy::disallowed_methods)]
 //! Fusion parametric-design records and links to the solved B-rep.
 
-use cadmpeg_ir::NonBlankString;
+use cadmpeg_core::text::NonBlankString;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::BTreeMap;
 use std::num::{NonZeroU32, NonZeroU64};
@@ -637,7 +637,7 @@ pub struct PersistentSubentityTag {
     pub selector: i64,
     /// Native UTF-8 tag token. Numeric strings and `-1` retain their spelling.
     #[serde(deserialize_with = "deserialize_persistent_tag_token")]
-    pub token: cadmpeg_ir::NonBlankString,
+    pub token: cadmpeg_core::text::NonBlankString,
     /// Ordered signed Design-stream references carried by this group.
     pub design_references: Vec<i64>,
     /// Position of this group in the owning attribute record.
@@ -646,8 +646,8 @@ pub struct PersistentSubentityTag {
 
 fn deserialize_persistent_tag_token<'de, D: Deserializer<'de>>(
     deserializer: D,
-) -> Result<cadmpeg_ir::NonBlankString, D::Error> {
-    cadmpeg_ir::NonBlankString::new(String::deserialize(deserializer)?)
+) -> Result<cadmpeg_core::text::NonBlankString, D::Error> {
+    cadmpeg_core::text::NonBlankString::new(String::deserialize(deserializer)?)
         .ok_or_else(|| serde::de::Error::custom("token must not be empty"))
 }
 
@@ -1123,7 +1123,7 @@ impl DesignParameter {
     pub(crate) fn source_kind_name(&self) -> NonBlankString {
         match &self.source {
             DesignParameterSource::User { .. } => {
-                cadmpeg_ir::nonblank_literal!("User Parameter")
+                cadmpeg_core::nonblank_literal!("User Parameter")
             }
             DesignParameterSource::Owned(source) => source.source_kind.clone(),
         }
@@ -6583,7 +6583,7 @@ pub struct SketchRelation {
     pub owner_reference: u32,
     /// Full Design entity id resolved from `owner_reference`.
     #[serde(default)]
-    pub owner_entity_id: Option<cadmpeg_ir::NonBlankString>,
+    pub owner_entity_id: Option<cadmpeg_core::text::NonBlankString>,
     /// Nullable or role-specific references stored before the owner reference.
     auxiliary_references: ReferenceRun<u32, u32>,
     /// Serialized count of the rectangular class's reference run. Zero selects
@@ -6621,7 +6621,7 @@ pub struct SketchRelationDraft {
     /// Numeric design-entity suffix of the sketch container that owns this relation.
     pub owner_reference: u32,
     /// Full Design entity id resolved from `owner_reference`.
-    pub owner_entity_id: Option<cadmpeg_ir::NonBlankString>,
+    pub owner_entity_id: Option<cadmpeg_core::text::NonBlankString>,
     /// Nullable or role-specific references stored before the owner reference.
     pub auxiliary_references: ReferenceRun<u32, u32>,
     /// Serialized count of the rectangular class's reference run. Zero selects
@@ -7019,7 +7019,7 @@ impl TryFrom<SketchRelationSerde> for SketchRelation {
             byte_offset: wire.byte_offset,
             state_offset: wire.state_offset,
             owner_reference: wire.owner_reference,
-            owner_entity_id: cadmpeg_ir::NonBlankString::new(wire.owner_entity_id),
+            owner_entity_id: cadmpeg_core::text::NonBlankString::new(wire.owner_entity_id),
             auxiliary_references: ReferenceRun::located(
                 wire.auxiliary_references
                     .into_iter()

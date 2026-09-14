@@ -483,7 +483,10 @@ fn topology_membership_admission() {
     assert!(FeatureResultTopology::new(
         id.clone(),
         feature.clone(),
-        vec![crate::nonblank_literal!("a"), crate::nonblank_literal!("a"),],
+        vec![
+            cadmpeg_core::nonblank_literal!("a"),
+            cadmpeg_core::nonblank_literal!("a"),
+        ],
         vec![],
         vec![],
         vec![],

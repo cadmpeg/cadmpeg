@@ -865,7 +865,7 @@ fn output_free_boolean_construction_has_no_retained_body_effect() {
     extrude.suppressed = None;
     extrude.dependencies.clear();
     extrude.source_properties.insert(
-        "primary_body_reference".to_string(),
+        cadmpeg_core::nonblank_literal!("primary_body_reference"),
         "reference".to_string(),
     );
     ir.model.features.push(extrude);
@@ -910,9 +910,10 @@ fn output_free_native_snapshot_is_local_to_history() {
     );
     snapshot.name = Some("MASTER SNAPSHOT BODY".to_string());
     snapshot.suppressed = None;
-    snapshot
-        .source_properties
-        .insert("operation_record".to_string(), "native-record".to_string());
+    snapshot.source_properties.insert(
+        cadmpeg_core::nonblank_literal!("operation_record"),
+        "native-record".to_string(),
+    );
     ir.model.features.push(snapshot);
 
     assert_eq!(
@@ -1007,9 +1008,10 @@ fn native_delete_without_a_primary_body_is_body_neutral() {
         BodyCensusEvaluation::Verified { bodies: Vec::new() }
     );
 
-    deletion
-        .source_properties
-        .insert("primary_body_object_index".to_string(), "7".to_string());
+    deletion.source_properties.insert(
+        cadmpeg_core::nonblank_literal!("primary_body_object_index"),
+        "7".to_string(),
+    );
     ir.model.features[0] = deletion;
     assert_eq!(
         evaluate_saved_body_census(&ir),

@@ -798,11 +798,11 @@ fn orders_exact_feature_parameters_by_serialized_field_position() {
         &ir.model.features[0].source_properties,
         &BTreeMap::from([
             (
-                "catia_parameter_early-parameter".to_string(),
+                cadmpeg_core::nonblank_literal!("catia_parameter_early-parameter"),
                 "1 mm".to_string()
             ),
             (
-                "catia_parameter_late-parameter".to_string(),
+                cadmpeg_core::nonblank_literal!("catia_parameter_late-parameter"),
                 "1 mm".to_string()
             ),
         ])
@@ -954,8 +954,14 @@ fn native_parameter_map_uses_disambiguated_names_when_source_names_collide() {
     assert_eq!(
         parameters,
         &BTreeMap::from([
-            ("Length".to_string(), "1 mm".to_string()),
-            ("Length#1".to_string(), "1 mm".to_string()),
+            (
+                cadmpeg_core::nonblank_literal!("Length"),
+                "1 mm".to_string()
+            ),
+            (
+                cadmpeg_core::nonblank_literal!("Length#1"),
+                "1 mm".to_string()
+            ),
         ])
     );
 }

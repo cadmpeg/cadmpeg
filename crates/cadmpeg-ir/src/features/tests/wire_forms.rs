@@ -895,12 +895,12 @@ fn body_selections_round_trip_through_json() {
             members: crate::features::BodyMembers::try_from_rows(vec![
                 crate::features::BodyMember::new(
                     BodyId::mint("synthetic:test:body#0").expect("valid identity"),
-                    crate::products::NonBlankString::new("body:17")
+                    cadmpeg_core::text::NonBlankString::new("body:17")
                         .expect("valid body selection row"),
                 ),
                 crate::features::BodyMember::new(
                     BodyId::mint("synthetic:test:body#1").expect("valid identity"),
-                    crate::products::NonBlankString::new("body:18")
+                    cadmpeg_core::text::NonBlankString::new("body:18")
                         .expect("valid body selection row"),
                 ),
             ])
@@ -920,13 +920,13 @@ fn body_selections_round_trip_through_json() {
                 crate::features::BodyMember::new(
                     HistoricalBodyId::mint("synthetic:history-input:body#0")
                         .expect("valid identity"),
-                    crate::products::NonBlankString::new("body:16")
+                    cadmpeg_core::text::NonBlankString::new("body:16")
                         .expect("valid historical body selection row"),
                 ),
                 crate::features::BodyMember::new(
                     HistoricalBodyId::mint("synthetic:history-input:body#1")
                         .expect("valid identity"),
-                    crate::products::NonBlankString::new("body:17")
+                    cadmpeg_core::text::NonBlankString::new("body:17")
                         .expect("valid historical body selection row"),
                 ),
             ])
@@ -948,8 +948,8 @@ fn body_selection_members_reject_blank_native_rows() {
     use crate::ids::BodyId;
 
     let body = BodyId::mint("synthetic:test:body#blank").expect("identity grammar");
-    assert!(crate::products::NonBlankString::new(" \t").is_none());
-    assert!(crate::products::NonBlankString::new("\n").is_none());
+    assert!(cadmpeg_core::text::NonBlankString::new(" \t").is_none());
+    assert!(cadmpeg_core::text::NonBlankString::new("\n").is_none());
     assert!(
         serde_json::from_value::<BodyMembers<BodyId>>(serde_json::json!([
             {"body": body, "native": " "}
@@ -984,10 +984,10 @@ fn feature_result_topology_round_trips_without_current_model_bodies() {
     let state = FeatureResultTopology::new(
         FeatureResultTopologyId::mint("synthetic:history-result:state#0").expect("valid identity"),
         FeatureId::mint("synthetic:model:feature#0").expect("identity grammar"),
-        vec![crate::nonblank_literal!("body:17")],
-        vec![crate::nonblank_literal!("face:3")],
-        vec![crate::nonblank_literal!("edge:5")],
-        vec![crate::nonblank_literal!("vertex:8")],
+        vec![cadmpeg_core::nonblank_literal!("body:17")],
+        vec![cadmpeg_core::nonblank_literal!("face:3")],
+        vec![cadmpeg_core::nonblank_literal!("edge:5")],
+        vec![cadmpeg_core::nonblank_literal!("vertex:8")],
         Some("native:result#0".into()),
     )
     .unwrap();

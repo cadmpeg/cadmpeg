@@ -445,15 +445,18 @@ fn dissected_sketch_alias_inherits_an_omitted_class_without_solved_geometry() {
     owner.name = "Sketch1".into();
     owner.kind = "Sketch".into();
     owner.input_class = Some("moProfileFeature_c".into());
-    owner.parameters.insert("D1".into(), "10".into());
+    owner
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "10".into());
     owner.content.push(FeatureContent::Dimension("D1".into()));
     let mut alias = feature("alias-native", Some("85"), 1);
     alias.xml_tag = "Sketch".into();
     alias.name = "Sketch1<3>".into();
     alias.kind = alias.name.clone();
-    alias
-        .properties
-        .insert("Description".into(), alias.name.clone());
+    alias.properties.insert(
+        cadmpeg_core::nonblank_literal!("Description"),
+        alias.name.clone(),
+    );
     alias.parameters = owner.parameters.clone();
     alias.content = owner.content.clone();
     let history = FeatureHistory {
@@ -772,7 +775,7 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
         source_index: Some(1),
         name: Some("Default".to_string()),
         material: None,
-        properties: BTreeMap::from([("id".into(), "1".into())]),
+        properties: BTreeMap::from([(cadmpeg_core::nonblank_literal!("id"), "1".into())]),
         bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
         parameter_values: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
@@ -1764,7 +1767,9 @@ fn configuration_frame_alias_binds_without_body_membership() {
     });
     let mut configuration = design_configuration("config", 0, None, None);
     configuration.bodies = None;
-    configuration.properties.insert("id".into(), "3".into());
+    configuration
+        .properties
+        .insert(cadmpeg_core::nonblank_literal!("id"), "3".into());
     ir.model.configurations.push(configuration);
     ir.model.configurations[0].feature_states.insert(
         feature_id,

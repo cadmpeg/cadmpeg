@@ -95,12 +95,16 @@ fn native_configuration(id: &str, ordinal: u32, source_index: Option<u32>) -> Co
 }
 
 fn with_configuration_id(mut configuration: DesignConfiguration, id: u32) -> DesignConfiguration {
-    configuration.properties.insert("id".into(), id.to_string());
+    configuration
+        .properties
+        .insert(cadmpeg_core::nonblank_literal!("id"), id.to_string());
     configuration
 }
 
 fn native_with_configuration_id(mut configuration: Configuration, id: u32) -> Configuration {
-    configuration.properties.insert("id".into(), id.to_string());
+    configuration
+        .properties
+        .insert(cadmpeg_core::nonblank_literal!("id"), id.to_string());
     configuration
 }
 

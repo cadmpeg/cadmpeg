@@ -259,9 +259,11 @@ pub(crate) fn enrich_history_move_face_translations(
             continue;
         }
         let feature = &mut histories[history_index].features[feature_index];
-        feature.properties.insert("Mode".into(), "Translate".into());
+        feature
+            .properties
+            .insert(cadmpeg_core::nonblank_literal!("Mode"), "Translate".into());
         feature.properties.insert(
-            "Direction".into(),
+            cadmpeg_core::nonblank_literal!("Direction"),
             format!("{},{},{}", first.x, first.y, first.z),
         );
     }
@@ -338,7 +340,7 @@ pub(crate) fn enrich_history_move_body_translations(
         histories[history_index].features[feature_index]
             .properties
             .insert(
-                "Translation".into(),
+                cadmpeg_core::nonblank_literal!("Translation"),
                 format!(
                     "{}mm,{}mm,{}mm",
                     first.x * 1000.0,
@@ -380,7 +382,7 @@ mod tests {
                 kind: "Move Face".into(),
                 input_class: Some("moMoveFace_c".into()),
                 suppressed: false,
-                parameters: BTreeMap::from([("D1".into(), "0.2".into())]),
+                parameters: BTreeMap::from([(cadmpeg_core::nonblank_literal!("D1"), "0.2".into())]),
                 dimension_properties: BTreeMap::new(),
                 properties: BTreeMap::new(),
                 text: None,

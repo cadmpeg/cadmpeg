@@ -219,7 +219,7 @@ pub(super) fn emit_model_features(
                             kind: current_operation
                                 .map_or("Native Feature", |operation| operation.kind.as_str())
                                 .into(),
-                            parameters: parameters.clone(),
+                            parameters: cadmpeg_core::text::named_entries(parameters.clone()),
                         }))
                     })
             },
@@ -306,7 +306,9 @@ pub(super) fn emit_model_features(
                     existing.dependencies.insert(dependency);
                 }
             }
-            existing.source_properties.extend(source_properties);
+            existing
+                .source_properties
+                .extend(cadmpeg_core::text::named_entries(source_properties));
             if source_tag.is_some() {
                 existing.source_tag = source_tag;
             }
@@ -344,7 +346,7 @@ pub(super) fn emit_model_features(
             name,
             suppressed: Some(false),
             dependencies: (dependencies).into_iter().collect(),
-            source_properties,
+            source_properties: cadmpeg_core::text::named_entries(source_properties),
             source_tag,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
@@ -395,7 +397,7 @@ pub(super) fn emit_model_features(
                     .unwrap_or_else(|| {
                         IrFeatureDefinition::Operation(IrFeatureOperation::Native {
                             kind: kind.into(),
-                            parameters: parameters.clone(),
+                            parameters: cadmpeg_core::text::named_entries(parameters.clone()),
                         })
                     }))
             },
@@ -441,7 +443,7 @@ pub(super) fn emit_model_features(
             ))
             .into_iter()
             .collect(),
-            source_properties,
+            source_properties: cadmpeg_core::text::named_entries(source_properties),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),

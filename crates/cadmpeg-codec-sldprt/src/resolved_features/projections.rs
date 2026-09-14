@@ -460,16 +460,22 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
                 continue;
             }
             let mut properties = BTreeMap::new();
-            properties.insert(RELATION_PARAMETER_ID_PROPERTY.into(), relation.id.clone());
             properties.insert(
-                RELATION_DISPLAY_SCALAR_ID_PROPERTY.into(),
+                cadmpeg_core::nonblank_const!(RELATION_PARAMETER_ID_PROPERTY),
+                relation.id.clone(),
+            );
+            properties.insert(
+                cadmpeg_core::nonblank_const!(RELATION_DISPLAY_SCALAR_ID_PROPERTY),
                 scalar.id.clone(),
             );
             properties.insert(
-                RELATION_PARAMETER_ROLE_PROPERTY.into(),
+                cadmpeg_core::nonblank_const!(RELATION_PARAMETER_ROLE_PROPERTY),
                 RELATION_PARAMETER_ROLE_REFERENCE.into(),
             );
-            properties.insert("source_name".into(), source_name.into());
+            properties.insert(
+                cadmpeg_core::nonblank_literal!("source_name"),
+                source_name.into(),
+            );
             parameters.push(DesignParameter {
                 id,
                 owner: Some(owner.clone()),
@@ -807,7 +813,9 @@ fn variable_fillet_radius_groups<'a>(
     let parameter_names = feature
         .parameters
         .keys()
-        .filter(|name| variable_fillet_dimension_index_for_feature(feature, name).is_some())
+        .filter(|name| {
+            variable_fillet_dimension_index_for_feature(feature, name.as_str()).is_some()
+        })
         .collect::<HashSet<_>>();
     if parameter_names.len() != feature.parameters.len() || parameter_names.len() < 2 {
         return None;
@@ -841,7 +849,7 @@ fn variable_fillet_radius_groups<'a>(
         let mut ordered_parameters = parameter_names
             .iter()
             .map(|name| {
-                variable_fillet_dimension_index_for_feature(feature, name).zip(
+                variable_fillet_dimension_index_for_feature(feature, name.as_str()).zip(
                     feature.parameters.get(*name).and_then(|value| {
                         crate::history::parse_positive_dimension_length_mm(value)
                     }),
@@ -910,7 +918,7 @@ fn variable_fillet_radius_groups<'a>(
                     if !control_names.insert(name.clone()) {
                         return None;
                     }
-                    let radius = feature.parameters.get(&name).and_then(|value| {
+                    let radius = feature.parameters.get(name.as_str()).and_then(|value| {
                         crate::history::parse_positive_dimension_length_mm(value)
                     })?;
                     match vertex_radii.entry(vertex.type_signature) {
@@ -941,7 +949,7 @@ fn variable_fillet_radius_groups<'a>(
             || non_vertex_control_names.len() != parameter_names.len()
             || !parameter_names
                 .iter()
-                .all(|name| non_vertex_control_names.contains(*name))
+                .all(|name| non_vertex_control_names.contains(name.as_str()))
             || non_vertex_control_references.is_empty()
         {
             return None;
@@ -949,7 +957,7 @@ fn variable_fillet_radius_groups<'a>(
         let mut ordered_parameters = parameter_names
             .iter()
             .map(|name| {
-                variable_fillet_dimension_index_for_feature(feature, name).zip(
+                variable_fillet_dimension_index_for_feature(feature, name.as_str()).zip(
                     feature.parameters.get(*name).and_then(|value| {
                         crate::history::parse_positive_dimension_length_mm(value)
                     }),
@@ -1003,7 +1011,7 @@ fn variable_fillet_radius_groups<'a>(
     if control_names.len() != parameter_names.len()
         || !parameter_names
             .iter()
-            .all(|name| control_names.contains(*name))
+            .all(|name| control_names.contains(name.as_str()))
     {
         return None;
     }

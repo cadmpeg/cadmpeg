@@ -5,7 +5,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::products::NonBlankString;
+use cadmpeg_core::text::NonBlankString;
 
 crate::ids::id_type!(
     /// Stable identity of one document asset.

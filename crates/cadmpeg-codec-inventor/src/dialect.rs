@@ -225,18 +225,18 @@ impl DialectRecovery {
         let admitted = identity_verified && framing_verified;
         let mut declared = BTreeMap::new();
         declared.insert(
-            DECLARED_CFB_MAJOR_VERSION.into(),
+            cadmpeg_core::nonblank_const!(DECLARED_CFB_MAJOR_VERSION),
             self.cfb_major_version.to_string(),
         );
         if !self.schemas.is_empty() {
             declared.insert(
-                DECLARED_RSE_DB_SCHEMA.into(),
+                cadmpeg_core::nonblank_const!(DECLARED_RSE_DB_SCHEMA),
                 join(self.schemas.iter().map(|schema| schema.value().to_string())),
             );
         }
         if !self.meta_streams.is_empty() {
             declared.insert(
-                DECLARED_META_STREAM_MARKER.into(),
+                cadmpeg_core::nonblank_const!(DECLARED_META_STREAM_MARKER),
                 join(
                     self.meta_streams
                         .iter()
@@ -244,7 +244,7 @@ impl DialectRecovery {
                 ),
             );
             declared.insert(
-                DECLARED_META_STREAM_VERSION.into(),
+                cadmpeg_core::nonblank_const!(DECLARED_META_STREAM_VERSION),
                 join(
                     self.meta_streams
                         .iter()

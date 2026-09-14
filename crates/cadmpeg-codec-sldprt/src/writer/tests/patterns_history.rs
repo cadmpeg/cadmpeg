@@ -1189,7 +1189,7 @@ fn semantic_writer_preserves_parametric_history() {
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_histories[0].features[0]
             .parameters
-            .insert("Depth".into(), "15mm".into());
+            .insert(cadmpeg_core::nonblank_literal!("Depth"), "15mm".into());
     });
 
     let mut encoded = Vec::new();
@@ -1308,7 +1308,7 @@ fn semantic_writer_rejects_conflicting_feature_edits() {
         update_sldprt_native(&mut ir_edit, |native| {
             native.feature_histories[0].features[0]
                 .parameters
-                .insert("Depth".into(), "20mm".into());
+                .insert(cadmpeg_core::nonblank_literal!("Depth"), "20mm".into());
         });
     }
 

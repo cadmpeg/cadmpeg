@@ -1714,7 +1714,7 @@ fn history_payload(history: &crate::records::FeatureHistory) -> Result<Vec<u8>, 
         xml_attribute(&mut out, "Name", name);
     }
     for (name, value) in &history.properties {
-        xml_attribute(&mut out, name, value);
+        xml_attribute(&mut out, name.as_str(), value);
     }
     out.push('>');
     let write_configuration = |out: &mut String, configuration: &crate::records::Configuration| {
@@ -1727,7 +1727,7 @@ fn history_payload(history: &crate::records::FeatureHistory) -> Result<Vec<u8>, 
             xml_attribute(out, "Material", material);
         }
         for (name, value) in &configuration.properties {
-            xml_attribute(out, name, value);
+            xml_attribute(out, name.as_str(), value);
         }
         out.push_str("/>");
     };
@@ -1856,7 +1856,7 @@ fn write_feature_xml(
         xml_attribute(out, "Suppressed", "true");
     }
     for (name, value) in &feature.properties {
-        xml_attribute(out, name, value);
+        xml_attribute(out, name.as_str(), value);
     }
     out.push('>');
     let write_dimension = |out: &mut String, name: &str, value: &str| {
@@ -1864,7 +1864,7 @@ fn write_feature_xml(
         xml_attribute(out, "Name", name);
         if let Some(properties) = feature.dimension_properties.get(name) {
             for (property, value) in properties {
-                xml_attribute(out, property, value);
+                xml_attribute(out, property.as_str(), value);
             }
         }
         out.push('>');
@@ -1885,7 +1885,7 @@ fn write_feature_xml(
     let mut emitted_children = HashSet::new();
     if feature.content.is_empty() {
         for (name, value) in &feature.parameters {
-            write_dimension(out, name, value);
+            write_dimension(out, name.as_str(), value);
             emitted_dimensions.insert(name.as_str());
         }
         if let Some(text) = &feature.text {
@@ -1895,7 +1895,7 @@ fn write_feature_xml(
         for item in &feature.content {
             match item {
                 crate::records::FeatureContent::Dimension(name) => {
-                    if let Some(value) = feature.parameters.get(name) {
+                    if let Some(value) = feature.parameters.get(name.as_str()) {
                         write_dimension(out, name, value);
                         emitted_dimensions.insert(name.as_str());
                     }
@@ -1911,8 +1911,8 @@ fn write_feature_xml(
         }
     }
     for (name, value) in &feature.parameters {
-        if emitted_dimensions.insert(name) {
-            write_dimension(out, name, value);
+        if emitted_dimensions.insert(name.as_str()) {
+            write_dimension(out, name.as_str(), value);
         }
     }
     for child in children {
@@ -3707,7 +3707,7 @@ mod nurbs_write_tests {
             name: Some("datum A".into()),
             visible: None,
             targets: vec![cadmpeg_ir::PmiTarget::ShapeAspect {
-                source_id: cadmpeg_ir::products::NonBlankString::new("F1")
+                source_id: cadmpeg_core::text::NonBlankString::new("F1")
                     .expect("nonempty source identity"),
             }],
             definition: cadmpeg_ir::PmiDefinition::Datum {
@@ -3721,7 +3721,10 @@ mod nurbs_write_tests {
                     cadmpeg_core::dialect::DialectId::pinned("sldprt:test"),
                 ),
             ),
-            std::collections::BTreeMap::from([(PMI_LOCAL_DIGEST_ATTRIBUTE.into(), hash)]),
+            std::collections::BTreeMap::from([(
+                cadmpeg_core::nonblank_const!(PMI_LOCAL_DIGEST_ATTRIBUTE),
+                hash,
+            )]),
         ));
         assert!(check_semantic_support(&ir, &Annotations::default()).is_ok());
 

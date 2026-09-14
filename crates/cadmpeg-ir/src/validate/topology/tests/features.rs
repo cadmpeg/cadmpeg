@@ -29,12 +29,12 @@ fn historical_body_overlap_spans_direct_and_paired_member_selections() {
         members: crate::features::BodyMembers::try_from_rows(vec![
             crate::features::BodyMember::new(
                 HistoricalBodyId::mint("test:body:2").expect("valid identity"),
-                crate::products::NonBlankString::new("tool-a")
+                cadmpeg_core::text::NonBlankString::new("tool-a")
                     .expect("valid historical body selection row"),
             ),
             crate::features::BodyMember::new(
                 HistoricalBodyId::mint("test:body:4").expect("valid identity"),
-                crate::products::NonBlankString::new("tool-b")
+                cadmpeg_core::text::NonBlankString::new("tool-b")
                     .expect("valid historical body selection row"),
             ),
         ])
@@ -45,7 +45,7 @@ fn historical_body_overlap_spans_direct_and_paired_member_selections() {
         members: crate::features::BodyMembers::try_from_rows(vec![
             crate::features::BodyMember::new(
                 HistoricalBodyId::mint("test:body:5").expect("valid identity"),
-                crate::products::NonBlankString::new("tool")
+                cadmpeg_core::text::NonBlankString::new("tool")
                     .expect("valid historical body selection row"),
             ),
         ])
@@ -1016,7 +1016,7 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
             FeatureResultTopologyId::mint("synthetic:test:feature-result-topology#producer")
                 .expect("valid identity"),
             producer.clone(),
-            vec![crate::nonblank_literal!("body#declared")],
+            vec![cadmpeg_core::nonblank_literal!("body#declared")],
             Vec::new(),
             Vec::new(),
             Vec::new(),

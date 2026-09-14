@@ -71,10 +71,13 @@ fn blind_extrusion_uses_its_sole_dimension_as_depth() {
     let mut feature = feature("sldprt:history:feature#1:2", Some("12"), 2);
     feature.xml_tag = "Extrusion".into();
     feature.input_class = Some("moExtrusion_c".into());
-    feature.parameters.insert("s".into(), "2.1".into());
     feature
-        .properties
-        .insert("EndCondition".into(), "Blind".into());
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("s"), "2.1".into());
+    feature.properties.insert(
+        cadmpeg_core::nonblank_literal!("EndCondition"),
+        "Blind".into(),
+    );
 
     assert!(native_parameter_is_length(&feature, "s", Some("2.1")));
     assert!(matches!(
@@ -99,7 +102,9 @@ fn modern_extrusion_with_one_source_dimension_defaults_to_blind() {
     feature.xml_tag = "Extrusion".into();
     feature.input_class = Some("moExtrusion_c".into());
     feature.content = vec![FeatureContent::Dimension("m".into())];
-    feature.parameters.insert("m".into(), "6.4".into());
+    feature
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("m"), "6.4".into());
 
     assert!(matches!(
         project_extrude(&feature, &HashMap::new(), &HashMap::new()),
@@ -126,9 +131,15 @@ fn legacy_history_extrusion_uses_preceding_profile_and_sole_source_depth() {
     extrusion.xml_tag = "Extrusion".into();
     extrusion.kind = "localized-boss-kind".into();
     extrusion.input_class = None;
-    extrusion.parameters.insert("m".into(), "6.8".into());
-    extrusion.parameters.insert("aux-1".into(), "1.2".into());
-    extrusion.parameters.insert("aux-2".into(), "3.4".into());
+    extrusion
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("m"), "6.8".into());
+    extrusion
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("aux-1"), "1.2".into());
+    extrusion
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("aux-2"), "3.4".into());
     extrusion.content = vec![
         FeatureContent::Dimension("m".into()),
         FeatureContent::Dimension("m".into()),
@@ -187,13 +198,17 @@ fn root_history_extrusion_uses_preceding_profile_without_overriding_cut() {
     extrusion.xml_tag = "Extrusion".into();
     extrusion.kind = "Cut-Extrude".into();
     extrusion.input_class = Some("moICE_c".into());
+    extrusion.properties.insert(
+        cadmpeg_core::nonblank_literal!("DissectableRoot"),
+        "true".into(),
+    );
+    extrusion.properties.insert(
+        cadmpeg_core::nonblank_literal!("EndCondition"),
+        "Blind".into(),
+    );
     extrusion
-        .properties
-        .insert("DissectableRoot".into(), "true".into());
-    extrusion
-        .properties
-        .insert("EndCondition".into(), "Blind".into());
-    extrusion.parameters.insert("D1".into(), "4.2".into());
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "4.2".into());
     extrusion.content = vec![FeatureContent::Dimension("D1".into())];
 
     let history = FeatureHistory {
@@ -234,7 +249,9 @@ fn root_history_extrusion_uses_preceding_profile_without_overriding_cut() {
 #[test]
 fn repeated_dimension_content_projects_one_owned_parameter() {
     let mut feature = feature("sldprt:history:feature#1:2", None, 2);
-    feature.parameters.insert("D1".into(), "2".into());
+    feature
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "2".into());
     feature.content = vec![
         FeatureContent::Dimension("D1".into()),
         FeatureContent::Dimension("D1".into()),
@@ -296,9 +313,10 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         profile.kind = "Sketch".into();
         profile.input_class = Some("moProfileFeature_c".into());
         for (name, expression) in roles {
-            profile
-                .parameters
-                .insert((*name).into(), (*expression).into());
+            profile.parameters.insert(
+                cadmpeg_core::text::NonBlankString::new(*name).expect("named dimension"),
+                (*expression).into(),
+            );
             profile
                 .content
                 .push(FeatureContent::Dimension((*name).into()));
@@ -484,9 +502,10 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     native_profile.id = "native-profile".into();
     native_profile.source_id = None;
     let mut native_owned = feature("native-owned-hole", None, 0);
-    native_owned
-        .properties
-        .insert("DissectableChildren".into(), native_profile.id.clone());
+    native_owned.properties.insert(
+        cadmpeg_core::nonblank_literal!("DissectableChildren"),
+        native_profile.id.clone(),
+    );
     let projected = project_hole(
         &native_owned,
         &HashMap::new(),
@@ -504,11 +523,20 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
 
     let mut canonical = feature("hole", Some("8"), 0);
     canonical.parameters = [
-        ("Diameter".into(), "4.2mm".into()),
-        ("Depth".into(), "12.4mm".into()),
-        ("ThreadMajorDiameter".into(), "5mm".into()),
-        ("ThreadDepth".into(), "10mm".into()),
-        ("DrillPointAngle".into(), "118°".into()),
+        (cadmpeg_core::nonblank_literal!("Diameter"), "4.2mm".into()),
+        (cadmpeg_core::nonblank_literal!("Depth"), "12.4mm".into()),
+        (
+            cadmpeg_core::nonblank_literal!("ThreadMajorDiameter"),
+            "5mm".into(),
+        ),
+        (
+            cadmpeg_core::nonblank_literal!("ThreadDepth"),
+            "10mm".into(),
+        ),
+        (
+            cadmpeg_core::nonblank_literal!("DrillPointAngle"),
+            "118°".into(),
+        ),
     ]
     .into();
     let projected = project_hole(
@@ -921,12 +949,19 @@ fn shifted_reserved_triplet_does_not_classify_principal_planes() {
 fn angular_plane_parameter_does_not_claim_offset_semantics() {
     let mut plane = feature("plane", Some("90"), 0);
     plane.input_class = Some("moRefPlane_c".into());
-    plane.parameters.insert("D1".into(), "0rad".into());
+    plane
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "0rad".into());
+    plane.properties.insert(
+        cadmpeg_core::nonblank_literal!("Origin"),
+        "0mm,70mm,0mm".into(),
+    );
     plane
         .properties
-        .insert("Origin".into(), "0mm,70mm,0mm".into());
-    plane.properties.insert("Normal".into(), "0,1,0".into());
-    plane.properties.insert("UAxis".into(), "-1,0,0".into());
+        .insert(cadmpeg_core::nonblank_literal!("Normal"), "0,1,0".into());
+    plane
+        .properties
+        .insert(cadmpeg_core::nonblank_literal!("UAxis"), "-1,0,0".into());
 
     assert!(!is_offset_plane(&plane));
     assert_eq!(
@@ -952,7 +987,9 @@ fn angular_plane_parameter_does_not_claim_offset_semantics() {
 fn length_plane_parameter_claims_offset_semantics() {
     let mut plane = feature("plane", Some("90"), 0);
     plane.input_class = Some("moRefPlane_c".into());
-    plane.parameters.insert("D1".into(), "70mm".into());
+    plane
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "70mm".into());
 
     assert!(is_offset_plane(&plane));
     assert_eq!(
@@ -1104,9 +1141,10 @@ fn custom_properties_are_document_attributes_not_model_features() {
 fn native_attribute_records_are_metadata_not_model_features() {
     let mut definition = feature("definition", Some("-1"), 0);
     definition.name = "VendorSettings.1".into();
-    definition
-        .parameters
-        .insert("VendorSettings.1".into(), "0".into());
+    definition.parameters.insert(
+        cadmpeg_core::nonblank_literal!("VendorSettings.1"),
+        "0".into(),
+    );
     let mut attribute = feature("attribute", Some("27"), 1);
     attribute.name = "VendorSettings.14236".into();
     attribute.input_class = Some("moAttribute_c".into());
@@ -1137,9 +1175,10 @@ fn native_attribute_definition_type_is_metadata_without_an_instance_name_match()
     let mut definition = feature("definition", Some("-1"), 0);
     definition.kind = "Attribute-Definition".into();
     definition.name = "NativeAttributeFamily".into();
-    definition
-        .parameters
-        .insert("NativeAttributeFamily".into(), "0".into());
+    definition.parameters.insert(
+        cadmpeg_core::nonblank_literal!("NativeAttributeFamily"),
+        "0".into(),
+    );
     let history = FeatureHistory {
         id: "history".into(),
         part_name: None,
@@ -1193,20 +1232,24 @@ fn configuration_snapshots_preserve_base_tree_node_roles() {
 fn simple_hole_uses_its_profile_dimension_roles() {
     let mut hole = feature("hole", Some("214"), 0);
     hole.xml_tag = "HoleWizard".into();
-    hole.properties
-        .insert("DissectableChildren".into(), "213,212".into());
+    hole.properties.insert(
+        cadmpeg_core::nonblank_literal!("DissectableChildren"),
+        "213,212".into(),
+    );
     let mut position = feature("position", Some("213"), 1);
     position.xml_tag = "Sketch".into();
     position.kind = "Sketch".into();
     let mut profile = feature("profile", Some("212"), 1);
     profile.xml_tag = "Sketch".into();
     profile.kind = "Sketch".into();
-    profile
-        .parameters
-        .insert("localized diameter".into(), "<MOD-DIAM>4.5".into());
-    profile
-        .parameters
-        .insert("localized depth".into(), "13.2".into());
+    profile.parameters.insert(
+        cadmpeg_core::nonblank_literal!("localized diameter"),
+        "<MOD-DIAM>4.5".into(),
+    );
+    profile.parameters.insert(
+        cadmpeg_core::nonblank_literal!("localized depth"),
+        "13.2".into(),
+    );
     let history = FeatureHistory {
         id: "history".into(),
         part_name: None,
@@ -1235,9 +1278,10 @@ fn simple_hole_uses_its_profile_dimension_roles() {
     );
 
     let mut ambiguous = history;
-    ambiguous.features[2]
-        .parameters
-        .insert("another length".into(), "2".into());
+    ambiguous.features[2].parameters.insert(
+        cadmpeg_core::nonblank_literal!("another length"),
+        "2".into(),
+    );
     let ambiguous = project_features(&[ambiguous]).unwrap();
     let FeatureDefinition::Operation(FeatureOperation::Hole { shape, extent, .. }) =
         ambiguous[0].evaluation.definition()
@@ -1253,27 +1297,35 @@ fn simple_hole_uses_its_profile_dimension_roles() {
 fn hole_wizard_rejects_unsupported_countersink_child_schema() {
     let mut hole = feature("hole", Some("214"), 0);
     hole.xml_tag = "HoleWizard".into();
-    hole.properties
-        .insert("DissectableChildren".into(), "213,212".into());
+    hole.properties.insert(
+        cadmpeg_core::nonblank_literal!("DissectableChildren"),
+        "213,212".into(),
+    );
     let mut position = feature("position", Some("213"), 1);
     position.xml_tag = "Sketch".into();
     position.kind = "Sketch".into();
-    position.parameters.insert("D1".into(), "11".into());
+    position
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "11".into());
     let mut profile = feature("profile", Some("212"), 2);
     profile.xml_tag = "Sketch".into();
     profile.kind = "Sketch".into();
-    profile
-        .parameters
-        .insert("localized bore".into(), "<MOD-DIAM>3.4".into());
-    profile
-        .parameters
-        .insert("localized depth".into(), "3".into());
-    profile
-        .parameters
-        .insert("localized entry".into(), "<MOD-DIAM>6.6".into());
-    profile
-        .parameters
-        .insert("localized angle".into(), "90°".into());
+    profile.parameters.insert(
+        cadmpeg_core::nonblank_literal!("localized bore"),
+        "<MOD-DIAM>3.4".into(),
+    );
+    profile.parameters.insert(
+        cadmpeg_core::nonblank_literal!("localized depth"),
+        "3".into(),
+    );
+    profile.parameters.insert(
+        cadmpeg_core::nonblank_literal!("localized entry"),
+        "<MOD-DIAM>6.6".into(),
+    );
+    profile.parameters.insert(
+        cadmpeg_core::nonblank_literal!("localized angle"),
+        "90°".into(),
+    );
     let history = FeatureHistory {
         id: "history".into(),
         part_name: None,
@@ -1300,27 +1352,35 @@ fn hole_wizard_rejects_unsupported_countersink_child_schema() {
 fn hole_wizard_drill_point_profile_retains_bore_and_blind_depth() {
     let mut hole = feature("hole", Some("214"), 0);
     hole.xml_tag = "HoleWizard".into();
-    hole.properties
-        .insert("DissectableChildren".into(), "212".into());
+    hole.properties.insert(
+        cadmpeg_core::nonblank_literal!("DissectableChildren"),
+        "212".into(),
+    );
     let mut profile = feature("profile", Some("212"), 1);
     profile.xml_tag = "Sketch".into();
     profile.kind = "Sketch".into();
     profile.input_class = Some("moProfileFeature_c".into());
-    profile
-        .parameters
-        .insert("螺纹孔钻头直径".into(), "<MOD-DIAM>4.2".into());
-    profile
-        .parameters
-        .insert("螺纹孔钻头深度".into(), "10".into());
-    profile.parameters.insert("导头角度".into(), "118°".into());
+    profile.parameters.insert(
+        cadmpeg_core::text::NonBlankString::new("螺纹孔钻头直径").expect("named dimension"),
+        "<MOD-DIAM>4.2".into(),
+    );
+    profile.parameters.insert(
+        cadmpeg_core::text::NonBlankString::new("螺纹孔钻头深度").expect("named dimension"),
+        "10".into(),
+    );
+    profile.parameters.insert(
+        cadmpeg_core::text::NonBlankString::new("导头角度").expect("named dimension"),
+        "118°".into(),
+    );
     profile.content.extend([
         FeatureContent::Dimension("导头角度".into()),
         FeatureContent::Dimension("螺纹孔钻头深度".into()),
         FeatureContent::Dimension("螺纹孔钻头直径".into()),
     ]);
-    profile
-        .parameters
-        .insert("derived native scalar".into(), "937.25".into());
+    profile.parameters.insert(
+        cadmpeg_core::nonblank_literal!("derived native scalar"),
+        "937.25".into(),
+    );
     let history = FeatureHistory {
         id: "history".into(),
         part_name: None,
@@ -1365,7 +1425,9 @@ fn native_scalar_refresh_preserves_radial_dimension_semantics() {
 fn legacy_revolve_uses_d1_angle_and_cut_class_operation() {
     let mut revolve = feature("revolve", Some("42"), 0);
     revolve.input_class = Some("moRevCut_c".into());
-    revolve.parameters.insert("D1".into(), "360°".into());
+    revolve
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "360°".into());
     let history = FeatureHistory {
         id: "history".into(),
         part_name: None,
@@ -1392,7 +1454,8 @@ fn localized_cut_extrusion_uses_its_native_class_operation() {
     let mut cut = feature("cut", Some("43"), 0);
     cut.kind = "BossExtrude".into();
     cut.input_class = Some("moCut_c".into());
-    cut.parameters.insert("D1".into(), "45".into());
+    cut.parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "45".into());
     let history = FeatureHistory {
         id: "history".into(),
         part_name: None,
@@ -1416,7 +1479,9 @@ fn localized_cut_extrusion_uses_its_native_class_operation() {
 fn revolve_uses_its_ordered_angle_dimension_name() {
     let mut revolve = feature("revolve", Some("42"), 0);
     revolve.input_class = Some("moRevolution_c".into());
-    revolve.parameters.insert("FIX_1".into(), "360°".into());
+    revolve
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("FIX_1"), "360°".into());
     revolve
         .content
         .push(FeatureContent::Dimension("FIX_1".into()));
@@ -1445,12 +1510,14 @@ fn revolve_uses_its_ordered_angle_dimension_name() {
 fn chamfer_uses_physical_types_of_ordered_localized_dimensions() {
     let mut chamfer = feature("chamfer", Some("42"), 0);
     chamfer.input_class = Some("Chamfer_c".into());
-    chamfer
-        .parameters
-        .insert("localized length".into(), "1.5".into());
-    chamfer
-        .parameters
-        .insert("localized angle".into(), "45°".into());
+    chamfer.parameters.insert(
+        cadmpeg_core::nonblank_literal!("localized length"),
+        "1.5".into(),
+    );
+    chamfer.parameters.insert(
+        cadmpeg_core::nonblank_literal!("localized angle"),
+        "45°".into(),
+    );
     chamfer
         .content
         .push(FeatureContent::Dimension("localized length".into()));
@@ -1484,9 +1551,10 @@ fn chamfer_uses_physical_types_of_ordered_localized_dimensions() {
 
     let mut distance = feature("distance", Some("43"), 0);
     distance.input_class = Some("Chamfer_c".into());
-    distance
-        .parameters
-        .insert("localized distance".into(), "2mm".into());
+    distance.parameters.insert(
+        cadmpeg_core::nonblank_literal!("localized distance"),
+        "2mm".into(),
+    );
     distance
         .content
         .push(FeatureContent::Dimension("localized distance".into()));
@@ -1504,9 +1572,10 @@ fn chamfer_uses_physical_types_of_ordered_localized_dimensions() {
             )
     ));
 
-    distance
-        .parameters
-        .insert("localized second distance".into(), "3mm".into());
+    distance.parameters.insert(
+        cadmpeg_core::nonblank_literal!("localized second distance"),
+        "3mm".into(),
+    );
     distance.content.push(FeatureContent::Dimension(
         "localized second distance".into(),
     ));
@@ -1530,8 +1599,12 @@ fn chamfer_uses_physical_types_of_ordered_localized_dimensions() {
 fn cosmetic_thread_retains_nominal_diameter_and_blind_length() {
     let mut thread = feature("thread", Some("42"), 0);
     thread.input_class = Some("moCosmeticThread_c".into());
-    thread.parameters.insert("D1".into(), "16".into());
-    thread.parameters.insert("D2".into(), "<MOD-DIAM>8".into());
+    thread
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "16".into());
+    thread
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D2"), "<MOD-DIAM>8".into());
     let history = FeatureHistory {
         id: "history".into(),
         part_name: None,
@@ -1558,7 +1631,9 @@ fn cosmetic_thread_retains_nominal_diameter_and_blind_length() {
 fn cosmetic_thread_without_blind_length_is_through() {
     let mut thread = feature("thread", Some("42"), 0);
     thread.input_class = Some("moCosmeticThread_c".into());
-    thread.parameters.insert("D2".into(), "<MOD-DIAM>8".into());
+    thread
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D2"), "<MOD-DIAM>8".into());
     let history = FeatureHistory {
         id: "history".into(),
         part_name: None,
@@ -1584,10 +1659,13 @@ fn cosmetic_thread_non_length_d1_and_named_diameter_are_through() {
     for d1 in ["0", "6.2831853071796rad"] {
         let mut thread = feature("thread", Some("42"), 0);
         thread.input_class = Some("moCosmeticThread_c".into());
-        thread.parameters.insert("D1".into(), d1.into());
         thread
             .parameters
-            .insert("thread size".into(), "<MOD-DIAM>4.9".into());
+            .insert(cadmpeg_core::nonblank_literal!("D1"), d1.into());
+        thread.parameters.insert(
+            cadmpeg_core::nonblank_literal!("thread size"),
+            "<MOD-DIAM>4.9".into(),
+        );
         let history = FeatureHistory {
             id: "history".into(),
             part_name: None,
@@ -1613,12 +1691,14 @@ fn cosmetic_thread_non_length_d1_and_named_diameter_are_through() {
 fn cosmetic_thread_requires_one_named_diameter() {
     let mut thread = feature("thread", Some("42"), 0);
     thread.input_class = Some("moCosmeticThread_c".into());
-    thread
-        .parameters
-        .insert("major".into(), "<MOD-DIAM>8".into());
-    thread
-        .parameters
-        .insert("minor".into(), "<MOD-DIAM>6.8".into());
+    thread.parameters.insert(
+        cadmpeg_core::nonblank_literal!("major"),
+        "<MOD-DIAM>8".into(),
+    );
+    thread.parameters.insert(
+        cadmpeg_core::nonblank_literal!("minor"),
+        "<MOD-DIAM>6.8".into(),
+    );
     let history = FeatureHistory {
         id: "history".into(),
         part_name: None,
@@ -1641,18 +1721,26 @@ fn cosmetic_thread_requires_one_named_diameter() {
 fn cosmetic_thread_inherits_one_threaded_hole_major_diameter() {
     let mut hole = feature("hole", Some("10"), 0);
     hole.input_class = Some("moHoleWzd_c".into());
-    hole.properties
-        .insert("DissectableChildren".into(), "11".into());
+    hole.properties.insert(
+        cadmpeg_core::nonblank_literal!("DissectableChildren"),
+        "11".into(),
+    );
 
     let mut profile = feature("profile", Some("11"), 1);
     profile.kind = "Sketch".into();
     profile.input_class = Some("moProfileFeature_c".into());
     profile.parameters = [
-        ("bore".into(), "<MOD-DIAM>2.5".into()),
-        ("drill depth".into(), "7.5".into()),
-        ("major".into(), "<MOD-DIAM>3".into()),
-        ("thread depth".into(), "6".into()),
-        ("angle".into(), "118°".into()),
+        (
+            cadmpeg_core::nonblank_literal!("bore"),
+            "<MOD-DIAM>2.5".into(),
+        ),
+        (cadmpeg_core::nonblank_literal!("drill depth"), "7.5".into()),
+        (
+            cadmpeg_core::nonblank_literal!("major"),
+            "<MOD-DIAM>3".into(),
+        ),
+        (cadmpeg_core::nonblank_literal!("thread depth"), "6".into()),
+        (cadmpeg_core::nonblank_literal!("angle"), "118°".into()),
     ]
     .into();
     profile.content = ["bore", "drill depth", "major", "thread depth", "angle"]
@@ -1759,11 +1847,15 @@ fn exact_native_profile_source_projects_a_feature_dependency() {
     let mut extrusion = feature("extrusion", Some("43"), 1);
     extrusion.kind = "Extrusion".into();
     extrusion.input_class = Some("moExtrusion_c".into());
-    extrusion.properties.insert("Profile".into(), "42".into());
     extrusion
         .properties
-        .insert("Operation".into(), "Join".into());
-    extrusion.parameters.insert("D1".into(), "5".into());
+        .insert(cadmpeg_core::nonblank_literal!("Profile"), "42".into());
+    extrusion
+        .properties
+        .insert(cadmpeg_core::nonblank_literal!("Operation"), "Join".into());
+    extrusion
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "5".into());
     let history = FeatureHistory {
         id: "history".into(),
         part_name: None,

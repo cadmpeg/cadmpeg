@@ -188,7 +188,7 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
         byte_offset: 30,
         state_offset: 0,
         owner_reference: 42,
-        owner_entity_id: Some(cadmpeg_ir::NonBlankString::new("Sketch_42").unwrap()),
+        owner_entity_id: Some(cadmpeg_core::text::NonBlankString::new("Sketch_42").unwrap()),
         auxiliary_references: crate::records::ReferenceRun::located(
             vec![20]
                 .into_iter()
@@ -511,7 +511,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
             byte_offset: 600,
             state_offset: 70,
             owner_reference: 172,
-            owner_entity_id: Some(cadmpeg_ir::NonBlankString::new("0_172").unwrap()),
+            owner_entity_id: Some(cadmpeg_core::text::NonBlankString::new("0_172").unwrap()),
             auxiliary_references: crate::records::ReferenceRun::located(Vec::new()),
             rectangular_counted_reference_count: None,
             members: (vec![member]
@@ -900,7 +900,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         byte_offset: 105,
         state_offset: 0,
         owner_reference: 42,
-        owner_entity_id: Some(cadmpeg_ir::NonBlankString::new("Sketch_42").unwrap()),
+        owner_entity_id: Some(cadmpeg_core::text::NonBlankString::new("Sketch_42").unwrap()),
         auxiliary_references: crate::records::ReferenceRun::located(Vec::new()),
         rectangular_counted_reference_count: None,
         // Member run order disagrees with semantic order below.

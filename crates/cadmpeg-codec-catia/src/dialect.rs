@@ -137,17 +137,29 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
 /// is absent unless all four read — and `<BuildDate>` is carried through as the
 /// string it is. Nothing here branches on the tuple; it is provenance recorded
 /// as evidence.
-fn declared(scan: &ContainerScan) -> BTreeMap<String, String> {
+fn declared(scan: &ContainerScan) -> BTreeMap<cadmpeg_core::text::NonBlankString, String> {
     let mut declared = BTreeMap::new();
     if let Some(version) = &scan.last_save_version {
-        declared.insert(DECLARED_VERSION.into(), version.version.to_string());
-        declared.insert(DECLARED_RELEASE.into(), version.release.to_string());
         declared.insert(
-            DECLARED_SERVICE_PACK.into(),
+            cadmpeg_core::nonblank_const!(DECLARED_VERSION),
+            version.version.to_string(),
+        );
+        declared.insert(
+            cadmpeg_core::nonblank_const!(DECLARED_RELEASE),
+            version.release.to_string(),
+        );
+        declared.insert(
+            cadmpeg_core::nonblank_const!(DECLARED_SERVICE_PACK),
             version.service_pack.to_string(),
         );
-        declared.insert(DECLARED_HOT_FIX.into(), version.hot_fix.to_string());
-        declared.insert(DECLARED_BUILD_DATE.into(), version.build_date.clone());
+        declared.insert(
+            cadmpeg_core::nonblank_const!(DECLARED_HOT_FIX),
+            version.hot_fix.to_string(),
+        );
+        declared.insert(
+            cadmpeg_core::nonblank_const!(DECLARED_BUILD_DATE),
+            version.build_date.clone(),
+        );
     }
     declared
 }

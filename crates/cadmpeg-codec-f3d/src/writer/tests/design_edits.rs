@@ -123,7 +123,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         .unwrap();
     let binding = &mut edited.model.appearance_bindings[0];
     binding.channels.insert(
-        "Appearance".into(),
+        cadmpeg_core::nonblank_literal!("Appearance"),
         "dddddddd-1111-2222-3333-eeeeeeeeeeee".into(),
     );
     let lost_edge = &mut native.lost_edge_references[0];
@@ -150,10 +150,10 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         Some(cadmpeg_ir::topology::Color::new(0.8, 0.6, 0.4, 1.0).expect("valid color"));
     edited.model.appearances[0]
         .properties
-        .insert("reflectivity_at_0deg".into(), 0.7);
+        .insert(cadmpeg_core::nonblank_literal!("reflectivity_at_0deg"), 0.7);
     edited.model.appearances[0]
         .properties
-        .insert("refraction_index".into(), 1.8);
+        .insert(cadmpeg_core::nonblank_literal!("refraction_index"), 1.8);
     assert_eq!(
         native.act_entities[0].entity_id(),
         native.design_material_assignments[0].entity_id.as_str()

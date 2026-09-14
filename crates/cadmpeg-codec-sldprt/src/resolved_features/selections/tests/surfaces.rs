@@ -498,7 +498,7 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
         kind: "Feature".into(),
         input_class: Some("moCosmeticThread_c".into()),
         suppressed: false,
-        parameters: BTreeMap::from([("D2".into(), "<MOD-DIAM>8".into())]),
+        parameters: BTreeMap::from([(cadmpeg_core::nonblank_literal!("D2"), "<MOD-DIAM>8".into())]),
         dimension_properties: BTreeMap::new(),
         properties: BTreeMap::new(),
         text: None,

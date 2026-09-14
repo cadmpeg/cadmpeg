@@ -67,7 +67,7 @@ fn surface_law_admission_preserves_the_depth_boundary() {
     let construction = |expression| LawSurfaceConstruction {
         parameter_ranges: None,
         primary: LawFormula::Named {
-            name: crate::nonblank_literal!("test"),
+            name: cadmpeg_core::nonblank_literal!("test"),
             variables: vec![expression],
         },
         additional: Vec::new(),
@@ -97,7 +97,7 @@ fn surface_law_admission_preserves_the_depth_boundary() {
     assert!(ProceduralSurface::new(
         id(),
         law(LawExpression::Text {
-            value: crate::nonblank_literal!("x ")
+            value: cadmpeg_core::nonblank_literal!("x ")
         })
         .unwrap(),
         None

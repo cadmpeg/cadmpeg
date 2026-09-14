@@ -480,7 +480,7 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_histories[0].features[0]
             .parameters
-            .insert("Depth".into(), "30000mm".into());
+            .insert(cadmpeg_core::nonblank_literal!("Depth"), "30000mm".into());
     });
     decoded.ir_mut().model.configurations[0]
         .parameter_values

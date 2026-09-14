@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::ids::{AppearanceId, BodyId, EdgeId, FaceId, VertexId};
 use crate::topology::Color;
+use cadmpeg_core::text::NonBlankString;
 
 /// A decoded appearance/material asset.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -77,7 +78,7 @@ pub struct Appearance {
     /// Additional byte-decoded shader scalars keyed by schema property name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
-    pub properties: BTreeMap<String, f64>,
+    pub properties: BTreeMap<NonBlankString, f64>,
     /// Texture assets connected to shader input slots.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub textures: Vec<TextureRef>,
@@ -226,7 +227,7 @@ pub struct AppearanceBinding {
     /// ACT change-version channel GUIDs for this assigned entity.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
-    pub channels: BTreeMap<String, String>,
+    pub channels: BTreeMap<NonBlankString, String>,
 }
 
 #[cfg(test)]

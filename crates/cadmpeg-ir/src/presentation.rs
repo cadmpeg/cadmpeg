@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Neutral persisted document and view presentation state.
 
+use cadmpeg_core::text::NonBlankString;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -27,7 +28,7 @@ pub struct CameraState {
     /// Other camera fields retained by exact source name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
-    pub properties: BTreeMap<String, String>,
+    pub properties: BTreeMap<NonBlankString, String>,
 }
 
 /// Closed set of document GUI state families.
@@ -65,7 +66,7 @@ pub struct PresentationState {
     /// Exact root attributes.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
-    pub attributes: BTreeMap<String, String>,
+    pub attributes: BTreeMap<NonBlankString, String>,
     /// Referenced display assets as global native entry ids.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub assets: Vec<String>,
@@ -263,7 +264,7 @@ pub struct ViewPresentation {
     /// Remaining view properties by exact source property name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
-    pub properties: BTreeMap<String, String>,
+    pub properties: BTreeMap<NonBlankString, String>,
     /// Native view-provider record supplying this state.
     #[serde(
         default,
@@ -345,7 +346,7 @@ pub enum PresentationItem {
     Source {
         /// Stable source item identity.
         #[serde(deserialize_with = "deserialize_source_id")]
-        source_id: crate::products::NonBlankString,
+        source_id: cadmpeg_core::text::NonBlankString,
     },
 }
 
@@ -403,7 +404,7 @@ crate::units::named_optional_field!(
 
 crate::units::named_field!(
     deserialize_source_id,
-    crate::products::NonBlankString,
+    cadmpeg_core::text::NonBlankString,
     "source_id"
 );
 
@@ -498,7 +499,7 @@ mod tests {
             description: None,
             visible: None,
             items: vec![PresentationItem::Source {
-                source_id: crate::nonblank_literal!("#{}", 42),
+                source_id: cadmpeg_core::nonblank_literal!("#{}", 42),
             }],
         });
 
@@ -514,7 +515,7 @@ mod tests {
             description: None,
             visible: None,
             items: vec![PresentationItem::Source {
-                source_id: crate::nonblank_literal!("#{}", 42),
+                source_id: cadmpeg_core::nonblank_literal!("#{}", 42),
             }],
         });
 
@@ -551,7 +552,7 @@ mod tests {
         )
         .expect_err("empty source_id");
         assert!(error.to_string().contains("source_id"));
-        assert!(crate::products::NonBlankString::new("").is_none());
+        assert!(cadmpeg_core::text::NonBlankString::new("").is_none());
     }
 
     #[test]

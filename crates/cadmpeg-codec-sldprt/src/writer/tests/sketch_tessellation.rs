@@ -621,7 +621,7 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_histories[0].features[0]
             .parameters
-            .insert("Depth".into(), "20mm".into());
+            .insert(cadmpeg_core::nonblank_literal!("Depth"), "20mm".into());
     });
 
     let mut encoded = Vec::new();

@@ -423,7 +423,7 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
         kind: "Sketch".into(),
         input_class: Some("moProfileFeature_c".into()),
         suppressed: false,
-        parameters: BTreeMap::from([("Depth".into(), depth.into())]),
+        parameters: BTreeMap::from([(cadmpeg_core::nonblank_literal!("Depth"), depth.into())]),
         dimension_properties: BTreeMap::new(),
         properties: BTreeMap::new(),
         text: None,

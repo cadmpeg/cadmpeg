@@ -133,7 +133,7 @@ impl F3dDialect {
     pub(crate) fn classify_document(version: &str) -> DialectMatch {
         let mut declared = BTreeMap::new();
         declared.insert(
-            DECLARED_TOP_LEVEL_MANIFEST_VERSION.to_owned(),
+            cadmpeg_core::nonblank_const!(DECLARED_TOP_LEVEL_MANIFEST_VERSION),
             version.to_owned(),
         );
         let dialect = if version == TOP_LEVEL_MANIFEST_VERSION {
@@ -153,7 +153,7 @@ impl F3dDialect {
     pub(crate) fn classify_f3z(root_document_members: &[&str]) -> DialectMatch {
         let mut declared = BTreeMap::new();
         declared.insert(
-            DECLARED_ROOT_DOCUMENT_MEMBERS.to_owned(),
+            cadmpeg_core::nonblank_const!(DECLARED_ROOT_DOCUMENT_MEMBERS),
             root_document_members.join(MEMBER_SEPARATOR),
         );
         Self::F3zMultiDocument.matched(declared)
@@ -161,7 +161,10 @@ impl F3dDialect {
 
     /// The one [`DialectMatch`] construction path in this codec, so a
     /// classification bug and the report can never disagree.
-    fn matched(self, declared: BTreeMap<String, String>) -> DialectMatch {
+    fn matched(
+        self,
+        declared: BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+    ) -> DialectMatch {
         match self {
             Self::Manifest3200 | Self::F3zMultiDocument => DialectMatch::admitted(self.id()),
             Self::Unknown => {

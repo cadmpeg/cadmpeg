@@ -1162,7 +1162,7 @@ pub enum EmbeddedLawExpression {
     /// A null operand.
     Null,
     /// A serializer-preserved textual law expression.
-    Text(cadmpeg_ir::products::NonBlankString),
+    Text(cadmpeg_core::text::NonBlankString),
     /// An integer operand.
     Integer(i64),
     /// A double operand.
@@ -1223,7 +1223,7 @@ pub enum EmbeddedLawFormula {
     /// A checked non-sentinel name and its operands.
     Named {
         /// The formula name.
-        name: cadmpeg_ir::products::NonBlankString,
+        name: cadmpeg_core::text::NonBlankString,
         /// The formula operands, in stream order.
         variables: Vec<EmbeddedLawExpression>,
     },
@@ -2430,7 +2430,7 @@ pub(crate) fn law_expression(cur: &mut Cur<'_>, depth: usize) -> Option<Embedded
 fn sweep_law_expression(cur: &mut Cur<'_>) -> Option<EmbeddedLawExpression> {
     if matches!(cur.peek(), Some(Token::Str(_))) {
         return Some(EmbeddedLawExpression::Text(
-            cadmpeg_ir::products::NonBlankString::new(cur.take_str()?)?,
+            cadmpeg_core::text::NonBlankString::new(cur.take_str()?)?,
         ));
     }
     law_expression(cur, 0)
@@ -2575,7 +2575,7 @@ fn law_formula_resolving(
         .map(|_| law_expression_resolving(cur, 0, resolver))
         .collect::<Option<Vec<_>>>()?;
     Some(EmbeddedLawFormula::Named {
-        name: cadmpeg_ir::products::NonBlankString::new(name)?,
+        name: cadmpeg_core::text::NonBlankString::new(name)?,
         variables,
     })
 }

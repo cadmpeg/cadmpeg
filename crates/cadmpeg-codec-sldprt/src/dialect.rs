@@ -233,7 +233,10 @@ impl SldprtDialect {
     fn matched(self, sw_version: Option<&str>) -> DialectMatch {
         let mut declared = BTreeMap::new();
         if let Some(value) = sw_version {
-            declared.insert(DECLARED_SW_VERSION.into(), value.to_owned());
+            declared.insert(
+                cadmpeg_core::nonblank_const!(DECLARED_SW_VERSION),
+                value.to_owned(),
+            );
         }
         match self {
             Self::SwVersionPre12000 | Self::SwVersion12000Plus => DialectMatch::admitted(self.id()),

@@ -320,7 +320,7 @@ pub(in super::super) fn transfer_saved_spline_curves(
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(placed)),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_ir::products::NonBlankString::new(format!(
+                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
                         "FeatDefs:saved_spline#{suffix}"
                     ))
                     .ok_or_else(|| {
@@ -583,7 +583,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 geometry,
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_ir::products::NonBlankString::new(format!(
+                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
                         "VisibGeom:{surface_id}"
                     ))
                     .ok_or_else(|| {
@@ -644,7 +644,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 geometry,
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_ir::products::NonBlankString::new(format!(
+                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
                         "VisibGeom:{native_surface_id}"
                     ))
                     .ok_or_else(|| {
@@ -748,7 +748,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix.clone())),
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: cadmpeg_ir::products::NonBlankString::new(format!(
+                        object_id: cadmpeg_core::text::NonBlankString::new(format!(
                             "FeatDefs:saved_spline#{suffix}"
                         ))
                         .ok_or_else(|| {
@@ -794,7 +794,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_ir::products::NonBlankString::new(format!(
+                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
                         "VisibGeom:{native_surface_id}"
                     ))
                     .ok_or_else(|| {

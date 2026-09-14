@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::DialectMatch;
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -52,7 +53,7 @@ enum DecodeMode {
 }
 
 impl Packaging {
-    fn add_source_attributes(self, attributes: &mut BTreeMap<String, String>) {
+    fn add_source_attributes(self, attributes: &mut BTreeMap<NonBlankString, String>) {
         let Self::Zip {
             entry_count,
             root_data_offset,
@@ -60,11 +61,20 @@ impl Packaging {
         else {
             return;
         };
-        attributes.insert("container_kind".into(), "iso-10303-21-zip".into());
-        attributes.insert("archive_root".into(), crate::archive::ROOT_NAME.into());
-        attributes.insert("archive_entries".into(), entry_count.to_string());
         attributes.insert(
-            "archive_root_data_offset".into(),
+            cadmpeg_core::nonblank_literal!("container_kind"),
+            "iso-10303-21-zip".into(),
+        );
+        attributes.insert(
+            cadmpeg_core::nonblank_literal!("archive_root"),
+            crate::archive::ROOT_NAME.into(),
+        );
+        attributes.insert(
+            cadmpeg_core::nonblank_literal!("archive_entries"),
+            entry_count.to_string(),
+        );
+        attributes.insert(
+            cadmpeg_core::nonblank_literal!("archive_root_data_offset"),
             root_data_offset.to_string(),
         );
     }
@@ -101,7 +111,7 @@ impl<T> std::ops::DerefMut for StageOutcome<T> {
 struct StepDecodeSession<'ctx, 'arena> {
     ir: CadIr,
     matched: DialectMatch,
-    source_attributes: BTreeMap<String, String>,
+    source_attributes: BTreeMap<NonBlankString, String>,
     body: DecodeBody,
     typed_records: HashSet<u64>,
     admitted_ir_entities: u64,
@@ -117,10 +127,16 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         mode: DecodeMode,
     ) -> Self {
         let mut attributes = BTreeMap::new();
-        attributes.insert("schema".into(), schema_name(exchange));
-        attributes.insert("data_sections".into(), exchange.data.len().to_string());
         attributes.insert(
-            "entity_instances".into(),
+            cadmpeg_core::nonblank_literal!("schema"),
+            schema_name(exchange),
+        );
+        attributes.insert(
+            cadmpeg_core::nonblank_literal!("data_sections"),
+            exchange.data.len().to_string(),
+        );
+        attributes.insert(
+            cadmpeg_core::nonblank_literal!("entity_instances"),
             exchange.records.len().to_string(),
         );
         if let DecodeMode::Decode(packaging) = mode {
@@ -540,17 +556,20 @@ fn decode_exchange_mode(
         }
         source_fidelity.attach_native_unknown_records(&mut session.ir, "step", opaque)?;
     }
-    session
-        .source_attributes
-        .insert("bytes_structural".into(), accounting.structural.to_string());
-    session
-        .source_attributes
-        .insert("bytes_typed".into(), accounting.typed.to_string());
-    session
-        .source_attributes
-        .insert("bytes_named_opaque".into(), accounting.opaque.to_string());
     session.source_attributes.insert(
-        "bytes_unclassified".into(),
+        cadmpeg_core::nonblank_literal!("bytes_structural"),
+        accounting.structural.to_string(),
+    );
+    session.source_attributes.insert(
+        cadmpeg_core::nonblank_literal!("bytes_typed"),
+        accounting.typed.to_string(),
+    );
+    session.source_attributes.insert(
+        cadmpeg_core::nonblank_literal!("bytes_named_opaque"),
+        accounting.opaque.to_string(),
+    );
+    session.source_attributes.insert(
+        cadmpeg_core::nonblank_literal!("bytes_unclassified"),
         accounting.unclassified.to_string(),
     );
     if accounting.unclassified > 0 {
@@ -917,8 +936,8 @@ fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
 }
 
 /// A non-blank STEP record reference.
-pub(super) fn step_source_id(id: u64) -> cadmpeg_ir::products::NonBlankString {
-    cadmpeg_ir::nonblank_literal!("#{id}")
+pub(super) fn step_source_id(id: u64) -> cadmpeg_core::text::NonBlankString {
+    cadmpeg_core::nonblank_literal!("#{id}")
 }
 
 /// A source association for a STEP record.

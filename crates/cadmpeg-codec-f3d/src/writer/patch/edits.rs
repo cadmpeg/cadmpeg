@@ -877,7 +877,8 @@ pub(crate) fn validate_material_assignment_appearances(
                     "F3D Protein property {id}.{name} is outside its writable range"
                 )));
             }
-            edit.properties.insert(name.clone(), after_value);
+            edit.properties
+                .insert(name.as_str().to_owned(), after_value);
         }
         if edit.color.is_some() || !edit.properties.is_empty() {
             let guid = after.visual_guid.clone().ok_or_else(|| {
@@ -1166,7 +1167,7 @@ pub(crate) fn validate_act_appearance_bindings(
                     before
                         .channels
                         .iter()
-                        .map(|(name, guid)| (name, guid.as_str()))
+                        .map(|(name, guid)| (name.as_str(), guid.as_str()))
                         .eq(act_channel_values(entity))
                 })
             });
@@ -1178,7 +1179,7 @@ pub(crate) fn validate_act_appearance_bindings(
                     after
                         .channels
                         .iter()
-                        .map(|(name, guid)| (name, guid.as_str()))
+                        .map(|(name, guid)| (name.as_str(), guid.as_str()))
                         .eq(act_channel_values(entity))
                 })
         });
@@ -1227,7 +1228,7 @@ pub(crate) fn validate_act_appearance_bindings(
             bindings.iter().any(|(channels, _)| {
                 channels
                     .iter()
-                    .map(|(name, guid)| (name, guid.as_str()))
+                    .map(|(name, guid)| (name.as_str(), guid.as_str()))
                     .eq(act_channel_values(before))
             })
         });
@@ -1250,7 +1251,7 @@ pub(crate) fn validate_act_appearance_bindings(
                             && binding
                                 .channels
                                 .iter()
-                                .map(|(name, guid)| (name, guid.as_str()))
+                                .map(|(name, guid)| (name.as_str(), guid.as_str()))
                                 .eq(act_channel_values(after))
                     })
             })
@@ -1269,12 +1270,12 @@ pub(crate) fn validate_act_appearance_bindings(
     Ok(())
 }
 
-fn act_channel_values(entity: &ActEntity) -> impl Iterator<Item = (&String, &str)> {
+fn act_channel_values(entity: &ActEntity) -> impl Iterator<Item = (&str, &str)> {
     entity
         .channel_group()
         .channels()
         .iter()
-        .map(|(name, guid)| (name, guid.value.as_str()))
+        .map(|(name, guid)| (name.as_str(), guid.value.as_str()))
 }
 
 pub(crate) fn validate_act_entity_edits(

@@ -136,7 +136,7 @@ fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
             Some("texture".into()),
             Some("image/png".into()),
             cadmpeg_ir::assets::AssetContent::External {
-                uri: cadmpeg_ir::products::NonBlankString::new("urn:test:texture")
+                uri: cadmpeg_core::text::NonBlankString::new("urn:test:texture")
                     .expect("nonempty uri"),
             },
             None,
@@ -164,7 +164,7 @@ fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
             native_ref: "native-note".into(),
         });
     let mut bom_properties = std::collections::BTreeMap::new();
-    bom_properties.insert("stock_code".into(), "A-1".into());
+    bom_properties.insert(cadmpeg_core::nonblank_literal!("stock_code"), "A-1".into());
     ir.model
         .product_definitions
         .push(cadmpeg_ir::products::ProductDefinition {
@@ -1288,7 +1288,7 @@ fn edge_without_curve_is_reported_and_omitted() {
 fn subds_tessellations_and_source_associations_are_reported_as_losses() {
     let source_object = cadmpeg_ir::SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Rhino,
-        object_id: cadmpeg_ir::products::NonBlankString::new("object-0")
+        object_id: cadmpeg_core::text::NonBlankString::new("object-0")
             .expect("nonempty source identity"),
         name: None,
         color: None,

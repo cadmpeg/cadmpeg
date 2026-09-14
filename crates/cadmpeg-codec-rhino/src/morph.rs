@@ -599,7 +599,7 @@ pub(crate) fn project(
         name,
         suppressed: Some(false),
         dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-        source_properties: properties,
+        source_properties: cadmpeg_core::text::named_entries(properties),
         source_tag: Some("RhinoMorphControl".to_string()),
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
@@ -609,9 +609,12 @@ pub(crate) fn project(
                 kind: "morph_control".into(),
                 parameters: {
                     let mut parameters = BTreeMap::from([
-                        ("variant".to_string(), variant.to_string()),
                         (
-                            "captive_ids".to_string(),
+                            cadmpeg_core::nonblank_literal!("variant"),
+                            variant.to_string(),
+                        ),
+                        (
+                            cadmpeg_core::nonblank_literal!("captive_ids"),
                             morph
                                 .captive_ids
                                 .iter()
@@ -619,17 +622,27 @@ pub(crate) fn project(
                                 .collect::<Vec<_>>()
                                 .join(","),
                         ),
-                        ("tolerance".to_string(), morph.tolerance.to_string()),
-                        ("quick_preview".to_string(), morph.quick_preview.to_string()),
                         (
-                            "preserve_structure".to_string(),
+                            cadmpeg_core::nonblank_literal!("tolerance"),
+                            morph.tolerance.to_string(),
+                        ),
+                        (
+                            cadmpeg_core::nonblank_literal!("quick_preview"),
+                            morph.quick_preview.to_string(),
+                        ),
+                        (
+                            cadmpeg_core::nonblank_literal!("preserve_structure"),
                             morph.preserve_structure.to_string(),
                         ),
                     ]);
                     parameters.extend(morph.captive_ids.iter().enumerate().filter_map(
                         |(index, id)| {
-                            resolve_captive(*id)
-                                .map(|record| (format!("captive_{index}_object"), record))
+                            resolve_captive(*id).map(|record| {
+                                (
+                                    cadmpeg_core::nonblank_literal!("captive_{index}_object"),
+                                    record,
+                                )
+                            })
                         },
                     ));
                     parameters

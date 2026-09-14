@@ -49,11 +49,17 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 .map(|record| record.parameters.clone())
                 .unwrap_or_default();
             if let Some(thickness) = construction.thickness {
-                parameters.insert("Thickness".into(), format_length_mm(thickness.get()));
+                parameters.insert(
+                    cadmpeg_core::nonblank_literal!("Thickness"),
+                    format_length_mm(thickness.get()),
+                );
             }
             match construction.draft {
                 RibDraft::Angle(draft) => {
-                    parameters.insert("Draft".into(), format_angle_rad(draft.get()));
+                    parameters.insert(
+                        cadmpeg_core::nonblank_literal!("Draft"),
+                        format_angle_rad(draft.get()),
+                    );
                 }
                 RibDraft::None => {
                     parameters.remove("Draft");
@@ -70,17 +76,23 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                                 feature.id
                             ))
                         })?;
-                properties.insert("Profile".into(), profile_source);
+                properties.insert(cadmpeg_core::nonblank_literal!("Profile"), profile_source);
             }
             if let Some(direction) = construction.direction {
-                properties.insert("Direction".into(), format_vector3(direction.get()));
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("Direction"),
+                    format_vector3(direction.get()),
+                );
             }
             if let Some(side) = construction.side {
-                properties.insert("BothSides".into(), (side == RibSide::Centered).to_string());
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("BothSides"),
+                    (side == RibSide::Centered).to_string(),
+                );
             }
             if *op != BooleanOp::Unresolved {
                 properties.insert(
-                    "Operation".into(),
+                    cadmpeg_core::nonblank_literal!("Operation"),
                     resolved_boolean_op(*op, &feature.id)?.into(),
                 );
             }
@@ -192,7 +204,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 .unwrap_or_default();
             let mut properties = feature.source_properties.clone();
             if !seed_sources.is_empty() {
-                properties.insert("Seeds".into(), seed_sources.join(","));
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("Seeds"),
+                    seed_sources.join(","),
+                );
             }
             match pattern.definition() {
                 PatternTransform::Unresolved { .. } => {
@@ -211,7 +226,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 } => {
                     match direction {
                         Some(direction) => {
-                            properties.insert("Direction".into(), format_vector3(*direction));
+                            properties.insert(
+                                cadmpeg_core::nonblank_literal!("Direction"),
+                                format_vector3(*direction),
+                            );
                         }
                         None if existing.is_some() => {}
                         None => {
@@ -224,31 +242,39 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
                     let spacing_key =
                         if parameters.contains_key("D3") && !parameters.contains_key("Spacing") {
-                            "D3"
+                            cadmpeg_core::nonblank_literal!("D3")
                         } else {
-                            "Spacing"
+                            cadmpeg_core::nonblank_literal!("Spacing")
                         };
                     let count_key =
                         if parameters.contains_key("D1") && !parameters.contains_key("Count") {
-                            "D1"
+                            cadmpeg_core::nonblank_literal!("D1")
                         } else {
-                            "Count"
+                            cadmpeg_core::nonblank_literal!("Count")
                         };
                     parameters.insert(
-                        spacing_key.into(),
+                        spacing_key.clone(),
                         format_length_like(
                             spacing.get(),
                             existing
-                                .and_then(|record| record.parameters.get(spacing_key))
+                                .and_then(|record| record.parameters.get(spacing_key.as_str()))
                                 .map(String::as_str),
                         ),
                     );
-                    parameters.insert(count_key.into(), count.to_string());
+                    parameters.insert(count_key.clone(), count.to_string());
                     if let Some(second) = second {
-                        properties.insert("Direction2".into(), format_vector3(second.direction));
-                        parameters
-                            .insert("D4".into(), format_length_like(second.spacing.get(), None));
-                        parameters.insert("D2".into(), second.count.to_string());
+                        properties.insert(
+                            cadmpeg_core::nonblank_literal!("Direction2"),
+                            format_vector3(second.direction),
+                        );
+                        parameters.insert(
+                            cadmpeg_core::nonblank_literal!("D4"),
+                            format_length_like(second.spacing.get(), None),
+                        );
+                        parameters.insert(
+                            cadmpeg_core::nonblank_literal!("D2"),
+                            second.count.to_string(),
+                        );
                     }
                 }
                 PatternTransform::Circular {
@@ -257,10 +283,19 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     angle,
                     count,
                 } => {
-                    properties.insert("AxisOrigin".into(), format_point3_mm(*axis_origin));
-                    properties.insert("AxisDirection".into(), format_vector3(*axis_dir));
-                    parameters.insert("Angle".into(), format_angle_rad(angle.get()));
-                    parameters.insert("Count".into(), count.to_string());
+                    properties.insert(
+                        cadmpeg_core::nonblank_literal!("AxisOrigin"),
+                        format_point3_mm(*axis_origin),
+                    );
+                    properties.insert(
+                        cadmpeg_core::nonblank_literal!("AxisDirection"),
+                        format_vector3(*axis_dir),
+                    );
+                    parameters.insert(
+                        cadmpeg_core::nonblank_literal!("Angle"),
+                        format_angle_rad(angle.get()),
+                    );
+                    parameters.insert(cadmpeg_core::nonblank_literal!("Count"), count.to_string());
                 }
                 PatternTransform::CurveDriven {
                     path,
@@ -276,7 +311,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                                         feature.id
                                     ))
                                 })?;
-                            properties.insert("Path".into(), path);
+                            properties.insert(cadmpeg_core::nonblank_literal!("Path"), path);
                         }
                         None if existing.is_some() => {}
                         None => {
@@ -288,33 +323,39 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     }
                     let spacing_key =
                         if parameters.contains_key("D3") && !parameters.contains_key("Spacing") {
-                            "D3"
+                            cadmpeg_core::nonblank_literal!("D3")
                         } else {
-                            "Spacing"
+                            cadmpeg_core::nonblank_literal!("Spacing")
                         };
                     let count_key =
                         if parameters.contains_key("D1") && !parameters.contains_key("Count") {
-                            "D1"
+                            cadmpeg_core::nonblank_literal!("D1")
                         } else {
-                            "Count"
+                            cadmpeg_core::nonblank_literal!("Count")
                         };
                     parameters.insert(
-                        spacing_key.into(),
+                        spacing_key.clone(),
                         format_length_like(
                             spacing.get(),
                             existing
-                                .and_then(|record| record.parameters.get(spacing_key))
+                                .and_then(|record| record.parameters.get(spacing_key.as_str()))
                                 .map(String::as_str),
                         ),
                     );
-                    parameters.insert(count_key.into(), count.to_string());
+                    parameters.insert(count_key.clone(), count.to_string());
                 }
                 PatternTransform::Mirror {
                     plane_origin,
                     plane_normal,
                 } => {
-                    properties.insert("PlaneOrigin".into(), format_point3_mm(*plane_origin));
-                    properties.insert("PlaneNormal".into(), format_vector3(*plane_normal));
+                    properties.insert(
+                        cadmpeg_core::nonblank_literal!("PlaneOrigin"),
+                        format_point3_mm(*plane_origin),
+                    );
+                    properties.insert(
+                        cadmpeg_core::nonblank_literal!("PlaneNormal"),
+                        format_vector3(*plane_normal),
+                    );
                 }
                 PatternTransform::MirrorReference { .. } => {
                     return Err(CodecError::NotImplemented(format!(

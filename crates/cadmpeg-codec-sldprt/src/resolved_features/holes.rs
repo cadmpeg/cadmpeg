@@ -423,9 +423,10 @@ pub(crate) fn enrich_history_hole_constructions(
             {
                 continue;
             }
-            history.features[feature_index]
-                .properties
-                .insert("DissectableChildren".into(), profile_source);
+            history.features[feature_index].properties.insert(
+                cadmpeg_core::nonblank_literal!("DissectableChildren"),
+                profile_source,
+            );
         }
         let claimed_profiles = history
             .features
@@ -484,9 +485,10 @@ pub(crate) fn enrich_history_hole_constructions(
             if interval_claim_counts.get(profile_source.as_str()) != Some(&1) {
                 continue;
             }
-            history.features[feature_index]
-                .properties
-                .insert("DissectableChildren".into(), profile_source);
+            history.features[feature_index].properties.insert(
+                cadmpeg_core::nonblank_literal!("DissectableChildren"),
+                profile_source,
+            );
         }
     }
 }
@@ -556,7 +558,7 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters(
                 continue;
             }
             feature.parameters.insert(
-                "D2".into(),
+                cadmpeg_core::nonblank_literal!("D2"),
                 format!("<MOD-DIAM>{}", crate::history::format_length_mm(diameter)),
             );
         }
@@ -585,7 +587,9 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters_without_hole_construction
         let Some(diameter) = fallback_parameters.get(&feature.id) else {
             continue;
         };
-        feature.parameters.insert("D2".into(), diameter.clone());
+        feature
+            .parameters
+            .insert(cadmpeg_core::nonblank_literal!("D2"), diameter.clone());
     }
 }
 

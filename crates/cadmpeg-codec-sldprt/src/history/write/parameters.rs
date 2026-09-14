@@ -197,17 +197,21 @@ pub(crate) fn sync_neutral_parameters(
             })?;
         let mut parameters = desired.remove(feature_id).unwrap_or_default();
         parameters.sort_by_key(|parameter| parameter.ordinal);
-        record.parameters = parameters
-            .iter()
-            .map(|parameter| (parameter.name.clone(), parameter.expression.clone()))
-            .collect();
+        record.parameters = cadmpeg_core::text::named_entries(
+            parameters
+                .iter()
+                .map(|parameter| (parameter.name.clone(), parameter.expression.clone())),
+        );
         record.dimension_properties = parameters
             .iter()
             .map(|parameter| {
                 let mut properties = parameter.properties.clone();
                 if parse_parameter_literal(&parameter.expression).is_none() {
                     if let Some(value) = &parameter.value {
-                        properties.insert("Value".into(), format_parameter_value(value));
+                        properties.insert(
+                            cadmpeg_core::nonblank_literal!("Value"),
+                            format_parameter_value(value),
+                        );
                     } else {
                         properties.remove("Value");
                     }
@@ -422,9 +426,9 @@ pub(crate) fn unquoted_expression_identifier(value: &str) -> bool {
 
 pub(crate) fn restore_equivalent_parameter_expressions(
     feature: &Feature,
-    original_parameters: &HashMap<String, BTreeMap<String, String>>,
-    evaluated_parameters: &HashMap<String, BTreeMap<String, String>>,
-    desired_parameters: &mut BTreeMap<String, String>,
+    original_parameters: &HashMap<String, BTreeMap<cadmpeg_core::text::NonBlankString, String>>,
+    evaluated_parameters: &HashMap<String, BTreeMap<cadmpeg_core::text::NonBlankString, String>>,
+    desired_parameters: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
 ) {
     let Some(original) = original_parameters.get(&feature.id) else {
         return;
@@ -436,16 +440,19 @@ pub(crate) fn restore_equivalent_parameter_expressions(
         let Some(expression) = original.get(name) else {
             continue;
         };
-        if parse_native_parameter_literal(feature, name, expression).is_some() {
+        if parse_native_parameter_literal(feature, name.as_str(), expression).is_some() {
             continue;
         }
         let Some(evaluated) = evaluated.get(name) else {
             continue;
         };
-        let Some(desired_value) = parse_native_parameter_literal(feature, name, desired) else {
+        let Some(desired_value) = parse_native_parameter_literal(feature, name.as_str(), desired)
+        else {
             continue;
         };
-        let Some(evaluated_value) = parse_native_parameter_literal(feature, name, evaluated) else {
+        let Some(evaluated_value) =
+            parse_native_parameter_literal(feature, name.as_str(), evaluated)
+        else {
             continue;
         };
         if desired_value == evaluated_value {

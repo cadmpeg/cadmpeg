@@ -1519,7 +1519,10 @@ pub(crate) fn source_meta(scan: &Scan, dialects: &DialectLayers) -> SourceMeta {
             );
         }
     }
-    SourceMeta::classified(dialects.clone(), attributes)
+    SourceMeta::classified(
+        dialects.clone(),
+        cadmpeg_core::text::named_entries(attributes),
+    )
 }
 
 #[cfg(test)]

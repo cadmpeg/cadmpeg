@@ -190,7 +190,12 @@ pub(crate) fn enrich_history_parameters_with_features(
         };
         histories[*history_index].features[*feature_index]
             .parameters
-            .entry(name.to_string())
+            .entry(
+                match cadmpeg_core::text::NonBlankString::new(name.to_string()) {
+                    Some(name) => name,
+                    None => continue,
+                },
+            )
             .or_insert(expression);
     }
 }

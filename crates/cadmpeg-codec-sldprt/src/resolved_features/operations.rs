@@ -585,13 +585,14 @@ pub(crate) fn enrich_history_split_lines(
     {
         if observations.get(&feature.id) == Some(&(true, false)) {
             feature.properties.insert(
-                SPLIT_LINE_MODE_PROPERTY.into(),
+                cadmpeg_core::nonblank_const!(SPLIT_LINE_MODE_PROPERTY),
                 SPLIT_LINE_PROJECTION_MODE.into(),
             );
             if let Some(tool) = tools.get(&feature.id) {
-                feature
-                    .properties
-                    .insert(SPLIT_LINE_TOOL_PROPERTY.into(), tool.clone());
+                feature.properties.insert(
+                    cadmpeg_core::nonblank_const!(SPLIT_LINE_TOOL_PROPERTY),
+                    tool.clone(),
+                );
             }
         }
     }

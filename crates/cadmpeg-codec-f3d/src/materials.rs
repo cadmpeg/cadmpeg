@@ -653,10 +653,12 @@ pub fn decode_with_body_bindings<'a>(
             source_entity_id: None,
             object_type: object_types.get(&over.entity_suffix).cloned(),
             visible: None,
-            channels: act_channels
-                .get(&over.entity_suffix)
-                .cloned()
-                .unwrap_or_default(),
+            channels: cadmpeg_core::text::named_entries(
+                act_channels
+                    .get(&over.entity_suffix)
+                    .cloned()
+                    .unwrap_or_default(),
+            ),
         });
     }
     let face_assignments = decode_face_appearance_assignments(scan)?;
@@ -737,7 +739,7 @@ fn appearances_from_schema_records(
                 schema: Some(record.schema.clone()),
                 category: None,
                 base_color,
-                properties,
+                properties: cadmpeg_core::text::named_entries(properties),
                 textures: connected,
             }
         })
@@ -1519,10 +1521,12 @@ fn bind_bodies(
             source_entity_id: Some(assignment.entity_id.as_str().to_owned()),
             object_type: object_types.get(&assignment.entity_id.suffix()).cloned(),
             visible: None,
-            channels: act_channels
-                .get(&assignment.entity_id.suffix())
-                .cloned()
-                .unwrap_or_default(),
+            channels: cadmpeg_core::text::named_entries(
+                act_channels
+                    .get(&assignment.entity_id.suffix())
+                    .cloned()
+                    .unwrap_or_default(),
+            ),
         });
     }
     Ok(out)
@@ -2055,7 +2059,7 @@ fn decode_fixed_record(record: &[u8]) -> Option<Appearance> {
         schema: Some(schema),
         category: None,
         base_color: color,
-        properties,
+        properties: cadmpeg_core::text::named_entries(properties),
         textures: Vec::new(),
     })
 }

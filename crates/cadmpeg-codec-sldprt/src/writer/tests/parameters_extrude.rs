@@ -32,9 +32,10 @@ fn semantic_writer_projects_and_validates_parameter_dependencies() {
         ]
     );
 
-    decoded.ir_mut().model.parameters[0]
-        .properties
-        .insert("EquationId".into(), "D1@Renamed".into());
+    decoded.ir_mut().model.parameters[0].properties.insert(
+        cadmpeg_core::nonblank_literal!("EquationId"),
+        "D1@Renamed".into(),
+    );
     decoded.ir_mut().model.parameters[1].name = "Wall Gauge".into();
     let mut renamed = Vec::new();
     crate::test_support::plan_inherited_write(
@@ -233,7 +234,9 @@ fn semantic_writer_rewrites_qualified_bare_equation_ids() {
             .iter_mut()
             .find(|parameter| parameter.name == "Width")
             .unwrap();
-        width.properties.insert("EquationId".into(), "D2".into());
+        width
+            .properties
+            .insert(cadmpeg_core::nonblank_literal!("EquationId"), "D2".into());
     }
 
     let mut encoded = Vec::new();
@@ -276,7 +279,10 @@ fn semantic_writer_rewrites_qualified_bare_equation_ids() {
         .find(|parameter| parameter.name == "Width")
         .unwrap()
         .properties
-        .insert("EquationId".into(), "D3@Sketch1".into());
+        .insert(
+            cadmpeg_core::nonblank_literal!("EquationId"),
+            "D3@Sketch1".into(),
+        );
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(
         regenerated.ir(),
@@ -635,7 +641,7 @@ fn semantic_writer_rejects_conflicting_parameter_edits() {
         update_sldprt_native(&mut ir_edit, |native| {
             native.feature_histories[0].features[0]
                 .parameters
-                .insert("Depth".into(), "30mm".into());
+                .insert(cadmpeg_core::nonblank_literal!("Depth"), "30mm".into());
         });
     }
 
@@ -664,13 +670,13 @@ fn semantic_writer_rejects_conflicting_dimension_property_edits() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.parameters[0]
         .properties
-        .insert("Driven".into(), "neutral".into());
+        .insert(cadmpeg_core::nonblank_literal!("Driven"), "neutral".into());
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_histories[0].features[0]
             .dimension_properties
             .get_mut("Depth")
             .unwrap()
-            .insert("Driven".into(), "native".into());
+            .insert(cadmpeg_core::nonblank_literal!("Driven"), "native".into());
     });
 
     let error = crate::test_support::plan_inherited_write(
@@ -1598,7 +1604,9 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
         .unwrap();
     let parameters = &sldprt_native(final_ir.ir()).feature_histories[0].features[0].parameters;
     assert_eq!(parameters["Radius"], "6mm");
-    assert!(!parameters.keys().any(|name| name.starts_with("Position")));
+    assert!(!parameters
+        .keys()
+        .any(|name| name.as_str().starts_with("Position")));
     assert!(!parameters.keys().any(|name| name == "Radius0"));
 }
 

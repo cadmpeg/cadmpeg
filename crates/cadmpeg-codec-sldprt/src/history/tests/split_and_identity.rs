@@ -8,24 +8,32 @@ use cadmpeg_ir::features::FeatureOperation;
 
 #[test]
 fn split_face_path_uses_the_prebound_source_sketch() {
-    let dimensions = BTreeMap::from([("D1".into(), "<MOD-DIAM>85".into())]);
+    let dimensions =
+        BTreeMap::from([(cadmpeg_core::nonblank_literal!("D1"), "<MOD-DIAM>85".into())]);
     let mut split = feature("split", Some("711"), 0);
     split.kind = "Split Line".into();
     split.input_class = Some("moPLine_c".into());
     split.parameters.clone_from(&dimensions);
     split.properties.insert(
-        crate::resolved_features::operations::SPLIT_LINE_MODE_PROPERTY.into(),
+        cadmpeg_core::nonblank_const!(
+            crate::resolved_features::operations::SPLIT_LINE_MODE_PROPERTY
+        ),
         crate::resolved_features::operations::SPLIT_LINE_PROJECTION_MODE.into(),
     );
     split.properties.insert(
-        crate::resolved_features::operations::SPLIT_LINE_TOOL_PROPERTY.into(),
+        cadmpeg_core::nonblank_const!(
+            crate::resolved_features::operations::SPLIT_LINE_TOOL_PROPERTY
+        ),
         "sketch".into(),
     );
     let mut sketch = feature("sketch", Some("705"), 1);
     sketch.xml_tag = "Sketch".into();
     sketch.kind = "Sketch".into();
     sketch.input_class = Some("moProfileFeature_c".into());
-    sketch.parameters = BTreeMap::from([("D1".into(), "<MOD-DIAM>2159mm".into())]);
+    sketch.parameters = BTreeMap::from([(
+        cadmpeg_core::nonblank_literal!("D1"),
+        "<MOD-DIAM>2159mm".into(),
+    )]);
     let history = FeatureHistory {
         id: "history".into(),
         part_name: None,
@@ -115,10 +123,13 @@ fn source_less_offset_plane_resolves_a_native_feature_reference() {
     principal.input_class = Some("moRefPlane_c".into());
     let mut offset = feature("offset-native", None, 1);
     offset.input_class = Some("moRefPlane_c".into());
-    offset.parameters.insert("D1".into(), "6".into());
     offset
-        .properties
-        .insert("Reference".into(), principal.id.clone());
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "6".into());
+    offset.properties.insert(
+        cadmpeg_core::nonblank_literal!("Reference"),
+        principal.id.clone(),
+    );
     let history = FeatureHistory {
         id: "history".into(),
         part_name: None,
@@ -217,12 +228,14 @@ fn native_operation_identity_selects_surface_and_solid_projectors() {
     let mut dome = feature("dome", Some("1"), 0);
     dome.kind = "Dome".into();
     dome.input_class = Some("moDome_c".into());
-    dome.parameters.insert("D1".into(), "2mm".into());
+    dome.parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "2mm".into());
 
     let mut rib = feature("rib", Some("2"), 1);
     rib.kind = "Rib".into();
     rib.input_class = Some("moRib_c".into());
-    rib.parameters.insert("D1".into(), "1mm".into());
+    rib.parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "1mm".into());
 
     let mut surface_loft = feature("surface-loft", Some("3"), 2);
     surface_loft.kind = "Surface-Loft".into();
@@ -235,7 +248,9 @@ fn native_operation_identity_selects_surface_and_solid_projectors() {
     let mut surface_extrude = feature("surface-extrude", Some("5"), 4);
     surface_extrude.kind = "Surface-Extrude".into();
     surface_extrude.input_class = Some("moExtruRefSurface_c".into());
-    surface_extrude.parameters.insert("D1".into(), "3mm".into());
+    surface_extrude
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "3mm".into());
 
     let mut offset_surface = feature("offset-surface", Some("6"), 5);
     offset_surface.kind = "Surface-Offset".into();
@@ -260,7 +275,9 @@ fn native_operation_identity_selects_surface_and_solid_projectors() {
     let mut draft = feature("draft", Some("11"), 10);
     draft.kind = "Draft".into();
     draft.input_class = Some("moDraft_c".into());
-    draft.parameters.insert("D1".into(), "3deg".into());
+    draft
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "3deg".into());
 
     let projected = project_features(&[FeatureHistory {
         id: "history".into(),
@@ -387,7 +404,9 @@ fn variable_fillet_does_not_use_d1_as_a_constant_radius() {
     let mut feature = feature("variable-fillet", Some("61"), 0);
     feature.kind = "VarFillet".into();
     feature.input_class = Some("VarFillet_c".into());
-    feature.parameters.insert("D1".into(), "R1".into());
+    feature
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "R1".into());
     assert!(matches!(
         project_fillet(&feature),
         FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
@@ -401,10 +420,10 @@ fn variable_fillet_d_dimensions_require_native_vertex_associations() {
     feature.kind = "VarFillet".into();
     feature.input_class = Some("VarFillet_c".into());
     feature.parameters = BTreeMap::from([
-        ("D0".into(), "R2mm".into()),
-        ("D01".into(), "R3mm".into()),
-        ("D02".into(), "R2mm".into()),
-        ("D03".into(), "R3mm".into()),
+        (cadmpeg_core::nonblank_literal!("D0"), "R2mm".into()),
+        (cadmpeg_core::nonblank_literal!("D01"), "R3mm".into()),
+        (cadmpeg_core::nonblank_literal!("D02"), "R2mm".into()),
+        (cadmpeg_core::nonblank_literal!("D03"), "R3mm".into()),
     ]);
 
     assert!(matches!(

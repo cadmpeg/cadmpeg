@@ -766,7 +766,10 @@ fn resource_metadata_and_uri_spellings_do_not_create_cache_identity() {
         .notes
         .contains(&"external reference #11 -> https://example.invalid/./model.p21#shape".into()));
     let source = result.ir().source.as_ref().expect("STEP source metadata");
-    assert!(!source.attributes.keys().any(|key| key.contains("cache")));
+    assert!(!source
+        .attributes
+        .keys()
+        .any(|key| key.as_str().contains("cache")));
 
     let summary = StepCodec::default()
         .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
@@ -825,7 +828,10 @@ fn signed_resource_digest_and_timestamp_are_retained_without_cache_identity() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode signed cache witness without resource access");
     let source = result.ir().source.as_ref().expect("STEP source metadata");
-    assert!(!source.attributes.keys().any(|key| key.contains("cache")));
+    assert!(!source
+        .attributes
+        .keys()
+        .any(|key| key.as_str().contains("cache")));
     assert!(result
         .report()
         .notes

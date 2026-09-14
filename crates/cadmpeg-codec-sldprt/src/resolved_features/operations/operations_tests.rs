@@ -28,7 +28,7 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
         text: None,
         content: Vec::new(),
     };
-    let dimensions = BTreeMap::from([("D1".into(), "2".into())]);
+    let dimensions = BTreeMap::from([(cadmpeg_core::nonblank_literal!("D1"), "2".into())]);
     let mut split = native_feature("split", "40", "moPLine_c");
     split.parameters.clone_from(&dimensions);
     let mut sketch = native_feature("sketch", "30", "moProfileFeature_c");

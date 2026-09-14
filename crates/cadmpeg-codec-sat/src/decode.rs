@@ -212,7 +212,7 @@ fn build_result(
 ) -> Result<Decoded, CodecError> {
     let mut ir = CadIr::decoded(SourceMeta::classified(
         DialectLayers::of(matched).with(kernel.clone()),
-        attributes,
+        cadmpeg_core::text::named_entries(attributes),
     ));
     let mut losses = Vec::new();
     for (name, value, tolerance) in [

@@ -73,22 +73,43 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     RevolveExtent::OneSided {
                         termination: AngularTermination::Angle { angle },
                     } => {
-                        properties.insert("EndCondition".into(), "OneSided".into());
-                        parameters.insert("Angle".into(), format_angle_rad(angle.get()));
+                        properties.insert(
+                            cadmpeg_core::nonblank_literal!("EndCondition"),
+                            "OneSided".into(),
+                        );
+                        parameters.insert(
+                            cadmpeg_core::nonblank_literal!("Angle"),
+                            format_angle_rad(angle.get()),
+                        );
                     }
                     RevolveExtent::Symmetric {
                         termination: AngularTermination::Angle { angle },
                     } => {
-                        properties.insert("EndCondition".into(), "Symmetric".into());
-                        parameters.insert("Angle".into(), format_angle_rad(angle.get()));
+                        properties.insert(
+                            cadmpeg_core::nonblank_literal!("EndCondition"),
+                            "Symmetric".into(),
+                        );
+                        parameters.insert(
+                            cadmpeg_core::nonblank_literal!("Angle"),
+                            format_angle_rad(angle.get()),
+                        );
                     }
                     RevolveExtent::TwoSided {
                         first: AngularTermination::Angle { angle: first },
                         second: AngularTermination::Angle { angle: second },
                     } => {
-                        properties.insert("EndCondition".into(), "TwoSided".into());
-                        parameters.insert("Angle".into(), format_angle_rad(first.get()));
-                        parameters.insert("Angle2".into(), format_angle_rad(second.get()));
+                        properties.insert(
+                            cadmpeg_core::nonblank_literal!("EndCondition"),
+                            "TwoSided".into(),
+                        );
+                        parameters.insert(
+                            cadmpeg_core::nonblank_literal!("Angle"),
+                            format_angle_rad(first.get()),
+                        );
+                        parameters.insert(
+                            cadmpeg_core::nonblank_literal!("Angle2"),
+                            format_angle_rad(second.get()),
+                        );
                     }
                     _ => {
                         return Err(CodecError::NotImplemented(format!(
@@ -105,12 +126,18 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         feature.id
                     )));
                 }
-                properties.insert("AxisOrigin".into(), format_point3_mm(axis.origin.get()));
-                properties.insert("AxisDirection".into(), format_vector3(axis.direction.get()));
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("AxisOrigin"),
+                    format_point3_mm(axis.origin.get()),
+                );
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("AxisDirection"),
+                    format_vector3(axis.direction.get()),
+                );
             }
             if *op != BooleanOp::Unresolved {
                 properties.insert(
-                    "Operation".into(),
+                    cadmpeg_core::nonblank_literal!("Operation"),
                     resolved_boolean_op(*op, &feature.id)?.into(),
                 );
             }
@@ -123,7 +150,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                                 feature.id
                             ))
                         })?;
-                properties.insert("Profile".into(), profile_source);
+                properties.insert(cadmpeg_core::nonblank_literal!("Profile"), profile_source);
             }
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(|| "Revolve".into(), |record| record.kind.clone()),
@@ -236,7 +263,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 .unwrap_or_default();
             match twist {
                 Some(twist) => {
-                    parameters.insert("Twist".into(), format_angle_rad(twist.get()));
+                    parameters.insert(
+                        cadmpeg_core::nonblank_literal!("Twist"),
+                        format_angle_rad(twist.get()),
+                    );
                 }
                 None => {
                     parameters.remove("Twist");
@@ -244,7 +274,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }
             match scale {
                 Some(scale) => {
-                    parameters.insert("Scale".into(), scale.get().to_string());
+                    parameters.insert(
+                        cadmpeg_core::nonblank_literal!("Scale"),
+                        scale.get().to_string(),
+                    );
                 }
                 None => {
                     parameters.remove("Scale");
@@ -252,20 +285,23 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }
             let mut properties = feature.source_properties.clone();
             if let Some(profile) = profile_source {
-                properties.insert("Profile".into(), profile);
+                properties.insert(cadmpeg_core::nonblank_literal!("Profile"), profile);
             }
             if let Some(path) = path_source {
-                properties.insert("Path".into(), path);
+                properties.insert(cadmpeg_core::nonblank_literal!("Path"), path);
             }
             match shape.mode() {
                 SweepMode::Solid {
                     op: cadmpeg_ir::features::SolidSweepOperation::NewBody,
                 } => {
-                    properties.insert("Operation".into(), "NewBody".into());
+                    properties.insert(
+                        cadmpeg_core::nonblank_literal!("Operation"),
+                        "NewBody".into(),
+                    );
                 }
                 SweepMode::Solid { op } => {
                     properties.insert(
-                        "Operation".into(),
+                        cadmpeg_core::nonblank_literal!("Operation"),
                         resolved_boolean_op(op.into(), &feature.id)?.into(),
                     );
                 }
@@ -379,21 +415,30 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 })?;
             let mut properties = feature.source_properties.clone();
             if !profile_sources.is_empty() || existing.is_none() {
-                properties.insert("Profiles".into(), profile_sources.join(","));
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("Profiles"),
+                    profile_sources.join(","),
+                );
             }
             if guide_sources.is_empty() && existing.is_none() {
                 properties.remove("Guides");
             } else if !guide_sources.is_empty() {
-                properties.insert("Guides".into(), guide_sources.join(","));
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("Guides"),
+                    guide_sources.join(","),
+                );
             }
             if *op != BooleanOp::Unresolved {
                 properties.insert(
-                    "Operation".into(),
+                    cadmpeg_core::nonblank_literal!("Operation"),
                     resolved_boolean_op(*op, &feature.id)?.into(),
                 );
             }
             if *closed || existing.is_none() || properties.contains_key("Closed") {
-                properties.insert("Closed".into(), closed.to_string());
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("Closed"),
+                    closed.to_string(),
+                );
             }
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(|| "Loft".into(), |record| record.kind.clone()),

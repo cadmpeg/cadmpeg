@@ -162,7 +162,7 @@ pub(super) fn merge_member_layers(
         let collision_instance = instance.clone();
         let mut declared = matched.declared().clone();
         declared.insert(
-            crate::dialect::DECLARED_ARCHIVE_MEMBER.to_owned(),
+            cadmpeg_core::nonblank_const!(crate::dialect::DECLARED_ARCHIVE_MEMBER),
             member_path.to_owned(),
         );
         let matched = matched.with_declared(declared).with_instance(instance);

@@ -13,6 +13,7 @@ mod support;
 mod surface;
 
 use crate::records::Feature;
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     FeatureDefinition, FeatureId, FeatureOperation, FeatureTreeNodeRole, UnresolvedFamily,
@@ -22,8 +23,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 /// Native XML kind plus parameter and property maps for a written feature.
 pub(super) struct NeutralFeatureEncoding {
     pub(super) kind: String,
-    pub(super) parameters: BTreeMap<String, String>,
-    pub(super) properties: BTreeMap<String, String>,
+    pub(super) parameters: BTreeMap<NonBlankString, String>,
+    pub(super) properties: BTreeMap<NonBlankString, String>,
 }
 
 pub(super) struct NeutralFeatureEncoder<'context, 'feature_key, 'source> {
@@ -36,7 +37,8 @@ pub(super) struct NeutralFeatureEncoder<'context, 'feature_key, 'source> {
     pub(super) feature_sources: &'context HashMap<&'feature_key FeatureId, &'source str>,
     pub(super) sketch_sources: &'context HashMap<cadmpeg_ir::sketches::SketchId, String>,
     pub(super) parent_sources: &'context HashMap<FeatureId, String>,
-    pub(super) resolved_parameter_names: &'context HashMap<String, HashSet<String>>,
+    pub(super) resolved_parameter_names:
+        &'context HashMap<String, HashSet<cadmpeg_core::text::NonBlankString>>,
 }
 
 impl NeutralFeatureEncoder<'_, '_, '_> {

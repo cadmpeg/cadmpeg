@@ -88,14 +88,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     .filter(|value| value.trim().starts_with("&lt;MOD-DIAM&gt;"))
                     .map_or("<MOD-DIAM>", |_| "&lt;MOD-DIAM&gt;");
                 parameters.insert(
-                    "D2".into(),
+                    cadmpeg_core::nonblank_literal!("D2"),
                     format!("{prefix}{}", format_f64_literal(diameter.get())),
                 );
             }
             match extent {
                 Some(CosmeticThreadExtent::Blind { length }) => {
                     parameters.insert(
-                        "D1".into(),
+                        cadmpeg_core::nonblank_literal!("D1"),
                         format_length_like(
                             length.get(),
                             record.parameters.get("D1").map(String::as_str),
@@ -109,7 +109,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }
             let mut properties = feature.source_properties.clone();
             if let Some(value) = face_selection_value(face) {
-                properties.insert("Face".into(), value);
+                properties.insert(cadmpeg_core::nonblank_literal!("Face"), value);
             } else if !matches!(face, FaceSelection::Unresolved) {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes cosmetic-thread face selection",
@@ -127,7 +127,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_native(
         &self,
         kind: &cadmpeg_ir::features::NativeFeatureKind,
-        parameters: &BTreeMap<String, String>,
+        parameters: &BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     ) -> NeutralFeatureEncoding {
         let feature = self.feature;
         NeutralFeatureEncoding {
@@ -186,12 +186,30 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 &["EquationDrivenCurve", "EquationCurve"],
             )?;
             let mut properties = feature.source_properties.clone();
-            properties.insert("Parameter".into(), curve.parameter().to_owned());
-            properties.insert("XEquation".into(), curve.x_expression().to_owned());
-            properties.insert("YEquation".into(), curve.y_expression().to_owned());
-            properties.insert("ZEquation".into(), curve.z_expression().to_owned());
-            properties.insert("Start".into(), curve.start().to_string());
-            properties.insert("End".into(), curve.end().to_string());
+            properties.insert(
+                cadmpeg_core::nonblank_literal!("Parameter"),
+                curve.parameter().to_owned(),
+            );
+            properties.insert(
+                cadmpeg_core::nonblank_literal!("XEquation"),
+                curve.x_expression().to_owned(),
+            );
+            properties.insert(
+                cadmpeg_core::nonblank_literal!("YEquation"),
+                curve.y_expression().to_owned(),
+            );
+            properties.insert(
+                cadmpeg_core::nonblank_literal!("ZEquation"),
+                curve.z_expression().to_owned(),
+            );
+            properties.insert(
+                cadmpeg_core::nonblank_literal!("Start"),
+                curve.start().to_string(),
+            );
+            properties.insert(
+                cadmpeg_core::nonblank_literal!("End"),
+                curve.end().to_string(),
+            );
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(
                     || "EquationDrivenCurve".into(),
@@ -235,14 +253,20 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 &["ProjectedCurve", "ProjectionCurve"],
             )?;
             let mut properties = feature.source_properties.clone();
-            properties.insert("Source".into(), source);
-            properties.insert("TargetFaces".into(), target_faces);
+            properties.insert(cadmpeg_core::nonblank_literal!("Source"), source);
+            properties.insert(cadmpeg_core::nonblank_literal!("TargetFaces"), target_faces);
             if let Some(bidirectional) = bidirectional {
-                properties.insert("Bidirectional".into(), bidirectional.to_string());
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("Bidirectional"),
+                    bidirectional.to_string(),
+                );
             }
             match direction {
                 CurveProjectionDirection::Vector(direction) => {
-                    properties.insert("Direction".into(), format_vector3(direction.get()));
+                    properties.insert(
+                        cadmpeg_core::nonblank_literal!("Direction"),
+                        format_vector3(direction.get()),
+                    );
                 }
                 CurveProjectionDirection::State(CurveProjectionDirectionState::TargetNormal) => {
                     properties.remove("Direction");
@@ -294,8 +318,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             let mut properties = feature.source_properties.clone();
-            properties.insert("Segments".into(), segments.join(";"));
-            properties.insert("Closed".into(), closed.to_string());
+            properties.insert(
+                cadmpeg_core::nonblank_literal!("Segments"),
+                segments.join(";"),
+            );
+            properties.insert(
+                cadmpeg_core::nonblank_literal!("Closed"),
+                closed.to_string(),
+            );
             NeutralFeatureEncoding {
                 kind: existing
                     .map_or_else(|| "CompositeCurve".into(), |record| record.kind.clone()),
@@ -356,14 +386,35 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let mut parameters = existing
                 .map(|record| record.parameters.clone())
                 .unwrap_or_default();
-            parameters.insert("Radius".into(), format_length_mm(radius.get()));
-            parameters.insert("Pitch".into(), format_length_mm(pitch.get()));
-            parameters.insert("Revolutions".into(), revolutions.get().to_string());
-            parameters.insert("StartAngle".into(), format_angle_rad(start_angle.get()));
+            parameters.insert(
+                cadmpeg_core::nonblank_literal!("Radius"),
+                format_length_mm(radius.get()),
+            );
+            parameters.insert(
+                cadmpeg_core::nonblank_literal!("Pitch"),
+                format_length_mm(pitch.get()),
+            );
+            parameters.insert(
+                cadmpeg_core::nonblank_literal!("Revolutions"),
+                revolutions.get().to_string(),
+            );
+            parameters.insert(
+                cadmpeg_core::nonblank_literal!("StartAngle"),
+                format_angle_rad(start_angle.get()),
+            );
             let mut properties = feature.source_properties.clone();
-            properties.insert("AxisOrigin".into(), format_point3_mm(*axis_origin));
-            properties.insert("AxisDirection".into(), format_vector3(*axis_direction));
-            properties.insert("Clockwise".into(), clockwise.to_string());
+            properties.insert(
+                cadmpeg_core::nonblank_literal!("AxisOrigin"),
+                format_point3_mm(*axis_origin),
+            );
+            properties.insert(
+                cadmpeg_core::nonblank_literal!("AxisDirection"),
+                format_vector3(*axis_direction),
+            );
+            properties.insert(
+                cadmpeg_core::nonblank_literal!("Clockwise"),
+                clockwise.to_string(),
+            );
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(|| "Helix".into(), |record| record.kind.clone()),
                 parameters,
@@ -408,19 +459,22 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }
             let mut parameters = record.parameters.clone();
             parameters.insert(
-                "D3".into(),
+                cadmpeg_core::nonblank_literal!("D3"),
                 format_length_like(
                     axial_rise.get(),
                     record.parameters.get("D3").map(String::as_str),
                 ),
             );
             parameters.insert(
-                "D4".into(),
+                cadmpeg_core::nonblank_literal!("D4"),
                 format_length_like(pitch.get(), record.parameters.get("D4").map(String::as_str)),
             );
-            parameters.insert("D5".into(), revolutions.get().to_string());
             parameters.insert(
-                "D7".into(),
+                cadmpeg_core::nonblank_literal!("D5"),
+                revolutions.get().to_string(),
+            );
+            parameters.insert(
+                cadmpeg_core::nonblank_literal!("D7"),
                 format_angle_like(
                     start_angle.get(),
                     record.parameters.get("D7").map(String::as_str),
@@ -428,7 +482,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             );
             let mut properties = feature.source_properties.clone();
             if properties.contains_key("Clockwise") || *clockwise {
-                properties.insert("Clockwise".into(), clockwise.to_string());
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("Clockwise"),
+                    clockwise.to_string(),
+                );
             }
             NeutralFeatureEncoding {
                 kind: record.kind.clone(),

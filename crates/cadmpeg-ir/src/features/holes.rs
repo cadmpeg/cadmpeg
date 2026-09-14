@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::deserialize_local_standard;
-use crate::products::NonBlankString;
 use crate::scalar::{InteriorAngle, Length, PositiveLength};
+use cadmpeg_core::text::NonBlankString;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};

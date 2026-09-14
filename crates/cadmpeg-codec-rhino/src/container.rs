@@ -9,6 +9,7 @@ use std::num::NonZeroU32;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::dialect::DialectMatch;
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -1241,26 +1242,33 @@ pub(crate) enum SourceMetaDetail<'a> {
     /// Facts reported only after full decoding.
     Full {
         scan: &'a Scan<'a>,
-        attributes: BTreeMap<String, String>,
+        attributes: BTreeMap<NonBlankString, String>,
     },
 }
 
 /// Builds source metadata; `primary` is the one author of the document's identity.
 pub(crate) fn source_meta(primary: DialectMatch, detail: SourceMetaDetail<'_>) -> SourceMeta {
     let attributes = match detail {
-        SourceMetaDetail::FlatLegacyArchive => {
-            BTreeMap::from([("archive_version".to_string(), "1".to_string())])
-        }
+        SourceMetaDetail::FlatLegacyArchive => BTreeMap::from([(
+            cadmpeg_core::nonblank_literal!("archive_version"),
+            "1".to_string(),
+        )]),
         SourceMetaDetail::ContainerOnly(scan) => {
             let mut attributes = chunked_source_attributes(scan);
             attributes.insert(
-                "comment_offset".to_string(),
+                cadmpeg_core::nonblank_literal!("comment_offset"),
                 scan.comment.range.start.to_string(),
             );
-            attributes.insert("eof_offset".to_string(), scan.eof_offset.to_string());
-            attributes.insert("table_count".to_string(), scan.tables.len().to_string());
             attributes.insert(
-                "instance_definition_count".to_string(),
+                cadmpeg_core::nonblank_literal!("eof_offset"),
+                scan.eof_offset.to_string(),
+            );
+            attributes.insert(
+                cadmpeg_core::nonblank_literal!("table_count"),
+                scan.tables.len().to_string(),
+            );
+            attributes.insert(
+                cadmpeg_core::nonblank_literal!("instance_definition_count"),
                 scan.definitions.definitions.len().to_string(),
             );
             attributes
@@ -1280,13 +1288,16 @@ pub(crate) fn source_meta(primary: DialectMatch, detail: SourceMetaDetail<'_>) -
     )
 }
 
-fn chunked_source_attributes(scan: &Scan<'_>) -> BTreeMap<String, String> {
+fn chunked_source_attributes(scan: &Scan<'_>) -> BTreeMap<NonBlankString, String> {
     BTreeMap::from([
         (
-            "archive_version".to_string(),
+            cadmpeg_core::nonblank_literal!("archive_version"),
             scan.archive.value().to_string(),
         ),
-        ("container_kind".to_string(), "3dm-chunks".to_string()),
+        (
+            cadmpeg_core::nonblank_literal!("container_kind"),
+            "3dm-chunks".to_string(),
+        ),
     ])
 }
 

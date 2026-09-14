@@ -4995,7 +4995,7 @@ fn select_legacy_extrude_face_candidate(
 fn body_member<B>(body: B, native: String) -> Option<cadmpeg_ir::features::BodyMember<B>> {
     Some(cadmpeg_ir::features::BodyMember::new(
         body,
-        cadmpeg_ir::products::NonBlankString::new(native)?,
+        cadmpeg_core::text::NonBlankString::new(native)?,
     ))
 }
 

@@ -205,13 +205,13 @@ pub(crate) fn transfer_neutral(
             runtime_type: record.kind.as_str().to_owned(),
             order: order as u32,
             visible: None,
-            relationships,
+            relationships: cadmpeg_core::text::named_entries(relationships),
             template,
             position,
             scale,
             direction,
             rotation_degrees,
-            parameters: record.parameters.clone(),
+            parameters: cadmpeg_core::text::named_entries(record.parameters.clone()),
             assets: record
                 .side_entries
                 .iter()

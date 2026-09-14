@@ -120,7 +120,7 @@ fn finalize_result(
     ir.finalize();
     let hash = crate::decode::document_local_sha256_with_source(&ir, &source)?;
     source.attributes.insert(
-        cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(),
+        cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
         hash,
     );
     ir.source = Some(source);

@@ -2840,13 +2840,14 @@ pub(crate) fn bind_sketch_graph(
                     relation.record_index, relation.owner_reference,
                 ))
             })?;
-        relation.owner_entity_id =
-            Some(cadmpeg_ir::NonBlankString::new(*owner).ok_or_else(|| {
+        relation.owner_entity_id = Some(
+            cadmpeg_core::text::NonBlankString::new(*owner).ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "Fusion sketch relation {} has an empty owner_entity_id",
                     relation.record_index,
                 ))
-            })?);
+            })?,
+        );
         scoped_relations.push((
             scope,
             relation.owner_reference,

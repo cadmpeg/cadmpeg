@@ -507,7 +507,10 @@ pub(crate) fn sync_neutral_configurations(
     synchronize_history_content_order(native);
 }
 
-pub(crate) fn configuration_slot(properties: &BTreeMap<String, String>, ordinal: u32) -> u32 {
+pub(crate) fn configuration_slot(
+    properties: &BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+    ordinal: u32,
+) -> u32 {
     properties
         .get("id")
         .and_then(|value| value.parse::<u32>().ok())

@@ -892,7 +892,8 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
         expression: text.to_string(),
         value: None,
         source_entry: "entry".to_string(),
-        source_table: cadmpeg_ir::NonBlankString::new("nx:test:expression-table#table").unwrap(),
+        source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table")
+            .unwrap(),
         source_offset: 0,
     };
     let parameter_use = |id: &str, expression: &str| crate::native::features::FeatureParameterUse {
@@ -928,15 +929,21 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
             None,
             None,
             super::HoleProjection::default(),
-            parameters,
+            cadmpeg_core::text::named_entries(parameters),
         )
         .unwrap(),
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Native {
                 kind: "UNKNOWN OPERATION".into(),
                 parameters: std::collections::BTreeMap::from([
-                    ("p1_length".to_string(), "p2_length * 2".to_string()),
-                    ("p2_length".to_string(), "12.5".to_string()),
+                    (
+                        cadmpeg_core::nonblank_literal!("p1_length"),
+                        "p2_length * 2".to_string()
+                    ),
+                    (
+                        cadmpeg_core::nonblank_literal!("p2_length"),
+                        "12.5".to_string()
+                    ),
                 ]),
             }
         )
@@ -1052,7 +1059,7 @@ fn boolean_target_is_an_independent_intermediate_result_writer() {
     assert_eq!(
         super::native_result_body_identity(None, Some(&boolean)),
         Some((
-            cadmpeg_ir::nonblank_literal!("nx:test:boolean#0:target"),
+            cadmpeg_core::nonblank_literal!("nx:test:boolean#0:target"),
             "nx:test:boolean#0".into(),
         ))
     );
@@ -1067,7 +1074,7 @@ fn boolean_target_is_an_independent_intermediate_result_writer() {
     assert_eq!(
         super::native_result_body_identity(Some(&primary), Some(&boolean)),
         Some((
-            cadmpeg_ir::nonblank_literal!("nx:test:primary#0"),
+            cadmpeg_core::nonblank_literal!("nx:test:primary#0"),
             "nx:test:primary#0".into(),
         ))
     );
@@ -1275,7 +1282,8 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
             crate::native::om::finite_value::FiniteValue::try_from(f64::from(key)).unwrap(),
         ),
         source_entry: "part".into(),
-        source_table: cadmpeg_ir::NonBlankString::new("nx:test:expression-table#table").unwrap(),
+        source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table")
+            .unwrap(),
         source_offset: u64::from(key),
     };
     let expressions = [expression(20), expression(21), expression(22)];
@@ -1324,7 +1332,7 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
     assert_eq!(ir.model.parameters.len(), 3);
     for (ordinal, parameter) in ir.model.parameters.iter().enumerate() {
         assert_eq!(
-            parameter.properties[&format!("block_dimension.{ordinal}")],
+            parameter.properties[format!("block_dimension.{ordinal}").as_str()],
             "dimensions"
         );
         assert_eq!(
@@ -1348,7 +1356,7 @@ fn nx_inch_expression_values_are_attached_in_millimeters() {
                 crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
             }),
             source_entry: "/Root/UG_PART/UG_PART".into(),
-            source_table: cadmpeg_ir::NonBlankString::new("nx:test:expression-table#table")
+            source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table")
                 .unwrap(),
             source_offset: u64::from(key),
         };
@@ -1395,7 +1403,8 @@ fn nx_native_expression_units_remain_outside_neutral_values() {
         expression: "4".into(),
         value: Some(crate::native::om::finite_value::FiniteValue::try_from(4.0).unwrap()),
         source_entry: "part".into(),
-        source_table: cadmpeg_ir::NonBlankString::new("nx:test:expression-table#table").unwrap(),
+        source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table")
+            .unwrap(),
         source_offset: 1,
     };
     let mut ir = cadmpeg_ir::CadIr::empty();

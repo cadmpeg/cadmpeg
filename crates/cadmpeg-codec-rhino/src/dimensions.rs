@@ -1698,11 +1698,11 @@ pub(crate) fn project(
             .then(|| dimension.user_text.clone())
             .into_iter()
             .collect(),
-        references,
+        references: cadmpeg_core::text::named_entries(references),
         value: Some(value),
         format: (!dimension.rich_text.is_empty()).then(|| dimension.rich_text.clone()),
         position,
-        parameters,
+        parameters: cadmpeg_core::text::named_entries(parameters),
         assets: Vec::new(),
         native_ref: object.to_string(),
     };

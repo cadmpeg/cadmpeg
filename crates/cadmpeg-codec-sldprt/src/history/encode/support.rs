@@ -76,15 +76,15 @@ pub(super) fn is_helix(feature: &Feature) -> bool {
 }
 
 pub(super) fn write_native_selection(
-    properties: &mut BTreeMap<String, String>,
-    key: &str,
+    properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+    key: cadmpeg_core::text::NonBlankString,
     selection: &str,
     fallback: &str,
 ) {
-    if selection != fallback || properties.contains_key(key) {
-        properties.insert(key.into(), selection.into());
+    if selection != fallback || properties.contains_key(key.as_str()) {
+        properties.insert(key, selection.into());
     } else {
-        properties.remove(key);
+        properties.remove(key.as_str());
     }
 }
 

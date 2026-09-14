@@ -829,7 +829,7 @@ pub(in super::super) fn schema_feature_definition(
     }
     Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Native {
         kind: kind.into(),
-        parameters: feature_parameters(scan, feature_id),
+        parameters: cadmpeg_core::text::named_entries(feature_parameters(scan, feature_id)),
     }))
 }
 

@@ -124,17 +124,20 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                             feature.id
                         )));
                     }
-                    parameters.insert("Depth".into(), format_length_mm(depth.get()));
+                    parameters.insert(
+                        cadmpeg_core::nonblank_literal!("Depth"),
+                        format_length_mm(depth.get()),
+                    );
                 }
                 WrapMode::Scribe => {
                     parameters.remove("Depth");
                 }
             }
             let mut properties = feature.source_properties.clone();
-            properties.insert("Profile".into(), profile);
-            properties.insert("Face".into(), face);
+            properties.insert(cadmpeg_core::nonblank_literal!("Profile"), profile);
+            properties.insert(cadmpeg_core::nonblank_literal!("Face"), face);
             properties.insert(
-                "Mode".into(),
+                cadmpeg_core::nonblank_literal!("Mode"),
                 match mode {
                     WrapMode::Emboss { .. } => "Emboss",
                     WrapMode::Deboss { .. } => "Deboss",

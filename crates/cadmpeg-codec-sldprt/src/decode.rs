@@ -1678,7 +1678,7 @@ fn configuration_source_needs_update(
         .and_then(|source| {
             source
                 .attributes
-                .get(&format!("sw_configuration_{slot}_needs_update"))
+                .get(format!("sw_configuration_{slot}_needs_update").as_str())
         })
         .is_some_and(|value| value.eq_ignore_ascii_case("yes"))
 }
@@ -2634,11 +2634,11 @@ fn build_geometry_ir(
     assign_native_configuration_indices(&ir, &mut native);
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
-            "sldprt_native_configuration_sha256".into(),
+            cadmpeg_core::nonblank_literal!("sldprt_native_configuration_sha256"),
             crate::history::native_configuration_hash(&native.feature_histories),
         );
         source.attributes.insert(
-            "sldprt_native_history_sha256".into(),
+            cadmpeg_core::nonblank_literal!("sldprt_native_history_sha256"),
             crate::history::history_hash(&native.feature_histories),
         );
     }
@@ -2997,38 +2997,47 @@ fn source_meta(
 ) -> Result<SourceMeta, CodecError> {
     let mut attributes = BTreeMap::new();
     attributes.insert(
-        "outer_version".to_string(),
+        cadmpeg_core::nonblank_literal!("outer_version"),
         format!("0x{:08x}", scan.version),
     );
     let display = crate::tessellation::summary(scan)?;
     if display.vertices > 0 {
         attributes.insert(
-            "displaylist_vertices".to_string(),
+            cadmpeg_core::nonblank_literal!("displaylist_vertices"),
             display.vertices.to_string(),
         );
         attributes.insert(
-            "displaylist_triangles".to_string(),
+            cadmpeg_core::nonblank_literal!("displaylist_triangles"),
             display.triangles.to_string(),
         );
     }
-    attributes.insert("block_count".to_string(), scan.blocks.len().to_string());
     attributes.insert(
-        "compound_stream_count".to_string(),
+        cadmpeg_core::nonblank_literal!("block_count"),
+        scan.blocks.len().to_string(),
+    );
+    attributes.insert(
+        cadmpeg_core::nonblank_literal!("compound_stream_count"),
         scan.compound_streams.len().to_string(),
     );
     let active_name = container::active_parasolid_summary(scan).map(|(name, _, _)| name);
     if let Some(active_name) = active_name {
-        attributes.insert("active_parasolid_block".to_string(), active_name);
+        attributes.insert(
+            cadmpeg_core::nonblank_literal!("active_parasolid_block"),
+            active_name,
+        );
     } else {
-        attributes.insert("sldprt_active_partition_unresolved".into(), "true".into());
+        attributes.insert(
+            cadmpeg_core::nonblank_literal!("sldprt_active_partition_unresolved"),
+            "true".into(),
+        );
     }
     if let Some(header) = header {
         attributes.insert(
-            "parasolid_schema".to_string(),
+            cadmpeg_core::nonblank_literal!("parasolid_schema"),
             header.schema.value().to_owned(),
         );
         attributes.insert(
-            "parasolid_description".to_string(),
+            cadmpeg_core::nonblank_literal!("parasolid_description"),
             header.description.clone(),
         );
     }
@@ -3040,7 +3049,10 @@ fn source_meta(
     ))
 }
 
-fn add_preview_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<String, String>) {
+fn add_preview_metadata(
+    scan: &ContainerScan,
+    attributes: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+) {
     let mut png_index = 0;
     let mut bmp_index = 0;
     for section in scan.sections() {
@@ -3059,14 +3071,16 @@ fn add_preview_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<String, 
                 let Some(fields) = payload.get(24..29) else {
                     continue;
                 };
-                let prefix = format!("png_preview_{png_index}");
-                attributes.insert(format!("{prefix}_width"), width.to_string());
-                attributes.insert(format!("{prefix}_height"), height.to_string());
-                attributes.insert(format!("{prefix}_bit_depth"), fields[0].to_string());
-                attributes.insert(format!("{prefix}_color_type"), fields[1].to_string());
-                attributes.insert(format!("{prefix}_compression"), fields[2].to_string());
-                attributes.insert(format!("{prefix}_filter"), fields[3].to_string());
-                attributes.insert(format!("{prefix}_interlace"), fields[4].to_string());
+                let key = |field: &str| {
+                    cadmpeg_core::nonblank_literal!("png_preview_{png_index}_{field}")
+                };
+                attributes.insert(key("width"), width.to_string());
+                attributes.insert(key("height"), height.to_string());
+                attributes.insert(key("bit_depth"), fields[0].to_string());
+                attributes.insert(key("color_type"), fields[1].to_string());
+                attributes.insert(key("compression"), fields[2].to_string());
+                attributes.insert(key("filter"), fields[3].to_string());
+                attributes.insert(key("interlace"), fields[4].to_string());
                 png_index += 1;
             }
             container::PayloadFamily::BmpThumbnail => {
@@ -3084,40 +3098,68 @@ fn add_preview_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<String, 
                 ) else {
                     continue;
                 };
-                let prefix = format!("bmp_thumbnail_{bmp_index}");
-                attributes.insert(format!("{prefix}_width"), width.to_string());
-                attributes.insert(format!("{prefix}_height"), height.to_string());
-                attributes.insert(format!("{prefix}_planes"), planes.to_string());
-                attributes.insert(format!("{prefix}_bit_count"), bits_per_pixel.to_string());
-                attributes.insert(format!("{prefix}_compression"), compression.to_string());
-                attributes.insert(format!("{prefix}_image_size"), image_size.to_string());
+                let key = |field: &str| {
+                    cadmpeg_core::nonblank_literal!("bmp_thumbnail_{bmp_index}_{field}")
+                };
+                attributes.insert(key("width"), width.to_string());
+                attributes.insert(key("height"), height.to_string());
+                attributes.insert(key("planes"), planes.to_string());
+                attributes.insert(key("bit_count"), bits_per_pixel.to_string());
+                attributes.insert(key("compression"), compression.to_string());
+                attributes.insert(key("image_size"), image_size.to_string());
                 bmp_index += 1;
             }
             _ => {}
         }
     }
-    attributes.insert("png_preview_count".into(), png_index.to_string());
-    attributes.insert("bmp_thumbnail_count".into(), bmp_index.to_string());
+    attributes.insert(
+        cadmpeg_core::nonblank_literal!("png_preview_count"),
+        png_index.to_string(),
+    );
+    attributes.insert(
+        cadmpeg_core::nonblank_literal!("bmp_thumbnail_count"),
+        bmp_index.to_string(),
+    );
 }
 
-fn add_solidworks_xml_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<String, String>) {
+fn add_solidworks_xml_metadata(
+    scan: &ContainerScan,
+    attributes: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+) {
     let active_configuration_name = container::active_configuration_name(scan);
     if let Some(envelope) = container::solidworks_envelope(scan) {
         for (key, value) in [
-            ("sw_creation_time_unix", envelope.creation_time.as_ref()),
-            ("sw_path", envelope.path.as_ref()),
-            ("sw_name", envelope.model_name.as_ref()),
+            (
+                cadmpeg_core::nonblank_literal!("sw_creation_time_unix"),
+                envelope.creation_time.as_ref(),
+            ),
+            (
+                cadmpeg_core::nonblank_literal!("sw_path"),
+                envelope.path.as_ref(),
+            ),
+            (
+                cadmpeg_core::nonblank_literal!("sw_name"),
+                envelope.model_name.as_ref(),
+            ),
         ] {
             if let Some(value) = value {
-                attributes.insert(key.into(), value.clone());
+                attributes.insert(key, value.clone());
             }
         }
         if let Some(value) = active_configuration_name.as_deref() {
-            attributes.insert("sw_configuration_name".into(), value.into());
+            attributes.insert(
+                cadmpeg_core::nonblank_literal!("sw_configuration_name"),
+                value.into(),
+            );
         } else if let Some(value) = &envelope.configuration_name {
-            attributes.insert("sw_configuration_name".into(), value.clone());
+            attributes.insert(
+                cadmpeg_core::nonblank_literal!("sw_configuration_name"),
+                value.clone(),
+            );
         }
-        attributes.extend(envelope.configuration_attributes.clone());
+        attributes.extend(cadmpeg_core::text::named_entries(
+            envelope.configuration_attributes.clone(),
+        ));
     }
 }
 
@@ -3257,10 +3299,13 @@ fn build_metadata_ir(
     ir.model.sketch_constraints = sketch_constraints;
     let mut attributes = BTreeMap::new();
     attributes.insert(
-        "outer_version".to_string(),
+        cadmpeg_core::nonblank_literal!("outer_version"),
         format!("0x{:08x}", scan.version),
     );
-    attributes.insert("block_count".to_string(), scan.blocks.len().to_string());
+    attributes.insert(
+        cadmpeg_core::nonblank_literal!("block_count"),
+        scan.blocks.len().to_string(),
+    );
     add_solidworks_xml_metadata(scan, &mut attributes);
 
     if let Some(site) = container::select_active_parasolid_site(scan) {
@@ -3275,9 +3320,12 @@ fn build_metadata_ir(
                 0,
             ),
         };
-        attributes.insert("active_parasolid_block".to_string(), name.clone());
         attributes.insert(
-            "parasolid_schema".to_string(),
+            cadmpeg_core::nonblank_literal!("active_parasolid_block"),
+            name.clone(),
+        );
+        attributes.insert(
+            cadmpeg_core::nonblank_literal!("parasolid_schema"),
             site.header.schema.value().to_owned(),
         );
         crate::annotations::note(
@@ -3653,23 +3701,23 @@ fn project_design_history(
     )?;
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
-            "sldprt_neutral_feature_local_sha256".into(),
+            cadmpeg_core::nonblank_literal!("sldprt_neutral_feature_local_sha256"),
             crate::history::feature_hash(&ir.model),
         );
         source.attributes.insert(
-            "sldprt_native_history_sha256".into(),
+            cadmpeg_core::nonblank_literal!("sldprt_native_history_sha256"),
             crate::history::history_hash(histories),
         );
         source.attributes.insert(
-            "sldprt_native_configuration_sha256".into(),
+            cadmpeg_core::nonblank_literal!("sldprt_native_configuration_sha256"),
             crate::history::native_configuration_hash(histories),
         );
         source.attributes.insert(
-            "sldprt_neutral_parameter_local_sha256".into(),
+            cadmpeg_core::nonblank_literal!("sldprt_neutral_parameter_local_sha256"),
             crate::history::parameter_hash(&ir.model.parameters),
         );
         source.attributes.insert(
-            "sldprt_native_parameter_sha256".into(),
+            cadmpeg_core::nonblank_literal!("sldprt_native_parameter_sha256"),
             crate::history::native_parameter_hash(histories),
         );
     }
@@ -3705,9 +3753,10 @@ fn parameter_identity_lanes(
 fn stamp_parameter_baseline(ir: &mut CadIr) {
     let hash = crate::history::parameter_hash(&ir.model.parameters);
     if let Some(source) = &mut ir.source {
-        source
-            .attributes
-            .insert("sldprt_neutral_parameter_local_sha256".into(), hash);
+        source.attributes.insert(
+            cadmpeg_core::nonblank_literal!("sldprt_neutral_parameter_local_sha256"),
+            hash,
+        );
     }
 }
 
@@ -3848,9 +3897,10 @@ fn snapshot_active_configuration(ir: &mut CadIr) {
     // so the write path can distinguish it from feature-input lane state.
     let id = configuration.id.as_str().to_owned();
     if let Some(source) = &mut ir.source {
-        source
-            .attributes
-            .insert("sldprt_configuration_snapshot_synthesized".into(), id);
+        source.attributes.insert(
+            cadmpeg_core::nonblank_literal!("sldprt_configuration_snapshot_synthesized"),
+            id,
+        );
     }
 }
 
@@ -4119,9 +4169,10 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_c
 fn stamp_feature_baseline(ir: &mut CadIr) {
     let hash = crate::history::feature_hash(&ir.model);
     if let Some(source) = &mut ir.source {
-        source
-            .attributes
-            .insert("sldprt_neutral_feature_local_sha256".into(), hash);
+        source.attributes.insert(
+            cadmpeg_core::nonblank_literal!("sldprt_neutral_feature_local_sha256"),
+            hash,
+        );
     }
 }
 
@@ -4259,15 +4310,16 @@ fn stamp_configuration_baseline(ir: &mut CadIr) {
     let feature_state_hash =
         crate::history::configuration_feature_state_hash(&ir.model.configurations);
     if let Some(source) = &mut ir.source {
-        source
-            .attributes
-            .insert("sldprt_neutral_configuration_local_sha256".into(), hash);
         source.attributes.insert(
-            "sldprt_configuration_parameter_values_local_sha256".into(),
+            cadmpeg_core::nonblank_literal!("sldprt_neutral_configuration_local_sha256"),
+            hash,
+        );
+        source.attributes.insert(
+            cadmpeg_core::nonblank_literal!("sldprt_configuration_parameter_values_local_sha256"),
             parameter_value_hash,
         );
         source.attributes.insert(
-            "sldprt_configuration_feature_states_local_sha256".into(),
+            cadmpeg_core::nonblank_literal!("sldprt_configuration_feature_states_local_sha256"),
             feature_state_hash,
         );
     }
@@ -4284,14 +4336,16 @@ fn stamp_sketch_baseline(ir: &mut CadIr, native: &crate::native::SldprtNative) {
     let constraint_hash = crate::resolved_features::hashes::constraint_hash(ir);
     let native_hash = crate::resolved_features::hashes::lane_hash(native);
     if let Some(source) = &mut ir.source {
-        source
-            .attributes
-            .insert("sldprt_neutral_sketch_local_sha256".into(), neutral_hash);
-        source
-            .attributes
-            .insert("sldprt_native_sketch_sha256".into(), native_hash);
         source.attributes.insert(
-            "sldprt_neutral_sketch_constraint_local_sha256".into(),
+            cadmpeg_core::nonblank_literal!("sldprt_neutral_sketch_local_sha256"),
+            neutral_hash,
+        );
+        source.attributes.insert(
+            cadmpeg_core::nonblank_literal!("sldprt_native_sketch_sha256"),
+            native_hash,
+        );
+        source.attributes.insert(
+            cadmpeg_core::nonblank_literal!("sldprt_neutral_sketch_constraint_local_sha256"),
             constraint_hash,
         );
     }
@@ -4306,9 +4360,10 @@ fn stamp_local_digests(ir: &mut CadIr) -> Result<(), CodecError> {
     ir.finalize();
     let brep_hash = brep_local_sha256_in_place(ir)?;
     if let Some(source) = &mut ir.source {
-        source
-            .attributes
-            .insert("brep_local_sha256".into(), brep_hash);
+        source.attributes.insert(
+            cadmpeg_core::nonblank_literal!("brep_local_sha256"),
+            brep_hash,
+        );
     }
     let has_swobjects_semantics = ir
         .model
@@ -4328,15 +4383,19 @@ fn stamp_local_digests(ir: &mut CadIr) -> Result<(), CodecError> {
             let identity_hash = crate::writer::swobjects_metadata_identity_local_sha256(ir)?;
             if let Some(source) = &mut ir.source {
                 source.attributes.insert(
-                    crate::writer::SWOBJECTS_LOCAL_DIGEST_ATTRIBUTE.into(),
+                    cadmpeg_core::nonblank_const!(crate::writer::SWOBJECTS_LOCAL_DIGEST_ATTRIBUTE),
                     swobjects_hash,
                 );
                 source.attributes.insert(
-                    crate::writer::SWOBJECTS_MATERIAL_LOCAL_DIGEST_ATTRIBUTE.into(),
+                    cadmpeg_core::nonblank_const!(
+                        crate::writer::SWOBJECTS_MATERIAL_LOCAL_DIGEST_ATTRIBUTE
+                    ),
                     material_hash,
                 );
                 source.attributes.insert(
-                    crate::writer::SWOBJECTS_METADATA_IDENTITY_LOCAL_DIGEST_ATTRIBUTE.into(),
+                    cadmpeg_core::nonblank_const!(
+                        crate::writer::SWOBJECTS_METADATA_IDENTITY_LOCAL_DIGEST_ATTRIBUTE
+                    ),
                     identity_hash,
                 );
             }
@@ -4345,16 +4404,17 @@ fn stamp_local_digests(ir: &mut CadIr) -> Result<(), CodecError> {
     if !ir.model.pmi.is_empty() {
         if let Ok(hash) = crate::writer::pmi_local_sha256(ir) {
             if let Some(source) = &mut ir.source {
-                source
-                    .attributes
-                    .insert(crate::writer::PMI_LOCAL_DIGEST_ATTRIBUTE.into(), hash);
+                source.attributes.insert(
+                    cadmpeg_core::nonblank_const!(crate::writer::PMI_LOCAL_DIGEST_ATTRIBUTE),
+                    hash,
+                );
             }
         }
     }
     let hash = document_local_sha256(ir)?;
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
-            cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(),
+            cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
             hash,
         );
     }

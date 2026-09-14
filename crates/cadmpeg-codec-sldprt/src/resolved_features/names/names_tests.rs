@@ -50,7 +50,7 @@ fn operand_kind_names_preserve_wire_spelling() {
 
 #[test]
 fn marker_literals_keep_their_wire_spelling() {
-    use cadmpeg_ir::nonblank_literal;
+    use cadmpeg_core::nonblank_literal;
     assert_eq!(
         nonblank_literal!("sldprt:marker-local-id").as_str(),
         "sldprt:marker-local-id"
