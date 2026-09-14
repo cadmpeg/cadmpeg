@@ -424,11 +424,7 @@ fn arrangement_edges_meet_only_at_nodes(
     {
         if left_center == right_center && left_radius == right_radius {
             let strictly_inside = |angle: f64, start: f64, end: f64| {
-                let parameter_tolerance =
-                    (tolerance / (left_radius * (end - start).abs())).min(0.5);
-                directed_angle_parameter(angle, start, end).is_some_and(|parameter| {
-                    parameter > parameter_tolerance && parameter < 1.0 - parameter_tolerance
-                })
+                angle_strictly_inside_arc(angle, start, end, *left_radius, tolerance)
             };
             return !strictly_inside(*left_start, *right_start, *right_end)
                 && !strictly_inside(*left_end, *right_start, *right_end)
@@ -442,6 +438,32 @@ fn arrangement_edges_meet_only_at_nodes(
                 .iter()
                 .any(|node| point_distance(*intersection, nodes[*node]) <= tolerance)
         })
+    })
+}
+
+/// Whether `angle` lies strictly inside the directed arc from `start` to `end`
+/// on a circle of radius `radius`, with `tolerance` a length on that circle.
+///
+/// The arc's length is positive and finite: a sketch circle or arc has a
+/// positive finite radius and a parameter range with distinct finite
+/// endpoints. An arc no longer than twice the tolerance has no strict
+/// interior, because every point of it is then within `tolerance` of an
+/// endpoint; that is the state the arc-length fraction has no answer for, and
+/// it is answered here rather than capped.
+fn angle_strictly_inside_arc(
+    angle: f64,
+    start: f64,
+    end: f64,
+    radius: f64,
+    tolerance: f64,
+) -> bool {
+    let arc_length = radius * (end - start).abs();
+    if arc_length <= 2.0 * tolerance {
+        return false;
+    }
+    let parameter_tolerance = tolerance / arc_length;
+    directed_angle_parameter(angle, start, end).is_some_and(|parameter| {
+        parameter > parameter_tolerance && parameter < 1.0 - parameter_tolerance
     })
 }
 
