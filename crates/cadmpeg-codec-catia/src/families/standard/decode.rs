@@ -30,10 +30,9 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::assemble::cgm_source;
 use crate::assemble::{
-    annotate, attach_free_vertices, build_geometry_report,
-    circle_parameter_range_from_surface_branch, link_payload_carriers, neutral_model_is_admissible,
-    ordered_range, preserve_raw_payload, rational_pcurve_arc, unit_vector, unwrap_angle,
-    TypedCounts,
+    annotate, build_geometry_report, circle_parameter_range_from_surface_branch,
+    link_payload_carriers, neutral_model_is_admissible, ordered_range, preserve_raw_payload,
+    rational_pcurve_arc, unit_vector, unwrap_angle, TypedCounts,
 };
 use crate::container::{self, ContainerScan};
 use crate::families::freeform::{
@@ -840,6 +839,54 @@ mod consolidated_analytic_refinement_tests {
             matches!(surfaces[1], Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))) if { cone_surface.half_angle() == 0.25 })
         );
     }
+}
+
+/// Attach the standard route's unbound vertices to one wire body.
+fn attach_free_vertices(ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
+    let Some((first, rest)) = ir.model.vertices.split_first() else {
+        return;
+    };
+    let body_id = BodyId::compose(
+        &cadmpeg_ir::identity_namespace!("catia", "standard", "body"),
+        cadmpeg_ir::identity_key!("unbound-points"),
+    );
+    let region_id = RegionId::compose(
+        &cadmpeg_ir::identity_namespace!("catia", "standard", "region"),
+        cadmpeg_ir::identity_key!("unbound-points"),
+    );
+    let shell_id = ShellId::compose(
+        &cadmpeg_ir::identity_namespace!("catia", "standard", "shell"),
+        cadmpeg_ir::identity_key!("unbound-points"),
+    );
+    let mut shell = Shell::with_free_vertex(shell_id.clone(), region_id.clone(), first.id.clone());
+    for vertex in rest {
+        shell.add_free_vertex(vertex.id.clone());
+    }
+    for id in [body_id.as_str(), region_id.as_str(), shell_id.as_str()] {
+        annotate(
+            annotations,
+            id,
+            "MainDataStream+SurfacicReps",
+            0,
+            "unbound_point_owner",
+            Exactness::Inferred,
+        );
+    }
+    ir.model.bodies.push(Body {
+        id: body_id.clone(),
+        kind: BodyKind::Wire,
+        regions: vec![region_id.clone()],
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+    ir.model.regions.push(Region {
+        id: region_id,
+        body: body_id,
+        shells: vec![shell_id],
+    });
+    ir.model.shells.push(shell);
 }
 
 /// Materialize one exact object-stream support surface once.
@@ -1845,7 +1892,10 @@ fn try_decode_standard_population(
         &mut unknowns,
         &mut annotations,
         scan,
-        "catia:payload:unknown#brep-stream",
+        cadmpeg_ir::ids::UnknownId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "payload", "unknown"),
+            cadmpeg_ir::identity_key!("brep-stream"),
+        ),
     );
     let mut procedural_supports = HashMap::<u32, SurfaceId>::new();
     let mut extrusion_definitions = HashMap::<u32, ProceduralSurfaceDefinition>::new();
@@ -2209,14 +2259,7 @@ fn try_decode_standard_population(
     } else {
         attach_standard_circles(&mut ir, &mut annotations, &face_bindings, &curve_supports).ok()?;
         attach_standard_lines(&mut ir, &mut annotations, &face_bindings, &curve_supports).ok()?;
-        if !ir.model.vertices.is_empty() {
-            attach_free_vertices(
-                &mut ir,
-                &mut annotations,
-                "standard",
-                "MainDataStream+SurfacicReps",
-            );
-        }
+        attach_free_vertices(&mut ir, &mut annotations);
     }
     let (bound_revolution_face_surface_count, resolved_revolution_seam_curve_count) =
         bind_consolidated_revolution_faces_and_seams(

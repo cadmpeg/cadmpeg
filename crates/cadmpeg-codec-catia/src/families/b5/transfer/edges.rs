@@ -11,7 +11,7 @@ use cadmpeg_ir::geometry::{
     PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry, SupportPcurve,
     SurfaceCurveFamily,
 };
-use cadmpeg_ir::ids::{CurveId, EdgeId, ProceduralCurveId, SurfaceId, VertexId};
+use cadmpeg_ir::ids::{CurveId, EdgeId, IdentityNamespace, ProceduralCurveId, SurfaceId, VertexId};
 use cadmpeg_ir::topology::Edge;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
@@ -97,7 +97,7 @@ pub(super) fn b5_edge_support_definition(
     surface_ids: &HashMap<u32, SurfaceId>,
     pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [f64; 2])>,
     solved_parameter_range: Option<[f64; 2]>,
-) -> Option<(&'static str, &'static str, ProceduralCurveDefinition)> {
+) -> Option<(IdentityNamespace, &'static str, ProceduralCurveDefinition)> {
     let ([first] | [first, _]) = supports else {
         return None;
     };
@@ -137,7 +137,7 @@ pub(super) fn b5_edge_support_definition(
     .ok()?;
     if supports.len() == 2 && supports[0].0 != supports[1].0 {
         Some((
-            "intersection",
+            cadmpeg_ir::identity_namespace!("catia", "b5", "intersection"),
             "two_surface_pcurve_intersection",
             ProceduralCurveDefinition::Intersection {
                 context,
@@ -147,7 +147,7 @@ pub(super) fn b5_edge_support_definition(
         ))
     } else {
         Some((
-            "surface-curve",
+            cadmpeg_ir::identity_namespace!("catia", "b5", "surface-curve"),
             "parametric_surface_curve",
             ProceduralCurveDefinition::SurfaceCurve {
                 family: SurfaceCurveFamily::Parametric {
@@ -339,7 +339,7 @@ pub(super) fn emit_edges(
             .as_ref()
             .map(|plan| {
                 (
-                    "helix",
+                    cadmpeg_ir::identity_namespace!("catia", "b5", "helix"),
                     "cylinder_parametric_helix",
                     plan.definition.clone(),
                 )
@@ -358,9 +358,8 @@ pub(super) fn emit_edges(
                     support_curve_range,
                 )
             });
-        if let Some((kind, tag, definition)) = procedural {
-            let procedural_id = ProceduralCurveId::mint(format!("catia:b5:{kind}#{edge_id}"))
-                .expect("identity grammar");
+        if let Some((namespace, tag, definition)) = procedural {
+            let procedural_id = ProceduralCurveId::compose(&namespace, edge_id);
             annotate(
                 annotations,
                 &procedural_id,

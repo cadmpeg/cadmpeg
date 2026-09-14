@@ -510,7 +510,7 @@ pub(crate) fn try_decode_freeform_surfaces(
         cadmpeg_ir::identity_key!("freeform"),
     );
     let payload_index =
-        preserve_raw_payload(&mut unknowns, &mut annotations, scan, payload_id.as_str());
+        preserve_raw_payload(&mut unknowns, &mut annotations, scan, payload_id.clone());
     let b5_complete = b5_graph.as_ref().is_some_and(|graph| graph.complete);
     // The graph moves into the transfer below. Keep the record identities the
     // topology loss notes must name.
@@ -2019,7 +2019,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                 };
                 continue;
             }
-            let (key, carrier, source_object, chart, annotation_kind, id_kind) = match binding {
+            let (key, carrier, source_object, chart, annotation_kind, namespace) = match binding {
                 Some(crate::families::consolidated::records::ConsolidatedSupportBinding::Cylinder { pos }) => {
                     let Some(cylinder) = standalone.get(pos) else {
                         continue;
@@ -2038,7 +2038,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                         None,
                         ConsolidatedCarrierChart::Cylinder { radius },
                         "consolidated_b2_03_28_cylinder",
-                        "cylinder",
+                        cadmpeg_ir::identity_namespace!("catia", "consolidated", "cylinder"),
                     )
                 }
             Some(crate::families::consolidated::records::ConsolidatedSupportBinding::EmbeddedCylinder { pos, .. }) => {
@@ -2059,7 +2059,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                     Some(cgm_source("surface", value.object_id)),
                     ConsolidatedCarrierChart::Cylinder { radius },
                     "consolidated_b2_03_60_cylinder",
-                    "cylinder",
+                    cadmpeg_ir::identity_namespace!("catia", "consolidated", "cylinder"),
                 )
             }
             Some(crate::families::consolidated::records::ConsolidatedSupportBinding::Cone { pos }) => {
@@ -2075,7 +2075,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                     None,
                     ConsolidatedCarrierChart::Cone { cone },
                     "consolidated_b2_03_29_cone",
-                    "cone",
+                    cadmpeg_ir::identity_namespace!("catia", "consolidated", "cone"),
                 )
             }
             Some(crate::families::consolidated::records::ConsolidatedSupportBinding::Sphere { pos }) => {
@@ -2088,7 +2088,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                     None,
                     ConsolidatedCarrierChart::Identity,
                     "consolidated_b2_03_2a_sphere",
-                    "sphere",
+                    cadmpeg_ir::identity_namespace!("catia", "consolidated", "sphere"),
                 )
             }
             Some(crate::families::consolidated::records::ConsolidatedSupportBinding::Torus { pos }) => {
@@ -2101,7 +2101,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                     None,
                     ConsolidatedCarrierChart::Torus { torus },
                     "consolidated_b2_03_2b_torus",
-                    "torus",
+                    cadmpeg_ir::identity_namespace!("catia", "consolidated", "torus"),
                 )
             }
             Some(crate::families::consolidated::records::ConsolidatedSupportBinding::Plane { pos }) => {
@@ -2118,7 +2118,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                     None,
                     ConsolidatedCarrierChart::Identity,
                     "consolidated_b2_03_27_plane",
-                    "plane",
+                    cadmpeg_ir::identity_namespace!("catia", "consolidated", "plane"),
                 )
             }
             Some(
@@ -2130,11 +2130,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
             let surface = if let Some(id) = surface_ids.get(&key) {
                 id.clone()
             } else {
-                let id = SurfaceId::mint(format!(
-                    "catia:consolidated:{id_kind}#{}",
-                    ir.model.surfaces.len()
-                ))
-                .expect("identity grammar");
+                let id = SurfaceId::compose(&namespace, ir.model.surfaces.len());
                 annotate(
                     annotations,
                     &id,

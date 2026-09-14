@@ -118,7 +118,10 @@ pub(crate) fn try_decode_e5(
         &mut unknowns,
         &mut annotations,
         scan,
-        "catia:payload:unknown#e5",
+        cadmpeg_ir::ids::UnknownId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "payload", "unknown"),
+            cadmpeg_ir::identity_key!("e5"),
+        ),
     );
     for (index, point) in points.iter().enumerate() {
         let point_id =

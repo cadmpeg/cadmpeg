@@ -13,10 +13,9 @@ use cadmpeg_ir::geometry::{
     SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
-use cadmpeg_ir::ids::{BodyId, RegionId, ShellId, UnknownId};
+use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::LossNote;
-use cadmpeg_ir::topology::{Body, BodyKind, Region, Shell};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
@@ -261,62 +260,6 @@ pub(crate) fn insert_unresolved_carrier_loss(ir: &CadIr, losses: &mut Vec<LossNo
         ));
     }
     losses.insert(0, CatiaLossCode::GeometryUnresolvedCarriers.note(statement));
-}
-
-pub(crate) fn attach_free_vertices(
-    ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
-    namespace: &str,
-    stream: &str,
-) {
-    let body_id =
-        BodyId::mint(format!("catia:{namespace}:body#unbound-points")).expect("identity grammar");
-    let region_id = RegionId::mint(format!("catia:{namespace}:region#unbound-points"))
-        .expect("identity grammar");
-    let shell_id =
-        ShellId::mint(format!("catia:{namespace}:shell#unbound-points")).expect("identity grammar");
-    for id in [body_id.as_str(), region_id.as_str(), shell_id.as_str()] {
-        annotate(
-            annotations,
-            id,
-            stream,
-            0,
-            "unbound_point_owner",
-            Exactness::Inferred,
-        );
-    }
-    ir.model.bodies.push(Body {
-        id: body_id.clone(),
-        kind: BodyKind::Wire,
-        regions: vec![region_id.clone()],
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    });
-    ir.model.regions.push(Region {
-        id: region_id.clone(),
-        body: body_id,
-        shells: vec![shell_id.clone()],
-    });
-    ir.model.shells.push(
-        match Shell::new(
-            shell_id,
-            region_id,
-            Vec::new(),
-            Vec::new(),
-            ir.model
-                .vertices
-                .iter()
-                .map(|vertex| vertex.id.clone())
-                .collect(),
-        ) {
-            Ok(shell) => shell,
-            Err(_) => {
-                return;
-            }
-        },
-    );
 }
 
 pub(crate) fn ordered_range(range: [f64; 2]) -> [f64; 2] {
@@ -700,13 +643,12 @@ pub(crate) fn preserve_raw_payload(
     unknowns: &mut Vec<UnknownRecord>,
     annotations: &mut AnnotationBuilder,
     scan: &ContainerScan,
-    id: &str,
+    id: UnknownId,
 ) -> usize {
     let (bytes, stream) = match scan.brep.as_ref() {
         Some(brep) => (brep.as_slice(), "MainDataStream+SurfacicReps"),
         None => (scan.data.as_ref(), "CATPart"),
     };
-    let id = UnknownId::mint(id.to_string()).expect("identity grammar");
     annotate(
         annotations,
         &id,

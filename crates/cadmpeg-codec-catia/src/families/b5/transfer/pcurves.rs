@@ -739,19 +739,16 @@ pub(super) fn emit_pcurves(
         let (geometry, cylinder_reparameterized, _) = &pcurve_plan[&object_id];
         let range_count = ranges.len();
         for (rank, (range_bits, occurrences)) in ranges.into_iter().enumerate() {
-            let id = if range_count == 1 {
-                PcurveId::compose(
-                    &cadmpeg_ir::identity_namespace!("catia", "b5", "pcurve"),
-                    object_id,
-                )
+            let key = cadmpeg_ir::ids::IdentityKey::from(object_id);
+            let key = if range_count == 1 {
+                key
             } else {
-                PcurveId::compose(
-                    &cadmpeg_ir::identity_namespace!("catia", "b5", "pcurve"),
-                    cadmpeg_ir::ids::IdentityKey::from(object_id)
-                        .then(cadmpeg_ir::identity_key!("@"))
-                        .then(rank),
-                )
+                key.then(cadmpeg_ir::identity_key!("@")).then(rank)
             };
+            let id = PcurveId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "b5", "pcurve"),
+                key,
+            );
             annotate(
                 annotations,
                 &id,
