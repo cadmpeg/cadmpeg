@@ -878,10 +878,9 @@ impl CompoundState {
             if data.len() != sector_size {
                 return malformed("CFB FAT sector is truncated");
             }
-            fat.extend(
-                data.chunks_exact(4)
-                    .map(|word| le_u32(word, 0).expect("four-byte chunk")),
-            );
+            // `sector_size` is 512 or 4096, both exact multiples of four;
+            // the length check above proves this sector has that width.
+            fat.extend(data.as_chunks::<4>().0.iter().copied().map(le_u32_array));
         }
         if fat.len() < sector_count {
             return malformed("CFB FAT does not address every physical sector");
@@ -956,15 +955,21 @@ impl CompoundState {
         let mini_fat_word_count = mini_fat_byte_count / 4;
         ctx.charge_collection_items(mini_fat_word_count as u64, "parse CFB mini FAT words")?;
         ctx.charge_retained(mini_fat_byte_count as u64, "retain CFB mini FAT")?;
-        let mini_fat = join_sectors(
+        let mini_fat_bytes = join_sectors(
             bytes,
             sector_size,
             sector_count,
             mini_fat_chain.iter().flat_map(SectorChain::iter),
-        )?
-        .chunks_exact(4)
-        .map(|word| le_u32(word, 0).expect("four-byte chunk"))
-        .collect::<Vec<_>>();
+        )?;
+        // Every joined sector passed the same exact-width proof above, so the
+        // joined mini FAT is an exact sequence of four-byte words.
+        let mini_fat = mini_fat_bytes
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .copied()
+            .map(le_u32_array)
+            .collect::<Vec<_>>();
         drop(mini_fat_scratch);
         let root = directory_root(&directory)?;
         let root_sectors = usize::try_from(root.size)
@@ -1373,10 +1378,9 @@ impl CompoundPrefixProbe {
             let Some(raw) = sector_slice(prefix, sector_size, available, id) else {
                 return Self::Incomplete;
             };
-            fat.extend(
-                raw.chunks_exact(4)
-                    .map(|word| le_u32(word, 0).expect("four-byte chunk")),
-            );
+            // `available` counts only complete sectors, and each admitted
+            // sector width is an exact multiple of four.
+            fat.extend(raw.as_chunks::<4>().0.iter().copied().map(le_u32_array));
             loaded_fat_count += 1;
         }
         if fat_sectors
@@ -1731,11 +1735,9 @@ fn cfb_upper_unit(unit: u16) -> u16 {
         return unit;
     };
     let mut uppercase = character.to_uppercase();
-    let first = uppercase.next().expect("uppercase mapping is non-empty");
-    if uppercase.next().is_none() && first.len_utf16() == 1 {
-        first as u16
-    } else {
-        unit
+    match (uppercase.next(), uppercase.next()) {
+        (Some(first), None) if first.len_utf16() == 1 => first as u16,
+        _ => unit,
     }
 }
 
