@@ -318,6 +318,9 @@ fn decode_standard_retains_unresolved_roster_carrier_without_fabricating_a_face(
         loss.code.category() == cadmpeg_ir::report::LossCategory::Geometry
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
             && loss.message.contains("1 unresolved surface carriers")
+            && loss
+                .message
+                .contains(decoded.ir().model.surfaces[1].id.as_str())
     }));
 }
 

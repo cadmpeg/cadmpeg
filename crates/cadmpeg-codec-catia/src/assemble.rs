@@ -252,20 +252,20 @@ pub(crate) fn insert_unresolved_carrier_loss(ir: &CadIr, losses: &mut Vec<LossNo
     if unresolved_curves.is_empty() && unresolved_surfaces.is_empty() {
         return;
     }
-    let mut statement = String::from(
-        "The transferred model retains unresolved carriers without exact procedural constructions.",
+    let mut statement = format!(
+        "The transferred model retains {} unresolved curve carriers and {} unresolved surface carriers without exact procedural constructions.",
+        unresolved_curves.len(),
+        unresolved_surfaces.len(),
     );
     if !unresolved_curves.is_empty() {
         statement.push_str(&format!(
-            " Curve carriers ({}): {}.",
-            unresolved_curves.len(),
+            " Curve carriers: {}.",
             identity_statement(&unresolved_curves)
         ));
     }
     if !unresolved_surfaces.is_empty() {
         statement.push_str(&format!(
-            " Surface carriers ({}): {}.",
-            unresolved_surfaces.len(),
+            " Surface carriers: {}.",
             identity_statement(&unresolved_surfaces)
         ));
     }
