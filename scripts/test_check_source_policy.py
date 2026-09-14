@@ -150,6 +150,37 @@ assert not classify('#[cfg(all(any(test, feature = "x")))]')
 
 
 class PatternFilters(unittest.TestCase):
+    def test_lifetimes_and_loop_labels_do_not_hide_code(self) -> None:
+        text = "'outer: loop { from_le_bytes(); break 'outer; }\n"
+        self.assertEqual(policy.mask_rust_non_code(text), text)
+
+    def test_nested_comments_are_one_non_code_span(self) -> None:
+        text = '/* outer /* inner */ from_le_bytes(); */ from_be_bytes();'
+        self.assertEqual(
+            policy.FROM_ENDIAN.findall(policy.mask_rust_non_code(text)),
+            ["from_be_bytes"],
+        )
+
+    def test_raw_string_backslash_does_not_escape_its_end(self) -> None:
+        text = 'let s = r"backslash\\"; from_le_bytes();'
+        self.assertEqual(
+            policy.FROM_ENDIAN.findall(policy.mask_rust_non_code(text)),
+            ["from_le_bytes"],
+        )
+
+    def test_literals_keep_positions_and_do_not_consume_following_code(self) -> None:
+        for literal in [
+            "'a'", "'é'", r"'\u{1f600}'", r"'\x41'", r"'\''", "b'a'",
+            '"from_le_bytes()\\\""', 'r##"from_le_bytes() \\"#"##',
+            'br"from_le_bytes()\\"', 'cr#"from_le_bytes()"#',
+        ]:
+            with self.subTest(literal=literal):
+                text = literal + ';\nfrom_be_bytes();'
+                masked = policy.mask_rust_non_code(text)
+                self.assertEqual(len(masked), len(text))
+                self.assertEqual(masked.count('\n'), text.count('\n'))
+                self.assertEqual(policy.FROM_ENDIAN.findall(masked), ["from_be_bytes"])
+
     def test_test_support_is_not_production_source(self) -> None:
         self.assertFalse(
             policy.is_production_rs(

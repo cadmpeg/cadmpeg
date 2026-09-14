@@ -100,26 +100,62 @@ def production_source(source: str) -> tuple[str, int]:
     return "".join(lines), production_lines
 
 
-RUST_NON_CODE = re.compile(
-    r"//[^\r\n]*"
-    r"|/\*(?:[^*]|\*(?!/))*\*/"
-    r'|(?:br|r)(?P<raw_hashes>#+)"(?:(?!"(?P=raw_hashes)).)*"(?P=raw_hashes)'
-    r'|(?:br|r)"(?:\\.|[^"\\])*"'
-    r'|"(?:\\.|[^"\\])*"'
-    r"|'(?:\\.|[^'\\\r\n])*'",
-    re.DOTALL,
-)
+NON_CODE_START = re.compile(r'//|/\*|(?:br|cr|r)(?P<hashes>#{0,255})"|"|\'')
+CHAR_LITERAL = re.compile(r"'(?:[^'\\\r\n]|\\(?:[nrt0\\'\"]|x[\da-fA-F]{2}|u\{[\da-fA-F_]+\}))'")
+COMMENT_BOUNDARY = re.compile(r"/\*|\*/")
+LINE_END = re.compile(r"[\r\n]")
+
+
+def rust_non_code_spans(text: str):
+    """Yield comment and literal spans, leaving lifetimes and labels intact."""
+    index = 0
+    while match := NON_CODE_START.search(text, index):
+        start = match.start()
+        index = match.end()
+        token = match.group(0)
+        if token == "//":
+            end = LINE_END.search(text, index)
+            index = len(text) if end is None else end.start()
+        elif token == "/*":
+            depth = 1
+            while depth and index < len(text):
+                boundary = COMMENT_BOUNDARY.search(text, index)
+                if boundary is None:
+                    index = len(text)
+                    break
+                depth += 1 if boundary.group(0) == "/*" else -1
+                index = boundary.end()
+        elif match.group("hashes") is not None:
+            delimiter = '"' + match.group("hashes")
+            end = text.find(delimiter, index)
+            index = len(text) if end == -1 else end + len(delimiter)
+        elif token == '"':
+            while index < len(text):
+                character = text[index]
+                index += 1
+                if character == "\\":
+                    index = min(index + 1, len(text))
+                elif character == '"':
+                    break
+        else:
+            literal = CHAR_LITERAL.match(text, start)
+            if literal is None:
+                continue
+            index = literal.end()
+        yield start, index
 
 
 def mask_rust_non_code(text: str) -> str:
     """Blank comments and literals while preserving positions and newlines."""
 
-    def blank(match: re.Match[str]) -> str:
-        return "".join(
-            character if character in "\r\n" else " " for character in match.group(0)
-        )
-
-    return RUST_NON_CODE.sub(blank, text)
+    pieces = []
+    end = 0
+    for start, stop in rust_non_code_spans(text):
+        pieces.append(text[end:start])
+        pieces.append(re.sub(r"[^\r\n]", " ", text[start:stop]))
+        end = stop
+    pieces.append(text[end:])
+    return "".join(pieces)
 
 
 ENDIAN_EXCEPTIONS = {"reconstructed-scalar", "packed-color-order"}
@@ -129,13 +165,13 @@ ENDIAN_MARKER = re.compile(r"^\s*// endian-exception: ([a-z-]+)\s*$")
 def endian_markers(source: str) -> dict[int, str]:
     """Read standalone line comments, excluding lookalikes inside Rust literals."""
     markers = {}
-    for token in RUST_NON_CODE.finditer(source):
-        marker = ENDIAN_MARKER.fullmatch(token[0])
+    for start, end in rust_non_code_spans(source):
+        marker = ENDIAN_MARKER.fullmatch(source[start:end])
         if marker is None:
             continue
-        start = source.rfind("\n", 0, token.start()) + 1
-        if not source[start:token.start()].strip():
-            markers[source.count("\n", 0, token.start())] = marker[1]
+        line_start = source.rfind("\n", 0, start) + 1
+        if not source[line_start:start].strip():
+            markers[source.count("\n", 0, start)] = marker[1]
     return markers
 
 
