@@ -1173,3 +1173,64 @@ fn real_lists_read_both_precisions_within_nonzero_view_bounds() {
     }
     assert!(list_layout::<3>(View::over_retained(&[0; 3]), "ScaleList").is_err());
 }
+
+#[test]
+fn a_stated_zero_element_count_is_a_scalar_link_and_never_a_floored_one() {
+    // A present zero `ElementCount` requires every array-valued field to be
+    // empty and the link retains its single scalar occurrence. The cardinality
+    // the node carries states that directly: it is `Scalar`, distinct from an
+    // array of one element, and no arithmetic turns the stated zero into a one.
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Prototype"/><Object type="App::Link" name="Occurrence"/></Objects>
+<ObjectData Count="2"><Object name="Prototype"><Properties Count="0"/></Object><Object name="Occurrence"><Properties Count="2">
+<Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+<Property name="ElementCount" type="App::PropertyIntegerConstraint"><Integer value="0"/></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("scalar link");
+    let records = decoded
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native")
+        .arena_as::<native::ProductNodeRecord>("product_nodes")
+        .expect("product nodes");
+    let [occurrence] = records.as_slice() else {
+        panic!("one link occurrence")
+    };
+    assert_eq!(occurrence.element_count(), Some(0));
+    assert_eq!(
+        occurrence.element_cardinality(),
+        Some(native::LinkArrayCardinality::Scalar)
+    );
+    assert_ne!(
+        occurrence.element_cardinality(),
+        Some(native::LinkArrayCardinality::Elements(
+            std::num::NonZeroU64::MIN
+        ))
+    );
+    assert_eq!(super::occurrence_count(occurrence).expect("count").get(), 1);
+
+    // A stated zero with a populated carrier is an inconsistent link array.
+    let populated = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3"><Object type="Part::Feature" name="Prototype"/><Object type="Part::Feature" name="ElementA"/><Object type="App::Link" name="Occurrence"/></Objects>
+<ObjectData Count="3"><Object name="Prototype"><Properties Count="0"/></Object><Object name="ElementA"><Properties Count="0"/></Object><Object name="Occurrence"><Properties Count="3">
+<Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+<Property name="ElementCount" type="App::PropertyIntegerConstraint"><Integer value="0"/></Property>
+<Property name="ElementList" type="App::PropertyLinkList"><LinkList count="1"><Link value="ElementA"/></LinkList></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let error = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(populated)),
+            &DecodeOptions::default(),
+        )
+        .expect_err("inconsistent link-array counts");
+    assert!(
+        error.to_string().contains("inconsistent link-array counts"),
+        "{error}"
+    );
+}

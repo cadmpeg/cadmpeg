@@ -4,11 +4,13 @@
 use crate::native::frame::FiniteFrame;
 use crate::native::joint::JointRecord;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::num::NonZeroUsize;
 
 use crate::brep::ShapePayloadRecord;
 use crate::layout::link_array_side_entry_header as link_array;
 use crate::native::{
-    ContainerNode, LinkOccurrence, ObjectRecord, ProductNode, ProductNodeRecord, PropertyRecord,
+    ContainerNode, LinkArrayCardinality, LinkOccurrence, ObjectRecord, ProductNode,
+    ProductNodeRecord, PropertyRecord,
 };
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -289,7 +291,7 @@ pub(crate) fn transfer_neutral(
         .iter()
         .filter(|record| matches!(record.node, ProductNode::Occurrence(_)))
     {
-        let count = occurrence_count(record)?;
+        let count = occurrence_count(record)?.get();
         let parent = parent_by_object
             .get(record.object.as_str())
             .map(|object| container_occurrence_id(object));
@@ -533,35 +535,29 @@ fn linked_prototype_transform(
         .map_err(|error| malformed(error.to_string()))
 }
 
-fn occurrence_count(record: &ProductNodeRecord) -> Result<usize, CodecError> {
-    let declared_count = record
-        .element_count()
-        .map(usize::try_from)
-        .transpose()
-        .map_err(|_| {
-            CodecError::malformed(format_args!(
-                "{} element count exceeds addressable size",
-                record.id
-            ))
-        })?;
-    let count = declared_count.unwrap_or_else(|| {
-        [
-            record.element_transforms().len(),
-            record.element_scales().len(),
-            record.element_objects().len(),
-            1,
-        ]
-        .into_iter()
-        .max()
-        .expect("nonempty lengths")
-    });
-    if count > 1_000_000 || u32::try_from(count).is_err() {
+/// Occurrences one product node contributes.
+///
+/// A link that states no array, or states a zero `ElementCount`, is scalar and
+/// contributes its single occurrence; the count is the cardinality the node's
+/// own type carries, never a floored zero.
+fn occurrence_count(record: &ProductNodeRecord) -> Result<NonZeroUsize, CodecError> {
+    let elements = match record.element_cardinality() {
+        None | Some(LinkArrayCardinality::Scalar) => return Ok(NonZeroUsize::MIN),
+        Some(LinkArrayCardinality::Elements(elements)) => elements,
+    };
+    let count = NonZeroUsize::try_from(elements).map_err(|_| {
+        CodecError::malformed(format_args!(
+            "{} element count exceeds addressable size",
+            record.id
+        ))
+    })?;
+    if count.get() > 1_000_000 || u32::try_from(count.get()).is_err() {
         return Err(CodecError::malformed(format_args!(
             "{} link-array count limit exceeded",
             record.id
         )));
     }
-    Ok(count.max(1))
+    Ok(count)
 }
 
 fn copy_on_change_policy(value: &str) -> CopyOnChangePolicy {

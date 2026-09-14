@@ -11,6 +11,7 @@ use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::products::NonBlankString;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::num::NonZeroU64;
 
 pub(crate) fn native_id(kind: &str, key: impl AsRef<str>) -> String {
     format!("fcstd:native:{kind}#{}", encode_id_key(key.as_ref()))
@@ -1152,6 +1153,20 @@ pub struct LinkArray {
     objects: Vec<String>,
 }
 
+/// The element cardinality a link states.
+///
+/// A present zero `ElementCount` requires every array-valued field to be empty
+/// and the link retains its single scalar occurrence. An absent `ElementCount`
+/// permits one scalar link occurrence or infers a nonzero count from the
+/// populated array-valued fields.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LinkArrayCardinality {
+    /// The link is not an array and carries one occurrence.
+    Scalar,
+    /// The link is an array of this many elements.
+    Elements(NonZeroU64),
+}
+
 impl LinkArray {
     pub(crate) fn try_new(
         count: Option<u64>,
@@ -1164,7 +1179,10 @@ impl LinkArray {
             scales.len() as u64,
             objects.len() as u64,
         ];
-        let effective = count.unwrap_or(lengths[0].max(lengths[1]).max(lengths[2]).max(1));
+        // With no stated count the longest populated carrier establishes the
+        // cardinality; every populated carrier must agree with it. A stated
+        // zero therefore requires every carrier to be empty.
+        let effective = count.unwrap_or(lengths[0].max(lengths[1]).max(lengths[2]));
         if lengths
             .into_iter()
             .any(|length| length != 0 && length != effective)
@@ -1177,6 +1195,19 @@ impl LinkArray {
             scales,
             objects,
         })
+    }
+
+    /// Element cardinality: the stated count, else the one the carriers establish.
+    pub fn cardinality(&self) -> LinkArrayCardinality {
+        let elements = self.count.unwrap_or_else(|| {
+            (self.transforms.len() as u64)
+                .max(self.scales.len() as u64)
+                .max(self.objects.len() as u64)
+        });
+        match NonZeroU64::new(elements) {
+            None => LinkArrayCardinality::Scalar,
+            Some(elements) => LinkArrayCardinality::Elements(elements),
+        }
     }
 }
 
@@ -1282,6 +1313,11 @@ impl ProductNodeRecord {
     /// Number of array elements requested by the link.
     pub fn element_count(&self) -> Option<u64> {
         self.occurrence().and_then(|node| node.array.count)
+    }
+
+    /// Element cardinality of a link occurrence. A non-occurrence node has none.
+    pub fn element_cardinality(&self) -> Option<LinkArrayCardinality> {
+        self.occurrence().map(|node| node.array.cardinality())
     }
 
     /// Whether the prototype transform participates in occurrence placement.
