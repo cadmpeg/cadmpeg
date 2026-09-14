@@ -183,3 +183,5 @@ fn configuration_known_fields_reject_wrong_json_kinds() {
         .is_err());
     }
 }
+
+mod admission;
