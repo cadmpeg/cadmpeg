@@ -6,6 +6,11 @@
 //! produces. Serde's own `Option` read also admits `null`, which gives the same
 //! state a second spelling. [`present`] closes that: the key, when stated,
 //! states a value.
+//!
+//! A field with no `skip_serializing_if` is the mirror case: the writer always
+//! states the key, so `null` is its spelling of `None` and an absent key is no
+//! spelling at all. [`nullable`] reads that key, and the reading declaration
+//! states no `default`, so serde names the field when it is left out.
 
 use serde::Deserialize;
 
@@ -52,14 +57,17 @@ where
     deserializer.deserialize_option(Visitor(std::marker::PhantomData))
 }
 
-/// Read a stated optional key whose writer spells `None` as `null`.
+/// Read a required optional key whose writer spells `None` as `null`.
 ///
-/// A field with no `skip_serializing_if` writes `null` for `None`, so `null`
-/// is that key's own spelling of absence and the reader admits it. The helper
-/// exists so every optional key on a read type states which spelling its
-/// writer produces: [`present`] where the writer omits the key, this where the
-/// writer states `null`. A field that states neither is an undeclared key, and
-/// the wire-crate census names it.
+/// A field with no `skip_serializing_if` writes the key for every value, so
+/// `null` is that key's own spelling of `None`. The reading declaration states
+/// no `default`, so an absent key is a missing field named in the error and
+/// `null` is the one spelling of `None`.
+///
+/// The helper exists so every optional key on a read type states which
+/// spelling its writer produces: [`present`] where the writer omits the key,
+/// this where the writer always states it. A field that states neither is an
+/// undeclared key, and the wire-crate census names it.
 ///
 /// # Errors
 ///

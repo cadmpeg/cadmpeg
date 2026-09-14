@@ -832,7 +832,7 @@ struct ParallelOffsetSurfaceConstructionWire {
     /// Signed offset distance.
     distance: f64,
     /// Whether the source classifies the result as self-intersecting.
-    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
+    #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
     self_intersect: Option<bool>,
 }
 

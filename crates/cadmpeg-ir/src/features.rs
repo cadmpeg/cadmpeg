@@ -1293,7 +1293,7 @@ pub(crate) struct FeatureRowWire {
     ordinal: u64,
     #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     name: Option<String>,
-    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
+    #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
     suppressed: Option<bool>,
     #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     regeneration_parent: Option<FeatureId>,
@@ -1350,7 +1350,7 @@ struct FeatureReadWire {
     ordinal: u64,
     #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     name: Option<String>,
-    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
+    #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
     suppressed: Option<bool>,
     #[serde(default, deserialize_with = "deserialize_dependencies")]
     dependencies: DistinctMembers<FeatureId>,
@@ -2532,10 +2532,10 @@ pub enum FeatureOperation {
     /// Rectangular solid primitive.
     Block {
         /// Ordered local x, y, and z dimensions, when resolved.
-        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
         dimensions: Option<[PositiveLength; 3]>,
         /// Local-to-model placement, when resolved.
-        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
         placement: Option<FeatureRigidPlacement>,
         /// Whether the primitive creates or combines material.
         op: BooleanOp,
@@ -3068,7 +3068,7 @@ pub enum FeatureOperation {
         /// Faces supplying the source surface geometry.
         faces: FaceSelection,
         /// Signed normal offset in canonical millimeters.
-        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
         distance: Option<Length>,
     },
     /// Joins selected surface bodies along coincident or near-coincident boundaries.
@@ -3076,10 +3076,10 @@ pub enum FeatureOperation {
         /// Faces participating in the knit operation.
         faces: FaceSelection,
         /// Whether coincident face and edge entities are merged.
-        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
         merge_entities: Option<bool>,
         /// Whether a closed result is converted to a solid body.
-        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
         create_solid: Option<bool>,
         /// Maximum boundary gap accepted by the operation.
         #[serde(
@@ -3094,7 +3094,7 @@ pub enum FeatureOperation {
         /// Bodies participating in the sew operation.
         bodies: SewBodySelection,
         /// Maximum accepted boundary gap, when resolved.
-        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
         gap_tolerance: Option<PositiveLength>,
     },
     /// Surface patch spanning a selected edge boundary.
@@ -3132,7 +3132,7 @@ pub enum FeatureOperation {
         /// Surface faces whose boundaries are extended.
         faces: FaceSelection,
         /// Positive extension distance in canonical millimeters.
-        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
         distance: Option<PositiveLength>,
         /// Geometric continuation law.
         method: SurfaceExtension,
@@ -3174,10 +3174,10 @@ pub enum FeatureOperation {
         /// Structurally selected anchor and pull frame.
         anchor: DraftAnchor,
         /// Signed draft angle.
-        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
         angle: Option<SlopeAngle>,
         /// Whether material is added away from the pull direction.
-        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
         outward: Option<bool>,
     },
     /// Boolean operation between existing bodies.

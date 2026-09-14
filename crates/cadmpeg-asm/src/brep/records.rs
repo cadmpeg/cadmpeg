@@ -430,26 +430,26 @@ pub enum TolerantCoedgeExtension {
     /// Releases 215 through 219 carry one nullable entity reference.
     Reference {
         /// Referenced record index; `None` is the native null reference.
-        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
         target: Option<i64>,
     },
     /// Modern releases carry no embedded tolerant-curve payload.
     Empty {
         /// Nullable record reference preceding the zero selector.
-        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
         target: Option<i64>,
     },
     /// Modern releases carry one balanced embedded tolerant-curve payload.
     EmbeddedCurve {
         /// Nullable record reference preceding the one selector.
-        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
         target: Option<i64>,
         /// Whether the embedded intcurve is evaluated with parameter negation.
         curve_reversed: bool,
         /// Number of tokens inside the balanced outer subtype delimiters.
         payload_token_count: u32,
         /// Optional parameter interval following the embedded subtype.
-        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
         parameter_range: Option<[f64; 2]>,
     },
 }
