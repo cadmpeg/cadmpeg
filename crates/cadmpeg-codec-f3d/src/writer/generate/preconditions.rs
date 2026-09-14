@@ -18,31 +18,22 @@ use super::attributes::source_less_body_key;
 pub(crate) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result<(), CodecError> {
     let mut surface_owners = BTreeSet::new();
     for procedural in &target.model.procedural_surfaces {
-        let owner = target
-            .model
-            .procedural_surface_owner(&procedural.id)
-            .ok_or_else(|| {
-                CodecError::InvalidInput(format!(
-                    "procedural surface {} has no unique carrier",
-                    procedural.id
-                ))
-            })?;
+        let mut owners =
+            target.model.surfaces.iter().filter(|surface| {
+                surface.geometry.procedural_construction() == Some(&procedural.id)
+            });
+        let (Some(surface), None) = (owners.next(), owners.next()) else {
+            return Err(CodecError::InvalidInput(format!(
+                "procedural surface {} has no unique carrier",
+                procedural.id
+            )));
+        };
+        let owner = &surface.id;
         if !surface_owners.insert(owner) {
             return Err(CodecError::InvalidInput(format!(
                 "surface {owner} has multiple procedural constructions"
             )));
         }
-        let surface = target
-            .model
-            .surfaces
-            .iter()
-            .find(|surface| surface.id == *owner)
-            .ok_or_else(|| {
-                CodecError::InvalidInput(format!(
-                    "procedural surface {} references missing carrier {}",
-                    procedural.id, owner
-                ))
-            })?;
         if surface.geometry.solved_cache().is_some_and(|geometry| {
             !matches!(
                 geometry,
@@ -58,31 +49,23 @@ pub(crate) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result
 
     let mut curve_owners = BTreeSet::new();
     for procedural in &target.model.procedural_curves {
-        let owner = target
+        let mut owners = target
             .model
-            .procedural_curve_owner(&procedural.id)
-            .ok_or_else(|| {
-                CodecError::InvalidInput(format!(
-                    "procedural curve {} has no unique carrier",
-                    procedural.id
-                ))
-            })?;
+            .curves
+            .iter()
+            .filter(|curve| curve.geometry.procedural_construction() == Some(&procedural.id));
+        let (Some(curve), None) = (owners.next(), owners.next()) else {
+            return Err(CodecError::InvalidInput(format!(
+                "procedural curve {} has no unique carrier",
+                procedural.id
+            )));
+        };
+        let owner = &curve.id;
         if !curve_owners.insert(owner) {
             return Err(CodecError::InvalidInput(format!(
                 "curve {owner} has multiple procedural constructions"
             )));
         }
-        let curve = target
-            .model
-            .curves
-            .iter()
-            .find(|curve| curve.id == *owner)
-            .ok_or_else(|| {
-                CodecError::InvalidInput(format!(
-                    "procedural curve {} references missing carrier {}",
-                    procedural.id, owner
-                ))
-            })?;
         match curve.geometry.solved_cache() {
             Some(SolvedCurveGeometry::Nurbs(_)) => {}
             None if procedural.cache_fit_tolerance().is_none() => {}
@@ -198,8 +181,8 @@ pub(crate) fn validate_source_less_recipes(native: &F3dNative) -> Result<(), Cod
                     .as_ref()
                     .map(|design| design.id.value.as_str()),
             ))
-            .or_insert(0u32);
-        if recipe.recipe_index != *expected {
+            .or_insert(0_u64);
+        if u64::from(recipe.recipe_index) != *expected {
             return Err(CodecError::InvalidInput(format!(
                 "F3D construction recipe {} has noncontiguous group index {}",
                 recipe.id, recipe.recipe_index
@@ -748,8 +731,8 @@ pub(crate) fn validate_source_less_design_links(
         .model
         .coedges
         .iter()
-        .map(|coedge| &coedge.id)
-        .collect::<BTreeSet<_>>();
+        .map(|coedge| (&coedge.id, coedge))
+        .collect::<HashMap<_, _>>();
     let mut linked_coedges = BTreeSet::new();
     for link in &native.sketch_curve_links {
         // Only a coedge-owned link is regenerated; a link on any other owner is
@@ -757,7 +740,7 @@ pub(crate) fn validate_source_less_design_links(
         let AttributeTarget::Coedge(coedge) = &link.target else {
             continue;
         };
-        if !coedges.contains(coedge) {
+        if !coedges.contains_key(coedge) {
             return Err(CodecError::InvalidInput(format!(
                 "F3D sketch-curve link {} targets a missing coedge {}",
                 link.id,
@@ -776,24 +759,25 @@ pub(crate) fn validate_source_less_design_links(
         .model
         .bodies
         .iter()
-        .map(|item| &item.id)
-        .collect::<BTreeSet<_>>();
+        .enumerate()
+        .map(|(ordinal, body)| (&body.id, (ordinal, body)))
+        .collect::<HashMap<_, _>>();
     let faces = target
         .model
         .faces
         .iter()
-        .map(|item| &item.id)
-        .collect::<BTreeSet<_>>();
+        .map(|face| (&face.id, face))
+        .collect::<HashMap<_, _>>();
     let edges = target
         .model
         .edges
         .iter()
-        .map(|item| &item.id)
-        .collect::<BTreeSet<_>>();
+        .map(|edge| (&edge.id, edge))
+        .collect::<HashMap<_, _>>();
     let mut groups: BTreeMap<AttributeTarget, Vec<&PersistentDesignLink>> = BTreeMap::new();
     for link in &native.persistent_design_links {
         let target_key = match &link.target {
-            cadmpeg_ir::attributes::AttributeTarget::Body(id) if bodies.contains(id) => {
+            cadmpeg_ir::attributes::AttributeTarget::Body(id) if bodies.contains_key(id) => {
                 Some(link.target.clone())
             }
             _ => None,
@@ -811,10 +795,10 @@ pub(crate) fn validate_source_less_design_links(
         BTreeMap::new();
     for tag in &native.persistent_subentity_tags {
         let target_key = match &tag.target {
-            cadmpeg_ir::attributes::AttributeTarget::Face(id) if faces.contains(id) => {
+            cadmpeg_ir::attributes::AttributeTarget::Face(id) if faces.contains_key(id) => {
                 Some((2, id.as_str().to_owned()))
             }
-            cadmpeg_ir::attributes::AttributeTarget::Edge(id) if edges.contains(id) => {
+            cadmpeg_ir::attributes::AttributeTarget::Edge(id) if edges.contains_key(id) => {
                 Some((1, id.as_str().to_owned()))
             }
             _ => None,
@@ -831,7 +815,7 @@ pub(crate) fn validate_source_less_design_links(
     for (target, mut tags) in subentity_groups {
         tags.sort_by_key(|tag| tag.ordinal);
         for (ordinal, tag) in tags.iter().enumerate() {
-            if tag.ordinal != ordinal as u32 {
+            if tag.ordinal as usize != ordinal {
                 return Err(CodecError::InvalidInput(format!(
                     "F3D persistent subentity tags for {target:?} require contiguous ordinals"
                 )));
@@ -841,7 +825,7 @@ pub(crate) fn validate_source_less_design_links(
     for (target, mut links) in groups {
         links.sort_by_key(|link| link.ordinal);
         for (ordinal, link) in links.iter().enumerate() {
-            if link.ordinal != ordinal as u32 {
+            if link.ordinal as usize != ordinal {
                 return Err(CodecError::InvalidInput(format!(
                     "F3D persistent design links for {target:?} require contiguous ordinals"
                 )));
@@ -849,18 +833,6 @@ pub(crate) fn validate_source_less_design_links(
         }
     }
 
-    let coedge_ids = target
-        .model
-        .coedges
-        .iter()
-        .map(|coedge| &coedge.id)
-        .collect::<BTreeSet<_>>();
-    let coedge_by_id = target
-        .model
-        .coedges
-        .iter()
-        .map(|coedge| (coedge.id.as_str(), coedge))
-        .collect::<std::collections::HashMap<_, _>>();
     let curve_by_id = target
         .model
         .curves
@@ -869,13 +841,13 @@ pub(crate) fn validate_source_less_design_links(
         .collect::<std::collections::HashMap<_, _>>();
     let mut tolerant_coedges = BTreeSet::new();
     for parameters in &native.tolerant_coedge_parameters {
-        if !coedge_ids.contains(&parameters.coedge) {
-            return Err(CodecError::InvalidInput(format!(
+        let coedge = coedges.get(&parameters.coedge).copied().ok_or_else(|| {
+            CodecError::InvalidInput(format!(
                 "F3D tolerant-coedge metadata {} targets missing coedge {}",
                 parameters.id(),
                 parameters.coedge
-            )));
-        }
+            ))
+        })?;
         if !tolerant_coedges.insert(&parameters.coedge) {
             return Err(CodecError::InvalidInput(format!(
                 "multiple F3D tolerant-coedge records target {}",
@@ -900,16 +872,6 @@ pub(crate) fn validate_source_less_design_links(
                 parameter_range,
                 ..
             } => {
-                let coedge = coedge_by_id
-                    .get(parameters.coedge.as_str())
-                    .copied()
-                    .ok_or_else(|| {
-                        CodecError::InvalidInput(format!(
-                            "F3D tolerant-coedge metadata {} targets missing coedge {}",
-                            parameters.id(),
-                            parameters.coedge
-                        ))
-                    })?;
                 let use_curve = coedge.use_curve.as_ref().ok_or_else(|| {
                     CodecError::InvalidInput(format!(
                         "F3D tolerant-coedge extension {} has no use curve",
@@ -963,58 +925,35 @@ pub(crate) fn validate_source_less_design_links(
         .model
         .vertices
         .iter()
-        .map(|item| &item.id)
-        .collect::<BTreeSet<_>>();
+        .map(|vertex| (&vertex.id, vertex))
+        .collect::<HashMap<_, _>>();
     let shells = target
         .model
         .shells
         .iter()
-        .map(|item| &item.id)
-        .collect::<BTreeSet<_>>();
-    let body_by_id = target
-        .model
-        .bodies
-        .iter()
-        .enumerate()
-        .map(|(ordinal, body)| (body.id.as_str(), (ordinal, body)))
-        .collect::<std::collections::HashMap<_, _>>();
-    let vertex_by_id = target
-        .model
-        .vertices
-        .iter()
-        .map(|vertex| (vertex.id.as_str(), vertex))
-        .collect::<std::collections::HashMap<_, _>>();
-    let edge_by_id = target
-        .model
-        .edges
-        .iter()
-        .map(|edge| (edge.id.as_str(), edge))
-        .collect::<std::collections::HashMap<_, _>>();
-    let shell_by_id = target
-        .model
-        .shells
-        .iter()
-        .map(|shell| (shell.id.as_str(), shell))
-        .collect::<std::collections::HashMap<_, _>>();
+        .map(|shell| (&shell.id, shell))
+        .collect::<HashMap<_, _>>();
     macro_rules! validate_unique_targets {
         ($items:expr, $field:ident, $valid:expr, $label:literal) => {
-            validate_unique_targets!($items, $field, $valid, $label, id());
+            validate_unique_targets!($items, $field, $valid, $label, [id()], |item, _target| {});
         };
-        ($items:expr, $field:ident, $valid:expr, $label:literal, $id:ident $( $call:tt )?) => {{
+        ($items:expr, $field:ident, $valid:expr, $label:literal,
+         [$($id:tt)+], |$item:ident, $target:pat_param| $validate:block) => {{
             let mut seen = BTreeSet::new();
-            for item in $items {
-                if !$valid.contains(&item.$field) {
-                    return Err(CodecError::InvalidInput(format!(
+            for $item in $items {
+                let $target = $valid.get(&$item.$field).copied().ok_or_else(|| {
+                    CodecError::InvalidInput(format!(
                         "F3D {} metadata {} targets missing entity {}",
-                        $label, item.$id $( $call )?, item.$field
-                    )));
-                }
-                if !seen.insert(&item.$field) {
+                        $label, $item.$($id)+, $item.$field
+                    ))
+                })?;
+                if !seen.insert(&$item.$field) {
                     return Err(CodecError::InvalidInput(format!(
                         "multiple F3D {} records target {}",
-                        $label, item.$field
+                        $label, $item.$field
                     )));
                 }
+                $validate
             }
         }};
     }
@@ -1024,9 +963,38 @@ pub(crate) fn validate_source_less_design_links(
         body,
         bodies,
         "body-visibility",
-        id
+        [id],
+        |visibility, (ordinal, body)| {
+            if body.visible != Some(visibility.visible) {
+                return Err(CodecError::InvalidInput(format!(
+                    "F3D body visibility {} conflicts with body {} visibility",
+                    visibility.id, visibility.body
+                )));
+            }
+            let emitted_key = source_less_body_key(attributes, body, ordinal)?;
+            if u64::try_from(emitted_key).ok() != Some(visibility.asm_body_key) {
+                return Err(CodecError::InvalidInput(format!(
+                    "F3D body visibility {} uses an ASM key different from body {}",
+                    visibility.id, visibility.body
+                )));
+            }
+        }
     );
-    validate_unique_targets!(&native.transform_hints, body, bodies, "transform-hint");
+    validate_unique_targets!(
+        &native.transform_hints,
+        body,
+        bodies,
+        "transform-hint",
+        [id()],
+        |hints, (_, body)| {
+            if body.transform.is_none() {
+                return Err(CodecError::InvalidInput(format!(
+                    "F3D transform hints {} target a body without a transform",
+                    hints.id()
+                )));
+            }
+        }
+    );
     validate_unique_targets!(&native.edge_continuities, edge, edges, "edge-continuity");
     validate_unique_targets!(&native.edge_ownerships, edge, edges, "edge-ownership");
     validate_unique_targets!(
@@ -1036,111 +1004,60 @@ pub(crate) fn validate_source_less_design_links(
         "vertex-ownership"
     );
     validate_unique_targets!(&native.face_sidedness, face, faces, "face-sidedness");
-    validate_unique_targets!(&native.tolerant_edge_tails, edge, edges, "tolerant-edge");
+    validate_unique_targets!(
+        &native.tolerant_edge_tails,
+        edge,
+        edges,
+        "tolerant-edge",
+        [id()],
+        |tail, edge| {
+            if edge.tolerance.is_none() {
+                return Err(CodecError::InvalidInput(format!(
+                    "F3D tolerant-edge metadata {} requires a tolerant edge",
+                    tail.id()
+                )));
+            }
+        }
+    );
     validate_unique_targets!(
         &native.tolerant_vertex_tails,
         vertex,
         vertices,
-        "tolerant-vertex"
+        "tolerant-vertex",
+        [id()],
+        |tail, vertex| {
+            if tail
+                .leading_tolerances
+                .iter()
+                .any(|value| !value.is_finite())
+                || vertex.tolerance.is_some()
+                    != matches!(
+                        tail.evaluated_slot,
+                        EvaluatedToleranceSlot::Evaluated { .. }
+                    )
+            {
+                return Err(CodecError::InvalidInput(format!(
+                    "F3D tolerant-vertex metadata {} requires finite fields and a tolerant vertex",
+                    tail.id()
+                )));
+            }
+        }
     );
     let mut wire_record_indices = BTreeSet::new();
     for wire in &native.wire_topologies {
-        if !shells.contains(&wire.shell) {
-            return Err(CodecError::InvalidInput(format!(
+        let shell = shells.get(&wire.shell).copied().ok_or_else(|| {
+            CodecError::InvalidInput(format!(
                 "F3D wire-topology metadata {} targets missing entity {}",
                 wire.id(),
                 wire.shell
-            )));
-        }
+            ))
+        })?;
         if !wire_record_indices.insert(wire.record_index) {
             return Err(CodecError::InvalidInput(format!(
                 "multiple F3D wire-topology records use native index {}",
                 wire.record_index
             )));
         }
-    }
-
-    for visibility in &native.body_visibilities {
-        let (ordinal, body) = body_by_id
-            .get(visibility.body.as_str())
-            .copied()
-            .ok_or_else(|| {
-                CodecError::InvalidInput(format!(
-                    "F3D body visibility {} targets missing body {}",
-                    visibility.id, visibility.body
-                ))
-            })?;
-        if body.visible != Some(visibility.visible) {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D body visibility {} conflicts with body {} visibility",
-                visibility.id, visibility.body
-            )));
-        }
-        let emitted_key = source_less_body_key(attributes, body, ordinal)?;
-        if u64::try_from(emitted_key).ok() != Some(visibility.asm_body_key) {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D body visibility {} uses an ASM key different from body {}",
-                visibility.id, visibility.body
-            )));
-        }
-    }
-    for hints in &native.transform_hints {
-        if body_by_id
-            .get(hints.body.as_str())
-            .map(|(_, body)| *body)
-            .is_none_or(|body| body.transform.is_none())
-        {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D transform hints {} target a body without a transform",
-                hints.id()
-            )));
-        }
-    }
-    for tail in &native.tolerant_vertex_tails {
-        if tail
-            .leading_tolerances
-            .iter()
-            .any(|value| !value.is_finite())
-            || vertex_by_id
-                .get(tail.vertex.as_str())
-                .copied()
-                .is_none_or(|vertex| {
-                    vertex.tolerance.is_some()
-                        != matches!(
-                            tail.evaluated_slot,
-                            EvaluatedToleranceSlot::Evaluated { .. }
-                        )
-                })
-        {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D tolerant-vertex metadata {} requires finite fields and a tolerant vertex",
-                tail.id()
-            )));
-        }
-    }
-    for tail in &native.tolerant_edge_tails {
-        if edge_by_id
-            .get(tail.edge.as_str())
-            .copied()
-            .is_none_or(|edge| edge.tolerance.is_none())
-        {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D tolerant-edge metadata {} requires a tolerant edge",
-                tail.id()
-            )));
-        }
-    }
-    for wire in &native.wire_topologies {
-        let shell = shell_by_id
-            .get(wire.shell.as_str())
-            .copied()
-            .ok_or_else(|| {
-                CodecError::InvalidInput(format!(
-                    "F3D wire-topology metadata {} targets missing shell {}",
-                    wire.id(),
-                    wire.shell
-                ))
-            })?;
         let member_form_is_valid = match &wire.members {
             cadmpeg_asm::brep::records::WireMembers::Edges(edges) => {
                 !edges.is_empty() && edges.iter().all(|edge| shell.wire_edges().contains(edge))
@@ -1219,67 +1136,6 @@ pub(crate) fn validate_source_less_body_kinds(
     Ok(())
 }
 
-/// Proof that [`validate_source_less_wire_vertices`] ran against the borrowed
-/// `CadIr`. The private field keeps construction inside this module, so the wire
-/// encoder that maps free vertices to record ordinals cannot be reached without
-/// the check having established that every free vertex exists in the model.
-#[derive(Clone, Copy)]
-pub(crate) struct WireVerticesValidated<'a> {
-    target: &'a CadIr,
-}
-
-impl<'a> WireVerticesValidated<'a> {
-    /// The `CadIr` whose wire vertices were validated.
-    pub(super) fn target(self) -> &'a CadIr {
-        self.target
-    }
-}
-
-pub(crate) fn validate_source_less_wire_vertices(
-    target: &CadIr,
-) -> Result<WireVerticesValidated<'_>, CodecError> {
-    let model = &target.model;
-    let vertex_ids = model
-        .vertices
-        .iter()
-        .map(|vertex| vertex.id.clone())
-        .collect::<BTreeSet<_>>();
-    let edge_vertex_ids = model
-        .edges
-        .iter()
-        .flat_map(|edge| [&edge.start, &edge.end])
-        .cloned()
-        .collect::<BTreeSet<_>>();
-    let mut free_vertex_ids = BTreeSet::new();
-    for vertex in model
-        .shells
-        .iter()
-        .flat_map(cadmpeg_ir::topology::Shell::free_vertices)
-    {
-        if !vertex_ids.contains(vertex) {
-            return Err(CodecError::InvalidInput(format!(
-                "wire references missing free vertex {vertex}"
-            )));
-        }
-        if edge_vertex_ids.contains(vertex) {
-            return Err(CodecError::InvalidInput(format!(
-                "wire vertex {vertex} is both free and an edge endpoint"
-            )));
-        }
-        if !free_vertex_ids.insert(vertex.clone()) {
-            return Err(CodecError::InvalidInput(format!(
-                "free vertex {vertex} belongs to more than one wire"
-            )));
-        }
-    }
-    if vertex_ids != edge_vertex_ids.union(&free_vertex_ids).cloned().collect() {
-        return Err(CodecError::InvalidInput(
-            "source-less F3D vertices must be edge endpoints or free wire vertices".into(),
-        ));
-    }
-    Ok(WireVerticesValidated { target })
-}
-
 /// Resolved wire-ownership ordinals of one body.
 #[derive(Clone, Copy)]
 pub(crate) struct WireBodyOwnership {
@@ -1349,17 +1205,21 @@ pub(crate) fn validate_source_less_wire_ownership(
 
     let mut regions = Vec::with_capacity(model.regions.len());
     for region in &model.regions {
-        let body = model
+        let (body, owner, position) = model
             .bodies
             .iter()
-            .position(|body| body.id == region.body && body.regions.contains(&region.id))
+            .enumerate()
+            .find_map(|(ordinal, body)| {
+                if body.id != region.body {
+                    return None;
+                }
+                body.regions
+                    .iter()
+                    .position(|id| *id == region.id)
+                    .map(|position| (ordinal, body, position))
+            })
             .ok_or_else(inconsistent)?;
-        let position = model.bodies[body]
-            .regions
-            .iter()
-            .position(|id| *id == region.id)
-            .ok_or_else(inconsistent)?;
-        let next_region = model.bodies[body]
+        let next_region = owner
             .regions
             .get(position + 1)
             .map(|id| region_ordinal(id).ok_or_else(inconsistent))
@@ -1407,17 +1267,22 @@ pub(crate) fn validate_source_less_wire_ownership(
 
     let mut shells = Vec::with_capacity(model.shells.len());
     for shell in &model.shells {
-        let region = model
+        let (region, owner, position) = model
             .regions
             .iter()
-            .position(|region| region.id == shell.region && region.shells.contains(&shell.id))
+            .enumerate()
+            .find_map(|(ordinal, region)| {
+                if region.id != shell.region {
+                    return None;
+                }
+                region
+                    .shells
+                    .iter()
+                    .position(|id| *id == shell.id)
+                    .map(|position| (ordinal, region, position))
+            })
             .ok_or_else(inconsistent)?;
-        let position = model.regions[region]
-            .shells
-            .iter()
-            .position(|id| *id == shell.id)
-            .ok_or_else(inconsistent)?;
-        let next_shell = model.regions[region]
+        let next_shell = owner
             .shells
             .get(position + 1)
             .map(|id| shell_ordinal(id).ok_or_else(inconsistent))

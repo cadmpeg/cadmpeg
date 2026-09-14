@@ -3,7 +3,7 @@
 //! generation.
 
 use cadmpeg_asm::brep::records::{EndpointSlot, EvaluatedToleranceSlot};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::native::F3dNative;
 use cadmpeg_core::CodecError;
@@ -28,10 +28,7 @@ use super::native_geometry::{
     native_nurbs_surface, native_pcurve, native_procedural_curve, native_procedural_surface,
     native_ref_pcurve_companion, native_smbh_header, pcurve_support_geometry, pcurve_uses_ref_form,
 };
-use super::preconditions::{
-    validate_source_less_body_kinds, validate_source_less_wire_ownership,
-    validate_source_less_wire_vertices, WireVerticesValidated,
-};
+use super::preconditions::{validate_source_less_body_kinds, validate_source_less_wire_ownership};
 use super::records::{native_tolerant_coedge_extension, tolerant_coedge_range};
 use crate::writer::primitives::{native_bool, normalized_face_sense_to_native};
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
@@ -56,8 +53,7 @@ pub(crate) fn encode_smbh(
         }
         return encode_wire_body_smbh(target, native, attributes, &topology);
     }
-    let wire_vertices = validate_source_less_wire_vertices(target)?;
-    encode_face_topology_smbh(target, native, attributes, &topology, wire_vertices)
+    encode_face_topology_smbh(target, native, attributes, &topology)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -161,14 +157,13 @@ fn source_less_wire_record_for_shell(
 
 fn encode_source_less_wires(
     records: &mut Vec<u8>,
-    wire_vertices: WireVerticesValidated<'_>,
+    target: &CadIr,
     topology: &NativeGenerationIndex<'_>,
     wire_start: i64,
     wire_coedge_start: i64,
     shell_start: i64,
     vertex_start: i64,
 ) -> Result<BTreeMap<VertexId, i64>, CodecError> {
-    let target = wire_vertices.target();
     let model = &target.model;
     let vertex_ordinals = model
         .vertices
@@ -176,6 +171,11 @@ fn encode_source_less_wires(
         .enumerate()
         .map(|(ordinal, vertex)| (&vertex.id, ordinal))
         .collect::<HashMap<_, _>>();
+    let edge_vertex_ids = model
+        .edges
+        .iter()
+        .flat_map(|edge| [&edge.start, &edge.end])
+        .collect::<BTreeSet<_>>();
     let mut free_vertex_owners = BTreeMap::new();
     let mut edge_base = 0usize;
     let mut wire_ordinal = 0usize;
@@ -209,13 +209,22 @@ fn encode_source_less_wires(
         }
         for (free_ordinal, vertex_id) in shell.free_vertices().iter().enumerate() {
             let vertex_ordinal = vertex_ordinals.get(vertex_id).copied().ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "shell {} references missing free vertex {}",
-                    shell.id, vertex_id
-                ))
+                CodecError::InvalidInput(format!("wire references missing free vertex {vertex_id}"))
             })?;
+            if edge_vertex_ids.contains(vertex_id) {
+                return Err(CodecError::InvalidInput(format!(
+                    "wire vertex {vertex_id} is both free and an edge endpoint"
+                )));
+            }
             let owner = native_record_index(wire_start, wire_ordinal)?;
-            free_vertex_owners.insert(vertex_id.clone(), owner);
+            if free_vertex_owners
+                .insert(vertex_id.clone(), owner)
+                .is_some()
+            {
+                return Err(CodecError::InvalidInput(format!(
+                    "free vertex {vertex_id} belongs to more than one wire"
+                )));
+            }
             native_ident(records, "wire")?;
             native_ref(records, -1);
             native_i64(records, -1);
@@ -235,6 +244,17 @@ fn encode_source_less_wires(
             records.push(0x11);
             wire_ordinal += 1;
         }
+    }
+    if edge_vertex_ids
+        .iter()
+        .any(|vertex| !vertex_ordinals.contains_key(vertex))
+        || vertex_ordinals.keys().any(|vertex| {
+            !edge_vertex_ids.contains(vertex) && !free_vertex_owners.contains_key(*vertex)
+        })
+    {
+        return Err(CodecError::InvalidInput(
+            "source-less F3D vertices must be edge endpoints or free wire vertices".into(),
+        ));
     }
     Ok(free_vertex_owners)
 }
@@ -281,7 +301,6 @@ fn encode_wire_body_smbh(
         ));
     }
     let ownership = validate_source_less_wire_ownership(target)?;
-    let wire_vertices = validate_source_less_wire_vertices(target)?;
     let body_start = 1i64;
     let region_start = native_record_index(body_start, model.bodies.len())?;
     let shell_start = native_record_index(region_start, model.regions.len())?;
@@ -383,7 +402,7 @@ fn encode_wire_body_smbh(
     }
     let free_vertex_owners = encode_source_less_wires(
         &mut records,
-        wire_vertices,
+        target,
         topology,
         wire_start,
         wire_coedge_start,
@@ -441,8 +460,8 @@ fn encode_wire_body_smbh(
             point: point_start,
             attribute: attribute_start,
         },
-        Some(&wire_edge_owners),
-        Some(&free_vertex_owners),
+        &wire_edge_owners,
+        &free_vertex_owners,
     )?;
     for body in &model.bodies {
         if let Some(transform) = body.transform {
@@ -517,11 +536,6 @@ fn encode_source_less_curves(records: &mut Vec<u8>, target: &CadIr) -> Result<()
                 let major_direction = *ellipse_curve.major_direction();
                 let major_radius = ellipse_curve.major_radius();
                 let minor_radius = ellipse_curve.minor_radius();
-                if major_radius == 0.0 {
-                    return Err(CodecError::Malformed(
-                        "source-less F3D ellipse has zero major radius".into(),
-                    ));
-                }
                 native_curve_base(records, "ellipse")?;
                 native_point(
                     records,
@@ -585,7 +599,6 @@ fn encode_face_topology_smbh(
     native: &F3dNative,
     attributes: &AttributeIndex<'_>,
     topology: &NativeGenerationIndex<'_>,
-    wire_vertices: WireVerticesValidated<'_>,
 ) -> Result<Vec<u8>, CodecError> {
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
@@ -774,7 +787,7 @@ fn encode_face_topology_smbh(
         native_ref(&mut records, native_record_index(body_start, body_ordinal)?);
         records.push(0x11);
     }
-    for shell in &model.shells {
+    for (shell_ordinal, shell) in model.shells.iter().enumerate() {
         let region_ordinal = model
             .regions
             .iter()
@@ -832,16 +845,6 @@ fn encode_face_topology_smbh(
             if source_less_wire_count(shell) == 0 {
                 -1
             } else {
-                let shell_ordinal = model
-                    .shells
-                    .iter()
-                    .position(|item| item.id == shell.id)
-                    .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
-                            "shell {} is absent from the target model",
-                            shell.id
-                        ))
-                    })?;
                 source_less_wire_record_for_shell(model, wire_start, shell_ordinal)?
             },
         );
@@ -854,7 +857,7 @@ fn encode_face_topology_smbh(
 
     let free_vertex_owners = encode_source_less_wires(
         &mut records,
-        wire_vertices,
+        target,
         topology,
         wire_start,
         wire_coedge_start,
@@ -876,16 +879,11 @@ fn encode_face_topology_smbh(
             .ok_or_else(|| {
                 CodecError::malformed(format_args!("shell does not own face {}", face.id))
             })?;
-        if face.loops.is_empty() {
-            return Err(CodecError::NotImplemented(
+        let first_loop = face.loops.iter().next().ok_or_else(|| {
+            CodecError::NotImplemented(
                 "source-less F3D face generation requires every face to own a loop".into(),
-            ));
-        }
-        let first_loop = face
-            .loops
-            .iter()
-            .next()
-            .ok_or_else(|| CodecError::malformed("face states no loop"))?;
+            )
+        })?;
         let loop_position = model
             .loops
             .iter()
@@ -1236,7 +1234,7 @@ fn encode_face_topology_smbh(
         native_ref(&mut records, native_record_index(coedge_start, previous)?);
         native_ref(
             &mut records,
-            if radial == coedge_ordinals.get(&coedge.id).copied().unwrap_or(radial) {
+            if radial == coedge_ordinal {
                 -1
             } else {
                 native_record_index(coedge_start, radial)?
@@ -1326,8 +1324,8 @@ fn encode_face_topology_smbh(
             point: point_start,
             attribute: attribute_start,
         },
-        Some(&wire_edge_owners),
-        Some(&free_vertex_owners),
+        &wire_edge_owners,
+        &free_vertex_owners,
     )?;
     for body in &model.bodies {
         if let Some(transform) = body.transform {
@@ -1373,8 +1371,8 @@ fn encode_source_less_edges_vertices_points(
     attributes: &AttributeIndex<'_>,
     topology: &NativeGenerationIndex<'_>,
     starts: SourceLessRecordStarts,
-    edge_owners: Option<&BTreeMap<cadmpeg_ir::ids::EdgeId, i64>>,
-    free_vertex_owners: Option<&BTreeMap<VertexId, i64>>,
+    edge_owners: &BTreeMap<cadmpeg_ir::ids::EdgeId, i64>,
+    free_vertex_owners: &BTreeMap<VertexId, i64>,
 ) -> Result<(), CodecError> {
     let SourceLessRecordStarts {
         curve: curve_start,
@@ -1472,13 +1470,7 @@ fn encode_source_less_edges_vertices_points(
         native_f64(records, range[0]);
         native_ref(records, native_record_index(vertex_start, end)?);
         native_f64(records, range[1]);
-        native_ref(
-            records,
-            edge_owners
-                .and_then(|owners| owners.get(&edge.id))
-                .copied()
-                .unwrap_or(-1),
-        );
+        native_ref(records, edge_owners.get(&edge.id).copied().unwrap_or(-1));
         native_ref(records, curve_ref);
         let (sense, continuity) = edge_record_metadata(topology, edge)?;
         records.push(native_bool(sense == Sense::Reversed));
@@ -1494,9 +1486,7 @@ fn encode_source_less_edges_vertices_points(
                 vertex.id
             )));
         };
-        let ownership = free_vertex_owners
-            .and_then(|owners| owners.get(&vertex.id))
-            .copied();
+        let ownership = free_vertex_owners.get(&vertex.id).copied();
         native_ident(
             records,
             if vertex.tolerance.is_some()
@@ -1796,4 +1786,67 @@ fn apply_native_edge_owners(
         owners.insert(ownership.edge.clone(), owner);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+
+    use crate::test_support::{
+        f3d_with_smbh, synthetic_free_vertex_body_smbh, synthetic_wire_body_smbh,
+    };
+    use crate::writer::generate::write_new;
+
+    fn decoded_wire(bytes: &[u8]) -> cadmpeg_ir::CadIr {
+        let decoded = crate::F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(bytes)),
+                &DecodeOptions::default(),
+            )
+            .expect("source wire is admitted");
+        let (mut target, _, _) = decoded.into_parts();
+        target.source = None;
+        target.native = cadmpeg_ir::native::Native::default();
+        target
+    }
+
+    #[test]
+    fn wire_vertex_admission_refuses_invalid_membership_before_output() {
+        let target = decoded_wire(&synthetic_free_vertex_body_smbh());
+        let mut valid_output = Vec::new();
+        write_new(&target, &mut valid_output).expect("unmodified free wire writes");
+        assert!(!valid_output.is_empty());
+
+        let mut missing = target.clone();
+        missing.model.vertices.clear();
+
+        let mut unowned = target.clone();
+        let mut extra_vertex = unowned.model.vertices[0].clone();
+        extra_vertex.id = cadmpeg_ir::ids::VertexId::mint("test:wire:vertex#unowned")
+            .expect("test identity is admitted");
+        unowned.model.vertices.push(extra_vertex);
+
+        let mut duplicated = target;
+        duplicated.model.shells[0].add_free_vertex(duplicated.model.vertices[0].id.clone());
+
+        let mut endpoint = decoded_wire(&synthetic_wire_body_smbh());
+        endpoint.model.shells[0].add_free_vertex(endpoint.model.edges[0].start.clone());
+
+        for (target, reason) in [
+            (missing, "wire references missing free vertex"),
+            (
+                unowned,
+                "source-less F3D vertices must be edge endpoints or free wire vertices",
+            ),
+            (duplicated, "belongs to more than one wire"),
+            (endpoint, "is both free and an edge endpoint"),
+        ] {
+            let mut output = vec![0x93, 0x2a];
+            let error = write_new(&target, &mut output)
+                .expect_err("invalid wire ownership must refuse the write");
+            assert!(error.to_string().contains(reason), "{error}");
+            assert_eq!(output, [0x93, 0x2a], "failed write changed caller output");
+        }
+    }
 }
