@@ -62,6 +62,7 @@ fn design_projection_gaps_count_cosmetic_thread_faces() {
             serde_json::from_value(serde_json::json!({
                 "id": format!("test:model:feature#thread-{ordinal}"),
                 "ordinal": ordinal,
+                "suppressed": null,
                 "definition": {
                     "definition": "cosmetic_thread",
                     "face": face,
@@ -121,6 +122,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         serde_json::from_value(serde_json::json!({
             "id": "synthetic:test:id#extrude",
             "ordinal": 0,
+            "suppressed": null,
             "definition": {
                 "definition": "extrude",
                 "profile": {
@@ -146,6 +148,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         serde_json::from_value(serde_json::json!({
             "id": "synthetic:test:id#sweep",
             "ordinal": 1,
+            "suppressed": null,
             "definition": {
                 "definition": "sweep",
                 "shape": {
@@ -165,6 +168,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         serde_json::from_value(serde_json::json!({
             "id": "synthetic:test:id#fillet",
             "ordinal": 2,
+            "suppressed": null,
             "definition": {
                 "definition": "fillet",
                 "groups": [
@@ -215,6 +219,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         serde_json::from_value(serde_json::json!({
             "id": "synthetic:test:id#native-feature",
             "ordinal": 3,
+            "suppressed": null,
             "definition": {
                 "definition": "native",
                 "kind": "unsupported",
@@ -227,6 +232,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         serde_json::from_value(serde_json::json!({
             "id": "synthetic:test:id#unresolved-pattern",
             "ordinal": 4,
+            "suppressed": null,
             "definition": {
                 "definition": "pattern",
                 "seeds": [],
@@ -591,6 +597,7 @@ fn design_projection_gaps_require_unique_scope_state_dependencies() {
             serde_json::from_value(serde_json::json!({
                 "id": format!("test:model:feature#{}", scope.record_index),
                 "ordinal": scope.record_index,
+                "suppressed": null,
                 "definition": {
                     "definition": "native",
                     "kind": "Unsupported",

@@ -543,7 +543,8 @@ fn selected_face_and_edge_features_require_neutral_operands() {
     assert!(feature_definition_is_incomplete(&definition(
         serde_json::json!({
             "definition": "offset_surface",
-            "faces": {"kind": "faces", "value": ["test:model:face#1"]}
+            "faces": {"kind": "faces", "value": ["test:model:face#1"]},
+            "distance": null
         }),
     )));
 }
@@ -577,6 +578,7 @@ fn form_and_primitive_completeness_requires_construction_payloads() {
         serde_json::json!({
             "definition": "block",
             "dimensions": [30.0, 40.0, 20.0],
+            "placement": null,
             "op": "join"
         }),
     )));
