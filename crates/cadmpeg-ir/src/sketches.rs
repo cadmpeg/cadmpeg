@@ -2373,6 +2373,28 @@ const EPS_POLAR_DISTANCE_ZERO: f64 = 1.0e-12;
 pub struct SketchConstraintDefinition(SketchConstraintDefinitionInput);
 
 impl SketchConstraintDefinition {
+    /// Construct a native relation with one source operand and its resolved entities.
+    ///
+    /// The operand supplies the required nonempty binding. State, flags, and
+    /// parameter are absent; callers with those fields use input admission.
+    #[must_use]
+    pub fn native_with_operand(
+        native_kind: NonBlankString,
+        native_properties: BTreeMap<String, String>,
+        entities: Vec<SketchEntityId>,
+        operand: SketchNativeOperand,
+    ) -> Self {
+        Self(SketchConstraintDefinitionInput::Native {
+            native_kind,
+            native_state: None,
+            native_flags: None,
+            native_properties,
+            entities,
+            parameter: None,
+            operands: vec![operand],
+        })
+    }
+
     /// Borrow the admitted constraint kind.
     #[must_use]
     pub fn kind(&self) -> &SketchConstraintDefinitionInput {
