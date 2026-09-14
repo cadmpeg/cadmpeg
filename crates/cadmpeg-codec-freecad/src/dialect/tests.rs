@@ -8,11 +8,12 @@ use super::*;
 use cadmpeg_core::dialect::Grammar;
 
 #[test]
-fn enum_and_registry_rows_are_closed_bidirectionally() {
+fn enum_and_registry_rows_are_closed_bidirectionally() -> Result<(), Box<dyn std::error::Error>> {
     cadmpeg_test_support::assert_dialect_rows_closed(
         &FcstdDialect::ALL.map(FcstdDialect::id),
         FORMAT,
-    );
+    )?;
+    Ok(())
 }
 
 /// A document element with the declarations this codec projects, fixed.

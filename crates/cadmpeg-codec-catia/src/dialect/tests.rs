@@ -12,8 +12,9 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 #[test]
-fn enum_and_registry_rows_are_closed_bidirectionally() {
-    cadmpeg_test_support::assert_dialect_rows_closed(&Variant::ALL.map(Variant::id), FORMAT);
+fn enum_and_registry_rows_are_closed_bidirectionally() -> Result<(), Box<dyn std::error::Error>> {
+    cadmpeg_test_support::assert_dialect_rows_closed(&Variant::ALL.map(Variant::id), FORMAT)?;
+    Ok(())
 }
 
 /// One registry row: the witness fixture it cites and the id it must classify
@@ -93,7 +94,7 @@ fn every_registry_row_is_witnessed_by_the_fixture_it_cites() {
     }
     assert_eq!(
         seen,
-        cadmpeg_test_support::registry_ids("catia"),
+        cadmpeg_test_support::registry_ids("catia").expect("identity registry parses"),
         "every catia row needs a witness fixture in this matrix"
     );
 }

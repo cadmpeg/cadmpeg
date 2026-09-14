@@ -132,8 +132,8 @@ mod tests {
     #[cfg(feature = "rhino")]
     #[test]
     fn the_provenance_joins_the_match_the_registry_and_the_catalog() {
-        let dialects = DialectLayers::of(DialectMatch::admitted(DialectId::pinned(
-            "rhino:archive-50",
+        let dialects = DialectLayers::of(DialectMatch::admitted(cadmpeg_core::dialect_id!(
+            "rhino:archive-50"
         )));
         let provenance = dialect_provenance(&dialects);
         assert_eq!(provenance.id.as_str(), "rhino:archive-50");

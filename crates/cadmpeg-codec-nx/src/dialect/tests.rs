@@ -11,8 +11,9 @@ use cadmpeg_core::dialect::Admission;
 use std::sync::OnceLock;
 
 #[test]
-fn enum_and_registry_rows_are_closed_bidirectionally() {
-    cadmpeg_test_support::assert_dialect_rows_closed(&NxDialect::ALL.map(NxDialect::id), FORMAT);
+fn enum_and_registry_rows_are_closed_bidirectionally() -> Result<(), Box<dyn std::error::Error>> {
+    cadmpeg_test_support::assert_dialect_rows_closed(&NxDialect::ALL.map(NxDialect::id), FORMAT)?;
+    Ok(())
 }
 
 /// A container carrying nothing but the dispatch flag and the version byte.

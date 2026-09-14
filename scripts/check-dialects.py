@@ -509,7 +509,7 @@ def render_generated_id_module(
                 ]
             )
         lines.append(
-            f'{visibility} const {name}: DialectId = DialectId::pinned("{dialect_id}");'
+            f'{visibility} const {name}: DialectId = cadmpeg_core::dialect_id!("{dialect_id}");'
         )
     return "\n".join(lines) + "\n", []
 

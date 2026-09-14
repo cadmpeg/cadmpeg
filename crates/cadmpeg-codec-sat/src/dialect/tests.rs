@@ -19,7 +19,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use std::io::Cursor;
 
 #[test]
-fn enum_and_registry_rows_are_closed_bidirectionally() {
+fn enum_and_registry_rows_are_closed_bidirectionally() -> Result<(), Box<dyn std::error::Error>> {
     let kernel = header(None);
     let reportable = [
         StreamEvidence::Binary {
@@ -35,7 +35,8 @@ fn enum_and_registry_rows_are_closed_bidirectionally() {
         StreamEvidence::Text(None),
     ]
     .map(|evidence| evidence.dialect());
-    cadmpeg_test_support::assert_dialect_rows_closed(&reportable, FORMAT);
+    cadmpeg_test_support::assert_dialect_rows_closed(&reportable, FORMAT)?;
+    Ok(())
 }
 
 /// A kernel header declaring `save_format_version` and nothing else that
@@ -102,7 +103,7 @@ fn only_the_acis_kernel_branches_are_banded() {
             );
             assert_eq!(
                 matched.using(),
-                Some(DialectId::pinned(nearest)),
+                Some(DialectId::parse(nearest).expect("test id has dialect grammar")),
                 "{version:?}"
             );
             let loss = dialect_loss(&matched).expect("the recovery is charged");

@@ -6,16 +6,16 @@
 pub(crate) const FORMAT: &str = "catia";
 
 /// Registry-owned dialect id `catia:standard-nested`.
-pub(crate) const CATIA_STANDARD_NESTED: DialectId = DialectId::pinned("catia:standard-nested");
+pub(crate) const CATIA_STANDARD_NESTED: DialectId = cadmpeg_core::dialect_id!("catia:standard-nested");
 /// Registry-owned dialect id `catia:fbb-only`.
-pub(crate) const CATIA_FBB_ONLY: DialectId = DialectId::pinned("catia:fbb-only");
+pub(crate) const CATIA_FBB_ONLY: DialectId = cadmpeg_core::dialect_id!("catia:fbb-only");
 /// Registry-owned dialect id `catia:e5-stream`.
-pub(crate) const CATIA_E5_STREAM: DialectId = DialectId::pinned("catia:e5-stream");
+pub(crate) const CATIA_E5_STREAM: DialectId = cadmpeg_core::dialect_id!("catia:e5-stream");
 /// Registry-owned dialect id `catia:zero-entity`.
-pub(crate) const CATIA_ZERO_ENTITY: DialectId = DialectId::pinned("catia:zero-entity");
+pub(crate) const CATIA_ZERO_ENTITY: DialectId = cadmpeg_core::dialect_id!("catia:zero-entity");
 /// Registry-owned dialect id `catia:float-packed-inner-no-fbb`.
-pub(crate) const CATIA_FLOAT_PACKED_INNER_NO_FBB: DialectId = DialectId::pinned("catia:float-packed-inner-no-fbb");
+pub(crate) const CATIA_FLOAT_PACKED_INNER_NO_FBB: DialectId = cadmpeg_core::dialect_id!("catia:float-packed-inner-no-fbb");
 /// Registry-owned dialect id `catia:inner-no-directory`.
-pub(crate) const CATIA_INNER_NO_DIRECTORY: DialectId = DialectId::pinned("catia:inner-no-directory");
+pub(crate) const CATIA_INNER_NO_DIRECTORY: DialectId = cadmpeg_core::dialect_id!("catia:inner-no-directory");
 /// Registry-owned dialect id `catia:unknown`.
-pub(crate) const CATIA_UNKNOWN: DialectId = DialectId::pinned("catia:unknown");
+pub(crate) const CATIA_UNKNOWN: DialectId = cadmpeg_core::dialect_id!("catia:unknown");

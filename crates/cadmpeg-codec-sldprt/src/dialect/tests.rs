@@ -23,11 +23,12 @@ use cadmpeg_ir::report::Severity;
 use std::collections::BTreeSet;
 
 #[test]
-fn enum_and_registry_rows_are_closed_bidirectionally() {
+fn enum_and_registry_rows_are_closed_bidirectionally() -> Result<(), Box<dyn std::error::Error>> {
     cadmpeg_test_support::assert_dialect_rows_closed(
         &SldprtDialect::ALL.map(SldprtDialect::id),
         FORMAT,
-    );
+    )?;
+    Ok(())
 }
 
 #[test]
@@ -93,7 +94,9 @@ fn residual_parasolid_schema_charges_a_strict_dialect_loss() {
         cadmpeg_core::dialect::LayerInstance::Sole,
         &VERIFIED_KERNELS,
     );
-    let layers = DialectLayers::of(host).with(kernel.into_matched());
+    let layers = DialectLayers::of(host)
+        .with(kernel.into_matched())
+        .expect("distinct dialect layer keys");
     let losses = dialect_losses(&layers);
 
     assert_eq!(losses.len(), 1);

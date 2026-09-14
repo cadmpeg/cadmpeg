@@ -9,12 +9,12 @@
 #![allow(clippy::unwrap_used)]
 
 use super::*;
-use crate::container::scan_bytes;
+use crate::container::scan_bytes_ok;
 use crate::test_support::{build_prt, build_prt_raw};
 use cadmpeg_core::dialect::Admission;
 
 #[test]
-fn enum_and_registry_rows_are_closed_bidirectionally() {
+fn enum_and_registry_rows_are_closed_bidirectionally() -> Result<(), Box<dyn std::error::Error>> {
     cadmpeg_test_support::assert_dialect_rows_closed(
         &[
             Layout::Nd,
@@ -24,7 +24,8 @@ fn enum_and_registry_rows_are_closed_bidirectionally() {
         ]
         .map(|layout| layout.id()),
         FORMAT,
-    );
+    )?;
+    Ok(())
 }
 
 /// A PSB file whose only section carries the `ND:` raw-name decoration.
@@ -169,7 +170,7 @@ fn cases() -> [Case; 7] {
 fn each_container_classifies_into_the_row_its_discriminants_match() {
     for case in cases() {
         let bytes = (case.bytes)();
-        let scan = scan_bytes(bytes.as_slice());
+        let scan = scan_bytes_ok(bytes.as_slice());
         match &case.layout {
             Layout::LegacyAscii(_) => assert!(
                 matches!(scan.framing.layout, Layout::LegacyAscii(_)),
@@ -233,7 +234,7 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
             Layout::LegacyAscii(_) => legacy_ascii_bytes(),
             Layout::Unknown(_) => unknown_bytes(),
         };
-        let scan = scan_bytes(bytes.as_slice());
+        let scan = scan_bytes_ok(bytes.as_slice());
         let classification = classify(&scan);
         let matched = classification.matched();
         let charged = classification.loss().is_some();
@@ -242,7 +243,7 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
 
     for case in cases() {
         let bytes = (case.bytes)();
-        let scan = scan_bytes(bytes.as_slice());
+        let scan = scan_bytes_ok(bytes.as_slice());
         let classification = classify(&scan);
         let matched = classification.matched();
         let charged = classification.loss().is_some();
@@ -258,7 +259,7 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
 #[test]
 fn the_dialect_unverified_loss_carries_the_shared_taxonomy() {
     let bytes = unknown_bytes();
-    let scan = scan_bytes(bytes.as_slice());
+    let scan = scan_bytes_ok(bytes.as_slice());
     let note = classify(&scan)
         .loss()
         .expect("an unclassified layout charges the loss");
@@ -278,7 +279,7 @@ fn the_dialect_unverified_loss_carries_the_shared_taxonomy() {
 #[test]
 fn malformed_depdb_loss_does_not_deny_present_nd_evidence() {
     let bytes = depdb_without_root_and_nd_bytes();
-    let scan = scan_bytes(bytes.as_slice());
+    let scan = scan_bytes_ok(bytes.as_slice());
     let note = classify(&scan).loss().expect("unknown layout loss");
 
     assert!(note.message.contains("DEPDB_DATA is the exclusive"));
@@ -292,7 +293,7 @@ fn the_totality_row_never_carries_a_verified_admission() {
     // (unknown, Admitted) must be unreachable.
     for case in cases() {
         let bytes = (case.bytes)();
-        let scan = scan_bytes(bytes.as_slice());
+        let scan = scan_bytes_ok(bytes.as_slice());
         let classification = classify(&scan);
         let matched = classification.matched();
         if matched.dialect().as_str()

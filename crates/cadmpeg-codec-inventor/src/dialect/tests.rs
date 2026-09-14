@@ -22,11 +22,12 @@ use crate::test_support::{
 use crate::InventorCodec;
 
 #[test]
-fn enum_and_registry_rows_are_closed_bidirectionally() {
+fn enum_and_registry_rows_are_closed_bidirectionally() -> Result<(), Box<dyn std::error::Error>> {
     cadmpeg_test_support::assert_dialect_rows_closed(
         &InventorDialect::ALL.map(InventorDialect::id),
         FORMAT,
-    );
+    )?;
+    Ok(())
 }
 
 /// One matrix row: a document's declarations and what they must classify as.

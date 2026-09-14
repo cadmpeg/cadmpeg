@@ -200,7 +200,7 @@ pub fn cube_with_source(attributes: &[(&str, &str)]) -> cadmpeg_ir::CadIr {
     let mut ir = unit_cube();
     ir.source = Some(cadmpeg_ir::SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
-            cadmpeg_core::dialect::DialectId::pinned("synthetic:test"),
+            cadmpeg_core::dialect_id!("synthetic:test"),
         )),
         cadmpeg_core::text::named_entries(
             "the fixture document",

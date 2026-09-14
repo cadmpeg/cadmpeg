@@ -505,7 +505,7 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
 
     ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
-            cadmpeg_core::dialect::DialectId::pinned("sldprt:test"),
+            cadmpeg_core::dialect_id!("sldprt:test"),
         )),
         BTreeMap::from([(
             cadmpeg_core::nonblank_literal!("sw_configuration_0_needs_update"),

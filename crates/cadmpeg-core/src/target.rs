@@ -484,13 +484,15 @@ mod tests {
     const NO_ALIASES: &[&str] = &[];
 
     const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
-        id: DialectId::pinned("fcstd:schema-4"),
+        id: crate::dialect_id!("fcstd:schema-4"),
         aliases: &["4"],
     }];
 
     const fn target(id: &'static str, aliases: &'static [&'static str]) -> TargetDescriptor {
         TargetDescriptor {
-            id: DialectId::pinned(id),
+            id: DialectId::from_static(
+                crate::dialect::StaticDialectId::new(id).expect("test id has dialect grammar"),
+            ),
             aliases,
         }
     }
@@ -499,7 +501,7 @@ mod tests {
     fn target_refusal_serializes_request_state_and_the_complete_catalog() {
         let refusal = TargetRefusal::new(
             TargetRefusalKind::ExplicitUnavailable {
-                target: DialectId::pinned("fcstd:schema-4"),
+                target: crate::dialect_id!("fcstd:schema-4"),
                 requested: TargetToken::new("4"),
                 reason: "the source image cannot be patched".into(),
             },

@@ -6,7 +6,7 @@ use crate::loss::IgesLossCode;
 use crate::test_support::{point_file, point_file_with_global};
 use crate::IgesCodec;
 use crate::IgesVersion;
-use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch};
+use cadmpeg_core::dialect::{Admission, DialectLayers, DialectMatch};
 use cadmpeg_ir::codec::write::TargetRequest;
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -397,7 +397,7 @@ fn compressed_ascii_at_a_version_with_no_row_classifies_into_the_totality_row() 
     assert_eq!(matched.dialect().as_str(), "iges:unknown");
     assert_eq!(
         matched.using(),
-        Some(DialectId::pinned("iges:5.3-compressed-ascii"))
+        Some(cadmpeg_core::dialect_id!("iges:5.3-compressed-ascii"))
     );
     assert_eq!(matched.declared()["representation"], "compressed-ascii");
     assert_eq!(matched.declared()["version_flag"], "4");

@@ -516,7 +516,10 @@ mod tests {
         })
         .into_iter()
         .collect();
-        assert_eq!(ids, cadmpeg_test_support::registry_ids(FORMAT));
+        assert_eq!(
+            ids,
+            cadmpeg_test_support::registry_ids(FORMAT).expect("identity registry parses")
+        );
     }
 
     #[test]

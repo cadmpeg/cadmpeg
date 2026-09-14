@@ -7,8 +7,9 @@
 use super::*;
 
 #[test]
-fn enum_and_registry_rows_are_closed_bidirectionally() {
-    cadmpeg_test_support::assert_dialect_rows_closed(&F3dDialect::ALL.map(F3dDialect::id), FORMAT);
+fn enum_and_registry_rows_are_closed_bidirectionally() -> Result<(), Box<dyn std::error::Error>> {
+    cadmpeg_test_support::assert_dialect_rows_closed(&F3dDialect::ALL.map(F3dDialect::id), FORMAT)?;
+    Ok(())
 }
 
 #[test]
@@ -61,7 +62,7 @@ fn a_version_only_drift_lands_on_the_recovery_row_and_charges_the_loss() {
     assert!(matches!(matched.admission(), Admission::Unverified { .. }));
     assert_eq!(
         matched.using(),
-        Some(DialectId::pinned("f3d:manifest-3-2-0-0"))
+        Some(cadmpeg_core::dialect_id!("f3d:manifest-3-2-0-0"))
     );
 
     let loss = dialect_loss(&matched).expect("the recovery is charged");

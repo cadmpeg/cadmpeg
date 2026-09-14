@@ -136,10 +136,10 @@ mod tests {
     #[cfg(feature = "rhino")]
     #[test]
     fn the_provenance_line_joins_the_match_the_registry_and_the_catalog() {
-        use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
+        use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
 
-        let dialects = DialectLayers::of(DialectMatch::admitted(DialectId::pinned(
-            "rhino:archive-50",
+        let dialects = DialectLayers::of(DialectMatch::admitted(cadmpeg_core::dialect_id!(
+            "rhino:archive-50"
         )));
         let lines = dialect_lines(Some(&dialects));
         let line = &lines[0];
@@ -157,10 +157,15 @@ mod tests {
 
     #[test]
     fn every_classified_layer_gets_a_human_line() {
-        use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
+        use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
 
-        let dialects = DialectLayers::of(DialectMatch::admitted(DialectId::pinned("sldprt:2024")))
-            .with(DialectMatch::admitted(DialectId::pinned("acis:sat-32")));
+        let dialects = DialectLayers::of(DialectMatch::admitted(cadmpeg_core::dialect_id!(
+            "sldprt:2024"
+        )))
+        .with(DialectMatch::admitted(cadmpeg_core::dialect_id!(
+            "acis:sat-32"
+        )))
+        .expect("distinct dialect layer keys");
         assert_eq!(dialect_lines(Some(&dialects)).len(), 2);
         assert_eq!(dialect_lines(Some(&dialects))[1], "dialect: acis:sat-32");
     }

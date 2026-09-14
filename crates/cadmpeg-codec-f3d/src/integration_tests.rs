@@ -271,9 +271,7 @@ fn a_version_only_manifest_drift_decodes_as_unverified_and_charges_the_recovery(
     ));
     assert_eq!(
         matched.using(),
-        Some(cadmpeg_core::dialect::DialectId::pinned(
-            "f3d:manifest-3-2-0-0"
-        ))
+        Some(cadmpeg_core::dialect_id!("f3d:manifest-3-2-0-0"))
     );
     assert_eq!(matched.declared()["top_level_manifest_version"], "3-3-0-0");
 

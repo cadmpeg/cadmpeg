@@ -321,7 +321,7 @@ fn a_cross_format_conversion_writes_the_catalog_default() {
     let mut ir = unit_cube();
     ir.source = Some(SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
-            cadmpeg_core::dialect::DialectId::pinned("rhino:archive-50"),
+            cadmpeg_core::dialect_id!("rhino:archive-50"),
         )),
         std::collections::BTreeMap::new(),
     ));
@@ -360,7 +360,7 @@ fn nothing_to_inherit_falls_to_the_catalog_default() {
     let mut foreign = unit_cube();
     foreign.source = Some(SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
-            cadmpeg_core::dialect::DialectId::pinned("iges:5.3-fixed-ascii"),
+            cadmpeg_core::dialect_id!("iges:5.3-fixed-ascii"),
         )),
         std::collections::BTreeMap::new(),
     ));

@@ -3721,9 +3721,9 @@ mod nurbs_write_tests {
         let hash = pmi_local_sha256(&ir).expect("PMI baseline hash");
         ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
             cadmpeg_core::dialect::DialectLayers::of(
-                cadmpeg_core::dialect::DialectMatch::admitted(
-                    cadmpeg_core::dialect::DialectId::pinned("sldprt:test"),
-                ),
+                cadmpeg_core::dialect::DialectMatch::admitted(cadmpeg_core::dialect_id!(
+                    "sldprt:test"
+                )),
             ),
             std::collections::BTreeMap::from([(
                 cadmpeg_core::nonblank_const!(PMI_LOCAL_DIGEST_ATTRIBUTE),

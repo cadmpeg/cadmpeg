@@ -6,10 +6,10 @@
 pub const FORMAT: &str = "parasolid";
 
 /// Registry-owned dialect id `parasolid:sch-sw-33103`.
-pub(crate) const PARASOLID_SCH_SW_33103: DialectId = DialectId::pinned("parasolid:sch-sw-33103");
+pub(crate) const PARASOLID_SCH_SW_33103: DialectId = cadmpeg_core::dialect_id!("parasolid:sch-sw-33103");
 /// Registry-owned dialect id `parasolid:sch-sw-32001`.
-pub(crate) const PARASOLID_SCH_SW_32001: DialectId = DialectId::pinned("parasolid:sch-sw-32001");
+pub(crate) const PARASOLID_SCH_SW_32001: DialectId = cadmpeg_core::dialect_id!("parasolid:sch-sw-32001");
 /// Registry-owned dialect id `parasolid:format-13006`.
-pub(crate) const PARASOLID_FORMAT_13006: DialectId = DialectId::pinned("parasolid:format-13006");
+pub(crate) const PARASOLID_FORMAT_13006: DialectId = cadmpeg_core::dialect_id!("parasolid:format-13006");
 /// Registry-owned dialect id `parasolid:unknown`.
-pub(crate) const PARASOLID_UNKNOWN: DialectId = DialectId::pinned("parasolid:unknown");
+pub(crate) const PARASOLID_UNKNOWN: DialectId = cadmpeg_core::dialect_id!("parasolid:unknown");

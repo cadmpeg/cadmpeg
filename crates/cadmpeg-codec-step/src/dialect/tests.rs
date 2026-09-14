@@ -8,13 +8,14 @@ use super::*;
 use std::collections::BTreeSet;
 
 #[test]
-fn enum_and_registry_rows_are_closed_bidirectionally() {
+fn enum_and_registry_rows_are_closed_bidirectionally() -> Result<(), Box<dyn std::error::Error>> {
     let ids = StepDialect::ALL
         .map(StepDialect::id)
         .into_iter()
         .chain(AlternateEncoding::ALL.map(AlternateEncoding::id))
         .collect::<Vec<_>>();
-    cadmpeg_test_support::assert_dialect_rows_closed(&ids, FORMAT);
+    cadmpeg_test_support::assert_dialect_rows_closed(&ids, FORMAT)?;
+    Ok(())
 }
 
 #[test]

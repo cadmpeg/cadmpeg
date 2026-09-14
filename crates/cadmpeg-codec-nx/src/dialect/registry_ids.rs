@@ -6,10 +6,10 @@
 pub(crate) const FORMAT: &str = "nx";
 
 /// Registry-owned dialect id `nx:splmsstr`.
-pub(crate) const NX_SPLMSSTR: DialectId = DialectId::pinned("nx:splmsstr");
+pub(crate) const NX_SPLMSSTR: DialectId = cadmpeg_core::dialect_id!("nx:splmsstr");
 /// Registry-owned dialect id `nx:legacy-cfb`.
-pub(crate) const NX_LEGACY_CFB: DialectId = DialectId::pinned("nx:legacy-cfb");
+pub(crate) const NX_LEGACY_CFB: DialectId = cadmpeg_core::dialect_id!("nx:legacy-cfb");
 /// Registry-owned dialect id `nx:unknown`.
 // Container detection cannot produce this registry row.
 #[allow(dead_code)]
-pub(crate) const NX_UNKNOWN: DialectId = DialectId::pinned("nx:unknown");
+pub(crate) const NX_UNKNOWN: DialectId = cadmpeg_core::dialect_id!("nx:unknown");

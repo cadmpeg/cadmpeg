@@ -6,10 +6,10 @@
 pub(crate) const FORMAT: &str = "fcstd";
 
 /// Registry-owned dialect id `fcstd:schema-2`.
-pub(crate) const FCSTD_SCHEMA_2: DialectId = DialectId::pinned("fcstd:schema-2");
+pub(crate) const FCSTD_SCHEMA_2: DialectId = cadmpeg_core::dialect_id!("fcstd:schema-2");
 /// Registry-owned dialect id `fcstd:schema-3`.
-pub(crate) const FCSTD_SCHEMA_3: DialectId = DialectId::pinned("fcstd:schema-3");
+pub(crate) const FCSTD_SCHEMA_3: DialectId = cadmpeg_core::dialect_id!("fcstd:schema-3");
 /// Registry-owned dialect id `fcstd:schema-4`.
-pub(crate) const FCSTD_SCHEMA_4: DialectId = DialectId::pinned("fcstd:schema-4");
+pub(crate) const FCSTD_SCHEMA_4: DialectId = cadmpeg_core::dialect_id!("fcstd:schema-4");
 /// Registry-owned dialect id `fcstd:unknown`.
-pub(crate) const FCSTD_UNKNOWN: DialectId = DialectId::pinned("fcstd:unknown");
+pub(crate) const FCSTD_UNKNOWN: DialectId = cadmpeg_core::dialect_id!("fcstd:unknown");
