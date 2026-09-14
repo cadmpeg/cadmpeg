@@ -740,7 +740,10 @@ pub(crate) fn rational_pcurve_arc(
     if !segment_count.is_finite() || segment_count > crate::MAX_EXACT_ARC_SPANS as f64 {
         return None;
     }
-    let segment_count = (segment_count as usize).max(1);
+    // `ceil` answers zero only for an angular span of exactly zero: an arc that
+    // sweeps no angle states no span, which this route refuses as it refuses
+    // every other degeneracy.
+    let segment_count = std::num::NonZeroUsize::new(segment_count as usize)?.get();
     let control_count = segment_count.checked_mul(2)?.checked_add(1)?;
     let step = span / segment_count as f64;
     let mut control_points = Vec::with_capacity(control_count);

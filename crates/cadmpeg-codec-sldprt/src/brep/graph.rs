@@ -51,6 +51,8 @@ const EPS_RADIUS_ABSOLUTE: f64 = 1.0e-6;
 const EPS_RADIUS_RELATIVE: f64 = 1.0e-9;
 const EPS_NURBS_WEIGHT: f64 = 1.0e-12;
 const EPS_POINT_DISTANCE: f64 = 1.0e-12;
+const EPS_SWEEP_EXTENT_ABSOLUTE_MM: f64 = 1.0e-6;
+const EPS_SWEEP_EXTENT_RELATIVE: f64 = 1.0e-3;
 
 /// Decoded B-rep arenas, provenance, and transfer statistics.
 #[derive(Default)]
@@ -603,7 +605,14 @@ fn resolve_sweep_surface(
                 .fold(f64::NEG_INFINITY, f64::max);
             let v_start = point_lo - pole_hi;
             let v_end = point_hi - pole_lo;
-            let pad = 1.0e-6_f64.max((v_end - v_start) * 1.0e-3);
+            // Two independently derived pads on the same swept extent: an
+            // absolute one in millimetres and one relative to the travel the
+            // poles and points state. The extent must clear both, so the
+            // looser is the pad.
+            let pad = looser_tolerance(
+                EPS_SWEEP_EXTENT_ABSOLUTE_MM,
+                (v_end - v_start) * EPS_SWEEP_EXTENT_RELATIVE,
+            );
             Some((
                 SolvedSurfaceGeometry::Nurbs(sweep::swept_nurbs(
                     &curve,
@@ -934,6 +943,26 @@ fn surface_sense(sense: Sense, orientation_reversed: bool) -> Sense {
     }
 }
 
+/// The body bytes a Parasolid stream header names.
+///
+/// # Errors
+///
+/// Refuses a body offset past the payload, naming the offset and the payload
+/// length: a header that states its body outside its own stream is a framing
+/// error, not an empty body.
+fn header_body<'a>(
+    payload: &'a [u8],
+    header: &StreamHeader,
+) -> Result<&'a [u8], cadmpeg_core::CodecError> {
+    payload.get(header.body_offset..).ok_or_else(|| {
+        cadmpeg_core::CodecError::malformed(format!(
+            "sldprt Parasolid stream header states body offset {} past its {}-byte payload",
+            header.body_offset,
+            payload.len()
+        ))
+    })
+}
+
 /// Decode one parsed Parasolid stream into B-rep arenas.
 ///
 /// `stream` names the provenance stream recorded in [`Brep::annotations`].
@@ -942,7 +971,7 @@ pub(crate) fn decode(
     header: &StreamHeader,
     stream: &str,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
-    decode_body(&payload[header.body_offset.min(payload.len())..], stream)
+    decode_body(header_body(payload, header)?, stream)
 }
 
 /// Decode related partition and deltas streams as one record source.
@@ -964,11 +993,11 @@ pub(crate) fn decode_bodies(
     let entity_streams = ordered
         .iter()
         .map(|(payload, header)| {
-            let body = &payload[header.body_offset.min(payload.len())..];
+            let body = header_body(payload, header)?;
             let is_deltas = header.description.to_ascii_lowercase().contains("deltas");
-            (body, is_deltas)
+            Ok((body, is_deltas))
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?;
     let typed_streams = entity_streams
         .iter()
         .map(|(body, _)| typed::scan(body))
@@ -986,7 +1015,7 @@ pub(crate) fn decode_bodies(
     for (stream_order, ((payload, header), stream_typed_facts)) in
         ordered.into_iter().zip(typed_streams).enumerate()
     {
-        let body = &payload[header.body_offset.min(payload.len())..];
+        let body = header_body(payload, header)?;
         let is_deltas = header.description.to_ascii_lowercase().contains("deltas");
         let typed_face_offsets = if typed_ownership_valid {
             stream_typed_facts
