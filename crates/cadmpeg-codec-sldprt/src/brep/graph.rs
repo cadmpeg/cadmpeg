@@ -3688,7 +3688,7 @@ fn derive_nurbs_isoparametric_pcurves(
         .collect();
     let edges: HashMap<_, _> = out.edges.iter().map(|edge| (&edge.id, edge)).collect();
     let curves: HashMap<_, _> = out.curves.iter().map(|curve| (&curve.id, curve)).collect();
-    let mut lane_refusals: Vec<String> = Vec::new();
+    let mut lane_refusals = crate::lane_refusal::LaneRefusals::new();
     let vertices: HashMap<_, _> = out
         .vertices
         .iter()
@@ -3739,10 +3739,10 @@ fn derive_nurbs_isoparametric_pcurves(
                 let resolution = match derive_nurbs_edge_pcurve(surface, curve, parameter_range) {
                     Ok(resolution) => resolution,
                     Err(error) => {
-                        lane_refusals.push(format!(
-                            "isoparametric pcurve for edge {}: {error}",
-                            edge.id.as_str()
-                        ));
+                        lane_refusals.note(
+                            format_args!("isoparametric pcurve for edge {}", edge.id.as_str()),
+                            &error,
+                        );
                         continue;
                     }
                 };
@@ -3827,6 +3827,11 @@ fn derive_nurbs_isoparametric_pcurves(
         .enumerate()
         .map(|(index, coedge)| (coedge.id.clone(), index))
         .collect::<HashMap<_, _>>();
+    // The sink is drained before the `?` below: an error on that route must
+    // not drop a refusal the walk above already pushed.
+    out.stats
+        .spline_lane_refusals
+        .extend(lane_refusals.take_records());
     for (coedge_id, id, pcurve, cache) in derived {
         if let Some(index) = coedge_indices.get(&coedge_id) {
             out.coedges[*index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
@@ -3846,7 +3851,6 @@ fn derive_nurbs_isoparametric_pcurves(
         annotations.exactness(&id, Exactness::Derived);
         out.pcurves.push(pcurve);
     }
-    out.stats.spline_lane_refusals.extend(lane_refusals);
     Ok(())
 }
 
