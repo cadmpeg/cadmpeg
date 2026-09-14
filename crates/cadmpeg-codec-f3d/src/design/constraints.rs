@@ -114,22 +114,24 @@ pub fn project_sketch_constraints(
             ))
         })
         .collect::<HashMap<_, _>>();
-    let native_operand = |scope: &str, field: &'static str, record_index: u32| {
+    let native_operand = |scope: &str,
+                          field: cadmpeg_core::text::NonBlankString,
+                          record_index: u32| {
         let (family, native_ref) = if let Some(native_ref) =
             point_native_refs.get(&(scope, record_index)).copied()
         {
-            ("point", Some(native_ref))
+            (cadmpeg_core::nonblank_literal!("point"), Some(native_ref))
         } else if let Some(native_ref) = curve_native_refs.get(&(scope, record_index)).copied() {
-            ("curve", Some(native_ref))
+            (cadmpeg_core::nonblank_literal!("curve"), Some(native_ref))
         } else if let Some(native_ref) = text_native_refs.get(&(scope, record_index)).copied() {
-            ("text", Some(native_ref))
+            (cadmpeg_core::nonblank_literal!("text"), Some(native_ref))
         } else {
-            ("record", None)
+            (cadmpeg_core::nonblank_literal!("record"), None)
         };
         SketchNativeOperand {
-            native_kind: crate::design::literals::nonempty(family),
+            native_kind: family,
             field: Some(NativeOperandField {
-                name: crate::design::literals::nonempty(field),
+                name: field,
                 role: None,
             }),
             object_index: Some(record_index),
@@ -213,24 +215,42 @@ pub fn project_sketch_constraints(
                 operands: relation
                     .member_indices()
                     .into_iter()
-                    .map(|record_index| native_operand(scope, "member", record_index))
+                    .map(|record_index| {
+                        native_operand(
+                            scope,
+                            cadmpeg_core::nonblank_literal!("member"),
+                            record_index,
+                        )
+                    })
                     .chain(
                         relation
                             .auxiliary_references()
                             .values()
-                            .map(|record_index| native_operand(scope, "auxiliary", *record_index)),
+                            .map(|record_index| {
+                                native_operand(
+                                    scope,
+                                    cadmpeg_core::nonblank_literal!("auxiliary"),
+                                    *record_index,
+                                )
+                            }),
                     )
                     .chain(
                         relation
                             .return_member_indices()
                             .into_iter()
-                            .map(|record_index| native_operand(scope, "return", record_index)),
+                            .map(|record_index| {
+                                native_operand(
+                                    scope,
+                                    cadmpeg_core::nonblank_literal!("return"),
+                                    record_index,
+                                )
+                            }),
                     )
                     .collect(),
             })
         })?;
         Some(SketchConstraint {
-            id: neutral_sketch_constraint_id(&relation.id, relation.record_index)?,
+            id: neutral_sketch_constraint_id(&relation.id, relation.record_index),
             sketch,
             definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
                 .ok()?,

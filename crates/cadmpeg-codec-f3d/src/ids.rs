@@ -15,7 +15,7 @@ use crate::records::{DesignParameter, DesignSketchPlacement};
 pub(crate) const SCHEME_PREFIX: &str = "f3d:";
 
 /// Format component of every entity ID this codec emits.
-pub(crate) const ID_FORMAT: cadmpeg_asm::ids::IdFormat<'static> = cadmpeg_asm::ids::IdFormat("f3d");
+pub(crate) const ID_FORMAT: cadmpeg_asm::ids::IdFormat = cadmpeg_asm::asm_format!("f3d");
 
 /// The native stream used when an identity key carries no qualifying stream —
 /// the fallback for `native_stream(id).unwrap_or(..)`.
@@ -63,34 +63,105 @@ pub(crate) fn design_segment(id: &str) -> Option<&str> {
 /// The fixed key of the single source-image record a design carries.
 pub(crate) const FILE_SOURCE_IMAGE_ID: &str = "f3d:file:source-image#0";
 
-/// Mints an identity whose namespace and escaped key parts satisfy the grammar.
-fn minted<T: From<cadmpeg_ir::ids::Identity>>(id: String) -> T {
-    cadmpeg_ir::ids::Identity::new(id)
-        .map(T::from)
-        .expect("f3d identity grammar")
+/// The fixed identity of the retained source image record.
+pub(crate) fn file_source_image_id() -> cadmpeg_ir::ids::UnknownId {
+    cadmpeg_ir::ids::UnknownId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "file", "source-image"),
+        cadmpeg_ir::identity_key!("0"),
+    )
 }
 
-/// Mints a local identity whose escaped parts carry no whitespace.
-fn minted_local<T>(mint: fn(String) -> Result<T, cadmpeg_ir::ids::IdentityError>, id: String) -> T {
-    mint(id).expect("f3d identity grammar")
+/// The neutral B-rep identity for one face slot.
+pub(crate) fn brep_face_id(
+    index: impl Into<cadmpeg_ir::ids::IdentityKey>,
+) -> cadmpeg_ir::ids::FaceId {
+    cadmpeg_ir::ids::FaceId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "brep", "entity"),
+        index,
+    )
+}
+
+/// The neutral B-rep identity for one edge slot.
+pub(crate) fn brep_edge_id(
+    index: impl Into<cadmpeg_ir::ids::IdentityKey>,
+) -> cadmpeg_ir::ids::EdgeId {
+    cadmpeg_ir::ids::EdgeId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "brep", "entity"),
+        index,
+    )
+}
+
+/// Build an appearance identity from its source visual token.
+pub(crate) fn appearance_id(key: cadmpeg_ir::ids::IdentityKey) -> cadmpeg_ir::ids::AppearanceId {
+    cadmpeg_ir::ids::AppearanceId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "design", "appearance"),
+        key,
+    )
+}
+
+/// Build a body appearance binding identity.
+pub(crate) fn body_appearance_binding_id(
+    entity_suffix: u64,
+    visual_guid: cadmpeg_ir::ids::IdentityKey,
+) -> cadmpeg_ir::ids::AppearanceBindingId {
+    let key = cadmpeg_ir::ids::IdentityKey::from(entity_suffix).colon(visual_guid);
+    cadmpeg_ir::ids::AppearanceBindingId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "appearance", "body"),
+        key,
+    )
+}
+
+/// Build a body assignment appearance binding identity.
+pub(crate) fn assignment_appearance_binding_id(
+    entity_id: &str,
+    visual_guid: cadmpeg_ir::ids::IdentityKey,
+) -> Result<cadmpeg_ir::ids::AppearanceBindingId, cadmpeg_ir::ids::IdentityError> {
+    let entity = cadmpeg_ir::ids::IdentityKeyTail::try_new(entity_id)?;
+    let key = cadmpeg_ir::identity_key!(":")
+        .with_prefix(&entity)
+        .then(visual_guid);
+    Ok(cadmpeg_ir::ids::AppearanceBindingId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "appearance", "binding"),
+        key,
+    ))
+}
+
+/// Build a face appearance binding identity.
+pub(crate) fn face_appearance_binding_id(
+    face_guid: &str,
+    visual_guid: cadmpeg_ir::ids::IdentityKey,
+    face: &cadmpeg_ir::ids::FaceId,
+) -> Result<cadmpeg_ir::ids::AppearanceBindingId, cadmpeg_ir::ids::IdentityError> {
+    let face_guid = cadmpeg_ir::ids::IdentityKeyTail::try_new(face_guid)?;
+    let face_key = cadmpeg_ir::ids::IdentityKeyTail::percent_encode(face.as_str());
+    let key = cadmpeg_ir::identity_key!(":")
+        .with_prefix(&face_guid)
+        .then(visual_guid)
+        .colon(face_key.as_str().len())
+        .then(cadmpeg_ir::identity_key!(":"))
+        .with_tail(&face_key);
+    Ok(cadmpeg_ir::ids::AppearanceBindingId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "appearance", "face"),
+        key,
+    ))
+}
+
+/// Build a T-spline identity from its source entry key.
+pub(crate) fn subd_id(
+    source_key: &str,
+) -> Result<cadmpeg_ir::ids::SubdId, cadmpeg_ir::ids::IdentityError> {
+    let key = cadmpeg_ir::ids::IdentityKey::try_new(source_key)?;
+    Ok(cadmpeg_ir::ids::SubdId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "tspline", "subd"),
+        key,
+    ))
 }
 
 /// Percent-encode identity separators, the escape byte, and whitespace.
-fn identity_key_component(value: &str) -> String {
-    use std::fmt::Write as _;
-
-    let mut encoded = String::with_capacity(value.len());
-    for character in value.chars() {
-        if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
-            let mut bytes = [0; 4];
-            for byte in character.encode_utf8(&mut bytes).as_bytes() {
-                write!(encoded, "%{byte:02X}").expect("writing to a String cannot fail");
-            }
-        } else {
-            encoded.push(character);
-        }
-    }
-    encoded
+pub(crate) fn identity_key_component(value: &str) -> String {
+    cadmpeg_ir::ids::IdentityKeyTail::percent_encode(value)
+        .as_str()
+        .to_owned()
 }
 
 /// Reverse [`identity_key_component`] for a complete encoded component.
@@ -127,22 +198,32 @@ pub(crate) fn neutral_xref_occurrence_id(
     reference_ordinal: u32,
     occurrence_ordinal: u32,
 ) -> cadmpeg_ir::ids::OccurrenceId {
-    minted(format!(
-        "f3d:model:occurrence#xref-{reference_ordinal}-{occurrence_ordinal}"
-    ))
+    cadmpeg_ir::ids::OccurrenceId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "occurrence"),
+        cadmpeg_ir::identity_key!("xref")
+            .dash(reference_ordinal)
+            .dash(occurrence_ordinal),
+    )
 }
 
 /// Neutral local component definition projected from its stable Design GUID.
-pub(crate) fn neutral_component_id(guid: &str) -> cadmpeg_ir::ids::ProductDefinitionId {
-    minted(format!("f3d:model:component#{}", guid.to_ascii_lowercase()))
+pub(crate) fn neutral_component_id(
+    guid: &crate::records::DesignRelaxedGuidText,
+) -> cadmpeg_ir::ids::ProductDefinitionId {
+    cadmpeg_ir::ids::ProductDefinitionId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "component"),
+        guid.identity_key(),
+    )
 }
 
 /// Neutral local occurrence projected from its stable Design GUID.
-pub(crate) fn neutral_component_occurrence_id(guid: &str) -> cadmpeg_ir::ids::OccurrenceId {
-    minted(format!(
-        "f3d:model:occurrence#{}",
-        guid.to_ascii_lowercase()
-    ))
+pub(crate) fn neutral_component_occurrence_id(
+    guid: &crate::records::DesignRelaxedGuidText,
+) -> cadmpeg_ir::ids::OccurrenceId {
+    cadmpeg_ir::ids::OccurrenceId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "occurrence"),
+        guid.identity_key(),
+    )
 }
 
 /// Neutral occurrence identity for an external component-insert scope whose
@@ -151,13 +232,19 @@ pub(crate) fn neutral_component_insert_occurrence_id(
     scope: &DesignParameterScope,
 ) -> cadmpeg_ir::ids::OccurrenceId {
     let stream = identity_key_component(native_stream(&scope.id).unwrap_or(DEFAULT_STREAM));
-    minted(format!(
-        "f3d:model:occurrence#component-insert-{}:{}{}:{}",
-        stream.len(),
-        stream,
-        scope.feature_ordinal,
-        scope.record_index,
-    ))
+    let stream_len = stream.len();
+    let key = cadmpeg_ir::identity_key!("component-insert-")
+        .then(stream_len)
+        .then(cadmpeg_ir::identity_key!(":"))
+        .with_tail(&cadmpeg_ir::ids::IdentityKeyTail::percent_encode(
+            native_stream(&scope.id).unwrap_or(DEFAULT_STREAM),
+        ))
+        .then(scope.feature_ordinal.get())
+        .colon(scope.record_index);
+    cadmpeg_ir::ids::OccurrenceId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "occurrence"),
+        key,
+    )
 }
 
 /// Neutral assembly-joint key projected from one Design parameter scope.
@@ -165,12 +252,16 @@ pub(crate) fn neutral_assembly_joint_id(
     scope: &crate::records::feature::DesignParameterScope,
 ) -> cadmpeg_ir::products::JointId {
     let stream = identity_key_component(native_stream(&scope.id).unwrap_or(DEFAULT_STREAM));
-    minted(format!(
-        "f3d:model:joint#{}:{}{}",
-        stream.len(),
-        stream,
-        scope.record_index
-    ))
+    let key = cadmpeg_ir::ids::IdentityKey::from(stream.len())
+        .then(cadmpeg_ir::identity_key!(":"))
+        .with_tail(&cadmpeg_ir::ids::IdentityKeyTail::percent_encode(
+            native_stream(&scope.id).unwrap_or(DEFAULT_STREAM),
+        ))
+        .then(scope.record_index);
+    cadmpeg_ir::products::JointId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "joint"),
+        key,
+    )
 }
 
 /// The Design configuration record key for the archive entry `entry_name`.
@@ -181,34 +272,24 @@ pub(crate) fn configuration_entry_id(entry_name: &str) -> String {
     )
 }
 
-/// Neutral per-face appearance binding joined through two GUIDs and a face.
-pub(crate) fn neutral_face_appearance_binding_id(
-    face_guid: &str,
-    visual_guid: &str,
-    face: &cadmpeg_ir::ids::FaceId,
-) -> String {
-    let face = identity_key_component(face.as_str());
-    format!(
-        "f3d:appearance:face#{face_guid}:{visual_guid}:{}:{face}",
-        face.len()
-    )
-}
-
 /// The neutral configuration key for `variant_name` under `entry_name`, with
 /// both names length-prefixed into `#{len}:{key}{len}:{key}` segments.
 pub(crate) fn neutral_configuration_id(
     entry_name: &str,
     variant_name: &str,
 ) -> cadmpeg_ir::features::ConfigurationId {
-    let entry_name = identity_key_component(entry_name);
-    let variant_name = identity_key_component(variant_name);
-    minted(format!(
-        "f3d:configuration:variant#{}:{}{}:{}",
-        entry_name.len(),
-        entry_name,
-        variant_name.len(),
-        variant_name,
-    ))
+    let entry_name = cadmpeg_ir::ids::IdentityKeyTail::percent_encode(entry_name);
+    let variant_name = cadmpeg_ir::ids::IdentityKeyTail::percent_encode(variant_name);
+    let key = cadmpeg_ir::ids::IdentityKey::from(entry_name.as_str().len())
+        .then(cadmpeg_ir::identity_key!(":"))
+        .with_tail(&entry_name)
+        .then(variant_name.as_str().len())
+        .then(cadmpeg_ir::identity_key!(":"))
+        .with_tail(&variant_name);
+    cadmpeg_ir::features::ConfigurationId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "configuration", "variant"),
+        key,
+    )
 }
 
 /// The neutral feature key for a parameter `scope`.
@@ -229,17 +310,20 @@ pub(crate) fn neutral_feature_id_parts(
     feature_ordinal: u32,
     scope_record_index: u32,
 ) -> cadmpeg_ir::features::FeatureId {
-    let stream = identity_key_component(stream);
-    let kind = identity_key_component(kind);
-    minted(format!(
-        "f3d:model:feature#{}:{}{}:{}{}:{}",
-        stream.len(),
-        stream,
-        kind.len(),
-        kind,
-        feature_ordinal,
-        scope_record_index,
-    ))
+    let stream = cadmpeg_ir::ids::IdentityKeyTail::percent_encode(stream);
+    let kind = cadmpeg_ir::ids::IdentityKeyTail::percent_encode(kind);
+    let key = cadmpeg_ir::ids::IdentityKey::from(stream.as_str().len())
+        .then(cadmpeg_ir::identity_key!(":"))
+        .with_tail(&stream)
+        .then(kind.as_str().len())
+        .then(cadmpeg_ir::identity_key!(":"))
+        .with_tail(&kind)
+        .then(feature_ordinal)
+        .colon(scope_record_index);
+    cadmpeg_ir::features::FeatureId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "feature"),
+        key,
+    )
 }
 
 /// Feature-input-local body key for one complete external `Combine` selector path.
@@ -349,8 +433,14 @@ pub(crate) fn neutral_assembly_legacy_object_id(
 
 /// The neutral embedded-asset key for one exact archive entry.
 pub(crate) fn neutral_asset_id(entry_name: &str) -> cadmpeg_ir::assets::AssetId {
-    let entry_name = identity_key_component(entry_name);
-    minted(format!("f3d:model:asset#{}:{entry_name}", entry_name.len()))
+    let entry_name = cadmpeg_ir::ids::IdentityKeyTail::percent_encode(entry_name);
+    let key = cadmpeg_ir::ids::IdentityKey::from(entry_name.as_str().len())
+        .then(cadmpeg_ir::identity_key!(":"))
+        .with_tail(&entry_name);
+    cadmpeg_ir::assets::AssetId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "asset"),
+        key,
+    )
 }
 
 /// The neutral parameter key for a design `parameter`.
@@ -369,39 +459,44 @@ pub(crate) fn neutral_parameter_id_parts(
     stream: &str,
     record_index: u32,
 ) -> cadmpeg_ir::features::ParameterId {
-    let stream = identity_key_component(stream);
-    minted(format!(
-        "f3d:model:parameter#{}:{}{}",
-        stream.len(),
-        stream,
-        record_index,
-    ))
+    let stream = cadmpeg_ir::ids::IdentityKeyTail::percent_encode(stream);
+    let key = cadmpeg_ir::ids::IdentityKey::from(stream.as_str().len())
+        .then(cadmpeg_ir::identity_key!(":"))
+        .with_tail(&stream)
+        .then(record_index);
+    cadmpeg_ir::features::ParameterId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "parameter"),
+        key,
+    )
 }
 
 /// The neutral planar-sketch key for a sketch `placement`.
 pub(crate) fn neutral_sketch_id(
     placement: &DesignSketchPlacement,
 ) -> cadmpeg_ir::sketches::SketchId {
-    minted(sketch_placement_id("sketch", placement))
+    cadmpeg_ir::sketches::SketchId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "sketch"),
+        sketch_placement_key(placement),
+    )
 }
 
 /// The neutral spatial-sketch key for a sketch `placement`.
 pub(crate) fn neutral_spatial_sketch_id(
     placement: &DesignSketchPlacement,
 ) -> cadmpeg_ir::sketches::SpatialSketchId {
-    minted(sketch_placement_id("spatial-sketch", placement))
+    cadmpeg_ir::sketches::SpatialSketchId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "spatial-sketch"),
+        sketch_placement_key(placement),
+    )
 }
 
 /// The shared body of a sketch or spatial-sketch placement key: the placement's
-/// stream, escaped, joined to its entity suffix by `@`. The `segment` selects
-/// the `sketch` or `spatial-sketch` URN kind; the byte layout is otherwise
-/// identical between the planar and spatial variants.
-fn sketch_placement_id(segment: &str, placement: &DesignSketchPlacement) -> String {
-    let stream = identity_key_component(native_stream(&placement.id).unwrap_or(DEFAULT_STREAM));
-    format!(
-        "f3d:model:{segment}#{stream}@{}",
-        placement.entity_id.suffix()
-    )
+/// stream, escaped, joined to its entity suffix by `@`.
+fn sketch_placement_key(placement: &DesignSketchPlacement) -> cadmpeg_ir::ids::IdentityKey {
+    let stream = native_stream(&placement.id).unwrap_or(DEFAULT_STREAM);
+    cadmpeg_ir::identity_key!("@")
+        .then(placement.entity_id.suffix())
+        .with_prefix(&cadmpeg_ir::ids::IdentityKeyTail::percent_encode(stream))
 }
 
 /// The neutral planar-sketch point-entity key under `sketch`.
@@ -409,12 +504,14 @@ pub(crate) fn neutral_sketch_point_id(
     sketch: &cadmpeg_ir::sketches::SketchId,
     persistent_id: u64,
 ) -> cadmpeg_ir::sketches::SketchEntityId {
-    minted(sketch_entity_tagged(
-        "sketch-entity",
-        sketch.as_str(),
-        'p',
-        persistent_id,
-    ))
+    cadmpeg_ir::sketches::SketchEntityId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "sketch-entity"),
+        sketch_entity_tagged(
+            sketch.as_str(),
+            cadmpeg_ir::identity_key!("p"),
+            persistent_id,
+        ),
+    )
 }
 
 /// The neutral planar-sketch curve-entity key under `sketch`.
@@ -423,12 +520,10 @@ pub(crate) fn neutral_sketch_curve_id(
     primary_id: u64,
     secondary_id: u64,
 ) -> cadmpeg_ir::sketches::SketchEntityId {
-    minted(sketch_entity_curve(
-        "sketch-entity",
-        sketch.as_str(),
-        primary_id,
-        secondary_id,
-    ))
+    cadmpeg_ir::sketches::SketchEntityId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "sketch-entity"),
+        sketch_entity_curve(sketch.as_str(), primary_id, secondary_id),
+    )
 }
 
 /// The neutral planar-sketch text-entity key under `sketch`.
@@ -436,12 +531,14 @@ pub(crate) fn neutral_sketch_text_id(
     sketch: &cadmpeg_ir::sketches::SketchId,
     persistent_id: u64,
 ) -> cadmpeg_ir::sketches::SketchEntityId {
-    minted(sketch_entity_tagged(
-        "sketch-entity",
-        sketch.as_str(),
-        't',
-        persistent_id,
-    ))
+    cadmpeg_ir::sketches::SketchEntityId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "sketch-entity"),
+        sketch_entity_tagged(
+            sketch.as_str(),
+            cadmpeg_ir::identity_key!("t"),
+            persistent_id,
+        ),
+    )
 }
 
 /// The source-local neutral key for a planar sketch record that has no
@@ -450,12 +547,14 @@ pub(crate) fn neutral_sketch_record_id(
     sketch: &cadmpeg_ir::sketches::SketchId,
     record_index: u32,
 ) -> cadmpeg_ir::sketches::SketchEntityId {
-    minted(sketch_entity_tagged(
-        "sketch-entity",
-        sketch.as_str(),
-        'x',
-        u64::from(record_index),
-    ))
+    cadmpeg_ir::sketches::SketchEntityId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "sketch-entity"),
+        sketch_entity_tagged(
+            sketch.as_str(),
+            cadmpeg_ir::identity_key!("x"),
+            u64::from(record_index),
+        ),
+    )
 }
 
 /// The neutral spatial-sketch curve-entity key under `sketch`.
@@ -464,26 +563,25 @@ pub(crate) fn neutral_spatial_sketch_curve_id(
     primary_id: u64,
     secondary_id: u64,
 ) -> cadmpeg_ir::sketches::SpatialSketchEntityId {
-    minted(sketch_entity_curve(
-        "spatial-sketch-entity",
-        sketch.as_str(),
-        primary_id,
-        secondary_id,
-    ))
+    cadmpeg_ir::sketches::SpatialSketchEntityId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "spatial-sketch-entity"),
+        sketch_entity_curve(sketch.as_str(), primary_id, secondary_id),
+    )
 }
 
 /// The neutral spatial-sketch point-entity key under `sketch`.
 pub(crate) fn neutral_spatial_sketch_point_id(
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     persistent_id: u64,
-) -> Option<cadmpeg_ir::sketches::SpatialSketchEntityId> {
-    cadmpeg_ir::sketches::SpatialSketchEntityId::mint(sketch_entity_tagged(
-        "spatial-sketch-entity",
-        sketch.as_str(),
-        'p',
-        persistent_id,
-    ))
-    .ok()
+) -> cadmpeg_ir::sketches::SpatialSketchEntityId {
+    cadmpeg_ir::sketches::SpatialSketchEntityId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "spatial-sketch-entity"),
+        sketch_entity_tagged(
+            sketch.as_str(),
+            cadmpeg_ir::identity_key!("p"),
+            persistent_id,
+        ),
+    )
 }
 
 /// The source-local neutral key for a spatial-sketch record that has no
@@ -491,67 +589,77 @@ pub(crate) fn neutral_spatial_sketch_point_id(
 pub(crate) fn neutral_spatial_sketch_record_id(
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     record_index: u32,
-) -> Option<cadmpeg_ir::sketches::SpatialSketchEntityId> {
-    cadmpeg_ir::sketches::SpatialSketchEntityId::mint(sketch_entity_tagged(
-        "spatial-sketch-entity",
-        sketch.as_str(),
-        'x',
-        u64::from(record_index),
-    ))
-    .ok()
+) -> cadmpeg_ir::sketches::SpatialSketchEntityId {
+    cadmpeg_ir::sketches::SpatialSketchEntityId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "spatial-sketch-entity"),
+        sketch_entity_tagged(
+            sketch.as_str(),
+            cadmpeg_ir::identity_key!("x"),
+            u64::from(record_index),
+        ),
+    )
 }
 
 /// The neutral spatial-sketch surface-entity key under `sketch`.
 pub(crate) fn neutral_spatial_sketch_surface_id(
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     persistent_id: u64,
-) -> Option<cadmpeg_ir::sketches::SpatialSketchEntityId> {
-    cadmpeg_ir::sketches::SpatialSketchEntityId::mint(sketch_entity_tagged(
-        "spatial-sketch-entity",
-        sketch.as_str(),
-        's',
-        persistent_id,
-    ))
-    .ok()
+) -> cadmpeg_ir::sketches::SpatialSketchEntityId {
+    cadmpeg_ir::sketches::SpatialSketchEntityId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "spatial-sketch-entity"),
+        sketch_entity_tagged(
+            sketch.as_str(),
+            cadmpeg_ir::identity_key!("s"),
+            persistent_id,
+        ),
+    )
 }
 
 /// A single-tag sketch-entity key: the escaped owning-sketch key, length-
-/// prefixed, followed by a one-character `tag` (`p`/`t`/`s`/`x`) and one id. The
-/// `segment` selects `sketch-entity` or `spatial-sketch-entity`; every other
-/// byte is identical across the planar and spatial variants.
-fn sketch_entity_tagged(segment: &str, sketch_key: &str, tag: char, id: u64) -> String {
-    let sketch = identity_key_component(sketch_key);
-    format!("f3d:model:{segment}#{}:{}{tag}{id}", sketch.len(), sketch)
+/// prefixed, followed by a one-character tag (`p`/`t`/`s`/`x`) and one id.
+fn sketch_entity_tagged(
+    sketch_key: &str,
+    tag: cadmpeg_ir::ids::IdentityKey,
+    id: u64,
+) -> cadmpeg_ir::ids::IdentityKey {
+    let sketch = cadmpeg_ir::ids::IdentityKeyTail::percent_encode(sketch_key);
+    cadmpeg_ir::ids::IdentityKey::from(sketch.as_str().len())
+        .then(cadmpeg_ir::identity_key!(":"))
+        .with_tail(&sketch)
+        .then(tag)
+        .then(id)
 }
 
 /// A curve sketch-entity key: the escaped owning-sketch key, length-prefixed,
-/// followed by `c`, the primary id, and the colon-joined secondary id. The
-/// `segment` selects `sketch-entity` or `spatial-sketch-entity`; every other
-/// byte is identical across the planar and spatial variants.
+/// followed by `c`, the primary id, and the colon-joined secondary id.
 fn sketch_entity_curve(
-    segment: &str,
     sketch_key: &str,
     primary_id: u64,
     secondary_id: u64,
-) -> String {
-    let sketch = identity_key_component(sketch_key);
-    format!(
-        "f3d:model:{segment}#{}:{}c{primary_id}:{secondary_id}",
-        sketch.len(),
-        sketch,
-    )
+) -> cadmpeg_ir::ids::IdentityKey {
+    let sketch = cadmpeg_ir::ids::IdentityKeyTail::percent_encode(sketch_key);
+    cadmpeg_ir::ids::IdentityKey::from(sketch.as_str().len())
+        .then(cadmpeg_ir::identity_key!(":"))
+        .with_tail(&sketch)
+        .then(cadmpeg_ir::identity_key!("c"))
+        .then(primary_id)
+        .colon(secondary_id)
 }
 
 /// The neutral sketch-constraint key for `native_ref` at `record_index`.
 pub(crate) fn neutral_sketch_constraint_id(
     native_ref: &str,
     record_index: u32,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintId> {
-    let stream = identity_key_component(native_stream(native_ref).unwrap_or(DEFAULT_STREAM));
-    cadmpeg_ir::sketches::SketchConstraintId::mint(format!(
-        "f3d:model:sketch-constraint#{stream}@{record_index}"
-    ))
-    .ok()
+) -> cadmpeg_ir::sketches::SketchConstraintId {
+    let stream = cadmpeg_ir::ids::IdentityKeyTail::percent_encode(
+        native_stream(native_ref).unwrap_or(DEFAULT_STREAM),
+    );
+    cadmpeg_ir::sketches::SketchConstraintId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "sketch-constraint"),
+        cadmpeg_ir::identity_key!("@")
+            .then(record_index)
+            .with_prefix(&stream),
+    )
 }
 
 /// The neutral dimension-constraint key derived from a `parameter` key and a
@@ -559,20 +667,18 @@ pub(crate) fn neutral_sketch_constraint_id(
 pub(crate) fn neutral_dimension_constraint_id(
     parameter: &cadmpeg_ir::features::ParameterId,
     form: &str,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintId> {
-    let parameter_key = parameter
-        .as_str()
-        .split_once('#')
-        .map_or(parameter.as_str(), |(_, key)| key);
-    let form = identity_key_component(form);
-    cadmpeg_ir::sketches::SketchConstraintId::mint(format!(
-        "f3d:model:sketch-constraint#dimension:{}:{}{}:{}",
-        parameter_key.len(),
-        parameter_key,
-        form.len(),
-        form,
-    ))
-    .ok()
+) -> cadmpeg_ir::sketches::SketchConstraintId {
+    let parameter_key = parameter.key();
+    let form = cadmpeg_ir::ids::IdentityKeyTail::percent_encode(form);
+    cadmpeg_ir::sketches::SketchConstraintId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "sketch-constraint"),
+        cadmpeg_ir::identity_key!("dimension")
+            .colon(parameter_key.as_str().len())
+            .colon(parameter_key)
+            .then(form.as_str().len())
+            .then(cadmpeg_ir::identity_key!(":"))
+            .with_tail(&form),
+    )
 }
 
 // --- history-input topology keys -------------------------------------------
@@ -585,59 +691,66 @@ pub(crate) fn neutral_dimension_constraint_id(
 /// The shared body of a history-input key: the feature key length-prefixed and
 /// joined to `previous_state_id` by colons.
 pub(crate) fn history_input_prefix(
-    feature_key: &str,
-    previous_state_id: impl std::fmt::Display,
-) -> String {
-    let feature_key = identity_key_component(feature_key);
-    format!("{}:{feature_key}:{previous_state_id}", feature_key.len())
+    feature_key: &cadmpeg_ir::ids::IdentityKey,
+    previous_state_id: impl Into<cadmpeg_ir::ids::IdentityKey>,
+) -> cadmpeg_ir::ids::IdentityKey {
+    cadmpeg_ir::ids::IdentityKey::from(feature_key.as_str().len())
+        .then(cadmpeg_ir::identity_key!(":"))
+        .then(feature_key)
+        .colon(previous_state_id)
 }
 
 /// The history-input state key for a `prefix` from [`history_input_prefix`].
-pub(crate) fn history_input_state_id(prefix: &str) -> cadmpeg_ir::ids::FeatureInputTopologyId {
-    minted(format!("f3d:history-input:state#{prefix}"))
+pub(crate) fn history_input_state_id(
+    prefix: &cadmpeg_ir::ids::IdentityKey,
+) -> cadmpeg_ir::ids::FeatureInputTopologyId {
+    cadmpeg_ir::ids::FeatureInputTopologyId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "history-input", "state"),
+        prefix.clone(),
+    )
 }
 
 /// The history-input edge key for `slot` under a `prefix`.
 pub(crate) fn history_input_edge_id(
-    prefix: &str,
-    slot: impl std::fmt::Display,
+    prefix: &cadmpeg_ir::ids::IdentityKey,
+    slot: impl Into<cadmpeg_ir::ids::IdentityKey>,
 ) -> cadmpeg_ir::ids::HistoricalEdgeId {
-    minted_local(
-        cadmpeg_ir::ids::HistoricalEdgeId::mint,
-        format!("f3d:history-input:edge#{prefix}:{slot}"),
+    cadmpeg_ir::ids::HistoricalEdgeId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "history-input", "edge"),
+        prefix.clone().colon(slot),
     )
 }
 
 /// The history-input vertex key for `slot` under a `prefix`.
 pub(crate) fn history_input_vertex_id(
-    prefix: &str,
-    slot: impl std::fmt::Display,
+    prefix: &cadmpeg_ir::ids::IdentityKey,
+    slot: impl Into<cadmpeg_ir::ids::IdentityKey>,
 ) -> cadmpeg_ir::ids::HistoricalVertexId {
-    minted_local(
-        cadmpeg_ir::ids::HistoricalVertexId::mint,
-        format!("f3d:history-input:vertex#{prefix}:{slot}"),
+    cadmpeg_ir::ids::HistoricalVertexId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "history-input", "vertex"),
+        prefix.clone().colon(slot),
     )
 }
 
 /// The history-input face key for `slot` under a `prefix`.
 pub(crate) fn history_input_face_id(
-    prefix: &str,
-    slot: impl std::fmt::Display,
+    prefix: &cadmpeg_ir::ids::IdentityKey,
+    slot: impl Into<cadmpeg_ir::ids::IdentityKey>,
 ) -> cadmpeg_ir::ids::HistoricalFaceId {
-    minted_local(
-        cadmpeg_ir::ids::HistoricalFaceId::mint,
-        format!("f3d:history-input:face#{prefix}:{slot}"),
+    cadmpeg_ir::ids::HistoricalFaceId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "history-input", "face"),
+        prefix.clone().colon(slot),
     )
 }
 
 /// The history-input body key for `slot` under a `prefix`.
 pub(crate) fn history_input_body_id(
-    prefix: &str,
-    slot: impl std::fmt::Display,
+    prefix: &cadmpeg_ir::ids::IdentityKey,
+    slot: impl Into<cadmpeg_ir::ids::IdentityKey>,
 ) -> cadmpeg_ir::ids::HistoricalBodyId {
-    minted_local(
-        cadmpeg_ir::ids::HistoricalBodyId::mint,
-        format!("f3d:history-input:body#{prefix}:{slot}"),
+    cadmpeg_ir::ids::HistoricalBodyId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "history-input", "body"),
+        prefix.clone().colon(slot),
     )
 }
 
@@ -901,13 +1014,95 @@ native_record_id!(
 #[cfg(test)]
 mod tests {
     use super::{
-        decode_identity_key_component, design_segment, native_design_feature_timeline_id_in_stream,
-        native_design_type_id, native_scope, neutral_assembly_legacy_object_id,
-        neutral_face_appearance_binding_id, neutral_sketch_record_id, neutral_sketch_text_id,
+        decode_identity_key_component, design_segment, face_appearance_binding_id,
+        native_design_feature_timeline_id_in_stream, native_design_type_id, native_scope,
+        neutral_assembly_legacy_object_id, neutral_sketch_record_id, neutral_sketch_text_id,
         same_native_occurrence, SCHEME_PREFIX,
     };
     use crate::records::feature::DesignAssemblyLegacySelection;
     use crate::records::ConstructionRecipeKind;
+
+    #[test]
+    fn history_keys_preserve_admitted_colons_percent_escapes_and_signed_states() {
+        let feature = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#a:b%20c").unwrap();
+        let prefix = super::history_input_prefix(&feature.key(), -3);
+        assert_eq!(prefix.as_str(), "7:a:b%20c:-3");
+        assert_eq!(
+            super::history_input_edge_id(&prefix, 9).as_str(),
+            "f3d:history-input:edge#7:a:b%20c:-3:9"
+        );
+    }
+
+    #[test]
+    fn empty_stream_remains_empty_before_the_sketch_entity_suffix() {
+        let placement = crate::records::DesignSketchPlacement {
+            id: ":record#4".into(),
+            scope_record_index: None,
+            entity_id: crate::records::DesignEntityId::from_parts("sketch", 7),
+            visibility: None,
+            class_tag: "330".to_owned().try_into().unwrap(),
+            record_index: 4,
+            paired_class_tag: "330".to_owned().try_into().unwrap(),
+            frame: crate::records::DesignSketchFrame::new(
+                0,
+                crate::records::DesignSketchFrameForm::ScopeCompact,
+            )
+            .unwrap(),
+        };
+        assert_eq!(
+            super::neutral_sketch_id(&placement).as_str(),
+            "f3d:model:sketch#@7"
+        );
+        assert_eq!(
+            super::neutral_sketch_constraint_id(&placement.id, 4).as_str(),
+            "f3d:model:sketch-constraint#@4"
+        );
+    }
+
+    #[test]
+    fn admitted_guid_and_visual_tokens_retain_source_spelling() {
+        let text = "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE";
+        let guid: crate::records::DesignRelaxedGuidText = text.to_owned().try_into().unwrap();
+        assert_eq!(
+            super::neutral_component_id(&guid).as_str(),
+            "f3d:model:component#aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+        );
+        assert_eq!(
+            serde_json::to_string(&guid).unwrap(),
+            serde_json::to_string(text).unwrap()
+        );
+        let token_text = format!("{text}_Post2015_Post2015");
+        let token: crate::records::DesignVisualToken = token_text.clone().try_into().unwrap();
+        assert_eq!(
+            super::appearance_id(token.identity_key()).as_str(),
+            format!("f3d:design:appearance#{token_text}")
+        );
+        assert_eq!(
+            serde_json::to_string(&token).unwrap(),
+            serde_json::to_string(&token_text).unwrap()
+        );
+        assert!(crate::records::DesignRelaxedGuidText::try_from(String::new()).is_err());
+        assert!(crate::records::DesignVisualToken::try_from(String::new()).is_err());
+    }
+
+    #[test]
+    fn raw_appearance_components_keep_legal_separators_and_reject_whitespace() {
+        let id = super::assignment_appearance_binding_id(
+            "part:one%20_7",
+            cadmpeg_ir::identity_key!("visual"),
+        )
+        .unwrap();
+        assert_eq!(id.as_str(), "f3d:appearance:binding#part:one%20_7:visual");
+        assert!(super::assignment_appearance_binding_id(
+            "part one_7",
+            cadmpeg_ir::identity_key!("visual")
+        )
+        .is_err());
+        assert_eq!(
+            super::subd_id("cage:one%20").unwrap().as_str(),
+            "f3d:tspline:subd#cage:one%20"
+        );
+    }
 
     #[test]
     fn design_segment_joins_sibling_meta_and_bulk_stream_ids() {
@@ -950,16 +1145,17 @@ mod tests {
 
     #[test]
     fn face_appearance_binding_escapes_the_nested_face_identity() {
-        let id = neutral_face_appearance_binding_id(
+        let id = face_appearance_binding_id(
             "face-guid",
-            "visual-guid",
+            cadmpeg_ir::identity_key!("visual-guid"),
             &cadmpeg_ir::ids::FaceId::mint("f3d:brep/path:face#12").expect("identity grammar"),
-        );
+        )
+        .expect("valid test identity");
         assert_eq!(
-            id,
+            id.as_str(),
             "f3d:appearance:face#face-guid:visual-guid:27:f3d%3Abrep/path%3Aface%2312"
         );
-        assert_eq!(id.matches('#').count(), 1);
+        assert_eq!(id.as_str().matches('#').count(), 1);
     }
 
     #[test]

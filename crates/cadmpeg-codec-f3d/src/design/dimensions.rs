@@ -280,13 +280,21 @@ fn project_all_dimension_constraints(
         .filter_map(|point| {
             Some((
                 (native_stream(&point.id)?, point.record_index),
-                ("point", point.owner_reference, point.id.as_str()),
+                (
+                    cadmpeg_core::nonblank_literal!("point"),
+                    point.owner_reference,
+                    point.id.as_str(),
+                ),
             ))
         })
         .chain(curves.iter().filter_map(|curve| {
             Some((
                 (native_stream(&curve.id)?, curve.record_index),
-                ("curve", curve.owner_reference, curve.id.as_str()),
+                (
+                    cadmpeg_core::nonblank_literal!("curve"),
+                    curve.owner_reference,
+                    curve.id.as_str(),
+                ),
             ))
         }))
         .collect::<HashMap<_, _>>();
@@ -348,50 +356,51 @@ fn project_all_dimension_constraints(
             .flatten()
             .and_then(|owner| sketches.get(&(scope, owner)).cloned())
     };
-    let native_operand =
-        |scope: &str, field: &'static str, role: Option<u32>, record_index: u32| {
-            let geometry = native_geometry.get(&(scope, record_index)).copied();
-            SketchNativeOperand {
-                native_kind: crate::design::literals::nonempty(
-                    geometry.map_or("record", |(kind, _, _)| kind),
-                ),
-                field: Some(NativeOperandField {
-                    name: crate::design::literals::nonempty(field),
-                    role,
-                }),
-                object_index: Some(record_index),
-                native_ref: geometry
-                    .filter(|_| !projected.contains_key(&(scope, record_index)))
-                    .map(|(_, _, native_ref)| native_ref.to_owned()),
-            }
-        };
-    let native_definition = |scope: &str,
-                             source_kind: cadmpeg_core::text::NonBlankString,
-                             state: Option<u64>,
-                             operands: &[(&'static str, Option<u32>, u32)],
-                             parameter| {
-        Some(Definition::Native {
-            native_kind: source_kind,
-            native_state: state,
-            native_flags: None,
-            native_properties: std::collections::BTreeMap::new(),
-            entities: operands
-                .iter()
-                .filter_map(|(_, _, record_index)| {
-                    projected
-                        .get(&(scope, *record_index))
-                        .map(|entity| entity.id().clone())
-                })
-                .collect(),
-            parameter: Some(parameter),
-            operands: operands
-                .iter()
-                .map(|(field, role, record_index)| {
-                    native_operand(scope, field, *role, *record_index)
-                })
-                .collect(),
-        })
+    let native_operand = |scope: &str,
+                          field: cadmpeg_core::text::NonBlankString,
+                          role: Option<u32>,
+                          record_index: u32| {
+        let geometry = native_geometry.get(&(scope, record_index)).cloned();
+        SketchNativeOperand {
+            native_kind: geometry.as_ref().map_or_else(
+                || cadmpeg_core::nonblank_literal!("record"),
+                |(kind, _, _)| kind.clone(),
+            ),
+            field: Some(NativeOperandField { name: field, role }),
+            object_index: Some(record_index),
+            native_ref: geometry
+                .filter(|_| !projected.contains_key(&(scope, record_index)))
+                .map(|(_, _, native_ref)| native_ref.to_owned()),
+        }
     };
+    let native_definition =
+        |scope: &str,
+         source_kind: cadmpeg_core::text::NonBlankString,
+         state: Option<u64>,
+         operands: &[(cadmpeg_core::text::NonBlankString, Option<u32>, u32)],
+         parameter| {
+            Some(Definition::Native {
+                native_kind: source_kind,
+                native_state: state,
+                native_flags: None,
+                native_properties: std::collections::BTreeMap::new(),
+                entities: operands
+                    .iter()
+                    .filter_map(|(_, _, record_index)| {
+                        projected
+                            .get(&(scope, *record_index))
+                            .map(|entity| entity.id().clone())
+                    })
+                    .collect(),
+                parameter: Some(parameter),
+                operands: operands
+                    .iter()
+                    .map(|(field, role, record_index)| {
+                        native_operand(scope, field.clone(), *role, *record_index)
+                    })
+                    .collect(),
+            })
+        };
     let exact_definition = |scope: &str,
                             source_parameter: &DesignParameter,
                             indices: &[u32],
@@ -720,7 +729,7 @@ fn project_all_dimension_constraints(
                 pair.loci()[1].geometry_index(),
             ];
             let sketch = sketch_for_geometry(scope, &indices)?;
-            let constraint_id = neutral_dimension_constraint_id(&parameter_id, "pair")?;
+            let constraint_id = neutral_dimension_constraint_id(&parameter_id, "pair");
             let definition = exact_definition(scope, parameter, &indices, parameter_id.clone())
                 .or_else(|| {
                     let [first_index, second_index] = indices;
@@ -742,8 +751,16 @@ fn project_all_dimension_constraints(
                         parameter.source_kind_name(),
                         None,
                         &[
-                            ("first_locus", Some(pair.loci()[0].role), indices[0]),
-                            ("second_locus", Some(pair.loci()[1].role), indices[1]),
+                            (
+                                cadmpeg_core::nonblank_literal!("first_locus"),
+                                Some(pair.loci()[0].role),
+                                indices[0],
+                            ),
+                            (
+                                cadmpeg_core::nonblank_literal!("second_locus"),
+                                Some(pair.loci()[1].role),
+                                indices[1],
+                            ),
                         ],
                         parameter_id,
                     )
@@ -789,15 +806,26 @@ fn project_all_dimension_constraints(
                     let mut operands = group
                         .loci
                         .iter()
-                        .map(|locus| ("locus", Some(locus.role), locus.geometry_record_index))
+                        .map(|locus| {
+                            (
+                                cadmpeg_core::nonblank_literal!("locus"),
+                                Some(locus.role),
+                                locus.geometry_record_index,
+                            )
+                        })
                         .collect::<Vec<_>>();
-                    operands.push(("owner", Some(group.owner_role), group.owner_reference));
-                    operands.extend(
-                        group
-                            .loci
-                            .iter()
-                            .map(|locus| ("return", None, locus.returned.value)),
-                    );
+                    operands.push((
+                        cadmpeg_core::nonblank_literal!("owner"),
+                        Some(group.owner_role),
+                        group.owner_reference,
+                    ));
+                    operands.extend(group.loci.iter().map(|locus| {
+                        (
+                            cadmpeg_core::nonblank_literal!("return"),
+                            None,
+                            locus.returned.value,
+                        )
+                    }));
                     native_definition(
                         scope,
                         parameter.source_kind_name(),
@@ -807,7 +835,7 @@ fn project_all_dimension_constraints(
                     )
                 })?;
             Some(SketchConstraint {
-                id: neutral_sketch_constraint_id(&group.id, group.record_index)?,
+                id: neutral_sketch_constraint_id(&group.id, group.record_index),
                 sketch,
                 definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
                     .ok()?,
@@ -833,7 +861,7 @@ fn project_all_dimension_constraints(
                 .filter_map(|operand| operand.geometry_record_index.map(std::num::NonZeroU32::get))
                 .collect::<Vec<_>>();
             let sketch = sketches.get(&(scope, frame.owner_reference))?.clone();
-            let constraint_id = neutral_dimension_constraint_id(&parameter_id, "annotation")?;
+            let constraint_id = neutral_dimension_constraint_id(&parameter_id, "annotation");
             let definition = exact_definition(scope, parameter, &indices, parameter_id.clone())
                 .or_else(|| {
                     annotation_offset_dimension_definition(
@@ -852,17 +880,20 @@ fn project_all_dimension_constraints(
                         .iter()
                         .map(|operand| match operand.geometry_record_index {
                             None => SketchNativeOperand {
-                                native_kind: crate::design::literals::nonempty("null_locus"),
+                                native_kind: cadmpeg_core::nonblank_literal!("null_locus"),
                                 field: Some(NativeOperandField {
-                                    name: crate::design::literals::nonempty("locus"),
+                                    name: cadmpeg_core::nonblank_literal!("locus"),
                                     role: Some(operand.role),
                                 }),
                                 object_index: None,
                                 native_ref: None,
                             },
-                            Some(index) => {
-                                native_operand(scope, "locus", Some(operand.role), index.get())
-                            }
+                            Some(index) => native_operand(
+                                scope,
+                                cadmpeg_core::nonblank_literal!("locus"),
+                                Some(operand.role),
+                                index.get(),
+                            ),
                         })
                         .collect();
                     Some(Definition::Native {
@@ -910,7 +941,7 @@ fn project_all_dimension_constraints(
                 parameter_for(scope, pair.governing_companion_record_index)?;
             let indices = [pair.loci()[1].geometry_index()];
             let sketch = sketch_for_geometry(scope, &indices)?;
-            let constraint_id = neutral_dimension_constraint_id(&parameter_id, "null-pair")?;
+            let constraint_id = neutral_dimension_constraint_id(&parameter_id, "null-pair");
             if design_dimension_unit(parameter) {
                 if let Some(entity) = projected.get(&(scope, pair.loci()[1].geometry_index())) {
                     if let Some(definition) = null_locus_dimension_definition(
@@ -944,9 +975,9 @@ fn project_all_dimension_constraints(
             }
             let operands = vec![
                 SketchNativeOperand {
-                    native_kind: crate::design::literals::nonempty("null_locus"),
+                    native_kind: cadmpeg_core::nonblank_literal!("null_locus"),
                     field: Some(NativeOperandField {
-                        name: crate::design::literals::nonempty("locus"),
+                        name: cadmpeg_core::nonblank_literal!("locus"),
                         role: Some(pair.loci()[0].role),
                     }),
                     object_index: None,
@@ -954,7 +985,7 @@ fn project_all_dimension_constraints(
                 },
                 native_operand(
                     scope,
-                    "locus",
+                    cadmpeg_core::nonblank_literal!("locus"),
                     Some(pair.loci()[1].role),
                     pair.loci()[1].geometry_index(),
                 ),
@@ -1036,7 +1067,7 @@ fn project_all_dimension_constraints(
             let companion = companions_by_key.get(&(scope.clone(), companion_record_index))?;
             let owner = owners_by_companion.get(&(scope.clone(), companion_record_index))?;
             let (parameter, parameter_id) = parameter_for(&scope, companion_record_index)?;
-            let constraint_id = neutral_dimension_constraint_id(&parameter_id, "recipe-group")?;
+            let constraint_id = neutral_dimension_constraint_id(&parameter_id, "recipe-group");
             let sketch = sketches_by_scope
                 .get(&(scope.as_str(), owner.scope_record_index()))?
                 .clone();
@@ -1090,11 +1121,9 @@ fn project_all_dimension_constraints(
                         operands: records
                             .into_iter()
                             .map(|record| SketchNativeOperand {
-                                native_kind: crate::design::literals::nonempty(
-                                    "construction_recipe",
-                                ),
+                                native_kind: cadmpeg_core::nonblank_literal!("construction_recipe"),
                                 field: Some(NativeOperandField {
-                                    name: crate::design::literals::nonempty("recipe"),
+                                    name: cadmpeg_core::nonblank_literal!("recipe"),
                                     role: None,
                                 }),
                                 object_index: Some(record.record_index),
@@ -1276,9 +1305,9 @@ fn project_all_dimension_constraints(
                 entities: Vec::new(),
                 parameter: Some(parameter_id.clone()),
                 operands: vec![SketchNativeOperand {
-                    native_kind: crate::design::literals::nonempty("dimension_companion"),
+                    native_kind: cadmpeg_core::nonblank_literal!("dimension_companion"),
                     field: Some(NativeOperandField {
-                        name: crate::design::literals::nonempty("companion_payload"),
+                        name: cadmpeg_core::nonblank_literal!("companion_payload"),
                         role: None,
                     }),
                     object_index: Some(companion.record_index()),
@@ -1287,7 +1316,7 @@ fn project_all_dimension_constraints(
             })
         })?;
         Some(SketchConstraint {
-            id: neutral_dimension_constraint_id(&parameter_id, "companion-payload")?,
+            id: neutral_dimension_constraint_id(&parameter_id, "companion-payload"),
             sketch,
             definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
                 .ok()?,
@@ -2761,7 +2790,7 @@ pub fn project_spatial_dimension_constraints(
             .get(&(scope, owner.scope_record_index()))?
             .clone();
         Some(SpatialSketchConstraint {
-            id: neutral_dimension_constraint_id(&parameter_id, "companion-payload")?,
+            id: neutral_dimension_constraint_id(&parameter_id, "companion-payload"),
             sketch,
             definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::try_from(
                 SpatialSketchConstraintDefinitionInput::Native {
@@ -2769,18 +2798,16 @@ pub fn project_spatial_dimension_constraints(
                     native_state: None,
                     parameter: Some(parameter_id),
                     operands: vec![SketchNativeOperand {
-                        native_kind: crate::design::literals::nonempty("dimension_companion"),
+                        native_kind: cadmpeg_core::nonblank_literal!("dimension_companion"),
                         field: Some(NativeOperandField {
-                            name: crate::design::literals::nonempty(
-                                if companion
-                                    .payload()
-                                    .is_none_or(|payload| payload.byte_length() == 0)
-                                {
-                                    "companion"
-                                } else {
-                                    "companion_payload"
-                                },
-                            ),
+                            name: if companion
+                                .payload()
+                                .is_none_or(|payload| payload.byte_length() == 0)
+                            {
+                                cadmpeg_core::nonblank_literal!("companion")
+                            } else {
+                                cadmpeg_core::nonblank_literal!("companion_payload")
+                            },
                             role: None,
                         }),
                         object_index: Some(companion.record_index()),

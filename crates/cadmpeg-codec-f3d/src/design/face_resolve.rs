@@ -887,10 +887,7 @@ fn historical_face_selection_with_native(
         return None;
     }
     let feature = neutral_feature_id(scope);
-    let feature_key = feature
-        .as_str()
-        .split_once('#')
-        .map_or(feature.as_str(), |(_, key)| key);
+    let feature_key = feature.key();
     Some(
         FaceSelection::historical(
             feature_input_topology_id(&feature, previous_state_id),
@@ -898,7 +895,7 @@ fn historical_face_selection_with_native(
                 .into_iter()
                 .map(|face| {
                     ids::history_input_face_id(
-                        &ids::history_input_prefix(feature_key, previous_state_id),
+                        &ids::history_input_prefix(&feature_key, previous_state_id),
                         face,
                     )
                 })
@@ -1123,10 +1120,7 @@ fn resolved_face_operand(operand: &DesignFaceOperand) -> Option<Vec<cadmpeg_ir::
                 operand
                     .resolved_face_slots
                     .iter()
-                    .map(|slot| {
-                        cadmpeg_ir::ids::FaceId::mint(ids::brep_entity_id(slot))
-                            .expect("identity grammar")
-                    })
+                    .map(ids::brep_face_id)
                     .collect(),
             );
         }
@@ -2953,13 +2947,10 @@ mod tests {
         let scope = loft_scope();
         let group = loft_group();
         let feature = crate::ids::neutral_feature_id(&scope);
-        let feature_key = feature
-            .as_str()
-            .split_once('#')
-            .map_or(feature.as_str(), |(_, key)| key);
+        let feature_key = feature.key();
         let expected_state = crate::design::edge_resolve::feature_input_topology_id(&feature, 6);
         let expected_face = crate::ids::history_input_face_id(
-            &crate::ids::history_input_prefix(feature_key, 6),
+            &crate::ids::history_input_prefix(&feature_key, 6),
             100,
         );
         let operands = vec![

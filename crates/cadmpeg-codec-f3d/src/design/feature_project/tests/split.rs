@@ -206,13 +206,7 @@ fn direct_single_identity_split_face_member_projects_historical_edge_path() {
         panic!("expected historical edge path");
     };
     let feature = crate::ids::neutral_feature_id(&scope);
-    let prefix = crate::ids::history_input_prefix(
-        feature
-            .as_str()
-            .split_once('#')
-            .map_or(feature.as_str(), |(_, key)| key),
-        7,
-    );
+    let prefix = crate::ids::history_input_prefix(&feature.key(), 7);
     assert_eq!(state, feature_input_topology_id(&feature, 7),);
     assert_eq!(
         edges.as_slice(),

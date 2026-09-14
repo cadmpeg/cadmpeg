@@ -193,8 +193,8 @@ fn sketch_geometry_identity_uses_owner_and_native_persistent_ids() {
     let spatial = SpatialSketchId::mint("f3d:model:spatial-sketch#Design/A@10").unwrap();
     let other_spatial = SpatialSketchId::mint("f3d:model:spatial-sketch#Design/A@11").unwrap();
     assert_ne!(
-        crate::ids::neutral_spatial_sketch_point_id(&spatial, 42).unwrap(),
-        crate::ids::neutral_spatial_sketch_point_id(&other_spatial, 42).unwrap()
+        crate::ids::neutral_spatial_sketch_point_id(&spatial, 42),
+        crate::ids::neutral_spatial_sketch_point_id(&other_spatial, 42)
     );
     assert_ne!(
         crate::ids::neutral_spatial_sketch_curve_id(&spatial, 42, 0),
@@ -206,15 +206,14 @@ fn sketch_geometry_identity_uses_owner_and_native_persistent_ids() {
 fn governing_dimension_identity_uses_parameter_identity() {
     let parameter = cadmpeg_ir::features::ParameterId::mint("f3d:model:parameter#Design/A:12")
         .expect("identity grammar");
-    let relocated = neutral_dimension_constraint_id(&parameter, "pair").unwrap();
-    let same = neutral_dimension_constraint_id(&parameter, "pair").unwrap();
-    let other_form = neutral_dimension_constraint_id(&parameter, "null-pair").unwrap();
+    let relocated = neutral_dimension_constraint_id(&parameter, "pair");
+    let same = neutral_dimension_constraint_id(&parameter, "pair");
+    let other_form = neutral_dimension_constraint_id(&parameter, "null-pair");
     let other_parameter = neutral_dimension_constraint_id(
         &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:Design/A")
             .expect("identity grammar"),
         "12:pair",
-    )
-    .unwrap();
+    );
 
     assert_eq!(relocated, same);
     assert_ne!(relocated, other_form);

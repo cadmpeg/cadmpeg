@@ -103,7 +103,7 @@ pub fn decode<'a>(
     report.notes.push(format!(
         "merged {merged} external occurrence(s) from the f3z archive"
     ));
-    merge::make_sibling_ordinals_unique(&mut ir.model.occurrences);
+    merge::make_sibling_ordinals_unique(&mut ir.model.occurrences)?;
     report.losses.extend(outer.losses);
     finalize_result(ir, report, fidelity)
 }
@@ -113,10 +113,11 @@ fn finalize_result(
     body: DecodeBody,
     source_fidelity: cadmpeg_ir::SourceFidelity,
 ) -> Result<Decoded, CodecError> {
-    let mut source = ir
-        .source
-        .take()
-        .expect("the decoded F3Z model root authored source metadata");
+    let Some(mut source) = ir.source.take() else {
+        return Err(CodecError::malformed(
+            "the decoded F3Z model root has no authored source metadata",
+        ));
+    };
     ir.finalize();
     let hash = crate::decode::document_local_sha256_with_source(&ir, &source)?;
     source.attributes.insert(

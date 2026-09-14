@@ -1186,7 +1186,8 @@ fn decode_vertices(stream: &[u8]) -> Result<Vec<[f64; 3]>, CodecError> {
     for triple in stream.chunks_exact(12) {
         let mut point = [0.0f64; 3];
         for (value, raw) in point.iter_mut().zip(triple.chunks_exact(4)) {
-            let component = View::f32_le_at(raw, 0).expect("chunks_exact(4)");
+            let component = View::f32_le_at(raw, 0)
+                .ok_or_else(|| malformed("paramesh vertex component is truncated"))?;
             if !component.is_finite() {
                 return Err(malformed("paramesh vertex coordinate is not finite"));
             }
@@ -1217,8 +1218,12 @@ fn decode_triangles(stream: &[u8], vertices: usize) -> Result<Vec<[u32; 3]>, Cod
     let deltas = stream
         .chunks_exact(4)
         .take(values - 1)
-        .map(|raw| i64::from(View::i32_le_at(raw, 0).expect("chunks_exact(4)")))
-        .collect::<Vec<_>>();
+        .map(|raw| {
+            View::i32_le_at(raw, 0)
+                .map(i64::from)
+                .ok_or_else(|| malformed("paramesh corner delta is truncated"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     let mut relative = 0i64;
     let mut minimum = 0i64;
     let mut maximum = 0i64;
@@ -1284,11 +1289,14 @@ fn decode_terminal_delta_values(stream: &[u8]) -> Result<Vec<u32>, CodecError> {
     let terminal_at = (value_count - 1) * 4;
     let terminal = i64::from(
         View::u32_le_at(stream, terminal_at)
-            .expect("terminal word is inside a 4-byte-aligned stream"),
+            .ok_or_else(|| malformed("paramesh terminal word is truncated"))?,
     );
     let mut delta_total = 0i64;
     for raw in stream[..terminal_at].chunks_exact(4) {
-        let delta = i64::from(View::i32_le_at(raw, 0).expect("chunks_exact(4)"));
+        let delta = i64::from(
+            View::i32_le_at(raw, 0)
+                .ok_or_else(|| malformed("paramesh terminal delta is truncated"))?,
+        );
         delta_total = delta_total
             .checked_add(delta)
             .ok_or_else(|| malformed("paramesh terminal-delta accumulation overflows"))?;
@@ -1303,7 +1311,10 @@ fn decode_terminal_delta_values(stream: &[u8]) -> Result<Vec<u32>, CodecError> {
             .map_err(|_| malformed("paramesh terminal-delta value is out of range"))?,
     );
     for raw in stream[..terminal_at].chunks_exact(4) {
-        let delta = i64::from(View::i32_le_at(raw, 0).expect("chunks_exact(4)"));
+        let delta = i64::from(
+            View::i32_le_at(raw, 0)
+                .ok_or_else(|| malformed("paramesh terminal delta is truncated"))?,
+        );
         current = current
             .checked_add(delta)
             .ok_or_else(|| malformed("paramesh terminal-delta value overflows"))?;
@@ -1438,10 +1449,11 @@ fn decode_corner_normals(
     }
     let mut table = Vec::with_capacity(values.len() / PACKED_DIRECTION_BYTES as usize);
     for raw in values.chunks_exact(PACKED_DIRECTION_BYTES as usize) {
-        table.push(decode_packed_direction([
-            View::f32_le_at(raw, 0).expect("packed-direction chunks_exact(8)"),
-            View::f32_le_at(raw, 4).expect("packed-direction chunks_exact(8)"),
-        ])?);
+        let x = View::f32_le_at(raw, 0)
+            .ok_or_else(|| malformed("paramesh packed direction is truncated"))?;
+        let y = View::f32_le_at(raw, 4)
+            .ok_or_else(|| malformed("paramesh packed direction is truncated"))?;
+        table.push(decode_packed_direction([x, y])?);
     }
 
     if attribute.addressing.domain() == MeshAttributeDomain::Triangle {

@@ -2508,13 +2508,20 @@ fn bind_entity_face_groups(
         .into_iter()
         .map(|(source, face, local)| {
             let discriminator = if local {
-                face.to_string()
+                cadmpeg_ir::ids::IdentityKey::from(face)
             } else {
-                format!("{}:{source}:{face}", source.len())
+                let source = cadmpeg_ir::ids::IdentityKeyTail::try_new(source)?;
+                cadmpeg_ir::ids::IdentityKey::from(source.as_str().len())
+                    .then(cadmpeg_ir::identity_key!(":"))
+                    .with_tail(&source)
+                    .colon(face)
             };
-            crate::ids::history_input_face_id(&prefix, discriminator)
+            Ok(crate::ids::history_input_face_id(&prefix, discriminator))
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, cadmpeg_ir::ids::IdentityError>>();
+    let Ok(faces) = faces else {
+        return;
+    };
     for face in &faces {
         topology.faces.insert(face.clone());
     }
@@ -2563,9 +2570,15 @@ fn bind_hole_face_selection(
     }
     let prefix = feature_input_prefix(feature_id, previous_state_id);
     let discriminator = if local {
-        candidate.face_slot.to_string()
+        cadmpeg_ir::ids::IdentityKey::from(candidate.face_slot)
     } else {
-        format!("{}:{source}:{}", source.len(), candidate.face_slot)
+        let Ok(source) = cadmpeg_ir::ids::IdentityKeyTail::try_new(source) else {
+            return;
+        };
+        cadmpeg_ir::ids::IdentityKey::from(source.as_str().len())
+            .then(cadmpeg_ir::identity_key!(":"))
+            .with_tail(&source)
+            .colon(candidate.face_slot)
     };
     let face = crate::ids::history_input_face_id(&prefix, discriminator);
     topology.faces.insert(face.clone());
@@ -3151,12 +3164,9 @@ fn point_matches(left: cadmpeg_ir::math::Point3, right: cadmpeg_ir::math::Point3
 fn feature_input_prefix(
     feature: &cadmpeg_ir::features::FeatureId,
     previous_state_id: i64,
-) -> String {
-    let feature_key = feature
-        .as_str()
-        .split_once('#')
-        .map_or(feature.as_str(), |(_, key)| key);
-    crate::ids::history_input_prefix(feature_key, previous_state_id)
+) -> cadmpeg_ir::ids::IdentityKey {
+    let feature_key = feature.key();
+    crate::ids::history_input_prefix(&feature_key, previous_state_id)
 }
 
 fn unique_history_state(
@@ -3770,16 +3780,14 @@ fn bind_historical_recipe_reference_candidates(
     }) {
         match tag.entity_kind {
             AsmHistoricalEntityKind::Face if live_faces.contains(&tag.entity_ref) => {
-                reference.candidate_faces.push(
-                    cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(tag.entity_ref))
-                        .expect("identity grammar"),
-                );
+                reference
+                    .candidate_faces
+                    .push(crate::ids::brep_face_id(tag.entity_ref));
             }
             AsmHistoricalEntityKind::Edge if live_edges.contains(&tag.entity_ref) => {
-                reference.candidate_edges.push(
-                    cadmpeg_ir::ids::EdgeId::mint(crate::ids::brep_entity_id(tag.entity_ref))
-                        .expect("identity grammar"),
-                );
+                reference
+                    .candidate_edges
+                    .push(crate::ids::brep_edge_id(tag.entity_ref));
             }
             _ => {}
         }
@@ -3807,10 +3815,7 @@ fn historical_recipe_faces(
                 && live_faces.contains(&tag.entity_ref)
                 && tag.design_references.contains(&design_reference)
         })
-        .map(|tag| {
-            cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(tag.entity_ref))
-                .expect("identity grammar")
-        })
+        .map(|tag| crate::ids::brep_face_id(tag.entity_ref))
         .collect::<Vec<_>>();
     faces.sort_by(|left, right| left.as_str().cmp(right.as_str()));
     faces.dedup();
@@ -4505,9 +4510,7 @@ fn grouped_reference_face_candidate(
     let [face] = candidates.as_slice() else {
         return None;
     };
-    Some(
-        cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(*face)).expect("identity grammar"),
-    )
+    Some(crate::ids::brep_face_id(*face))
 }
 
 fn relation_members(
@@ -5172,8 +5175,7 @@ fn bind_profile_face_group_cardinality(
                 continue;
             };
             for (index, face) in indices.into_iter().zip(faces) {
-                let face_id = cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(face))
-                    .expect("identity grammar");
+                let face_id = crate::ids::brep_face_id(face);
                 operands[index].preceding_candidate_faces = vec![face_id.clone()];
                 operands[index].changed_candidate_faces = vec![face_id];
                 operands[index].resolved_face_slots = vec![face];
@@ -7138,27 +7140,13 @@ pub(crate) fn bind_entity_selection_history(
         let Some(topology) = state.topology() else {
             continue;
         };
-        let identity_pair = operand
-            .secondary()
-            .map(|secondary| [operand.primary_identity, secondary.identity.value]);
-        operand.historical_edge_candidates = identity_pair.as_ref().map_or_else(
-            || {
-                entity_selection_edge_candidates(
-                    std::slice::from_ref(&operand.primary_identity),
-                    previous_state_id,
-                    &identities,
-                    topology,
-                )
-            },
-            |identities_pair| {
-                entity_selection_edge_candidates(
-                    identities_pair,
-                    previous_state_id,
-                    &identities,
-                    topology,
-                )
-            },
+        let selections = std::iter::once((0, operand.primary_identity)).chain(
+            operand
+                .secondary()
+                .map(|secondary| (1, secondary.identity.value)),
         );
+        operand.historical_edge_candidates =
+            entity_selection_edge_candidates(selections, previous_state_id, &identities, topology);
         operand.resolved_edge_slot =
             unique_entity_selection_edge(&operand.historical_edge_candidates);
     }
@@ -8098,7 +8086,7 @@ fn entity_selection_face_candidates(
 }
 
 fn entity_selection_edge_candidates(
-    identities: &[u64],
+    identities: impl IntoIterator<Item = (u32, u64)>,
     previous_state_id: i64,
     history_identities: &HistoricalIdentityIndex,
     topology: &AsmHistoricalTopology,
@@ -8106,9 +8094,7 @@ fn entity_selection_edge_candidates(
     use crate::records::topology::DesignEntitySelectionEdgeCandidate;
 
     identities
-        .iter()
-        .copied()
-        .enumerate()
+        .into_iter()
         .filter_map(|(identity_ordinal, local_id)| {
             let (kind, entity_ref, states) =
                 history_identities.selection_identity_kind(local_id)?;
@@ -8118,8 +8104,7 @@ fn entity_selection_edge_candidates(
                 .collect::<Vec<_>>();
             edge_slots.sort_unstable();
             (!edge_slots.is_empty()).then_some(DesignEntitySelectionEdgeCandidate {
-                identity_ordinal: u32::try_from(identity_ordinal)
-                    .expect("two identity ordinals fit u32"),
+                identity_ordinal,
                 local_id,
                 historical_entity_kind: kind,
                 historical_entity_ref: entity_ref,

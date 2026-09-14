@@ -22,7 +22,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{
     Appearance, AppearanceBinding, AppearanceTarget, BumpMap, TextureMap2d, TextureRef,
 };
-use cadmpeg_ir::ids::{AppearanceId, BodyId};
+use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::topology::Color;
 use cadmpeg_protein::{
     CONTINUATION_MARKER, PAGE_SIZE, RECORD_MARKER, STREAM_HEADER_LEN, TERMINAL_MARKER,
@@ -589,8 +589,7 @@ pub fn decode_with_body_bindings<'a>(
     for assignment in &assignments {
         if appearance_for_assignment(&out, assignment)?.is_none() {
             out.push(Appearance {
-                id: AppearanceId::mint(format!("f3d:design:appearance#{}", assignment.visual_guid))
-                    .expect("identity grammar"),
+                id: crate::ids::appearance_id(assignment.visual_guid.identity_key()),
                 name: assignment
                     .visual_preset
                     .as_ref()
@@ -642,12 +641,10 @@ pub fn decode_with_body_bindings<'a>(
             continue;
         };
         bindings.push(AppearanceBinding {
-            id: format!(
-                "f3d:appearance:body#{}:{}",
-                over.entity_suffix, over.visual_guid
-            )
-            .try_into()
-            .expect("valid identity"),
+            id: crate::ids::body_appearance_binding_id(
+                over.entity_suffix,
+                over.visual_guid.identity_key(),
+            ),
             target: AppearanceTarget::Body(over.body.clone()),
             appearance: appearance.id.clone(),
             source_entity_id: None,
@@ -733,8 +730,13 @@ fn appearances_from_schema_records(
             });
             let base_color = appearance_base_color(record);
             Ok(Appearance {
-                id: AppearanceId::mint(format!("f3d:design:appearance#{}", record.guid))
-                    .expect("identity grammar"),
+                id: crate::ids::appearance_id(
+                    cadmpeg_ir::ids::IdentityKey::try_new(&record.guid).map_err(|error| {
+                        CodecError::malformed(format_args!(
+                            "F3D appearance identity is invalid: {error}"
+                        ))
+                    })?,
+                ),
                 name: Some(record.base.clone()),
                 asset_guid: Some(record.guid.clone()),
                 library_id: library_id(&record.asset_lib_id),
@@ -1484,12 +1486,10 @@ fn body_node_candidate(
         .iter()
         .filter_map(|(_, candidate)| nodes.get(&candidate.to_ascii_lowercase()).copied())
         .collect::<std::collections::HashSet<_>>();
-    (candidates.len() == 1).then(|| {
-        *candidates
-            .iter()
-            .next()
-            .expect("one browser-node candidate was established")
-    })
+    if candidates.len() != 1 {
+        return None;
+    }
+    candidates.into_iter().next()
 }
 
 fn bind_bodies(
@@ -1516,13 +1516,15 @@ fn bind_bodies(
             continue;
         };
         out.push(AppearanceBinding {
-            id: format!(
-                "f3d:appearance:binding#{}:{}",
+            id: crate::ids::assignment_appearance_binding_id(
                 assignment.entity_id.as_str(),
-                assignment.visual_guid
+                assignment.visual_guid.identity_key(),
             )
-            .try_into()
-            .expect("valid identity"),
+            .map_err(|error| {
+                CodecError::malformed(format_args!(
+                    "F3D appearance binding identity is invalid: {error}"
+                ))
+            })?,
             target: AppearanceTarget::Body(body),
             appearance: appearance.id.clone(),
             source_entity_id: Some(assignment.entity_id.as_str().to_owned()),
@@ -1673,11 +1675,10 @@ fn decode_design_object_types(
                 continue;
             }
             for id_bytes in bytes[after_type + 4..after_type + 4 + count * 8].chunks_exact(8) {
-                out.insert(
-                    View::u64_le_at(id_bytes, 0)
-                        .expect("invariant: chunks_exact(8) yields 8-byte slices"),
-                    object_type.clone(),
-                );
+                let id = View::u64_le_at(id_bytes, 0).ok_or_else(|| {
+                    CodecError::malformed("F3D object-type stream contains a truncated entity id")
+                })?;
+                out.insert(id, object_type.clone());
             }
             position = after_type + 4 + count * 8;
         }
@@ -1715,7 +1716,7 @@ fn decode_act_channels(
                 continue;
             }
             let count = View::u32_le_at(header, 14)
-                .expect("invariant: header is an 18-byte slice, so offset 14 is a 4-byte field")
+                .ok_or_else(|| CodecError::malformed("F3D ACT channel header is truncated"))?
                 as usize;
             if !(1..=8).contains(&count) {
                 position += 1;
@@ -2072,7 +2073,11 @@ fn decode_fixed_record(record: &[u8]) -> Result<Option<Appearance>, CodecError> 
         properties,
     )?;
     Ok(Some(Appearance {
-        id: AppearanceId::mint(format!("f3d:design:appearance#{guid}")).expect("identity grammar"),
+        id: crate::ids::appearance_id(cadmpeg_ir::ids::IdentityKey::try_new(&guid).map_err(
+            |error| {
+                CodecError::malformed(format_args!("F3D appearance identity is invalid: {error}"))
+            },
+        )?),
         name: Some(base),
         asset_guid: Some(guid.clone()),
         library_id: library_id(&asset_lib_id),

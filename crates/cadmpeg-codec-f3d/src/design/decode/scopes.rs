@@ -632,7 +632,13 @@ pub(crate) fn admit_history_bound_scope_variants(
 
     let mut admitted =
         cadmpeg_core::decode::alloc_filled(scopes.len(), true, "f3d scope admission")?;
-    for indices in groups.values().filter(|indices| indices.len() > 1) {
+    for indices in groups.values() {
+        let [first, following @ ..] = indices.as_slice() else {
+            continue;
+        };
+        if following.is_empty() {
+            continue;
+        }
         let history_bound = indices
             .iter()
             .copied()
@@ -650,18 +656,18 @@ pub(crate) fn admit_history_bound_scope_variants(
                     .is_some()
             })
             .collect::<Vec<_>>();
-        let equivalent_payload = indices.first().is_some_and(|first| {
-            indices
-                .iter()
-                .skip(1)
-                .all(|index| equivalent_scope_variant_payload(&scopes[*first], &scopes[*index]))
-        });
+        let equivalent_payload = following
+            .iter()
+            .all(|index| equivalent_scope_variant_payload(&scopes[*first], &scopes[*index]));
         let keep = match history_bound.as_slice() {
             [keep] => *keep,
-            [] if equivalent_payload => *indices
-                .iter()
-                .max_by_key(|index| scopes[**index].byte_offset())
-                .expect("equivalent duplicate scope group is non-empty"),
+            [] if equivalent_payload => following.iter().copied().fold(*first, |keep, index| {
+                if scopes[index].byte_offset() >= scopes[keep].byte_offset() {
+                    index
+                } else {
+                    keep
+                }
+            }),
             _ => {
                 return Err(CodecError::Malformed(
                     "Design scope record identity has unresolved duplicate envelopes".into(),
@@ -6669,12 +6675,13 @@ pub(crate) fn exact_move_operation(
             )?) else {
                 continue;
             };
-            let transform: [[f64; 4]; 4] = f64s_at(bytes, start + transform_offset, 16)?
-                .chunks_exact(4)
-                .map(|row| row.try_into().expect("four-value matrix row"))
-                .collect::<Vec<[f64; 4]>>()
-                .try_into()
-                .ok()?;
+            let mut view = View::over_retained(bytes.get(start + transform_offset..)?);
+            let mut transform = [[0.0; 4]; 4];
+            for row in &mut transform {
+                for value in row {
+                    *value = view.f64_le()?;
+                }
+            }
             let Ok(transform) = crate::records::SketchPlacementMatrix::try_from(transform) else {
                 continue;
             };

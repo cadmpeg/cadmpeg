@@ -916,11 +916,8 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     )
     .expect("resolved target-shape Extrude");
     let feature = crate::ids::neutral_feature_id(&scope);
-    let feature_key = feature
-        .as_str()
-        .split_once('#')
-        .map_or(feature.as_str(), |(_, key)| key);
-    let prefix = crate::ids::history_input_prefix(feature_key, 7);
+    let feature_key = feature.key();
+    let prefix = crate::ids::history_input_prefix(&feature_key, 7);
     assert!(matches!(
         target_shape,
         FeatureDefinition::Operation(FeatureOperation::Extrude {

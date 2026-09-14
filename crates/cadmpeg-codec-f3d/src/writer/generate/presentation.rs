@@ -339,9 +339,9 @@ fn deterministic_guid(domain: &str, identity: &str) -> String {
     digest.update(domain.as_bytes());
     digest.update(b"\0");
     digest.update(identity.as_bytes());
-    let mut bytes: [u8; 16] = digest.finalize()[..16]
-        .try_into()
-        .expect("SHA-256 always contains sixteen prefix bytes");
+    let digest = digest.finalize();
+    let mut bytes = [0u8; 16];
+    bytes.copy_from_slice(&digest[..16]);
     bytes[6] = (bytes[6] & 0x0f) | 0x80;
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
     format!(
@@ -465,7 +465,7 @@ mod tests {
                 cadmpeg_asm::brep::records::BodyNativeKey {
                     source_namespace:
                         cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
-                            cadmpeg_asm::ids::IdFormat("generated"),
+                            cadmpeg_asm::asm_format!("generated"),
                         ),
                     body: first.id.clone(),
                     record_index: 1,
@@ -476,7 +476,7 @@ mod tests {
                 cadmpeg_asm::brep::records::BodyNativeKey {
                     source_namespace:
                         cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
-                            cadmpeg_asm::ids::IdFormat("generated"),
+                            cadmpeg_asm::asm_format!("generated"),
                         ),
                     body: second.id.clone(),
                     record_index: 2,

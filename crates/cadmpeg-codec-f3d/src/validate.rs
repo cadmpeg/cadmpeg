@@ -7931,7 +7931,7 @@ fn validate_subentity_tags(ctx: &Ctx, findings: &mut Vec<Finding>) {
         .collect::<HashSet<_>>();
     let mut subentity_tags = std::collections::BTreeMap::new();
     for tag in &native.persistent_subentity_tags {
-        let target_key = match &tag.target {
+        let Some(target_key) = (match &tag.target {
             cadmpeg_ir::attributes::AttributeTarget::Face(id) if face_ids.contains(id) => {
                 Some(format!("face:{}", id.as_str()))
             }
@@ -7939,8 +7939,7 @@ fn validate_subentity_tags(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 Some(format!("edge:{}", id.as_str()))
             }
             _ => None,
-        };
-        if target_key.is_none() {
+        }) else {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
@@ -7949,9 +7948,9 @@ fn validate_subentity_tags(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 entity: Some(tag.id.clone()),
             });
             continue;
-        }
+        };
         subentity_tags
-            .entry(target_key.expect("validated subentity target"))
+            .entry(target_key)
             .or_insert_with(Vec::new)
             .push(tag);
     }
