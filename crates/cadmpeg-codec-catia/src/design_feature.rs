@@ -982,22 +982,19 @@ fn native_operation_definition_properties(
         .iter()
         .flat_map(|owned| owned.definition_values.iter())
         .filter_map(|entity_id| entities.get(entity_id.as_str()).copied())
-        .filter(|entity| entity.definition_value().is_some())
+        .filter_map(|entity| entity.definition_value().map(|value| (entity, value)))
         .collect::<Vec<_>>();
-    definition_values.sort_by(|left, right| {
+    definition_values.sort_by(|(left, _), (right, _)| {
         left.byte_offset
             .cmp(&right.byte_offset)
             .then(left.ordinal.cmp(&right.ordinal))
             .then(left.id.cmp(&right.id))
     });
-    for (ordinal, entity) in definition_values.into_iter().enumerate() {
+    for (ordinal, (entity, value)) in definition_values.into_iter().enumerate() {
         definition_value_count += 1;
         definition_value_records.insert(entity.object_record.clone());
         let prefix = format!("catia_definition_value_{ordinal}");
         properties.insert(format!("{prefix}_entity"), entity.id.clone());
-        let value = entity
-            .definition_value()
-            .expect("definition values were filtered to complete records");
         insert_schema_value_properties(
             &mut properties,
             &format!("{prefix}_definition"),
@@ -1021,22 +1018,19 @@ fn native_operation_definition_properties(
         .iter()
         .flat_map(|owned| owned.definition_chain_values.iter())
         .filter_map(|entity_id| entities.get(entity_id.as_str()).copied())
-        .filter(|entity| entity.definition_chain_value().is_some())
+        .filter_map(|entity| entity.definition_chain_value().map(|value| (entity, value)))
         .collect::<Vec<_>>();
-    definition_chain_values.sort_by(|left, right| {
+    definition_chain_values.sort_by(|(left, _), (right, _)| {
         left.byte_offset
             .cmp(&right.byte_offset)
             .then(left.ordinal.cmp(&right.ordinal))
             .then(left.id.cmp(&right.id))
     });
-    for (ordinal, entity) in definition_chain_values.into_iter().enumerate() {
+    for (ordinal, (entity, value)) in definition_chain_values.into_iter().enumerate() {
         definition_chain_value_count += 1;
         definition_chain_value_records.insert(entity.object_record.clone());
         let prefix = format!("catia_definition_chain_value_{ordinal}");
         properties.insert(format!("{prefix}_entity"), entity.id.clone());
-        let value = entity
-            .definition_chain_value()
-            .expect("definition chains were filtered to complete records");
         insert_schema_value_properties(
             &mut properties,
             &format!("{prefix}_selector"),
@@ -1061,29 +1055,23 @@ fn native_operation_definition_properties(
         .filter_map(|field| {
             let entity_id = field.entity_record()?;
             let entity = entities.get(entity_id).copied()?;
-            (entity.object_record == field.id && entity.range_interval.is_some()).then_some(entity)
+            (entity.object_record == field.id).then_some(())?;
+            entity.range_interval.as_ref().map(|range| (entity, range))
         })
         .collect::<Vec<_>>();
-    range_intervals.sort_by(|left, right| {
+    range_intervals.sort_by(|(left, _), (right, _)| {
         left.byte_offset
             .cmp(&right.byte_offset)
             .then(left.ordinal.cmp(&right.ordinal))
             .then(left.id.cmp(&right.id))
     });
-    range_intervals.dedup_by(|left, right| left.id == right.id);
-    for (ordinal, entity) in range_intervals.into_iter().enumerate() {
+    range_intervals.dedup_by(|(left, _), (right, _)| left.id == right.id);
+    for (ordinal, (entity, range)) in range_intervals.into_iter().enumerate() {
         range_count += 1;
         range_records.insert(entity.object_record.clone());
         let prefix = format!("catia_range_{ordinal}");
         properties.insert(format!("{prefix}_entity"), entity.id.clone());
-        insert_range_interval_properties(
-            &mut properties,
-            &prefix,
-            entity
-                .range_interval
-                .as_ref()
-                .expect("range intervals were filtered to complete records"),
-        );
+        insert_range_interval_properties(&mut properties, &prefix, range);
     }
 
     Ok(NativeOperationDefinitionProperties {

@@ -245,6 +245,8 @@ fn identity_statement(ids: &[String]) -> String {
     }
 }
 
+// Formatting into a temporary String keeps this loss renderer infallible.
+#[allow(clippy::format_push_string)]
 pub(crate) fn insert_unresolved_carrier_loss(ir: &CadIr, losses: &mut Vec<LossNote>) {
     let (unresolved_curves, unresolved_surfaces) = unresolved_carrier_ids(ir);
     if unresolved_curves.is_empty() && unresolved_surfaces.is_empty() {
