@@ -171,7 +171,10 @@ pub fn token_at(data: &[u8], offset: usize) -> Option<Token> {
 ///   raw byte as a one-byte value (callers that need the stricter reference-id
 ///   grammar must reject this range themselves).
 ///
-/// Returns `(value, new_offset)`; `new_offset == offset` signals end-of-buffer.
+/// Returns `(value, new_offset)`. `new_offset == offset` signals end-of-buffer
+/// and is the only route that does not advance: every byte at `offset` inside
+/// `data` consumes one or two bytes, so `new_offset > offset` there and a
+/// scanner that follows `new_offset` always makes progress.
 pub fn compact_int(data: &[u8], offset: usize) -> (u32, usize) {
     let Some(&b) = data.get(offset) else {
         return (0, offset);
