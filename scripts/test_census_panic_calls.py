@@ -113,6 +113,22 @@ mod tests {
         self.assertIn('lib.rs:4\t.expect("second")', result)
         self.assertIn('non-test lines calling .expect(: 2', result)
 
+    def test_check_fails_for_a_production_call(self) -> None:
+        self.write("lib.rs", 'fn f() { value.expect("not a type guarantee"); }\n')
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(census.census_panic_calls(check=True), 1)
+
+    def test_check_exempts_only_the_declared_seed_tool(self) -> None:
+        self.write("lib.rs", "fn f() {}\n")
+        seed = self.root / census.SEED_GENERATOR
+        seed.parent.mkdir(parents=True)
+        seed.write_text('fn main() { value.unwrap(); }\n')
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(census.census_panic_calls(check=True), 0)
+        seed.with_name("production.rs").write_text('fn main() { value.unwrap(); }\n')
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(census.census_panic_calls(check=True), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

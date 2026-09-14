@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
-//! One unknown key, inserted into every distinct object shape of a document.
+//! One unknown key, inserted into every non-native object of a document.
 //!
 //! A document-reachable type states the keys it owns. This sweep proves that
-//! by shape rather than by inspection: it walks a serialized `CadIr`, dedupes
-//! the object shapes it finds by normalised path and key set, inserts one
-//! unknown key into each, and reports the shapes that still read back.
+//! by reading each object through its document route. Objects with the same
+//! keys can use different readers selected by an enclosing variant.
 //!
 //! The codec-private `/native` subtree is free-form by design and is skipped.
 
 use std::collections::BTreeSet;
 
 use cadmpeg_ir::CadIr;
+use serde::Deserialize;
 use serde_json::{Map, Value};
 
 /// The key inserted into every swept shape.
@@ -33,19 +33,6 @@ fn probe_values() -> [Value; 7] {
     ]
 }
 
-/// One object shape found in a document: where it sits and what it holds.
-struct Shape {
-    /// Path with every array index replaced by `#`.
-    normalised: String,
-    /// Path to the concrete node the key is inserted into.
-    concrete: Vec<Step>,
-}
-
-/// The identity of a shape: its normalised path, its key set, and the value of
-/// every string-valued key. The tag value separates two internally tagged
-/// variants that share a key set.
-type ShapeIdentity = (String, Vec<String>, Vec<(String, String)>);
-
 /// One step of a concrete JSON path.
 #[derive(Clone)]
 enum Step {
@@ -60,7 +47,7 @@ pub struct SweptShapes {
     /// The normalised path of every distinct shape that accepts
     /// [`UNKNOWN_KEY`].
     pub accepting: BTreeSet<String>,
-    /// The number of distinct shapes probed.
+    /// The number of objects probed.
     pub swept: usize,
     /// The number of shapes probed in the full document because their graft
     /// did not read back on its own.
@@ -73,11 +60,11 @@ pub struct SweptShapes {
 /// yields the serde error, which the caller accounts for; it is never a silent
 /// skip.
 ///
-/// Each shape is probed in a graft: an empty document carrying only the path
+/// Each object is probed in a graft: an empty document carrying only the path
 /// that reaches the shape, with the array element the shape sits in as the one
 /// element of its array. Unknown-key refusal is a property of the node's
-/// `Deserialize` implementation, which reads no sibling context, so the verdict
-/// in the graft is the verdict in the full document. A graft that does not read
+/// `Deserialize` implementation. The graft preserves the complete containing
+/// array element, including its enclosing tags. A graft that does not read
 /// back on its own states a document the shape cannot be lifted out of, and that
 /// shape is probed in the full document instead.
 ///
@@ -85,29 +72,34 @@ pub struct SweptShapes {
 ///
 /// Returns the serde error when `ir` does not read back as a `CadIr`.
 pub fn accepting_shapes(ir: &Value) -> Result<SweptShapes, serde_json::Error> {
-    serde_json::from_value::<CadIr>(ir.clone())?;
-    let mut shapes = Vec::new();
-    let mut seen = BTreeSet::new();
-    collect_shapes(ir, &mut Vec::new(), &mut seen, &mut shapes);
-    let swept = shapes.len();
+    CadIr::deserialize(ir)?;
     let empty = serde_json::to_value(CadIr::empty())?;
+    sweep(ir, &empty, |document| CadIr::deserialize(document).is_ok())
+}
+
+fn sweep(
+    ir: &Value,
+    empty: &Value,
+    accepts: impl Fn(&Value) -> bool,
+) -> Result<SweptShapes, serde_json::Error> {
+    let mut shapes = Vec::new();
+    collect_shapes(ir, &mut Vec::new(), &mut shapes);
+    let swept = shapes.len();
     let mut accepting = BTreeSet::new();
     let mut fallbacks = 0;
-    for shape in shapes {
-        let grafted = grafted_document(ir, &empty, &shape.concrete)
-            .filter(|(graft, _)| serde_json::from_value::<CadIr>(graft.clone()).is_ok());
-        let (document, path) = match grafted {
+    for concrete in shapes {
+        let grafted = grafted_document(ir, empty, &concrete).filter(|(graft, _)| accepts(graft));
+        let (mut document, path) = match grafted {
             Some(grafted) => grafted,
             None => {
                 fallbacks += 1;
-                (ir.clone(), shape.concrete.clone())
+                (ir.clone(), concrete)
             }
         };
         for value in probe_values() {
-            let mut probe = document.clone();
-            insert_unknown_key(&mut probe, &path, value);
-            if serde_json::from_value::<CadIr>(probe).is_ok() {
-                accepting.insert(shape.normalised.clone());
+            object_at_mut(&mut document, &path)?.insert(UNKNOWN_KEY.into(), value);
+            if accepts(&document) {
+                accepting.insert(normalise(&path));
                 break;
             }
         }
@@ -127,7 +119,7 @@ pub fn accepting_shapes(ir: &Value) -> Result<SweptShapes, serde_json::Error> {
 /// graft cannot carry.
 fn grafted_document(ir: &Value, empty: &Value, path: &[Step]) -> Option<(Value, Vec<Step>)> {
     if path.is_empty() {
-        return Some((empty.clone(), Vec::new()));
+        return Some((ir.clone(), Vec::new()));
     }
     let mut graft = empty.clone();
     match path.iter().position(|step| matches!(step, Step::Index(_))) {
@@ -185,41 +177,24 @@ fn set_member(document: &mut Value, path: &[Step], value: Value) -> Option<()> {
     Some(())
 }
 
-/// Records one shape per distinct (normalised path, key set) pair.
-fn collect_shapes(
-    value: &Value,
-    path: &mut Vec<Step>,
-    seen: &mut BTreeSet<ShapeIdentity>,
-    found: &mut Vec<Shape>,
-) {
+/// Records every object, including equal key sets under different readers.
+fn collect_shapes(value: &Value, path: &mut Vec<Step>, found: &mut Vec<Vec<Step>>) {
     match value {
         Value::Object(fields) => {
-            let normalised = normalise(path);
-            if !normalised.starts_with("/native") {
-                let keys: Vec<String> = fields.keys().cloned().collect();
-                let tags: Vec<(String, String)> = fields
-                    .iter()
-                    .filter_map(|(key, field)| {
-                        field.as_str().map(|text| (key.clone(), text.to_owned()))
-                    })
-                    .collect();
-                if seen.insert((normalised.clone(), keys, tags)) {
-                    found.push(Shape {
-                        normalised,
-                        concrete: path.clone(),
-                    });
-                }
+            if matches!(path.first(), Some(Step::Key(key)) if key == "native") {
+                return;
             }
+            found.push(path.clone());
             for (key, field) in fields {
                 path.push(Step::Key(key.clone()));
-                collect_shapes(field, path, seen, found);
+                collect_shapes(field, path, found);
                 path.pop();
             }
         }
         Value::Array(items) => {
             for (index, item) in items.iter().enumerate() {
                 path.push(Step::Index(index));
-                collect_shapes(item, path, seen, found);
+                collect_shapes(item, path, found);
                 path.pop();
             }
         }
@@ -233,30 +208,36 @@ fn normalise(path: &[Step]) -> String {
     for step in path {
         text.push('/');
         match step {
-            Step::Key(key) => text.push_str(key),
+            Step::Key(key) => text.push_str(&key.replace('~', "~0").replace('/', "~1")),
             Step::Index(_) => text.push('#'),
         }
     }
     text
 }
 
-/// Inserts the unknown key into the object the path names.
-fn insert_unknown_key(value: &mut Value, path: &[Step], probe: Value) {
+fn object_at_mut<'a>(
+    value: &'a mut Value,
+    path: &[Step],
+) -> Result<&'a mut Map<String, Value>, serde_json::Error> {
     let mut node = value;
+    let missing = || {
+        <serde_json::Error as serde::de::Error>::custom(format!(
+            "unknown-key probe target {} is not an object in its document",
+            normalise(path)
+        ))
+    };
     for step in path {
-        node = match (step, node) {
-            (Step::Key(key), Value::Object(fields)) => {
-                fields.get_mut(key).expect("the swept path key is live")
-            }
-            (Step::Index(index), Value::Array(items)) => {
-                items.get_mut(*index).expect("the swept path index is live")
-            }
-            _ => panic!("the swept path does not match the document shape"),
+        let next = match (step, node) {
+            (Step::Key(key), Value::Object(fields)) => fields.get_mut(key),
+            (Step::Index(index), Value::Array(items)) => items.get_mut(*index),
+            _ => None,
         };
+        let Some(next) = next else {
+            return Err(missing());
+        };
+        node = next;
     }
-    let fields: &mut Map<String, Value> =
-        node.as_object_mut().expect("the swept node is an object");
-    fields.insert(UNKNOWN_KEY.into(), probe);
+    node.as_object_mut().ok_or_else(missing)
 }
 
 /// The non-native nodes a document may accept an unknown key on.
@@ -324,3 +305,6 @@ pub const FREE_FORM_SHAPES: &[&str] = &[
     "/source/identity/dialects/extra/#/declared",
     "/source/identity/dialects/primary/declared",
 ];
+
+#[cfg(test)]
+mod tests;
