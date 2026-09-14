@@ -15,6 +15,7 @@ mod dispatcher;
 mod extrude;
 mod form;
 mod mirror;
+mod parameter_cycles;
 mod parameters;
 mod pattern;
 mod pipe;
