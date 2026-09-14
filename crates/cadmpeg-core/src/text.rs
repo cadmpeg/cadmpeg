@@ -133,19 +133,89 @@ impl std::borrow::Borrow<str> for NonBlankString {
     }
 }
 
-/// Keys a map by the entry names that are not blank.
+/// A source property whose key holds no non-whitespace character.
 ///
-/// A key that holds no non-whitespace character names nothing, so nothing can
-/// ask for the entry it carries and the entry is dropped. Codecs that read an
-/// open set of native names route the whole set through here, so the rule is
-/// stated once instead of at each reader.
-pub fn named_entries<V>(
+/// A blank key names nothing, so the entry it carries cannot be asked for. The
+/// value it carries is still source content, so the reader states the property
+/// it could not key instead of dropping it without a word.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlankKey {
+    record: String,
+    index: usize,
+}
+
+impl BlankKey {
+    /// The record the reader named as the owner of the property set.
+    pub fn record(&self) -> &str {
+        &self.record
+    }
+
+    /// The position of the property in the set the reader stated, counted from
+    /// zero in the order the reader supplied.
+    pub const fn index(&self) -> usize {
+        self.index
+    }
+}
+
+impl std::fmt::Display for BlankKey {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "{} states a property with a blank key at position {}",
+            self.record, self.index
+        )
+    }
+}
+
+impl std::error::Error for BlankKey {}
+
+/// Keys a map by the entry names, and states every name that is blank.
+///
+/// Returns the entries whose keys name something, and one [`BlankKey`] per
+/// entry whose key does not, in the order the reader supplied. `record` names
+/// the owning record so a blank key can be reported against the record that
+/// states it; it is rendered only when a key is blank.
+///
+/// This is the route for a reader that keeps the properties it can key and
+/// reports the rest. A reader that refuses the whole set uses
+/// [`named_entries`].
+pub fn named_entries_with_blank<V>(
+    record: impl std::fmt::Display,
     entries: impl IntoIterator<Item = (String, V)>,
-) -> BTreeMap<NonBlankString, V> {
-    entries
-        .into_iter()
-        .filter_map(|(name, value)| Some((NonBlankString::new(name)?, value)))
-        .collect()
+) -> (BTreeMap<NonBlankString, V>, Vec<BlankKey>) {
+    let mut kept = BTreeMap::new();
+    let mut blank = Vec::new();
+    for (index, (name, value)) in entries.into_iter().enumerate() {
+        match NonBlankString::new(name) {
+            Some(key) => {
+                kept.insert(key, value);
+            }
+            None => blank.push(BlankKey {
+                record: record.to_string(),
+                index,
+            }),
+        }
+    }
+    (kept, blank)
+}
+
+/// Keys a map by the entry names, refusing a name that is blank.
+///
+/// Codecs that read an open set of native names route the whole set through
+/// here, so the rule is stated once instead of at each reader.
+///
+/// # Errors
+///
+/// Names the record and the position of the first blank key.
+pub fn named_entries<V>(
+    record: impl std::fmt::Display,
+    entries: impl IntoIterator<Item = (String, V)>,
+) -> Result<BTreeMap<NonBlankString, V>, BlankKey> {
+    let (kept, blank) = named_entries_with_blank(record, entries);
+    match blank.into_iter().next() {
+        Some(key) => Err(key),
+        None => Ok(kept),
+    }
 }
 
 /// Builds a [`NonBlankString`] from a `&'static str` constant.
@@ -228,5 +298,39 @@ mod tests {
             NonBlankString::new(" a ").map(|value| value.as_str().to_owned()),
             Some(" a ".to_owned())
         );
+    }
+
+    #[test]
+    fn a_blank_key_is_named_and_the_other_properties_survive() {
+        let entries = [
+            ("width".to_owned(), "10"),
+            ("   ".to_owned(), "dropped"),
+            ("depth".to_owned(), "4"),
+        ];
+
+        let (kept, blank) = named_entries_with_blank("feature 7", entries.clone());
+        assert_eq!(blank.len(), 1);
+        assert_eq!(blank[0].record(), "feature 7");
+        assert_eq!(blank[0].index(), 1);
+        assert_eq!(
+            blank[0].to_string(),
+            "feature 7 states a property with a blank key at position 1"
+        );
+        assert_eq!(
+            kept.keys().map(NonBlankString::as_str).collect::<Vec<_>>(),
+            ["depth", "width"]
+        );
+
+        let refused = named_entries("feature 7", entries).unwrap_err();
+        assert_eq!(refused, blank[0]);
+    }
+
+    #[test]
+    fn keys_that_all_name_something_are_kept_whole() {
+        let entries = [("width".to_owned(), "10"), ("depth".to_owned(), "4")];
+
+        let kept = named_entries("feature 7", entries.clone()).unwrap();
+        assert_eq!(kept.len(), 2);
+        assert!(named_entries_with_blank("feature 7", entries).1.is_empty());
     }
 }

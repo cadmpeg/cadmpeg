@@ -584,7 +584,7 @@ pub(crate) fn transfer_design_features(
                     &entities,
                     &design_objects,
                     &native_operation_object_ids,
-                );
+                )?;
             }
             _ => {
                 // One object cannot safely occupy two neutral feature identities.
@@ -819,7 +819,7 @@ fn transfer_native_operation(
     entities: &HashMap<&str, &CatiaEntityRecord>,
     design_objects: &HashMap<&str, &CatiaDesignObject>,
     native_operation_object_ids: &HashSet<&str>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let object = candidate.object;
     let kind = candidate.kind;
     let NativeOperationDefinitionProperties {
@@ -836,7 +836,7 @@ fn transfer_native_operation(
         entities,
         design_objects,
         native_operation_object_ids,
-    );
+    )?;
     let (definition, source_properties) = native_operation_definition(kind, &object.id, properties);
     let feature_id =
         FeatureId::mint(neutral_history_id(&object.id, "feature")).expect("identity grammar");
@@ -870,6 +870,7 @@ fn transfer_native_operation(
     transfer
         .native_operation_range_records
         .extend(range_records);
+    Ok(())
 }
 
 /// Project an admitted CATIA operation class into the neutral family while
@@ -955,7 +956,7 @@ fn native_operation_definition_properties(
     entities: &HashMap<&str, &CatiaEntityRecord>,
     design_objects: &HashMap<&str, &CatiaDesignObject>,
     native_operation_object_ids: &HashSet<&str>,
-) -> NativeOperationDefinitionProperties {
+) -> Result<NativeOperationDefinitionProperties, cadmpeg_core::CodecError> {
     let mut properties = BTreeMap::new();
     let mut definition_value_count = 0;
     let mut definition_chain_value_count = 0;
@@ -1085,15 +1086,15 @@ fn native_operation_definition_properties(
         );
     }
 
-    NativeOperationDefinitionProperties {
-        source_properties: cadmpeg_core::text::named_entries(properties),
+    Ok(NativeOperationDefinitionProperties {
+        source_properties: cadmpeg_core::text::named_entries(&object.id, properties)?,
         definition_value_count,
         definition_chain_value_count,
         range_count,
         definition_value_records,
         definition_chain_value_records,
         range_records,
-    }
+    })
 }
 
 /// Return whether a design object belongs to one operation's exact structural

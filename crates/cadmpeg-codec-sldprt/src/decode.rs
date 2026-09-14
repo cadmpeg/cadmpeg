@@ -2220,7 +2220,8 @@ fn build_geometry_ir(
     let appearance_definitions = crate::appearance::definitions(scan);
     let mut ir = CadIr::decoded(source_meta(scan, classification, header)?);
     let mut annotations = std::mem::take(&mut brep.annotations);
-    let mut histories = crate::history::histories(scan, &mut annotations);
+    let mut pmi_losses = Vec::new();
+    let mut histories = crate::history::histories(scan, &mut annotations, &mut pmi_losses);
     let mut lanes = crate::resolved_features::assembly::lanes(scan, &mut annotations);
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(scan, &mut annotations);
@@ -2230,7 +2231,6 @@ fn build_geometry_ir(
         &histories,
         &mut supplemental_config_lanes,
     );
-    let mut pmi_losses = Vec::new();
     let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations, &mut pmi_losses);
     project_design_history(
         &mut ir,
@@ -3042,7 +3042,7 @@ fn source_meta(
         );
     }
     add_preview_metadata(scan, &mut attributes);
-    add_solidworks_xml_metadata(scan, &mut attributes);
+    add_solidworks_xml_metadata(scan, &mut attributes)?;
     Ok(SourceMeta::classified(
         classification.layers().clone(),
         attributes,
@@ -3125,7 +3125,7 @@ fn add_preview_metadata(
 fn add_solidworks_xml_metadata(
     scan: &ContainerScan,
     attributes: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
-) {
+) -> Result<(), CodecError> {
     let active_configuration_name = container::active_configuration_name(scan);
     if let Some(envelope) = container::solidworks_envelope(scan) {
         for (key, value) in [
@@ -3158,9 +3158,11 @@ fn add_solidworks_xml_metadata(
             );
         }
         attributes.extend(cadmpeg_core::text::named_entries(
+            "the solidworks envelope",
             envelope.configuration_attributes.clone(),
-        ));
+        )?);
     }
+    Ok(())
 }
 
 fn build_geometry_report(
@@ -3273,7 +3275,8 @@ fn build_metadata_ir(
     let mut ir = CadIr::empty();
     let mut unknowns = Vec::new();
     let mut annotations = Annotations::default();
-    let mut histories = crate::history::histories(scan, &mut annotations);
+    let mut pmi_losses = Vec::new();
+    let mut histories = crate::history::histories(scan, &mut annotations, &mut pmi_losses);
     let mut lanes = crate::resolved_features::assembly::lanes(scan, &mut annotations);
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(scan, &mut annotations);
@@ -3283,7 +3286,6 @@ fn build_metadata_ir(
         &histories,
         &mut supplemental_config_lanes,
     );
-    let mut pmi_losses = Vec::new();
     let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations, &mut pmi_losses);
     ir.model.pmi = crate::swift::annotations(scan, &mut annotations, None, None);
     let crate::resolved_features::sketch_projection::ProjectedSketches {
@@ -3306,7 +3308,7 @@ fn build_metadata_ir(
         cadmpeg_core::nonblank_literal!("block_count"),
         scan.blocks.len().to_string(),
     );
-    add_solidworks_xml_metadata(scan, &mut attributes);
+    add_solidworks_xml_metadata(scan, &mut attributes)?;
 
     if let Some(site) = container::select_active_parasolid_site(scan) {
         let name = site.name();

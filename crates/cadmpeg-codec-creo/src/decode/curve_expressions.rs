@@ -492,7 +492,7 @@ pub(crate) fn transfer_curve_expression_features(
                     }
                 }),
                 dependencies: dependencies.into_iter().collect(),
-                properties: cadmpeg_core::text::named_entries(properties),
+                properties: cadmpeg_core::text::named_entries(parameter_id.as_str(), properties)?,
                 pmi: None,
                 native_ref: Some(curve_expression_record_id(record)),
             });

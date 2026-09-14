@@ -685,21 +685,11 @@ pub fn project_parameter_design_with_edge_identities(
                         )
                     })
                     .map_or_else(
-                        || FeatureDefinition::Operation(FeatureOperation::Native {
-                            kind: scope.kind_name().into(),
-                            parameters: cadmpeg_core::text::named_entries(parameters.iter().map(
-                                |(_, parameter)| {
-                                    (
-                                        parameter.name().to_owned(),
-                                        parameter.expression().to_owned(),
-                                    )
-                                },
-                            )),
-                        }),
-                        |_| FeatureDefinition::Operation(FeatureOperation::AssemblyJoint {
+                        || native_scope_definition(scope, &parameters),
+                        |_| Ok(FeatureDefinition::Operation(FeatureOperation::AssemblyJoint {
                             joint: crate::ids::neutral_assembly_joint_id(scope),
-                        }),
-                    ),
+                        })),
+                    )?,
                 Some(DesignFeatureFamily::Extrude) => project_extrude(
                     scope,
                     &parameters,
@@ -708,17 +698,9 @@ pub fn project_parameter_design_with_edge_identities(
                     placements,
                     body_recipe_operands,
                 )
-                .unwrap_or_else(|| FeatureDefinition::Operation(FeatureOperation::Native {
-                    kind: scope.kind_name().into(),
-                    parameters: cadmpeg_core::text::named_entries(parameters.iter().map(|(_, parameter)| {
-                        (
-                            parameter.name().to_owned(),
-                            parameter.expression().to_owned(),
-                        )
-                    })),
-                })),
+                .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
                 Some(DesignFeatureFamily::Fillet) => {
-                    project_fillet_arm(inputs, scope, parameters.as_slice(), native_scope)
+                    project_fillet_arm(inputs, scope, parameters.as_slice(), native_scope)?
                 }
                 Some(DesignFeatureFamily::Chamfer) => parameters
                     .is_empty()
@@ -744,15 +726,7 @@ pub fn project_parameter_design_with_edge_identities(
                             histories,
                         )
                     })
-                    .unwrap_or_else(|| FeatureDefinition::Operation(FeatureOperation::Native {
-                        kind: scope.kind_name().into(),
-                        parameters: cadmpeg_core::text::named_entries(parameters.iter().map(|(_, parameter)| {
-                            (
-                                parameter.name().to_owned(),
-                                parameter.expression().to_owned(),
-                            )
-                        })),
-                    })),
+                    .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
                 Some(DesignFeatureFamily::Combine) => project_combine(scope, native_scope)
                     .unwrap_or_else(|| FeatureDefinition::Operation(FeatureOperation::Native {
                         kind: scope.kind_name().into(),
@@ -776,15 +750,7 @@ pub fn project_parameter_design_with_edge_identities(
                     face_operands,
                     body_recipe_operands,
                 )
-                .unwrap_or_else(|| FeatureDefinition::Operation(FeatureOperation::Native {
-                    kind: scope.kind_name().into(),
-                    parameters: cadmpeg_core::text::named_entries(parameters.iter().map(|(_, parameter)| {
-                        (
-                            parameter.name().to_owned(),
-                            parameter.expression().to_owned(),
-                        )
-                    })),
-                })),
+                .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
                 Some(DesignFeatureFamily::Revolve) => project_fixed_revolve_with_entities(
                     scope,
                     construction_groups,
@@ -829,15 +795,7 @@ pub fn project_parameter_design_with_edge_identities(
                     edge_operands,
                     edge_identity_operands,
                 )
-                .unwrap_or_else(|| FeatureDefinition::Operation(FeatureOperation::Native {
-                    kind: scope.kind_name().into(),
-                    parameters: cadmpeg_core::text::named_entries(parameters.iter().map(|(_, parameter)| {
-                        (
-                            parameter.name().to_owned(),
-                            parameter.expression().to_owned(),
-                        )
-                    })),
-                })),
+                .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
                 Some(DesignFeatureFamily::SurfacePatch) => project_surface_patch(
                     scope,
                     construction_groups,
@@ -895,15 +853,7 @@ pub fn project_parameter_design_with_edge_identities(
                     edge_operands,
                     edge_identity_operands,
                 )
-                .unwrap_or_else(|| FeatureDefinition::Operation(FeatureOperation::Native {
-                    kind: scope.kind_name().into(),
-                    parameters: cadmpeg_core::text::named_entries(parameters.iter().map(|(_, parameter)| {
-                        (
-                            parameter.name().to_owned(),
-                            parameter.expression().to_owned(),
-                        )
-                    })),
-                })),
+                .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
                 Some(DesignFeatureFamily::SurfaceTrim) => {
                     project_surface_trim(scope, construction_groups, body_recipe_operands)
                         .unwrap_or_else(|| FeatureDefinition::Operation(FeatureOperation::Native {
@@ -920,15 +870,7 @@ pub fn project_parameter_design_with_edge_identities(
                     })
                 }
                 Some(DesignFeatureFamily::Hole) => project_hole(scope, &parameters, face_operands)
-                    .unwrap_or_else(|| FeatureDefinition::Operation(FeatureOperation::Native {
-                        kind: scope.kind_name().into(),
-                        parameters: cadmpeg_core::text::named_entries(parameters.iter().map(|(_, parameter)| {
-                            (
-                                parameter.name().to_owned(),
-                                parameter.expression().to_owned(),
-                            )
-                        })),
-                    })),
+                    .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
                 Some(DesignFeatureFamily::Split) => {
                     project_split(scope, construction_groups, face_operands).unwrap_or_else(|| {
                         FeatureDefinition::Operation(FeatureOperation::Native {
@@ -960,72 +902,21 @@ pub fn project_parameter_design_with_edge_identities(
                 }
                 Some(DesignFeatureFamily::OffsetFaces) => {
                     project_offset_faces(scope, &parameters, face_operands, construction_groups)
-                        .unwrap_or_else(|| FeatureDefinition::Operation(FeatureOperation::Native {
-                            kind: scope.kind_name().into(),
-                            parameters: cadmpeg_core::text::named_entries(parameters.iter().map(
-                                |(_, parameter)| {
-                                    (
-                                        parameter.name().to_owned(),
-                                        parameter.expression().to_owned(),
-                                    )
-                                },
-                            )),
-                        }))
+                        .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
                 }
                 Some(DesignFeatureFamily::Move) => project_move(scope, construction_groups)
-                    .unwrap_or_else(|| FeatureDefinition::Operation(FeatureOperation::Native {
-                        kind: scope.kind_name().into(),
-                        parameters: cadmpeg_core::text::named_entries(parameters.iter().map(|(_, parameter)| {
-                            (
-                                parameter.name().to_owned(),
-                                parameter.expression().to_owned(),
-                            )
-                        })),
-                    })),
+                    .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
                 Some(DesignFeatureFamily::Shell) => {
-                    project_shell(scope, face_operands, construction_groups).unwrap_or_else(|| {
-                        FeatureDefinition::Operation(FeatureOperation::Native {
-                            kind: scope.kind_name().into(),
-                            parameters: cadmpeg_core::text::named_entries(parameters.iter().map(
-                                |(_, parameter)| {
-                                    (
-                                        parameter.name().to_owned(),
-                                        parameter.expression().to_owned(),
-                                    )
-                                },
-                            )),
-                        })
-                    })
+                    project_shell(scope, face_operands, construction_groups)
+                        .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
                 }
                 Some(DesignFeatureFamily::Thicken) => {
-                    project_thicken(scope, face_operands, construction_groups).unwrap_or_else(
-                        || FeatureDefinition::Operation(FeatureOperation::Native {
-                            kind: scope.kind_name().into(),
-                            parameters: cadmpeg_core::text::named_entries(parameters.iter().map(
-                                |(_, parameter)| {
-                                    (
-                                        parameter.name().to_owned(),
-                                        parameter.expression().to_owned(),
-                                    )
-                                },
-                            )),
-                        }),
-                    )
+                    project_thicken(scope, face_operands, construction_groups)
+                        .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
                 }
                 Some(DesignFeatureFamily::Coil) => {
-                    project_coil(scope, &parameters, construction_groups).unwrap_or_else(|| {
-                        FeatureDefinition::Operation(FeatureOperation::Native {
-                            kind: scope.kind_name().into(),
-                            parameters: cadmpeg_core::text::named_entries(parameters.iter().map(
-                                |(_, parameter)| {
-                                    (
-                                        parameter.name().to_owned(),
-                                        parameter.expression().to_owned(),
-                                    )
-                                },
-                            )),
-                        })
-                    })
+                    project_coil(scope, &parameters, construction_groups)
+                        .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
                 }
                 Some(DesignFeatureFamily::Scale) => scope.scale_operation().map_or_else(
                     || FeatureDefinition::Operation(FeatureOperation::Native {
@@ -1069,17 +960,7 @@ pub fn project_parameter_design_with_edge_identities(
                             .map(|size| (construction, size))
                     })
                     .map_or_else(
-                        || FeatureDefinition::Operation(FeatureOperation::Native {
-                            kind: scope.kind_name().into(),
-                            parameters: cadmpeg_core::text::named_entries(parameters.iter().map(
-                                |(_, parameter)| {
-                                    (
-                                        parameter.name().to_owned(),
-                                        parameter.expression().to_owned(),
-                                    )
-                                },
-                            )),
-                        }),
+                        || native_scope_definition(scope, &parameters),
                         |(construction, nominal_size)| {
                             let face = project_thread_face_selection(
                                 scope,
@@ -1138,38 +1019,19 @@ pub fn project_parameter_design_with_edge_identities(
                                         cadmpeg_ir::features::CosmeticThreadExtent::Through {},
                                     )
                                 });
-                            FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
+                            Ok(FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
                                 face,
                                 diameter: Some(nominal_size),
                                 extent,
-                            })
+                            }))
                         },
-                    ),
+                    )?,
                 Some(DesignFeatureFamily::SheetMetalEdgeFlange) => {
-                    project_edge_flange(scope, inputs).unwrap_or_else(|| {
-                        FeatureDefinition::Operation(FeatureOperation::Native {
-                            kind: scope.kind_name().into(),
-                            parameters: cadmpeg_core::text::named_entries(parameters.iter().map(
-                                |(_, parameter)| {
-                                    (
-                                        parameter.name().to_owned(),
-                                        parameter.expression().to_owned(),
-                                    )
-                                },
-                            )),
-                        })
-                    })
+                    project_edge_flange(scope, inputs)
+                        .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
                 }
                 Some(DesignFeatureFamily::SheetMetalHem) => project_hem(scope, inputs)
-                    .unwrap_or_else(|| FeatureDefinition::Operation(FeatureOperation::Native {
-                        kind: scope.kind_name().into(),
-                        parameters: cadmpeg_core::text::named_entries(parameters.iter().map(|(_, parameter)| {
-                            (
-                                parameter.name().to_owned(),
-                                parameter.expression().to_owned(),
-                            )
-                        })),
-                    })),
+                    .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
                 None => {
                     if let Some(primitive) = project_solid_primitive(scope) {
                         primitive
@@ -1191,34 +1053,14 @@ pub fn project_parameter_design_with_edge_identities(
                                     transform[1][2],
                                     transform[2][2],
                                 ))).map_or_else(
-                            || FeatureDefinition::Operation(FeatureOperation::Native {
-                                kind: scope.kind_name().into(),
-                                parameters: cadmpeg_core::text::named_entries(parameters.iter().map(
-                                    |(_, parameter)| {
-                                        (
-                                            parameter.name().to_owned(),
-                                            parameter.expression().to_owned(),
-                                        )
-                                    },
-                                )),
-                            }),
-                            |frame| FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem { frame }),
-                        )
+                            || native_scope_definition(scope, &parameters),
+                            |frame| Ok(FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem { frame })),
+                        )?
                     } else if scope.kind() == crate::records::feature::DesignFeatureKind::WorkPlane {
                         scope.work_plane_transform().map_or_else(
-                            || FeatureDefinition::Operation(FeatureOperation::Native {
-                                kind: scope.kind_name().into(),
-                                parameters: cadmpeg_core::text::named_entries(parameters.iter().map(
-                                    |(_, parameter)| {
-                                        (
-                                            parameter.name().to_owned(),
-                                            parameter.expression().to_owned(),
-                                        )
-                                    },
-                                )),
-                            }),
-                            |transform| project_work_plane(scope, transform.into()),
-                        )
+                            || native_scope_definition(scope, &parameters),
+                            |transform| Ok(project_work_plane(scope, transform.into())),
+                        )?
                     } else if scope.kind() == crate::records::feature::DesignFeatureKind::WorkAxis {
                         scope
                             .work_axis_construction()
@@ -1238,19 +1080,9 @@ pub fn project_parameter_design_with_edge_identities(
                                 ))
                             })
                             .map_or_else(
-                                || FeatureDefinition::Operation(FeatureOperation::Native {
-                                    kind: scope.kind_name().into(),
-                                    parameters: cadmpeg_core::text::named_entries(parameters.iter().map(
-                                        |(_, parameter)| {
-                                            (
-                                                parameter.name().to_owned(),
-                                                parameter.expression().to_owned(),
-                                            )
-                                        },
-                                    )),
-                                }),
-                                |(origin, direction)| FeatureDefinition::Operation(FeatureOperation::DatumAxis { origin, direction }),
-                            )
+                                || native_scope_definition(scope, &parameters),
+                                |(origin, direction)| Ok(FeatureDefinition::Operation(FeatureOperation::DatumAxis { origin, direction })),
+                            )?
                     } else if scope.kind() == crate::records::feature::DesignFeatureKind::WorkPoint {
                         scope.work_point_construction().and_then(|construction| Some((
                             construction,
@@ -1260,18 +1092,8 @@ pub fn project_parameter_design_with_edge_identities(
                                 construction.position[2] * 10.0,
                             ))?,
                         ))).map_or_else(
-                            || FeatureDefinition::Operation(FeatureOperation::Native {
-                                kind: scope.kind_name().into(),
-                                parameters: cadmpeg_core::text::named_entries(parameters.iter().map(
-                                    |(_, parameter)| {
-                                        (
-                                            parameter.name().to_owned(),
-                                            parameter.expression().to_owned(),
-                                        )
-                                    },
-                                )),
-                            }),
-                            |(construction, position)| FeatureDefinition::Operation(FeatureOperation::DatumPoint {
+                            || native_scope_definition(scope, &parameters),
+                            |(construction, position)| Ok(FeatureDefinition::Operation(FeatureOperation::DatumPoint {
                                 position,
                                 construction: project_work_point_construction(
                                     scope,
@@ -1281,8 +1103,8 @@ pub fn project_parameter_design_with_edge_identities(
                                     &scope_ids,
                                 )
                                 .map(Box::new),
-                            }),
-                        )
+                            })),
+                        )?
                     } else if scope.kind() == crate::records::feature::DesignFeatureKind::BaseFlange {
                         project_base_flange(scope, construction_groups, placements).unwrap_or_else(
                             || FeatureDefinition::Operation(FeatureOperation::Native {
@@ -1387,17 +1209,7 @@ pub fn project_parameter_design_with_edge_identities(
                             }),
                         )
                     } else {
-                        FeatureDefinition::Operation(FeatureOperation::Native {
-                            kind: scope.kind_name().into(),
-                            parameters: cadmpeg_core::text::named_entries(parameters.iter().map(
-                                |(_, parameter)| {
-                                    (
-                                        parameter.name().to_owned(),
-                                        parameter.expression().to_owned(),
-                                    )
-                                },
-                            )),
-                        })
+                        native_scope_definition(scope, &parameters)?
                     }
                 }
             };
@@ -1419,7 +1231,7 @@ pub fn project_parameter_design_with_edge_identities(
                 ),
                 dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                 source_properties: if matches!(&definition, FeatureDefinition::Operation(FeatureOperation::Native { .. })) {
-                    cadmpeg_core::text::named_entries(native_scope_properties(scope, native_scope))
+                    cadmpeg_core::text::named_entries(&scope.id, native_scope_properties(scope, native_scope))?
                 } else {
                     BTreeMap::new()
                 },
@@ -2144,12 +1956,41 @@ fn scope_properties(
     properties
 }
 
+/// The native definition for a scope this codec does not type.
+///
+/// It states the scope's own kind name and every parameter expression the
+/// scope carries, so a feature the codec will not type still names what the
+/// source states about it.
+///
+/// # Errors
+///
+/// Names the scope whose parameter set states a blank parameter name.
+fn native_scope_definition(
+    scope: &DesignParameterScope,
+    parameters: &[(u32, &DesignParameter)],
+) -> Result<cadmpeg_ir::features::FeatureDefinition, CodecError> {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+
+    Ok(FeatureDefinition::Operation(FeatureOperation::Native {
+        kind: scope.kind_name().into(),
+        parameters: cadmpeg_core::text::named_entries(
+            &scope.id,
+            parameters.iter().map(|(_, parameter)| {
+                (
+                    parameter.name().to_owned(),
+                    parameter.expression().to_owned(),
+                )
+            }),
+        )?,
+    }))
+}
+
 fn project_fillet_arm(
     inputs: &ProjectInputs<'_>,
     scope: &DesignParameterScope,
     parameters: &[(u32, &DesignParameter)],
     native_scope: &str,
-) -> cadmpeg_ir::features::FeatureDefinition {
+) -> Result<cadmpeg_ir::features::FeatureDefinition, CodecError> {
     use cadmpeg_ir::features::{
         EdgeSelection, FeatureDefinition, FeatureOperation, FilletGroup, RadiusSpec,
     };
@@ -2163,7 +2004,7 @@ fn project_fillet_arm(
             inputs.fillet_radius_groups,
             inputs.histories,
         ) {
-            return definition;
+            return Ok(definition);
         }
     }
 
@@ -2176,22 +2017,9 @@ fn project_fillet_arm(
         })
         .collect::<Vec<_>>();
     assignments.sort_by_key(|assignment| assignment.group_ordinal);
-    let native = || {
-        FeatureDefinition::Operation(FeatureOperation::Native {
-            kind: scope.kind_name().into(),
-            parameters: cadmpeg_core::text::named_entries(parameters.iter().map(
-                |(_, parameter)| {
-                    (
-                        parameter.name().to_owned(),
-                        parameter.expression().to_owned(),
-                    )
-                },
-            )),
-        })
-    };
     if !assignments.is_empty() {
         let Some(assignments) = resolved_fillet_assignments(&assignments, parameters) else {
-            return native();
+            return native_scope_definition(scope, parameters);
         };
         let groups = assignments
             .into_iter()
@@ -2231,9 +2059,10 @@ fn project_fillet_arm(
             })
             .collect::<Option<Vec<_>>>()
             .and_then(|groups| groups.try_into().ok());
-        return groups.map_or_else(native, |groups| {
-            FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
-        });
+        return groups.map_or_else(
+            || native_scope_definition(scope, parameters),
+            |groups| Ok(FeatureDefinition::Operation(FeatureOperation::Fillet { groups })),
+        );
     }
     if let Some(definition) = project_variable_fillet(
         scope,
@@ -2244,7 +2073,7 @@ fn project_fillet_arm(
         inputs.edge_treatment_vertex_operands,
         inputs.histories,
     ) {
-        return definition;
+        return Ok(definition);
     }
     if parameters.is_empty() {
         if let Some(definition) = project_fixed_fillet_with_corners(
@@ -2255,25 +2084,25 @@ fn project_fillet_arm(
             inputs.edge_treatment_vertex_operands,
             inputs.histories,
         ) {
-            return definition;
+            return Ok(definition);
         }
     }
     let [(_, parameter)] = parameters else {
-        return native();
+        return native_scope_definition(scope, parameters);
     };
     let Some(radius) = (parameter.source_kind() == "Radius")
         .then(|| design_positive_length(parameter))
         .flatten()
     else {
-        return native();
+        return native_scope_definition(scope, parameters);
     };
-    FeatureDefinition::Operation(FeatureOperation::Fillet {
+    Ok(FeatureDefinition::Operation(FeatureOperation::Fillet {
         groups: cadmpeg_ir::features::NonEmptyMembers::one(FilletGroup {
             edges: EdgeSelection::Native(scope.id.clone()),
             radius: RadiusSpec::Constant { radius },
             tangency_weight: None,
         }),
-    })
+    }))
 }
 
 struct ResolvedFilletAssignment<'a> {

@@ -1524,7 +1524,11 @@ fn design_intent_losses_accept_output_free_local_body_operations() {
         name: Some("Pattern Geometry".into()),
         suppressed: Some(false),
         dependencies: Default::default(),
-        source_properties: cadmpeg_core::text::named_entries(source_properties),
+        source_properties: cadmpeg_core::text::named_entries(
+            "test:test:feature#local-pattern",
+            source_properties,
+        )
+        .expect("the fixture states named properties"),
         source_tag: Some("Pattern Geometry".into()),
         source_text: None,
         source_content: Default::default(),
@@ -1663,7 +1667,11 @@ fn output_free_local_body_construction_requires_unbound_primary_body() {
         name: Some("Pattern Geometry".into()),
         suppressed: Some(false),
         dependencies: Default::default(),
-        source_properties: cadmpeg_core::text::named_entries(source_properties),
+        source_properties: cadmpeg_core::text::named_entries(
+            "test:test:feature#local-pattern",
+            source_properties,
+        )
+        .expect("the fixture states named properties"),
         source_tag: Some("Pattern Geometry".into()),
         source_text: None,
         source_content: Default::default(),

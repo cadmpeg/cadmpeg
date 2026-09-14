@@ -145,7 +145,7 @@ pub(crate) fn transfer_neutral(
             runtime_type: record.kind.as_str().to_owned(),
             order: order as u32,
             text: record.text.clone(),
-            references: cadmpeg_core::text::named_entries(references),
+            references: cadmpeg_core::text::named_entries(&record.object, references)?,
             value: None,
             format: match schema.text {
                 Some(carrier) if carrier.has_format_spec => {
@@ -159,7 +159,10 @@ pub(crate) fn transfer_neutral(
                         .ok_or_else(|| CodecError::malformed("annotation position must be finite"))
                 })
                 .transpose()?,
-            parameters: cadmpeg_core::text::named_entries(record.parameters.clone()),
+            parameters: cadmpeg_core::text::named_entries(
+                &record.object,
+                record.parameters.clone(),
+            )?,
             assets: record
                 .side_entries
                 .iter()

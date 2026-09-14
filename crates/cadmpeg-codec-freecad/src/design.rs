@@ -501,7 +501,7 @@ pub(crate) fn transfer(
             name: Some(object.name.clone()),
             suppressed: bool_property(&owned, "Suppressed"),
             dependencies: (dependencies).into_iter().collect(),
-            source_properties: feature_state(&owned),
+            source_properties: feature_state(&object.id, &owned)?,
             source_tag: Some(object.type_name.clone()),
             source_text: None,
             source_content: FeatureContent::default(),
@@ -1974,7 +1974,10 @@ fn rotate_vector(quaternion: [f64; 4], vector: [f64; 3]) -> Vector3 {
     )
 }
 
-fn feature_state(properties: &[&PropertyRecord]) -> BTreeMap<NonBlankString, String> {
+fn feature_state(
+    object: &str,
+    properties: &[&PropertyRecord],
+) -> Result<BTreeMap<NonBlankString, String>, CodecError> {
     const STATE_NAMES: &[&str] = &[
         "Active",
         "Frozen",
@@ -1999,7 +2002,7 @@ fn feature_state(properties: &[&PropertyRecord]) -> BTreeMap<NonBlankString, Str
             (property.name.clone(), value)
         })
         .collect::<Vec<_>>();
-    cadmpeg_core::text::named_entries(named)
+    Ok(cadmpeg_core::text::named_entries(object, named)?)
 }
 
 fn bool_property(properties: &[&PropertyRecord], name: &str) -> Option<bool> {

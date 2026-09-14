@@ -98,6 +98,15 @@ impl From<TargetRefusal> for CodecError {
     }
 }
 
+/// A source property whose key names nothing is an inconsistency inside the
+/// bytes that are present, so a reader that refuses the whole property set
+/// reports it as a malformed container.
+impl From<crate::text::BlankKey> for CodecError {
+    fn from(blank: crate::text::BlankKey) -> Self {
+        Self::malformed(blank)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;

@@ -53,7 +53,7 @@ pub(crate) fn classify_document(
     scope: ReportScope,
     attributes: BTreeMap<String, String>,
     body: &mut DecodeBody,
-) -> SourceMeta {
+) -> Result<SourceMeta, cadmpeg_core::CodecError> {
     let dialects = match scope {
         ReportScope::Standalone => {
             let (dialects, mut losses) = crate::dialect::classify_layers(scan);
@@ -63,7 +63,10 @@ pub(crate) fn classify_document(
         }
         ReportScope::ArchiveMember(dialects) => dialects,
     };
-    SourceMeta::classified(dialects, cadmpeg_core::text::named_entries(attributes))
+    Ok(SourceMeta::classified(
+        dialects,
+        cadmpeg_core::text::named_entries("the f3d document", attributes)?,
+    ))
 }
 
 /// Build a single-document inspection summary with the same dialect facts that
@@ -101,7 +104,8 @@ mod tests {
             Vec::new(),
         );
         let source =
-            classify_document(&scan, ReportScope::Standalone, BTreeMap::new(), &mut report);
+            classify_document(&scan, ReportScope::Standalone, BTreeMap::new(), &mut report)
+                .unwrap();
         assert!(source.dialects().is_some());
         assert!(report
             .losses

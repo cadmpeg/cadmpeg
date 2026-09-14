@@ -746,6 +746,27 @@ impl<'a> DecodeContext<'a> {
         self.transition(source_order, GeometryOutcome::NativeRetained(code))
     }
 
+    /// Keys one source record's open property set, charging every key that
+    /// names nothing.
+    ///
+    /// A blank key cannot be asked for, so the property it carries cannot
+    /// reach the document. The record is still transferred; the charge names
+    /// the record and the position of the property that did not.
+    fn named_record_entries(
+        &mut self,
+        record: &str,
+        entries: impl IntoIterator<Item = (String, String)>,
+    ) -> BTreeMap<cadmpeg_core::text::NonBlankString, String> {
+        let (kept, blank) = cadmpeg_core::text::named_entries_with_blank(record, entries);
+        for key in blank {
+            self.report.typed_losses.push(
+                RhinoLossCode::ObjectAttributesDegraded
+                    .note(format_args!("{key}; the property is not transferred")),
+            );
+        }
+        kept
+    }
+
     /// Resolves one foreign object UUID to the single record that owns it.
     fn resolve_object(&self, id: crate::wire::Uuid) -> ObjectReference {
         match self
@@ -1247,6 +1268,7 @@ impl<'a> DecodeContext<'a> {
                 ),
             );
         }
+        let parameters = self.named_record_entries(feature_id.as_str(), parameters);
         let feature = Feature {
             id: feature_id.clone(),
             ordinal: u64::try_from(hatch.source_range.start).expect("source offset fits u64"),
@@ -1261,7 +1283,7 @@ impl<'a> DecodeContext<'a> {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "hatch".into(),
-                    parameters: cadmpeg_core::text::named_entries(parameters),
+                    parameters,
                 }),
             ),
             native_ref: Some(self.unknowns[source_order].id().to_string()),
@@ -1336,6 +1358,7 @@ impl<'a> DecodeContext<'a> {
                 .map(|record| (format!("segment_{index}_object"), record))
             })
             .collect::<BTreeMap<_, _>>();
+        let parameters = self.named_record_entries(id.as_str(), parameters);
         let name = (!identity.name.is_empty()).then(|| identity.name.clone());
         let feature = Feature {
             id: id.clone(),
@@ -1354,7 +1377,7 @@ impl<'a> DecodeContext<'a> {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "polyedge_reference".into(),
-                    parameters: cadmpeg_core::text::named_entries(parameters),
+                    parameters,
                 }),
             ),
             native_ref: Some(Self::mint_unknown_id(source_order).to_string()),
@@ -1550,13 +1573,14 @@ impl<'a> DecodeContext<'a> {
                     .join(","),
             );
         }
+        let properties = self.named_record_entries(feature_id.as_str(), properties);
         let feature = Feature {
             id: feature_id.clone(),
             ordinal: u64::try_from(cage.source_range.start).expect("source offset fits u64"),
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
             suppressed: Some(false),
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-            source_properties: cadmpeg_core::text::named_entries(properties),
+            source_properties: properties,
             source_tag: Some("RhinoNurbsCage".to_string()),
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
@@ -1639,13 +1663,20 @@ impl<'a> DecodeContext<'a> {
             }
         };
         let key = self.object_key(identity, source_order);
-        let feature = crate::morph::project(
+        let feature = match crate::morph::project(
             &morph,
             &key,
             (!identity.name.is_empty()).then(|| identity.name.clone()),
             self.unknowns[source_order].id().to_string(),
             |id| self.resolve_object_record(source_order, "morph captive", id),
-        );
+        ) {
+            Ok(feature) => feature,
+            Err(error) => {
+                self.scan_warning(source_order, &format!("morph control failed: {error}"));
+                self.mark_failed(source_order);
+                return;
+            }
+        };
         let feature_id = feature.id.to_string();
         match self
             .validate_candidate(|candidate, _annotations| candidate.model.features.push(feature))
@@ -2512,11 +2543,19 @@ impl<'a> DecodeContext<'a> {
         // residual admission and its loss cannot be reported apart.
         losses.extend(crate::dialect::admission_loss(&primary));
         let attributes = full_source_attributes(self.scan);
+        let (attributes, blank) =
+            cadmpeg_core::text::named_entries_with_blank("the rhino document", attributes);
+        for key in blank {
+            losses.push(
+                RhinoLossCode::ObjectAttributesDegraded
+                    .note(format_args!("{key}; the attribute is not transferred")),
+            );
+        }
         self.ir.source = Some(crate::container::source_meta(
             primary,
             crate::container::SourceMetaDetail::Full {
                 scan: self.scan,
-                attributes: cadmpeg_core::text::named_entries(attributes),
+                attributes,
             },
         ));
         Decoded {

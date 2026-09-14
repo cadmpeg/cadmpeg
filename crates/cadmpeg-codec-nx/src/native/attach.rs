@@ -3655,7 +3655,7 @@ fn attach_feature_operations(
                             .outputs
                             .contains_key(label.id.as_str()),
                     },
-                    cadmpeg_core::text::named_entries(native_parameters),
+                    cadmpeg_core::text::named_entries(&label.id, native_parameters)?,
                 )?
             };
             if let FeatureDefinition::Operation(FeatureOperation::Block { op, .. }) =
@@ -3723,7 +3723,7 @@ fn attach_feature_operations(
             name: Some(label.value.clone()),
             suppressed: None,
             dependencies: (dependencies).into_iter().collect(),
-            source_properties: cadmpeg_core::text::named_entries(source_properties),
+            source_properties: cadmpeg_core::text::named_entries(&label.id, source_properties)?,
             source_tag: Some(label.value.clone()),
             source_text: None,
             source_content,
@@ -9139,7 +9139,7 @@ pub(crate) fn attach_expression_parameters(
                 display: None,
                 value,
                 dependencies: dependencies.into_iter().collect(),
-                properties: cadmpeg_core::text::named_entries(properties),
+                properties: cadmpeg_core::text::named_entries(&expression.id, properties)?,
                 pmi: None,
                 native_ref: Some(expression.id.clone()),
             });

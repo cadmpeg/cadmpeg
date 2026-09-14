@@ -26,12 +26,35 @@ use crate::container::ContainerScan;
 use crate::records::FeatureSource;
 use crate::records::{Configuration, Feature, FeatureContent, FeatureHistory, HistoryContent};
 use cadmpeg_ir::annotations::Annotations;
+use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::Exactness;
 use std::collections::{BTreeMap, HashMap};
+
+/// Keys one source element's attributes, charging every key that names
+/// nothing.
+///
+/// The element is still transferred. A key holding no non-whitespace character
+/// cannot be asked for, so the charge names the element and the position of
+/// the attribute that did not reach the record.
+fn keyed_attributes(
+    losses: &mut Vec<LossNote>,
+    record: &str,
+    entries: impl IntoIterator<Item = (String, String)>,
+) -> BTreeMap<cadmpeg_core::text::NonBlankString, String> {
+    let (kept, blank) = cadmpeg_core::text::named_entries_with_blank(record, entries);
+    for key in blank {
+        losses.push(
+            crate::loss::SldprtLossCode::SourcePropertyKeyBlank
+                .note(format!("{key}; the property is not transferred")),
+        );
+    }
+    kept
+}
 
 pub(crate) fn histories(
     scan: &ContainerScan,
     annotations: &mut Annotations,
+    losses: &mut Vec<LossNote>,
 ) -> Vec<FeatureHistory> {
     scan.sections()
         .filter_map(|section| {
@@ -58,6 +81,17 @@ pub(crate) fn histories(
                         "Configuration",
                         Exactness::ByteExact,
                     );
+                    let properties = keyed_attributes(
+                        losses,
+                        &id,
+                        node.attributes()
+                            .filter(|attribute| {
+                                !matches!(attribute.name(), "Name" | "Material" | "SourceIndex")
+                            })
+                            .map(|attribute| {
+                                (attribute.name().to_string(), attribute.value().to_string())
+                            }),
+                    );
                     Configuration {
                         id,
                         parent: parent.clone(),
@@ -70,15 +104,7 @@ pub(crate) fn histories(
                             .attribute("Material")
                             .filter(|value| !value.is_empty())
                             .map(str::to_string),
-                        properties: cadmpeg_core::text::named_entries(
-                            node.attributes()
-                                .filter(|attribute| {
-                                    !matches!(attribute.name(), "Name" | "Material" | "SourceIndex")
-                                })
-                                .map(|attribute| {
-                                    (attribute.name().to_string(), attribute.value().to_string())
-                                }),
-                        ),
+                        properties,
                     }
                 })
                 .collect();
@@ -114,6 +140,17 @@ pub(crate) fn histories(
                         node.range().start as u64,
                         node.tag_name().name(),
                         Exactness::ByteExact,
+                    );
+                    let properties = keyed_attributes(
+                        losses,
+                        &id,
+                        node.attributes()
+                            .filter(|attribute| {
+                                !matches!(attribute.name(), "id" | "Name" | "Type" | "Suppressed")
+                            })
+                            .map(|attribute| {
+                                (attribute.name().to_string(), attribute.value().to_string())
+                            }),
                     );
                     Feature {
                         id,
@@ -172,22 +209,11 @@ pub(crate) fn histories(
                                         )
                                     })
                                     .collect::<Vec<_>>();
-                                let properties = cadmpeg_core::text::named_entries(properties);
+                                let properties = keyed_attributes(losses, name, properties);
                                 (!properties.is_empty()).then(|| (name.into(), properties))
                             })
                             .collect(),
-                        properties: cadmpeg_core::text::named_entries(
-                            node.attributes()
-                                .filter(|attribute| {
-                                    !matches!(
-                                        attribute.name(),
-                                        "id" | "Name" | "Type" | "Suppressed"
-                                    )
-                                })
-                                .map(|attribute| {
-                                    (attribute.name().to_string(), attribute.value().to_string())
-                                }),
-                        ),
+                        properties,
                         text: (!node.children().any(|child| child.is_element()))
                             .then(|| node.text().map(str::trim).unwrap_or_default().to_string())
                             .filter(|value| !value.is_empty()),
@@ -258,19 +284,20 @@ pub(crate) fn histories(
                 "Keywords",
                 Exactness::ByteExact,
             );
+            let properties = keyed_attributes(
+                losses,
+                &id,
+                root.attributes()
+                    .filter(|attribute| attribute.name() != "Name")
+                    .map(|attribute| (attribute.name().to_string(), attribute.value().to_string())),
+            );
             Some(FeatureHistory {
                 id,
                 part_name: root
                     .attribute("Name")
                     .filter(|value| !value.is_empty())
                     .map(str::to_string),
-                properties: cadmpeg_core::text::named_entries(
-                    root.attributes()
-                        .filter(|attribute| attribute.name() != "Name")
-                        .map(|attribute| {
-                            (attribute.name().to_string(), attribute.value().to_string())
-                        }),
-                ),
+                properties,
                 content,
                 configurations,
                 features,

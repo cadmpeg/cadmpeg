@@ -579,7 +579,10 @@ fn transfer_neutral_presentation(
                                 PresentationStateKind::Native(state.kind.clone())
                             },
                             order: order as u32,
-                            attributes: cadmpeg_core::text::named_entries(state.attributes.clone()),
+                            attributes: cadmpeg_core::text::named_entries(
+                                format_args!("the gui {} state", state.kind),
+                                state.attributes.clone(),
+                            )?,
                             assets: state
                                 .side_entries
                                 .iter()
@@ -651,13 +654,16 @@ fn transfer_neutral_presentation(
                 .map(str::to_owned),
             line_width,
             point_size,
-            properties: cadmpeg_core::text::named_entries(owned.iter().map(|property| {
-                (
-                    property.name.clone(),
-                    gui_property_value(property)
-                        .map_or_else(|| property.xml.text().to_owned(), str::to_owned),
-                )
-            })),
+            properties: cadmpeg_core::text::named_entries(
+                &provider.id,
+                owned.iter().map(|property| {
+                    (
+                        property.name.clone(),
+                        gui_property_value(property)
+                            .map_or_else(|| property.xml.text().to_owned(), str::to_owned),
+                    )
+                }),
+            )?,
             native_ref: Some(provider.id.clone()),
         });
     }
@@ -699,7 +705,10 @@ fn camera_state_value(state: &GuiStateRecord) -> Result<CameraState, CodecError>
     Ok(CameraState {
         position,
         orientation,
-        properties: cadmpeg_core::text::named_entries(state.attributes.clone()),
+        properties: cadmpeg_core::text::named_entries(
+            format_args!("the gui {} state", state.kind),
+            state.attributes.clone(),
+        )?,
     })
 }
 

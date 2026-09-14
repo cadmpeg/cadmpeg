@@ -17,7 +17,7 @@ use cadmpeg_ir::document::SourceMeta;
 pub(in super::super) fn source_meta(
     scan: &ContainerScan,
     classification: &crate::dialect::DialectClassification,
-) -> (SourceMeta, cadmpeg_ir::Coverage) {
+) -> Result<(SourceMeta, cadmpeg_ir::Coverage), cadmpeg_core::CodecError> {
     let mut attributes = BTreeMap::new();
     let mut coverage = cadmpeg_ir::Coverage::default();
     attributes.insert(
@@ -937,13 +937,13 @@ pub(in super::super) fn source_meta(
     if let Some(value) = scan.framing.first_quilt_ptr {
         attributes.insert("first_quilt_ptr".to_string(), value.to_string());
     }
-    (
+    Ok((
         SourceMeta::classified(
             DialectLayers::of(classification.matched().clone()),
-            cadmpeg_core::text::named_entries(attributes),
+            cadmpeg_core::text::named_entries("the creo container", attributes)?,
         ),
         coverage,
-    )
+    ))
 }
 
 fn record_scalar_string_coverage<K>(
