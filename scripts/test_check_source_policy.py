@@ -84,6 +84,22 @@ assert not classify('#[cfg(all(any(test, feature = "x")))]')
             ["from_le_bytes", "from_be_bytes"],
         )
 
+    def test_strips_cfg_test_fn_whose_signature_holds_an_array_type(self) -> None:
+        text = (
+            "fn prod() { from_le_bytes(); }\n"
+            "#[cfg(test)]\n"
+            "fn helper(sizes: Option<[f64; 3]>) -> u8 {\n"
+            "    from_be_bytes();\n"
+            "    0\n"
+            "}\n"
+            "fn other() { from_le_bytes(); }\n"
+        )
+        stripped, _ = policy.production_source(text)
+        self.assertEqual(
+            policy.FROM_ENDIAN.findall(stripped),
+            ["from_le_bytes", "from_le_bytes"],
+        )
+
     def test_keeps_non_test_cfg(self) -> None:
         text = "#[cfg(feature = \"x\")]\nfn f() { from_le_bytes(); }\n"
         stripped, _ = policy.production_source(text)

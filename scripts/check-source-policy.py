@@ -261,6 +261,7 @@ def path_attr_target(attr: str) -> str | None:
 def skip_item(lines: list[str], start: int) -> int:
     saw_brace = False
     depth = 0
+    grouping = 0
     i = start
     while i < len(lines):
         for ch in lines[i]:
@@ -270,7 +271,13 @@ def skip_item(lines: list[str], start: int) -> int:
             elif ch == "}":
                 if saw_brace:
                     depth -= 1
-            elif ch == ";" and not saw_brace:
+            elif ch in "([":
+                grouping += 1
+            elif ch in ")]":
+                grouping -= 1
+            elif ch == ";" and not saw_brace and grouping <= 0:
+                # A `;` inside a parameter list or an array type, such as
+                # `Option<[f64; 3]>`, is not the end of the item.
                 return i + 1
         i += 1
         if saw_brace and depth <= 0:
