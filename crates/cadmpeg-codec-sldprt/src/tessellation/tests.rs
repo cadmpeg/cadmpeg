@@ -182,6 +182,30 @@ fn inconsistent_auxiliary_count_invalidates_the_table() {
 }
 
 #[test]
+fn a_strip_span_past_the_vertex_lane_refuses_the_recognised_table() {
+    // The descriptor is the record boundary: a table whose auxiliary channels
+    // agree with a four-vertex strip, over a three-vertex lane, is a table the
+    // codec recognizes and a lane error inside it, not a probe miss.
+    let mut payload = descriptor(4, 8, 1, &4_u32.to_le_bytes());
+    let positions = [0.0_f32, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0]
+        .into_iter()
+        .flat_map(f32::to_le_bytes)
+        .collect::<Vec<_>>();
+    payload.extend(descriptor(12, 100, 3, &positions));
+    payload.extend(descriptor(12, 100, 3, &[0; 36]));
+    payload.extend(descriptor(4, 8, 6, &[0; 24]));
+    payload.extend(descriptor(4, 8, 1, &6_u32.to_le_bytes()));
+    payload.extend(descriptor(1, 8, 6, &[0; 6]));
+    let error = parse_table(&payload, 0).expect_err("a recognised table refuses its lane error");
+    let text = error.to_string();
+    assert!(
+        text.contains("sldprt display-list table at byte 0")
+            && text.contains("strip span(s) do not cut the vertex lane"),
+        "{text}"
+    );
+}
+
+#[test]
 fn analytic_surface_residuals_measure_normal_distance() {
     let plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::PlaneSurface::try_new(
