@@ -958,7 +958,7 @@ pub(crate) fn parse_attributes(
         let object_id = uuid_reader(&mut reader)?;
         let layer_index = reader.i32()?;
         let material_index = reader.i32()?;
-        let color = reader.take(4)?.try_into().expect("color width checked");
+        let color = reader.array::<4>()?;
         let obsolete_line_style = reader.i16()?;
         let obsolete_line_style_index = reader.i16()?;
         let obsolete_thickness = reader.f64()?;
@@ -1002,7 +1002,7 @@ pub(crate) fn parse_attributes(
                 (
                     reader.i32()?,
                     reader.u8()?,
-                    reader.take(4)?.try_into().expect("color width checked"),
+                    reader.array::<4>()?,
                     reader.u8()?,
                     finite_attribute(reader.f64()?, reader.position(), "plot weight")?,
                 )
@@ -1203,10 +1203,10 @@ pub(crate) fn parse_attributes(
                 )?);
             }
             AttributeItem::Color => {
-                attributes.color = reader.take(4)?.try_into().expect("color width checked");
+                attributes.color = reader.array::<4>()?;
             }
             AttributeItem::PlotColor => {
-                attributes.plot_color = reader.take(4)?.try_into().expect("color width checked");
+                attributes.plot_color = reader.array::<4>()?;
             }
             AttributeItem::PlotWeight => {
                 attributes.plot_weight =
@@ -1275,7 +1275,7 @@ pub(crate) fn parse_attributes(
             }
             AttributeItem::HatchBackground => {
                 attributes.hatch_background =
-                    reader.take(4)?.try_into().expect("color width checked");
+                    reader.array::<4>()?;
             }
             AttributeItem::HatchBoundaryVisible => {
                 attributes.hatch_boundary_visible =
@@ -1359,7 +1359,7 @@ pub(crate) fn read_uuid_list(
 
 fn uuid_reader(reader: &mut crate::chunks::BoundedReader<'_>) -> Result<Uuid, FramingError> {
     Ok(Uuid::from_wire(
-        reader.take(16)?.try_into().expect("UUID width checked"),
+        reader.array::<16>()?,
     ))
 }
 

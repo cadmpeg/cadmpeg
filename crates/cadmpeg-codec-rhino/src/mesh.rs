@@ -1515,9 +1515,7 @@ fn interval(reader: &mut BoundedReader<'_>) -> Result<(), FramingError> {
 }
 
 fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
-    Ok(Uuid::from_wire(
-        reader.take(16)?.try_into().expect("UUID width"),
-    ))
+    Ok(Uuid::from_wire(reader.array::<16>()?))
 }
 
 /// Reads a mesh element count bounded by the codec-local `cap`.
