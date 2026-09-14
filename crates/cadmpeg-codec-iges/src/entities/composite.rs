@@ -854,6 +854,12 @@ pub(super) enum CompositeCurveError {
         /// The refused scale.
         scale: f64,
     },
+    /// The joined carrier states no point at one of its own endpoints.
+    #[error("the joined carrier states no point at the endpoint parameter {t}")]
+    EndpointEvaluation {
+        /// The endpoint parameter the carrier does not evaluate at.
+        t: f64,
+    },
 }
 
 fn elevate_nurbs_to_degree(
@@ -1186,25 +1192,21 @@ fn concatenate_nurbs<T>(
     )?;
     let nurbs_points = nurbs.control_points();
     let nurbs_weights = nurbs.weights();
-    if cadmpeg_ir::eval::nurbs_curve_point(
-        degree,
-        nurbs.knots(),
-        &nurbs_points,
-        nurbs_weights.as_deref(),
-        0.0,
-    )
-    .is_none()
-        || cadmpeg_ir::eval::nurbs_curve_point(
+    // The joined carrier evaluates at both of its own endpoints: reading the
+    // two points is the statement, and each names its own parameter when the
+    // carrier does not answer.
+    let endpoint = |t: f64| -> Result<Point3, CompositeCurveError> {
+        cadmpeg_ir::eval::nurbs_curve_point(
             degree,
             nurbs.knots(),
             &nurbs_points,
             nurbs_weights.as_deref(),
-            cursor,
+            t,
         )
-        .is_none()
-    {
-        return Ok(None);
-    }
+        .ok_or(CompositeCurveError::EndpointEvaluation { t })
+    };
+    endpoint(0.0)?;
+    endpoint(cursor)?;
     Ok(Some(ConcatenatedNurbs { nurbs, segments }))
 }
 
