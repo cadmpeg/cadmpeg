@@ -3,7 +3,7 @@
 
 use crate::kernel_header::RefWidth;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralCurveDefinition};
+use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface, PcurveNurbs, ProceduralCurveDefinition};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::transform::Transform;
@@ -63,7 +63,7 @@ pub enum InlinePcurveEdit<'a> {
     /// A `pcurve` wrapper, which carries the native wrapper metadata.
     PcurveWrapper {
         /// Parameter-curve geometry in the carrier's native chart.
-        native_geometry: &'a PcurveGeometry,
+        native_geometry: &'a PcurveNurbs,
         /// Optional native periodic flag.
         periodic: Option<bool>,
         /// Optional wrapper reversal flag.
@@ -78,7 +78,7 @@ pub enum InlinePcurveEdit<'a> {
     /// An `intcurve` UV cache, which has no wrapper fields.
     IntcurveCache {
         /// Parameter-curve geometry in the carrier's native chart.
-        native_geometry: &'a PcurveGeometry,
+        native_geometry: &'a PcurveNurbs,
         /// Optional native periodic flag.
         periodic: Option<bool>,
         /// Optional solved-cache fit tolerance.
@@ -87,7 +87,7 @@ pub enum InlinePcurveEdit<'a> {
 }
 
 impl<'a> InlinePcurveEdit<'a> {
-    fn native_geometry(&self) -> &'a PcurveGeometry {
+    fn native_geometry(&self) -> &'a PcurveNurbs {
         match self {
             Self::PcurveWrapper {
                 native_geometry, ..
@@ -1749,13 +1749,7 @@ fn patch_nurbs_pcurve_record(
         } => (*wrapper_reversed, *native_tail_flags, *parameter_range),
         InlinePcurveEdit::IntcurveCache { .. } => (None, None, None),
     };
-    let geometry = edit.native_geometry();
-    let PcurveGeometry::Nurbs { nurbs } = geometry else {
-        return Err(CodecError::NotImplemented(format!(
-            "pcurve record {} is not a writable NURBS cache",
-            record.index
-        )));
-    };
+    let nurbs = edit.native_geometry();
     let carrier = PcurvePatchCarrier::admit(bytes, record, stream_width, edit)?;
     let scope = carrier.scope();
     let layout = crate::nurbs::pcurve::final_pcurve_patch_layout(
@@ -2188,7 +2182,7 @@ mod tests {
 
     #[test]
     fn intcurve_uv_cache_admits_only_the_intcurve_cache_edit() {
-        use cadmpeg_ir::geometry::{PcurveGeometry, PcurveNurbs};
+        use cadmpeg_ir::geometry::PcurveNurbs;
         use cadmpeg_ir::math::Point2;
         let mut original = vec![0x0d, 8];
         original.extend_from_slice(b"intcurve");
@@ -2209,16 +2203,14 @@ mod tests {
         }
         original.push(0x11);
         let records = crate::sab::frame(&original, 0, original.len(), RefWidth::Eight).unwrap();
-        let geometry = PcurveGeometry::Nurbs {
-            nurbs: PcurveNurbs::from_lanes(
-                1,
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
-                None,
-                false,
-            )
-            .unwrap(),
-        };
+        let geometry = PcurveNurbs::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
+            None,
+            false,
+        )
+        .unwrap();
         let base = super::InlinePcurveEdit::IntcurveCache {
             native_geometry: &geometry,
             periodic: None,

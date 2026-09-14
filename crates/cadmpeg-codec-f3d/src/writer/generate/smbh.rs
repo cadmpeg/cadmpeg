@@ -8,7 +8,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use crate::native::F3dNative;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, PcurveGeometry, PcurveMetadata, SolvedCurveGeometry, SurfaceGeometry,
+};
 use cadmpeg_ir::ids::{ShellId, VertexId};
 use cadmpeg_ir::topology::Sense;
 
@@ -26,7 +28,7 @@ use super::native_bytes::{
 use super::native_geometry::{
     native_cacheless_procedural_curve, native_cacheless_procedural_surface, native_nurbs_curve,
     native_nurbs_surface, native_pcurve, native_procedural_curve, native_procedural_surface,
-    native_ref_pcurve_companion, native_smbh_header, pcurve_support_geometry, pcurve_uses_ref_form,
+    native_ref_pcurve_companion, native_smbh_header, pcurve_support_geometry, NativePcurveForm,
 };
 use super::preconditions::{validate_source_less_body_kinds, validate_source_less_wire_ownership};
 use super::records::{native_tolerant_coedge_extension, tolerant_coedge_range};
@@ -56,8 +58,15 @@ pub(crate) fn encode_smbh(
     encode_face_topology_smbh(target, native, attributes, &topology)
 }
 
-#[derive(Debug, Clone, Copy)]
-struct NativeRecordPlan {
+#[derive(Debug)]
+struct PlannedPcurve<'a> {
+    geometry: &'a PcurveGeometry,
+    support: &'a SurfaceGeometry,
+    form: NativePcurveForm<'a>,
+}
+
+#[derive(Debug)]
+struct NativeRecordPlan<'a> {
     body: i64,
     region: i64,
     shell: i64,
@@ -74,10 +83,11 @@ struct NativeRecordPlan {
     point: i64,
     transform: i64,
     attribute: i64,
+    pcurves: Vec<PlannedPcurve<'a>>,
 }
 
-impl NativeRecordPlan {
-    fn for_model(model: &cadmpeg_ir::document::Model) -> Result<Self, CodecError> {
+impl<'a> NativeRecordPlan<'a> {
+    fn for_model(model: &'a cadmpeg_ir::document::Model) -> Result<Self, CodecError> {
         let body_start = 1;
         let region_start = native_record_index(body_start, model.bodies.len())?;
         let shell_start = native_record_index(region_start, model.regions.len())?;
@@ -88,14 +98,39 @@ impl NativeRecordPlan {
         let surface_start = native_record_index(loop_start, model.loops.len())?;
         let curve_start = native_record_index(surface_start, model.surfaces.len())?;
         let pcurve_start = native_record_index(curve_start, model.curves.len())?;
-        let ref_pcurve_count = model
-            .pcurves
-            .iter()
-            .map(pcurve_uses_ref_form)
-            .collect::<Result<Vec<_>, _>>()?
-            .into_iter()
-            .filter(|uses_ref_form| *uses_ref_form)
-            .count();
+        let ref_pcurve_start = native_record_index(pcurve_start, model.pcurves.len())?;
+        let mut ref_pcurve_count = 0usize;
+        let mut pcurves = Vec::new();
+        for pcurve in &model.pcurves {
+            let form = match &pcurve.metadata {
+                PcurveMetadata::AsmInline { form } => NativePcurveForm::Inline(form),
+                PcurveMetadata::General { form } => {
+                    if form.wrapper_reversed.is_some() || form.fit_tolerance().is_some() {
+                        return Err(CodecError::malformed(format_args!(
+                            "pcurve {} has non-ASM wrapper or tolerance metadata",
+                            pcurve.id
+                        )));
+                    }
+                    let range = form.parameter_range().ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "ref-form pcurve {} has no parameter range",
+                            pcurve.id
+                        ))
+                    })?;
+                    let companion_ref = native_record_index(ref_pcurve_start, ref_pcurve_count)?;
+                    ref_pcurve_count += 1;
+                    NativePcurveForm::Reference {
+                        range,
+                        companion_ref,
+                    }
+                }
+            };
+            pcurves.push(PlannedPcurve {
+                geometry: &pcurve.geometry,
+                support: pcurve_support_geometry(model, &pcurve.id)?,
+                form,
+            });
+        }
         let pcurve_record_count = model
             .pcurves
             .len()
@@ -135,6 +170,7 @@ impl NativeRecordPlan {
             point: point_start,
             transform: transform_start,
             attribute: attribute_start,
+            pcurves,
         })
     }
 }
@@ -669,6 +705,7 @@ fn encode_face_topology_smbh(
         point: point_start,
         transform: transform_start,
         attribute: attribute_start,
+        pcurves,
     } = plan;
 
     let mut records = Vec::new();
@@ -1166,25 +1203,15 @@ fn encode_face_topology_smbh(
 
     encode_source_less_curves(&mut records, target)?;
 
-    let ref_pcurve_start = native_record_index(pcurve_start, model.pcurves.len())?;
-    let mut ref_pcurve_ordinal = 0usize;
-    for pcurve in &model.pcurves {
-        let support = pcurve_support_geometry(model, &pcurve.id)?;
-        let companion_ref = pcurve_uses_ref_form(pcurve)?
-            .then(|| native_record_index(ref_pcurve_start, ref_pcurve_ordinal))
-            .transpose()?;
-        native_pcurve(&mut records, pcurve, companion_ref, support)?;
-        ref_pcurve_ordinal += usize::from(companion_ref.is_some());
+    for pcurve in &pcurves {
+        native_pcurve(&mut records, pcurve.geometry, &pcurve.form, pcurve.support)?;
         records.push(0x11);
     }
-    for pcurve in model
-        .pcurves
-        .iter()
-        .filter(|pcurve| pcurve_uses_ref_form(pcurve).is_ok_and(|value| value))
-    {
-        let support = pcurve_support_geometry(model, &pcurve.id)?;
-        native_ref_pcurve_companion(&mut records, pcurve, support)?;
-        records.push(0x11);
+    for pcurve in &pcurves {
+        if let NativePcurveForm::Reference { range, .. } = pcurve.form {
+            native_ref_pcurve_companion(&mut records, pcurve.geometry, range, pcurve.support)?;
+            records.push(0x11);
+        }
     }
 
     for (coedge_ordinal, coedge) in model.coedges.iter().enumerate() {
