@@ -1042,3 +1042,57 @@ fn branched_line_graph_with_a_shared_corner_projects_bounded_faces() {
         ]
     );
 }
+
+#[test]
+fn an_arc_shorter_than_twice_the_tolerance_has_no_strict_interior() {
+    use std::f64::consts::{FRAC_PI_2, PI, TAU};
+
+    let tolerance = 0.1;
+
+    // A unit quarter arc is much longer than twice the tolerance, so its
+    // midpoint lies strictly inside it and both endpoints do not.
+    assert!(angle_strictly_inside_arc(
+        FRAC_PI_2 / 2.0,
+        0.0,
+        FRAC_PI_2,
+        1.0,
+        tolerance
+    ));
+    assert!(!angle_strictly_inside_arc(0.0, 0.0, FRAC_PI_2, 1.0, tolerance));
+    assert!(!angle_strictly_inside_arc(
+        FRAC_PI_2,
+        0.0,
+        FRAC_PI_2,
+        1.0,
+        tolerance
+    ));
+
+    // Exactly twice the tolerance: the interval closes and its own midpoint is
+    // outside. The boundary answers false; it does not answer with a capped
+    // fraction of the span.
+    let end = 2.0 * tolerance;
+    assert!(!angle_strictly_inside_arc(
+        end / 2.0,
+        0.0,
+        end,
+        1.0,
+        tolerance
+    ));
+    // A hair longer, and the midpoint is strictly inside again.
+    let end = 2.0 * tolerance * (1.0 + 1e-9);
+    assert!(angle_strictly_inside_arc(
+        end / 2.0,
+        0.0,
+        end,
+        1.0,
+        tolerance
+    ));
+
+    // A tiny radius shortens the arc the same way a tiny angular span does.
+    assert!(!angle_strictly_inside_arc(PI, 0.0, TAU, 1e-9, tolerance));
+
+    // A zero tolerance leaves every interior angle strictly inside, and the
+    // endpoints outside, with no division by a capped span.
+    assert!(angle_strictly_inside_arc(FRAC_PI_2, 0.0, PI, 1.0, 0.0));
+    assert!(!angle_strictly_inside_arc(0.0, 0.0, PI, 1.0, 0.0));
+}

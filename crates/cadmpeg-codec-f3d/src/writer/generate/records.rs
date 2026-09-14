@@ -791,6 +791,13 @@ fn encode_sketch_text(out: &mut Vec<u8>, text: &SketchText) -> Result<(), CodecE
     Ok(())
 }
 
+/// Least sketch-relation record the Design `BulkStream` writer emits. A
+/// relation record ends at its trailing zero byte, and the reader requires
+/// every byte from there to the next indexed-record header to be zero, so the
+/// filler carries no field. It is a fixed width of the writer's own and bounds
+/// no value the IR states.
+const SKETCH_RELATION_RECORD_FILLED_LEN: usize = 101;
+
 fn encode_sketch_relation(
     out: &mut Vec<u8>,
     relation: &crate::records::SketchRelation,
@@ -798,8 +805,11 @@ fn encode_sketch_relation(
     let mut record = vec![0u8; 19];
     encode_sketch_record_header(&mut record, &relation.class_tag, relation.record_index);
     record.push(1);
-    let member_count = u32::try_from(relation.members().len())
-        .map_err(|_| CodecError::Malformed("sketch relation has too many members".into()))?;
+    let member_count = u32::try_from(relation.members().len()).map_err(|_| {
+        CodecError::InvalidInput(
+            "sketch relation members: the Design record states a u32 member count".into(),
+        )
+    })?;
     record.extend_from_slice(&member_count.to_le_bytes());
     for member in relation.members().iter() {
         write_reference(&mut record, member.reference.record_index());
@@ -825,14 +835,19 @@ fn encode_sketch_relation(
         write_reference(&mut record, *reference);
     }
     record.extend_from_slice(&relation.definition.state().to_le_bytes());
-    let return_count = u32::try_from(relation.return_members().len())
-        .map_err(|_| CodecError::Malformed("sketch relation has too many return members".into()))?;
+    let return_count = u32::try_from(relation.return_members().len()).map_err(|_| {
+        CodecError::InvalidInput(
+            "sketch relation return_members: the Design record states a u32 return count".into(),
+        )
+    })?;
     record.extend_from_slice(&return_count.to_le_bytes());
     for member in relation.return_members().iter() {
         write_reference(&mut record, member.reference.record_index());
     }
     record.push(0);
-    record.resize(record.len().max(101), 0);
+    if record.len() < SKETCH_RELATION_RECORD_FILLED_LEN {
+        record.resize(SKETCH_RELATION_RECORD_FILLED_LEN, 0);
+    }
     out.extend_from_slice(&record);
     Ok(())
 }
@@ -1003,4 +1018,90 @@ fn native_lp_utf16(out: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
         out.extend_from_slice(&unit.to_le_bytes());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    // Hand-built relations assert the written bytes; the drafts are valid by construction.
+    #![allow(clippy::unwrap_used)]
+    use super::{encode_sketch_relation, SKETCH_RELATION_RECORD_FILLED_LEN};
+    use crate::records::{
+        DesignClassTag, ReferenceRun, SketchRelation, SketchRelationDefinition, SketchRelationDraft,
+        SketchRelationMember, SketchRelationReturnMember,
+    };
+
+    fn relation(member_count: u32) -> SketchRelation {
+        let members = (1..=member_count).collect::<Vec<_>>();
+        SketchRelation::try_new(SketchRelationDraft {
+            id: "f3d:native:sketch-relation#filler".into(),
+            record_index: 10,
+            class_tag: DesignClassTag::try_from("300".to_owned()).unwrap(),
+            byte_offset: 0,
+            state_offset: 0,
+            owner_reference: 1,
+            owner_entity_id: None,
+            owner_reference_offset: 0,
+            auxiliary_references: ReferenceRun::located(Vec::new()),
+            rectangular_counted_reference_count: None,
+            members: members
+                .iter()
+                .copied()
+                .map(SketchRelationMember::from_index)
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+            definition: SketchRelationDefinition::new(1, None).unwrap(),
+            entity_genesis: None,
+            return_members: members
+                .iter()
+                .copied()
+                .map(SketchRelationReturnMember::from_index)
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+            raw_bytes: vec![0; 160],
+        })
+        .unwrap()
+    }
+
+    fn encoded(member_count: u32) -> Vec<u8> {
+        let mut out = Vec::new();
+        encode_sketch_relation(&mut out, &relation(member_count)).unwrap();
+        out
+    }
+
+    #[test]
+    fn the_relation_record_filler_is_a_writer_width_and_never_bounds_a_stated_count() {
+        // A short relation is filled to the writer's own width with the zero
+        // bytes the reader requires between the record's trailing zero and the
+        // next indexed-record header.
+        let short = encoded(1);
+        assert_eq!(short.len(), SKETCH_RELATION_RECORD_FILLED_LEN);
+
+        // Every byte the relation itself does not state is zero: take the same
+        // record one member longer and the shared prefix is identical up to
+        // the point the counts differ, with zeros beyond each content end.
+        let content_end = short
+            .iter()
+            .rposition(|byte| *byte != 0)
+            .expect("the record states nonzero bytes")
+            + 1;
+        assert!(content_end < SKETCH_RELATION_RECORD_FILLED_LEN);
+        assert!(short[content_end..].iter().all(|byte| *byte == 0));
+
+        // The stated member count reaches the bytes unfloored, and a relation
+        // whose own content passes the filler width is written whole: the
+        // width is a floor on the record, never a ceiling on a stated count.
+        assert_eq!(
+            u32::from_le_bytes(short[20..24].try_into().unwrap()),
+            1,
+            "the member count the relation states"
+        );
+        let long = encoded(6);
+        assert!(long.len() > SKETCH_RELATION_RECORD_FILLED_LEN);
+        assert_eq!(u32::from_le_bytes(long[20..24].try_into().unwrap()), 6);
+        let longer = encoded(7);
+        assert!(longer.len() > long.len());
+        assert_eq!(u32::from_le_bytes(longer[20..24].try_into().unwrap()), 7);
+    }
 }
