@@ -593,7 +593,8 @@ fn a_document_holding_a_non_finite_coordinate_has_no_canonical_json() {
 ///
 /// `suppressed` is the counter-case in the same record: its writing
 /// declaration states no `skip_serializing_if`, so `null` is that key's own
-/// spelling and the same document reads it back.
+/// spelling, the same document reads it back, and the key is required. Leaving
+/// it out is refused by name.
 #[test]
 fn a_stated_null_is_refused_on_every_feature_key_written_by_omission() {
     use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
@@ -629,4 +630,13 @@ fn a_stated_null_is_refused_on_every_feature_key_written_by_omission() {
     let json = serde_json::to_string(&value).unwrap();
     let read = CadIr::from_json(&json).unwrap();
     assert_eq!(read.model.features[0].suppressed, None);
+
+    let mut value = document;
+    value["model"]["features"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("suppressed");
+    let json = serde_json::to_string(&value).unwrap();
+    let error = CadIr::from_json(&json).unwrap_err().to_string();
+    assert!(error.contains("missing field `suppressed`"), "{error}");
 }

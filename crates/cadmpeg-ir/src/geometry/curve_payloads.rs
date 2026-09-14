@@ -504,7 +504,7 @@ struct SpatialOffsetCurveConstructionWire {
     /// Reference direction controlling the offset frame.
     reference_direction: Vector3,
     /// Whether the source classifies the result as self-intersecting.
-    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
+    #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
     self_intersect: Option<bool>,
 }
 
