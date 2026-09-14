@@ -11,7 +11,8 @@ use cadmpeg_ir::sketches::{
     SketchEntity, SketchEntityId, SketchGeometry, SketchId, SketchNativeOperand,
 };
 
-use crate::design_feature::{self, DesignFeatureTransfer};
+use crate::design_feature::DesignFeatureTransfer;
+use crate::ids::neutral_history_id;
 use crate::native::entity_record::CatiaEntityRecord;
 use crate::native::{
     CatiaConstraintRange, CatiaDesignObject, CatiaEntityEvaluation, CatiaNative, CatiaObjectRecord,
@@ -108,10 +109,11 @@ pub(crate) fn transfer_native_sketch_entities(
                 continue;
             }
 
-            let Ok(entity_id) = SketchEntityId::mint(design_feature::neutral_history_id(
+            let Ok(entity_id) = neutral_history_id(
                 &geometry_field.id,
-                "sketch-entity",
-            )) else {
+                &cadmpeg_ir::identity_component!("sketch-entity"),
+            )
+            .map(SketchEntityId::from) else {
                 continue;
             };
             if ir.model.sketch_entities.iter().any(|entity| {
@@ -335,10 +337,11 @@ pub(crate) fn transfer_native_sketch_constraints(
 
     let mut transferred = HashSet::new();
     for candidate in candidates {
-        let Ok(constraint_id) = SketchConstraintId::mint(design_feature::neutral_history_id(
+        let Ok(constraint_id) = neutral_history_id(
             &candidate.target_entity_record,
-            "sketch-constraint",
-        )) else {
+            &cadmpeg_ir::identity_component!("sketch-constraint"),
+        )
+        .map(SketchConstraintId::from) else {
             continue;
         };
         if ir.model.sketch_constraints.iter().any(|constraint| {
@@ -625,10 +628,11 @@ pub(crate) fn transfer_constraint_ranges(
             continue;
         };
 
-        let Ok(constraint_id) = SketchConstraintId::mint(design_feature::neutral_history_id(
+        let Ok(constraint_id) = neutral_history_id(
             &entity.id,
-            "sketch-constraint",
-        )) else {
+            &cadmpeg_ir::identity_component!("sketch-constraint"),
+        )
+        .map(SketchConstraintId::from) else {
             continue;
         };
         if ir.model.sketch_constraints.iter().any(|constraint| {

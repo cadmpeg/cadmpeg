@@ -1261,13 +1261,13 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
     );
     assert_eq!(
         ir.model.parameters[0].owner,
-        Some(
-            cadmpeg_ir::features::FeatureId::mint(crate::design_feature::neutral_history_id(
+        Some(cadmpeg_ir::features::FeatureId::from(
+            crate::ids::neutral_history_id(
                 &native.design_objects[0].id,
-                "feature"
-            ),)
+                &cadmpeg_ir::identity_component!("feature")
+            )
             .expect("identity grammar")
-        )
+        ))
     );
     assert_eq!(
         transfer.sketch_owner_records,
@@ -1439,13 +1439,13 @@ fn parameter_owner_follows_one_exact_child_design_object() {
     assert_eq!(ir.model.features.len(), 1);
     assert_eq!(
         ir.model.parameters[0].owner,
-        Some(
-            cadmpeg_ir::features::FeatureId::mint(crate::design_feature::neutral_history_id(
+        Some(cadmpeg_ir::features::FeatureId::from(
+            crate::ids::neutral_history_id(
                 &feature_id,
-                "feature"
-            ),)
+                &cadmpeg_ir::identity_component!("feature")
+            )
             .expect("identity grammar")
-        )
+        ))
     );
 }
 
@@ -1505,6 +1505,56 @@ fn complete_standalone_principal_plane_declarations_transfer_one_history_node() 
         .unwrap();
         assert!(excluded_ir.model.features.is_empty());
         assert!(excluded.consumed_records().is_empty());
+    }
+}
+
+#[test]
+fn principal_plane_history_identity_admission_precedes_transfer() {
+    let records = [
+        object_graph_record(&[0x12, 0x82, 0x84], &[0xfe]),
+        object_graph_record(&[0x12, 0x82, 0x84], &[0xfe]),
+    ];
+    let mut bytes = entity_backed_object_graph(&records, &[2, 3]);
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "xy-plane",
+    ]));
+    for id in ["catia:graph:object#owner:child", "short"] {
+        let mut native = crate::native::CatiaNative::decode(&bytes);
+        let old_id = std::mem::replace(&mut native.design_objects[0].id, id.to_owned());
+        for record in native
+            .object_graphs
+            .iter_mut()
+            .flat_map(|graph| &mut graph.records)
+        {
+            if record.design_object.as_deref() == Some(old_id.as_str()) {
+                record.design_object = Some(id.to_owned());
+            }
+        }
+        let mut ir = CadIr::empty();
+        let result = transfer_design_features(
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        );
+        if id == "short" {
+            assert!(matches!(
+                result,
+                Err(cadmpeg_core::CodecError::Malformed(_))
+            ));
+            assert!(ir.model.features.is_empty());
+        } else {
+            let transfer = result.unwrap();
+            assert_eq!(ir.model.features.len(), 1);
+            assert_eq!(
+                ir.model.features[0].id.as_str(),
+                "catia:graph:feature#owner:child"
+            );
+            assert_eq!(transfer.principal_plane_records.len(), 2);
+        }
     }
 }
 
