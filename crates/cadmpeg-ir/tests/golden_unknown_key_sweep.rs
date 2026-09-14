@@ -871,10 +871,7 @@ fn every_read_optional_field_refuses_a_null_spelling() {
 /// the same. A name defined twice carries both macros, which is what lets the
 /// allowlist above refuse a shim that only some of its definitions guard.
 fn shim_definitions() -> std::collections::BTreeMap<String, BTreeSet<String>> {
-    fn walk(
-        items: &[syn::Item],
-        found: &mut std::collections::BTreeMap<String, BTreeSet<String>>,
-    ) {
+    fn walk(items: &[syn::Item], found: &mut std::collections::BTreeMap<String, BTreeSet<String>>) {
         for item in items {
             match item {
                 syn::Item::Macro(invocation) => {
@@ -888,10 +885,7 @@ fn shim_definitions() -> std::collections::BTreeMap<String, BTreeSet<String>> {
                     let mut tokens = Vec::new();
                     flatten_tokens(&invocation.mac.tokens, &mut tokens);
                     let Some(shim) = tokens.first() else { continue };
-                    found
-                        .entry(shim.clone())
-                        .or_default()
-                        .insert(macro_name);
+                    found.entry(shim.clone()).or_default().insert(macro_name);
                 }
                 syn::Item::Mod(module) => {
                     if let Some((_, nested)) = &module.content {
