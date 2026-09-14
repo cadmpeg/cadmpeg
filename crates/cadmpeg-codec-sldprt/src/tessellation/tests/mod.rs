@@ -1620,10 +1620,16 @@ fn decode_rejects_incoherent_display_list_header_counts() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(0x41, "Contents/DisplayLists", &payload));
 
-    let result = SldprtCodec
+    let error = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .unwrap();
-    assert!(result.ir().model.tessellations.is_empty());
+        .expect_err("an incoherent display-face header must refuse the decode");
+    let text = error.to_string();
+    assert!(
+        text.contains("display-face table")
+            && text.contains("header states 2 triangle(s) and 1 strip(s)")
+            && text.contains("parsed mesh has 1 triangle(s) and 1 strip(s)"),
+        "{text}"
+    );
 }
 
 #[test]
