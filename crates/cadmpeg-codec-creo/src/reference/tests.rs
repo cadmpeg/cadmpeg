@@ -262,7 +262,7 @@ fn withholds_incomplete_coordinate_suffix() {
 fn decodes_signed_coordinate_dictionary_line_rows() {
     let coordinates = b"\x18\x41\x93\x8a\x07\xa0\xe6\xf8\x55\x8c\x3e\x32\xfb\x7f\x13\x0b\
             \x18\x93\x27\x14\x0f\x41\xcd\xf1\x8c\x3e\x32\xfb\x7f\x13\x0b";
-    assert!(scalar_suffix(coordinates, 6, &ScalarCache::from_section(coordinates)).is_some());
+    assert!(scalar_suffix::<6>(coordinates, &ScalarCache::from_section(coordinates)).is_some());
     let payload = b"ent_list(line)\0\xe0\x00entity(line)\0\xf1\xe3\xf7\x11\
             \xf6\xe2\x02\x48\x10\x00\xeb\x10\x00\x00\x00\x00\x02\
             \x18\x41\x93\x8a\x07\xa0\xe6\xf8\x55\x8c\x3e\x32\xfb\x7f\x13\x0b\
@@ -274,11 +274,11 @@ fn decodes_signed_coordinate_dictionary_line_rows() {
 #[test]
 fn scalar_suffix_withholds_competing_start_offsets() {
     let first_only = [0x46, 0, 0, 0, 0, 0, 0, 0, 0xe4, 0xe4, 0xe4, 0xe4, 0xe4];
-    assert!(scalar_suffix(&first_only, 6, &ScalarCache::from_section(&first_only)).is_some());
+    assert!(scalar_suffix::<6>(&first_only, &ScalarCache::from_section(&first_only)).is_some());
     let second_only = [0, 0x2c, 0, 0, 0, 0, 0, 0, 0xe4, 0xe4, 0xe4, 0xe4, 0xe4];
-    assert!(scalar_suffix(&second_only, 6, &ScalarCache::from_section(&second_only)).is_some());
+    assert!(scalar_suffix::<6>(&second_only, &ScalarCache::from_section(&second_only)).is_some());
     let body = [0x46, 0x2c, 0, 0, 0, 0, 0, 0, 0xe4, 0xe4, 0xe4, 0xe4, 0xe4];
-    assert!(scalar_suffix(&body, 6, &ScalarCache::from_section(&body)).is_none());
+    assert!(scalar_suffix::<6>(&body, &ScalarCache::from_section(&body)).is_none());
 }
 
 #[test]

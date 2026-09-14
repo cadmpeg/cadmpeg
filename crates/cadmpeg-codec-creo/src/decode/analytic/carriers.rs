@@ -523,15 +523,13 @@ pub fn geometry_section_record(scan: &ContainerScan, offset: usize) -> Option<Un
         .sections
         .iter()
         .filter(|section| section.role() == SectionRole::PsbGeometry)
-        .find(|section| {
-            offset >= section.offset && offset < section.offset.saturating_add(section.length)
-        })
-        .map(|section| {
+        .find_map(|section| {
+            (offset >= section.offset && offset < section.offset.saturating_add(section.length))
+                .then_some(())?;
             let namespace =
                 cadmpeg_ir::ids::IdentityNamespace::new("creo", section.name(), "section").ok()?;
             Some(UnknownId::compose(&namespace, section.offset))
         })
-        .flatten()
 }
 
 #[cfg(test)]

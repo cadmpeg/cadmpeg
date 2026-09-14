@@ -284,7 +284,9 @@ pub(in super::super) fn transfer_feature_dimensions(
                 let value_token = token.iter().fold(
                     String::with_capacity(token.len() * 2),
                     |mut encoded, byte| {
-                        encoded.push_str(&format!("{byte:02x}"));
+                        const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
+                        encoded.push(char::from(HEX_DIGITS[usize::from(*byte >> 4)]));
+                        encoded.push(char::from(HEX_DIGITS[usize::from(*byte & 0x0f)]));
                         encoded
                     },
                 );

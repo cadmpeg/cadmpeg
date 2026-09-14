@@ -167,12 +167,14 @@ impl ScalarCache {
             if section[offset] != 0x46 {
                 continue;
             }
-            let Some(bytes) = section.get(offset..offset + 8) else {
+            let Some(&[byte_0, byte_1, byte_2, byte_3, byte_4, byte_5, byte_6, byte_7]) =
+                section.get(offset..offset + 8)
+            else {
                 continue;
             };
-            let Ok(raw) = <[u8; 8]>::try_from(bytes) else {
-                continue;
-            };
+            let raw = [
+                byte_0, byte_1, byte_2, byte_3, byte_4, byte_5, byte_6, byte_7,
+            ];
             if !seen.insert(raw) {
                 continue;
             }
@@ -1496,9 +1498,16 @@ fn decode_local_system_slot_prefix(
     if values.len() != 12 {
         return None;
     }
-    let values = values.try_into().ok()?;
+    let [value_0, value_1, value_2, value_3, value_4, value_5, value_6, value_7, value_8, value_9, value_10, value_11] =
+        values.as_slice()
+    else {
+        return None;
+    };
     Some(LocalSystemSlotPrefix {
-        values,
+        values: [
+            *value_0, *value_1, *value_2, *value_3, *value_4, *value_5, *value_6, *value_7,
+            *value_8, *value_9, *value_10, *value_11,
+        ],
         cursor,
         saw_zero_slot_prefix,
     })
