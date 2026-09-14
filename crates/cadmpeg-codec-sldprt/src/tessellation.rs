@@ -421,13 +421,14 @@ fn probe_table(bytes: &[u8], mut at: usize) -> Option<(ProbedTable, usize)> {
 
 /// Pair one display-list table's lanes into mesh rows.
 ///
-/// `Ok(None)` is a probe miss: this byte position states no table, or its
-/// strip spans do not cut its vertex lane, so the position is not a table
-/// start. `Err` is a table the codec recognizes whose normal lane does not
-/// cover its vertex lane. The display-list grammar states a normal descriptor
-/// for every table, so the lane is always present and `None` is never the
-/// reading of an empty one: a normal lane that does not cover the vertices is
-/// a record that states a shaded mesh it cannot fill, and it is refused.
+/// `Ok(None)` is a probe miss and nothing else: the descriptors at this byte
+/// position do not state the display-list grammar. The descriptor is the record
+/// boundary, so once `probe_table` answers, the region is a table and every
+/// lane disagreement inside it is a `CodecError` naming the table's byte
+/// offset — a normal lane that does not cover the vertices, and strip spans
+/// that do not cut the vertex lane, alike. The display-list grammar states a
+/// normal descriptor for every table, so the lane is always present and `None`
+/// is never the reading of an empty one.
 fn parse_table(bytes: &[u8], at: usize) -> Result<Option<(Mesh, usize)>, cadmpeg_core::CodecError> {
     let Some((
         ProbedTable {
@@ -444,14 +445,9 @@ fn parse_table(bytes: &[u8], at: usize) -> Result<Option<(Mesh, usize)>, cadmpeg
     let spans: Vec<u32> = strips.into_iter().map(|length| length as u32).collect();
     match TessellationMesh::from_strip_lanes(vertices, Some(normals), &spans) {
         Ok(mesh) => Ok(Some((Mesh { mesh, channels }, end))),
-        Err(error @ cadmpeg_ir::tessellation::TessellationLaneError::VertexNormalLane { .. }) => {
-            Err(cadmpeg_core::CodecError::malformed(format_args!(
-                "sldprt display-list table at byte {at}: {error}"
-            )))
-        }
-        // The strip spans are what the probe recognizes: spans that do not cut
-        // the vertex lane mean this position is not a table start.
-        Err(_) => Ok(None),
+        Err(error) => Err(cadmpeg_core::CodecError::malformed(format_args!(
+            "sldprt display-list table at byte {at}: {error}"
+        ))),
     }
 }
 
