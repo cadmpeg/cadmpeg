@@ -1443,6 +1443,33 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
     let mut at = 0;
     while at < bytes.len() {
         let offset = at;
+        if bytes[at] == 0xe5 {
+            if let Some(end) = blob_end(bytes, at) {
+                fields.push(PayloadField::Blob {
+                    bytes: bytes[at + 5..end].to_vec(),
+                    offset,
+                });
+                at = end;
+                continue;
+            }
+            if blob_declared_end(bytes, at) == Some(bytes.len()) {
+                return None;
+            }
+        }
+        if matches!(bytes[at], 0x80 | 0x32) {
+            if let Some(value) = bytes
+                .get(at + 5)
+                .and_then(|_| View::u32_le_at(bytes, at + 1))
+            {
+                fields.push(if bytes[at] == 0x80 {
+                    PayloadField::Atom { value, offset }
+                } else {
+                    PayloadField::Reference { value, offset }
+                });
+                at += 5;
+                continue;
+            }
+        }
         match bytes[at] {
             0xfe if is_final_terminator_run(bytes, at) => {
                 while bytes.get(at) == Some(&0xfe) {
@@ -1451,16 +1478,6 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
                 }
                 break;
             }
-            0xe5 if blob_end(bytes, at).is_some() => {
-                let start = at + 5;
-                let end = blob_end(bytes, at).expect("checked blob extent");
-                fields.push(PayloadField::Blob {
-                    bytes: bytes[start..end].to_vec(),
-                    offset,
-                });
-                at = end;
-            }
-            0xe5 if blob_declared_end(bytes, at) == Some(bytes.len()) => return None,
             0x3c => {
                 let Some((count, advance)) = atom(bytes, at + 1) else {
                     fields.push(PayloadField::Atom {
@@ -1480,7 +1497,9 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
                     continue;
                 };
                 let table_end = table_at.checked_add(4)?;
-                if table_count <= u32::try_from(bytes.len().saturating_sub(table_end)).unwrap_or(0)
+                if usize::try_from(table_count)
+                    .ok()
+                    .is_some_and(|count| count <= bytes.len() - table_end)
                 {
                     let (rows, end) = parse_bulk_table_rows(bytes, table_end, table_count)?;
                     fields.push(PayloadField::BulkTable {
@@ -1557,21 +1576,6 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
                     items,
                     offset,
                 });
-            }
-            0x80 | 0x32 if at + 5 < bytes.len() => {
-                let tag = bytes[at];
-                fields.push(if tag == 0x80 {
-                    PayloadField::Atom {
-                        value: View::u32_le_at(bytes, at + 1).expect("checked escaped atom extent"),
-                        offset,
-                    }
-                } else {
-                    PayloadField::Reference {
-                        value: View::u32_le_at(bytes, at + 1).expect("checked scalar extent"),
-                        offset,
-                    }
-                });
-                at += 5;
             }
             0x81 | 0x3a | 0x39 | 0x7a => {
                 let tag = bytes[at];

@@ -1392,9 +1392,9 @@ fn records(bytes: &[u8]) -> Vec<Record<'_>> {
             break;
         };
         let start = position + relative;
-        if start + 13 > bytes.len() {
+        let Some(id) = View::u32_le_at(bytes, start + 9) else {
             break;
-        }
+        };
         let Some(size) = View::u16_le_at(bytes, start + 5).map(usize::from) else {
             break;
         };
@@ -1407,7 +1407,7 @@ fn records(bytes: &[u8]) -> Vec<Record<'_>> {
         }
         records.push(Record {
             class: bytes[start + 3],
-            id: View::u32_le_at(bytes, start + 9).expect("record header bounds were checked"),
+            id,
             payload: &bytes[start + 13..end],
         });
         position = end;

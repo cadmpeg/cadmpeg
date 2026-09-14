@@ -11,6 +11,7 @@ use cadmpeg_ir::ids::{
     SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::topology::{
     AnchoredVertexUse, Body, BodyKind, Coedge, Edge, Face, Loop, PcurveUse, Point, Region, Sense,
     Shell, Vertex,
@@ -26,7 +27,10 @@ use super::topology::{
 };
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
-const MODEL_POINT_TOLERANCE: f64 = 2e-3;
+const MODEL_POINT_TOLERANCE: PositiveReal = match PositiveReal::new(2e-3) {
+    Some(tolerance) => tolerance,
+    None => panic!("zero-entity point tolerance must be positive and finite"),
+};
 
 /// Counts one complete geometry-derived zero-entity topology transfer.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -449,12 +453,7 @@ pub(crate) fn transfer_closed_face_topology(
         ir.model.vertices.push(Vertex {
             id: vertex_ids[index].clone(),
             point: point_ids[index].clone(),
-            tolerance: Some(
-                const {
-                    cadmpeg_ir::scalar::PositiveReal::new(MODEL_POINT_TOLERANCE)
-                        .expect("positive finite tolerance")
-                },
-            ),
+            tolerance: Some(MODEL_POINT_TOLERANCE),
         });
     }
 
@@ -554,12 +553,7 @@ pub(crate) fn transfer_closed_face_topology(
             .ok()?,
             start: oriented_vertices[0].clone(),
             end: oriented_vertices[1].clone(),
-            tolerance: Some(
-                const {
-                    cadmpeg_ir::scalar::PositiveReal::new(MODEL_POINT_TOLERANCE)
-                        .expect("positive finite tolerance")
-                },
-            ),
+            tolerance: Some(MODEL_POINT_TOLERANCE),
         });
         edge_ids.push(edge_id);
     }
@@ -887,10 +881,10 @@ fn curve_orientation(
         curve_point(geometry, parameter_range[0])?,
         curve_point(geometry, parameter_range[1])?,
     ];
-    let direct = evaluated[0].distance(endpoints[0]) <= MODEL_POINT_TOLERANCE
-        && evaluated[1].distance(endpoints[1]) <= MODEL_POINT_TOLERANCE;
-    let reversed = evaluated[0].distance(endpoints[1]) <= MODEL_POINT_TOLERANCE
-        && evaluated[1].distance(endpoints[0]) <= MODEL_POINT_TOLERANCE;
+    let direct = evaluated[0].distance(endpoints[0]) <= MODEL_POINT_TOLERANCE.get()
+        && evaluated[1].distance(endpoints[1]) <= MODEL_POINT_TOLERANCE.get();
+    let reversed = evaluated[0].distance(endpoints[1]) <= MODEL_POINT_TOLERANCE.get()
+        && evaluated[1].distance(endpoints[0]) <= MODEL_POINT_TOLERANCE.get();
     match (direct, reversed) {
         (true, false) => Some(false),
         (false, true) => Some(true),
@@ -909,10 +903,10 @@ fn increasing_range(parameters: [f64; 2]) -> Option<[f64; 2]> {
 }
 
 fn endpoint_indices(reference: [Point3; 2], target: [Point3; 2]) -> Option<[usize; 2]> {
-    let direct = reference[0].distance(target[0]) <= MODEL_POINT_TOLERANCE
-        && reference[1].distance(target[1]) <= MODEL_POINT_TOLERANCE;
-    let reversed = reference[0].distance(target[1]) <= MODEL_POINT_TOLERANCE
-        && reference[1].distance(target[0]) <= MODEL_POINT_TOLERANCE;
+    let direct = reference[0].distance(target[0]) <= MODEL_POINT_TOLERANCE.get()
+        && reference[1].distance(target[1]) <= MODEL_POINT_TOLERANCE.get();
+    let reversed = reference[0].distance(target[1]) <= MODEL_POINT_TOLERANCE.get()
+        && reference[1].distance(target[0]) <= MODEL_POINT_TOLERANCE.get();
     match (direct, reversed) {
         (true, false) => Some([0, 1]),
         (false, true) => Some([1, 0]),

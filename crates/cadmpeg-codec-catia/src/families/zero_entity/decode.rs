@@ -13,6 +13,7 @@ use cadmpeg_ir::ids::{
     BodyId, CurveId, EdgeId, PointId, ProceduralCurveId, RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::topology::{Body, BodyKind, Edge, Point, Region, Shell, Vertex};
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
@@ -56,7 +57,10 @@ struct ClosedWireMember<'a> {
     parameter_range: Option<[f64; 2]>,
 }
 
-const ZERO_ENTITY_WIRE_TOLERANCE: f64 = 2e-3;
+const ZERO_ENTITY_WIRE_TOLERANCE: PositiveReal = match PositiveReal::new(2e-3) {
+    Some(tolerance) => tolerance,
+    None => panic!("zero-entity point tolerance must be positive and finite"),
+};
 
 fn finite_point(point: Point3) -> bool {
     [point.x, point.y, point.z].into_iter().all(f64::is_finite)
@@ -112,7 +116,7 @@ fn closed_wire_loop_members<'a>(
         .enumerate()
         .all(|(index, member)| {
             let next_start = members[(index + 1) % member_count].endpoints[0];
-            member.endpoints[1].distance(next_start) <= ZERO_ENTITY_WIRE_TOLERANCE
+            member.endpoints[1].distance(next_start) <= ZERO_ENTITY_WIRE_TOLERANCE.get()
         })
         .then_some(members)
 }
@@ -330,12 +334,7 @@ fn transfer_closed_wire_loops(
                 ir.model.vertices.push(Vertex {
                     id: vertex_id.clone(),
                     point: point_id,
-                    tolerance: Some(
-                        const {
-                            cadmpeg_ir::scalar::PositiveReal::new(ZERO_ENTITY_WIRE_TOLERANCE)
-                                .expect("positive finite tolerance")
-                        },
-                    ),
+                    tolerance: Some(ZERO_ENTITY_WIRE_TOLERANCE),
                 });
                 vertex_ids.push(vertex_id);
                 counts.points += 1;
@@ -567,12 +566,7 @@ fn transfer_closed_wire_loops(
                         .map_err(cadmpeg_core::CodecError::malformed)?,
                     start: vertex_ids[index].clone(),
                     end: vertex_ids[(index + 1) % member_count].clone(),
-                    tolerance: Some(
-                        const {
-                            cadmpeg_ir::scalar::PositiveReal::new(ZERO_ENTITY_WIRE_TOLERANCE)
-                                .expect("positive finite tolerance")
-                        },
-                    ),
+                    tolerance: Some(ZERO_ENTITY_WIRE_TOLERANCE),
                 });
                 if param_range.is_some() {
                     annotations

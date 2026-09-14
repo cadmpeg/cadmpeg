@@ -243,8 +243,11 @@ pub(crate) fn tokenize(payload: &[u8]) -> Vec<ValueField> {
     let mut at = 0;
     while at < payload.len() {
         let offset = at;
-        if payload.get(at..at + 2) == Some(&[0x87, 0xe6]) && at + 10 <= payload.len() {
-            let bits = View::u64_le_at(payload, at + 2).expect("checked binary64 extent");
+        if let Some(bits) = payload
+            .get(at..at + 2)
+            .filter(|prefix| *prefix == [0x87, 0xe6])
+            .and_then(|_| View::u64_le_at(payload, at + 2))
+        {
             fields.push(ValueField::Binary64 { bits, offset });
             at += 10;
         } else if payload.get(at) == Some(&0x87)
@@ -291,11 +294,12 @@ pub(crate) fn tokenize(payload: &[u8]) -> Vec<ValueField> {
                 });
                 at += 1;
             }
-        } else if payload.get(at) == Some(&0xe5) && at + 5 <= payload.len() {
-            let len = usize::try_from(
-                View::u32_le_at(payload, at + 1).expect("checked byte-string length extent"),
-            )
-            .ok();
+        } else if let Some(len) = payload
+            .get(at)
+            .filter(|tag| **tag == 0xe5)
+            .and_then(|_| View::u32_le_at(payload, at + 1))
+        {
+            let len = usize::try_from(len).ok();
             let end = len.and_then(|len| at.checked_add(5)?.checked_add(len));
             if let Some(end) = end.filter(|end| *end <= payload.len()) {
                 fields.push(ValueField::ByteString {
@@ -310,11 +314,12 @@ pub(crate) fn tokenize(payload: &[u8]) -> Vec<ValueField> {
                 });
                 at += 1;
             }
-        } else if payload.get(at) == Some(&0x32) && at + 5 <= payload.len() {
-            fields.push(ValueField::SchemaSelector {
-                ordinal: View::u32_le_at(payload, at + 1).expect("checked schema-reference extent"),
-                offset,
-            });
+        } else if let Some(ordinal) = payload
+            .get(at)
+            .filter(|tag| **tag == 0x32)
+            .and_then(|_| View::u32_le_at(payload, at + 1))
+        {
+            fields.push(ValueField::SchemaSelector { ordinal, offset });
             at += 5;
         } else if payload
             .get(at)

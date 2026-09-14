@@ -4,12 +4,12 @@
 use std::collections::HashSet;
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::ids::{format_identity, PmiId};
+use cadmpeg_ir::ids::{IdentityKey, PmiId};
 use cadmpeg_ir::pmi::{
     DimensionKind, DimensionTolerance, PmiAnnotation, PmiDefinition, PmiQuantity, PmiValue,
 };
 
-use crate::entity_table::{RangeInterval, RangeIntervalSlot};
+use crate::entity_table::RangeIntervalSlot;
 use crate::native::entity_record::CatiaEntityRecord;
 use crate::native::{CatiaNative, CatiaRangeInterval};
 
@@ -59,14 +59,10 @@ pub(crate) fn transfer_dimensions(
 }
 
 fn pmi_id(source_offset: u64) -> PmiId {
-    PmiId::from(
-        format_identity(
-            "catia",
-            "model",
-            "pmi",
-            format!("entity-record-{source_offset:010}"),
-        )
-        .expect("CATIA PMI source offset produces a valid identity"),
+    PmiId::compose(
+        &cadmpeg_ir::identity_namespace!("catia", "model", "pmi"),
+        cadmpeg_ir::identity_key!("entity-record-")
+            .then(IdentityKey::zero_padded(source_offset, 10)),
     )
 }
 
@@ -112,9 +108,13 @@ fn range_only_dimension_definition(
         _ => return None,
     };
     let nominal = finite_length(range.nominal.as_ref()?.bits)?;
-    let (Some(lower_deviation), Some(upper_deviation)) = deviations(&range.interval)? else {
+    let [RangeIntervalSlot::Binary64 { bits: lower, .. }, RangeIntervalSlot::Binary64 { bits: upper, .. }] =
+        range.interval.slots.as_ref()?
+    else {
         return None;
     };
+    let lower_deviation = finite_length(*lower)?;
+    let upper_deviation = finite_length(*upper)?;
     Some(PmiDefinition::Dimension {
         dimension,
         nominal: Some(nominal),
@@ -125,38 +125,6 @@ fn range_only_dimension_definition(
     })
 }
 
-fn deviations(interval: &RangeInterval) -> Option<(Option<PmiValue>, Option<PmiValue>)> {
-    let Some([lower, upper]) = interval.slots.as_ref() else {
-        return Some((None, None));
-    };
-    let lower = match slot_value(lower) {
-        DeviationSlot::Unset => None,
-        DeviationSlot::Finite(value) => Some(value),
-        DeviationSlot::Invalid => return None,
-    };
-    let upper = match slot_value(upper) {
-        DeviationSlot::Unset => None,
-        DeviationSlot::Finite(value) => Some(value),
-        DeviationSlot::Invalid => return None,
-    };
-    Some((lower, upper))
-}
-
-enum DeviationSlot {
-    Unset,
-    Finite(PmiValue),
-    Invalid,
-}
-
-fn slot_value(slot: &RangeIntervalSlot) -> DeviationSlot {
-    match slot {
-        RangeIntervalSlot::Binary64 { bits, .. } => {
-            finite_length(*bits).map_or(DeviationSlot::Invalid, DeviationSlot::Finite)
-        }
-        RangeIntervalSlot::Unset { .. } => DeviationSlot::Unset,
-    }
-}
-
 fn finite_length(bits: u64) -> Option<PmiValue> {
     let value = f64::from_bits(bits);
     PmiValue::new(value, PmiQuantity::Length)
@@ -165,7 +133,7 @@ fn finite_length(bits: u64) -> Option<PmiValue> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entity_table::{RangeIntervalPrefix, RangeIntervalSlot};
+    use crate::entity_table::{RangeInterval, RangeIntervalPrefix, RangeIntervalSlot};
     use crate::native::entity_record::{CatiaEntityRecord, CatiaEntityRecordBody};
     use crate::native::{
         CatiaConstraintRange, CatiaConstraintRangeFraming, CatiaDefinitionSchemaSelection,

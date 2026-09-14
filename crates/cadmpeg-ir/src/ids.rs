@@ -318,6 +318,12 @@ impl StaticIdentityKey {
 pub struct IdentityKey(std::borrow::Cow<'static, str>);
 
 impl IdentityKey {
+    /// Construct an unsigned decimal key with a minimum zero-padded width.
+    #[must_use]
+    pub fn zero_padded(value: u64, width: usize) -> Self {
+        Self(std::borrow::Cow::Owned(format!("{value:0width$}")))
+    }
+
     /// Construct a key from the two lowercase hexadecimal digits of a byte.
     #[must_use]
     pub fn hex_byte(value: u8) -> Self {
