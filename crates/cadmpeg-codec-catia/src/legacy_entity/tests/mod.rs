@@ -206,15 +206,13 @@ fn parses_monotone_identity_suffix_before_legacy_catalog() {
     assert!(runs[0].integer_values.is_empty());
     assert_eq!(
         runs[0]
-            .identities
-            .iter()
+            .identities()
             .map(|identity| identity.entity_id)
             .collect::<Vec<_>>(),
         [1, 4, 7]
     );
     assert!(runs[0]
-        .identities
-        .iter()
+        .identities()
         .all(|identity| u8::from(identity.lead) == 0x81));
 }
 
@@ -228,8 +226,7 @@ fn parses_each_admitted_identity_record_lead() {
 
     assert_eq!(
         parse_runs(&bytes)[0]
-            .identities
-            .iter()
+            .identities()
             .map(|identity| (identity.entity_id, u8::from(identity.lead)))
             .collect::<Vec<_>>(),
         [(1, 0x81), (2, 0x82), (3, 0xe5), (4, 0xfd)]
@@ -246,8 +243,7 @@ fn unsupported_record_leads_do_not_split_identity_intervals() {
 
     assert_eq!(
         parse_runs(&bytes)[0]
-            .identities
-            .iter()
+            .identities()
             .map(|identity| identity.entity_id)
             .collect::<Vec<_>>(),
         [1, 3]
