@@ -56,7 +56,7 @@ pub(crate) fn transfer_parameters(
             );
         for output in outputs {
             *formula_definition_counts
-                .entry(neutral_parameter_id(output))
+                .entry(neutral_parameter_id(output)?)
                 .or_default() += 1;
         }
     }
@@ -73,7 +73,7 @@ pub(crate) fn transfer_parameters(
                 LegacyModelingScope::Container,
             )
     };
-    let legacy_transfer = collect_legacy_parameters(native, &mut candidates, legacy_scope);
+    let legacy_transfer = collect_legacy_parameters(native, &mut candidates, legacy_scope)?;
     let mut relation_program_parameters =
         BTreeMap::<ParameterId, Option<(DesignParameter, FormulaParameterType)>>::new();
     for program_entity in native
@@ -250,7 +250,7 @@ pub(crate) fn transfer_parameters(
             .and_then(|id| entities.get(id))
         {
             if let Some(output_value) = output.parameter_value() {
-                let output_id = neutral_parameter_id(&output.id);
+                let output_id = neutral_parameter_id(&output.id)?;
                 if !dependencies.contains(&output_id) {
                     if let Some((parameter_type, value)) =
                         typed_parameter_evaluation(&signature.result_type, &output_value.evaluation)
@@ -645,7 +645,7 @@ fn definition_chain_parameter_candidate(
     }
     Some(FormulaParameterCandidate {
         parameter: DesignParameter {
-            id: neutral_parameter_id(&entity.id),
+            id: neutral_parameter_id(&entity.id).ok()?,
             owner: None,
             ordinal: 0,
             name,
@@ -692,7 +692,7 @@ fn collect_legacy_parameters(
     native: &CatiaNative,
     candidates: &mut BTreeMap<ParameterId, FormulaParameterCandidate>,
     modeling_scope: LegacyModelingScope<'_>,
-) -> LegacyParameterTransfer {
+) -> Result<LegacyParameterTransfer, cadmpeg_core::CodecError> {
     let mut transfer = LegacyParameterTransfer::default();
     for run in native
         .legacy_entity_runs
@@ -734,8 +734,12 @@ fn collect_legacy_parameters(
             let Some(key) = scalar.id.strip_prefix("catia:legacy:scalar#") else {
                 continue;
             };
-            let id = ParameterId::mint(format!("catia:legacy:parameter#{key}"))
-                .expect("identity grammar");
+            let key = cadmpeg_ir::ids::IdentityKey::try_new(key)
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+            let id = ParameterId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "legacy", "parameter"),
+                key,
+            );
             if candidates.contains_key(&id) {
                 continue;
             }
@@ -788,8 +792,12 @@ fn collect_legacy_parameters(
             let Some(key) = string.id.strip_prefix("catia:legacy:string#") else {
                 continue;
             };
-            let id = ParameterId::mint(format!("catia:legacy:parameter#{key}"))
-                .expect("identity grammar");
+            let key = cadmpeg_ir::ids::IdentityKey::try_new(key)
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+            let id = ParameterId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "legacy", "parameter"),
+                key,
+            );
             if candidates.contains_key(&id) {
                 continue;
             }
@@ -843,8 +851,12 @@ fn collect_legacy_parameters(
             let Some(key) = integer.id.strip_prefix("catia:legacy:integer#") else {
                 continue;
             };
-            let id = ParameterId::mint(format!("catia:legacy:parameter#{key}"))
-                .expect("identity grammar");
+            let key = cadmpeg_ir::ids::IdentityKey::try_new(key)
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+            let id = ParameterId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "legacy", "parameter"),
+                key,
+            );
             if candidates.contains_key(&id) {
                 continue;
             }
@@ -923,7 +935,7 @@ fn collect_legacy_parameters(
             transfer.formulas += 1;
         }
     }
-    transfer
+    Ok(transfer)
 }
 
 #[cfg(test)]
@@ -1162,7 +1174,7 @@ fn typed_entity_parameter_candidate(
     };
     Some(FormulaParameterCandidate {
         parameter: DesignParameter {
-            id: neutral_parameter_id(&entity.id),
+            id: neutral_parameter_id(&entity.id).ok()?,
             owner: None,
             ordinal: 0,
             name: parameter.name.value.clone(),
@@ -1321,7 +1333,7 @@ fn relation_program_output_candidate(
         type_checked_expression.as_ref()
     })?;
     let output_value = output_entity.parameter_value()?;
-    let output_id = neutral_parameter_id(&output_entity.id);
+    let output_id = neutral_parameter_id(&output_entity.id).ok()?;
     if dependencies.contains(&output_id) {
         return None;
     }
@@ -3364,12 +3376,9 @@ fn canonical_parameter_type(source_type: &str) -> Option<FormulaParameterType> {
     }
 }
 
-fn neutral_parameter_id(native_id: &str) -> ParameterId {
-    ParameterId::mint(crate::design_feature::neutral_history_id(
-        native_id,
-        "parameter",
-    ))
-    .expect("identity grammar")
+fn neutral_parameter_id(native_id: &str) -> Result<ParameterId, cadmpeg_core::CodecError> {
+    crate::ids::neutral_history_id(native_id, &cadmpeg_ir::identity_component!("parameter"))
+        .map(ParameterId::from)
 }
 
 #[cfg(test)]

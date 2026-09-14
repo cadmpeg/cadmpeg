@@ -52,6 +52,7 @@ pub(crate) mod dialect;
 pub(crate) mod entity_table;
 pub(crate) mod families;
 pub(crate) mod formula;
+mod ids;
 /// Byte-offset constants generated from `docs/layouts/catia.toml`.
 pub(crate) mod layout;
 pub(crate) mod legacy_entity;

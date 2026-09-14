@@ -74,6 +74,23 @@ impl Identity {
         IdentityKey(std::borrow::Cow::Owned(self.0.split('#').skip(1).collect()))
     }
 
+    /// Replace the kind while retaining the admitted format, scope, and key.
+    #[must_use]
+    pub fn with_kind(&self, kind: &IdentityComponent) -> Self {
+        let mut value = String::with_capacity(self.0.len() + kind.as_str().len());
+        // Admission guarantees three namespace components and one key separator.
+        for component in self.0.split(':').take(2) {
+            value.push_str(component);
+            value.push(':');
+        }
+        value.push_str(kind.as_str());
+        value.push('#');
+        for key in self.0.split('#').skip(1) {
+            value.push_str(key);
+        }
+        Self(value)
+    }
+
     /// Append an admitted tail to this identity's key.
     #[must_use]
     pub fn with_key_tail(mut self, tail: &IdentityKeyTail) -> Self {

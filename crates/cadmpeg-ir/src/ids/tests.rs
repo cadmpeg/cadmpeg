@@ -7,6 +7,17 @@ use super::{
 };
 
 #[test]
+fn kind_replacement_preserves_admitted_namespace_and_key() {
+    for key in ["0", "owner:child", "é:部", ":"] {
+        let source = super::Identity::new(format!("catia:graph:object#{key}")).unwrap();
+        let feature = source.with_kind(&crate::identity_component!("feature"));
+        assert_eq!(feature.as_str(), format!("catia:graph:feature#{key}"));
+        assert_eq!(source.as_str(), format!("catia:graph:object#{key}"));
+        assert!(is_valid_identity(feature.as_str()));
+    }
+}
+
+#[test]
 fn three_component_ids_are_valid() {
     assert!(is_valid_identity("step:file:signature#0"));
     assert!(format_identity("step", "file", "signature", 0u8).is_ok());

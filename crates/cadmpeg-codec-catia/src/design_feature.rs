@@ -11,6 +11,7 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
 
 use crate::entity_table::{RangeIntervalPrefix, RangeIntervalSlot};
+use crate::ids::neutral_history_id;
 use crate::native::entity_record::CatiaEntityRecord;
 use crate::native::{
     CatiaDesignObject, CatiaDesignObjectRelationSource, CatiaNative, CatiaObjectRecord,
@@ -488,39 +489,6 @@ fn nearest_feature_for_design_object(
     None
 }
 
-/// Derive one neutral history identity from a canonical CATIA native identity.
-///
-/// Native identities use the form `<format>:<scope>:<kind>#<key>`. Neutral
-/// history identities keep the same format and scope and replace only the
-/// source kind. Synthetic unit fixtures may use short IDs, for which the
-/// legacy suffix form remains deterministic.
-pub(crate) fn neutral_history_id(native_id: &str, kind: &str) -> String {
-    let Some((namespace, key)) = native_id.rsplit_once('#') else {
-        return format!("{native_id}:{kind}");
-    };
-    let mut components = namespace.split(':');
-    let Some(format) = components.next() else {
-        return format!("{native_id}:{kind}");
-    };
-    let Some(scope) = components.next() else {
-        return format!("{native_id}:{kind}");
-    };
-    let Some(source_kind) = components.next() else {
-        return format!("{native_id}:{kind}");
-    };
-    if format.is_empty()
-        || scope.is_empty()
-        || source_kind.is_empty()
-        || components.next().is_some()
-        || key.is_empty()
-        || key.contains(':')
-        || kind.is_empty()
-    {
-        return format!("{native_id}:{kind}");
-    }
-    format!("{format}:{scope}:{kind}#{key}")
-}
-
 /// Transfer exact owner-bound reference history nodes.
 pub(crate) fn transfer_design_features(
     ir: &mut CadIr,
@@ -567,13 +535,13 @@ pub(crate) fn transfer_design_features(
             native_operation,
         ) {
             (Some(candidate), None, None, None) => {
-                transfer_principal_plane(ir, &mut transfer, candidate);
+                transfer_principal_plane(ir, &mut transfer, candidate)?;
             }
             (None, Some(owner_record), None, None) => {
                 transfer_sketch(ir, &mut transfer, object, owner_record);
             }
             (None, None, Some(candidate), None) => {
-                transfer_reference_plane(ir, &mut transfer, &candidate);
+                transfer_reference_plane(ir, &mut transfer, &candidate)?;
             }
             (None, None, None, Some(candidate)) => {
                 transfer_native_operation(
@@ -603,10 +571,12 @@ fn transfer_principal_plane(
     ir: &mut CadIr,
     transfer: &mut DesignFeatureTransfer,
     candidate: PrincipalPlaneCandidate<'_>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let object = candidate.object;
-    let feature_id =
-        FeatureId::mint(neutral_history_id(&object.id, "feature")).expect("identity grammar");
+    let feature_id = FeatureId::from(neutral_history_id(
+        &object.id,
+        &cadmpeg_ir::identity_component!("feature"),
+    )?);
     ir.model.features.push(Feature {
         id: feature_id.clone(),
         ordinal: object.first_field_byte_offset,
@@ -632,16 +602,19 @@ fn transfer_principal_plane(
             .into_iter()
             .map(|record| record.id.clone()),
     );
+    Ok(())
 }
 
 fn transfer_reference_plane(
     ir: &mut CadIr,
     transfer: &mut DesignFeatureTransfer,
     candidate: &ReferencePlaneCandidate<'_>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let object = candidate.object;
-    let feature_id =
-        FeatureId::mint(neutral_history_id(&object.id, "feature")).expect("identity grammar");
+    let feature_id = FeatureId::from(neutral_history_id(
+        &object.id,
+        &cadmpeg_ir::identity_component!("feature"),
+    )?);
     ir.model.features.push(Feature {
         id: feature_id.clone(),
         ordinal: object.first_field_byte_offset,
@@ -664,6 +637,7 @@ fn transfer_reference_plane(
     transfer
         .reference_plane_records
         .insert(candidate.owner_record.id.clone());
+    Ok(())
 }
 
 fn transfer_sketch(
@@ -672,11 +646,12 @@ fn transfer_sketch(
     object: &CatiaDesignObject,
     owner_record: &CatiaObjectRecord,
 ) {
-    let Ok(sketch_id) = SketchId::mint(neutral_history_id(&object.id, "sketch")) else {
+    let Ok(identity) = cadmpeg_ir::ids::Identity::new(object.id.clone()) else {
         return;
     };
+    let sketch_id = SketchId::from(identity.with_kind(&cadmpeg_ir::identity_component!("sketch")));
     let feature_id =
-        FeatureId::mint(neutral_history_id(&object.id, "feature")).expect("identity grammar");
+        FeatureId::from(identity.with_kind(&cadmpeg_ir::identity_component!("feature")));
     ir.model.sketches.push(Sketch {
         id: sketch_id.clone(),
         name: None,
@@ -838,8 +813,10 @@ fn transfer_native_operation(
         native_operation_object_ids,
     )?;
     let (definition, source_properties) = native_operation_definition(kind, &object.id, properties);
-    let feature_id =
-        FeatureId::mint(neutral_history_id(&object.id, "feature")).expect("identity grammar");
+    let feature_id = FeatureId::from(neutral_history_id(
+        &object.id,
+        &cadmpeg_ir::identity_component!("feature"),
+    )?);
     ir.model.features.push(Feature {
         id: feature_id.clone(),
         ordinal: object.first_field_byte_offset,
