@@ -2047,7 +2047,7 @@ fn read_faces(
         }
         if present != 0 {
             for face in &mut result {
-                face.color = Some(child.take(4)?.try_into().expect("color width checked"));
+                face.color = Some(child.array::<4>()?);
             }
         }
     }
@@ -2712,7 +2712,7 @@ fn point(reader: &mut BoundedReader<'_>) -> Result<Point3, GeometryError> {
 
 fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, GeometryError> {
     Ok(Uuid::from_wire(
-        reader.take(16)?.try_into().expect("UUID width checked"),
+        reader.array::<16>()?,
     ))
 }
 
