@@ -232,7 +232,7 @@ fn build_metadata_ir(
     scan: &Scan,
     dialects: &DialectLayers,
 ) -> Result<(CadIr, cadmpeg_ir::Annotations, Vec<UnknownRecord>), CodecError> {
-    let mut ir = CadIr::decoded(source_meta(scan, dialects));
+    let mut ir = CadIr::decoded(source_meta(scan, dialects)?);
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
     for (si, stream) in scan.streams.iter().enumerate() {

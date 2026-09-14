@@ -291,7 +291,8 @@ mod tests {
             name: Some(id.into()),
             suppressed: None,
             dependencies: (dependencies).try_into().unwrap(),
-            source_properties: cadmpeg_core::text::named_entries(source_properties),
+            source_properties: cadmpeg_core::text::named_entries(id, source_properties)
+                .expect("the fixture states named properties"),
             source_tag: native.then(|| "NX_OPERATION".to_string()),
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),

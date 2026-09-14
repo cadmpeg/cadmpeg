@@ -124,6 +124,9 @@ pub(crate) enum SldprtLossCode {
     DialectLayerCollision,
     /// The selected write target differs from the same-format source dialect.
     SourceDialectDisplaced,
+    /// A source record states a property whose key holds no non-whitespace
+    /// character, so the property cannot be keyed and is not transferred.
+    SourcePropertyKeyBlank,
 }
 
 impl SldprtLossCode {
@@ -176,6 +179,7 @@ impl SldprtLossCode {
         Self::KernelDialectUnverified,
         Self::DialectLayerCollision,
         Self::SourceDialectDisplaced,
+        Self::SourcePropertyKeyBlank,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -229,6 +233,7 @@ impl SldprtLossCode {
             Self::KernelDialectUnverified => "source.kernel-dialect-unverified",
             Self::DialectLayerCollision => "source.dialect-layer-collision",
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
+            Self::SourcePropertyKeyBlank => "source.property-key-blank",
         }
     }
 
@@ -282,7 +287,8 @@ impl SldprtLossCode {
             | Self::SourceDialectUnverified
             | Self::KernelDialectUnverified
             | Self::DialectLayerCollision
-            | Self::SourceDialectDisplaced => Severity::Warning,
+            | Self::SourceDialectDisplaced
+            | Self::SourcePropertyKeyBlank => Severity::Warning,
         }
     }
 
@@ -295,6 +301,7 @@ impl SldprtLossCode {
             }
             Self::DialectLayerCollision => LossTaxonomy::DecodeDiagnostic,
             Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
+            Self::SourcePropertyKeyBlank => LossTaxonomy::AttributesNotTransferred,
             Self::TopologyBodyHierarchyDerived | Self::TopologyFaceOwnerAmbiguous => {
                 LossTaxonomy::TopologyGaugeSubstituted
             }
@@ -443,6 +450,7 @@ mod tests {
                 "source.kernel-dialect-unverified",
                 "source.dialect-layer-collision",
                 "target.source-dialect-displaced",
+                "source.property-key-blank",
             ]
         );
     }

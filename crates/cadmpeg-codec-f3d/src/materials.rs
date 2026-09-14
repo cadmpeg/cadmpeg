@@ -545,13 +545,13 @@ pub fn decode_with_body_bindings<'a>(
                 .map(|appearance| appearance.id.clone())
                 .collect::<std::collections::HashSet<_>>();
             decoded.extend(
-                decode_fixed_logical_records(&record_frames)
+                decode_fixed_logical_records(&record_frames)?
                     .into_iter()
                     .filter(|appearance| !decoded_ids.contains(&appearance.id)),
             );
             decoded
         } else {
-            decode_fixed_logical_records(&record_frames)
+            decode_fixed_logical_records(&record_frames)?
         };
         for appearance in &mut appearances {
             if let Some(name) = appearance.name.as_deref() {
@@ -654,11 +654,15 @@ pub fn decode_with_body_bindings<'a>(
             object_type: object_types.get(&over.entity_suffix).cloned(),
             visible: None,
             channels: cadmpeg_core::text::named_entries(
+                format_args!(
+                    "f3d:appearance:body#{}:{}",
+                    over.entity_suffix, over.visual_guid
+                ),
                 act_channels
                     .get(&over.entity_suffix)
                     .cloned()
                     .unwrap_or_default(),
-            ),
+            )?,
         });
     }
     let face_assignments = decode_face_appearance_assignments(scan)?;
@@ -728,7 +732,7 @@ fn appearances_from_schema_records(
                     .then_with(|| left.asset_guid.cmp(&right.asset_guid))
             });
             let base_color = appearance_base_color(record);
-            Appearance {
+            Ok(Appearance {
                 id: AppearanceId::mint(format!("f3d:design:appearance#{}", record.guid))
                     .expect("identity grammar"),
                 name: Some(record.base.clone()),
@@ -739,11 +743,14 @@ fn appearances_from_schema_records(
                 schema: Some(record.schema.clone()),
                 category: None,
                 base_color,
-                properties: cadmpeg_core::text::named_entries(properties),
+                properties: cadmpeg_core::text::named_entries(
+                    format_args!("f3d:design:appearance#{}", record.guid),
+                    properties,
+                )?,
                 textures: connected,
-            }
+            })
         })
-        .collect();
+        .collect::<Result<Vec<_>, CodecError>>()?;
     Ok((appearances, untyped_distance_properties))
 }
 
@@ -1522,11 +1529,16 @@ fn bind_bodies(
             object_type: object_types.get(&assignment.entity_id.suffix()).cloned(),
             visible: None,
             channels: cadmpeg_core::text::named_entries(
+                format_args!(
+                    "f3d:appearance:binding#{}:{}",
+                    assignment.entity_id.as_str(),
+                    assignment.visual_guid
+                ),
                 act_channels
                     .get(&assignment.entity_id.suffix())
                     .cloned()
                     .unwrap_or_default(),
-            ),
+            )?,
         });
     }
     Ok(out)
@@ -1985,10 +1997,11 @@ pub(crate) fn nested_entry<'a>(
 /// Protein assets package schemas and use the schema-driven path instead.
 fn decode_fixed_logical_records(
     frames: &[cadmpeg_protein::framing::RecordFrame],
-) -> Vec<Appearance> {
+) -> Result<Vec<Appearance>, CodecError> {
     frames
         .iter()
-        .filter_map(|frame| decode_fixed_record(frame.bytes()))
+        .map(|frame| decode_fixed_record(frame.bytes()))
+        .filter_map(Result::transpose)
         .collect()
 }
 
@@ -2001,28 +2014,40 @@ fn decode_fixed_logical_records(
 /// reads. That covers the `interior_model` subtypes with no fixed layout here,
 /// `PrismLayeredSchema` and `PrismWoodSchema`, whose colour offset must not be
 /// assumed from the opaque, metal, or transparent layouts.
-fn decode_fixed_record(record: &[u8]) -> Option<Appearance> {
+fn decode_fixed_record(record: &[u8]) -> Result<Option<Appearance>, CodecError> {
     let mut position = RECORD_MARKER.len();
-    let schema = take_lp_utf8(record, &mut position)?;
-    let guid = take_lp_utf8(record, &mut position)?;
-    let base = take_lp_utf8(record, &mut position)?;
-    let asset_lib_id = take_lp_utf8(record, &mut position)?;
+    let Some(schema) = take_lp_utf8(record, &mut position) else {
+        return Ok(None);
+    };
+    let Some(guid) = take_lp_utf8(record, &mut position) else {
+        return Ok(None);
+    };
+    let Some(base) = take_lp_utf8(record, &mut position) else {
+        return Ok(None);
+    };
+    let Some(asset_lib_id) = take_lp_utf8(record, &mut position) else {
+        return Ok(None);
+    };
     let color = match schema.as_str() {
-        "GenericSchema" => fixed_rgba(
-            record,
-            position + 112 + generic_connection_delta(record, position)?,
-        ),
+        "GenericSchema" => {
+            let Some(delta) = generic_connection_delta(record, position) else {
+                return Ok(None);
+            };
+            fixed_rgba(record, position + 112 + delta)
+        }
         "PrismOpaqueSchema" | "PrismMetalSchema" => fixed_rgba(record, position + 8),
         "PrismTransparentSchema" => fixed_rgba(record, position + 121),
         "PhysMatSchema"
         | "StructuralMetalSchema"
         | "StructuralPlasticSchema"
         | "ThermalSolidSchema" => None,
-        _ => return None,
+        _ => return Ok(None),
     };
     let mut properties = BTreeMap::new();
     if schema == "GenericSchema" {
-        let delta = generic_connection_delta(record, position)?;
+        let Some(delta) = generic_connection_delta(record, position) else {
+            return Ok(None);
+        };
         fixed_tagged_scalar(
             &mut properties,
             "reflectivity_at_0deg",
@@ -2042,7 +2067,11 @@ fn decode_fixed_record(record: &[u8]) -> Option<Appearance> {
     } else if schema == "PrismTransparentSchema" {
         fixed_scalar(&mut properties, "refraction_index", record, position + 169);
     }
-    Some(Appearance {
+    let properties = cadmpeg_core::text::named_entries(
+        format_args!("f3d:design:appearance#{guid}"),
+        properties,
+    )?;
+    Ok(Some(Appearance {
         id: AppearanceId::mint(format!("f3d:design:appearance#{guid}")).expect("identity grammar"),
         name: Some(base),
         asset_guid: Some(guid.clone()),
@@ -2059,9 +2088,9 @@ fn decode_fixed_record(record: &[u8]) -> Option<Appearance> {
         schema: Some(schema),
         category: None,
         base_color: color,
-        properties: cadmpeg_core::text::named_entries(properties),
+        properties,
         textures: Vec::new(),
-    })
+    }))
 }
 
 fn fixed_scalar(out: &mut BTreeMap<String, f64>, name: &str, bytes: &[u8], offset: usize) {

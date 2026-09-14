@@ -1698,11 +1698,17 @@ pub(crate) fn project(
             .then(|| dimension.user_text.clone())
             .into_iter()
             .collect(),
-        references: cadmpeg_core::text::named_entries(references),
+        references: cadmpeg_core::text::named_entries(
+            format_args!("rhino:dimension:annotation#{key}"),
+            references,
+        )?,
         value: Some(value),
         format: (!dimension.rich_text.is_empty()).then(|| dimension.rich_text.clone()),
         position,
-        parameters: cadmpeg_core::text::named_entries(parameters),
+        parameters: cadmpeg_core::text::named_entries(
+            format_args!("rhino:dimension:annotation#{key}"),
+            parameters,
+        )?,
         assets: Vec::new(),
         native_ref: object.to_string(),
     };

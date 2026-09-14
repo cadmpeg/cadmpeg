@@ -203,10 +203,12 @@ pub fn cube_with_source(attributes: &[(&str, &str)]) -> cadmpeg_ir::CadIr {
             cadmpeg_core::dialect::DialectId::pinned("synthetic:test"),
         )),
         cadmpeg_core::text::named_entries(
+            "the fixture document",
             attributes
                 .iter()
                 .map(|(key, value)| ((*key).to_owned(), (*value).to_owned())),
-        ),
+        )
+        .expect("the fixture states named attributes"),
     ));
     ir
 }

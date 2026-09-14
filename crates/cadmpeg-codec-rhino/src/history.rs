@@ -1360,13 +1360,27 @@ pub(crate) fn project(
         );
         properties.insert("antecedent_objects".to_string(), list(&record.antecedents));
         properties.insert("descendant_objects".to_string(), list(&record.descendants));
+        let (properties, blank) = cadmpeg_core::text::named_entries_with_blank(
+            &native_ids[index],
+            properties,
+        );
+        let (parameters, blank_parameters) = cadmpeg_core::text::named_entries_with_blank(
+            &native_ids[index],
+            parameters,
+        );
+        for key in blank.into_iter().chain(blank_parameters) {
+            sink.warnings.push_coded(
+                crate::loss::RhinoLossCode::ObjectAttributesDegraded,
+                format!("{key}; the property is not transferred"),
+            );
+        }
         ir.model.features.push(Feature {
             id: ids[index].clone(),
             ordinal: u64::try_from(index).expect("history source order fits u64"),
             name: None,
             suppressed: Some(false),
             dependencies,
-            source_properties: cadmpeg_core::text::named_entries(properties),
+            source_properties: properties,
             source_tag: Some("HistoryRecord".to_string()),
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
@@ -1374,7 +1388,7 @@ pub(crate) fn project(
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: record.command_id.to_string().into(),
-                    parameters: cadmpeg_core::text::named_entries(parameters),
+                    parameters,
                 }),
             ),
             native_ref: Some(native_ids[index].clone()),

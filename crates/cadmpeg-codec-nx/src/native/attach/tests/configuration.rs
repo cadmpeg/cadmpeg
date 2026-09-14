@@ -929,7 +929,8 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
             None,
             None,
             super::HoleProjection::default(),
-            cadmpeg_core::text::named_entries(parameters),
+            cadmpeg_core::text::named_entries("UNKNOWN OPERATION", parameters)
+                .expect("the fixture states named parameters"),
         )
         .unwrap(),
         cadmpeg_ir::features::FeatureDefinition::Operation(

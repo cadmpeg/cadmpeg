@@ -772,10 +772,12 @@ mod tests {
                 ),
             ),
             cadmpeg_core::text::named_entries(
+                "the fixture document",
                 attributes
                     .iter()
                     .map(|(key, value)| ((*key).to_owned(), (*value).to_owned())),
-            ),
+            )
+            .expect("the fixture states named attributes"),
         ));
         ir
     }

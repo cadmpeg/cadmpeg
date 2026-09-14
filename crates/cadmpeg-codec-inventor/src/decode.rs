@@ -291,7 +291,7 @@ fn decode_container<'a>(
             (Vec::new(), None)
         }
     };
-    let material_catalog = crate::materials::project_catalog(&protein_instances);
+    let material_catalog = crate::materials::project_catalog(&protein_instances)?;
     let mut protein_issues = Vec::new();
     let mut ufrx_issues = Vec::new();
     let protein_assets = protein_instances
@@ -524,7 +524,7 @@ fn decode_container<'a>(
     metadata.apply_attributes(&mut attributes);
     ir.source = Some(SourceMeta::classified(
         dialects,
-        cadmpeg_core::text::named_entries(attributes),
+        cadmpeg_core::text::named_entries("the inventor document", attributes)?,
     ));
     if matches!(document_kind, DocumentKind::Part | DocumentKind::Assembly) {
         ir.model.product_definitions.push(ProductDefinition {
@@ -539,7 +539,10 @@ fn decode_container<'a>(
             label: metadata.title.clone(),
             description: metadata.description.clone(),
             part_number: metadata.part_number.clone(),
-            bom_properties: cadmpeg_core::text::named_entries(metadata.bom_properties.clone()),
+            bom_properties: cadmpeg_core::text::named_entries(
+                "inventor:document:product#root",
+                metadata.bom_properties.clone(),
+            )?,
             bodies: Vec::new(),
             native_ref: None,
         });

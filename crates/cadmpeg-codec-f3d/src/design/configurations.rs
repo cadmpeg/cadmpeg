@@ -402,7 +402,10 @@ pub fn project_configurations(
                 source_index: None,
                 name: name.clone().into(),
                 material,
-                properties: cadmpeg_core::text::named_entries(properties),
+                properties: cadmpeg_core::text::named_entries(
+                    format_args!("f3d configuration {name}"),
+                    properties,
+                )?,
                 parameter_overrides: BTreeMap::new(),
                 parameter_values: BTreeMap::new(),
                 feature_states: BTreeMap::new(),

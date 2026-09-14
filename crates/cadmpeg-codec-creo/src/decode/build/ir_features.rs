@@ -219,7 +219,10 @@ pub(super) fn emit_model_features(
                             kind: current_operation
                                 .map_or("Native Feature", |operation| operation.kind.as_str())
                                 .into(),
-                            parameters: cadmpeg_core::text::named_entries(parameters.clone()),
+                            parameters: cadmpeg_core::text::named_entries(
+                                format_args!("creo:model:feature#{}", operation.feature_id),
+                                parameters.clone(),
+                            )?,
                         }))
                     })
             },
@@ -308,7 +311,10 @@ pub(super) fn emit_model_features(
             }
             existing
                 .source_properties
-                .extend(cadmpeg_core::text::named_entries(source_properties));
+                .extend(cadmpeg_core::text::named_entries(
+                    format_args!("creo:model:feature#{}", operation.feature_id),
+                    source_properties,
+                )?);
             if source_tag.is_some() {
                 existing.source_tag = source_tag;
             }
@@ -346,7 +352,10 @@ pub(super) fn emit_model_features(
             name,
             suppressed: Some(false),
             dependencies: (dependencies).into_iter().collect(),
-            source_properties: cadmpeg_core::text::named_entries(source_properties),
+            source_properties: cadmpeg_core::text::named_entries(
+                format_args!("creo:model:feature#{}", operation.feature_id),
+                source_properties,
+            )?,
             source_tag,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
@@ -391,15 +400,17 @@ pub(super) fn emit_model_features(
         let parameters = feature_parameters(scan, feature_id);
         let mut source_properties = feature_source_properties(scan, feature_id);
         let definition = schema_class.map_or_else(
-            || {
-                Ok(named_feature_definition(scan, ir, feature_id, kind)
-                    .or_else(|| unbounded_feature_plane_definition(scan, ir, feature_id))
-                    .unwrap_or_else(|| {
-                        IrFeatureDefinition::Operation(IrFeatureOperation::Native {
-                            kind: kind.into(),
-                            parameters: cadmpeg_core::text::named_entries(parameters.clone()),
-                        })
-                    }))
+            || match named_feature_definition(scan, ir, feature_id, kind)
+                .or_else(|| unbounded_feature_plane_definition(scan, ir, feature_id))
+            {
+                Some(definition) => Ok(definition),
+                None => Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Native {
+                    kind: kind.into(),
+                    parameters: cadmpeg_core::text::named_entries(
+                        format_args!("creo:model:feature#{feature_id}"),
+                        parameters.clone(),
+                    )?,
+                })),
             },
             |schema_class| {
                 schema_feature_definition(scan, ir, feature_id, Some(schema_class), kind)
@@ -443,7 +454,10 @@ pub(super) fn emit_model_features(
             ))
             .into_iter()
             .collect(),
-            source_properties: cadmpeg_core::text::named_entries(source_properties),
+            source_properties: cadmpeg_core::text::named_entries(
+                format_args!("creo:model:feature#{feature_id}"),
+                source_properties,
+            )?,
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),

@@ -3818,7 +3818,7 @@ fn decode_result(
         report_scope,
         retained.source_attributes,
         &mut report,
-    );
+    )?;
     // Stamped on the finalized, classified document, so the write path
     // compares against the exact document the sealed wrapper returns.
     ir.finalize();

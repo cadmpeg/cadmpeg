@@ -16,7 +16,9 @@ pub(crate) struct MaterialCatalog {
     pub(crate) duplicate_guids: Vec<String>,
 }
 
-pub(crate) fn project_catalog(instances: &[ProteinInstanceRecords]) -> MaterialCatalog {
+pub(crate) fn project_catalog(
+    instances: &[ProteinInstanceRecords],
+) -> Result<MaterialCatalog, cadmpeg_core::CodecError> {
     let records = instances
         .iter()
         .flat_map(|instance| instance.records.iter())
@@ -88,15 +90,21 @@ pub(crate) fn project_catalog(instances: &[ProteinInstanceRecords]) -> MaterialC
                 schema: Some(record.schema.clone()),
                 category: None,
                 base_color,
-                properties: cadmpeg_core::text::named_entries(properties),
+                properties: cadmpeg_core::text::named_entries(
+                    format_args!(
+                        "inventor:protein:appearance#{instance_ordinal}-{}",
+                        record.ordinal
+                    ),
+                    properties,
+                )?,
                 textures: connected,
             });
         }
     }
-    MaterialCatalog {
+    Ok(MaterialCatalog {
         appearances,
         duplicate_guids,
-    }
+    })
 }
 
 fn library_id(value: &str) -> Option<String> {
@@ -312,7 +320,7 @@ mod tests {
             records: vec![color, texture(), texture()],
             rejected: Vec::new(),
         }];
-        let catalog = project_catalog(&instances);
+        let catalog = project_catalog(&instances).unwrap();
 
         assert_eq!(catalog.appearances.len(), 1);
         assert_eq!(

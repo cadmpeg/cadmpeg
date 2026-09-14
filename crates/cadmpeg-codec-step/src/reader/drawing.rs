@@ -65,6 +65,27 @@ impl TargetContext<'_> {
     }
 }
 
+/// Keys one drawing record's open property set, charging every key that names
+/// nothing.
+///
+/// The drawing is still transferred. A key holding no non-whitespace character
+/// cannot be asked for, so the charge names the record and the position of the
+/// property that did not reach it.
+fn keyed_properties<V>(
+    losses: &mut Vec<LossNote>,
+    record: &str,
+    entries: impl IntoIterator<Item = (String, V)>,
+) -> BTreeMap<cadmpeg_core::text::NonBlankString, V> {
+    let (kept, blank) = cadmpeg_core::text::named_entries_with_blank(record, entries);
+    for key in blank {
+        losses.push(
+            StepLossCode::MetadataStringInvalid
+                .note(format!("{key}; the property is not transferred")),
+        );
+    }
+    kept
+}
+
 /// Decode the drawing object graph without claiming unsupported graphics.
 pub(super) fn decode(
     exchange: &Exchange,
@@ -211,13 +232,13 @@ pub(super) fn decode(
                 runtime_type: name.into(),
                 order: u32::try_from(order).unwrap_or(u32::MAX),
                 visible: hidden_drawing_ids.contains(&id).then_some(false),
-                relationships: cadmpeg_core::text::named_entries(relationships),
+                relationships: keyed_properties(&mut losses, identity.as_str(), relationships),
                 template: None,
                 position: None,
                 scale: None,
                 direction: None,
                 rotation_degrees: None,
-                parameters: cadmpeg_core::text::named_entries(stored_parameters),
+                parameters: keyed_properties(&mut losses, identity.as_str(), stored_parameters),
                 assets: Vec::new(),
                 native_ref: identity.into_string(),
             },

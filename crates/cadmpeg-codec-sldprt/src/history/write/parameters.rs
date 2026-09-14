@@ -198,10 +198,11 @@ pub(crate) fn sync_neutral_parameters(
         let mut parameters = desired.remove(feature_id).unwrap_or_default();
         parameters.sort_by_key(|parameter| parameter.ordinal);
         record.parameters = cadmpeg_core::text::named_entries(
+            format_args!("the sldprt feature {feature_id} record"),
             parameters
                 .iter()
                 .map(|parameter| (parameter.name.clone(), parameter.expression.clone())),
-        );
+        )?;
         record.dimension_properties = parameters
             .iter()
             .map(|parameter| {

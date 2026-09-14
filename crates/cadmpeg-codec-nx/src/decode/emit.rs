@@ -1345,7 +1345,10 @@ fn unknown_stream_record(si: usize, stream: &Stream, data: Option<Vec<u8>>) -> U
 }
 
 /// Builds source metadata from classified layers and the container scan.
-pub(crate) fn source_meta(scan: &Scan, dialects: &DialectLayers) -> SourceMeta {
+pub(crate) fn source_meta(
+    scan: &Scan,
+    dialects: &DialectLayers,
+) -> Result<SourceMeta, cadmpeg_core::CodecError> {
     let mut attributes = BTreeMap::new();
     attributes.insert(
         "file_size".to_string(),
@@ -1519,10 +1522,10 @@ pub(crate) fn source_meta(scan: &Scan, dialects: &DialectLayers) -> SourceMeta {
             );
         }
     }
-    SourceMeta::classified(
+    Ok(SourceMeta::classified(
         dialects.clone(),
-        cadmpeg_core::text::named_entries(attributes),
-    )
+        cadmpeg_core::text::named_entries("the nx part", attributes)?,
+    ))
 }
 
 #[cfg(test)]
