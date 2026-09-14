@@ -193,6 +193,34 @@ fn typed_namespace_composition_preserves_the_wire_identity() {
 }
 
 #[test]
+fn signed_record_identity_keys_preserve_decimal_text_at_the_integer_bounds() {
+    let namespace = crate::identity_namespace!("f3d", "brep", "attribute");
+    for (value, text) in [
+        (i64::MIN, "-9223372036854775808"),
+        (-1, "-1"),
+        (0, "0"),
+        (1, "1"),
+        (i64::MAX, "9223372036854775807"),
+    ] {
+        let key = IdentityKey::from(value);
+        assert_eq!(key.as_str(), text);
+        assert_eq!(IdentityKey::from(&value), key);
+        assert_eq!(IdentityKey::from(&&value), key);
+        let identity = super::Identity::compose(&namespace, key);
+        assert_eq!(identity.as_str(), format!("f3d:brep:attribute#{text}"));
+        assert!(is_valid_identity(identity.as_str()));
+    }
+    assert_eq!(
+        IdentityKey::from(i128::MIN).as_str(),
+        "-170141183460469231731687303715884105728"
+    );
+    assert_eq!(
+        IdentityKey::from(i128::MAX).as_str(),
+        "170141183460469231731687303715884105727"
+    );
+}
+
+#[test]
 fn runtime_namespace_and_key_admission_reports_the_rejected_value() {
     assert!(matches!(
         IdentityNamespace::new("step", "bad scope", "signature"),
