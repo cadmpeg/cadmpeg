@@ -323,20 +323,23 @@ impl Format {
 }
 
 /// Resolves the CLI's forced-input vocabulary from the compiled descriptors.
-#[must_use]
-pub fn forced_input(name: &str) -> Option<ForcedInput> {
+pub fn forced_input(name: &str) -> Result<Option<ForcedInput>, crate::registry::RegistryLoadError> {
     let canonical = crate::registry::canonical_format_name(name)?;
-    let descriptor = FORMAT_DESCRIPTORS
-        .iter()
-        .find(|descriptor| canonical == descriptor.id().as_str())?;
-    Some(descriptor.forced_input())
+    Ok(canonical.and_then(|canonical| {
+        FORMAT_DESCRIPTORS
+            .iter()
+            .find(|descriptor| canonical == descriptor.id().as_str())
+            .map(|descriptor| descriptor.forced_input())
+    }))
 }
 
 /// Every forced-input spelling accepted by this build.
-pub fn input_names() -> impl Iterator<Item = &'static str> {
-    FORMAT_DESCRIPTORS
-        .iter()
-        .flat_map(|descriptor| crate::registry::format_words(descriptor.id().as_str()))
+pub fn input_names() -> Result<Vec<&'static str>, crate::registry::RegistryLoadError> {
+    let mut names = Vec::new();
+    for descriptor in FORMAT_DESCRIPTORS {
+        names.extend(crate::registry::format_words(descriptor.id().as_str())?);
+    }
+    Ok(names)
 }
 
 #[cfg(test)]
@@ -363,6 +366,7 @@ mod tests {
             );
             assert!(
                 crate::registry::format_words(descriptor.id().as_str())
+                    .expect("embedded registry loads")
                     .next()
                     .is_some(),
                 "{} has no identity-registry format name",
@@ -373,11 +377,14 @@ mod tests {
                 "{} has no input extension",
                 descriptor.id()
             );
-            if let Some(format) = Format::from_name(descriptor.id().as_str()) {
+            if let Some(format) =
+                Format::from_name(descriptor.id().as_str()).expect("embedded registry loads")
+            {
                 let output = format.descriptor().1;
                 assert!(!output.extensions.is_empty());
                 assert_eq!(
-                    crate::registry::canonical_format_name(descriptor.id().as_str()),
+                    crate::registry::canonical_format_name(descriptor.id().as_str())
+                        .expect("embedded registry loads"),
                     Some(descriptor.id().as_str()),
                     "{} output format is absent from docs/dialects.toml",
                     descriptor.id()
@@ -390,8 +397,14 @@ mod tests {
     fn every_registry_word_resolves_through_its_descriptor() {
         for descriptor in FORMAT_DESCRIPTORS {
             let expected = descriptor.forced_input();
-            for name in crate::registry::format_words(descriptor.id().as_str()) {
-                assert_eq!(forced_input(name), Some(expected), "{name}");
+            for name in crate::registry::format_words(descriptor.id().as_str())
+                .expect("embedded registry loads")
+            {
+                assert_eq!(
+                    forced_input(name).expect("embedded registry loads"),
+                    Some(expected),
+                    "{name}"
+                );
             }
         }
     }
@@ -399,7 +412,7 @@ mod tests {
     #[test]
     fn input_names_are_unique() {
         let mut names = BTreeSet::new();
-        for name in input_names() {
+        for name in input_names().expect("embedded registry loads") {
             assert!(names.insert(name), "duplicate input format word {name:?}");
         }
     }

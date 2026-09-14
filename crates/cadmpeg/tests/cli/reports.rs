@@ -13,7 +13,11 @@ use crate::support::*;
 #[test]
 fn artifact_reports_cover_success_and_semantic_refusal() {
     let dir = tempdir().unwrap();
-    let cube = fixture(dir.path(), "cube.json", &unit_cube());
+    let cube = fixture(
+        dir.path(),
+        "cube.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
     let success_report = dir.path().join("success-report.json");
     Command::cargo_bin("cadmpeg")
         .unwrap()
@@ -78,7 +82,11 @@ fn artifact_reports_cover_success_and_semantic_refusal() {
 #[test]
 fn convert_refuses_one_path_for_the_cad_file_and_command_report() {
     let dir = tempdir().unwrap();
-    let cube = fixture(dir.path(), "cube.json", &unit_cube());
+    let cube = fixture(
+        dir.path(),
+        "cube.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
     let output = dir.path().join("collision.step");
 
     Command::cargo_bin("cadmpeg")
@@ -104,7 +112,11 @@ fn convert_refuses_one_path_for_the_cad_file_and_command_report() {
 #[test]
 fn report_write_failure_does_not_replace_a_typed_refusal() {
     let dir = tempdir().unwrap();
-    let cube = fixture(dir.path(), "cube.json", &unit_cube());
+    let cube = fixture(
+        dir.path(),
+        "cube.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
 
     Command::cargo_bin("cadmpeg")
         .unwrap()
@@ -129,7 +141,11 @@ fn report_write_failure_does_not_replace_a_typed_refusal() {
 #[test]
 fn report_write_failure_does_not_reclassify_a_completed_conversion() {
     let dir = tempdir().unwrap();
-    let cube = fixture(dir.path(), "cube.json", &unit_cube());
+    let cube = fixture(
+        dir.path(),
+        "cube.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
     let output = dir.path().join("cube.step");
 
     Command::cargo_bin("cadmpeg")
@@ -157,7 +173,11 @@ fn report_write_failure_does_not_reclassify_a_completed_conversion() {
 #[test]
 fn f3d_export_report_identifies_regenerated_output() {
     let dir = tempdir().unwrap();
-    let cube = fixture(dir.path(), "cube.json", &unit_cube());
+    let cube = fixture(
+        dir.path(),
+        "cube.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
     let output = dir.path().join("cube.f3d");
     let report = dir.path().join("f3d-report.json");
     Command::cargo_bin("cadmpeg")
@@ -192,7 +212,11 @@ fn f3d_export_report_identifies_regenerated_output() {
 #[test]
 fn reporting_commands_emit_json_only_on_stdout() {
     let dir = tempdir().unwrap();
-    let input = fixture(dir.path(), "cube.json", &unit_cube());
+    let input = fixture(
+        dir.path(),
+        "cube.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
     let validate = Command::cargo_bin("cadmpeg")
         .unwrap()
         .args(["check", input.to_str().unwrap(), "--json"])
@@ -262,7 +286,11 @@ fn inspect_report_writes_summary_to_file() {
 #[test]
 fn validate_report_writes_result_to_file() {
     let dir = tempdir().unwrap();
-    let input = fixture(dir.path(), "cube.cadir.json", &unit_cube());
+    let input = fixture(
+        dir.path(),
+        "cube.cadir.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
     let report = dir.path().join("validate-report.json");
     Command::cargo_bin("cadmpeg")
         .unwrap()
@@ -356,7 +384,11 @@ fn inspect_classifies_and_reports_an_unsupported_dialect() {
 #[test]
 fn reporting_commands_accept_o_for_the_report_and_force_to_replace_it() {
     let dir = tempdir().unwrap();
-    let input = fixture(dir.path(), "cube.cadir.json", &unit_cube());
+    let input = fixture(
+        dir.path(),
+        "cube.cadir.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
     let report = dir.path().join("report.json");
 
     for (command, path_flag) in [
@@ -395,7 +427,7 @@ fn reporting_commands_accept_o_for_the_report_and_force_to_replace_it() {
 fn validate_agrees_between_its_exit_code_printed_summary_and_report() {
     // findings under `.check_report.findings` in the written report.
     let dir = tempdir().unwrap();
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let absent = format!("{}-absent", ir.model.faces[0].surface);
     ir.model.faces[0].surface = absent.try_into().expect("valid identity");
     let input = fixture(dir.path(), "broken.cadir.json", &ir);
@@ -435,7 +467,7 @@ fn validate_agrees_between_its_exit_code_printed_summary_and_report() {
 #[test]
 fn diff_report_writes_result_to_file() {
     let dir = tempdir().unwrap();
-    let cube = unit_cube();
+    let cube = unit_cube().expect("unit cube fixture is admitted");
     let a = fixture(dir.path(), "a.cadir.json", &cube);
     let b = fixture(dir.path(), "b.cadir.json", &cube);
     let report = dir.path().join("diff-report.json");

@@ -6,7 +6,6 @@
 //! a stale sidecar beside a newer CADIR. Digest verification failing closed on
 //! the next load is what saves the caller, not a transactional pair.
 
-use std::fmt::Write as _;
 use std::fs::File;
 use std::io::{self, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
@@ -340,13 +339,14 @@ struct TempFileWriter<'a> {
 }
 
 impl TempFileWriter<'_> {
+    // Per-byte formatting avoids a fallible write channel for the fixed digest.
+    #[allow(clippy::format_collect)]
     fn finish(self) -> String {
-        let digest = self.hasher.finalize();
-        let mut encoded = String::with_capacity(digest.len() * 2);
-        for byte in digest {
-            write!(encoded, "{byte:02x}").expect("writing a digest to a String");
-        }
-        encoded
+        self.hasher
+            .finalize()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect()
     }
 }
 

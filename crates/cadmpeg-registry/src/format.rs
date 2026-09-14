@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Writable formats and registry-owned CLI format words.
 
+use crate::registry::RegistryLoadError;
 use cadmpeg_ir::codec::FormatId;
 
 /// An output format this build can write.
@@ -35,8 +36,7 @@ pub enum Format {
 impl Format {
     /// Whether `name` is a format word in the output grammar, independent of
     /// whether this build can write it.
-    #[must_use]
-    pub fn is_known_name(name: &str) -> bool {
+    pub fn is_known_name(name: &str) -> Result<bool, RegistryLoadError> {
         crate::registry::is_format_name(name)
     }
 
@@ -66,10 +66,10 @@ impl Format {
     /// word. Call [`Self::is_known_name`] first when that distinction matters.
     /// `registry::tests::compiled_write_catalogs_match_registry_policy` proves
     /// no compiled target's local id or alias is also a format word.
-    #[must_use]
-    pub fn from_name(name: &str) -> Option<Self> {
+    pub fn from_name(name: &str) -> Result<Option<Self>, RegistryLoadError> {
         let canonical = crate::registry::canonical_format_name(name)?;
-        Self::all().find(|format| format.name().as_str() == canonical)
+        Ok(canonical
+            .and_then(|canonical| Self::all().find(|format| format.name().as_str() == canonical)))
     }
 
     /// The output-format words this build accepts, for a refusal message.
@@ -145,19 +145,34 @@ mod tests {
             "acis",
             "parasolid",
         ] {
-            assert!(Format::is_known_name(name), "{name}");
+            assert!(
+                Format::is_known_name(name).expect("embedded registry loads"),
+                "{name}"
+            );
         }
-        assert!(!Format::is_known_name("5.1"));
-        assert!(!Format::is_known_name("f3z"));
+        assert!(!Format::is_known_name("5.1").expect("embedded registry loads"));
+        assert!(!Format::is_known_name("f3z").expect("embedded registry loads"));
     }
 
     #[cfg(feature = "step")]
     #[test]
     fn output_aliases_resolve_through_the_identity_registry() {
-        assert_eq!(Format::from_name("stp"), Some(Format::Step));
-        assert_eq!(Format::from_name("json"), Some(Format::Cadir));
-        assert_eq!(Format::from_name("inventor"), None);
-        assert_eq!(Format::from_name("ipt"), None);
+        assert_eq!(
+            Format::from_name("stp").expect("embedded registry loads"),
+            Some(Format::Step)
+        );
+        assert_eq!(
+            Format::from_name("json").expect("embedded registry loads"),
+            Some(Format::Cadir)
+        );
+        assert_eq!(
+            Format::from_name("inventor").expect("embedded registry loads"),
+            None
+        );
+        assert_eq!(
+            Format::from_name("ipt").expect("embedded registry loads"),
+            None
+        );
     }
 
     #[test]

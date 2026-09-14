@@ -118,7 +118,7 @@ mod tests {
             for target in encoder.targets() {
                 for token in target.accepted_tokens() {
                     assert!(
-                        !Format::is_known_name(token),
+                        !Format::is_known_name(token).expect("embedded registry loads"),
                         "{}: accepted token {token} of {} is also an output format name",
                         encoder.id(),
                         target.id

@@ -42,7 +42,7 @@ pub(crate) fn run(file: &str, arena: Option<&str>, json: bool) -> Result<()> {
     let entry_count = arena_rec.records.len() as u64;
     let rows = infer_fields(&arena_rec.records, &doc.all_ids());
     if json {
-        print_json("schema", json_payload(&target.dotted(), entry_count, &rows));
+        print_json("schema", json_payload(&target.dotted(), entry_count, &rows))?;
         return Ok(());
     }
     println!("path\tpresence\ttype\texample\trelation");

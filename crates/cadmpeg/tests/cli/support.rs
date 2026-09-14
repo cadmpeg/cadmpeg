@@ -185,7 +185,7 @@ pub fn minimal_rhino_archive_with_comment(
 }
 
 pub fn sldprt_cube() -> cadmpeg_ir::CadIr {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.bodies[0].name = None;
     ir.model.faces.iter_mut().for_each(|face| face.name = None);
     ir.model
@@ -197,7 +197,7 @@ pub fn sldprt_cube() -> cadmpeg_ir::CadIr {
 
 /// A cube carrying source metadata with the given attributes.
 pub fn cube_with_source(attributes: &[(&str, &str)]) -> cadmpeg_ir::CadIr {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.source = Some(cadmpeg_ir::SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
             cadmpeg_core::dialect_id!("synthetic:test"),

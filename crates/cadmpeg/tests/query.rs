@@ -507,7 +507,7 @@ fn a_non_json_file_is_an_operational_error() {
 #[test]
 fn query_projects_a_real_check_report_end_to_end() {
     let dir = tempdir().unwrap();
-    let ir = unit_cube();
+    let ir = unit_cube().expect("unit cube fixture is admitted");
     let model = dir.path().join("cube.cadir.json");
     fs::write(&model, ir.to_canonical_json().unwrap()).unwrap();
     let report = dir.path().join("report.json");
@@ -1015,7 +1015,7 @@ fn item_head_conflicts_with_ids_and_fields_conflicts_with_json() {
 #[test]
 fn item_round_trips_counts_dotted_name_on_unit_cube() {
     let dir = tempdir().unwrap();
-    let ir = unit_cube();
+    let ir = unit_cube().expect("unit cube fixture is admitted");
     let model = dir.path().join("cube.cadir.json");
     fs::write(&model, ir.to_canonical_json().unwrap()).unwrap();
 
@@ -1477,7 +1477,7 @@ fn fidelity_rejects_non_sidecar_kinds_and_wraps_json() {
 #[test]
 fn a_written_report_carries_the_generator_and_summary_prints_it() {
     let dir = tempdir().unwrap();
-    let ir = unit_cube();
+    let ir = unit_cube().expect("unit cube fixture is admitted");
     let model = dir.path().join("cube.cadir.json");
     fs::write(&model, ir.to_canonical_json().unwrap()).unwrap();
     let report = dir.path().join("cube.report.json");

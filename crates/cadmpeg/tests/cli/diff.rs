@@ -11,7 +11,7 @@ use crate::support::*;
 #[test]
 fn diff_reports_modified_entities_and_uses_diff_exit_codes() {
     let dir = tempdir().unwrap();
-    let left = unit_cube();
+    let left = unit_cube().expect("unit cube fixture is admitted");
     let mut right = left.clone();
     right.model.points[0].position.x += 0.5;
     right.model.edges[0].tolerance =
@@ -73,7 +73,7 @@ fn diff_reports_dialect_admission_and_declaration_changes() {
     use std::collections::BTreeMap;
 
     let dir = tempdir().unwrap();
-    let mut left = unit_cube();
+    let mut left = unit_cube().expect("unit cube fixture is admitted");
     left.source = Some(cadmpeg_ir::SourceMeta::classified(
         DialectLayers::of(
             DialectMatch::admitted(cadmpeg_core::dialect_id!("synthetic:v1")).with_declared(
@@ -82,7 +82,7 @@ fn diff_reports_dialect_admission_and_declaration_changes() {
         ),
         BTreeMap::new(),
     ));
-    let mut right = unit_cube();
+    let mut right = unit_cube().expect("unit cube fixture is admitted");
     right.source = Some(cadmpeg_ir::SourceMeta::classified(
         DialectLayers::of(
             DialectMatch::residual(cadmpeg_core::dialect_id!("synthetic:v1")).with_declared(
@@ -157,7 +157,7 @@ fn diff_reports_a_machine_local_digest_difference_without_a_verdict() {
 #[test]
 fn diff_handles_absent_source_metadata() {
     let dir = tempdir().unwrap();
-    let mut bare = unit_cube();
+    let mut bare = unit_cube().expect("unit cube fixture is admitted");
     bare.source = None;
     let a = fixture(dir.path(), "a.json", &bare);
     let b = fixture(
@@ -214,8 +214,16 @@ fn diff_rejects_input_format_override() {
 #[test]
 fn diff_input_format_forces_the_reader_per_input() {
     let dir = tempdir().unwrap();
-    let a = fixture(dir.path(), "a.cadir.json", &unit_cube());
-    let b = fixture(dir.path(), "b.cadir.json", &unit_cube());
+    let a = fixture(
+        dir.path(),
+        "a.cadir.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
+    let b = fixture(
+        dir.path(),
+        "b.cadir.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
 
     // Two identical CADIR documents compare equal.
     Command::cargo_bin("cadmpeg")

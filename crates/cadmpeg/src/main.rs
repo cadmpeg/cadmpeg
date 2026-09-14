@@ -8,6 +8,7 @@
 
 mod application;
 mod commands;
+mod input_format;
 mod inspect;
 mod loader;
 mod query;
@@ -18,7 +19,6 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use cadmpeg_registry::{ForcedInput, InputCatalog};
-use clap::builder::TypedValueParser;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use registry_view::{print_dialects, print_formats};
 
@@ -50,16 +50,9 @@ struct InputArgs {
     #[arg(
         long,
         visible_alias = "from",
-        value_parser = input_format_parser()
+        value_parser = crate::input_format::input_format_parser()
     )]
     input_format: Option<ForcedInput>,
-}
-
-fn input_format_parser() -> impl TypedValueParser<Value = ForcedInput> {
-    clap::builder::PossibleValuesParser::new(cadmpeg_registry::input_names()).try_map(|name| {
-        cadmpeg_registry::forced_input(&name)
-            .ok_or_else(|| format!("unsupported input format: {name}"))
-    })
 }
 
 #[derive(Debug, Clone, Args)]
@@ -265,13 +258,13 @@ enum Command {
         /// Treat the first file as this format.
         #[arg(
             long,
-            value_parser = input_format_parser()
+            value_parser = crate::input_format::input_format_parser()
         )]
         input_format_a: Option<ForcedInput>,
         /// Treat the second file as this format.
         #[arg(
             long,
-            value_parser = input_format_parser()
+            value_parser = crate::input_format::input_format_parser()
         )]
         input_format_b: Option<ForcedInput>,
         /// Write JSON to standard output.
@@ -407,10 +400,9 @@ fn main() -> ExitCode {
             )
         }
         .map(|()| ExitCode::SUCCESS),
-        Command::Formats => {
-            print_formats(&inputs);
-            Ok(ExitCode::SUCCESS)
-        }
+        Command::Formats => print_formats(&inputs)
+            .map(|()| ExitCode::SUCCESS)
+            .map_err(application::refusal::ApplicationError::from),
         Command::Dialects { format } => print_dialects(format.as_deref())
             .map(|()| ExitCode::SUCCESS)
             .map_err(anyhow::Error::new)

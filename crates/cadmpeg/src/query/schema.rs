@@ -102,7 +102,7 @@ fn listing(model: &Map<String, Value>, defs: &Map<String, Value>, json: bool) ->
                 Value::String(element_label(node, defs)),
             );
         }
-        print_json("schema", Value::Object(payload));
+        print_json("schema", Value::Object(payload))?;
         return Ok(());
     }
     println!("arena\telement\trequired");
@@ -149,7 +149,7 @@ fn arena_table(
             "schema": element,
             "defs": defs_closure(element, defs),
         });
-        print_json("schema", payload);
+        print_json("schema", payload)?;
         return Ok(());
     }
     print_type_table(element, defs);
@@ -169,7 +169,7 @@ fn sidecar(json: bool) -> Result<()> {
             "element": "DecodeSidecar",
             "schema": root,
         });
-        print_json("schema", payload);
+        print_json("schema", payload)?;
         return Ok(());
     }
     print_type_table(&root, defs);
