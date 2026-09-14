@@ -1220,7 +1220,7 @@ fn merge_formula_parameter_candidate(
     conflicting_inputs: &mut BTreeSet<ParameterId>,
     mut candidate: FormulaParameterCandidate,
 ) {
-    match candidates.get(&candidate.parameter.id) {
+    match candidates.get_mut(&candidate.parameter.id) {
         Some(existing) if !formula_parameter_candidates_agree(existing, &candidate) => {
             match (
                 existing.role.is_formula_output(),
@@ -1250,11 +1250,7 @@ fn merge_formula_parameter_candidate(
         Some(existing)
             if existing.role.is_formula_output() && !candidate.role.is_formula_output() =>
         {
-            if let FormulaParameterRole::FormulaOutput { fallback } = &mut candidates
-                .get_mut(&candidate.parameter.id)
-                .expect("candidate exists")
-                .role
-            {
+            if let FormulaParameterRole::FormulaOutput { fallback } = &mut existing.role {
                 fallback.get_or_insert((candidate.parameter, candidate.parameter_type));
             }
         }
@@ -1568,7 +1564,6 @@ enum EvaluatedFormulaScalar {
         value: f64,
         dimension: FormulaDimension,
         integral: Option<bool>,
-        known_value: f64,
     },
 }
 
@@ -1580,11 +1575,10 @@ impl EvaluatedFormulaScalar {
         known_value: Option<f64>,
     ) -> Self {
         match known_value {
-            Some(known_value) => Self::Known {
+            Some(value) => Self::Known {
                 value,
                 dimension,
                 integral,
-                known_value,
             },
             None => Self::Static {
                 value,
@@ -1614,21 +1608,9 @@ impl EvaluatedFormulaScalar {
 
     fn known_value(self) -> Option<f64> {
         match self {
-            Self::Known { known_value, .. } => Some(known_value),
+            Self::Known { value, .. } => Some(value),
             Self::Static { .. } => None,
         }
-    }
-
-    fn set_value(&mut self, value: f64) {
-        *self = Self::from_parts(value, self.dimension(), self.integral(), self.known_value());
-    }
-
-    fn set_integral(&mut self, integral: Option<bool>) {
-        *self = Self::from_parts(self.value(), self.dimension(), integral, self.known_value());
-    }
-
-    fn set_known_value(&mut self, known_value: Option<f64>) {
-        *self = Self::from_parts(self.value(), self.dimension(), self.integral(), known_value);
     }
 
     fn satisfies_source_type(self, source_type: FormulaParameterType) -> bool {
@@ -1821,28 +1803,21 @@ impl EvaluatedFormulaValue {
     fn agrees_with(&self, evaluation: &TypedParameterEvaluation) -> bool {
         match evaluation {
             TypedParameterEvaluation::Unset => true,
-            TypedParameterEvaluation::Value(value) => match (self, value) {
-                (Self::Boolean(left), ParameterValue::Boolean(right)) => {
-                    left.known_value() == Some(*right)
+            TypedParameterEvaluation::Value(value) => {
+                match (self, Self::from_parameter_value(value)) {
+                    (Self::Boolean(left), Self::Boolean(right)) => {
+                        left.known_value() == right.known_value()
+                    }
+                    (Self::String(left), Self::String(right)) => {
+                        left.is_known() && left.value() == right.value()
+                    }
+                    (Self::Scalar(left), Self::Scalar(right)) => {
+                        left.dimension() == right.dimension()
+                            && left.known_value() == right.known_value()
+                    }
+                    _ => false,
                 }
-                (Self::String(left), ParameterValue::String(right)) => left.value() == *right,
-                (
-                    Self::Scalar(left),
-                    value @ (ParameterValue::Length(_)
-                    | ParameterValue::Angle(_)
-                    | ParameterValue::Real(_)
-                    | ParameterValue::Integer(_)),
-                ) => {
-                    let right = Self::from_parameter_value(value)
-                        .scalar()
-                        .expect("numeric parameter produces a scalar");
-                    left.dimension() == right.dimension() && left.value() == right.value()
-                }
-                (Self::Boolean(_) | Self::String(_), _)
-                | (Self::Scalar(_), ParameterValue::Boolean(_) | ParameterValue::String(_)) => {
-                    false
-                }
-            },
+            }
         }
     }
 }
@@ -2221,7 +2196,7 @@ impl FormulaExpressionParser<'_, '_> {
                     continue;
                 }
             }
-            let mut left = value.scalar()?;
+            let left = value.scalar()?;
             let right = right.scalar()?;
             if left.dimension() != right.dimension() {
                 return None;
@@ -2262,18 +2237,20 @@ impl FormulaExpressionParser<'_, '_> {
             {
                 return None;
             }
-            left.set_value(if result_value.is_finite() {
-                result_value
-            } else {
-                0.0
-            });
-            left.set_integral(if self.evaluate {
-                finite_integrality(result_value)
-            } else {
-                integral
-            });
-            left.set_known_value(known_value);
-            value = EvaluatedFormulaValue::Scalar(left);
+            value = EvaluatedFormulaValue::Scalar(EvaluatedFormulaScalar::from_parts(
+                if result_value.is_finite() {
+                    result_value
+                } else {
+                    0.0
+                },
+                left.dimension(),
+                if self.evaluate {
+                    finite_integrality(result_value)
+                } else {
+                    integral
+                },
+                known_value,
+            ));
         }
     }
 
@@ -2381,10 +2358,15 @@ impl FormulaExpressionParser<'_, '_> {
             }
             b'-' => {
                 self.at += 1;
-                let mut value = self.unary(Self::nested_depth(depth)?)?.scalar()?;
-                value.set_value(-value.value());
-                value.set_known_value(value.known_value().map(|value| -value));
-                Some(EvaluatedFormulaValue::Scalar(value))
+                let value = self.unary(Self::nested_depth(depth)?)?.scalar()?;
+                Some(EvaluatedFormulaValue::Scalar(
+                    EvaluatedFormulaScalar::from_parts(
+                        -value.value(),
+                        value.dimension(),
+                        value.integral(),
+                        value.known_value().map(|value| -value),
+                    ),
+                ))
             }
             _ => self.power(depth),
         }
@@ -2843,18 +2825,18 @@ impl FormulaExpressionParser<'_, '_> {
                 if result.dimension() != argument.dimension() {
                     return None;
                 }
-                result.set_value(if function == "min" {
+                let value = if function == "min" {
                     result.value().min(argument.value())
                 } else {
                     result.value().max(argument.value())
-                });
-                result.set_integral(if self.evaluate {
-                    finite_integrality(result.value())
+                };
+                let integral = if self.evaluate {
+                    finite_integrality(value)
                 } else {
                     static_all_integral(result.integral(), argument.integral())
-                });
-                result.set_known_value(if self.evaluate {
-                    Some(result.value())
+                };
+                let known_value = if self.evaluate {
+                    Some(value)
                 } else {
                     result
                         .known_value()
@@ -2866,7 +2848,13 @@ impl FormulaExpressionParser<'_, '_> {
                                 result.max(argument)
                             }
                         })
-                });
+                };
+                result = EvaluatedFormulaScalar::from_parts(
+                    value,
+                    result.dimension(),
+                    integral,
+                    known_value,
+                );
             }
             return Some(EvaluatedFormulaValue::Scalar(result));
         }
@@ -3627,6 +3615,30 @@ mod parser_tests {
             evaluate_formula_expression_with_mode("round(#3_, #4_, #2_)", &bindings, false)
                 .is_none()
         );
+    }
+
+    #[test]
+    fn static_formula_branches_use_the_known_scalar_value() {
+        let bindings =
+            BTreeMap::from([("#1_", static_formula_value(FormulaParameterType::Boolean))]);
+        for predicate in [
+            "sqrt(4) > 1",
+            "abs(-2) == 2",
+            "mod(5, 3) == 2",
+            "(#1_ ? 2 ; 2) == 2",
+            "ToString(abs(-2)) == \"2\"",
+        ] {
+            let invalid = format!("{predicate} ? 1 / 0 ; 1");
+            assert!(
+                evaluate_formula_expression_with_mode(&invalid, &bindings, false).is_none(),
+                "{invalid}"
+            );
+            let valid = format!("{predicate} ? 1 ; 1 / 0");
+            assert!(
+                evaluate_formula_expression_with_mode(&valid, &bindings, false).is_some(),
+                "{valid}"
+            );
+        }
     }
 
     #[test]
