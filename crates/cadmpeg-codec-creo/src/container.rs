@@ -20,6 +20,7 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::bytes::find_from as find;
+use cadmpeg_core::CodecError;
 use cadmpeg_core::ContainerEntry;
 use cadmpeg_ir::ContainerSummary;
 
@@ -549,7 +550,7 @@ fn classify(name: &str) -> SectionRole {
 /// Enumerate binary sections from `body_start` to EOF by the `\n#<name>\n`
 /// header rule ([spec §2.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)). A candidate header is accepted only when its name is
 /// a printable run and is not one of the header/TOC framing markers.
-fn scan_sections(data: &[u8], body_start: usize) -> Vec<Section> {
+fn scan_sections(data: &[u8], body_start: usize) -> Result<Vec<Section>, CodecError> {
     // Collect header hits as (offset_of_section_hash, raw_name).
     let mut hits: Vec<(usize, String)> = Vec::new();
     let search_start = body_start.saturating_sub(1);
@@ -580,10 +581,15 @@ fn scan_sections(data: &[u8], body_start: usize) -> Vec<Section> {
             continue;
         }
         if toc_delimited {
-            let directory_end = hits
-                .first()
-                .map_or(body_start.min(data.len()), |(offset, _)| *offset);
-            if !toc_lists_section(&data[..directory_end], name_bytes) {
+            let directory_end = hits.first().map_or(body_start, |(offset, _)| *offset);
+            let Some(directory) = data.get(..directory_end) else {
+                return Err(CodecError::malformed(format!(
+                    "creo section `{raw}` is TOC-delimited and its directory window ends at \
+                     {directory_end}, past the file length {}",
+                    data.len(),
+                )));
+            };
+            if !toc_lists_section(directory, name_bytes) {
                 continue;
             }
         }
@@ -600,7 +606,7 @@ fn scan_sections(data: &[u8], body_start: usize) -> Vec<Section> {
             expanded_length: None,
         });
     }
-    sections
+    Ok(sections)
 }
 
 fn toc_sections(data: &[u8], header_base: usize) -> Vec<Section> {
@@ -864,6 +870,30 @@ pub(crate) fn expanded_section_for<'a>(
     })
 }
 
+/// The payload bytes of one declared section.
+///
+/// This is the only place that adds a declared section offset to a declared
+/// section length. A declared extent that ends past the last byte of the file
+/// is refused, named by the section and by both the declared end and the file
+/// length. A short file therefore never decodes a shortened region.
+pub(crate) fn section_region<'a>(
+    data: &'a [u8],
+    section: &Section,
+) -> Result<&'a [u8], CodecError> {
+    let declared_end = section.offset as u128 + section.length as u128;
+    if declared_end > data.len() as u128 {
+        return Err(CodecError::malformed(format!(
+            "creo section `{}` at offset {} declares length {}, so it ends at {declared_end}, \
+             past the file length {}",
+            section.raw_name,
+            section.offset,
+            section.length,
+            data.len(),
+        )));
+    }
+    Ok(&data[section.offset..section.offset + section.length])
+}
+
 fn toc_lists_section(toc: &[u8], name: &[u8]) -> bool {
     toc.windows(name.len() + 2).any(|window| {
         window[0] == b'\n' && &window[1..=name.len()] == name && window[1 + name.len()] == b' '
@@ -984,7 +1014,7 @@ fn identify_layout(
 /// (e.g. the `f3`/`f2` `crv_array` discriminators) are skipped before the
 /// required `f8` opener, whose compact-integer count is then decoded ([spec §4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#4-curve-namespace-crv_array),
 /// [§5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#5-topology-and-section-records)).
-fn read_array_count(region: &[u8], label: &[u8]) -> Option<u32> {
+fn read_array_count(region: &[u8], label: &[u8]) -> Result<Option<u32>, CodecError> {
     let mut from = 0;
     let mut total = 0u32;
     let mut found = false;
@@ -998,7 +1028,15 @@ fn read_array_count(region: &[u8], label: &[u8]) -> Option<u32> {
                 match region.get(p) {
                     Some(&psb::token::ARRAY_OPEN) => {
                         let (count, _) = psb::compact_int(region, p + 1);
-                        total = total.saturating_add(count);
+                        let Some(sum) = total.checked_add(count) else {
+                            return Err(CodecError::malformed(format!(
+                                "creo `{}` namespace array at offset {pos} declares {count} \
+                                 entries, which added to the {total} already declared exceeds \
+                                 the 32-bit census",
+                                String::from_utf8_lossy(label),
+                            )));
+                        };
+                        total = sum;
                         found = true;
                         break;
                     }
@@ -1009,23 +1047,23 @@ fn read_array_count(region: &[u8], label: &[u8]) -> Option<u32> {
         }
         from = pos + 1;
     }
-    found.then_some(total)
+    Ok(found.then_some(total))
 }
 
 /// Read the visible-geometry namespace census from the `VisibGeom` section body.
-fn geom_census(data: &[u8], sections: &[Section]) -> GeomCensus {
+fn geom_census(data: &[u8], sections: &[Section]) -> Result<GeomCensus, CodecError> {
     let Some(vg) = sections
         .iter()
         .find(|s| s.name() == VISIBGEOM)
         .or_else(|| sections.iter().find(|s| s.name() == "DEPDB_DATA"))
     else {
-        return GeomCensus::default();
+        return Ok(GeomCensus::default());
     };
-    let region = &data[vg.offset..(vg.offset + vg.length).min(data.len())];
-    GeomCensus {
-        srf_array_count: read_array_count(region, b"srf_array"),
-        crv_array_count: read_array_count(region, b"crv_array"),
-    }
+    let region = section_region(data, vg)?;
+    Ok(GeomCensus {
+        srf_array_count: read_array_count(region, b"srf_array")?,
+        crv_array_count: read_array_count(region, b"crv_array")?,
+    })
 }
 
 /// Decode the active unit-system selector. `51` is millimeter-Newton-Second,
@@ -1059,18 +1097,17 @@ fn cmnm_model_name(data: &[u8]) -> Option<(String, usize)> {
 
 /// Find the root model name stored by binary sections that do not carry a
 /// `CMNM` header record.
-fn native_model_name(data: &[u8], sections: &[Section]) -> Option<(String, usize)> {
+fn native_model_name(
+    data: &[u8],
+    sections: &[Section],
+) -> Result<Option<(String, usize)>, CodecError> {
     const FIELD: &[u8] = b"model_name\0";
 
     for section in sections {
         if section.role() == SectionRole::Thumbnail {
             continue;
         }
-        let end = section
-            .offset
-            .saturating_add(section.length)
-            .min(data.len());
-        let region = data.get(section.offset..end)?;
+        let region = section_region(data, section)?;
         let mut from = 0;
         while let Some(field) = find(region, FIELD, from) {
             let value_start = field + FIELD.len();
@@ -1088,13 +1125,13 @@ fn native_model_name(data: &[u8], sections: &[Section]) -> Option<(String, usize
             let value = &region[name_start..value_end];
             if let Ok(name) = std::str::from_utf8(value) {
                 if !name.is_empty() && name.chars().all(|character| !character.is_control()) {
-                    return Some((name.to_owned(), section.offset + name_start));
+                    return Ok(Some((name.to_owned(), section.offset + name_start)));
                 }
             }
             from = value_end + 1;
         }
     }
-    None
+    Ok(None)
 }
 
 fn relation_model_name(filename: &str) -> Option<&str> {
@@ -1111,82 +1148,94 @@ fn relation_model_name(filename: &str) -> Option<&str> {
     (!name.is_empty()).then_some(name)
 }
 
-fn family_table(data: &[u8], sections: &[Section]) -> Option<FamilyTableRecord> {
-    let section = sections
+fn family_table(
+    data: &[u8],
+    sections: &[Section],
+) -> Result<Option<FamilyTableRecord>, CodecError> {
+    let Some(section) = sections
         .iter()
-        .find(|section| section.name() == "FamilyInf")?;
-    let end = (section.offset + section.length).min(data.len());
+        .find(|section| section.name() == "FamilyInf")
+    else {
+        return Ok(None);
+    };
+    let end = section.offset + section_region(data, section)?.len();
     let label = b"drv_tbl_ptr\0";
-    let offset = find(data, label, section.offset)? + label.len();
+    let Some(label_offset) = find(data, label, section.offset) else {
+        return Ok(None);
+    };
+    let offset = label_offset + label.len();
     if offset >= end {
-        return None;
+        return Ok(None);
     }
     let pointer = match data[offset] {
         0xe1 => FamilyTablePointer::Null,
         psb::token::ENTITY_REF => {
-            let (id, after) = psb::reference_id(data, offset + 1).ok()?;
-            (after <= end).then_some(FamilyTablePointer::Entity(id))?
-        }
-        _ => return None,
-    };
-    Some(FamilyTableRecord { pointer, offset })
-}
-
-fn model_geometry_sections(data: &[u8], sections: &[Section]) -> Vec<Section> {
-    let visible_namespace_present = sections.iter().any(|candidate| {
-        if candidate.name() != VISIBGEOM {
-            return false;
-        }
-        let end = (candidate.offset + candidate.length).min(data.len());
-        let payload = &data[candidate.offset..end];
-        find(payload, b"srf_array\0", 0).is_some() || find(payload, b"crv_array\0", 0).is_some()
-    });
-    sections
-        .iter()
-        .filter(|section| {
-            if visible_namespace_present {
-                section.name() == VISIBGEOM
-            } else if section.name() == "DEPDB_DATA" {
-                let end = section
-                    .offset
-                    .saturating_add(section.length)
-                    .min(data.len());
-                let payload = &data[section.offset..end];
-                find(payload, b"srf_array\0", 0).is_some()
-                    || find(payload, b"crv_array\0", 0).is_some()
-            } else {
-                false
+            let Ok((id, after)) = psb::reference_id(data, offset + 1) else {
+                return Ok(None);
+            };
+            if after > end {
+                return Ok(None);
             }
-        })
-        .cloned()
-        .collect()
+            FamilyTablePointer::Entity(id)
+        }
+        _ => return Ok(None),
+    };
+    Ok(Some(FamilyTableRecord { pointer, offset }))
 }
 
-fn surface_rows(data: &[u8], sections: &[Section]) -> Vec<SurfaceRow> {
+fn model_geometry_sections(data: &[u8], sections: &[Section]) -> Result<Vec<Section>, CodecError> {
+    let mut visible_namespace_present = false;
+    for candidate in sections
+        .iter()
+        .filter(|candidate| candidate.name() == VISIBGEOM)
+    {
+        let payload = section_region(data, candidate)?;
+        if find(payload, b"srf_array\0", 0).is_some() || find(payload, b"crv_array\0", 0).is_some()
+        {
+            visible_namespace_present = true;
+            break;
+        }
+    }
+    let mut selected = Vec::new();
+    for section in sections {
+        let keep = if visible_namespace_present {
+            section.name() == VISIBGEOM
+        } else if section.name() == "DEPDB_DATA" {
+            let payload = section_region(data, section)?;
+            find(payload, b"srf_array\0", 0).is_some() || find(payload, b"crv_array\0", 0).is_some()
+        } else {
+            false
+        };
+        if keep {
+            selected.push(section.clone());
+        }
+    }
+    Ok(selected)
+}
+
+fn surface_rows(data: &[u8], sections: &[Section]) -> Result<Vec<SurfaceRow>, CodecError> {
     let mut rows = Vec::new();
     for section in sections {
-        let end = (section.offset + section.length).min(data.len());
-        rows.extend(
-            surface::rows(&data[section.offset..end])
-                .into_iter()
-                .map(|mut row| {
-                    row.offset += section.offset;
-                    row
-                }),
-        );
+        let section_bytes = section_region(data, section)?;
+        rows.extend(surface::rows(section_bytes).into_iter().map(|mut row| {
+            row.offset += section.offset;
+            row
+        }));
     }
     rows.sort_by_key(|row| row.offset);
-    rows
+    Ok(rows)
 }
 
-fn cross_section_surface_rows(data: &[u8], sections: &[Section]) -> Vec<SurfaceRow> {
+fn cross_section_surface_rows(
+    data: &[u8],
+    sections: &[Section],
+) -> Result<Vec<SurfaceRow>, CodecError> {
     let mut rows = Vec::new();
     for section in sections
         .iter()
         .filter(|section| section.name() == "Xsections")
     {
-        let end = (section.offset + section.length).min(data.len());
-        let payload = &data[section.offset..end];
+        let payload = section_region(data, section)?;
         if find(payload, b"Sld_Xsections\0", 0).is_none() {
             continue;
         }
@@ -1200,25 +1249,26 @@ fn cross_section_surface_rows(data: &[u8], sections: &[Section]) -> Vec<SurfaceR
         );
     }
     rows.sort_by_key(|row| row.offset);
-    rows
+    Ok(rows)
 }
 
-fn surface_prototype_count(data: &[u8], sections: &[Section]) -> usize {
-    sections
-        .iter()
-        .map(|section| {
-            let end = (section.offset + section.length).min(data.len());
-            surface::prototype_count(&data[section.offset..end])
-        })
-        .sum()
+fn surface_prototype_count(data: &[u8], sections: &[Section]) -> Result<usize, CodecError> {
+    let mut total = 0usize;
+    for section in sections {
+        total += surface::prototype_count(section_region(data, section)?);
+    }
+    Ok(total)
 }
 
-fn surface_prototype_records(data: &[u8], sections: &[Section]) -> Vec<SurfacePrototypeRecord> {
+fn surface_prototype_records(
+    data: &[u8],
+    sections: &[Section],
+) -> Result<Vec<SurfacePrototypeRecord>, CodecError> {
     let mut records = Vec::new();
     for section in sections {
-        let end = (section.offset + section.length).min(data.len());
+        let section_bytes = section_region(data, section)?;
         records.extend(
-            surface::named_prototype_records(&data[section.offset..end])
+            surface::named_prototype_records(section_bytes)
                 .into_iter()
                 .map(|mut record| {
                     record.offset += section.offset;
@@ -1231,15 +1281,18 @@ fn surface_prototype_records(data: &[u8], sections: &[Section]) -> Vec<SurfacePr
         );
     }
     records.sort_by_key(|record| record.offset);
-    records
+    Ok(records)
 }
 
-fn surface_parameters(data: &[u8], sections: &[Section]) -> Vec<SurfaceParameterRecord> {
+fn surface_parameters(
+    data: &[u8],
+    sections: &[Section],
+) -> Result<Vec<SurfaceParameterRecord>, CodecError> {
     let mut records = Vec::new();
     for section in sections {
-        let end = (section.offset + section.length).min(data.len());
+        let section_bytes = section_region(data, section)?;
         records.extend(
-            surface::parameter_records(&data[section.offset..end])
+            surface::parameter_records(section_bytes)
                 .into_iter()
                 .map(|mut record| {
                     record.offset += section.offset;
@@ -1249,20 +1302,19 @@ fn surface_parameters(data: &[u8], sections: &[Section]) -> Vec<SurfaceParameter
         );
     }
     records.sort_by_key(|record| record.offset);
-    records
+    Ok(records)
 }
 
 fn cross_section_surface_parameters(
     data: &[u8],
     sections: &[Section],
-) -> Vec<SurfaceParameterRecord> {
+) -> Result<Vec<SurfaceParameterRecord>, CodecError> {
     let mut records = Vec::new();
     for section in sections
         .iter()
         .filter(|section| section.name() == "Xsections")
     {
-        let end = (section.offset + section.length).min(data.len());
-        let payload = &data[section.offset..end];
+        let payload = section_region(data, section)?;
         if find(payload, b"Sld_Xsections\0", 0).is_none() {
             continue;
         }
@@ -1277,15 +1329,18 @@ fn cross_section_surface_parameters(
         );
     }
     records.sort_by_key(|record| record.offset);
-    records
+    Ok(records)
 }
 
-fn surface_contours(data: &[u8], sections: &[Section]) -> Vec<SurfaceContourRecord> {
+fn surface_contours(
+    data: &[u8],
+    sections: &[Section],
+) -> Result<Vec<SurfaceContourRecord>, CodecError> {
     let mut records = Vec::new();
     for section in sections {
-        let end = (section.offset + section.length).min(data.len());
+        let section_bytes = section_region(data, section)?;
         records.extend(
-            surface::contour_records(&data[section.offset..end])
+            surface::contour_records(section_bytes)
                 .into_iter()
                 .map(|mut record| {
                     record.offset += section.offset;
@@ -1296,17 +1351,19 @@ fn surface_contours(data: &[u8], sections: &[Section]) -> Vec<SurfaceContourReco
         );
     }
     records.sort_by_key(|record| record.offset);
-    records
+    Ok(records)
 }
 
-fn cross_section_surface_contours(data: &[u8], sections: &[Section]) -> Vec<SurfaceContourRecord> {
+fn cross_section_surface_contours(
+    data: &[u8],
+    sections: &[Section],
+) -> Result<Vec<SurfaceContourRecord>, CodecError> {
     let mut records = Vec::new();
     for section in sections
         .iter()
         .filter(|section| section.name() == "Xsections")
     {
-        let end = (section.offset + section.length).min(data.len());
-        let payload = &data[section.offset..end];
+        let payload = section_region(data, section)?;
         if find(payload, b"Sld_Xsections\0", 0).is_none() {
             continue;
         }
@@ -1322,15 +1379,14 @@ fn cross_section_surface_contours(data: &[u8], sections: &[Section]) -> Vec<Surf
         );
     }
     records.sort_by_key(|record| record.offset);
-    records
+    Ok(records)
 }
 
-fn loop_array_scan(data: &[u8], sections: &[Section]) -> LoopArrayScan {
+fn loop_array_scan(data: &[u8], sections: &[Section]) -> Result<LoopArrayScan, CodecError> {
     let mut frames = Vec::new();
     let mut records = Vec::new();
     for section in sections {
-        let end = (section.offset + section.length).min(data.len());
-        let payload = &data[section.offset..end];
+        let payload = section_region(data, section)?;
         let scan = loop_array::scan(payload);
         frames.extend(scan.frames.into_iter().map(|mut frame| {
             frame.offset += section.offset;
@@ -1347,18 +1403,18 @@ fn loop_array_scan(data: &[u8], sections: &[Section]) -> LoopArrayScan {
     }
     frames.sort_by_key(|frame: &LoopArrayFrame| frame.offset);
     records.sort_by_key(|record: &LoopArrayRecord| record.offset);
-    LoopArrayScan { frames, records }
+    Ok(LoopArrayScan { frames, records })
 }
 
 fn tabulated_cylinder_curve_replays(
     data: &[u8],
     sections: &[Section],
-) -> Vec<TabulatedCylinderCurveReplay> {
+) -> Result<Vec<TabulatedCylinderCurveReplay>, CodecError> {
     let mut records = Vec::new();
     for section in sections {
-        let end = (section.offset + section.length).min(data.len());
+        let section_bytes = section_region(data, section)?;
         records.extend(
-            surface::tabulated_cylinder_curve_replays(&data[section.offset..end])
+            surface::tabulated_cylinder_curve_replays(section_bytes)
                 .into_iter()
                 .map(|mut record| {
                     record.offset += section.offset;
@@ -1368,35 +1424,38 @@ fn tabulated_cylinder_curve_replays(
         );
     }
     records.sort_by_key(|record| record.offset);
-    records
+    Ok(records)
 }
 
-fn plane_local_systems(data: &[u8], sections: &[Section]) -> Vec<PlaneLocalSystem> {
+fn plane_local_systems(
+    data: &[u8],
+    sections: &[Section],
+) -> Result<Vec<PlaneLocalSystem>, CodecError> {
     let mut systems = Vec::new();
     for section in sections {
-        let end = (section.offset + section.length).min(data.len());
-        systems.extend(
-            surface::plane_local_systems(&data[section.offset..end])
-                .into_iter()
-                .map(|mut system| {
-                    system.row_offset += section.offset;
-                    system.offset += section.offset;
-                    system
-                }),
-        );
+        let section_bytes = section_region(data, section)?;
+        systems.extend(surface::plane_local_systems(section_bytes).into_iter().map(
+            |mut system| {
+                system.row_offset += section.offset;
+                system.offset += section.offset;
+                system
+            },
+        ));
     }
     systems.sort_by_key(|system| system.offset);
-    systems
+    Ok(systems)
 }
 
-fn cross_section_plane_local_systems(data: &[u8], sections: &[Section]) -> Vec<PlaneLocalSystem> {
+fn cross_section_plane_local_systems(
+    data: &[u8],
+    sections: &[Section],
+) -> Result<Vec<PlaneLocalSystem>, CodecError> {
     let mut systems = Vec::new();
     for section in sections
         .iter()
         .filter(|section| section.name() == "Xsections")
     {
-        let end = (section.offset + section.length).min(data.len());
-        let payload = &data[section.offset..end];
+        let payload = section_region(data, section)?;
         if find(payload, b"Sld_Xsections\0", 0).is_none() {
             continue;
         }
@@ -1411,35 +1470,38 @@ fn cross_section_plane_local_systems(data: &[u8], sections: &[Section]) -> Vec<P
         );
     }
     systems.sort_by_key(|system| system.offset);
-    systems
+    Ok(systems)
 }
 
-fn plane_envelopes(data: &[u8], sections: &[Section]) -> Vec<PlaneEnvelopeRecord> {
+fn plane_envelopes(
+    data: &[u8],
+    sections: &[Section],
+) -> Result<Vec<PlaneEnvelopeRecord>, CodecError> {
     let mut envelopes = Vec::new();
     for section in sections {
-        let end = (section.offset + section.length).min(data.len());
-        envelopes.extend(
-            surface::plane_envelopes(&data[section.offset..end])
-                .into_iter()
-                .map(|mut envelope| {
-                    envelope.row_offset += section.offset;
-                    envelope.offset += section.offset;
-                    envelope
-                }),
-        );
+        let section_bytes = section_region(data, section)?;
+        envelopes.extend(surface::plane_envelopes(section_bytes).into_iter().map(
+            |mut envelope| {
+                envelope.row_offset += section.offset;
+                envelope.offset += section.offset;
+                envelope
+            },
+        ));
     }
     envelopes.sort_by_key(|envelope| envelope.offset);
-    envelopes
+    Ok(envelopes)
 }
 
-fn cross_section_plane_envelopes(data: &[u8], sections: &[Section]) -> Vec<PlaneEnvelopeRecord> {
+fn cross_section_plane_envelopes(
+    data: &[u8],
+    sections: &[Section],
+) -> Result<Vec<PlaneEnvelopeRecord>, CodecError> {
     let mut envelopes = Vec::new();
     for section in sections
         .iter()
         .filter(|section| section.name() == "Xsections")
     {
-        let end = (section.offset + section.length).min(data.len());
-        let payload = &data[section.offset..end];
+        let payload = section_region(data, section)?;
         if find(payload, b"Sld_Xsections\0", 0).is_none() {
             continue;
         }
@@ -1453,15 +1515,15 @@ fn cross_section_plane_envelopes(data: &[u8], sections: &[Section]) -> Vec<Plane
         );
     }
     envelopes.sort_by_key(|envelope| envelope.offset);
-    envelopes
+    Ok(envelopes)
 }
 
-fn curve_prototypes(data: &[u8], sections: &[Section]) -> Vec<CurvePrototype> {
+fn curve_prototypes(data: &[u8], sections: &[Section]) -> Result<Vec<CurvePrototype>, CodecError> {
     let mut prototypes = Vec::new();
     for section in sections {
-        let end = (section.offset + section.length).min(data.len());
+        let section_bytes = section_region(data, section)?;
         prototypes.extend(
-            curve::prototypes(&data[section.offset..end])
+            curve::prototypes(section_bytes)
                 .into_iter()
                 .map(|mut prototype| {
                     prototype.offset += section.offset;
@@ -1470,19 +1532,19 @@ fn curve_prototypes(data: &[u8], sections: &[Section]) -> Vec<CurvePrototype> {
         );
     }
     prototypes.sort_by_key(|prototype| prototype.offset);
-    prototypes
+    Ok(prototypes)
 }
 
 fn curve_expressions(
     data: &[u8],
     sections: &[Section],
     model_name: Option<&str>,
-) -> Vec<CurveExpressionRecord> {
+) -> Result<Vec<CurveExpressionRecord>, CodecError> {
     let mut records = Vec::new();
     for section in sections {
-        let end = (section.offset + section.length).min(data.len());
+        let section_bytes = section_region(data, section)?;
         records.extend(
-            curve::expression_records_with_model_name(&data[section.offset..end], model_name)
+            curve::expression_records_with_model_name(section_bytes, model_name)
                 .into_iter()
                 .map(|mut record| {
                     record.offset += section.offset;
@@ -1508,19 +1570,19 @@ fn curve_expressions(
         );
     }
     records.sort_by_key(|record| record.offset);
-    records
+    Ok(records)
 }
 
 fn curve_parameters(
     data: &[u8],
     sections: &[Section],
     face_ids: &BTreeSet<u32>,
-) -> Vec<CurveParameterRecord> {
+) -> Result<Vec<CurveParameterRecord>, CodecError> {
     let mut records = Vec::new();
     for section in sections {
-        let end = (section.offset + section.length).min(data.len());
+        let section_bytes = section_region(data, section)?;
         records.extend(
-            curve::parameter_records_with_face_ids(&data[section.offset..end], Some(face_ids))
+            curve::parameter_records_with_face_ids(section_bytes, Some(face_ids))
                 .into_iter()
                 .map(|mut record| {
                     record.offset += section.offset;
@@ -1531,19 +1593,19 @@ fn curve_parameters(
         );
     }
     records.sort_by_key(|record| record.offset);
-    records
+    Ok(records)
 }
 
 fn two_chart_pcurves(
     data: &[u8],
     sections: &[Section],
     face_ids: &BTreeSet<u32>,
-) -> Vec<TwoChartPcurveSamples> {
+) -> Result<Vec<TwoChartPcurveSamples>, CodecError> {
     let mut records = Vec::new();
     for section in sections {
-        let end = (section.offset + section.length).min(data.len());
+        let section_bytes = section_region(data, section)?;
         records.extend(
-            curve::two_chart_pcurve_samples(&data[section.offset..end], Some(face_ids))
+            curve::two_chart_pcurve_samples(section_bytes, Some(face_ids))
                 .into_iter()
                 .map(|mut record| {
                     record.offset += section.offset;
@@ -1557,15 +1619,18 @@ fn two_chart_pcurves(
         *counts.entry(record.curve_id).or_insert(0usize) += 1;
     }
     records.retain(|record| counts.get(&record.curve_id) == Some(&1));
-    records
+    Ok(records)
 }
 
-fn prototype_pcurves(data: &[u8], sections: &[Section]) -> Vec<PrototypePcurveEndpoints> {
+fn prototype_pcurves(
+    data: &[u8],
+    sections: &[Section],
+) -> Result<Vec<PrototypePcurveEndpoints>, CodecError> {
     let mut records = Vec::new();
     for section in sections {
-        let end = (section.offset + section.length).min(data.len());
+        let section_bytes = section_region(data, section)?;
         records.extend(
-            curve::prototype_pcurve_endpoints(&data[section.offset..end])
+            curve::prototype_pcurve_endpoints(section_bytes)
                 .into_iter()
                 .map(|mut record| {
                     record.offset += section.offset;
@@ -1574,15 +1639,18 @@ fn prototype_pcurves(data: &[u8], sections: &[Section]) -> Vec<PrototypePcurveEn
         );
     }
     records.sort_by_key(|record| record.offset);
-    records
+    Ok(records)
 }
 
-fn curve_prototype_topology(data: &[u8], sections: &[Section]) -> Vec<CurvePrototypeTopology> {
+fn curve_prototype_topology(
+    data: &[u8],
+    sections: &[Section],
+) -> Result<Vec<CurvePrototypeTopology>, CodecError> {
     let mut records = Vec::new();
     for section in sections {
-        let end = (section.offset + section.length).min(data.len());
+        let section_bytes = section_region(data, section)?;
         records.extend(
-            curve::prototype_topology(&data[section.offset..end])
+            curve::prototype_topology(section_bytes)
                 .into_iter()
                 .map(|mut record| {
                     record.offset += section.offset;
@@ -1591,19 +1659,19 @@ fn curve_prototype_topology(data: &[u8], sections: &[Section]) -> Vec<CurveProto
         );
     }
     records.sort_by_key(|record| record.offset);
-    records
+    Ok(records)
 }
 
 fn curve_topology_rows(
     data: &[u8],
     sections: &[Section],
     face_ids: &BTreeSet<u32>,
-) -> Vec<CurveTopologyRow> {
+) -> Result<Vec<CurveTopologyRow>, CodecError> {
     let mut rows = Vec::new();
     for section in sections {
-        let end = (section.offset + section.length).min(data.len());
+        let section_bytes = section_region(data, section)?;
         rows.extend(
-            curve::topology_rows_with_face_ids(&data[section.offset..end], Some(face_ids))
+            curve::topology_rows_with_face_ids(section_bytes, Some(face_ids))
                 .into_iter()
                 .map(|mut row| {
                     row.offset += section.offset;
@@ -1612,17 +1680,19 @@ fn curve_topology_rows(
         );
     }
     rows.sort_by_key(|row| row.offset);
-    rows
+    Ok(rows)
 }
 
-fn cross_section_curve_rows(data: &[u8], sections: &[Section]) -> Vec<DepdbCurveRow> {
+fn cross_section_curve_rows(
+    data: &[u8],
+    sections: &[Section],
+) -> Result<Vec<DepdbCurveRow>, CodecError> {
     let mut rows = Vec::new();
     for section in sections
         .iter()
         .filter(|section| section.name() == "Xsections")
     {
-        let end = (section.offset + section.length).min(data.len());
-        let payload = &data[section.offset..end];
+        let payload = section_region(data, section)?;
         if find(payload, b"Sld_Xsections\0", 0).is_none() {
             continue;
         }
@@ -1636,17 +1706,19 @@ fn cross_section_curve_rows(data: &[u8], sections: &[Section]) -> Vec<DepdbCurve
         );
     }
     rows.sort_by_key(|row| row.offset);
-    rows
+    Ok(rows)
 }
 
-fn cross_section_curve_prototypes(data: &[u8], sections: &[Section]) -> Vec<CurvePrototype> {
+fn cross_section_curve_prototypes(
+    data: &[u8],
+    sections: &[Section],
+) -> Result<Vec<CurvePrototype>, CodecError> {
     let mut records = Vec::new();
     for section in sections
         .iter()
         .filter(|section| section.name() == "Xsections")
     {
-        let end = (section.offset + section.length).min(data.len());
-        let payload = &data[section.offset..end];
+        let payload = section_region(data, section)?;
         if find(payload, b"Sld_Xsections\0", 0).is_none() {
             continue;
         }
@@ -1656,42 +1728,38 @@ fn cross_section_curve_prototypes(data: &[u8], sections: &[Section]) -> Vec<Curv
         }));
     }
     records.sort_by_key(|record| record.offset);
-    records
+    Ok(records)
 }
 
-fn datum_planes(data: &[u8], sections: &[Section]) -> Vec<DatumPlaneRecord> {
+fn datum_planes(data: &[u8], sections: &[Section]) -> Result<Vec<DatumPlaneRecord>, CodecError> {
     let mut planes = Vec::new();
     for section in sections
         .iter()
         .filter(|section| section.name() == "ActDatums")
     {
-        let end = (section.offset + section.length).min(data.len());
-        planes.extend(
-            datum::planes(&data[section.offset..end])
-                .into_iter()
-                .map(|mut plane| {
-                    plane.offset_in_payload += section.offset;
-                    plane
-                }),
-        );
-        if let Some(mut plane) = datum::named_plane(&data[section.offset..end]) {
+        let section_bytes = section_region(data, section)?;
+        planes.extend(datum::planes(section_bytes).into_iter().map(|mut plane| {
+            plane.offset_in_payload += section.offset;
+            plane
+        }));
+        if let Some(mut plane) = datum::named_plane(section_bytes) {
             plane.offset_in_payload += section.offset;
             planes.push(plane);
         }
     }
     planes.sort_by_key(|plane| plane.offset_in_payload);
-    planes
+    Ok(planes)
 }
 
-fn datum_cylinders(data: &[u8], sections: &[Section]) -> Vec<DatumCylinder> {
+fn datum_cylinders(data: &[u8], sections: &[Section]) -> Result<Vec<DatumCylinder>, CodecError> {
     let mut cylinders = Vec::new();
     for section in sections
         .iter()
         .filter(|section| section.name() == "ActDatums")
     {
-        let end = (section.offset + section.length).min(data.len());
+        let section_bytes = section_region(data, section)?;
         cylinders.extend(
-            datum::cylinders(&data[section.offset..end])
+            datum::cylinders(section_bytes)
                 .into_iter()
                 .map(|mut cylinder| {
                     cylinder.offset_in_payload += section.offset;
@@ -1700,7 +1768,7 @@ fn datum_cylinders(data: &[u8], sections: &[Section]) -> Vec<DatumCylinder> {
         );
     }
     cylinders.sort_by_key(|cylinder| cylinder.offset_in_payload);
-    cylinders
+    Ok(cylinders)
 }
 
 fn structural_feature_ids(
@@ -1708,7 +1776,7 @@ fn structural_feature_ids(
     sections: &[Section],
     surface_rows: &[SurfaceRow],
     curve_rows: &[CurveTopologyRow],
-) -> std::collections::BTreeSet<u32> {
+) -> Result<std::collections::BTreeSet<u32>, CodecError> {
     let mut ids = std::collections::BTreeSet::new();
     ids.extend(
         surface_rows
@@ -1721,8 +1789,7 @@ fn structural_feature_ids(
         .iter()
         .filter(|section| section.role() == SectionRole::PsbGeometry)
     {
-        let end = (section.offset + section.length).min(data.len());
-        let payload = &data[section.offset..end];
+        let payload = section_region(data, section)?;
         let mut from = 0;
         while let Some(found) = find(payload, b"parent_feats\0", from) {
             let start = found + b"parent_feats\0".len();
@@ -1744,7 +1811,7 @@ fn structural_feature_ids(
             from = start;
         }
     }
-    ids
+    Ok(ids)
 }
 
 fn stored_operation_schema_class(
@@ -1835,7 +1902,7 @@ fn feature_entity_tables(
     sections: &[Section],
     feature_ids: &[u32],
     rows: &[SurfaceRow],
-) -> Vec<FeatureEntityTable> {
+) -> Result<Vec<FeatureEntityTable>, CodecError> {
     let feature_ids = feature_ids.iter().copied().collect();
     let surface_ids = rows.iter().map(|row| row.id).collect();
     let mut tables = Vec::new();
@@ -1843,9 +1910,9 @@ fn feature_entity_tables(
         .iter()
         .filter(|section| section.name() == "AllFeatur")
     {
-        let end = (section.offset + section.length).min(data.len());
+        let section_bytes = section_region(data, section)?;
         tables.extend(
-            feature::entity_tables(&data[section.offset..end], &feature_ids, &surface_ids)
+            feature::entity_tables(section_bytes, &feature_ids, &surface_ids)
                 .into_iter()
                 .map(|mut table| {
                     table.offset += section.offset;
@@ -1858,49 +1925,50 @@ fn feature_entity_tables(
         );
     }
     tables.sort_by_key(|table| table.offset);
-    tables
+    Ok(tables)
 }
 
-fn feature_rows(data: &[u8], sections: &[Section], feature_ids: &[u32]) -> Vec<FeatureRow> {
+fn feature_rows(
+    data: &[u8],
+    sections: &[Section],
+    feature_ids: &[u32],
+) -> Result<Vec<FeatureRow>, CodecError> {
     let feature_ids = feature_ids.iter().copied().collect();
     let mut rows = Vec::new();
     for section in sections
         .iter()
         .filter(|section| section.name() == "AllFeatur")
     {
-        let end = (section.offset + section.length).min(data.len());
-        rows.extend(feature::rows(
-            &data[section.offset..end],
-            &feature_ids,
-            section.offset,
-        ));
+        let section_bytes = section_region(data, section)?;
+        rows.extend(feature::rows(section_bytes, &feature_ids, section.offset));
     }
     rows.sort_by_key(|row| row.offset);
-    rows
+    Ok(rows)
 }
 
 fn feature_entity_graph(
     data: &[u8],
     sections: &[Section],
-) -> (Vec<FeatureEntity>, Vec<FeatureEntityReference>) {
+) -> Result<(Vec<FeatureEntity>, Vec<FeatureEntityReference>), CodecError> {
     let Some(section) = sections
         .iter()
         .find(|section| section.name() == "AllFeatur")
     else {
-        return (Vec::new(), Vec::new());
+        return Ok((Vec::new(), Vec::new()));
     };
-    let end = (section.offset + section.length).min(data.len());
-    let payload_start = find(data, b"\n", section.offset)
-        .map_or(section.offset, |newline| newline + 1)
-        .min(end);
-    let (mut entities, mut references) = feature::entity_graph(&data[payload_start..end]);
+    let section_bytes = section_region(data, section)?;
+    // The payload follows the `#<name>\n` section header. A section without
+    // that newline carries no header, so the whole region is the payload.
+    let header_length = find(section_bytes, b"\n", 0).map_or(0, |newline| newline + 1);
+    let payload_start = section.offset + header_length;
+    let (mut entities, mut references) = feature::entity_graph(&section_bytes[header_length..]);
     for entity in &mut entities {
         entity.offset += payload_start;
     }
     for reference in &mut references {
         reference.offset += payload_start;
     }
-    (entities, references)
+    Ok((entities, references))
 }
 
 fn offset_feature_definition(definition: &mut FeatureDefinition, section_offset: usize) {
@@ -1981,14 +2049,16 @@ fn offset_feature_definition(definition: &mut FeatureDefinition, section_offset:
     }
 }
 
-fn feature_definitions(data: &[u8], sections: &[Section]) -> Vec<FeatureDefinition> {
+fn feature_definitions(
+    data: &[u8],
+    sections: &[Section],
+) -> Result<Vec<FeatureDefinition>, CodecError> {
     let mut definitions = Vec::new();
     for section in sections
         .iter()
         .filter(|section| section.name() == "FeatDefs" || section.name() == "DEPDB_DATA")
     {
-        let end = (section.offset + section.length).min(data.len());
-        let payload = &data[section.offset..end];
+        let payload = section_region(data, section)?;
         definitions.extend(
             (if section.name() == "DEPDB_DATA" {
                 feature::depdb_definitions(payload)
@@ -2024,7 +2094,7 @@ fn feature_definitions(data: &[u8], sections: &[Section]) -> Vec<FeatureDefiniti
         }
     }
     definitions.sort_by_key(|definition| definition.offset);
-    definitions
+    Ok(definitions)
 }
 
 fn feature_row_definitions(rows: &[FeatureRow]) -> Vec<FeatureDefinition> {
@@ -2060,15 +2130,18 @@ fn section_owner_ranges(sections: &[Section], feature_rows: &[FeatureRow]) -> Ve
     ranges
 }
 
-fn positional_replay_definitions(data: &[u8], sections: &[Section]) -> Vec<FeatureDefinition> {
+fn positional_replay_definitions(
+    data: &[u8],
+    sections: &[Section],
+) -> Result<Vec<FeatureDefinition>, CodecError> {
     let mut definitions = Vec::new();
     for section in sections
         .iter()
         .filter(|section| section.name() == "FeatDefs")
     {
-        let end = (section.offset + section.length).min(data.len());
+        let section_bytes = section_region(data, section)?;
         definitions.extend(
-            feature::positional_replay_definitions(&data[section.offset..end])
+            feature::positional_replay_definitions(section_bytes)
                 .into_iter()
                 .map(|mut definition| {
                     offset_feature_definition(&mut definition, section.offset);
@@ -2077,18 +2150,21 @@ fn positional_replay_definitions(data: &[u8], sections: &[Section]) -> Vec<Featu
         );
     }
     definitions.sort_by_key(|definition| definition.offset);
-    definitions
+    Ok(definitions)
 }
 
-fn feature_operations(data: &[u8], sections: &[Section]) -> Vec<FeatureOperation> {
+fn feature_operations(
+    data: &[u8],
+    sections: &[Section],
+) -> Result<Vec<FeatureOperation>, CodecError> {
     let mut records = Vec::new();
     for section in sections
         .iter()
         .filter(|section| section.name() == "MdlStatus" || section.name() == "DEPDB_DATA")
     {
-        let end = (section.offset + section.length).min(data.len());
+        let section_bytes = section_region(data, section)?;
         records.extend(
-            feature::operations(&data[section.offset..end])
+            feature::operations(section_bytes)
                 .into_iter()
                 .map(|mut record| {
                     record.offset += section.offset;
@@ -2105,37 +2181,42 @@ fn feature_operations(data: &[u8], sections: &[Section]) -> Vec<FeatureOperation
         .into_values()
         .collect::<Vec<_>>();
     current.sort_by_key(|record| record.offset);
-    current
+    Ok(current)
 }
 
-fn feature_reference_names(data: &[u8], sections: &[Section]) -> Vec<FeatureReferenceName> {
-    sections
+fn feature_reference_names(
+    data: &[u8],
+    sections: &[Section],
+) -> Result<Vec<FeatureReferenceName>, CodecError> {
+    let mut records = Vec::new();
+    for section in sections
         .iter()
         .filter(|section| section.name() == "MdlRefInfo")
-        .flat_map(|section| {
-            let end = section
-                .offset
-                .saturating_add(section.length)
-                .min(data.len());
-            feature::reference_names(&data[section.offset..end])
+    {
+        records.extend(
+            feature::reference_names(section_region(data, section)?)
                 .into_iter()
                 .map(|mut record| {
                     record.offset += section.offset;
                     record
-                })
-        })
-        .collect()
+                }),
+        );
+    }
+    Ok(records)
 }
 
-fn feature_operation_states(data: &[u8], sections: &[Section]) -> Vec<FeatureOperationState> {
+fn feature_operation_states(
+    data: &[u8],
+    sections: &[Section],
+) -> Result<Vec<FeatureOperationState>, CodecError> {
     let mut records = Vec::new();
     for section in sections
         .iter()
         .filter(|section| section.name() == "MdlStatus" || section.name() == "DEPDB_DATA")
     {
-        let end = (section.offset + section.length).min(data.len());
+        let section_bytes = section_region(data, section)?;
         records.extend(
-            feature::operation_states(&data[section.offset..end])
+            feature::operation_states(section_bytes)
                 .into_iter()
                 .map(|mut record| {
                     record.offset += section.offset;
@@ -2145,10 +2226,10 @@ fn feature_operation_states(data: &[u8], sections: &[Section]) -> Vec<FeatureOpe
         );
     }
     records.sort_by_key(|record| record.offset);
-    records
+    Ok(records)
 }
 
-fn depdb_recipe_rows(data: &[u8], sections: &[Section]) -> Vec<FeatureRow> {
+fn depdb_recipe_rows(data: &[u8], sections: &[Section]) -> Result<Vec<FeatureRow>, CodecError> {
     fn recipe_end(payload: &[u8], search_start: usize, recipe: FeatureRecipe) -> Option<usize> {
         let name = match recipe {
             FeatureRecipe::ProtrudeExtrude => b"protextrude\0".as_slice(),
@@ -2164,8 +2245,7 @@ fn depdb_recipe_rows(data: &[u8], sections: &[Section]) -> Vec<FeatureRow> {
         .iter()
         .filter(|section| section.name() == "DEPDB_DATA")
     {
-        let end = (section.offset + section.length).min(data.len());
-        let payload = &data[section.offset..end];
+        let payload = section_region(data, section)?;
         let mut recipe_operations = feature::operation_states(payload)
             .into_iter()
             .filter_map(|operation| {
@@ -2199,18 +2279,27 @@ fn depdb_recipe_rows(data: &[u8], sections: &[Section]) -> Vec<FeatureRow> {
         }
     }
     rows.sort_by_key(|row| row.offset);
-    rows
+    Ok(rows)
 }
 
-fn geomlists_value(data: &[u8], sections: &[Section], label: &[u8]) -> Option<u32> {
-    let section = sections
+fn geomlists_value(
+    data: &[u8],
+    sections: &[Section],
+    label: &[u8],
+) -> Result<Option<u32>, CodecError> {
+    let Some(section) = sections
         .iter()
-        .find(|section| section.name() == "Geomlists")?;
-    let end = (section.offset + section.length).min(data.len());
-    let payload = &data[section.offset..end];
-    let value_offset = find(payload, label, 0)? + label.len();
+        .find(|section| section.name() == "Geomlists")
+    else {
+        return Ok(None);
+    };
+    let payload = section_region(data, section)?;
+    let Some(label_offset) = find(payload, label, 0) else {
+        return Ok(None);
+    };
+    let value_offset = label_offset + label.len();
     let (count, after) = psb::compact_int(payload, value_offset);
-    (after > value_offset).then_some(count)
+    Ok((after > value_offset).then_some(count))
 }
 
 /// Read one scalar integer owned by the unique legacy `Sld_GeomDepend` root.
@@ -2241,7 +2330,7 @@ fn legacy_geom_depend_value(persistence: &legacy::Persistence, field_name: &str)
 }
 
 /// Parse a whole `.prt` byte image.
-pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
+pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<ContainerScan<'a>, CodecError> {
     let data = data.into();
     let version_line = line_at(&data, 0);
     let mut model_name = cmnm_model_name(&data).map(|(name, offset)| ModelName { name, offset });
@@ -2263,7 +2352,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         |legacy| legacy_toc_sections(&data, legacy.banner_offset),
     );
     let sections = if sections.is_empty() {
-        scan_sections(&data, body_start)
+        scan_sections(&data, body_start)?
     } else {
         sections
     };
@@ -2273,19 +2362,20 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
             .map_or(data.len(), |section| section.offset);
         let mut scopes = Vec::with_capacity(sections.len() + 1);
         scopes.push(framing.object_offset..initial_end);
-        scopes.extend(sections.iter().filter_map(|section| {
-            let payload_start = section
+        for section in &sections {
+            let region = section_region(&data, section)?;
+            let Some(payload_start) = section
                 .offset
-                .checked_add(section.raw_name.len().checked_add(2)?)?;
-            legacy::starts_with_declaration(&data, payload_start).then(|| {
-                section.offset
-                    ..section
-                        .offset
-                        .saturating_add(section.length)
-                        .min(data.len())
-            })
-        }));
-        framing.persistence = legacy::scan(&data, scopes);
+                .checked_add(section.raw_name.len())
+                .and_then(|start| start.checked_add(2))
+            else {
+                continue;
+            };
+            if legacy::starts_with_declaration(&data, payload_start) {
+                scopes.push(section.offset..section.offset + region.len());
+            }
+        }
+        framing.persistence = legacy::scan(&data, scopes)?;
     }
     if model_name.is_none() {
         if let Some((name, offset)) = legacy_ascii
@@ -2334,60 +2424,43 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
                     conflicts.saturating_add(scan.conflicting_representation_count),
                 )
             });
-    let reference_lines = sections
+    let mut reference_lines = Vec::new();
+    let mut reference_circles = Vec::new();
+    let mut reference_conics: Vec<ReferenceConic> = Vec::new();
+    for section in sections
         .iter()
         .filter(|section| section.name() == "MdlRefInfo")
-        .flat_map(|section| {
-            let end = section
-                .offset
-                .saturating_add(section.length)
-                .min(data.len());
-            reference::lines(&data[section.offset..end])
+    {
+        let payload = section_region(&data, section)?;
+        reference_lines.extend(
+            reference::lines(payload)
                 .into_iter()
-                .chain(reference::line3d_lines(&data[section.offset..end]))
-                .map(move |mut line| {
+                .chain(reference::line3d_lines(payload))
+                .map(|mut line| {
                     line.offset += section.offset;
                     line
-                })
-        })
-        .collect();
-    let reference_circles = sections
-        .iter()
-        .filter(|section| section.name() == "MdlRefInfo")
-        .flat_map(|section| {
-            let end = section
-                .offset
-                .saturating_add(section.length)
-                .min(data.len());
-            reference::arc_z_circles(&data[section.offset..end])
+                }),
+        );
+        reference_circles.extend(reference::arc_z_circles(payload).into_iter().map(
+            |mut circle| {
+                circle.offset += section.offset;
+                circle
+            },
+        ));
+        reference_conics.extend(
+            reference::named_conics(payload)
                 .into_iter()
-                .map(move |mut circle| {
-                    circle.offset += section.offset;
-                    circle
-                })
-        })
-        .collect();
-    let reference_conics: Vec<ReferenceConic> = sections
-        .iter()
-        .filter(|section| section.name() == "MdlRefInfo")
-        .flat_map(|section| {
-            let end = section
-                .offset
-                .saturating_add(section.length)
-                .min(data.len());
-            reference::named_conics(&data[section.offset..end])
-                .into_iter()
-                .chain(reference::positional_conics(&data[section.offset..end]))
-                .map(move |mut conic| {
+                .chain(reference::positional_conics(payload))
+                .map(|mut conic| {
                     conic.offset += section.offset;
                     conic
-                })
-        })
-        .collect();
+                }),
+        );
+    }
     let reference_ellipses = reference::ellipse_carriers(&reference_conics);
     let layout = identify_layout(&data, &sections, legacy_ascii);
     if model_name.is_none() && !matches!(layout, Layout::LegacyAscii(_)) {
-        if let Some((name, offset)) = native_model_name(&data, &sections) {
+        if let Some((name, offset)) = native_model_name(&data, &sections)? {
             model_name = Some(ModelName { name, offset });
         }
     }
@@ -2400,11 +2473,11 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
             crate::legacy_feature::scan(&framing.persistence, &legacy_geometry.topology_rows)
         })
         .unwrap_or_default();
-    let model_geometry_sections = model_geometry_sections(&data, &sections);
-    let census = geom_census(&data, &sections);
+    let model_geometry_sections = model_geometry_sections(&data, &sections)?;
+    let census = geom_census(&data, &sections)?;
     let principal_unit =
         binary_principal_unit(&data).or_else(|| legacy_ascii?.persistence.principal_unit_system());
-    let family_table = family_table(&data, &sections);
+    let family_table = family_table(&data, &sections)?;
     let legacy_family_table =
         legacy_ascii.and_then(|framing| crate::legacy_family::parse(&framing.persistence));
     let nonvisible_geometry_sections = sections
@@ -2414,40 +2487,36 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         .collect::<Vec<_>>();
     let mut loop_array_sections = model_geometry_sections.clone();
     loop_array_sections.extend(nonvisible_geometry_sections.iter().cloned());
-    loop_array_sections.extend(
-        sections
-            .iter()
-            .filter(|section| {
-                if section.name() != "Xsections" {
-                    return false;
-                }
-                let end = (section.offset + section.length).min(data.len());
-                find(&data[section.offset..end], b"Sld_Xsections\0", 0).is_some()
-            })
-            .cloned(),
-    );
+    for section in sections
+        .iter()
+        .filter(|section| section.name() == "Xsections")
+    {
+        if find(section_region(&data, section)?, b"Sld_Xsections\0", 0).is_some() {
+            loop_array_sections.push(section.clone());
+        }
+    }
     loop_array_sections.sort_by_key(|section| section.offset);
     loop_array_sections.dedup_by_key(|section| section.offset);
-    let loop_arrays = loop_array_scan(&data, &loop_array_sections);
-    let mut nonvisible_surface_rows = surface_rows(&data, &nonvisible_geometry_sections);
+    let loop_arrays = loop_array_scan(&data, &loop_array_sections)?;
+    let mut nonvisible_surface_rows = surface_rows(&data, &nonvisible_geometry_sections)?;
     nonvisible_surface_rows.extend(legacy_geometry.nonvisible_rows);
     nonvisible_surface_rows.sort_by_key(|row| row.offset);
-    let mut surface_rows = surface_rows(&data, &model_geometry_sections);
+    let mut surface_rows = surface_rows(&data, &model_geometry_sections)?;
     surface_rows.extend(legacy_geometry.rows);
     surface_rows.sort_by_key(|row| row.offset);
-    let cross_section_surface_rows = cross_section_surface_rows(&data, &sections);
-    let nonvisible_surface_parameters = surface_parameters(&data, &nonvisible_geometry_sections);
-    let surface_parameters = surface_parameters(&data, &model_geometry_sections);
-    let cross_section_surface_parameters = cross_section_surface_parameters(&data, &sections);
-    let nonvisible_surface_contours = surface_contours(&data, &nonvisible_geometry_sections);
-    let surface_contours = surface_contours(&data, &model_geometry_sections);
-    let cross_section_surface_contours = cross_section_surface_contours(&data, &sections);
+    let cross_section_surface_rows = cross_section_surface_rows(&data, &sections)?;
+    let nonvisible_surface_parameters = surface_parameters(&data, &nonvisible_geometry_sections)?;
+    let surface_parameters = surface_parameters(&data, &model_geometry_sections)?;
+    let cross_section_surface_parameters = cross_section_surface_parameters(&data, &sections)?;
+    let nonvisible_surface_contours = surface_contours(&data, &nonvisible_geometry_sections)?;
+    let surface_contours = surface_contours(&data, &model_geometry_sections)?;
+    let cross_section_surface_contours = cross_section_surface_contours(&data, &sections)?;
     let tabulated_cylinder_curve_replays =
-        tabulated_cylinder_curve_replays(&data, &model_geometry_sections);
-    let plane_local_systems = plane_local_systems(&data, &model_geometry_sections);
-    let cross_section_plane_local_systems = cross_section_plane_local_systems(&data, &sections);
-    let plane_envelopes = plane_envelopes(&data, &model_geometry_sections);
-    let cross_section_plane_envelopes = cross_section_plane_envelopes(&data, &sections);
+        tabulated_cylinder_curve_replays(&data, &model_geometry_sections)?;
+    let plane_local_systems = plane_local_systems(&data, &model_geometry_sections)?;
+    let cross_section_plane_local_systems = cross_section_plane_local_systems(&data, &sections)?;
+    let plane_envelopes = plane_envelopes(&data, &model_geometry_sections)?;
+    let cross_section_plane_envelopes = cross_section_plane_envelopes(&data, &sections)?;
     let outline_planes = surface::placed_outline_planes(&plane_envelopes, &plane_local_systems);
     let positional_frame_planes =
         surface::positional_frame_planes(&surface_parameters, &surface_rows);
@@ -2466,33 +2535,33 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         &cross_section_plane_envelopes,
         &cross_section_plane_local_systems,
     );
-    let surface_prototype_count = surface_prototype_count(&data, &model_geometry_sections);
+    let surface_prototype_count = surface_prototype_count(&data, &model_geometry_sections)?;
     let nonvisible_surface_prototype_records =
-        surface_prototype_records(&data, &nonvisible_geometry_sections);
-    let surface_prototype_records = surface_prototype_records(&data, &model_geometry_sections);
-    let nonvisible_curve_prototypes = curve_prototypes(&data, &nonvisible_geometry_sections);
-    let curve_prototypes = curve_prototypes(&data, &model_geometry_sections);
-    let cross_section_curve_prototypes = cross_section_curve_prototypes(&data, &sections);
+        surface_prototype_records(&data, &nonvisible_geometry_sections)?;
+    let surface_prototype_records = surface_prototype_records(&data, &model_geometry_sections)?;
+    let nonvisible_curve_prototypes = curve_prototypes(&data, &nonvisible_geometry_sections)?;
+    let curve_prototypes = curve_prototypes(&data, &model_geometry_sections)?;
+    let cross_section_curve_prototypes = cross_section_curve_prototypes(&data, &sections)?;
     let mut curve_expressions = curve_expressions(
         &data,
         &sections,
         model_name
             .as_ref()
             .and_then(|model| relation_model_name(&model.name)),
-    );
+    )?;
     let topology_face_ids = nonvisible_surface_rows
         .iter()
         .chain(surface_rows.iter())
         .map(|row| row.id)
         .collect::<BTreeSet<_>>();
     let nonvisible_curve_parameters =
-        curve_parameters(&data, &nonvisible_geometry_sections, &topology_face_ids);
-    let curve_parameters = curve_parameters(&data, &model_geometry_sections, &topology_face_ids);
+        curve_parameters(&data, &nonvisible_geometry_sections, &topology_face_ids)?;
+    let curve_parameters = curve_parameters(&data, &model_geometry_sections, &topology_face_ids)?;
     let nonvisible_curve_topology_rows =
-        curve_topology_rows(&data, &nonvisible_geometry_sections, &topology_face_ids);
+        curve_topology_rows(&data, &nonvisible_geometry_sections, &topology_face_ids)?;
     let mut curve_topology_rows =
-        curve_topology_rows(&data, &model_geometry_sections, &topology_face_ids);
-    let curve_prototype_topology = curve_prototype_topology(&data, &model_geometry_sections);
+        curve_topology_rows(&data, &model_geometry_sections, &topology_face_ids)?;
+    let curve_prototype_topology = curve_prototype_topology(&data, &model_geometry_sections)?;
     let prototype_topology_rows = curve::prototype_topology_rows(
         &curve_prototypes,
         &curve_prototype_topology,
@@ -2502,9 +2571,9 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     curve_topology_rows.extend(prototype_topology_rows);
     curve_topology_rows.sort_by_key(|row| row.offset);
     curve_topology_rows.dedup_by_key(|row| row.offset);
-    let cross_section_curve_rows = cross_section_curve_rows(&data, &sections);
+    let cross_section_curve_rows = cross_section_curve_rows(&data, &sections)?;
     let mut pcurves = curve::pcurve_endpoints(&curve_parameters, &curve_topology_rows);
-    let two_chart_pcurves = two_chart_pcurves(&data, &model_geometry_sections, &topology_face_ids);
+    let two_chart_pcurves = two_chart_pcurves(&data, &model_geometry_sections, &topology_face_ids)?;
     if matches!(layout, Layout::LegacyAscii(_)) {
         curve_topology_rows.extend(legacy_geometry.topology_rows.iter().cloned());
         pcurves.extend(legacy_geometry.pcurves.iter().cloned());
@@ -2517,19 +2586,19 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     let fc05_circles = curve::fc05_circles(&curve_parameters);
     let fc05_cylinder_cap_pairs =
         curve::fc05_cylinder_cap_pairs(&fc05_circles, &curve_topology_rows, &surface_rows);
-    let prototype_pcurves = prototype_pcurves(&data, &model_geometry_sections);
+    let prototype_pcurves = prototype_pcurves(&data, &model_geometry_sections)?;
     let bound_prototype_pcurves =
         curve::bind_prototype_pcurves(&prototype_pcurves, &curve_prototype_topology);
     let (half_edges, loops) = topology::build(&curve_topology_rows);
     let (topological_vertices, half_edge_vertex_incidence) = topology::vertex_orbits(&half_edges);
     let face_components = topology::face_components(&curve_topology_rows);
-    let datum_planes = datum_planes(&data, &sections);
-    let datum_cylinders = datum_cylinders(&data, &sections);
-    let feature_operation_states = feature_operation_states(&data, &sections);
-    let feature_operations = feature_operations(&data, &sections);
-    let feature_reference_names = feature_reference_names(&data, &sections);
+    let datum_planes = datum_planes(&data, &sections)?;
+    let datum_cylinders = datum_cylinders(&data, &sections)?;
+    let feature_operation_states = feature_operation_states(&data, &sections)?;
+    let feature_operations = feature_operations(&data, &sections)?;
+    let feature_reference_names = feature_reference_names(&data, &sections)?;
     let structural_feature_ids =
-        structural_feature_ids(&data, &sections, &surface_rows, &curve_topology_rows);
+        structural_feature_ids(&data, &sections, &surface_rows, &curve_topology_rows)?;
     let mut candidate_feature_ids = structural_feature_ids.clone();
     candidate_feature_ids.extend(
         feature_operations
@@ -2545,7 +2614,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         &data,
         &sections,
         &candidate_feature_ids.iter().copied().collect::<Vec<_>>(),
-    );
+    )?;
     feature_rows.retain(|row| {
         feature_row_has_model_identity(
             row,
@@ -2560,7 +2629,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     let feature_round_replay_scalars = feature::round_replay_scalars(&feature_rows);
     let feature_choices = feature::choices(&feature_rows);
     let feature_choice_fields = feature::choice_fields(&feature_choices);
-    let depdb_recipe_rows = depdb_recipe_rows(&data, &sections);
+    let depdb_recipe_rows = depdb_recipe_rows(&data, &sections)?;
     let mut feature_geometry_tables = feature::geometry_tables(&feature_rows);
     feature_geometry_tables.extend(feature::geometry_tables(&depdb_recipe_rows));
     feature_geometry_tables.sort_by_key(|table| table.offset);
@@ -2574,8 +2643,8 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         feature::surface_merge_replay_affected_ids(&feature_rows, &feature_affected_ids);
     let feature_loop_restore_directions = feature::loop_restore_directions(&feature_rows);
     let feature_entity_tables =
-        feature_entity_tables(&data, &sections, &feature_ids, &surface_rows);
-    let feature_definitions = feature_definitions(&data, &sections);
+        feature_entity_tables(&data, &sections, &feature_ids, &surface_rows)?;
+    let feature_definitions = feature_definitions(&data, &sections)?;
     let feature_definitions =
         feature::bind_definition_owners(feature_definitions, &feature_geometry_tables);
     let mut feature_definitions =
@@ -2587,7 +2656,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         .filter_map(|definition| definition.identity.owner_feature_id())
         .collect();
     let replay_definitions = feature::bind_replay_definition_owners(
-        positional_replay_definitions(&data, &sections),
+        positional_replay_definitions(&data, &sections)?,
         &feature_entity_tables,
         &claimed_definition_owners,
     );
@@ -2642,14 +2711,14 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         },
         &feature_entity_tables,
     );
-    let (feature_entities, feature_entity_references) = feature_entity_graph(&data, &sections);
-    let declared_body_count = geomlists_value(&data, &sections, b"n_bodies\0");
-    let first_quilt_ptr = geomlists_value(&data, &sections, b"first_quilt_ptr\0").or_else(|| {
+    let (feature_entities, feature_entity_references) = feature_entity_graph(&data, &sections)?;
+    let declared_body_count = geomlists_value(&data, &sections, b"n_bodies\0")?;
+    let first_quilt_ptr = geomlists_value(&data, &sections, b"first_quilt_ptr\0")?.or_else(|| {
         legacy_ascii
             .and_then(|framing| legacy_geom_depend_value(&framing.persistence, "first_quilt_ptr"))
     });
 
-    ContainerScan {
+    Ok(ContainerScan {
         framing: FramingScan {
             data,
             version_line,
@@ -2754,43 +2823,54 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
             entity_tables: feature_entity_tables,
             legacy_rounds: legacy_rounds.rounds,
         },
+    })
+}
+
+/// The container scan of an in-tree fixture that states its own extents.
+///
+/// Only tests use it. A refusal is a defect in the fixture, so it fails the
+/// test rather than returning a shortened scan.
+#[cfg(test)]
+pub(crate) fn scan_bytes_ok<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
+    match scan_bytes(data) {
+        Ok(scan) => scan,
+        Err(refusal) => panic!("the fixture states a section past its own end: {refusal}"),
     }
 }
 
 /// Return whether a thumbnail section contains a JPEG start marker.
-pub fn has_thumbnail(scan: &ContainerScan) -> bool {
-    scan.framing
+pub fn has_thumbnail(scan: &ContainerScan) -> Result<bool, CodecError> {
+    for section in scan
+        .framing
         .sections
         .iter()
         .filter(|s| s.role() == SectionRole::Thumbnail)
-        .any(|section| {
-            let end = section
-                .offset
-                .saturating_add(section.length)
-                .min(scan.framing.data.len());
-            let raw = scan.framing.data.get(section.offset..end);
-            let raw_is_compressed = raw.is_some_and(|region| {
-                let payload_start = section.raw_name.len().saturating_add(2);
-                region
-                    .get(payload_start..)
-                    .is_some_and(|payload| payload.starts_with(UNIX_COMPRESS_MAGIC))
-            });
-            if raw_is_compressed {
-                expanded_section_for(scan, section)
-                    .is_some_and(|expanded| find(&expanded.data, JPEG_MAGIC, 0).is_some())
-            } else {
-                raw.is_some_and(|region| find(region, JPEG_MAGIC, 0).is_some())
-                    || expanded_section_for(scan, section)
-                        .is_some_and(|expanded| find(&expanded.data, JPEG_MAGIC, 0).is_some())
-            }
-        })
+    {
+        let raw = section_region(&scan.framing.data, section)?;
+        // The `#<name>\n` header precedes the payload.
+        let payload_start = section.raw_name.len() + 2;
+        let raw_is_compressed = raw
+            .get(payload_start..)
+            .is_some_and(|payload| payload.starts_with(UNIX_COMPRESS_MAGIC));
+        let expanded_carries_jpeg = expanded_section_for(scan, section)
+            .is_some_and(|expanded| find(&expanded.data, JPEG_MAGIC, 0).is_some());
+        let carries_jpeg = if raw_is_compressed {
+            expanded_carries_jpeg
+        } else {
+            find(raw, JPEG_MAGIC, 0).is_some() || expanded_carries_jpeg
+        };
+        if carries_jpeg {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// Build a codec-neutral summary of the sections, layout, and namespace census.
 pub fn summarize(
     scan: &ContainerScan,
     classification: &crate::dialect::DialectClassification,
-) -> ContainerSummary {
+) -> Result<ContainerSummary, CodecError> {
     let entries = scan
         .framing
         .sections
@@ -2824,19 +2904,19 @@ pub fn summarize(
         })
         .collect();
 
-    let notes = notes(scan);
+    let notes = notes(scan)?;
 
-    ContainerSummary::classified(
+    Ok(ContainerSummary::classified(
         cadmpeg_core::dialect::DialectLayers::of(classification.matched().clone()),
         cadmpeg_ir::ContainerKind::Psb,
         entries,
         classification.loss().into_iter().collect(),
         notes,
-    )
+    ))
 }
 
 /// Build the diagnostic notes shared by inspection and decode reports.
-pub(crate) fn notes(scan: &ContainerScan) -> Vec<String> {
+pub(crate) fn notes(scan: &ContainerScan) -> Result<Vec<String>, CodecError> {
     let mut notes = vec![
         format!("PSB container: {}", scan.framing.version_line),
         format!(
@@ -2887,7 +2967,7 @@ pub(crate) fn notes(scan: &ContainerScan) -> Vec<String> {
         }
     }
 
-    if has_thumbnail(scan) {
+    if has_thumbnail(scan)? {
         notes.push("THMB_IMG_MAIN carries a JPEG preview (excluded from geometry)".to_string());
     }
     if !scan.framing.expanded_sections.is_empty() {
@@ -2903,7 +2983,7 @@ pub(crate) fn notes(scan: &ContainerScan) -> Vec<String> {
             .to_string(),
     );
 
-    notes
+    Ok(notes)
 }
 
 #[cfg(test)]
@@ -2932,7 +3012,8 @@ mod feature_row_definition_tests {
         };
 
         assert_eq!(
-            structural_feature_ids(&[], &[], &[surface], &[curve]),
+            structural_feature_ids(&[], &[], &[surface], &[curve])
+                .expect("no section states an extent"),
             std::collections::BTreeSet::from([40, 41])
         );
     }

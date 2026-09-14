@@ -1007,6 +1007,11 @@ fn ordered_native_parameter_face_loops<'a>(
 #[cfg(test)]
 mod tests;
 
+/// Transfer the native `VisibGeom` B-rep: bodies, faces, loops, and coedges.
+///
+/// A coedge whose projected pcurve lane the IR carrier refuses is emitted
+/// without a pcurve use, which the model carries, so the refusal is a loss
+/// note naming the curve row and the face.
 pub(in super::super) fn transfer_native_brep(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -1014,6 +1019,7 @@ pub(in super::super) fn transfer_native_brep(
     derived_intersection_curves: &BTreeSet<CurveId>,
     analytic_pcurve_carriers: &BTreeSet<CurveId>,
     nurbs_endpoint_witnesses: &BTreeSet<CurveId>,
+    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
 ) -> Result<NativeBrepTransferSummary, cadmpeg_core::CodecError> {
     let carriers = placed_carriers(scan, ir);
     let planes = carriers
@@ -1984,6 +1990,10 @@ pub(in super::super) fn transfer_native_brep(
                             let (geometry, tag) = planar_curve_pcurve(
                                 &surface.geometry,
                                 &curve.geometry,
+                                &format!(
+                                    "VisibGeom curve-topology row {} on face {face_id}",
+                                    half_edge.curve_id
+                                ),
                                 refusal_cell,
                             )
                             .map(|geometry| (geometry, "projected_planar_pcurve"))
@@ -2009,8 +2019,19 @@ pub(in super::super) fn transfer_native_brep(
                                 tag,
                             ))
                         });
-                    if let Some(error) = refusal.take_error() {
-                        return Err(error);
+                    let refused = refusal.take_records();
+                    if pcurve_geometry.is_none() {
+                        for record in refused {
+                            losses.push(
+                                crate::loss::CreoLossCode::VisibGeomCurveUntransferred.note(
+                                    format!(
+                                        "VisibGeom curve row {} on face {face_id} states no \
+                                         pcurve carrier: {record}",
+                                        half_edge.curve_id
+                                    ),
+                                ),
+                            );
+                        }
                     }
                     let pcurves = pcurve_geometry
                         .and_then(|(geometry, parameter_range, offset, tag)| {

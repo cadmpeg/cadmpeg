@@ -110,7 +110,7 @@ fn rejects_an_undefined_traversal_byte() {
 #[test]
 fn container_and_native_arena_retain_contour_entries() {
     let data = build_prt("c", &[("VisibGeom", contour_payload())]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.surfaces.contours.len(), 2);
     assert_eq!(

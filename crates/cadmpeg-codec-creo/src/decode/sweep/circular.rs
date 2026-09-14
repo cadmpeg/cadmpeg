@@ -37,6 +37,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
+    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
     for transform in &scan.features.section_transforms {
@@ -80,6 +81,40 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         }
         let region_id = RegionId::mint(format!("{prefix}:region")).expect("identity grammar");
         let shell_id = ShellId::mint(format!("{prefix}:shell")).expect("identity grammar");
+        // Both caps state the same full-turn circle in section parameters, so
+        // the cap pcurve is stated once and before the first record of this
+        // body reaches the model. A refused lane here leaves no partial body
+        // behind, so the model carries the absence of this one extrusion.
+        let cap_geometry = {
+            let mut refusal = crate::lane_refusal::LaneRefusals::new();
+            let cap_record = format!("extrusion feature {feature_id} cap");
+            let cap = circular_pcurve(
+                section_center,
+                radius,
+                0.0,
+                std::f64::consts::TAU,
+                &cap_record,
+                &mut refusal,
+            );
+            let records = refusal.take_records();
+            match cap {
+                Some(cap) if records.is_empty() => cap,
+                _ => {
+                    let detail = if records.is_empty() {
+                        ".".to_owned()
+                    } else {
+                        format!(": {}", records.join("; "))
+                    };
+                    losses.push(
+                        crate::loss::CreoLossCode::ExtrusionBodyRejected.note(format!(
+                            "Extrusion body {body_id} states no cap pcurve; its B-rep was \
+                         skipped{detail}"
+                        )),
+                    );
+                    continue;
+                }
+            }
+        };
         let center = section_point_in_model(transform, section_center);
         let seam =
             std::array::from_fn::<_, 3, _>(|axis| center[axis] + radius * transform.u_axis()[axis]);
@@ -108,22 +143,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 annotations,
                 PcurveId::mint(format!("{prefix}:pcurve:{side}:cap")).expect("identity grammar"),
                 transform.offset,
-                {
-                    let mut refusal = crate::lane_refusal::LaneRefusals::new();
-                    let cap = circular_pcurve(
-                        section_center,
-                        radius,
-                        0.0,
-                        std::f64::consts::TAU,
-                        &mut refusal,
-                    );
-                    if let Some(error) = refusal.take_error() {
-                        return Err(error);
-                    }
-                    cap.ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed("extrusion pcurve geometry is invalid")
-                    })?
-                },
+                cap_geometry.clone(),
             )?;
             let side_pcurve = add_extrusion_pcurve(
                 ir,

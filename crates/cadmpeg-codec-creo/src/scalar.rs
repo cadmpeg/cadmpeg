@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, HashSet};
 use cadmpeg_core::bytes::{assemble_f32_be, assemble_f64_be, find_from};
 use cadmpeg_core::decode::View;
 
+use crate::decode::axis::Axis;
 use crate::psb::{compact_int, short_form_float};
 
 const EPS_SUPPORT_FRAME_AGREEMENT: f64 = 1.0e-9;
@@ -732,15 +733,28 @@ pub fn decode_positional_torus_local_system_prefix(
     Some((finite_local_system_slots(prefix.values)?, prefix.cursor))
 }
 
-/// A local system in an inline non-plane surface row.
+/// Expanded local-system slots and the cursor after the image that carried
+/// them.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct InlineNonPlaneLocalSystemPrefix {
+pub(crate) struct InlineLocalSystemFrame {
     /// Expanded twelve-slot local-system values.
     pub(crate) values: [f64; 12],
     /// First byte after the local-system image.
     pub(crate) cursor: usize,
-    /// Axis coordinate named by a compact image, when the image is compact.
-    pub(crate) compact_axis: Option<usize>,
+}
+
+/// A local system in an inline non-plane surface row.
+///
+/// The two image forms take different follow-on parses, so they are separate
+/// variants. A compact image states the three direction triples only, and its
+/// origin slots stay zero until the separate origin operand at `cursor` is
+/// decoded. An explicit image states all twelve slots.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum InlineNonPlaneLocalSystemPrefix {
+    /// Compact image. The origin operand follows at the frame cursor.
+    Compact(InlineLocalSystemFrame),
+    /// Explicit image. The frame is complete.
+    Explicit(InlineLocalSystemFrame),
 }
 
 /// Decode the bounded local-system prefix used by inline non-plane rows.
@@ -753,28 +767,21 @@ pub(crate) fn decode_inline_non_plane_local_system_prefix(
     cache: &ScalarCache,
 ) -> Vec<InlineNonPlaneLocalSystemPrefix> {
     let mut prefixes = Vec::new();
-    if let Some((axis, reference_coordinate, reference_sign, axis_sign, cursor)) =
-        decode_inline_compact_image(body)
-    {
-        prefixes.push(InlineNonPlaneLocalSystemPrefix {
-            values: compact_inline_frame(axis, reference_coordinate, reference_sign, axis_sign),
-            cursor,
-            compact_axis: Some(axis),
-        });
+    if let Some((axes, reference_sign, axis_sign, cursor)) = decode_inline_compact_image(body) {
+        prefixes.push(InlineNonPlaneLocalSystemPrefix::Compact(
+            InlineLocalSystemFrame {
+                values: compact_inline_frame(axes, reference_sign, axis_sign),
+                cursor,
+            },
+        ));
     }
 
     let mut explicit = Vec::new();
     let mut values = [0.0; 12];
     walk_inline_explicit_local_system(body, cache, 0, 0, &mut values, &mut explicit);
-    prefixes.extend(
-        explicit
-            .into_iter()
-            .map(|(values, cursor)| InlineNonPlaneLocalSystemPrefix {
-                values,
-                cursor,
-                compact_axis: None,
-            }),
-    );
+    prefixes.extend(explicit.into_iter().map(|(values, cursor)| {
+        InlineNonPlaneLocalSystemPrefix::Explicit(InlineLocalSystemFrame { values, cursor })
+    }));
     prefixes
 }
 
@@ -807,7 +814,43 @@ pub(crate) fn decode_inline_surface_suffix_scalar(
     }
 }
 
-fn decode_inline_compact_image(body: &[u8]) -> Option<(usize, usize, f64, f64, usize)> {
+/// The ordered axis pair a compact inline local-system image states: the frame
+/// axis and the reference coordinate.
+///
+/// The two axes are always distinct, so the six variants are the complete
+/// domain of the pair and the distinctness carries no run-time check. Each
+/// variant names the frame axis first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CompactFrameAxes {
+    XY,
+    XZ,
+    YX,
+    YZ,
+    ZX,
+    ZY,
+}
+
+impl CompactFrameAxes {
+    /// The frame axis.
+    const fn axis(self) -> Axis {
+        match self {
+            Self::XY | Self::XZ => Axis::X,
+            Self::YX | Self::YZ => Axis::Y,
+            Self::ZX | Self::ZY => Axis::Z,
+        }
+    }
+
+    /// The reference coordinate.
+    const fn reference(self) -> Axis {
+        match self {
+            Self::YX | Self::ZX => Axis::X,
+            Self::XY | Self::ZY => Axis::Y,
+            Self::XZ | Self::YZ => Axis::Z,
+        }
+    }
+}
+
+fn decode_inline_compact_image(body: &[u8]) -> Option<(CompactFrameAxes, f64, f64, usize)> {
     const X_NEGATIVE_Z_IMAGE: &[u8] = &[0x18, 0xe4, 0x0f, 0x18, 0x0f, 0x18, 0x10, 0x18, 0xe4];
     const X_POSITIVE_Y_IMAGE: &[u8] = &[0x18, 0x0f, 0x18, 0xe5, 0x0f, 0xe4, 0x18, 0xe4];
     const Y_IMAGE: &[u8] = &[0x18, 0x10, 0x18, 0xe5, 0x10, 0x0f, 0x18, 0xe4];
@@ -821,53 +864,55 @@ fn decode_inline_compact_image(body: &[u8]) -> Option<(usize, usize, f64, f64, u
             let reference_sign = sign(body[0])?;
             sign(body[3])?;
             let axis_sign = sign(body[6])?;
-            return Some((2, 0, reference_sign, axis_sign, 7));
+            return Some((CompactFrameAxes::ZX, reference_sign, axis_sign, 7));
         }
         if body[0] == 0x18 && body[2] == 0x18 && body[4] == 0x18 && body[5] == 0xe6 {
             sign(body[1])?;
             let reference_sign = sign(body[3])?;
             let axis_sign = sign(body[6])?;
-            return Some((2, 1, reference_sign, axis_sign, 7));
+            return Some((CompactFrameAxes::ZY, reference_sign, axis_sign, 7));
         }
         if body[1] == 0x18 && body[2] == 0xe6 && body[4] == 0x18 && body[6] == 0x18 {
             let reference_sign = sign(body[0])?;
             sign(body[3])?;
             sign(body[5])?;
-            return Some((1, 0, reference_sign, 1.0, 7));
+            return Some((CompactFrameAxes::YX, reference_sign, 1.0, 7));
         }
     }
 
     if body.starts_with(Y_IMAGE) {
-        return Some((1, 2, 1.0, 1.0, Y_IMAGE.len()));
+        return Some((CompactFrameAxes::YZ, 1.0, 1.0, Y_IMAGE.len()));
     }
     if body.starts_with(X_NEGATIVE_Z_IMAGE) {
-        return Some((0, 2, -1.0, 1.0, X_NEGATIVE_Z_IMAGE.len()));
+        return Some((CompactFrameAxes::XZ, -1.0, 1.0, X_NEGATIVE_Z_IMAGE.len()));
     }
-    body.starts_with(X_POSITIVE_Y_IMAGE)
-        .then_some((0, 1, 1.0, 1.0, X_POSITIVE_Y_IMAGE.len()))
+    body.starts_with(X_POSITIVE_Y_IMAGE).then_some((
+        CompactFrameAxes::XY,
+        1.0,
+        1.0,
+        X_POSITIVE_Y_IMAGE.len(),
+    ))
 }
 
-fn compact_inline_frame(
-    axis: usize,
-    reference_coordinate: usize,
-    reference_sign: f64,
-    axis_sign: f64,
-) -> [f64; 12] {
-    debug_assert!(axis < 3 && reference_coordinate < 3 && axis != reference_coordinate);
+/// Expand a compact image to the twelve local-system slots.
+///
+/// The reference direction takes the reference coordinate, the frame axis
+/// takes the axis coordinate, and the second direction is their cross product,
+/// which is a unit vector because the two axes are distinct model axes.
+fn compact_inline_frame(axes: CompactFrameAxes, reference_sign: f64, axis_sign: f64) -> [f64; 12] {
+    let axis = axes.axis().index();
+    let reference = axes.reference().index();
+    let mut axis_direction = [0.0; 3];
+    axis_direction[axis] = axis_sign;
+    let mut reference_direction = [0.0; 3];
+    reference_direction[reference] = reference_sign;
     let mut values = [0.0; 12];
-    values[reference_coordinate] = reference_sign;
-    let axis_direction = [
-        if axis == 0 { axis_sign } else { 0.0 },
-        if axis == 1 { axis_sign } else { 0.0 },
-        if axis == 2 { axis_sign } else { 0.0 },
-    ];
-    let reference_direction: [f64; 3] = values[..3].try_into().expect("three direction slots");
-    let second = [
+    values[..3].copy_from_slice(&reference_direction);
+    values[3..6].copy_from_slice(&[
         axis_direction[1] * reference_direction[2] - axis_direction[2] * reference_direction[1],
         axis_direction[2] * reference_direction[0] - axis_direction[0] * reference_direction[2],
         axis_direction[0] * reference_direction[1] - axis_direction[1] * reference_direction[0],
-    ];
-    values[3..6].copy_from_slice(&second);
+    ]);
     values[6 + axis] = axis_sign;
     values
 }
@@ -2187,12 +2232,73 @@ mod tests {
         ];
         let cache = ScalarCache::default();
         for (body, axis, expected) in cases {
-            let prefix = decode_inline_non_plane_local_system_prefix(&body, &cache)
+            let frame = decode_inline_non_plane_local_system_prefix(&body, &cache)
                 .into_iter()
-                .find(|prefix| prefix.compact_axis == Some(axis))
+                .find_map(|prefix| match prefix {
+                    InlineNonPlaneLocalSystemPrefix::Compact(frame)
+                        if frame.values[6 + axis] != 0.0 =>
+                    {
+                        Some(frame)
+                    }
+                    _ => None,
+                })
                 .unwrap_or_else(|| panic!("compact inline local-system image {body:02x?}"));
-            assert_eq!(prefix.cursor, body.len());
-            assert_eq!(prefix.values, expected);
+            assert_eq!(frame.cursor, body.len());
+            assert_eq!(frame.values, expected);
+        }
+    }
+
+    #[test]
+    fn every_compact_axis_pair_names_two_distinct_model_axes() {
+        let pairs = [
+            CompactFrameAxes::XY,
+            CompactFrameAxes::XZ,
+            CompactFrameAxes::YX,
+            CompactFrameAxes::YZ,
+            CompactFrameAxes::ZX,
+            CompactFrameAxes::ZY,
+        ];
+        for axes in pairs {
+            assert_ne!(axes.axis(), axes.reference(), "{axes:?}");
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        for axes in pairs {
+            assert!(seen.insert((axes.axis().index(), axes.reference().index())));
+        }
+        assert_eq!(seen.len(), 6);
+    }
+
+    #[test]
+    fn compact_frames_carry_a_right_handed_orthonormal_basis() {
+        for axes in [
+            CompactFrameAxes::XY,
+            CompactFrameAxes::XZ,
+            CompactFrameAxes::YX,
+            CompactFrameAxes::YZ,
+            CompactFrameAxes::ZX,
+            CompactFrameAxes::ZY,
+        ] {
+            for reference_sign in [1.0, -1.0] {
+                for axis_sign in [1.0, -1.0] {
+                    let values = compact_inline_frame(axes, reference_sign, axis_sign);
+                    let axis = axes.axis().index();
+                    let reference = axes.reference().index();
+                    assert_eq!(values[reference], reference_sign);
+                    assert_eq!(values[6 + axis], axis_sign);
+                    let second: [f64; 3] = match values[3..6].try_into() {
+                        Ok(second) => second,
+                        Err(error) => panic!("compact frame has no second direction: {error}"),
+                    };
+                    assert_eq!(
+                        second.iter().map(|value| value * value).sum::<f64>(),
+                        1.0,
+                        "{axes:?} second direction is not a unit vector"
+                    );
+                    assert_eq!(second[axis], 0.0);
+                    assert_eq!(second[reference], 0.0);
+                    assert_eq!(values[9..12], [0.0; 3]);
+                }
+            }
         }
     }
 
@@ -2221,9 +2327,11 @@ mod tests {
 
         assert!(decode_inline_non_plane_local_system_prefix(&body, &cache)
             .into_iter()
-            .any(|prefix| prefix.compact_axis.is_none()
-                && prefix.cursor == body.len()
-                && prefix.values == expected));
+            .any(|prefix| matches!(
+                prefix,
+                InlineNonPlaneLocalSystemPrefix::Explicit(frame)
+                    if frame.cursor == body.len() && frame.values == expected
+            )));
     }
 
     #[test]
@@ -2237,9 +2345,11 @@ mod tests {
 
         assert!(decode_inline_non_plane_local_system_prefix(&body, &cache)
             .into_iter()
-            .any(|prefix| prefix.compact_axis.is_none()
-                && prefix.cursor == body.len()
-                && prefix.values == expected));
+            .any(|prefix| matches!(
+                prefix,
+                InlineNonPlaneLocalSystemPrefix::Explicit(frame)
+                    if frame.cursor == body.len() && frame.values == expected
+            )));
     }
 
     #[test]

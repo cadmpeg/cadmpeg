@@ -164,6 +164,7 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
             reversed,
             start,
             end,
+            &"spline extrusion cap fixture",
             &mut crate::lane_refusal::LaneRefusals::new(),
         )
         .unwrap();
@@ -206,6 +207,9 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         0,
     )
     .expect("valid section frame");
+    let mut refusal = crate::lane_refusal::LaneRefusals::new();
+    let mut diagnostics =
+        crate::lane_refusal::LaneRefusalContext::new(&"spline side surface fixture", &mut refusal);
     let side = extrusion_brep_side_surface(
         &transform,
         &spline,
@@ -216,7 +220,7 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
             lower: -2.0,
             upper: 3.0,
         },
-        &mut crate::lane_refusal::LaneRefusals::new(),
+        &mut diagnostics,
     )
     .expect("spline side surface");
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(side)) = side else {
@@ -413,7 +417,7 @@ fn cap_proof_classifies_section_sweeps_without_overriding_revolves() {
 
 #[test]
 fn unresolved_display_state_family_blocks_schema_sweep_fallback() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features
         .operations
         .push(crate::feature::FeatureOperation {
@@ -437,7 +441,7 @@ fn unresolved_display_state_family_blocks_schema_sweep_fallback() {
 
 #[test]
 fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features
         .operations
         .push(crate::feature::FeatureOperation {
@@ -514,7 +518,7 @@ fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
 
 #[test]
 fn class_942_schema_state_precedes_surface_body_tree_fallback() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features
         .operations
         .push(crate::feature::FeatureOperation {
@@ -543,7 +547,7 @@ fn class_942_schema_state_precedes_surface_body_tree_fallback() {
 
 #[test]
 fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features
         .operations
         .push(crate::feature::FeatureOperation {
@@ -795,7 +799,7 @@ fn draft_neutral_plane_requires_one_owned_class_209_plane() {
         next_surface: 0,
         offset: id as usize,
     };
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features
         .entity_tables
         .push(table(vec![entry(226, 209)], vec![226]));
@@ -845,7 +849,7 @@ fn draft_neutral_plane_rejects_foreign_or_non_plane_surface_rows() {
         (crate::surface::SurfaceKind::Cylinder, 225),
         (crate::surface::SurfaceKind::Plane, 224),
     ] {
-        let mut scan = crate::container::scan_bytes(Vec::new());
+        let mut scan = crate::container::scan_bytes_ok(Vec::new());
         scan.features.entity_tables.push(table.clone());
         scan.surfaces.rows.push(crate::surface::SurfaceRow {
             id: 226,
@@ -1011,7 +1015,7 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
     )
     .is_none());
 
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.definitions.push(definition);
     let mut ir = CadIr::empty();
     for kind in ["Revolve", "Revolve 2"] {
@@ -1088,7 +1092,7 @@ fn named_linear_sweep_reuses_materialized_cap_extent() {
         entry(32, 203, None),
         entry(33, 200, Some(11)),
     ];
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.entity_tables.push(
         crate::feature::FeatureEntityTable::new(
             7,
@@ -1305,7 +1309,7 @@ fn stored_section_sweep_family_defines_boolean_operation() {
 
 #[test]
 fn datum_feature_uses_its_unique_transferred_plane_carrier() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 6,
         kind: crate::surface::SurfaceKind::Plane,
@@ -1379,7 +1383,7 @@ fn datum_feature_uses_its_unique_transferred_plane_carrier() {
 
 #[test]
 fn datum_feature_preserves_its_unique_transferred_plane_chart() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 6,
         kind: crate::surface::SurfaceKind::Plane,
@@ -1419,7 +1423,7 @@ fn datum_feature_preserves_its_unique_transferred_plane_chart() {
 
 #[test]
 fn datum_feature_uses_its_unique_complete_local_system() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features
         .definitions
         .push(crate::feature::FeatureDefinition {
@@ -1479,7 +1483,7 @@ fn datum_feature_uses_its_unique_complete_local_system() {
 
 #[test]
 fn coordinate_system_feature_uses_its_unique_complete_local_system() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features
         .definitions
         .push(crate::feature::FeatureDefinition {
@@ -1540,7 +1544,7 @@ fn coordinate_system_feature_uses_its_unique_complete_local_system() {
 
 #[test]
 fn coordinate_system_feature_rejects_a_reflected_local_system() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features
         .definitions
         .push(crate::feature::FeatureDefinition {

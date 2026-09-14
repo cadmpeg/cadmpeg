@@ -171,22 +171,59 @@ pub(in super::super) enum NurbsBoundaryKind {
 /// Boundary curve of an extrusion surface against a plane, with the
 /// section-generator fallback.
 ///
-/// The sink is reported before the fallback runs, so the fallback's own `?` on
-/// the caller never sits between a refusal and the report that names it.
+/// The sink is drained before the fallback runs, so the fallback's own `?`
+/// never sits between a refusal and the report that names it. A refused lane
+/// that the fallback covers costs the model nothing and states no loss. A
+/// refused lane that leaves the curve-topology row without a carrier is a loss
+/// note naming the row and the surface that stated the lane.
 fn extrusion_plane_boundary_curve(
     ctx: &DecodeContext<'_>,
     nurbs: &NurbsSurface,
+    surface_id: u32,
+    curve_row_id: u32,
     plane: PlaneEquation,
     refusal: &mut crate::lane_refusal::LaneRefusals,
+    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
 ) -> Result<Option<(CurveGeometry, NurbsBoundaryKind)>, CodecError> {
-    if let Some(geometry) = nurbs_plane_boundary_curve(nurbs, plane, refusal) {
+    if let Some(geometry) = nurbs_plane_boundary_curve(nurbs, surface_id, plane, refusal) {
         return Ok(Some((geometry, NurbsBoundaryKind::ExtrusionPlane)));
     }
-    if let Some(error) = refusal.take_error() {
-        return Err(error);
+    let refused = refusal.take_records();
+    let mut fallback_losses = Vec::new();
+    let fallback =
+        cubic_extrusion_plane_generator_curve(ctx, nurbs, surface_id, plane, &mut fallback_losses)?
+            .map(|geometry| (geometry, NurbsBoundaryKind::ExtrusionPlaneSectionGenerator));
+    if fallback.is_none() {
+        losses.extend(fallback_losses);
+        note_boundary_lane_records(curve_row_id, &refused, losses);
     }
-    Ok(cubic_extrusion_plane_generator_curve(ctx, nurbs, plane)?
-        .map(|geometry| (geometry, NurbsBoundaryKind::ExtrusionPlaneSectionGenerator)))
+    Ok(fallback)
+}
+
+/// Drain every refused boundary lane into one loss note per record.
+fn note_refused_boundary_lanes(
+    curve_row_id: u32,
+    refusal: &mut crate::lane_refusal::LaneRefusals,
+    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
+) {
+    let records = refusal.take_records();
+    note_boundary_lane_records(curve_row_id, &records, losses);
+}
+
+/// One loss note per refused boundary-lane record, each naming the row.
+fn note_boundary_lane_records(
+    curve_row_id: u32,
+    records: &[String],
+    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
+) {
+    for record in records {
+        losses.push(
+            crate::loss::CreoLossCode::NurbsBoundaryCarrierUnresolved.note(format!(
+                "VisibGeom curve-topology row {curve_row_id} states no NURBS boundary carrier: \
+                 {record}"
+            )),
+        );
+    }
 }
 
 pub(in super::super) fn transfer_nurbs_boundary_curves(
@@ -194,6 +231,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
+    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
 ) -> Result<TransferredNurbsBoundaryCurves, CodecError> {
     let mut result = TransferredNurbsBoundaryCurves {
         ids: BTreeSet::new(),
@@ -242,7 +280,9 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
                     origin: [origin.x, origin.y, origin.z],
                     normal: [normal.x, normal.y, normal.z],
                 };
-                extrusion_plane_boundary_curve(ctx, nurbs, plane, refusal)?
+                extrusion_plane_boundary_curve(
+                    ctx, nurbs, first.id, row.id, plane, refusal, losses,
+                )?
             }
             (
                 crate::surface::SurfaceKind::Plane,
@@ -256,21 +296,27 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
                     origin: [origin.x, origin.y, origin.z],
                     normal: [normal.x, normal.y, normal.z],
                 };
-                extrusion_plane_boundary_curve(ctx, nurbs, plane, refusal)?
+                extrusion_plane_boundary_curve(
+                    ctx, nurbs, second.id, row.id, plane, refusal, losses,
+                )?
             }
             (
                 crate::surface::SurfaceKind::Extrusion(_),
                 crate::surface::SurfaceKind::Extrusion(_),
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(first)),
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(second)),
-            ) => shared_extrusion_generator_curve(first, second, refusal)
-                .map(|geometry| (geometry, NurbsBoundaryKind::SharedExtrusionGenerator)),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(first_nurbs)),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(second_nurbs)),
+            ) => shared_extrusion_generator_curve(
+                first_nurbs,
+                first.id,
+                second_nurbs,
+                second.id,
+                refusal,
+            )
+            .map(|geometry| (geometry, NurbsBoundaryKind::SharedExtrusionGenerator)),
             _ => None,
         };
-        if let Some(error) = refusal.take_error() {
-            return Err(error);
-        }
         let Some((geometry, kind)) = resolved else {
+            note_refused_boundary_lanes(row.id, refusal, losses);
             continue;
         };
         let id =
@@ -366,7 +412,7 @@ mod tests {
 
     #[test]
     fn plane_intersection_survives_inconsistent_endpoint_witness() {
-        let mut scan = container::scan_bytes(Vec::new());
+        let mut scan = container::scan_bytes_ok(Vec::new());
         scan.surfaces.rows = [1_u32, 2, 3]
             .into_iter()
             .map(|id| surface::SurfaceRow {
@@ -518,7 +564,7 @@ mod tests {
 
     #[test]
     fn nurbs_boundary_rejects_duplicate_model_surface_ids() {
-        let mut scan = container::scan_bytes(Vec::new());
+        let mut scan = container::scan_bytes_ok(Vec::new());
         scan.surfaces.rows = vec![
             surface::SurfaceRow {
                 id: 1,
@@ -588,11 +634,39 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &DecodePolicy::default())
             .expect("test decode context");
 
-        let result =
-            transfer_nurbs_boundary_curves(&ctx, &scan, &mut ir, &mut AnnotationBuilder::new())
-                .expect("transfer should not fail");
+        let result = transfer_nurbs_boundary_curves(
+            &ctx,
+            &scan,
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &mut Vec::new(),
+        )
+        .expect("transfer should not fail");
 
         assert!(result.ids.is_empty());
         assert!(ir.model.curves.is_empty());
+    }
+
+    #[test]
+    fn refused_boundary_lanes_name_the_curve_topology_row_and_continue() {
+        let mut refusal = crate::lane_refusal::LaneRefusals::new();
+        refusal.note(
+            "creo VisibGeom surface row 7 boundary curve record",
+            &cadmpeg_ir::geometry::NurbsError::Structure("knot vector".to_owned()),
+        );
+        let mut losses = Vec::new();
+
+        super::note_refused_boundary_lanes(41, &mut refusal, &mut losses);
+
+        let [note] = losses.as_slice() else {
+            panic!("one loss note per refused record");
+        };
+        assert_eq!(
+            note.code,
+            crate::loss::CreoLossCode::NurbsBoundaryCarrierUnresolved.kind()
+        );
+        assert!(note.message.contains("row 41"), "{}", note.message);
+        assert!(note.message.contains("surface row 7"), "{}", note.message);
+        assert!(refusal.take_records().is_empty());
     }
 }

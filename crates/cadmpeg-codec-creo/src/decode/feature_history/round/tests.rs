@@ -21,7 +21,7 @@ fn chamfer_does_not_use_a_cone_prototype_as_model_space_placement() {
     payload.extend_from_slice(b"\xe0\x00parent_feats\0\xf8\x01\x04");
     payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
 
-    let mut scan = crate::container::scan_bytes(crate::test_support::build_prt(
+    let mut scan = crate::container::scan_bytes_ok(crate::test_support::build_prt(
         "cone-template",
         &[("VisibGeom", payload)],
     ));
@@ -29,7 +29,9 @@ fn chamfer_does_not_use_a_cone_prototype_as_model_space_placement() {
         panic!("complete cone prototype");
     };
     assert_eq!(
-        crate::decode::surfaces::unique_surface_prototype_associations(&scan).len(),
+        crate::decode::surfaces::unique_surface_prototype_associations(&scan)
+            .expect("prototype associations")
+            .len(),
         1
     );
     let frame = crate::surface::prototype_cone_frame(prototype).expect("prototype frame");
@@ -75,7 +77,7 @@ fn chamfer_does_not_use_a_cone_prototype_as_model_space_placement() {
 
 #[test]
 fn chamfer_uses_transferred_model_plane_carrier() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.surfaces.rows.extend([
         crate::surface::SurfaceRow {
             id: 10,
@@ -227,7 +229,7 @@ fn slot_fillet_cylinder_skips_parallel_midplane_candidates() {
 
 #[test]
 fn chamfer_uses_transferred_model_cone_when_row_parameters_are_opaque() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.surfaces.rows.extend([
         crate::surface::SurfaceRow {
             id: 10,
@@ -314,7 +316,7 @@ fn chamfer_uses_transferred_model_cone_when_row_parameters_are_opaque() {
 
 #[test]
 fn round_support_radius_reconciles_placed_and_transferred_planes() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features
         .affected_ids
         .push(crate::feature::FeatureAffectedIds {
@@ -434,7 +436,7 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
 
 #[test]
 fn round_support_radius_requires_distinct_parallel_cap_planes() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features
         .affected_ids
         .push(crate::feature::FeatureAffectedIds {
@@ -540,7 +542,7 @@ fn round_placed_cylinder_radius_rejects_duplicate_model_surfaces() {
 
 #[test]
 fn round_uses_complete_placed_cylinders_with_cap_and_support_rows() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.surfaces.rows.extend([
         crate::surface::SurfaceRow {
             id: 1,
@@ -599,12 +601,15 @@ fn round_uses_complete_placed_cylinders_with_cap_and_support_rows() {
         });
     }
 
-    assert_eq!(super::round_constant_radius(&scan, &ir, 913), Some(0.5));
+    assert_eq!(
+        super::round_constant_radius(&scan, &ir, 913).expect("round constant radius"),
+        Some(0.5)
+    );
 }
 
 #[test]
 fn round_rejects_conflicting_complete_direct_and_placed_cylinder_radii() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     for id in [3, 4] {
         scan.surfaces.rows.push(crate::surface::SurfaceRow {
             id,
@@ -657,7 +662,10 @@ fn round_rejects_conflicting_complete_direct_and_placed_cylinder_radii() {
         });
     }
 
-    assert_eq!(super::round_constant_radius(&scan, &ir, 913), Some(0.5));
+    assert_eq!(
+        super::round_constant_radius(&scan, &ir, 913).expect("round constant radius"),
+        Some(0.5)
+    );
     if let cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
         cylinder_surface,
     )) = &mut ir.model.surfaces[1].geometry
@@ -671,14 +679,20 @@ fn round_rejects_conflicting_complete_direct_and_placed_cylinder_radii() {
             cadmpeg_ir::geometry::CylinderSurface::try_new(*origin, *axis, *ref_direction, radius)
                 .expect("valid CylinderSurface fixture");
     }
-    assert_eq!(super::round_constant_radius(&scan, &ir, 913), None);
+    assert_eq!(
+        super::round_constant_radius(&scan, &ir, 913).expect("round constant radius"),
+        None
+    );
     ir.model.surfaces.pop();
-    assert_eq!(super::round_constant_radius(&scan, &ir, 913), Some(0.5));
+    assert_eq!(
+        super::round_constant_radius(&scan, &ir, 913).expect("round constant radius"),
+        Some(0.5)
+    );
 }
 
 #[test]
 fn prototype_round_radius_rejects_multiple_associated_torus_prototypes() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.framing.layout = crate::container::Layout::Nd;
     scan.framing.sections.push(crate::container::Section {
         raw_name: "VisibGeom#1".to_string(),
@@ -737,13 +751,13 @@ fn prototype_round_radius_rejects_multiple_associated_torus_prototypes() {
     scan.surfaces.parameters.push(parameter(1, 6));
     let first_row = &scan.surfaces.rows[0];
     assert_eq!(
-        super::prototype_round_radius(&scan, &[first_row]),
+        super::prototype_round_radius(&scan, &[first_row]).expect("prototype round radius"),
         Some(0.5)
     );
 
     scan.framing.layout = crate::container::Layout::Depdb;
     assert_eq!(
-        super::prototype_round_radius(&scan, &[first_row]),
+        super::prototype_round_radius(&scan, &[first_row]).expect("prototype round radius"),
         Some(0.5)
     );
 
@@ -758,12 +772,15 @@ fn prototype_round_radius_rejects_multiple_associated_torus_prototypes() {
     scan.surfaces.parameters.push(parameter(2, 26));
     let rows = scan.surfaces.rows.iter().collect::<Vec<_>>();
 
-    assert_eq!(super::prototype_round_radius(&scan, &rows), None);
+    assert_eq!(
+        super::prototype_round_radius(&scan, &rows).expect("prototype round radius"),
+        None
+    );
 }
 
 #[test]
 fn legacy_round_dimension_supplies_constant_radius() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features
         .legacy_rounds
         .push(crate::legacy_feature::LegacyRoundFeature {
@@ -773,12 +790,15 @@ fn legacy_round_dimension_supplies_constant_radius() {
             offset: 0,
         });
     let ir = cadmpeg_ir::document::CadIr::empty();
-    assert_eq!(super::round_constant_radius(&scan, &ir, 913), Some(2.0));
+    assert_eq!(
+        super::round_constant_radius(&scan, &ir, 913).expect("round constant radius"),
+        Some(2.0)
+    );
 }
 
 #[test]
 fn legacy_variable_round_dimension_withholds_radius() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features
         .legacy_rounds
         .push(crate::legacy_feature::LegacyRoundFeature {
@@ -788,5 +808,8 @@ fn legacy_variable_round_dimension_withholds_radius() {
             offset: 0,
         });
     let ir = cadmpeg_ir::document::CadIr::empty();
-    assert_eq!(super::round_constant_radius(&scan, &ir, 913), None);
+    assert_eq!(
+        super::round_constant_radius(&scan, &ir, 913).expect("round constant radius"),
+        None
+    );
 }

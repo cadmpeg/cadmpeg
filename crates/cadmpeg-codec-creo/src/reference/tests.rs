@@ -429,7 +429,7 @@ fn decode_transfers_equation_verified_model_reference_circles() {
         \xe4\xe4\x0f\x0f\x43\xf0\x00\x0f\x0f\xe0\x00ent_list(line3d)\0"
         .to_vec();
     let data = build_prt("c", &[("MdlRefInfo", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
     assert_eq!(scan.references.circles.len(), 1);
     assert_eq!(scan.references.circles[0].center, [0.0; 3]);
     assert_eq!(scan.references.circles[0].radius, 1.0);
@@ -471,7 +471,7 @@ fn decode_retains_line3d_original_length() {
         \x0f\x0f\x0f\xe4\x0f\x0f\xe4"
         .to_vec();
     let data = build_prt("c", &[("MdlRefInfo", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
     let [line] = scan.references.lines.as_slice() else {
         panic!("one line3d");
     };
@@ -540,7 +540,7 @@ fn decode_reports_and_retains_invariant_complete_reference_ellipses() {
         \xe2\x2c\xf7\x10\xe3\xe0\x00ent_list(text)\0"
         .to_vec();
     let data = build_prt("c", &[("MdlRefInfo", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
     assert_eq!(scan.references.conics.len(), 1);
     assert_eq!(scan.references.ellipses.len(), 1);
 

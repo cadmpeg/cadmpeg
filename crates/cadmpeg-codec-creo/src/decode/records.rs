@@ -2768,7 +2768,7 @@ mod tests {
     #[test]
     fn overlapping_feature_candidates_do_not_expose_short_headers() {
         let payload = [1, 0xe3, 2, 0, 0, 0xe3, 0xf6, 0x83, 0x8f, 0xe1];
-        let mut scan = crate::container::scan_bytes(Vec::new());
+        let mut scan = crate::container::scan_bytes_ok(Vec::new());
         scan.features.rows = crate::feature::rows(&payload, &BTreeSet::from([1, 2]), 0);
         let records = feature_row_records(&scan);
         assert_eq!(records.len(), 1);

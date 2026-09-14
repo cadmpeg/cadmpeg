@@ -254,7 +254,7 @@ fn scan_groups_connected_nonzero_face_references() {
     payload.extend_from_slice(
         b"topol_ref_data\0\x07\x08\x04\x01\xf6\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3\x08\x08\x04\x01\xf6\x0b\x0c\x08\x08\0\0\xe3\xe1\xe3",
     );
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert_eq!(scan.topology.face_components.len(), 1);
     assert_eq!(scan.topology.face_components[0].face_ids, vec![10, 11, 12]);
@@ -279,7 +279,7 @@ fn scan_builds_topological_vertex_orbits_and_incidence() {
         b"topol_ref_data\0\x07\x08\x04\x01\xf6\x0a\x0b\x08\x08\0\0\xe3\xe1\xe3\
           \x08\x08\x04\x01\xf6\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3",
     );
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert_eq!(scan.topology.vertices.len(), 2);
     assert_eq!(
@@ -375,7 +375,7 @@ fn closed_plane_intersection_data(geomlists: Option<&[u8]>) -> Vec<u8> {
 #[test]
 fn decode_transfers_closed_plane_intersection_brep() {
     let data = closed_plane_intersection_data(None);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
     assert_eq!(scan.planes.local_systems.len(), 4);
     assert_eq!(scan.curves.topology_rows.len(), 6);
     assert!(
@@ -532,7 +532,7 @@ fn decode_transfers_closed_plane_intersection_brep() {
 #[test]
 fn decode_withholds_native_brep_when_declared_body_count_disagrees() {
     let data = closed_plane_intersection_data(Some(b"n_bodies\0\x02"));
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
     assert_eq!(scan.framing.declared_body_count, Some(2));
     assert_eq!(scan.topology.face_components.len(), 1);
 

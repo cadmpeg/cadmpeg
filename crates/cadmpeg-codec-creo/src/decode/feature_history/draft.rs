@@ -447,7 +447,7 @@ pub(in super::super) fn schema_feature_definition(
     if schema_class == Some(SchemaClass::Round) {
         let mut observed_radii = round_observed_radii(scan, feature_id);
         observed_radii.extend(round_placed_cylinder_radii(scan, ir, feature_id));
-        let radius = round_constant_radius(scan, ir, feature_id)
+        let radius = round_constant_radius(scan, ir, feature_id)?
             .and_then(cadmpeg_ir::scalar::PositiveLength::new)
             .map_or_else(
                 || {

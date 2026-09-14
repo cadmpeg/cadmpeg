@@ -78,6 +78,12 @@ pub enum CreoLossCode {
     VisibGeomSurfaceUntransferred,
     /// Unique `VisibGeom` curve-topology rows were not transferred as carriers.
     VisibGeomCurveUntransferred,
+    /// A legacy ASCII surface carrier refused a lane, so its geometry stays a
+    /// structural record.
+    LegacySurfaceCarrierUnresolved,
+    /// A NURBS boundary or plane-generator carrier refused a lane, so the
+    /// curve named by its surface row stays a structural record.
+    NurbsBoundaryCarrierUnresolved,
     /// `VisibGeom` surface rows share a non-unique identity.
     VisibGeomSurfaceAmbiguous,
     /// `VisibGeom` curve-topology rows share a non-unique identity.
@@ -200,6 +206,8 @@ impl CreoLossCode {
             Self::GeometryInstanceCarriersGated => "geometry.instance-carriers-gated",
             Self::VisibGeomSurfaceUntransferred => "geometry.visibgeom-surface-untransferred",
             Self::VisibGeomCurveUntransferred => "geometry.visibgeom-curve-untransferred",
+            Self::LegacySurfaceCarrierUnresolved => "geometry.legacy-surface-carrier-unresolved",
+            Self::NurbsBoundaryCarrierUnresolved => "geometry.nurbs-boundary-carrier-unresolved",
             Self::VisibGeomSurfaceAmbiguous => "geometry.visibgeom-surface-ambiguous",
             Self::VisibGeomCurveAmbiguous => "geometry.visibgeom-curve-ambiguous",
             Self::SectionSegmentGeometryUnresolved => "geometry.section-segment-unresolved",
@@ -299,6 +307,8 @@ impl CreoLossCode {
             | Self::TriangleStripRepresentationConflict
             | Self::VisibGeomSurfaceUntransferred
             | Self::VisibGeomCurveUntransferred
+            | Self::LegacySurfaceCarrierUnresolved
+            | Self::NurbsBoundaryCarrierUnresolved
             | Self::SectionSegmentGeometryUnresolved
             | Self::FeatureNeutralSemanticsIncomplete
             | Self::FeatureSweepIncomplete
@@ -367,6 +377,8 @@ impl CreoLossCode {
             | Self::GeometryInstanceCarriersGated
             | Self::VisibGeomSurfaceUntransferred
             | Self::VisibGeomCurveUntransferred
+            | Self::LegacySurfaceCarrierUnresolved
+            | Self::NurbsBoundaryCarrierUnresolved
             | Self::VisibGeomSurfaceAmbiguous
             | Self::VisibGeomCurveAmbiguous
             | Self::SectionSegmentGeometryUnresolved
@@ -457,6 +469,8 @@ mod tests {
                 "geometry.instance-carriers-gated",
                 "geometry.visibgeom-surface-untransferred",
                 "geometry.visibgeom-curve-untransferred",
+                "geometry.legacy-surface-carrier-unresolved",
+                "geometry.nurbs-boundary-carrier-unresolved",
                 "geometry.visibgeom-surface-ambiguous",
                 "geometry.visibgeom-curve-ambiguous",
                 "geometry.section-segment-unresolved",

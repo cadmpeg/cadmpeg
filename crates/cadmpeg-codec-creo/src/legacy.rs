@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Structural grammar for legacy ASCII persistence records.
 
+use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroUsize;
 use std::ops::Range;
@@ -1353,9 +1354,15 @@ fn value(line: &[u8], line_offset: usize) -> Option<AttributeValue> {
     })
 }
 
-fn scan_scope(data: &[u8], range: Range<usize>) -> Scope {
-    let end = range.end.min(data.len());
-    let range = range.start.min(end)..end;
+fn scan_scope(data: &[u8], range: Range<usize>) -> Result<Scope, CodecError> {
+    if range.end > data.len() {
+        return Err(CodecError::malformed(format!(
+            "creo legacy persistence scope at offset {} declares end {}, past the file length {}",
+            range.start,
+            range.end,
+            data.len(),
+        )));
+    }
     let mut declarations = Vec::<AttributeDeclaration>::new();
     let mut declaration_indices = BTreeMap::<u32, usize>::new();
     let mut conflicting_ids = BTreeSet::<u32>::new();
@@ -1416,22 +1423,25 @@ fn scan_scope(data: &[u8], range: Range<usize>) -> Scope {
         declaration_indices.contains_key(&value.attribute_id)
             && !conflicting_ids.contains(&value.attribute_id)
     });
-    Scope {
+    Ok(Scope {
         range,
         declarations,
         unresolved_value_count: candidate_count - candidates.len(),
         values: candidates,
         conflicting_declaration_count: conflicting_ids.len(),
-    }
+    })
 }
 
 /// Scan independently scoped legacy ASCII record extents.
-pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) -> Persistence {
+pub(crate) fn scan(
+    data: &[u8],
+    ranges: impl IntoIterator<Item = Range<usize>>,
+) -> Result<Persistence, CodecError> {
     let scopes = ranges
         .into_iter()
         .filter(|range| range.start < range.end && range.start < data.len())
         .map(|range| scan_scope(data, range))
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, CodecError>>()?;
     let parents = parent_object_offsets(&scopes);
     let (objects, incomplete_object_array_count, unresolved_object_value_count) =
         object_records(data, &scopes, &parents);
@@ -1463,7 +1473,7 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         numeric_records(data, &scopes, ValueKind::TYPE9, unsigned_integer, &parents);
     let type_11_values =
         numeric_records(data, &scopes, ValueKind::TYPE11, unsigned_integer, &parents);
-    Persistence {
+    Ok(Persistence {
         scopes,
         real_values,
         integer_values,
@@ -1480,7 +1490,7 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
         type_7_values,
         type_9_values,
         type_11_values,
-    }
+    })
 }
 
 impl<K: LegacyCode> ValueRecord<K> {

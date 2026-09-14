@@ -9,7 +9,7 @@ use crate::CreoCodec;
 
 #[test]
 fn unresolved_round_type26_frames_are_not_admitted_as_constant_tori() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.rows.push(crate::feature::FeatureRow {
         feature_id: 913,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
@@ -82,8 +82,10 @@ fn transfers_an_exact_zero_major_inline_frame_as_a_sphere() {
     let mut payload = b"srf_array\0\xf8\x01".to_vec();
     payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0, 0xe3]);
     payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
-    let mut scan =
-        crate::container::scan_bytes(build_prt("inline-sphere", &[("ND:0:VisibGeom:0", payload)]));
+    let mut scan = crate::container::scan_bytes_ok(build_prt(
+        "inline-sphere",
+        &[("ND:0:VisibGeom:0", payload)],
+    ));
     assert_eq!(scan.surfaces.rows.len(), 1);
     assert_eq!(scan.surfaces.parameters.len(), 1);
     scan.surfaces.parameters[0].carrier = crate::surface::SurfaceParameterCarrier::Resolved(
@@ -188,12 +190,14 @@ fn paired_envelope_spheres_do_not_join_rows_from_two_prototypes_in_one_frame() {
     payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
 
     let data = build_prt("two-prototypes-one-frame", &[("ND:0:VisibGeom:0", payload)]);
-    let scan = crate::container::scan_bytes(data.clone());
+    let scan = crate::container::scan_bytes_ok(data.clone());
     assert_eq!(scan.surfaces.rows.len(), 2);
     assert_eq!(scan.surfaces.parameters.len(), 2);
     assert_eq!(scan.surfaces.prototype_records.len(), 2);
     assert_eq!(
-        super::super::prototypes::unique_surface_prototype_associations(&scan).len(),
+        super::super::prototypes::unique_surface_prototype_associations(&scan)
+            .expect("prototype associations")
+            .len(),
         2
     );
 

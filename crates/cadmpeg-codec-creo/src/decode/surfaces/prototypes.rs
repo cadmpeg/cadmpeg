@@ -71,6 +71,10 @@ pub(in super::super) fn prototype_spline_nurbs(
             prototype_vector_array(record, "end_v_tangts")?,
             <[[f64; 3]; 4]>::try_from(prototype_vector_array(record, "end_uv_deriv")?).ok()?,
         )?,
+        &format!(
+            "VisibGeom surface prototype record at offset {}",
+            record.offset
+        ),
         refusal,
     )
 }
@@ -143,33 +147,68 @@ pub(in super::super) fn first_instance_surface_row(
         .min_by_key(|row| row.offset)
 }
 
+/// Bounds of the complete surface array that holds one prototype record.
+///
+/// A section whose declared extent runs past the scanned buffer is a refusal
+/// naming the section, its declared end, and the buffer length. `Ok(None)`
+/// states that no single complete surface array holds the prototype.
 pub(in super::super) fn surface_prototype_frame_bounds(
     scan: &ContainerScan<'_>,
     section: &crate::container::Section,
     prototype_offset: usize,
-) -> Option<(usize, usize)> {
+) -> Result<Option<(usize, usize)>, cadmpeg_core::CodecError> {
+    let section_end = section_declared_end(section)?;
     if scan.framing.data.is_empty() {
-        return Some((
-            section.offset,
-            section.offset.saturating_add(section.length),
-        ));
+        return Ok(Some((section.offset, section_end)));
     }
-    let section_end = section
-        .offset
-        .saturating_add(section.length)
-        .min(scan.framing.data.len());
-    let payload = scan.framing.data.get(section.offset..section_end)?;
-    let relative_prototype_offset = prototype_offset.checked_sub(section.offset)?;
+    let payload = crate::container::section_region(&scan.framing.data, section)?;
+    let Some(relative_prototype_offset) = prototype_offset.checked_sub(section.offset) else {
+        return Ok(None);
+    };
     let mut matches = crate::surface::complete_surface_array_bounds(payload)
         .into_iter()
         .filter(|(start, end)| {
             relative_prototype_offset >= *start && relative_prototype_offset < *end
         });
-    let (start, end) = matches.next()?;
-    matches.next().is_none().then_some((
-        section.offset.saturating_add(start),
-        section.offset.saturating_add(end),
-    ))
+    let Some((start, end)) = matches.next() else {
+        return Ok(None);
+    };
+    if matches.next().is_some() {
+        return Ok(None);
+    }
+    Ok(Some((
+        frame_bound(section, start)?,
+        frame_bound(section, end)?,
+    )))
+}
+
+/// Declared end of a section, refusing an extent that does not fit an address.
+fn section_declared_end(
+    section: &crate::container::Section,
+) -> Result<usize, cadmpeg_core::CodecError> {
+    section.offset.checked_add(section.length).ok_or_else(|| {
+        cadmpeg_core::CodecError::malformed(format!(
+            "section {} states offset {} and length {}, which do not form an address",
+            section.name(),
+            section.offset,
+            section.length
+        ))
+    })
+}
+
+/// Absolute address of an offset inside one section payload.
+fn frame_bound(
+    section: &crate::container::Section,
+    relative: usize,
+) -> Result<usize, cadmpeg_core::CodecError> {
+    section.offset.checked_add(relative).ok_or_else(|| {
+        cadmpeg_core::CodecError::malformed(format!(
+            "section {} states offset {} and a surface array bound at {relative}, which do not \
+             form an address",
+            section.name(),
+            section.offset
+        ))
+    })
 }
 
 #[derive(Clone, Copy)]
@@ -193,13 +232,20 @@ impl<'a> SupportedPrototype<'a> {
     }
 }
 
+/// Every surface prototype record that binds to exactly one first-instance row.
+///
+/// A section whose declared extent runs past the scanned buffer is a refusal,
+/// because the prototype frame it states cannot be read.
 pub(in super::super) fn unique_surface_prototype_associations<'a>(
     scan: &'a ContainerScan<'_>,
-) -> Vec<(
-    SupportedPrototype<'a>,
-    &'a crate::surface::SurfaceRow,
-    &'a crate::container::Section,
-)> {
+) -> Result<
+    Vec<(
+        SupportedPrototype<'a>,
+        &'a crate::surface::SurfaceRow,
+        &'a crate::container::Section,
+    )>,
+    cadmpeg_core::CodecError,
+> {
     let mut associations = Vec::new();
     for record in &scan.surfaces.prototype_records {
         let (prototype, row_kind) = match record.family {
@@ -232,7 +278,7 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
             continue;
         };
         let Some((adjacent_start, adjacent_end)) =
-            surface_prototype_frame_bounds(scan, section, record.offset)
+            surface_prototype_frame_bounds(scan, section, record.offset)?
         else {
             continue;
         };
@@ -256,22 +302,28 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
     for (_, row, _) in &associations {
         *association_counts.entry(row.offset).or_default() += 1;
     }
-    associations
+    Ok(associations
         .into_iter()
         .filter(|(_, row, _)| association_counts.get(&row.offset) == Some(&1))
-        .collect()
+        .collect())
 }
 
+/// Transfer one exact surface carrier per first-instance prototype record.
+///
+/// A prototype spline whose lanes the IR carrier refuses states no carrier.
+/// The model carries the surface row without it, so the refusal is a loss note
+/// naming the `VisibGeom` surface row and the prototype offset.
 pub(in super::super) fn transfer_first_instance_prototype_surfaces(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
+    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     if scan.framing.layout != crate::container::Layout::Nd {
         return Ok(0);
     }
     let mut transferred = 0;
-    for (prototype, row, section) in unique_surface_prototype_associations(scan) {
+    for (prototype, row, section) in unique_surface_prototype_associations(scan)? {
         let record = prototype.record();
         let geometry = match prototype {
             SupportedPrototype::Plane(_) => {
@@ -380,10 +432,19 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
             SupportedPrototype::Spline(_) => {
                 let mut refusal = crate::lane_refusal::LaneRefusals::new();
                 let nurbs = prototype_spline_nurbs(record, &mut refusal);
-                if let Some(error) = refusal.take_error() {
-                    return Err(error);
-                }
-                let Some(nurbs) = nurbs else {
+                let refused = refusal.take_records();
+                let Some(nurbs) = nurbs.filter(|_| refused.is_empty()) else {
+                    if !refused.is_empty() {
+                        losses.push(
+                            crate::loss::CreoLossCode::VisibGeomSurfaceUntransferred.note(format!(
+                                "VisibGeom surface row {} states a spline prototype at offset {} \
+                                 that forms no NURBS carrier: {}",
+                                row.id,
+                                record.offset,
+                                refused.join("; ")
+                            )),
+                        );
+                    }
                     continue;
                 };
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
@@ -427,10 +488,17 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
     Ok(transferred)
 }
 
+/// Transfer one exact surface carrier per positional spline replay.
+///
+/// A section whose declared extent runs past the scanned buffer is a refusal.
+/// A replay whose lanes the IR carrier refuses states no carrier: the model
+/// carries the surface row without it, so that refusal is a loss note naming
+/// the `VisibGeom` surface row and the parameter body offset.
 pub(in super::super) fn transfer_positional_spline_replays(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
+    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     if scan.framing.layout != crate::container::Layout::Nd {
         return Ok(0);
@@ -460,13 +528,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
         let [section] = sections.as_slice() else {
             continue;
         };
-        let section_end = section
-            .offset
-            .saturating_add(section.length)
-            .min(scan.framing.data.len());
-        let Some(payload) = scan.framing.data.get(section.offset..section_end) else {
-            continue;
-        };
+        let payload = crate::container::section_region(&scan.framing.data, section)?;
         let Some(relative_row_offset) = row.offset.checked_sub(section.offset) else {
             continue;
         };
@@ -503,11 +565,27 @@ pub(in super::super) fn transfer_positional_spline_replays(
             continue;
         };
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
-        let nurbs = interpolation_spline_surface(&replay, &mut refusal);
-        if let Some(error) = refusal.take_error() {
-            return Err(error);
-        }
-        let Some(nurbs) = nurbs else {
+        let nurbs = interpolation_spline_surface(
+            &replay,
+            &format!(
+                "VisibGeom surface row {} positional spline replay at offset {}",
+                row.id, parameter.body_offset
+            ),
+            &mut refusal,
+        );
+        let refused = refusal.take_records();
+        let Some(nurbs) = nurbs.filter(|_| refused.is_empty()) else {
+            if !refused.is_empty() {
+                losses.push(
+                    crate::loss::CreoLossCode::VisibGeomSurfaceUntransferred.note(format!(
+                        "VisibGeom surface row {} states a positional spline replay at offset {} \
+                         that forms no NURBS carrier: {}",
+                        row.id,
+                        parameter.body_offset,
+                        refused.join("; ")
+                    )),
+                );
+            }
             continue;
         };
         let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
@@ -548,10 +626,16 @@ pub(in super::super) fn transfer_positional_spline_replays(
     Ok(transferred)
 }
 
+/// Transfer one exact surface carrier per unique legacy ASCII carrier record.
+///
+/// A carrier spline whose lanes the IR carrier refuses states no carrier. The
+/// model carries the surface row without it, so the refusal is a loss note
+/// naming the surface row and the carrier offset.
 pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
+    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     if !matches!(
         scan.framing.layout,
@@ -674,11 +758,32 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
                 if row.kind == crate::surface::SurfaceKind::Spline =>
             {
                 let mut refusal = crate::lane_refusal::LaneRefusals::new();
-                let nurbs = interpolation_spline_surface(spline, &mut refusal);
-                if let Some(error) = refusal.take_error() {
-                    return Err(error);
-                }
-                let Some(nurbs) = nurbs else {
+                let nurbs = interpolation_spline_surface(
+                    spline,
+                    &format!(
+                        "legacy {}{} spline carrier at offset {}",
+                        carrier.namespace.source_prefix(),
+                        carrier.surface_id,
+                        carrier.offset
+                    ),
+                    &mut refusal,
+                );
+                let refused = refusal.take_records();
+                let Some(nurbs) = nurbs.filter(|_| refused.is_empty()) else {
+                    if !refused.is_empty() {
+                        losses.push(
+                            crate::loss::CreoLossCode::LegacySurfaceCarrierUnresolved.note(
+                                format!(
+                                "{}{} states a legacy spline carrier at offset {} that forms no \
+                                 NURBS carrier: {}",
+                                carrier.namespace.source_prefix(),
+                                carrier.surface_id,
+                                carrier.offset,
+                                refused.join("; ")
+                            ),
+                            ),
+                        );
+                    }
                     continue;
                 };
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))

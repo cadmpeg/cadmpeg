@@ -174,7 +174,7 @@ fn face_admission_diagnostics_record_unresolved_boundary_operands() {
 
 #[test]
 fn legacy_brep_admission_retains_components_with_eligible_visible_faces() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.framing.layout = crate::test_support::legacy_layout();
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 5,
@@ -230,7 +230,7 @@ fn legacy_brep_admission_retains_components_with_eligible_visible_faces() {
 
 #[test]
 fn legacy_brep_admission_excludes_nonvisible_face_references() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.framing.layout = crate::test_support::legacy_layout();
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 5,
@@ -607,7 +607,7 @@ fn native_parameter_loops_admit_proven_two_edge_circles() {
 
 #[test]
 fn native_brep_rejects_ambiguous_model_carriers() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.framing.declared_body_count = Some(1);
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 5,
@@ -773,6 +773,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         &BTreeSet::new(),
         &BTreeSet::new(),
         &BTreeSet::new(),
+        &mut Vec::new(),
     )
     .expect("valid source object identity");
 
@@ -860,6 +861,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         &BTreeSet::new(),
         &BTreeSet::new(),
         &BTreeSet::new(),
+        &mut Vec::new(),
     )
     .expect("valid source object identity");
 

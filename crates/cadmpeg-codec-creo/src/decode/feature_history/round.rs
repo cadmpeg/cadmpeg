@@ -327,10 +327,13 @@ pub(in super::super) fn replayed_torus_minor_radius(
 pub(in super::super) fn prototype_round_radius(
     scan: &ContainerScan,
     rows: &[&crate::surface::SurfaceRow],
-) -> Option<f64> {
-    let feature_id = rows.first()?.feature_id;
-    let (radius1, radius2) = exactly_one(
-        unique_surface_prototype_associations(scan)
+) -> Result<Option<f64>, cadmpeg_core::CodecError> {
+    let Some(first) = rows.first() else {
+        return Ok(None);
+    };
+    let feature_id = first.feature_id;
+    let Some((radius1, radius2)) = exactly_one(
+        unique_surface_prototype_associations(scan)?
             .into_iter()
             .filter(|(record, row, _)| {
                 matches!(
@@ -345,9 +348,14 @@ pub(in super::super) fn prototype_round_radius(
                     prototype_scalar(record.record(), "radius2")?,
                 ))
             }),
-    )?;
-    (radius1.is_finite() && radius1 >= 0.0 && radius2.is_finite() && radius2 > 0.0).then_some(())?;
-    rows.iter()
+    ) else {
+        return Ok(None);
+    };
+    if !(radius1.is_finite() && radius1 >= 0.0 && radius2.is_finite() && radius2 > 0.0) {
+        return Ok(None);
+    }
+    Ok(rows
+        .iter()
         .all(|row| {
             let Some(record) = unique_surface_parameter_record(scan, row) else {
                 return false;
@@ -370,14 +378,14 @@ pub(in super::super) fn prototype_round_radius(
                             coordinate_pair_proves_torus_radii([a1, a2], [b1, b2], radius1, radius2)
                         }))
         })
-        .then_some(radius2)
+        .then_some(radius2))
 }
 
 pub(in super::super) fn round_constant_radius(
     scan: &ContainerScan,
     ir: &CadIr,
     feature_id: u32,
-) -> Option<f64> {
+) -> Result<Option<f64>, cadmpeg_core::CodecError> {
     match scan
         .features
         .legacy_rounds
@@ -387,11 +395,11 @@ pub(in super::super) fn round_constant_radius(
     {
         Some(LegacyRoundRadius::Constant(radius)) => {
             if !legacy_round_radius_agrees(scan, ir, feature_id, radius) {
-                return None;
+                return Ok(None);
             }
-            return Some(radius);
+            return Ok(Some(radius));
         }
-        Some(LegacyRoundRadius::Ambiguous) => return None,
+        Some(LegacyRoundRadius::Ambiguous) => return Ok(None),
         Some(LegacyRoundRadius::NotPresent) | None => {}
     }
     if let Some(radius) = round_direct_radii(scan, feature_id)
@@ -401,9 +409,9 @@ pub(in super::super) fn round_constant_radius(
         if complete_direct_placed_cylinder_radius_agreement(scan, ir, feature_id)
             .is_some_and(|agrees| !agrees)
         {
-            return None;
+            return Ok(None);
         }
-        return Some(radius);
+        return Ok(Some(radius));
     }
     let generated_rows = scan
         .surfaces
@@ -412,17 +420,17 @@ pub(in super::super) fn round_constant_radius(
         .filter(|row| row.feature_id == feature_id)
         .collect::<Vec<_>>();
     if generated_rows.is_empty() {
-        return round_support_radius(scan, ir, feature_id);
+        return Ok(round_support_radius(scan, ir, feature_id));
     }
     if let Some(radius) = round_replay_radius(scan, ir, feature_id) {
-        return Some(radius);
+        return Ok(Some(radius));
     }
     // Unequal decoded rolling-radius samples identify a variable-radius
     // round even when another generated row has no radius proof. A support
     // plane fallback must not turn that incomplete, unequal sample set into
     // a false constant radius.
     if differing_positive_lengths(&round_observed_radii(scan, feature_id)) {
-        return None;
+        return Ok(None);
     }
     let cylinder_rows = generated_rows
         .iter()
@@ -434,7 +442,7 @@ pub(in super::super) fn round_constant_radius(
             .iter()
             .any(|row| row.kind != crate::surface::SurfaceKind::TorusOrSphere)
         {
-            return None;
+            return Ok(None);
         }
         return prototype_round_radius(scan, &generated_rows);
     }
@@ -446,8 +454,8 @@ pub(in super::super) fn round_constant_radius(
             )
         })
     {
-        if let Some(radii) = mixed_round_radius_samples(scan, ir, &generated_rows) {
-            return unique_positive_length(&radii);
+        if let Some(radii) = mixed_round_radius_samples(scan, ir, &generated_rows)? {
+            return Ok(unique_positive_length(&radii));
         }
     }
     let cylinder_radii = round_placed_cylinder_radii(scan, ir, feature_id);
@@ -455,7 +463,7 @@ pub(in super::super) fn round_constant_radius(
         // Independent placed cylinder samples remain decisive when an
         // unresolved toroidal sibling prevents the complete mixed-family
         // witness from being assembled.
-        return None;
+        return Ok(None);
     }
     // A complete placed set of generated cylinder carriers is an independent
     // radius witness when the remaining generated rows are cap or support
@@ -468,9 +476,9 @@ pub(in super::super) fn round_constant_radius(
         )
     });
     if cylinder_radii.len() == cylinder_rows.len() && non_radius_rows_are_planes {
-        return unique_positive_length(&cylinder_radii);
+        return Ok(unique_positive_length(&cylinder_radii));
     }
-    round_support_radius(scan, ir, feature_id)
+    Ok(round_support_radius(scan, ir, feature_id))
 }
 
 fn round_replay_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> Option<f64> {
@@ -560,7 +568,7 @@ pub(in super::super) fn mixed_round_radius_samples(
     scan: &ContainerScan,
     ir: &CadIr,
     rows: &[&crate::surface::SurfaceRow],
-) -> Option<Vec<f64>> {
+) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
     let cylinder_rows = rows
         .iter()
         .copied()
@@ -571,44 +579,56 @@ pub(in super::super) fn mixed_round_radius_samples(
         .copied()
         .filter(|row| row.kind == crate::surface::SurfaceKind::TorusOrSphere)
         .collect::<Vec<_>>();
-    (!cylinder_rows.is_empty() && !torus_rows.is_empty()).then_some(())?;
+    if cylinder_rows.is_empty() || torus_rows.is_empty() {
+        return Ok(None);
+    }
 
-    let cylinder_radii = cylinder_rows
+    let Some(cylinder_radii) = cylinder_rows
         .iter()
         .map(|row| round_cylinder_radius(scan, ir, row))
-        .collect::<Option<Vec<_>>>()?;
-    let torus_radii = mixed_torus_radius_samples(scan, &torus_rows)?;
-    Some(cylinder_radii.into_iter().chain(torus_radii).collect())
+        .collect::<Option<Vec<_>>>()
+    else {
+        return Ok(None);
+    };
+    let Some(torus_radii) = mixed_torus_radius_samples(scan, &torus_rows)? else {
+        return Ok(None);
+    };
+    Ok(Some(
+        cylinder_radii.into_iter().chain(torus_radii).collect(),
+    ))
 }
 
 pub(in super::super) fn mixed_torus_radius_samples(
     scan: &ContainerScan,
     rows: &[&crate::surface::SurfaceRow],
-) -> Option<Vec<f64>> {
-    let parameters = rows
+) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
+    let Some(parameters) = rows
         .iter()
         .map(|row| unique_surface_parameter_record(scan, row))
-        .collect::<Option<Vec<_>>>()?;
+        .collect::<Option<Vec<_>>>()
+    else {
+        return Ok(None);
+    };
     if parameters
         .iter()
         .all(|record| record.torus_radius_overrides().is_some())
     {
-        return Some(
+        return Ok(Some(
             parameters
                 .iter()
                 .filter_map(|record| record.torus_radius_overrides())
                 .map(|overrides| overrides.radius2)
                 .collect(),
-        );
+        ));
     }
     if parameters
         .iter()
         .any(|record| record.torus_radius_overrides().is_some())
     {
-        return None;
+        return Ok(None);
     }
-    prototype_round_radius(scan, rows)
-        .and_then(|radius| alloc_filled(rows.len(), radius, "creo_torus_radius_samples").ok())
+    Ok(prototype_round_radius(scan, rows)?
+        .and_then(|radius| alloc_filled(rows.len(), radius, "creo_torus_radius_samples").ok()))
 }
 
 pub(in super::super) fn round_cylinder_radius(

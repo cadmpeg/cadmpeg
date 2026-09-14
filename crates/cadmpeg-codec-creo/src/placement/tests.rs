@@ -1331,7 +1331,7 @@ fn scan_decodes_featdefs_gsec3d_placement_references() {
         dim_id_tab\0\xf3\xf8\x02\x07\x81\x01"
         .to_vec();
     let data = build_prt("c", &[("FeatDefs", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     let section = scan.features.definitions[0]
         .section_3d
@@ -1384,7 +1384,7 @@ fn named_gsec3d_fields_stop_at_the_next_record() {
     let mut payload = b"feat_defs_40\0\xe0\x00gsec3d_ptr\0".to_vec();
     payload
         .extend_from_slice(b"\xe0\x00gsec3d_ptr\0plane_id\0\x83\x01\xe0\x00p_saved_result\0\xe3");
-    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("FeatDefs", payload)]));
 
     let section = scan.features.definitions[0]
         .section_3d
@@ -1400,7 +1400,7 @@ fn named_gsec3d_fields_extend_to_the_placement_close() {
     payload.resize(payload.len() + 300, 0);
     payload
         .extend_from_slice(b"\xe0\x01plane_id\0\x09plane_id\0\x83\x01\xe0\x00p_saved_result\0\xe3");
-    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("FeatDefs", payload)]));
 
     let section = scan.features.definitions[0]
         .section_3d

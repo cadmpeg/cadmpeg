@@ -29,7 +29,7 @@ fn first_instance_cone_prototype_transfers_its_complete_model_space_frame() {
     payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
 
     let data = build_prt("c", &[("ND:0:VisibGeom:0", payload)]);
-    let scan = crate::container::scan_bytes(data.clone());
+    let scan = crate::container::scan_bytes_ok(data.clone());
     let [prototype] = scan.surfaces.prototype_records.as_slice() else {
         panic!("complete cone prototype");
     };
@@ -38,7 +38,12 @@ fn first_instance_cone_prototype_transfers_its_complete_model_space_frame() {
         crate::surface::SurfacePrototypeFamily::Cone
     );
     assert!(crate::surface::prototype_cone_frame(prototype).is_some());
-    assert_eq!(super::unique_surface_prototype_associations(&scan).len(), 1);
+    assert_eq!(
+        super::unique_surface_prototype_associations(&scan)
+            .expect("prototype associations")
+            .len(),
+        1
+    );
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
@@ -590,4 +595,39 @@ ${}
         result.report().coverage()["transferred_visible_spline_surface_row_count"],
         1
     );
+}
+
+#[test]
+fn section_extent_that_does_not_form_an_address_is_refused_by_name() {
+    let section = crate::container::Section {
+        raw_name: "ND:0:VisibGeom:0".to_owned(),
+        offset: usize::MAX - 3,
+        length: 16,
+        expanded_length: None,
+    };
+
+    let error = super::section_declared_end(&section).expect_err("overrun extent is refused");
+
+    let message = error.to_string();
+    assert!(message.contains("VisibGeom"), "{message}");
+    assert!(message.contains(&(usize::MAX - 3).to_string()), "{message}");
+    assert!(message.contains("16"), "{message}");
+}
+
+#[test]
+fn in_range_section_extent_states_its_declared_end() {
+    let section = crate::container::Section {
+        raw_name: "ND:0:VisibGeom:0".to_owned(),
+        offset: 32,
+        length: 16,
+        expanded_length: None,
+    };
+
+    assert_eq!(
+        super::section_declared_end(&section).expect("declared end"),
+        48
+    );
+    assert_eq!(super::frame_bound(&section, 8).expect("frame bound"), 40);
+    let error = super::frame_bound(&section, usize::MAX).expect_err("overrun bound is refused");
+    assert!(error.to_string().contains("VisibGeom"));
 }

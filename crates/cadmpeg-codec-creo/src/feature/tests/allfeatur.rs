@@ -15,7 +15,7 @@ fn scan_collects_feature_owners_from_rows_and_parent_lists() {
     let mut payload = visibgeom_payload(1, 0);
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
     payload.extend_from_slice(b"parent_feats\0\xf8\x02\x04\x09");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert_eq!(scan.features.ids, vec![4, 9]);
 }
@@ -42,7 +42,7 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
             ("MdlStatus", b"Protrusion id 4\0".to_vec()),
         ],
     );
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.features.entity_tables.len(), 1);
     let table = &scan.features.entity_tables[0];
@@ -123,7 +123,7 @@ fn scan_decodes_source_entity_id_whose_compact_tail_is_e3() {
             0, 0xe3,
         ],
     );
-    let scan = container::scan_bytes(build_prt(
+    let scan = container::scan_bytes_ok(build_prt(
         "c",
         &[("VisibGeom", geometry), ("AllFeatur", allfeatur)],
     ));
@@ -146,7 +146,7 @@ fn scan_accepts_large_structurally_bounded_feature_entity_tables() {
     for _ in 1..65 {
         allfeatur.extend_from_slice(&[9, 0x80, 0xc8, 1, 0, 0xe3]);
     }
-    let scan = container::scan_bytes(build_prt(
+    let scan = container::scan_bytes_ok(build_prt(
         "c",
         &[("VisibGeom", geometry), ("AllFeatur", allfeatur)],
     ));
@@ -173,7 +173,7 @@ fn scan_rejects_feature_entity_table_that_crosses_the_next_feature_row() {
     );
     // The second declared entry is absent before feature 9 starts.
     allfeatur.extend(allfeatur_row(9, [0x90, 0x01], 913, &[8, 0xe3]));
-    let scan = container::scan_bytes(build_prt(
+    let scan = container::scan_bytes_ok(build_prt(
         "c",
         &[("VisibGeom", geometry), ("AllFeatur", allfeatur)],
     ));
@@ -188,7 +188,7 @@ fn scan_bounds_known_allfeatur_feature_rows() {
     geometry.extend_from_slice(&[8, 0x22, 9, 0x01, 0, 0]);
     let mut allfeatur = allfeatur_row(4, [0xeb, 0x04], 917, &[0xaa, 0xbb, 0xe3]);
     allfeatur.extend(allfeatur_row(9, [0x90, 0x01], 913, &[0xcc]));
-    let scan = container::scan_bytes(build_prt(
+    let scan = container::scan_bytes_ok(build_prt(
         "c",
         &[("VisibGeom", geometry), ("AllFeatur", allfeatur)],
     ));
@@ -233,7 +233,7 @@ fn scan_decodes_allfeatur_root_featdefs_schema_class() {
             ),
         ],
     );
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(
         scan.features.rows[0]
@@ -279,7 +279,7 @@ fn scan_resolves_allfeatur_walker_order_entity_references() {
     let allfeatur =
         b"\xe0\x00Sld_Features\0\xe0\x22first\0\xf7\x02\xe3\xe0\x24second\0\xf7\x01\xe3".to_vec();
     let data = build_prt("c", &[("AllFeatur", allfeatur)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.features.entities.len(), 3);
     assert_eq!(scan.features.entities[0].entity_id, 0);
@@ -337,7 +337,7 @@ fn scan_bounds_allfeatur_procedural_choice_spans() {
         917,
         b"\xe0\x22blend_choice\0\x11\x12\xe0\x24depth_choice\0\x07",
     );
-    let scan = container::scan_bytes(build_prt(
+    let scan = container::scan_bytes_ok(build_prt(
         "c",
         &[("VisibGeom", geometry), ("AllFeatur", allfeatur)],
     ));
@@ -369,7 +369,7 @@ fn scan_decodes_allfeatur_choice_field_wrappers() {
             ("MdlStatus", b"Round id 4\0".to_vec()),
         ],
     );
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.features.choice_fields.len(), 2);
     assert_eq!(scan.features.choice_fields[0].name, "count");
@@ -416,7 +416,7 @@ fn scan_decodes_complete_allfeatur_f9_scalar_slots() {
     );
     allfeatur.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
     let data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(
         scan.features.choice_fields[0].value,
@@ -458,7 +458,7 @@ fn scan_decodes_allfeatur_generated_geometry_manifest() {
         b"edg_id_tab_ptr\0\xf1\xf8\x03\xf7\x53\xfb\xe3used_bodies\0\xf8\x01\xf7\x60\xfb\xe2dtm_id_tab\0\xf2\xf8\x02\xf7\x57\xfb\xe2\xe0\x01dtm_id\0\x2a\xe0\x01dtm_id\0\x2b",
     );
     let data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.features.geometry_tables.len(), 3);
     assert_eq!(scan.features.geometry_tables[0].feature_id, 4);
@@ -515,7 +515,7 @@ fn scan_decodes_complete_allfeatur_loop_history_rosters() {
         \x2b\x03\x04\xe4\xf6\x05\xe0\x00next\0",
     );
     let data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.features.loop_history_entries.len(), 2);
     assert_eq!(scan.features.loop_history_entries[0].feature_id, 4);
@@ -571,7 +571,7 @@ fn scan_decodes_allfeatur_affected_id_arrays() {
         \xe0\x22contours\0\xf8\x01\x2a\xe0\x01parent_table\0\xf8\x02\x01\x03",
     );
     let data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.features.affected_ids.len(), 3);
     assert_eq!(
@@ -614,7 +614,7 @@ fn scan_partitions_allfeatur_positional_round_operands() {
             ("MdlStatus", b"Round id 4\0".to_vec()),
         ],
     );
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.features.replay_affected_ids.len(), 1);
     assert_eq!(scan.features.replay_affected_ids[0].feature_id, 4);
@@ -661,7 +661,7 @@ fn scan_decodes_allfeatur_loop_restore_direction_compact_integers() {
         \xe0\x01direction2\0\x80\xa7\xe0\x01direction\0\x01",
     );
     let data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.features.loop_restore_directions.len(), 3);
     assert_eq!(scan.features.loop_restore_directions[0].value, 0);
@@ -722,7 +722,7 @@ fn scan_partitions_multiple_depdb_recipe_rows() {
         \xf7\x50\x9f\x77\x83\x94\xf6\x9f\x75Profile 2\0\xf6\0cutextrude\0"
         .to_vec();
     let data = build_prt("c", &[("DEPDB_DATA", depdb)]);
-    let scan = container::scan_bytes(data);
+    let scan = container::scan_bytes_ok(data);
 
     assert_eq!(scan.features.depdb_recipe_rows.len(), 2);
     assert_eq!(scan.features.depdb_recipe_rows[0].feature_id, 8053);
@@ -757,7 +757,7 @@ fn scan_binds_standalone_depdb_section_to_its_recipe_owner() {
         \xf7\x3b\x11\x83\x95\xf6\x04Profile 1\0\xf6\0protextrude\0",
     );
     let data = build_prt("c", &[("DEPDB_DATA", depdb)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.features.definitions.len(), 1);
     let definition = &scan.features.definitions[0];
@@ -791,7 +791,7 @@ fn scan_binds_standalone_depdb_datum_and_parent_tables_to_recipe_owner() {
         \xe0\x01parent_table\0\xf8\x02\x03\x05\xf7\x24\xe3\
         Body ID 17\0\xe3\xf7\x3b\x11\x83\x95\xf6\x04Profile 1\0\xf6\0protextrude\0"
         .to_vec();
-    let scan = container::scan_bytes(build_prt("c", &[("DEPDB_DATA", depdb)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("DEPDB_DATA", depdb)]));
 
     let datum_table = scan
         .features
@@ -826,7 +826,7 @@ fn scan_distinguishes_null_and_referenced_family_tables() {
             b"Sld_FamilyInfo\0drv_tbl_ptr\0\xe1\xf1".to_vec(),
         )],
     );
-    let null = container::scan_bytes(null_data.clone());
+    let null = container::scan_bytes_ok(null_data.clone());
     assert_eq!(
         null.framing.family_table.unwrap().pointer,
         crate::container::FamilyTablePointer::Null
@@ -867,7 +867,7 @@ fn scan_distinguishes_null_and_referenced_family_tables() {
             b"Sld_FamilyInfo\0drv_tbl_ptr\0\xf7\x81\x23\xf1".to_vec(),
         )],
     );
-    let referenced = container::scan_bytes(referenced_data.clone());
+    let referenced = container::scan_bytes_ok(referenced_data.clone());
     assert_eq!(
         referenced.framing.family_table.unwrap().pointer,
         crate::container::FamilyTablePointer::Entity(0x0123)

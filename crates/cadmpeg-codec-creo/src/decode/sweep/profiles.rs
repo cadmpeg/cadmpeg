@@ -163,6 +163,7 @@ pub(in super::super) fn circular_pcurve(
     radius: f64,
     start_angle: f64,
     end_angle: f64,
+    record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<PcurveGeometry> {
     let segment_count = ((end_angle - start_angle).abs() / std::f64::consts::FRAC_PI_2)
@@ -208,7 +209,7 @@ pub(in super::super) fn circular_pcurve(
     ) {
         Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),
         Err(error) => {
-            refusal.note("creo circular pcurve record", &error);
+            refusal.note(format!("creo circular pcurve record for {record}"), &error);
             None
         }
     }
@@ -219,6 +220,7 @@ pub(in super::super) fn extrusion_cap_pcurve(
     reversed: bool,
     start: [f64; 2],
     end: [f64; 2],
+    record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<PcurveGeometry> {
     match geometry.definition() {
@@ -238,6 +240,7 @@ pub(in super::super) fn extrusion_cap_pcurve(
                 radius.get(),
                 start_angle,
                 end_angle,
+                record,
                 refusal,
             )
         }
@@ -248,10 +251,13 @@ pub(in super::super) fn extrusion_cap_pcurve(
                 radius.get(),
                 start_angle,
                 end_angle,
+                record,
                 refusal,
             )
         }
-        SketchGeometryDefinition::Nurbs { .. } => sketch_nurbs_pcurve(geometry, reversed, refusal),
+        SketchGeometryDefinition::Nurbs { .. } => {
+            sketch_nurbs_pcurve(geometry, reversed, record, refusal)
+        }
         _ => line_pcurve(start, end),
     }
 }

@@ -56,6 +56,7 @@ pub(super) fn transfer_section_entities(
     materialized_saved_section_external_ids: &BTreeSet<u32>,
     mut profiles: Vec<Vec<SketchEntityUse>>,
     profile_entities: &BTreeSet<SketchEntityId>,
+    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
 ) -> Result<(Vec<SketchEntity>, Vec<Vec<SketchEntityUse>>), cadmpeg_core::CodecError> {
     let segment_geometry = |segment: &crate::feature::FeatureSegment| {
         if section_degenerate_axis_line(definition, segment) {
@@ -669,10 +670,18 @@ pub(super) fn transfer_section_entities(
     }) {
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
         let geometry = saved_spline_sketch_geometry(spline, &mut refusal);
-        if let Some(error) = refusal.take_error() {
-            return Err(error);
-        }
-        let Some(geometry) = geometry else {
+        let refused = refusal.take_records();
+        let Some(geometry) = geometry.filter(|_| refused.is_empty()) else {
+            for record in &refused {
+                losses.push(
+                    crate::loss::CreoLossCode::SectionSplineUnresolved.note(format!(
+                        "Feature {} states a saved section spline at offset {} that forms no \
+                         sketch geometry: {record}",
+                        definition.identity.id(),
+                        spline.offset
+                    )),
+                );
+            }
             continue;
         };
         let unique_internal_id = spline.entity_id.filter(|id| unique_saved_ids.contains(id));

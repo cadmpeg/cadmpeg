@@ -612,7 +612,8 @@ fn decode_transfers_axis_aligned_plane_from_outline() {
     payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 0xe4]);
     payload.push(0xe3);
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let expected_offset = container::scan_bytes(data.clone()).planes.local_systems[0].offset as u64;
+    let expected_offset =
+        container::scan_bytes_ok(data.clone()).planes.local_systems[0].offset as u64;
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
@@ -1160,7 +1161,7 @@ fn decode_places_first_interpolation_spline_instance_from_named_prototype() {
     payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
 
     let data = build_prt("c", &[("ND:0:VisibGeom:0", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
     assert_eq!(scan.surfaces.rows.len(), 1);
     assert_eq!(scan.surfaces.prototype_records.len(), 1);
     let result = CreoCodec

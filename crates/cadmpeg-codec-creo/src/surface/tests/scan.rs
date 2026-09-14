@@ -15,7 +15,7 @@ fn scan_discovers_typed_surface_rows() {
     let mut payload = visibgeom_payload(2, 0);
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 8]);
     payload.extend_from_slice(&[8, 0x24, 4, 0xf6, 0x01, 0]);
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert_eq!(scan.surfaces.rows.len(), 2);
     assert_eq!(scan.surfaces.rows[0].id, 7);
@@ -30,7 +30,7 @@ fn scan_preserves_linear_extrusion_type_variants() {
     payload.extend_from_slice(&[7, 0x2a, 4, 0x01, 0, 8]);
     payload.extend_from_slice(&[8, 0x2c, 4, 0x01, 0, 0]);
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.surfaces.rows.len(), 2);
     assert_eq!(
@@ -70,7 +70,7 @@ fn scan_bounds_tabulated_cylinder_cubic_curve_replay() {
         payload.extend_from_slice(&separator);
     }
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.curves.tabulated_cylinder_replays.len(), 1);
     let replay = &scan.curves.tabulated_cylinder_replays[0];
@@ -111,7 +111,7 @@ fn scan_bounds_surface_parameter_bodies_and_decodes_scalars() {
     payload.extend_from_slice(&[8, 0x24, 4, 0xf6, 6, 0]);
     payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
     payload.extend_from_slice(b"\xe0\x01next_record\0");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert_eq!(scan.surfaces.parameters.len(), 2);
     assert_eq!(scan.surfaces.parameters[0].surface_id, 7);
@@ -145,7 +145,7 @@ fn scan_withholds_type24_carrier_when_eight_slot_forms_collide() {
         push_generated_scalar(&mut payload, value);
     }
     payload.push(0xe3);
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert_eq!(scan.surfaces.parameters.len(), 1);
     assert!(scan.surfaces.parameters[0]
@@ -160,7 +160,7 @@ fn torus_family_does_not_shorten_unframed_negative_world_scalar() {
     payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);
     payload.extend_from_slice(&scalar);
     payload.extend_from_slice(b"\xe0\x01next_record\0");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert_eq!(scan.surfaces.parameters.len(), 1);
     assert_eq!(scan.surfaces.parameters[0].body, scalar);
@@ -181,7 +181,7 @@ fn torus_parameter_trailer_retains_typed_outline_frame() {
     ]);
     payload.push(0xe3);
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     let frame = scan.surfaces.parameters[0]
         .torus_outline_frame()
@@ -235,7 +235,7 @@ fn torus_parameter_trailer_retains_tagged_radius_overrides() {
         payload.extend_from_slice(&body);
         payload.push(0xe3);
         let data = build_prt("c", &[("VisibGeom", payload)]);
-        let scan = container::scan_bytes(data.clone());
+        let scan = container::scan_bytes_ok(data.clone());
 
         let overrides = scan.surfaces.parameters[0]
             .torus_radius_overrides()
@@ -312,7 +312,7 @@ fn cone_terminal_half_angle_bounds_the_parameter_body() {
     payload.extend_from_slice(&[0xfe; 12]);
     payload.extend_from_slice(&[8, 0x22, 4, 0x01, 0, 0, 0xe4, 0xe3]);
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(
         scan.surfaces.parameters[0].body,
@@ -358,7 +358,7 @@ fn surface_parameter_body_ignores_compound_close_inside_scalar() {
     payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);
     payload.extend_from_slice(&scalar);
     payload.push(0xe3);
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert_eq!(scan.surfaces.parameters.len(), 1);
     assert_eq!(scan.surfaces.parameters[0].body, scalar);
@@ -378,7 +378,7 @@ fn surface_parameter_body_ignores_invalid_embedded_named_marker() {
     payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);
     payload.extend_from_slice(&[0x2f, 0x43, 0, 0xe0, 0xff, 0x80, 0, 0x0f]);
     payload.extend_from_slice(b"\xe0\x01next_record\0");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert_eq!(scan.surfaces.parameters.len(), 1);
     assert_eq!(
@@ -398,7 +398,7 @@ fn surface_parameter_body_ignores_valid_looking_header_inside_scalar() {
     payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);
     payload.extend_from_slice(&scalar);
     payload.extend_from_slice(b"\xe0\x01next_record\0");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert_eq!(scan.surfaces.parameters.len(), 1);
     assert_eq!(scan.surfaces.parameters[0].body, scalar);
@@ -417,7 +417,7 @@ fn scan_ignores_surface_header_candidates_inside_a_preceding_header() {
     let mut payload = visibgeom_payload(1, 0);
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0x24]);
     payload.extend_from_slice(&[0x22, 4, 0x01, 0, 0, 0xe3]);
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert_eq!(scan.surfaces.parameters.len(), 1);
     assert_eq!(scan.surfaces.parameters[0].surface_id, 7);
@@ -438,7 +438,7 @@ fn scan_decodes_plane_local_system_support_frame() {
     ]);
     payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 0xe4]);
     payload.push(0xe3);
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert_eq!(scan.planes.local_systems.len(), 1);
     let frame = &scan.planes.local_systems[0];
@@ -462,7 +462,7 @@ fn scan_resolves_section_scalar_cache_in_surface_rows() {
     let mut payload = visibgeom_payload(1, 0);
     payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
     payload.extend_from_slice(&[7, 0x24, 4, 0x01, 0, 0, 0x18, 0x00, 0xe3]);
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert_eq!(scan.surfaces.parameters.len(), 1);
     assert_eq!(scan.surfaces.parameters[0].surface_id, 7);
@@ -478,7 +478,7 @@ fn scan_decodes_standard_and_compact_plane_envelopes() {
     payload.extend_from_slice(&[8, 0x22, 4, 0xf6, 0, 0, 0x0e]);
     payload.extend_from_slice(&[0xe4, 0x0f, 0xe4, 0x0f, 0x0f, 0xe4, 0xe4, 0x0f, 0xe4]);
     payload.push(0xe3);
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert_eq!(scan.planes.envelopes.len(), 2);
     let crate::surface::PlaneEnvelope::Standard {
@@ -517,7 +517,7 @@ fn scan_derives_named_surface_plane_from_outline_corners() {
         outline\0\xf9\x02\x03"
         .to_vec();
     payload.extend_from_slice(&[0xe4, 0x0f, 0x2f, 0, 0, 0x0d, 0x0f, 0x48, 0, 0]);
-    let scan = container::scan_bytes(build_prt("c", &[("DEPDB_DATA", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("DEPDB_DATA", payload)]));
 
     assert_eq!(scan.planes.envelopes.len(), 1);
     assert_eq!(scan.planes.outlines.len(), 1);
@@ -532,7 +532,7 @@ fn scan_discovers_labeled_surface_namespace_row() {
     payload.extend_from_slice(
         b"srf_array\0geom_id\0\x07geom_type\0\x22feat_id\0\x04orient\0\x01boundary_type\0\0next_geom_ptr\0\0",
     );
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     assert!(scan
         .surfaces
@@ -549,7 +549,7 @@ fn scan_withholds_named_surface_row_without_valid_discriminators() {
         b"srf_array\0geom_id\0\x07geom_type\0\x22feat_id\0\x04orient\0\0boundary_type\0\0next_geom_ptr\0\0",
         b"srf_array\0geom_id\0\x07geom_type\0\x22feat_id\0\x04orient\0\x01boundary_type\0\x02next_geom_ptr\0\0",
     ] {
-        let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", row.to_vec())]));
+        let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", row.to_vec())]));
         assert!(scan.surfaces.rows.is_empty());
     }
 }
@@ -558,7 +558,7 @@ fn scan_withholds_named_surface_row_without_valid_discriminators() {
 fn scan_keeps_depdb_cross_section_surfaces_out_of_model_namespace() {
     let visible = b"srf_array\0\xf8\x01geom_id\0\x07geom_type\0\x22feat_id\0\x04orient\0\x01boundary_type\0\0next_geom_ptr\0\0".to_vec();
     let cross_section = b"Sld_Xsections\0\xe3\xe0\0xsec_geom\0\xe2srf_array\0\xf8\x01geom_id\0\x09geom_type\0\x24feat_id\0\x08orient\0\x01boundary_type\0\x06next_geom_ptr\0\0".to_vec();
-    let scan = container::scan_bytes(build_prt(
+    let scan = container::scan_bytes_ok(build_prt(
         "c",
         &[("VisibGeom", visible), ("Xsections", cross_section)],
     ));
@@ -596,7 +596,7 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
     payload.extend_from_slice(b"\xe0\x00srf_flip_dat\0\xf7\x05");
     payload.extend_from_slice(b"\xe0\x01tan_spline\0");
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let scan = container::scan_bytes(data.clone());
+    let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.surfaces.prototype_records.len(), 1);
     let prototype = &scan.surfaces.prototype_records[0];
@@ -766,7 +766,7 @@ fn surface_prototype_field_rejects_duplicate_names() {
     payload.extend_from_slice(b"\xe0\x01radius\0\xe4");
     payload.extend_from_slice(b"\xe0\x00tan_spline\0");
 
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
     let prototype = &scan.surfaces.prototype_records[0];
 
     assert_eq!(
@@ -786,7 +786,7 @@ fn scan_decodes_cone_half_angle_in_its_positive_dict_lane() {
     payload.extend_from_slice(b"srf_prim_ptr(cone)\0");
     payload.extend_from_slice(b"\xe0\x01half_angle\0\x74\x21\xfb\x54\x44\x2d\x23");
     payload.extend_from_slice(b"\xe0\x00parent_feats\0\xf8\x01\x04");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     let prototype = scan
         .surfaces
@@ -808,7 +808,7 @@ fn scan_keeps_out_of_range_cone_half_angle_opaque() {
     payload.extend_from_slice(b"srf_prim_ptr(cone)\0");
     payload.extend_from_slice(b"\xe0\x01half_angle\0\x8b\0\0\0\0\0\0");
     payload.extend_from_slice(b"\xe0\x00parent_feats\0\xf8\x01\x04");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
 
     let prototype = scan
         .surfaces

@@ -86,7 +86,7 @@ fn generated_table_cap_classes_use_placed_cap_planes() {
         offset: 0,
         end_offset: 0,
     };
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.entity_tables.push(
         crate::feature::FeatureEntityTable::new(
             7,
@@ -148,7 +148,7 @@ fn generated_table_cap_classes_use_placed_cap_planes() {
 
 #[test]
 fn feature_plane_extent_reconciles_native_and_transferred_carriers() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.surfaces.rows.extend([plane_row(31), plane_row(32)]);
     scan.planes
         .outlines
@@ -183,7 +183,7 @@ fn feature_plane_extent_reconciles_native_and_transferred_carriers() {
 
 #[test]
 fn feature_plane_extent_accepts_complete_transferred_carriers_without_local_frames() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.surfaces.rows.extend([plane_row(31), plane_row(32)]);
     let mut ir = CadIr::empty();
     ir.model
@@ -200,7 +200,7 @@ fn feature_plane_extent_accepts_complete_transferred_carriers_without_local_fram
 
 #[test]
 fn feature_plane_extent_rejects_ambiguous_or_non_plane_carriers() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.surfaces.rows.extend([plane_row(31), plane_row(32)]);
     scan.planes.outlines.extend([
         plane_outline(31, 2.0),
@@ -243,7 +243,7 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
         Some(34.0),
     )
     .expect("valid positional cylinder frame");
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.entity_tables.push(
         crate::feature::FeatureEntityTable::new(
             7,

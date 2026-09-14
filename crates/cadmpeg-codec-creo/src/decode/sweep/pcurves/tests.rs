@@ -28,6 +28,7 @@ fn spindle_torus_boundary_pcurve_retains_the_signed_ring_branch() {
         &surface,
         [-3.0, 0.0, 0.0],
         &axis,
+        &"revolution boundary fixture",
         &mut crate::lane_refusal::LaneRefusals::new(),
     )
     .expect("spindle boundary");

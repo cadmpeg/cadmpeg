@@ -329,7 +329,11 @@ pub fn entity_graph(payload: &[u8]) -> (Vec<FeatureEntity>, Vec<FeatureEntityRef
     let Some(root) = tokens.first() else {
         return (Vec::new(), Vec::new());
     };
-    let root_name = payload.get(2..root.length.saturating_sub(1));
+    // The root name ends one byte before the record ends, at its NUL.
+    let root_name = root
+        .length
+        .checked_sub(1)
+        .and_then(|name_end| payload.get(2..name_end));
     if root.offset != 0
         || root.kind != psb::TokenKind::NamedRecord
         || payload.get(1) != Some(&0)

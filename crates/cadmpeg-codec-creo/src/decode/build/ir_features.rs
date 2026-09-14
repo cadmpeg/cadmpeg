@@ -70,7 +70,7 @@ pub(super) fn emit_model_features(
     annotations: &mut AnnotationBuilder,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut regeneration_edges = Vec::new();
-    let prototype_feature_dependencies = surface_prototype_feature_dependencies(scan);
+    let prototype_feature_dependencies = surface_prototype_feature_dependencies(scan)?;
     let operation_feature_ids = scan
         .features
         .operations
@@ -483,7 +483,7 @@ pub(super) fn finish_feature_transfers(
     annotations: &mut AnnotationBuilder,
     coverage: &mut cadmpeg_ir::Coverage,
 ) -> Result<(usize, usize), cadmpeg_core::CodecError> {
-    let prototype_feature_dependencies = surface_prototype_feature_dependencies(scan);
+    let prototype_feature_dependencies = surface_prototype_feature_dependencies(scan)?;
     link_feature_sketch_history(scan, ir);
     reconcile_feature_links(scan, ir, &prototype_feature_dependencies)?;
     let feature_result_topology_count = emit_feature_result_topologies(scan, ir);

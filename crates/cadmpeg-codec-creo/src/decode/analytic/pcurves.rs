@@ -1732,6 +1732,7 @@ pub fn unique_oriented_native_pcurve(
 pub fn planar_curve_pcurve(
     surface: &SurfaceGeometry,
     geometry: &CurveGeometry,
+    record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<PcurveGeometry> {
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = surface else {
@@ -1913,7 +1914,10 @@ pub fn planar_curve_pcurve(
             ) {
                 Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),
                 Err(error) => {
-                    refusal.note("creo planar-curve pcurve record", &error);
+                    refusal.note(
+                        format!("creo planar-curve pcurve record for {record}"),
+                        &error,
+                    );
                     None
                 }
             }
@@ -2001,7 +2005,7 @@ mod tests {
 
     #[test]
     fn two_chart_samples_validate_every_point_and_extend_a_nurbs_boundary_span() {
-        let scan = crate::container::scan_bytes(Vec::new());
+        let scan = crate::container::scan_bytes_ok(Vec::new());
         let mut ir = CadIr::empty();
         ir.model.surfaces.extend([
             Surface {
@@ -2083,7 +2087,7 @@ mod tests {
     #[test]
     fn two_chart_endpoint_carrier_proof_ignores_interior_disagreement() {
         const EPS_EXPECTED_POINT: f64 = 1.0e-12;
-        let mut scan = crate::container::scan_bytes(Vec::new());
+        let mut scan = crate::container::scan_bytes_ok(Vec::new());
         scan.curves
             .two_chart_pcurves
             .push(crate::curve::TwoChartPcurveSamples {
@@ -2188,7 +2192,7 @@ mod tests {
 
     #[test]
     fn pcurve_diagnostics_count_inactive_face_paths() {
-        let mut scan = crate::container::scan_bytes(Vec::new());
+        let mut scan = crate::container::scan_bytes_ok(Vec::new());
         scan.curves
             .topology_rows
             .push(crate::curve::CurveTopologyRow {
@@ -2302,7 +2306,7 @@ mod tests {
             body_offset: 100,
             suffix_offset: 122,
         };
-        let mut scan = crate::container::scan_bytes(Vec::new());
+        let mut scan = crate::container::scan_bytes_ok(Vec::new());
         scan.curves.parameters.push(record);
         scan.curves
             .topology_rows
@@ -2417,7 +2421,7 @@ mod tests {
 
     #[test]
     fn pcurve_carrier_join_keeps_one_valid_face_path() {
-        let mut scan = crate::container::scan_bytes(Vec::new());
+        let mut scan = crate::container::scan_bytes_ok(Vec::new());
         scan.curves
             .topology_rows
             .push(crate::curve::CurveTopologyRow {

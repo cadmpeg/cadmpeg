@@ -23,8 +23,13 @@ pub(in super::super) struct NurbsSurfaceBoundary {
     pub(super) transverse_periodic: bool,
 }
 
+/// The four boundary curves of one NURBS surface carrier.
+///
+/// `surface_id` is the `VisibGeom` surface row that stated the surface. Every
+/// refusal names that row, so N refused rows stay N named records.
 pub(in super::super) fn nurbs_surface_boundaries(
     nurbs: &NurbsSurface,
+    surface_id: u32,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<[NurbsSurfaceBoundary; 4]> {
     let u_count = usize::try_from(nurbs.u_count()).ok()?;
@@ -84,7 +89,10 @@ pub(in super::super) fn nurbs_surface_boundaries(
             ) {
                 Ok(curve) => curve,
                 Err(error) => {
-                    refusal.note("creo NURBS surface boundary curve record", &error);
+                    refusal.note(
+                        format!("creo VisibGeom surface row {surface_id} boundary curve record"),
+                        &error,
+                    );
                     return None;
                 }
             };
@@ -118,10 +126,11 @@ pub(in super::super) fn point_tolerance<'a>(
 
 pub(in super::super) fn nurbs_plane_boundary_curve(
     nurbs: &NurbsSurface,
+    surface_id: u32,
     plane: PlaneEquation,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<CurveGeometry> {
-    let boundaries = nurbs_surface_boundaries(nurbs, refusal)?;
+    let boundaries = nurbs_surface_boundaries(nurbs, surface_id, refusal)?;
     let normal = normalize(plane.normal)?;
     let poles = nurbs.poles();
     let tolerance = point_tolerance(poles.iter())?
@@ -355,11 +364,13 @@ pub(in super::super) fn generator_separates_control_nets(
 
 pub(in super::super) fn shared_extrusion_generator_curve(
     first: &NurbsSurface,
+    first_surface_id: u32,
     second: &NurbsSurface,
+    second_surface_id: u32,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<CurveGeometry> {
-    let first_boundaries = nurbs_surface_boundaries(first, refusal)?;
-    let second_boundaries = nurbs_surface_boundaries(second, refusal)?;
+    let first_boundaries = nurbs_surface_boundaries(first, first_surface_id, refusal)?;
+    let second_boundaries = nurbs_surface_boundaries(second, second_surface_id, refusal)?;
     let first_poles = first.poles();
     let second_poles = second.poles();
     let tolerance = point_tolerance(first_poles.iter().chain(second_poles.iter()))?;
@@ -480,18 +491,26 @@ pub(in super::super) fn cubic_unit_interval_roots(
     roots
 }
 
+/// Generator curve where a cubic extrusion surface meets a plane.
+///
+/// A refused boundary lane states no generator curve. The model carries the
+/// surface and the plane without it, so the refusal is a loss note naming the
+/// `VisibGeom` surface row and the decode continues with `Ok(None)`.
 pub(in super::super) fn cubic_extrusion_plane_generator_curve(
     ctx: &DecodeContext<'_>,
     nurbs: &NurbsSurface,
+    surface_id: u32,
     plane: PlaneEquation,
+    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
 ) -> Result<Option<CurveGeometry>, CodecError> {
     fn recognize(
         ctx: &DecodeContext<'_>,
         nurbs: &NurbsSurface,
+        surface_id: u32,
         plane: PlaneEquation,
         refusal: &mut crate::lane_refusal::LaneRefusals,
     ) -> Option<Result<CurveGeometry, CodecError>> {
-        let boundaries = nurbs_surface_boundaries(nurbs, refusal)?;
+        let boundaries = nurbs_surface_boundaries(nurbs, surface_id, refusal)?;
         (nurbs.u_degree() == 3
             && nurbs.v_degree() == 1
             && nurbs.u_count() == 4
@@ -636,16 +655,30 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve(
         ) {
             Ok(curve) => curve,
             Err(error) => {
-                refusal.note("creo cubic-extrusion plane generator curve", &error);
+                refusal.note(
+                    format!(
+                        "creo VisibGeom surface row {surface_id} cubic-extrusion plane generator \
+                         curve"
+                    ),
+                    &error,
+                );
                 return None;
             }
         };
         Some(Ok(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve))))
     }
     let mut refusal = crate::lane_refusal::LaneRefusals::new();
-    let recognized = recognize(ctx, nurbs, plane, &mut refusal).transpose();
-    match refusal.take_error() {
-        Some(error) => Err(error),
-        None => recognized,
+    let recognized = recognize(ctx, nurbs, surface_id, plane, &mut refusal).transpose();
+    let refused = refusal.take_records();
+    if refused.is_empty() {
+        return recognized;
     }
+    losses.push(
+        crate::loss::CreoLossCode::NurbsBoundaryCarrierUnresolved.note(format!(
+            "VisibGeom surface row {surface_id} states no cubic-extrusion plane generator \
+             carrier: {}",
+            refused.join("; ")
+        )),
+    );
+    Ok(None)
 }

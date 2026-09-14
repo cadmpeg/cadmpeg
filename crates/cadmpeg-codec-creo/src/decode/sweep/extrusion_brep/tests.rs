@@ -80,7 +80,7 @@ fn sketch() -> Sketch {
 #[test]
 fn generated_side_coverage_rejects_duplicate_surface_rows() {
     let definition = definition();
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.entity_tables.push(generated_side_table());
     scan.surfaces
         .rows
@@ -120,7 +120,7 @@ fn generated_side_coverage_rejects_duplicate_surface_rows() {
 #[test]
 fn generated_side_coverage_accepts_explicit_rowless_results() {
     let definition = definition();
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     let mut table = generated_side_table();
     let cap = |entity_id, class_id| crate::feature::FeatureEntityTableEntry {
         payload: crate::feature::entry_payload(class_id, None, None, None),

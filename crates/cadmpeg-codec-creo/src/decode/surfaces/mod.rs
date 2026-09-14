@@ -92,12 +92,12 @@ pub(super) fn unique_native_surface_row<'a>(
 #[cfg(test)]
 mod tests {
     use super::native_surface_id;
-    use crate::container::scan_bytes;
+    use crate::container::scan_bytes_ok;
     use crate::surface::{SurfaceKind, SurfaceRow};
 
     #[test]
     fn native_surface_id_preserves_nonvisible_namespace() {
-        let mut scan = scan_bytes(Vec::new());
+        let mut scan = scan_bytes_ok(Vec::new());
         scan.surfaces.nonvisible_rows.push(SurfaceRow {
             id: 17,
             kind: SurfaceKind::Plane,

@@ -9,7 +9,7 @@ use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 fn boundary_scan() -> crate::container::ContainerScan<'static> {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.surfaces.rows.extend([
         crate::surface::SurfaceRow {
             id: 1,

@@ -10,7 +10,7 @@ use cadmpeg_ir::features::{
 use super::super::{link_feature_sketch_history, section_entity_is_generated_profile};
 
 fn section_scan() -> crate::container::ContainerScan<'static> {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features
         .definitions
         .push(crate::feature::FeatureDefinition {

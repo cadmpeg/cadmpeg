@@ -342,6 +342,7 @@ pub(in super::super) fn transfer_saved_spline_curves(
 pub(in super::super) fn revolved_nurbs_surface(
     directrix: &NurbsCurve,
     axis: &RevolutionAxis,
+    record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<NurbsSurface> {
     let axis_direction = normalize([axis.direction.x, axis.direction.y, axis.direction.z])?;
@@ -433,7 +434,10 @@ pub(in super::super) fn revolved_nurbs_surface(
     ) {
         Ok(surface) => Some(surface),
         Err(error) => {
-            refusal.note("creo revolved NURBS surface record", &error);
+            refusal.note(
+                format!("creo revolved NURBS surface record for {record}"),
+                &error,
+            );
             None
         }
     }
@@ -718,7 +722,13 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 continue;
             };
             let mut refusal = crate::lane_refusal::LaneRefusals::new();
-            let Some(surface) = extruded_nurbs_surface(&directrix, sweep, &mut refusal) else {
+            let surface_record = format!(
+                "surface {native_surface_id} from saved-spline entity {internal_id} at offset {}",
+                spline.offset
+            );
+            let Some(surface) =
+                extruded_nurbs_surface(&directrix, sweep, &surface_record, &mut refusal)
+            else {
                 for record in refusal.take_records() {
                     losses.push(
                         crate::loss::CreoLossCode::SectionSplineUnresolved.note(format!(

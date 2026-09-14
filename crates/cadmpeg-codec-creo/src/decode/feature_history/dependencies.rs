@@ -333,9 +333,9 @@ pub(in super::super) fn agreed_feature_parent_ids(
 
 pub(in super::super) fn surface_prototype_feature_dependencies(
     scan: &ContainerScan,
-) -> BTreeMap<u32, Vec<u32>> {
+) -> Result<BTreeMap<u32, Vec<u32>>, cadmpeg_core::CodecError> {
     let mut dependencies = BTreeMap::new();
-    for (prototype, row, _) in unique_surface_prototype_associations(scan) {
+    for (prototype, row, _) in unique_surface_prototype_associations(scan)? {
         let prototype = prototype.record();
         let mut fields = prototype
             .parameters
@@ -352,7 +352,7 @@ pub(in super::super) fn surface_prototype_feature_dependencies(
         };
         add_surface_prototype_feature_dependencies(&mut dependencies, row.feature_id, consumers);
     }
-    dependencies
+    Ok(dependencies)
 }
 
 pub(in super::super) fn add_surface_prototype_feature_dependencies(

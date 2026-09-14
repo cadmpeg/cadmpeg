@@ -17,6 +17,12 @@ use super::segment_rows::{SegmentRow, SegmentRows};
 
 const EPS_PARAMETER_AGREEMENT: f64 = 1.0e-9;
 
+/// The byte before `offset`. There is no preceding byte at the start of the
+/// payload, so a row at offset zero has no separator before it.
+fn preceding_byte(payload: &[u8], offset: usize) -> Option<u8> {
+    payload.get(offset.checked_sub(1)?).copied()
+}
+
 /// Definition-space parameter-frame field in a `FeatDefs` record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FeatureParameterFrameKind {
@@ -1078,11 +1084,18 @@ impl<T> SolverSubtable<T> {
         }
     }
 
+    /// Declared rows that did not decode. Rows decoded past the declaration are
+    /// an over-run, not a shortfall, and `is_complete` reports that state.
     pub fn missing_rows(&self) -> usize {
         match self {
-            Self::Declared { header, rows } => usize::try_from(header.declared_count)
-                .unwrap_or(usize::MAX)
-                .saturating_sub(rows.len()),
+            Self::Declared { header, rows } => {
+                let declared = usize::try_from(header.declared_count).unwrap_or(usize::MAX);
+                if declared > rows.len() {
+                    declared - rows.len()
+                } else {
+                    0
+                }
+            }
             Self::Unframed(_) => 0,
         }
     }
@@ -1635,7 +1648,11 @@ pub(crate) fn variable_table(
             known: named_compact_int(payload, b"known\0", cursor, close),
             homogeneity: named_compact_int(payload, b"homogeneity\0", cursor, close),
             uvar_id: named_compact_int(payload, b"uvar_id\0", cursor, close),
-            offset: type_label.saturating_sub(2),
+            // The row header is the two bytes before its type label. A label
+            // below offset 2 states a header outside the payload and refuses
+            // the row; the label sits at or after the table opener plus eight,
+            // so the bound holds for every table this scanner reaches.
+            offset: type_label.checked_sub(2)?,
         })
     })();
     let (_, after_close_ref) = psb::compact_int(payload, close + 2);
@@ -1644,9 +1661,10 @@ pub(crate) fn variable_table(
         cursor += 1;
     }
     let mut rows = named_row.into_iter().collect::<Vec<_>>();
-    let max_rows = usize::try_from(declared_count)
-        .unwrap_or(usize::MAX)
-        .min(end.saturating_sub(cursor));
+    // Each row consumes at least one byte, so the declared count cannot admit
+    // more rows than the unread bytes in the table window.
+    let window = payload.get(cursor..end).map_or(0, <[u8]>::len);
+    let max_rows = bounded_len(u64::from(declared_count), 1, window).unwrap_or(window);
     while cursor < end && rows.len() < max_rows {
         if payload[cursor] == 0xe2 {
             cursor += 1;
@@ -1743,8 +1761,8 @@ pub(crate) fn positional_variable_table(
     let row_limit = usize::try_from(declared_count).unwrap_or(usize::MAX);
     // Each row consumes at least one byte before its 0xe2 separator, so the row
     // count cannot exceed the unread bytes in the table window.
-    let capacity =
-        bounded_len(u64::from(declared_count), 1, end.saturating_sub(cursor)).unwrap_or(0);
+    let window = payload.get(cursor..end).map_or(0, <[u8]>::len);
+    let capacity = bounded_len(u64::from(declared_count), 1, window).unwrap_or(0);
     let mut rows = Vec::with_capacity(capacity);
     let mut prototype_separator = vec![0xf1, psb::token::ENTITY_REF];
     prototype_separator.extend_from_slice(&reference_bytes);
@@ -2150,7 +2168,11 @@ pub(crate) fn positional_segment_table(
     start: usize,
     end: usize,
 ) -> Option<FeatureSegmentTable> {
-    let name_end = find_bytes(payload, b"S2D", start, start.saturating_add(256).min(end))?;
+    const NAME_WINDOW: usize = 256;
+    let name_search_end = start
+        .checked_add(NAME_WINDOW)
+        .map_or(end, |window_end| window_end.min(end));
+    let name_end = find_bytes(payload, b"S2D", start, name_search_end)?;
     let cursor = payload[name_end..end].iter().position(|&byte| byte == 0)? + name_end + 1;
     segment_table_body(payload, cursor, cursor, end, PrototypeRow::Elided)
 }
@@ -2247,9 +2269,14 @@ pub(crate) fn segment_table_body(
         .into_iter()
         .collect::<Vec<_>>();
     let first_row = cursor;
-    let row_limit = usize::try_from(declared_count)
-        .unwrap_or(usize::MAX)
-        .saturating_sub(usize::from(has_elided_prototype));
+    // The declared count of an elided-prototype table counts the prototype row
+    // that the body does not carry. A declared count below that one row states
+    // a body-row count the table cannot hold, and refuses the table.
+    let declared_body_rows = match prototype_row {
+        PrototypeRow::Elided => declared_count.checked_sub(1)?,
+        PrototypeRow::Present => declared_count,
+    };
+    let row_limit = usize::try_from(declared_body_rows).ok()?;
     while cursor < region_end && rows.len() < row_limit {
         let row_start = cursor;
         let kind_offset = if matches!(
@@ -2262,8 +2289,7 @@ pub(crate) fn segment_table_body(
         };
         if payload.get(kind_offset).is_none_or(|kind| *kind > 0x7f)
             || (row_start != first_row
-                && payload.get(row_start.saturating_sub(1)) != Some(&0xe2)
-                && payload.get(row_start.saturating_sub(1)) != Some(&0xe3))
+                && !matches!(preceding_byte(payload, row_start), Some(0xe2 | 0xe3)))
         {
             cursor += 1;
             continue;
@@ -2497,7 +2523,7 @@ fn trim_entity_table(payload: &[u8], start: usize, end: usize) -> Option<Feature
     let mut rows = Vec::new();
     let mut seen = BTreeSet::new();
     while cursor < region_end {
-        if cursor != first_row && payload.get(cursor.saturating_sub(1)) != Some(&0xe3) {
+        if cursor != first_row && preceding_byte(payload, cursor) != Some(0xe3) {
             cursor += 1;
             continue;
         }
@@ -2598,7 +2624,7 @@ pub(crate) fn trim_buckets(
     while starts.len() < usize::try_from(header.declared_count).unwrap_or(usize::MAX) {
         let expected = u32::try_from(starts.len()).unwrap_or(u32::MAX);
         let Some((offset, index, next)) = (cursor..end).find_map(|offset| {
-            (payload.get(offset.saturating_sub(1)) == Some(&0xe2)).then_some(())?;
+            (preceding_byte(payload, offset) == Some(0xe2)).then_some(())?;
             let (Some(index), next) = segment_int(payload, offset) else {
                 return None;
             };
@@ -2623,9 +2649,12 @@ pub(crate) fn trim_buckets(
         .iter()
         .enumerate()
         .map(|(position, start)| {
+            // Every bucket start after the first follows an 0xe2 separator, so
+            // it has a preceding byte.
             let body_end = starts
                 .get(position + 1)
-                .map_or(end, |next| next.offset.saturating_sub(1));
+                .and_then(|next| next.offset.checked_sub(1))
+                .unwrap_or(end);
             FeatureTrimBucket {
                 index: start.index,
                 declared_entry_count: start.declared_entry_count,
@@ -2705,14 +2734,16 @@ fn trim_bucket_entry_count(
         TrimEntryKind::Entity => {
             let rows = (start..end)
                 .filter(|&offset| {
-                    payload.get(offset.saturating_sub(1)) == Some(&0xe3)
+                    preceding_byte(payload, offset) == Some(0xe3)
                         && complete_trim_entity_entry(payload, offset, end)
                 })
                 .count();
             let prototype = usize::from(
                 named_first && named_trim_entity_prototype_complete(payload, start, end, classes),
             );
-            u32::try_from(rows.saturating_add(prototype)).unwrap_or(u32::MAX)
+            // Decoded rows counted over `start..end`, not a stated count: the
+            // sum is bounded by the scanned region.
+            u32::try_from(rows + prototype).unwrap_or(u32::MAX)
         }
         TrimEntryKind::Vertex => {
             let mut rows = BTreeSet::new();
@@ -2725,7 +2756,7 @@ fn trim_bucket_entry_count(
                         }
                     }
                 }
-                if payload.get(offset.saturating_sub(1)) == Some(&0xe3)
+                if preceding_byte(payload, offset) == Some(0xe3)
                     && trim_vertex_entry(payload, offset, end).is_some()
                 {
                     rows.insert(offset);
@@ -2734,7 +2765,9 @@ fn trim_bucket_entry_count(
             let prototype = usize::from(
                 named_first && named_trim_vertex_prototype_complete(payload, start, end, classes),
             );
-            u32::try_from(rows.len().saturating_add(prototype)).unwrap_or(u32::MAX)
+            // Decoded rows counted over `start..end`, not a stated count: the
+            // sum is bounded by the scanned region.
+            u32::try_from(rows.len() + prototype).unwrap_or(u32::MAX)
         }
     }
 }
@@ -2995,7 +3028,7 @@ pub(crate) fn positional_trim_entity_table(
         region_end
     };
     while cursor < region_end {
-        if cursor == rows_start || payload.get(cursor.saturating_sub(1)) != Some(&0xe3) {
+        if cursor == rows_start || preceding_byte(payload, cursor) != Some(0xe3) {
             cursor += 1;
             continue;
         }
@@ -3051,6 +3084,7 @@ fn trim_vertex_table(
     segments: Option<&FeatureSegmentTable>,
     variables: Option<&FeatureVariableTable>,
 ) -> Option<FeatureTrimVertexTable> {
+    const CHAINS_WINDOW: usize = 120;
     let table = find_bytes(payload, b"vert_tab\0", start, end)?;
     let header = trim_table_header(payload, b"vert_tab\0", start, end);
     let region_end = [
@@ -3067,9 +3101,9 @@ fn trim_vertex_table(
     .min()
     .unwrap_or(end);
     let chains_end = table
-        .saturating_add(b"vert_tab\0".len())
-        .saturating_add(120)
-        .min(end);
+        .checked_add(b"vert_tab\0".len())
+        .and_then(|after_label| after_label.checked_add(CHAINS_WINDOW))
+        .map_or(end, |window_end| window_end.min(end));
     let chains = find_bytes(payload, b"chains\0", table, chains_end)?;
     let mut cursor = chains + b"chains\0".len();
     (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
@@ -3627,8 +3661,15 @@ pub(crate) fn order_table(payload: &[u8], start: usize, end: usize) -> Option<Fe
     let mut rows = Vec::new();
     let mut external_ids = BTreeSet::new();
     let mut internal_ids = BTreeSet::new();
-    let row_limit = usize::try_from(declared_count.saturating_sub(u32::from(prototype.is_some())))
-        .unwrap_or(usize::MAX);
+    // A decoded prototype row is one of the declared rows. A declared count of
+    // zero with the prototype row present states a body-row count the table
+    // cannot hold, and refuses the table.
+    let declared_body_rows = if prototype.is_some() {
+        declared_count.checked_sub(1)?
+    } else {
+        declared_count
+    };
+    let row_limit = usize::try_from(declared_body_rows).ok()?;
     while cursor < end && rows.len() < row_limit {
         if payload[cursor] == 0xe2 {
             cursor += 1;
@@ -3706,15 +3747,21 @@ pub(crate) fn positional_order_table(
         (class == table_class && payload.get(after_reference) == Some(&0xe2)).then_some(())?;
         Some(after_reference + 1)
     })();
-    let row_limit = usize::try_from(declared_count.saturating_sub(1)).unwrap_or(usize::MAX);
-    // Each row consumes at least one byte before its 0xe2 separator, so the row
-    // count cannot exceed the unread bytes in the table window.
-    let capacity = bounded_len(
-        u64::from(declared_count.saturating_sub(1)),
-        1,
-        end.saturating_sub(prototype.unwrap_or(end)),
-    )
-    .unwrap_or(0);
+    // The declared count of a positional order table counts its prototype row.
+    // A declared count of zero with the prototype row present states a body-row
+    // count the table cannot hold, and refuses the table. Each row consumes at
+    // least one byte before its 0xe2 separator, so the row count cannot exceed
+    // the unread bytes in the table window.
+    let (row_limit, capacity) = match prototype.filter(|&rows_start| rows_start < end) {
+        Some(rows_start) => {
+            let declared_body_rows = declared_count.checked_sub(1)?;
+            (
+                usize::try_from(declared_body_rows).ok()?,
+                bounded_len(u64::from(declared_body_rows), 1, end - rows_start).unwrap_or(0),
+            )
+        }
+        None => (0, 0),
+    };
     let mut rows = Vec::with_capacity(capacity);
     let mut cursor = prototype.unwrap_or(end);
     let mut external_ids = BTreeSet::new();
@@ -3778,7 +3825,11 @@ fn gsec3d_plane_id(payload: &[u8], start: usize, end: usize) -> Option<u32> {
     cursor = reference_planes;
     while let Some(at) = find_bytes(payload, label, cursor, end) {
         cursor = at + label.len();
-        if payload.get(at.saturating_sub(2)..at) == Some(&[psb::token::NAMED_RECORD, 1]) {
+        if at
+            .checked_sub(2)
+            .and_then(|header| payload.get(header..at))
+            .is_some_and(|header| header == [psb::token::NAMED_RECORD, 1].as_slice())
+        {
             continue;
         }
         let (value, next) = segment_int(payload, cursor);
@@ -5160,7 +5211,7 @@ pub(crate) fn relation_table(
             payload,
             rows_start,
             rows_end,
-            declared_count.saturating_sub(2),
+            RelationBodyRows::from_declared(declared_count),
         )
     });
     Some(FeatureRelationTable {
@@ -5179,15 +5230,48 @@ pub(crate) fn relation_table(
     })
 }
 
+/// Body rows stated by a `relat_ptr` allocation count. A count of one is the
+/// empty table form, and a count of zero is the invalid form the decoder
+/// reports from the retained declared count. Every larger count states two
+/// structural entries before its body rows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RelationBodyRows {
+    InvalidZero,
+    Count(u32),
+}
+
+impl RelationBodyRows {
+    /// Structural entries inside a relation table's declared count.
+    const STRUCTURAL_ENTRIES: u32 = 2;
+
+    fn from_declared(declared_count: u32) -> Self {
+        match declared_count {
+            0 => Self::InvalidZero,
+            1 | 2 => Self::Count(0),
+            declared_count => Self::Count(declared_count - Self::STRUCTURAL_ENTRIES),
+        }
+    }
+
+    fn get(self) -> Option<u32> {
+        match self {
+            Self::InvalidZero => None,
+            Self::Count(count) => Some(count),
+        }
+    }
+}
+
 fn positional_relation_rows(
     payload: &[u8],
     mut cursor: usize,
     end: usize,
-    row_count: u32,
+    row_count: RelationBodyRows,
 ) -> Vec<FeatureRelation> {
     if cursor > end || end > payload.len() {
         return Vec::new();
     }
+    let Some(row_count) = row_count.get() else {
+        return Vec::new();
+    };
     let mut rows = Vec::new();
     for _ in 0..row_count {
         let Some(row_end) = payload[cursor..end]
@@ -5271,7 +5355,12 @@ pub(crate) fn positional_relation_table(
         Some(prototype_end + prototype_separator.len())
     })();
     let rows = rows_start.map_or_else(Vec::new, |rows_start| {
-        positional_relation_rows(payload, rows_start, end, declared_count.saturating_sub(2))
+        positional_relation_rows(
+            payload,
+            rows_start,
+            end,
+            RelationBodyRows::from_declared(declared_count),
+        )
     });
     Some(FeatureRelationTable {
         declared_count,
@@ -5692,6 +5781,7 @@ pub(crate) fn saved_positional_generated_entities(
     order_table: Option<&FeatureOrderTable>,
     segments: Option<&FeatureSegmentTable>,
 ) -> Vec<FeatureSavedEntity> {
+    const HEADER_WINDOW: usize = 24;
     let (Some(order_table), Some(segments)) = (order_table, segments) else {
         return Vec::new();
     };
@@ -5718,7 +5808,12 @@ pub(crate) fn saved_positional_generated_entities(
         if !generated_segments.contains_key(&entity_id) {
             continue;
         }
-        let header_end = after_id.saturating_add(24).min(end);
+        let Some(header_end) = after_id
+            .checked_add(HEADER_WINDOW)
+            .map(|window_end| window_end.min(end))
+        else {
+            continue;
+        };
         if after_id > header_end {
             continue;
         }
@@ -5731,9 +5826,11 @@ pub(crate) fn saved_positional_generated_entities(
 
     let mut entities = Vec::new();
     for (index, row_start) in starts.iter().copied().enumerate() {
+        // Every row start follows an 0xe3 separator, so it has a preceding byte.
         let row_end = starts
             .get(index + 1)
-            .map_or(end, |next| next.saturating_sub(1));
+            .and_then(|next| next.checked_sub(1))
+            .unwrap_or(end);
         let (Some(entity_id), after_id) = segment_int(payload, row_start) else {
             continue;
         };
@@ -5861,11 +5958,10 @@ pub(crate) fn saved_positional_generated_entities(
 }
 
 fn saved_positional_body_end(payload: &[u8], row_end: usize) -> usize {
-    if payload.get(row_end.saturating_sub(1)) == Some(&0xe3) {
-        row_end.saturating_sub(1)
-    } else {
-        row_end
-    }
+    row_end
+        .checked_sub(1)
+        .filter(|&before| payload.get(before) == Some(&0xe3))
+        .unwrap_or(row_end)
 }
 
 pub(crate) fn saved_circular_entities(
@@ -5902,16 +5998,13 @@ pub(crate) fn saved_circular_entities(
                     order_table,
                     segments,
                 );
-                let named_body_end = positional.iter().map(saved_entity_offset).min().map_or(
-                    body_end,
-                    |row_start| {
-                        if payload.get(row_start.saturating_sub(1)) == Some(&0xe3) {
-                            row_start.saturating_sub(1)
-                        } else {
-                            row_start
-                        }
-                    },
-                );
+                let named_body_end = positional
+                    .iter()
+                    .map(saved_entity_offset)
+                    .min()
+                    .map_or(body_end, |row_start| {
+                        saved_positional_body_end(payload, row_start)
+                    });
                 let first = saved_named_scalars::<3>(payload, b"end1", body_start, body_end, cache)
                     .unwrap_or([None; 3]);
                 let second =
@@ -6036,6 +6129,10 @@ pub(crate) fn saved_spline_entities(
     const TANGENTS: &[u8] = b"\xe0\x02end_tangts\0\xf9\x02\x03";
     const PARAMETERS_LABEL: &[u8] = b"\xe0\x02params\0";
     const PARAMETERS: &[u8] = b"\xe0\x02params\0\xf8";
+    // One encoded byte can carry at most one coordinate lane, and the shortest
+    // encoded point block still holds twelve lanes.
+    const COORDINATE_LANES_PER_BYTE: usize = 16;
+    const MINIMUM_COORDINATE_LANES: usize = 12;
     let mut entities = Vec::new();
     let mut search = start;
     while let Some(entity_offset) = find_bytes(payload, LABEL, search, end) {
@@ -6056,9 +6153,16 @@ pub(crate) fn saved_spline_entities(
             if dimensions_end > extents_start && cursor > dimensions_end && coordinate_count == 3 {
                 declared_point_count = Some(declared);
                 interpolation_points_body = payload[value_start..cursor].to_vec();
+                let coordinate_lanes = payload
+                    .get(cursor..body_end)
+                    .map_or(0, <[u8]>::len)
+                    .checked_mul(COORDINATE_LANES_PER_BYTE)
+                    .map(|lanes| lanes.max(MINIMUM_COORDINATE_LANES));
                 point_count = usize::try_from(declared).ok().filter(|point_count| {
-                    point_count.saturating_mul(3)
-                        <= body_end.saturating_sub(cursor).saturating_mul(16).max(12)
+                    point_count
+                        .checked_mul(3)
+                        .zip(coordinate_lanes)
+                        .is_some_and(|(declared_lanes, lanes)| declared_lanes <= lanes)
                 });
                 if let Some(point_count) = point_count {
                     points.reserve(point_count);
@@ -6616,12 +6720,15 @@ fn definition_starts(payload: &[u8]) -> Vec<(usize, Option<NonZeroU32>, Option<u
 fn depdb_gsec2d_starts(payload: &[u8]) -> Vec<(usize, Option<NonZeroU32>, Option<u32>, bool)> {
     const GSEC: &[u8] = b"gsec2d_ptr\0";
     const NAME: &[u8] = b"name\0S2D";
+    const NAME_WINDOW: usize = 128;
     payload
         .windows(GSEC.len())
         .enumerate()
         .filter_map(|(start, window)| {
             (window == GSEC).then_some(())?;
-            let search_end = start.saturating_add(128).min(payload.len());
+            let search_end = start
+                .checked_add(NAME_WINDOW)
+                .map_or(payload.len(), |window_end| window_end.min(payload.len()));
             let digits_start = find_bytes(payload, NAME, start, search_end)? + NAME.len();
             let digits_end = payload[digits_start..search_end]
                 .iter()
@@ -6760,6 +6867,7 @@ pub fn depdb_section_definition(
 ) -> Option<FeatureDefinition> {
     const GSEC: &[u8] = b"gsec2d_ptr\0";
     const NAME: &[u8] = b"name\0S2D";
+    const NAME_WINDOW: usize = 128;
     const PREFIX: &[u8] = b"feat_defs_";
     let starts = payload
         .windows(GSEC.len())
@@ -6769,7 +6877,9 @@ pub fn depdb_section_definition(
     let [start] = starts.as_slice() else {
         return None;
     };
-    let name_search_end = start.saturating_add(128).min(payload.len());
+    let name_search_end = start
+        .checked_add(NAME_WINDOW)
+        .map_or(payload.len(), |window_end| window_end.min(payload.len()));
     let name = find_bytes(payload, NAME, *start, name_search_end)? + NAME.len();
     let name_end = payload[name..name_search_end]
         .iter()
@@ -7071,7 +7181,10 @@ pub(crate) mod test_support;
 
 #[cfg(test)]
 mod tests {
-    use super::VariableType;
+    use super::{
+        order_table, positional_order_table, segment_table_body, PrototypeRow, RelationBodyRows,
+        VariableType,
+    };
 
     #[test]
     fn variable_classes_normalize_known_codes_and_preserve_unknown_codes() {
@@ -7093,5 +7206,93 @@ mod tests {
             assert!(matches!(class, VariableType::Unknown(_)));
             assert_eq!(class.code(), code);
         }
+    }
+
+    #[test]
+    fn elided_prototype_segment_table_refuses_a_declared_count_below_its_prototype_row() {
+        let zero = b"\xf8\x00\xf7\x01\xfb\xe2\xf2\xf7\x01\xe2";
+        let one = b"\xf8\x01\xf7\x01\xfb\xe2\xf2\xf7\x01\xe2";
+
+        assert!(segment_table_body(zero, 0, 0, zero.len(), PrototypeRow::Elided).is_none());
+        assert_eq!(
+            segment_table_body(one, 0, 0, one.len(), PrototypeRow::Elided)
+                .map(|table| (table.declared_count, table.rows.ordinary().count())),
+            Some((1, 0))
+        );
+        assert_eq!(
+            segment_table_body(zero, 0, 0, zero.len(), PrototypeRow::Present)
+                .map(|table| table.declared_count),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn order_table_refuses_a_zero_declared_count_with_a_prototype_row() {
+        let prototype_row = b"\xe0\x01ext_id\0\x09\xe0\x01int_id\0\x01\
+            \xe0\x01bitmask\0\x00\xf1\xf7\x42\xe2";
+        let table = |declared_count: u8| {
+            let mut payload = b"order_table\0\xf8".to_vec();
+            payload.push(declared_count);
+            payload.extend_from_slice(b"\xf7\x42\xfb\xe2");
+            payload.extend_from_slice(prototype_row);
+            payload
+        };
+
+        let zero = table(0);
+        assert!(order_table(&zero, 0, zero.len()).is_none());
+
+        let one = table(1);
+        assert_eq!(
+            order_table(&one, 0, one.len()).map(|table| (
+                table.declared_count,
+                table.has_prototype,
+                table.rows.len()
+            )),
+            Some((1, true, 0))
+        );
+    }
+
+    #[test]
+    fn positional_order_table_refuses_a_zero_declared_count_with_a_prototype_row() {
+        let table = |declared_count: u8| {
+            let mut payload = b"prefix\xf8".to_vec();
+            payload.push(declared_count);
+            payload.extend_from_slice(
+                b"\xf7\x42\xfb\xe2\xf7\x43\x09\x01\x00\xf1\xf7\x42\xe2\x0a\x02\x01\xe2",
+            );
+            payload
+        };
+
+        let zero = table(0);
+        assert!(positional_order_table(&zero, 0, zero.len(), 66).is_none());
+
+        let two = table(2);
+        assert_eq!(
+            positional_order_table(&two, 0, two.len(), 66).map(|table| (
+                table.declared_count,
+                table.has_prototype,
+                table.rows.len()
+            )),
+            Some((2, true, 1))
+        );
+    }
+
+    #[test]
+    fn relation_body_rows_state_preserves_invalid_zero_and_empty_counts() {
+        assert_eq!(
+            RelationBodyRows::from_declared(0),
+            RelationBodyRows::InvalidZero
+        );
+        for declared_count in [1, 2] {
+            assert_eq!(
+                RelationBodyRows::from_declared(declared_count).get(),
+                Some(0)
+            );
+        }
+        assert_eq!(RelationBodyRows::from_declared(3).get(), Some(1));
+        assert_eq!(
+            RelationBodyRows::from_declared(u32::MAX).get(),
+            Some(u32::MAX - 2)
+        );
     }
 }

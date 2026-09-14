@@ -125,7 +125,7 @@ fn saved_spline_curve() -> Curve {
 }
 
 fn transfer_with_curve_count(curve_count: usize) -> (usize, CadIr) {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.definitions.push(saved_spline_definition());
     scan.features.section_transforms.push(
         crate::placement::FeatureSectionTransform::new(
@@ -188,9 +188,13 @@ fn transfer_with_curve_count(curve_count: usize) -> (usize, CadIr) {
     ir.model
         .curves
         .extend((0..curve_count).map(|_| saved_spline_curve()));
-    let transferred =
-        transfer_resolved_revolution_surfaces(&scan, &mut ir, &mut AnnotationBuilder::new())
-            .expect("valid source object identity");
+    let transferred = transfer_resolved_revolution_surfaces(
+        &scan,
+        &mut ir,
+        &mut AnnotationBuilder::new(),
+        &mut Vec::new(),
+    )
+    .expect("valid source object identity");
     (transferred, ir)
 }
 

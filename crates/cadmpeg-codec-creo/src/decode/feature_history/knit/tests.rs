@@ -2,7 +2,7 @@
 
 #[test]
 fn draft_neutral_plane_rejects_duplicate_materialized_roster_entry() {
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.entity_tables.push(
         crate::feature::FeatureEntityTable::new(
             225,

@@ -53,10 +53,11 @@ pub(super) fn transfer_and_record_scanned_geometry(
 ) -> Result<(), CodecError> {
     let cross_section_plane_count = transfer_cross_section_planes(scan, ir, annotations)?;
     let first_instance_prototype_surface_count =
-        transfer_first_instance_prototype_surfaces(scan, ir, annotations)?;
-    let positional_spline_replay_count = transfer_positional_spline_replays(scan, ir, annotations)?;
+        transfer_first_instance_prototype_surfaces(scan, ir, annotations, transfer_losses)?;
+    let positional_spline_replay_count =
+        transfer_positional_spline_replays(scan, ir, annotations, transfer_losses)?;
     let legacy_ascii_surface_carrier_count =
-        transfer_legacy_ascii_surface_carriers(scan, ir, annotations)?;
+        transfer_legacy_ascii_surface_carriers(scan, ir, annotations, transfer_losses)?;
     let legacy_torus_sphere_carrier_count = scan
         .surfaces
         .legacy_carriers
@@ -74,14 +75,14 @@ pub(super) fn transfer_and_record_scanned_geometry(
     let positional_line_extrusion_plane_count =
         transfer_positional_line_extrusion_planes(scan, ir, annotations)?;
     let tabulated_cylinder_spline_extrusion_count =
-        transfer_tabulated_cylinder_spline_extrusions(scan, ir, annotations)?;
+        transfer_tabulated_cylinder_spline_extrusions(scan, ir, annotations, transfer_losses)?;
     transfer_fc05_cap_circles(scan, ir, annotations)?;
     transfer_cap_pair_cylinders(scan, ir, annotations)?;
     let saved_spline_curve_count =
         transfer_saved_spline_curves(scan, ir, annotations, transfer_losses)?;
-    let sketch_segment_coverage = transfer_sketches(scan, ir, annotations)?;
+    let sketch_segment_coverage = transfer_sketches(scan, ir, annotations, transfer_losses)?;
     let feature_revolution_surface_count =
-        transfer_resolved_revolution_surfaces(scan, ir, annotations)?;
+        transfer_resolved_revolution_surfaces(scan, ir, annotations, transfer_losses)?;
     let feature_revolution_vertex_orbit_curve_count =
         transfer_resolved_revolution_vertex_orbit_curves(scan, ir, annotations)?;
     let feature_extrusion_surface_count =
@@ -101,7 +102,8 @@ pub(super) fn transfer_and_record_scanned_geometry(
         reconcile_support_apex_cone_parameter_branches(scan, ir, annotations);
     let analytic_pcurve_carriers = transfer_analytic_pcurve_carriers(scan, ir, annotations)?;
     let analytic_pcurve_carrier_count = analytic_pcurve_carriers.len();
-    let nurbs_boundary_curves = transfer_nurbs_boundary_curves(ctx, scan, ir, annotations)?;
+    let nurbs_boundary_curves =
+        transfer_nurbs_boundary_curves(ctx, scan, ir, annotations, transfer_losses)?;
     let extrusion_plane_boundary_curve_count = nurbs_boundary_curves.extrusion_plane_count;
     let extrusion_plane_section_generator_curve_count =
         nurbs_boundary_curves.extrusion_plane_section_generator_count;
@@ -137,13 +139,14 @@ pub(super) fn transfer_and_record_scanned_geometry(
         &derived_intersection_curves,
         &analytic_pcurve_carriers,
         &nurbs_boundary_curves.endpoint_witnesses,
+        transfer_losses,
     )?;
     diagnostics.record_coverage(coverage);
     *brep_diagnostics = diagnostics;
     let feature_revolution_brep_count =
         transfer_resolved_revolution_breps(scan, ir, annotations, transfer_losses)?;
     let feature_circular_extrusion_brep_count =
-        transfer_resolved_circular_extrusion_breps(scan, ir, annotations)?;
+        transfer_resolved_circular_extrusion_breps(scan, ir, annotations, transfer_losses)?;
     let feature_extrusion_brep_count =
         transfer_resolved_extrusion_breps(scan, ir, annotations, brep_diagnostics)?;
     retain_unresolved_surface_carriers(scan, ir, annotations)?;
@@ -689,7 +692,7 @@ mod tests {
 
     #[test]
     fn intersections_revisit_carriers_proven_by_topology_bound_planes() {
-        let mut scan = crate::container::scan_bytes(Vec::new());
+        let mut scan = crate::container::scan_bytes_ok(Vec::new());
         scan.surfaces.rows = vec![
             crate::surface::SurfaceRow {
                 id: 5,

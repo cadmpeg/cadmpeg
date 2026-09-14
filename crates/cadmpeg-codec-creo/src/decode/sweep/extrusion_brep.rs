@@ -146,19 +146,29 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         let Some(profiles) = ordered_extrusion_profiles(profiles) else {
             continue;
         };
+        let prefix = format!("creo:feature:extrusion#{feature_id}");
+        let body_id = BodyId::mint(format!("{prefix}:body")).expect("identity grammar");
+        if ir.model.bodies.iter().any(|body| body.id == body_id) {
+            continue;
+        }
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
         let unprojectable = profiles
             .iter()
             .flat_map(super::profiles::ValidatedProfile::entities)
-            .any(|entity| {
+            .enumerate()
+            .any(|(entity_index, entity)| {
                 let geometry = entity.geometry();
                 let reversed = entity.reversed();
                 let start = entity.start();
                 let end = entity.end();
+                let record =
+                    format!("extrusion feature {feature_id} profile entity {entity_index}");
 
                 geometry
                     .to_sketch()
                     .and_then(|sketch_geometry| {
+                        let mut diagnostics =
+                            crate::lane_refusal::LaneRefusalContext::new(&record, &mut refusal);
                         extrusion_brep_side_surface(
                             transform,
                             &sketch_geometry,
@@ -166,24 +176,27 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             start,
                             end,
                             span,
-                            &mut refusal,
+                            &mut diagnostics,
                         )
                     })
                     .is_none()
             });
-        if let Some(error) = refusal.take_error() {
-            return Err(error);
+        let records = refusal.take_records();
+        if !records.is_empty() {
+            // The probe states every side before the first record of this body
+            // reaches the model, so a refused lane leaves no partial body and
+            // the model carries the absence of this one extrusion.
+            diagnostics.rejected_extrusion_bodies.push((
+                body_id.clone(),
+                format!("refused extrusion side lanes: {}", records.join("; ")),
+            ));
+            continue;
         }
         if unprojectable {
             continue;
         }
         let forward_caps = profiles[0].area() > 0.0;
 
-        let prefix = format!("creo:feature:extrusion#{feature_id}");
-        let body_id = BodyId::mint(format!("{prefix}:body")).expect("identity grammar");
-        if ir.model.bodies.iter().any(|body| body.id == body_id) {
-            continue;
-        }
         let region_id = RegionId::mint(format!("{prefix}:region")).expect("identity grammar");
         let shell_id = ShellId::mint(format!("{prefix}:shell")).expect("identity grammar");
         let bottom_face = FaceId::mint(format!("{prefix}:face:bottom")).expect("identity grammar");
@@ -523,20 +536,31 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     transform.offset,
                     {
                         let mut refusal = crate::lane_refusal::LaneRefusals::new();
+                        let record = format!(
+                            "extrusion feature {feature_id} profile {profile_index} bottom cap \
+                             at entity {edge_index}"
+                        );
                         let cap = extrusion_cap_pcurve(
                             &sketch_geometry,
                             reversed,
                             start,
                             end,
+                            &record,
                             &mut refusal,
                         );
-                        if let Some(error) = refusal.take_error() {
-                            return Err(error);
+                        let records = refusal.take_records();
+                        if !records.is_empty() {
+                            // The shell of this body already declares this cap
+                            // face, so the model cannot omit the pcurve.
+                            return Err(cadmpeg_core::CodecError::malformed(format!(
+                                "Refused lanes on {record}: {}",
+                                records.join("; ")
+                            )));
                         }
                         cap.ok_or_else(|| {
-                            cadmpeg_core::CodecError::malformed(
-                                "extrusion pcurve geometry is invalid",
-                            )
+                            cadmpeg_core::CodecError::malformed(format!(
+                                "{record} states no pcurve geometry"
+                            ))
                         })?
                     },
                 )?;
@@ -576,20 +600,31 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     transform.offset,
                     {
                         let mut refusal = crate::lane_refusal::LaneRefusals::new();
+                        let record = format!(
+                            "extrusion feature {feature_id} profile {profile_index} top cap \
+                             at entity {ring_index}"
+                        );
                         let cap = extrusion_cap_pcurve(
                             &sketch_geometry,
                             reversed,
                             start,
                             end,
+                            &record,
                             &mut refusal,
                         );
-                        if let Some(error) = refusal.take_error() {
-                            return Err(error);
+                        let records = refusal.take_records();
+                        if !records.is_empty() {
+                            // The shell of this body already declares this cap
+                            // face, so the model cannot omit the pcurve.
+                            return Err(cadmpeg_core::CodecError::malformed(format!(
+                                "Refused lanes on {record}: {}",
+                                records.join("; ")
+                            )));
                         }
                         cap.ok_or_else(|| {
-                            cadmpeg_core::CodecError::malformed(
-                                "extrusion pcurve geometry is invalid",
-                            )
+                            cadmpeg_core::CodecError::malformed(format!(
+                                "{record} states no pcurve geometry"
+                            ))
                         })?
                     },
                 )?;
@@ -624,6 +659,10 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     SurfaceId::mint(format!("{prefix}:surface:{profile_index}:side:{index}"))
                         .expect("identity grammar");
                 let mut refusal = crate::lane_refusal::LaneRefusals::new();
+                let record =
+                    format!("extrusion feature {feature_id} profile {profile_index} side {index}");
+                let mut diagnostics =
+                    crate::lane_refusal::LaneRefusalContext::new(&record, &mut refusal);
                 let surface_geometry = extrusion_brep_side_surface(
                     transform,
                     &sketch_geometry,
@@ -631,10 +670,16 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     start,
                     profile[index].end(),
                     span,
-                    &mut refusal,
+                    &mut diagnostics,
                 );
-                if let Some(error) = refusal.take_error() {
-                    return Err(error);
+                let records = refusal.take_records();
+                if !records.is_empty() {
+                    // The shell of this body already declares this side face,
+                    // so the model cannot omit the surface.
+                    return Err(cadmpeg_core::CodecError::malformed(format!(
+                        "Refused lanes on {record}: {}",
+                        records.join("; ")
+                    )));
                 }
                 let Some(surface_geometry) = surface_geometry else {
                     break;

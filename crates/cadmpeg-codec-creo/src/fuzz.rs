@@ -61,7 +61,14 @@ pub fn short_form_float(data: &[u8]) {
 
 /// Exercise Creo container scanning.
 pub fn container_scan(data: &[u8]) {
-    let _probe = crate::container::scan_bytes(data.to_vec());
+    match crate::container::scan_bytes(data.to_vec()) {
+        Ok(scan) => {
+            let _probe = scan.framing.sections.len();
+        }
+        Err(refusal) => {
+            let _probe = refusal.to_string();
+        }
+    }
 }
 
 #[cfg(test)]

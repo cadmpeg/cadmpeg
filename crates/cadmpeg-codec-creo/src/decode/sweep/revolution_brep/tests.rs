@@ -89,7 +89,7 @@ fn definition() -> crate::feature::FeatureDefinition {
 #[test]
 fn axis_endpoint_with_offset_neighbor_reports_boundary_rejection() {
     const JOIN_OFFSET: f64 = 5.0e-10;
-    let mut scan = crate::container::scan_bytes(Vec::new());
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.definitions.push(definition());
     scan.features.section_transforms.push(
         crate::placement::FeatureSectionTransform::new(
