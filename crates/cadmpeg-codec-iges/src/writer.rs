@@ -90,6 +90,32 @@ const WRITER_MAXIMUM_LINE_WIDTH: &str = "1.0";
 const WRITER_AUTHOR_NAME: &str = "author";
 const WRITER_AUTHOR_ORGANIZATION: &str = "cadmpeg";
 const WRITER_DRAFTING_STANDARD_FLAG: i64 = 0;
+
+/// States that `value` holds ASCII bytes only.
+const fn is_ascii_text(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if !bytes[index].is_ascii() {
+            return false;
+        }
+        index += 1;
+    }
+    true
+}
+
+/// Every writer global string is ASCII. `global_hollerith` states a byte count,
+/// and a Hollerith count states characters, so the two agree only for ASCII.
+const _: () = assert!(
+    is_ascii_text(WRITER_SENDER_PRODUCT)
+        && is_ascii_text(WRITER_NATIVE_FILE_NAME)
+        && is_ascii_text(WRITER_NATIVE_SYSTEM_ID)
+        && is_ascii_text(WRITER_PREPROCESSOR_VERSION)
+        && is_ascii_text(WRITER_UNITS_NAME)
+        && is_ascii_text(WRITER_AUTHOR_NAME)
+        && is_ascii_text(WRITER_AUTHOR_ORGANIZATION)
+);
+
 const WRITER_ENTITY_TYPES: &[u32] = &[
     100, 102, 104, 108, 110, 116, 120, 122, 123, 124, 126, 128, 141, 142, 143, 144, 186, 190, 192,
     194, 196, 198, 502, 504, 508, 510, 514,
@@ -4697,6 +4723,48 @@ fn extrusion_surface_entities(
     Ok(entities)
 }
 
+/// Class of the revolution angular interval that IGES Type 120 output carries.
+///
+/// A sweep within [`ANGULAR_TOLERANCE`] of a full turn is a full turn, and the
+/// writer states it as `TAU`. Every other sweep is written as declared. A sweep
+/// outside `(0, TAU + ANGULAR_TOLERANCE]` is not a Type 120 revolution.
+enum RevolutionSweep {
+    /// `0 < sweep < TAU`. The writer states this sweep unchanged.
+    Partial(f64),
+    /// `TAU <= sweep <= TAU + ANGULAR_TOLERANCE`. The writer states `TAU`.
+    Full,
+}
+
+impl RevolutionSweep {
+    /// Classifies one `angular_interval`, or refuses it.
+    fn classify(start_angle: f64, terminate_angle: f64) -> Result<Self, CodecError> {
+        let sweep = terminate_angle - start_angle;
+        if !start_angle.is_finite() || !terminate_angle.is_finite() || !sweep.is_finite() {
+            return Err(CodecError::InvalidInput(format!(
+                "IGES Type 120 angular_interval [{start_angle}, {terminate_angle}] is not finite"
+            )));
+        }
+        if sweep <= 0.0 || sweep > TAU + ANGULAR_TOLERANCE {
+            return Err(CodecError::InvalidInput(format!(
+                "IGES Type 120 angular_interval sweep {sweep} is outside (0, {TAU} + {ANGULAR_TOLERANCE}]"
+            )));
+        }
+        if sweep < TAU {
+            Ok(Self::Partial(sweep))
+        } else {
+            Ok(Self::Full)
+        }
+    }
+
+    /// Returns the terminate angle that the Type 120 record states.
+    fn terminate_angle(&self, start_angle: f64) -> f64 {
+        match self {
+            Self::Partial(sweep) => start_angle + sweep,
+            Self::Full => start_angle + TAU,
+        }
+    }
+}
+
 fn revolution_surface_entities(
     ir: &CadIr,
     construction: &cadmpeg_ir::ids::ProceduralSurfaceId,
@@ -4732,19 +4800,9 @@ fn revolution_surface_entities(
             "IGES Type 120 output requires the default revolution parameterization".into(),
         ));
     }
-    let [start_angle, terminate_angle] = *angular_interval;
-    let sweep = terminate_angle - start_angle;
-    if !start_angle.is_finite()
-        || !terminate_angle.is_finite()
-        || !sweep.is_finite()
-        || sweep <= 0.0
-        || sweep > TAU + ANGULAR_TOLERANCE
-    {
-        return Err(CodecError::Malformed(
-            "IGES Type 120 angular interval is outside (0, 2*pi]".into(),
-        ));
-    }
-    let terminate_angle = start_angle + sweep.min(TAU);
+    let [start_angle, declared_terminate_angle] = *angular_interval;
+    let terminate_angle = RevolutionSweep::classify(start_angle, declared_terminate_angle)?
+        .terminate_angle(start_angle);
     let [start_parameter, terminate_parameter] = parameter_interval.ok_or_else(|| {
         CodecError::NotImplemented(
             "IGES Type 120 output requires a bounded generatrix parameter interval".into(),
@@ -6586,8 +6644,12 @@ fn generated_line_font(version: crate::IgesVersion, entity_type: u32, form: i64)
     }
 }
 
+/// Renders one IGES global Hollerith field.
+///
+/// Each caller passes an ASCII writer constant, an empty string, or the
+/// generated timestamp, which holds digits and one period. The byte count of
+/// each is therefore the character count that the Hollerith prefix states.
 fn global_hollerith(value: &str) -> String {
-    debug_assert!(value.is_ascii());
     format!("{}H{value}", value.len())
 }
 
