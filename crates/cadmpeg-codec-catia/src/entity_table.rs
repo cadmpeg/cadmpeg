@@ -906,10 +906,30 @@ enum EntityRecordLayout {
     Inline,
 }
 
+/// How many monotone paths reach one candidate. The run is unique only when
+/// exactly one path reaches its final layer, so paths beyond the second are
+/// never distinguished and never counted.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PathCount {
+    None,
+    One,
+    Many,
+}
+
+impl PathCount {
+    /// Paths reaching a candidate through either of two disjoint predecessors.
+    fn join(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::None, count) | (count, Self::None) => count,
+            (Self::One, Self::One) | (_, Self::Many) | (Self::Many, _) => Self::Many,
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 struct MonotonePathState {
     identity: EntityIdentityCandidate,
-    path_count: u8,
+    path_count: PathCount,
     predecessor: Option<usize>,
 }
 
@@ -920,7 +940,7 @@ fn unique_monotone_run(records: &[EntityRecordCandidates]) -> Option<Vec<EntityI
         .copied()
         .map(|identity| MonotonePathState {
             identity,
-            path_count: 1,
+            path_count: PathCount::One,
             predecessor: None,
         })
         .collect::<Vec<_>>()];
@@ -929,10 +949,13 @@ fn unique_monotone_run(records: &[EntityRecordCandidates]) -> Option<Vec<EntityI
         let mut ordered_predecessors = previous.iter().enumerate().collect::<Vec<_>>();
         ordered_predecessors.sort_by_key(|(_, state)| state.identity.entity_id);
         let mut cumulative = Vec::with_capacity(ordered_predecessors.len());
-        let mut cumulative_count = 0u8;
+        let mut cumulative_count = PathCount::None;
         for (index, state) in &ordered_predecessors {
-            cumulative_count = cumulative_count.saturating_add(state.path_count).min(2);
-            cumulative.push((cumulative_count, (cumulative_count == 1).then_some(*index)));
+            cumulative_count = cumulative_count.join(state.path_count);
+            cumulative.push((
+                cumulative_count,
+                (cumulative_count == PathCount::One).then_some(*index),
+            ));
         }
         let layer = record
             .identities
@@ -942,8 +965,8 @@ fn unique_monotone_run(records: &[EntityRecordCandidates]) -> Option<Vec<EntityI
                     .partition_point(|(_, state)| state.identity.entity_id < identity.entity_id);
                 let (path_count, predecessor) = predecessor_count
                     .checked_sub(1)
-                    .map_or((0, None), |index| cumulative[index]);
-                (path_count != 0).then_some(MonotonePathState {
+                    .map_or((PathCount::None, None), |index| cumulative[index]);
+                (path_count != PathCount::None).then_some(MonotonePathState {
                     identity: *identity,
                     path_count,
                     predecessor,
@@ -956,13 +979,16 @@ fn unique_monotone_run(records: &[EntityRecordCandidates]) -> Option<Vec<EntityI
         layers.push(layer);
     }
     let final_layer = layers.last()?;
-    if final_layer.iter().fold(0u8, |count, state| {
-        count.saturating_add(state.path_count).min(2)
-    }) != 1
+    if final_layer
+        .iter()
+        .fold(PathCount::None, |count, state| count.join(state.path_count))
+        != PathCount::One
     {
         return None;
     }
-    let mut state_index = final_layer.iter().position(|state| state.path_count == 1)?;
+    let mut state_index = final_layer
+        .iter()
+        .position(|state| state.path_count == PathCount::One)?;
     let mut result = Vec::with_capacity(layers.len());
     for layer in layers.iter().rev() {
         let state = &layer[state_index];
@@ -2105,5 +2131,53 @@ mod tests {
 
         assert!(parse_numeric_pair(&payload).is_some());
         assert!(value_packets(&payload, &fields).is_empty());
+    }
+
+    #[test]
+    fn a_monotone_run_is_unique_only_when_exactly_one_path_reaches_its_last_layer() {
+        // The run is taken only when one monotone path reaches the final
+        // layer, so the path count is a none/one/many classifier. `join`
+        // states that directly: a second path makes the count `Many`, and a
+        // third leaves it `Many` without ever being counted.
+        assert!(PathCount::None.join(PathCount::None) == PathCount::None);
+        assert!(PathCount::None.join(PathCount::One) == PathCount::One);
+        assert!(PathCount::One.join(PathCount::None) == PathCount::One);
+        assert!(PathCount::One.join(PathCount::One) == PathCount::Many);
+        assert!(PathCount::Many.join(PathCount::One) == PathCount::Many);
+        assert!(PathCount::One.join(PathCount::Many) == PathCount::Many);
+        assert!(PathCount::Many.join(PathCount::Many) == PathCount::Many);
+
+        let record = |entity_ids: &[u32]| EntityRecordCandidates {
+            pos: 0,
+            total_len: 12,
+            lead: 0x01,
+            layout: EntityRecordLayout::Inline,
+            identities: entity_ids
+                .iter()
+                .enumerate()
+                .map(|(ordinal, entity_id)| EntityIdentityCandidate {
+                    delimiter: ordinal,
+                    entity_id: *entity_id,
+                })
+                .collect(),
+        };
+
+        // One strictly increasing path: the run is the path.
+        let unique = unique_monotone_run(&[record(&[1]), record(&[2]), record(&[3])])
+            .expect("one monotone path");
+        assert_eq!(
+            unique
+                .iter()
+                .map(|identity| identity.entity_id)
+                .collect::<Vec<_>>(),
+            vec![1, 2, 3]
+        );
+
+        // Two paths, and three paths, are both `Many`; neither is a run.
+        assert!(unique_monotone_run(&[record(&[1, 2]), record(&[3])]).is_none());
+        assert!(unique_monotone_run(&[record(&[1, 2, 3]), record(&[4])]).is_none());
+
+        // No predecessor is strictly below the successor: no path at all.
+        assert!(unique_monotone_run(&[record(&[5]), record(&[4])]).is_none());
     }
 }
