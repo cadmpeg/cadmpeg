@@ -111,11 +111,7 @@ crate::units::named_optional_field!(
     "position"
 );
 
-crate::units::named_optional_field!(
-    deserialize_scale,
-    crate::scalar::PositiveReal,
-    "scale"
-);
+crate::units::named_optional_field!(deserialize_scale, crate::scalar::PositiveReal, "scale");
 
 crate::units::named_optional_field!(
     deserialize_direction,
