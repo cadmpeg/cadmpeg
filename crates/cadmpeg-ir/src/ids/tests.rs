@@ -193,6 +193,60 @@ fn typed_namespace_composition_preserves_the_wire_identity() {
 }
 
 #[test]
+// Standard formatting is an independent oracle for the complete byte alphabet.
+#[allow(clippy::format_collect)]
+fn hexadecimal_identity_keys_encode_every_byte_without_collisions() {
+    let bytes = (u8::MIN..=u8::MAX).collect::<Vec<_>>();
+    let mut distinct = std::collections::HashSet::new();
+    for &byte in &bytes {
+        let key = IdentityKey::hex_byte(byte);
+        assert_eq!(key.as_str(), format!("{byte:02x}"));
+        assert!(distinct.insert(key));
+    }
+    let prefix = crate::identity_key!("source-");
+    assert_eq!(prefix.clone().with_hex_bytes(&[]), prefix);
+    let encoded = prefix.with_hex_bytes(&bytes);
+    let expected = bytes
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    assert_eq!(encoded.as_str(), format!("source-{expected}"));
+    assert_eq!(
+        crate::identity_key!("source-")
+            .with_hex_bytes("é:# \n".as_bytes())
+            .as_str(),
+        "source-c3a93a23200a"
+    );
+}
+
+#[test]
+fn identity_key_projection_and_tails_preserve_namespace_and_key_separators() {
+    let namespace = crate::identity_namespace!("format", "scope", "kind");
+    for key in ["key", ":", "left:right", "é:端"] {
+        let key = IdentityKey::try_new(key).unwrap();
+        let identity = super::Identity::compose(&namespace, key.clone());
+        assert_eq!(identity.key(), key);
+        let curve = crate::ids::CurveId::from(identity.clone());
+        assert_eq!(curve.key(), key);
+        assert_eq!(
+            identity
+                .clone()
+                .with_key_tail(&super::IdentityKeyTail::empty()),
+            identity
+        );
+        let extended = identity.with_key_tail(
+            &super::IdentityKeyTail::empty().dash(crate::identity_key!("construction")),
+        );
+        assert_eq!(
+            extended.as_str(),
+            format!("format:scope:kind#{key}-construction")
+        );
+        assert_eq!(extended.key().as_str(), format!("{key}-construction"));
+        assert!(is_valid_identity(extended.as_str()));
+    }
+}
+
+#[test]
 fn signed_record_identity_keys_preserve_decimal_text_at_the_integer_bounds() {
     let namespace = crate::identity_namespace!("f3d", "brep", "attribute");
     for (value, text) in [
