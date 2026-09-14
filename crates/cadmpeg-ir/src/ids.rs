@@ -577,7 +577,7 @@ macro_rules! identity_key_from_number {
     )*};
 }
 
-identity_key_from_number!(u8, u16, u32, u64, u128, usize);
+identity_key_from_number!(u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize);
 
 impl From<&IdentityKey> for IdentityKey {
     fn from(value: &IdentityKey) -> Self {
