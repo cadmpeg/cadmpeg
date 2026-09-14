@@ -1058,13 +1058,11 @@ fn an_arc_shorter_than_twice_the_tolerance_has_no_strict_interior() {
         1.0,
         tolerance
     ));
-    assert!(!angle_strictly_inside_arc(0.0, 0.0, FRAC_PI_2, 1.0, tolerance));
     assert!(!angle_strictly_inside_arc(
-        FRAC_PI_2,
-        0.0,
-        FRAC_PI_2,
-        1.0,
-        tolerance
+        0.0, 0.0, FRAC_PI_2, 1.0, tolerance
+    ));
+    assert!(!angle_strictly_inside_arc(
+        FRAC_PI_2, 0.0, FRAC_PI_2, 1.0, tolerance
     ));
 
     // Exactly twice the tolerance: the interval closes and its own midpoint is

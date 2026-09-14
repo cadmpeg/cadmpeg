@@ -1026,8 +1026,8 @@ mod tests {
     #![allow(clippy::unwrap_used)]
     use super::{encode_sketch_relation, SKETCH_RELATION_RECORD_FILLED_LEN};
     use crate::records::{
-        DesignClassTag, ReferenceRun, SketchRelation, SketchRelationDefinition, SketchRelationDraft,
-        SketchRelationMember, SketchRelationReturnMember,
+        DesignClassTag, ReferenceRun, SketchRelation, SketchRelationDefinition,
+        SketchRelationDraft, SketchRelationMember, SketchRelationReturnMember,
     };
 
     fn relation(member_count: u32) -> SketchRelation {
