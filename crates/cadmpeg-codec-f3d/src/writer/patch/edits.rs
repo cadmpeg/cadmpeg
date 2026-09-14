@@ -1675,10 +1675,10 @@ pub(crate) fn validate_configuration_edits(
                 "retained F3D configuration edit changes entry identity: {name}"
             )));
         }
-        if before.payload() != after.payload() || before.variant_order() != after.variant_order() {
+        if before != after {
             edits.insert(
                 name.to_owned(),
-                crate::design::configurations::encode_configuration_payload(after)?,
+                crate::records::configuration::encode_configuration_payload(after)?,
             );
         }
     }

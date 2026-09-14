@@ -1011,14 +1011,7 @@ fn validate_configurations(ctx: &Ctx, findings: &mut Vec<Finding>) {
         .native
         .design_configurations
         .iter()
-        .filter(|configuration| configuration.kind() == records::DesignConfigurationKind::Table)
-        .filter(|configuration| {
-            configuration
-                .payload()
-                .get("configurations")
-                .and_then(serde_json::Value::as_object)
-                .is_some_and(|variants| !variants.is_empty())
-        })
+        .filter(|configuration| !configuration.variants().is_empty())
         .collect::<Vec<_>>();
     if nonempty_tables.len() > 1 {
         findings.push(Finding {
