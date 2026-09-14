@@ -105,27 +105,27 @@ pub struct Drawing {
     pub native_ref: String,
 }
 
-crate::units::named_field!(
+crate::units::named_optional_field!(
     deserialize_position,
-    Option<crate::units::FiniteVector<2>>,
+    crate::units::FiniteVector<2>,
     "position"
 );
 
-crate::units::named_field!(
+crate::units::named_optional_field!(
     deserialize_scale,
-    Option<crate::scalar::PositiveReal>,
+    crate::scalar::PositiveReal,
     "scale"
 );
 
-crate::units::named_field!(
+crate::units::named_optional_field!(
     deserialize_direction,
-    Option<crate::units::NonzeroVector<3>>,
+    crate::units::NonzeroVector<3>,
     "direction"
 );
 
-crate::units::named_field!(
+crate::units::named_optional_field!(
     deserialize_rotation_degrees,
-    Option<crate::scalar::FiniteReal>,
+    crate::scalar::FiniteReal,
     "rotation_degrees"
 );
 

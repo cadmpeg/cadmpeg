@@ -377,27 +377,27 @@ pub struct PresentationLayer {
     pub items: Vec<PresentationItem>,
 }
 
-crate::units::named_field!(
+crate::units::named_optional_field!(
     deserialize_position,
-    Option<crate::units::FiniteVector<3>>,
+    crate::units::FiniteVector<3>,
     "position"
 );
 
-crate::units::named_field!(
+crate::units::named_optional_field!(
     deserialize_orientation,
-    Option<crate::units::NonzeroVector<4>>,
+    crate::units::NonzeroVector<4>,
     "orientation"
 );
 
-crate::units::named_field!(
+crate::units::named_optional_field!(
     deserialize_line_width,
-    Option<crate::scalar::NonNegativeReal>,
+    crate::scalar::NonNegativeReal,
     "line_width"
 );
 
-crate::units::named_field!(
+crate::units::named_optional_field!(
     deserialize_point_size,
-    Option<crate::scalar::NonNegativeReal>,
+    crate::scalar::NonNegativeReal,
     "point_size"
 );
 
@@ -409,6 +409,30 @@ crate::units::named_field!(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_named_optional_key_states_a_value_or_is_left_out() {
+        use super::ViewPresentation;
+
+        let refusal = serde_json::from_value::<ViewPresentation>(serde_json::json!({
+            "id": "freecad:presentation:view#1",
+            "order": 0,
+            "line_width": null
+        }))
+        .expect_err("null is not a spelling of an absent line width");
+        let text = refusal.to_string();
+        assert!(
+            text.contains("line_width")
+                && text.contains("this key states a value or is left out; it does not state null"),
+            "{text}"
+        );
+        let absent = serde_json::from_value::<ViewPresentation>(serde_json::json!({
+            "id": "freecad:presentation:view#1",
+            "order": 0
+        }))
+        .expect("an absent key reaches the field default");
+        assert!(absent.line_width.is_none());
+    }
+
     #[test]
     fn camera_kinds_and_states_round_trip_without_payload_or_tag_loss() {
         use super::*;

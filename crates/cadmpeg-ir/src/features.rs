@@ -2245,7 +2245,7 @@ pub struct TreeChildren {
 struct TreeChildrenWire {
     #[serde(default)]
     children: Vec<FeatureId>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     active_child: Option<FeatureId>,
 }
 
@@ -7280,7 +7280,7 @@ pub struct SweepCircularRegion {
 #[serde(deny_unknown_fields)]
 struct SweepCircularRegionWire {
     outer_radius: PositiveLength,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     wall_thickness: Option<PositiveLength>,
 }
 

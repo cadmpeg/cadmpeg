@@ -611,6 +611,211 @@ fn every_hand_written_deserialize_states_its_coverage() {
     }
 }
 
+/// Where every hand-written `Deserialize` refuses `null` for an optional field
+/// its type writes by omission, as (file, type, field, line).
+///
+/// A hand impl states its own key reads, so the derive census cannot see
+/// whether `null` and absence reach the same value there. The listed line is
+/// read at run time and must state the refusal; an entry that names a line
+/// which no longer does fails, and a type whose skipping fields and entries
+/// disagree fails.
+const HAND_IMPL_NULL_REFUSALS: &[(&str, &str, &str, usize)] = &[
+    (
+        "crates/cadmpeg-ir/src/features.rs",
+        "SweepCircularRegion",
+        "wall_thickness",
+        7283,
+    ),
+    (
+        "crates/cadmpeg-ir/src/features.rs",
+        "TreeChildren",
+        "active_child",
+        2248,
+    ),
+    (
+        "crates/cadmpeg-ir/src/features/holes.rs",
+        "HoleShape",
+        "exit_kind",
+        60,
+    ),
+    (
+        "crates/cadmpeg-ir/src/features/holes.rs",
+        "HoleShape",
+        "diameter",
+        62,
+    ),
+    (
+        "crates/cadmpeg-ir/src/geometry.rs",
+        "ProceduralCurveDefinition",
+        "cache",
+        6663,
+    ),
+    (
+        "crates/cadmpeg-ir/src/geometry.rs",
+        "ProceduralCurveDefinition",
+        "version",
+        6672,
+    ),
+    (
+        "crates/cadmpeg-ir/src/geometry.rs",
+        "ProceduralCurveDefinition",
+        "cache",
+        6682,
+    ),
+    (
+        "crates/cadmpeg-ir/src/geometry.rs",
+        "ProceduralCurveDefinition",
+        "cache",
+        6695,
+    ),
+    (
+        "crates/cadmpeg-ir/src/geometry.rs",
+        "ProceduralCurveDefinition",
+        "parameterization",
+        6704,
+    ),
+    (
+        "crates/cadmpeg-ir/src/geometry.rs",
+        "ProceduralCurveDefinition",
+        "cache",
+        6711,
+    ),
+    (
+        "crates/cadmpeg-ir/src/geometry.rs",
+        "ProceduralCurveDefinition",
+        "blend_surface",
+        6737,
+    ),
+    (
+        "crates/cadmpeg-ir/src/geometry.rs",
+        "ProceduralCurveDefinition",
+        "native_kind",
+        6745,
+    ),
+    (
+        "crates/cadmpeg-ir/src/geometry.rs",
+        "ProceduralCurveDefinition",
+        "record",
+        6751,
+    ),
+    (
+        "crates/cadmpeg-ir/src/geometry.rs",
+        "ProceduralCurveDefinition",
+        "cache",
+        6758,
+    ),
+    (
+        "crates/cadmpeg-ir/src/geometry.rs",
+        "ProceduralSurfaceDefinition",
+        "cache",
+        802,
+    ),
+    (
+        "crates/cadmpeg-ir/src/geometry.rs",
+        "ProceduralSurfaceDefinition",
+        "record",
+        812,
+    ),
+    (
+        "crates/cadmpeg-ir/src/geometry.rs",
+        "ProceduralSurfaceDefinition",
+        "cache",
+        819,
+    ),
+];
+
+/// Every hand-written `Deserialize` reads its optional keys the one way.
+///
+/// For each impl the coverage census enumerates, the type either declares no
+/// optional field written by omission -- nothing for `null` to spell twice --
+/// or every such field is listed in [`HAND_IMPL_NULL_REFUSALS`] with the line
+/// where the impl refuses `null`. A type declared by a macro states `$name` in
+/// the census and declares no fields of its own.
+#[test]
+fn every_hand_written_deserialize_refuses_a_null_spelling() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("the repository root sits two levels above the crate manifest")
+        .to_path_buf();
+    let mut disagreements = Vec::new();
+    for (path, name, _class) in HAND_IMPLS {
+        if name.starts_with('$') {
+            continue;
+        }
+        let text = std::fs::read_to_string(root.join(path)).expect("read source");
+        let parsed = syn::parse_file(&text).expect("every source file in the wire crates parses");
+        let mut skipping = Vec::new();
+        declared_skipping_fields(&parsed.items, name, &mut skipping);
+        let mut listed: Vec<String> = HAND_IMPL_NULL_REFUSALS
+            .iter()
+            .filter(|(listed_path, listed_name, _, _)| listed_path == path && listed_name == name)
+            .map(|(_, _, field, line)| {
+                let stated = text
+                    .lines()
+                    .nth(line - 1)
+                    .unwrap_or_else(|| panic!("{path} states no line {line}"));
+                assert!(
+                    stated.contains("absent_key::present"),
+                    "{path}:{line} is listed as where {name} refuses null for {field}, but the line states {stated}"
+                );
+                (*field).to_owned()
+            })
+            .collect();
+        skipping.sort();
+        listed.sort();
+        if skipping != listed {
+            disagreements.push(format!(
+                "{path} {name}: fields written by omission {skipping:?}, refusals listed {listed:?}"
+            ));
+        }
+    }
+    assert!(
+        disagreements.is_empty(),
+        "{} hand-written Deserialize impl(s) disagree with the null-refusal list:\n{}",
+        disagreements.len(),
+        disagreements.join("\n")
+    );
+}
+
+/// Records the name of every field of the type named `name` that skips
+/// serialization on `None`, recursing into inline modules.
+fn declared_skipping_fields(items: &[syn::Item], name: &str, found: &mut Vec<String>) {
+    fn record(fields: &syn::Fields, found: &mut Vec<String>) {
+        for field in fields {
+            let (skips, _) = absence_spelling(field);
+            if !skips {
+                continue;
+            }
+            found.push(
+                field
+                    .ident
+                    .as_ref()
+                    .map_or_else(|| "<tuple field>".to_owned(), syn::Ident::to_string),
+            );
+        }
+    }
+
+    for item in items {
+        match item {
+            syn::Item::Struct(declaration) if declaration.ident == name => {
+                record(&declaration.fields, found);
+            }
+            syn::Item::Enum(declaration) if declaration.ident == name => {
+                for variant in &declaration.variants {
+                    record(&variant.fields, found);
+                }
+            }
+            syn::Item::Mod(module) => {
+                if let Some((_, nested)) = &module.content {
+                    declared_skipping_fields(nested, name, found);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 /// Absence is spelled one way on every field a document can be read into.
 ///
 /// A field carrying `skip_serializing_if = "Option::is_none"` is written by
@@ -631,6 +836,20 @@ fn every_hand_written_deserialize_states_its_coverage() {
 /// Offenders are named by `file:line`.
 #[test]
 fn every_read_optional_field_refuses_a_null_spelling() {
+    let definitions = shim_definitions();
+    for helper in NULL_REFUSING_HELPERS {
+        if helper.contains("::") {
+            continue;
+        }
+        let defined_by = definitions
+            .get(*helper)
+            .unwrap_or_else(|| panic!("{helper} is allowlisted but no source defines it"));
+        assert_eq!(
+            defined_by,
+            &BTreeSet::from(["named_optional_field".to_owned()]),
+            "{helper} is allowlisted as refusing null, but it is defined by {defined_by:?}"
+        );
+    }
     let (readable, offenders) = optional_absence_census();
     assert!(
         readable > 0,
@@ -638,10 +857,79 @@ fn every_read_optional_field_refuses_a_null_spelling() {
     );
     assert!(
         offenders.is_empty(),
-        "{} optional field(s) skip on `None` and state no deserialize_with, so `null` and an absent key reach the same value:\n{}",
+        "{} optional field(s) skip on `None` and state no helper that refuses `null`, so `null` and an absent key reach the same value:\n{}",
         offenders.len(),
         offenders.join("\n")
     );
+}
+
+/// The macro every field-deserializer shim is defined by, keyed by shim name.
+///
+/// A shim is a `named_field!` or `named_optional_field!` item invocation; the
+/// macro's first token is the shim's own name. The source is parsed, so an
+/// invocation wrapped over several lines or nested in an inline module reads
+/// the same. A name defined twice carries both macros, which is what lets the
+/// allowlist above refuse a shim that only some of its definitions guard.
+fn shim_definitions() -> std::collections::BTreeMap<String, BTreeSet<String>> {
+    fn walk(
+        items: &[syn::Item],
+        found: &mut std::collections::BTreeMap<String, BTreeSet<String>>,
+    ) {
+        for item in items {
+            match item {
+                syn::Item::Macro(invocation) => {
+                    let Some(macro_name) = invocation.mac.path.segments.last() else {
+                        continue;
+                    };
+                    let macro_name = macro_name.ident.to_string();
+                    if macro_name != "named_field" && macro_name != "named_optional_field" {
+                        continue;
+                    }
+                    let mut tokens = Vec::new();
+                    flatten_tokens(&invocation.mac.tokens, &mut tokens);
+                    let Some(shim) = tokens.first() else { continue };
+                    found
+                        .entry(shim.clone())
+                        .or_default()
+                        .insert(macro_name);
+                }
+                syn::Item::Mod(module) => {
+                    if let Some((_, nested)) = &module.content {
+                        walk(nested, found);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("the repository root sits two levels above the crate manifest")
+        .to_path_buf();
+    let mut found = std::collections::BTreeMap::new();
+    for source in ["crates/cadmpeg-ir/src", "crates/cadmpeg-core/src"] {
+        let mut files = Vec::new();
+        collect_rust_sources(&root.join(source), &mut files);
+        files.sort();
+        for file in files {
+            let relative = file
+                .strip_prefix(&root)
+                .expect("a collected source sits under the repository root")
+                .to_string_lossy()
+                .replace('\\', "/");
+            if is_test_path(&relative) {
+                continue;
+            }
+            let text = std::fs::read_to_string(&file).expect("read source");
+            let parsed = syn::parse_file(&text)
+                .map_err(|error| format!("{relative} does not parse: {error}"))
+                .expect("every source file in the wire crates parses");
+            walk(&parsed.items, &mut found);
+        }
+    }
+    found
 }
 
 /// The count of readable types visited, and every `file:line` where one of
@@ -769,12 +1057,46 @@ fn derive_list_names_deserialize(attribute: &syn::Attribute) -> bool {
     flat.iter().any(|token| token == "Deserialize")
 }
 
-/// Records every field of `fields` that skips on `None` and states no
-/// `deserialize_with`.
+/// The `deserialize_with` helpers that refuse an explicit `null` at their key.
+///
+/// Each entry was read at its definition, not inferred from its name.
+/// `cadmpeg_core::absent_key::present` implements both `visit_unit` and
+/// `visit_none` as the refusal, so neither serde path admits `null`, and
+/// `visit_some` delegates to the field's own type; `crate::absent_key::present`
+/// is the same function spelled from inside `cadmpeg-core`. The
+/// `named_optional_field!` shims — `deserialize_position`, `deserialize_scale`,
+/// `deserialize_direction`, `deserialize_rotation_degrees`,
+/// `deserialize_orientation`, `deserialize_line_width`, `deserialize_point_size`,
+/// `deserialize_value` and `deserialize_tolerance` — call it and add the field
+/// name to whatever it refuses. Anything else on a field that skips on `None`
+/// is an offender, because a `deserialize_with` that does not state the refusal
+/// gives `None` a second spelling.
+const NULL_REFUSING_HELPERS: &[&str] = &[
+    "cadmpeg_core::absent_key::present",
+    "crate::absent_key::present",
+    "deserialize_direction",
+    "deserialize_line_width",
+    "deserialize_orientation",
+    "deserialize_point_size",
+    "deserialize_position",
+    "deserialize_rotation_degrees",
+    "deserialize_scale",
+    "deserialize_tolerance",
+    "deserialize_value",
+];
+
+/// Records every field of `fields` that skips on `None` and states no helper
+/// from [`NULL_REFUSING_HELPERS`].
 fn record_unguarded_fields(fields: &syn::Fields, relative: &str, offenders: &mut Vec<String>) {
     for field in fields {
-        let (skips, guarded) = absence_spelling(field);
-        if !skips || guarded {
+        let (skips, helper) = absence_spelling(field);
+        if !skips {
+            continue;
+        }
+        if helper
+            .as_deref()
+            .is_some_and(|helper| NULL_REFUSING_HELPERS.contains(&helper))
+        {
             continue;
         }
         let span = field
@@ -785,15 +1107,19 @@ fn record_unguarded_fields(fields: &syn::Fields, relative: &str, offenders: &mut
             .ident
             .as_ref()
             .map_or_else(|| "<tuple field>".to_owned(), syn::Ident::to_string);
-        offenders.push(format!("{relative}:{} {name}", span.start().line));
+        let stated = helper.map_or_else(
+            || "states no deserialize_with".to_owned(),
+            |helper| format!("states the unlisted helper {helper}"),
+        );
+        offenders.push(format!("{relative}:{} {name} {stated}", span.start().line));
     }
 }
 
-/// Whether this field skips serialization on `None`, and whether it states a
-/// `deserialize_with` (or a `with`) that can refuse an explicit `null`.
-fn absence_spelling(field: &syn::Field) -> (bool, bool) {
+/// Whether this field skips serialization on `None`, and the
+/// `deserialize_with` (or `with`) path it states.
+fn absence_spelling(field: &syn::Field) -> (bool, Option<String>) {
     let mut skips = false;
-    let mut guarded = false;
+    let mut helper = None;
     for attribute in &field.attrs {
         if !attribute.path().is_ident("serde") {
             continue;
@@ -801,15 +1127,17 @@ fn absence_spelling(field: &syn::Field) -> (bool, bool) {
         attribute
             .parse_nested_meta(|meta| {
                 let named_skip = meta.path.is_ident("skip_serializing_if");
-                if meta.path.is_ident("deserialize_with") || meta.path.is_ident("with") {
-                    guarded = true;
-                }
+                let named_helper =
+                    meta.path.is_ident("deserialize_with") || meta.path.is_ident("with");
                 if meta.input.peek(syn::Token![=]) {
                     let literal: syn::Lit = meta.value()?.parse()?;
-                    if named_skip
-                        && matches!(&literal, syn::Lit::Str(text) if text.value() == "Option::is_none")
-                    {
-                        skips = true;
+                    if let syn::Lit::Str(text) = &literal {
+                        if named_skip && text.value() == "Option::is_none" {
+                            skips = true;
+                        }
+                        if named_helper {
+                            helper = Some(text.value());
+                        }
                     }
                 } else {
                     skip_meta_value(&meta)?;
@@ -818,7 +1146,7 @@ fn absence_spelling(field: &syn::Field) -> (bool, bool) {
             })
             .expect("every serde attribute in the wire crates parses as a nested meta list");
     }
-    (skips, guarded)
+    (skips, helper)
 }
 
 /// Every hand-written `Deserialize` impl in the three wire crates, outside
