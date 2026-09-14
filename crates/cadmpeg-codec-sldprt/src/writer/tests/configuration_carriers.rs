@@ -40,7 +40,7 @@ fn encoder_writes_source_less_datum_features() {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use cadmpeg_ir::math::{Point3, Vector3};
 
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.model.bodies[0].name = None;
     ir.model.faces.iter_mut().for_each(|face| face.name = None);
     ir.model
@@ -111,7 +111,7 @@ fn encoder_writes_source_less_neutral_configurations() {
     use cadmpeg_ir::features::{ConfigurationId, DesignConfiguration};
     use std::collections::BTreeMap;
 
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.model.bodies[0].name = None;
     ir.model.faces.iter_mut().for_each(|face| face.name = None);
     ir.model
@@ -636,7 +636,7 @@ fn encoder_writes_source_less_neutral_parameters() {
     };
     use std::collections::BTreeMap;
 
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.model.bodies[0].name = None;
     ir.model.faces.iter_mut().for_each(|face| face.name = None);
     ir.model
@@ -713,7 +713,7 @@ fn encoder_bakes_rigid_body_transform() {
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::transform::Transform;
 
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.model.bodies[0].name = None;
     ir.model.faces.iter_mut().for_each(|face| face.name = None);
     ir.model

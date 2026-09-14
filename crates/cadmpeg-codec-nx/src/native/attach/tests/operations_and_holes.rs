@@ -1147,7 +1147,7 @@ fn nx_container_record_is_not_a_modeling_feature() {
 
 #[test]
 fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let dimensions = [10.0, 20.0, 30.0];
     for axis in 0..3 {
         let mut surfaces = ir
@@ -1359,7 +1359,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
 
 #[test]
 fn nx_sphere_projection_requires_one_complete_spherical_body() {
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let body = ir.model.bodies[0].id.clone();
     let face = ir.model.faces[0].id.clone();
     let surface = ir.model.faces[0].surface.clone();

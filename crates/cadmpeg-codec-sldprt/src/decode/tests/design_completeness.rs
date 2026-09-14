@@ -1219,7 +1219,7 @@ fn incoherent_feature_graph_is_reported_as_design_loss() {
 
 #[test]
 fn incoherent_feature_outputs_are_reported_as_design_loss() {
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.model.features.clear();
     ir.model.parameters.clear();
     let body = ir.model.bodies[0].id.clone();

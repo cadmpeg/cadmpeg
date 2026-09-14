@@ -890,7 +890,7 @@ fn legacy_face_assignment_color_precedes_appearance_base_but_not_brep_color() {
     let assignment_color = Color::new(0.75, 0.25, 0.125, 1.0).expect("valid color");
     let explicit_color = Color::new(0.1, 0.8, 0.2, 1.0).expect("valid color");
     let make_ir = || {
-        let mut ir = cadmpeg_ir::examples::unit_cube();
+        let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
         let face = ir.model.faces[0].id.clone();
         ir.model.attributes.push(SourceAttribute {
             id: "f3d:test:attribute#face-material"
@@ -963,7 +963,7 @@ fn duplicate_face_assignments_reject_conflicting_colors() {
         visual_guid: crate::records::DesignVisualToken::try_from(visual_guid.to_owned()).unwrap(),
         color: Some(Color::new(r, 0.25, 0.5, 1.0).expect("valid color")),
     };
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let error = crate::decode::resolve_face_appearance_bindings(
         &mut ir,
         &[assignment(0.25), assignment(0.75)],
@@ -1102,7 +1102,7 @@ fn decode_transfers_generated_custom_attribute() {
 fn source_less_tolerant_vertex_retains_custom_attribute_ownership() {
     use cadmpeg_ir::attributes::AttributeTarget;
 
-    let mut source = cadmpeg_ir::examples::unit_cube();
+    let mut source = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     source.source = None;
     source.set_native_unknowns("f3d", &[]).unwrap();
     let vertex = source.model.vertices[0].id.clone();
@@ -1273,7 +1273,7 @@ fn an_unconstrained_sketch_link_sense_round_trips_in_its_source_spelling() {
         "4294967295 is the disabled sense, not a stored one"
     );
 
-    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let coedge = source_less.model.coedges[0].id.clone();
     f3d_native_mut(&mut source_less).sketch_curve_links = vec![SketchCurveLink {
         id: "f3d:generated:sketch-curve-link#0".into(),

@@ -468,7 +468,7 @@ fn writer_round_trips_every_exact_step_pcurve_family(
 
 #[test]
 pub(crate) fn writer_round_trips_rigid_body_placements() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.bodies[0].transform = Some(
         cadmpeg_ir::transform::Transform::affine([
             [0.0, -1.0, 0.0, 15.0],
@@ -494,7 +494,7 @@ pub(crate) fn writer_round_trips_rigid_body_placements() {
 
 #[test]
 pub(crate) fn writer_round_trips_product_body_ownership() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let product =
         cadmpeg_ir::ids::ProductDefinitionId::mint("test:model:product-definition#product-0")
             .expect("identity grammar");
@@ -549,7 +549,7 @@ pub(crate) fn writer_round_trips_product_body_ownership() {
 
 #[test]
 pub(crate) fn writer_round_trips_edge_based_wire_bodies() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let edge = ir.model.edges[0].clone();
     let curve = edge.curve().clone().expect("cube edge curve");
     ir.model.edges.retain(|candidate| candidate.id == edge.id);
@@ -617,7 +617,7 @@ pub(crate) fn writer_round_trips_edge_based_wire_bodies() {
 
 #[test]
 fn writer_round_trips_standalone_points_and_curves() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.curves.truncate(1);
     ir.model.surfaces.clear();
     ir.model.bodies.clear();
@@ -647,7 +647,7 @@ fn writer_round_trips_standalone_points_and_curves() {
 
 #[test]
 pub(crate) fn ap242_writer_round_trips_indexed_tessellation_and_exact_body_link() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.tessellations.push(
         Tessellation::new(
             "synthetic:test:tessellation#mesh-0",
@@ -773,7 +773,7 @@ pub(crate) fn standalone_geometry_uses_general_shape_representation() {
 
 #[test]
 fn cube_has_valid_part21_envelope() {
-    let s = export(&unit_cube());
+    let s = export(&unit_cube().expect("unit cube fixture is admitted"));
     assert!(s.starts_with("ISO-10303-21;\n"));
     assert!(s.contains("HEADER;"));
     assert!(s.contains("FILE_SCHEMA(('AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }'));"));
@@ -785,7 +785,7 @@ fn cube_has_valid_part21_envelope() {
 
 #[test]
 fn cube_emits_full_brep_hierarchy() {
-    let s = export(&unit_cube());
+    let s = export(&unit_cube().expect("unit cube fixture is admitted"));
     assert!(s.contains("MANIFOLD_SOLID_BREP"));
     assert!(s.contains("CLOSED_SHELL"));
     // Six planar faces, twelve unique edges, eight vertices.
@@ -803,7 +803,7 @@ fn cube_emits_full_brep_hierarchy() {
 
 #[test]
 fn cube_product_and_context_boilerplate_present() {
-    let s = export(&unit_cube());
+    let s = export(&unit_cube().expect("unit cube fixture is admitted"));
     for kw in [
         "APPLICATION_CONTEXT",
         "APPLICATION_PROTOCOL_DEFINITION",
@@ -825,7 +825,7 @@ fn cube_product_and_context_boilerplate_present() {
 fn every_reference_resolves() {
     // Collect declared instance ids (#n = ...) and every #n referenced anywhere;
     // a valid Part 21 graph references only declared instances.
-    let s = export(&unit_cube());
+    let s = export(&unit_cube().expect("unit cube fixture is admitted"));
     let mut declared = std::collections::HashSet::new();
     for line in s.lines() {
         if let Some(rest) = line.strip_prefix('#') {
@@ -870,7 +870,7 @@ fn every_reference_resolves() {
 fn reports_entity_counts_and_no_geometry_loss_for_cube() {
     let mut buf = Vec::new();
     let report = write_step(
-        &unit_cube(),
+        &unit_cube().expect("unit cube fixture is admitted"),
         &mut buf,
         StepSchema::Ap214,
         &StepWriteOptions::default(),
@@ -888,7 +888,7 @@ fn writer_round_trips_binding_scoped_appearance_visibility() {
     use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
     use cadmpeg_ir::ids::AppearanceId;
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let appearance = AppearanceId::mint("test:model:appearance#hidden").expect("identity grammar");
     ir.model.appearances.push(Appearance {
         id: appearance.clone(),
@@ -947,7 +947,7 @@ fn writer_round_trips_surface_appearance_transparency() {
     use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
     use cadmpeg_ir::ids::AppearanceId;
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let appearance =
         AppearanceId::mint("test:model:appearance#transparent").expect("identity grammar");
     let second_appearance =
@@ -1038,7 +1038,7 @@ fn writer_round_trips_presentation_layer_visibility() {
     use cadmpeg_ir::ids::LayerId;
     use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let body = ir.model.bodies[0].id.clone();
     ir.model.presentation_layers.push(PresentationLayer {
         id: LayerId::mint("test:model:layer#hidden").expect("identity grammar"),
@@ -1080,7 +1080,7 @@ fn writer_round_trips_empty_presentation_layer_label() {
     use cadmpeg_ir::ids::LayerId;
     use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let body = ir.model.bodies[0].id.clone();
     ir.model.presentation_layers.push(PresentationLayer {
         id: LayerId::mint("test:model:layer#unnamed").expect("identity grammar"),
@@ -1267,7 +1267,7 @@ pub(crate) fn nurbs_surface_grid_orientation_is_u_major() {
 
 #[test]
 fn v1_document_uses_canonical_millimeter_unit() {
-    let ir = unit_cube();
+    let ir = unit_cube().expect("unit cube fixture is admitted");
     let s = export(&ir);
     assert!(s.contains("SI_UNIT(.MILLI.,.METRE.)"));
     assert!(!s.contains("CONVERSION_BASED_UNIT"));
@@ -1276,14 +1276,14 @@ fn v1_document_uses_canonical_millimeter_unit() {
 #[test]
 fn real_formatting_always_has_decimal_point() {
     // Coordinates like 10 must serialize as 10. (a Part 21 real), never 10.
-    let s = export(&unit_cube());
+    let s = export(&unit_cube().expect("unit cube fixture is admitted"));
     assert!(s.contains("10.")); // cube corner coordinate
     assert!(!s.contains("(10,")); // no bare integer coordinate
 }
 
 #[test]
 fn writer_emits_both_carriers_for_mixed_general_bodies() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let edge = ir.model.edges[0].id.clone();
     ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::General;
     {
@@ -1311,7 +1311,7 @@ fn writer_emits_both_carriers_for_mixed_general_bodies() {
 
 #[test]
 fn writer_orders_edge_loop_coedges_by_oriented_endpoints() {
-    let mut source = unit_cube();
+    let mut source = unit_cube().expect("unit cube fixture is admitted");
     let loop_ = source
         .model
         .loops
@@ -1361,7 +1361,13 @@ fn writer_declares_each_supported_target_schema_exactly() {
             ..StepWriteOptions::default()
         };
         let mut bytes = Vec::new();
-        write_step(&unit_cube(), &mut bytes, schema, &options).expect("write target schema");
+        write_step(
+            &unit_cube().expect("unit cube fixture is admitted"),
+            &mut bytes,
+            schema,
+            &options,
+        )
+        .expect("write target schema");
         let text = std::str::from_utf8(&bytes).expect("ASCII STEP output");
         assert!(text.contains(&format!("FILE_SCHEMA(('{}'));", schema.file_schema())));
         StepCodec::default()

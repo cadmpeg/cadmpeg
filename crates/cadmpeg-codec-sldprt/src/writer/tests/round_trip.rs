@@ -21,7 +21,7 @@ use crate::test_support::{sldprt_with_body, triangle_body};
 use crate::SldprtCodec;
 
 fn source_less_spatial_line(start: Point3, end: Point3) -> cadmpeg_ir::CadIr {
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.model.bodies[0].name = None;
     ir.model.faces.iter_mut().for_each(|face| face.name = None);
     ir.model

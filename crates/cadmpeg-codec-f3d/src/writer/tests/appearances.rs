@@ -32,7 +32,7 @@ fn generated_source_less_writes_unassigned_protein_appearance() {
     let visual_guid = "11111111-2222-3333-4444-555555555555";
     let appearance_id =
         AppearanceId::mint("generated:test:appearance#0").expect("identity grammar");
-    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     source_less.model.appearances = vec![Appearance {
         id: appearance_id.clone(),
         name: Some("Prism-Generated".into()),
@@ -89,7 +89,7 @@ fn generated_source_less_writes_unassigned_protein_appearance() {
 fn generated_source_less_rejects_material_assignment_without_presentation_graph() {
     use crate::records::DesignMaterialAssignment;
 
-    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     f3d_native_mut(&mut source_less).design_material_assignments = vec![DesignMaterialAssignment {
         id: "f3d:generated:material-assignment#0".into(),
         asm_body_key: 42,
@@ -122,7 +122,7 @@ fn generated_source_less_rejects_material_assignment_without_presentation_graph(
 
 #[test]
 fn generated_source_less_rejects_collapsed_visibility_body_bindings() {
-    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     source_less.model.bodies[0].visible = Some(false);
     let body = source_less.model.bodies[0].id.clone();
     f3d_native_mut(&mut source_less).body_visibilities = [985, 986]

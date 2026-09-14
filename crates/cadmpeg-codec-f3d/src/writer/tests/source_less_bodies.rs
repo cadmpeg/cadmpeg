@@ -23,7 +23,7 @@ use crate::F3dCodec;
 
 #[test]
 fn generated_source_less_unit_cube_writes_body_transform() {
-    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let expected = cadmpeg_ir::transform::Transform::affine([
         [0.0, -1.0, 0.0, 20.0],
         [1.0, 0.0, 0.0, -30.0],
@@ -50,7 +50,7 @@ fn generated_source_less_unit_cube_writes_body_transform() {
 fn generated_source_less_unit_cube_writes_body_and_face_colors() {
     use cadmpeg_ir::topology::Color;
 
-    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let body_color = Color::new(0.1, 0.2, 0.3, 1.0).expect("valid color");
     let face_color = Color::new(0.65, 0.45, 0.25, 1.0).expect("valid color");
     source_less.model.bodies[0].color = Some(body_color);
@@ -77,7 +77,7 @@ fn generated_source_less_unit_cube_writes_body_and_face_colors() {
 
 #[test]
 fn generated_source_less_rejects_translucent_direct_color() {
-    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     source_less.model.bodies[0].color =
         Some(cadmpeg_ir::topology::Color::new(0.1, 0.2, 0.3, 0.5).expect("valid color"));
 
@@ -96,7 +96,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     use cadmpeg_ir::attributes::AttributeTarget;
     use cadmpeg_ir::topology::Color;
 
-    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     source_less.model.bodies[0].color = Some(Color::new(0.2, 0.4, 0.6, 1.0).expect("valid color"));
     source_less.model.faces[0].color = Some(Color::new(0.7, 0.3, 0.1, 1.0).expect("valid color"));
     let body_id = source_less.model.bodies[0].id.clone();
@@ -332,7 +332,7 @@ fn generated_source_less_rejects_lossy_design_link_metadata() {
     use crate::records::{PersistentDesignLink, SketchCurveLink};
     use cadmpeg_ir::attributes::AttributeTarget;
 
-    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let body = source_less.model.bodies[0].id.clone();
     let coedge = source_less.model.coedges[0].id.clone();
     let mut native = f3d_native_mut(&mut source_less);
@@ -377,7 +377,7 @@ fn generated_source_less_rejects_lossy_design_link_metadata() {
 fn generated_source_less_rejects_collapsed_native_topology_metadata() {
     use cadmpeg_asm::brep::records::{EdgeContinuity, TolerantVertexTail};
 
-    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let edge = source_less.model.edges[0].id.clone();
     let vertex = source_less.model.vertices[0].id.clone();
     {
@@ -428,7 +428,7 @@ fn generated_source_less_rejects_collapsed_native_topology_metadata() {
 
 #[test]
 fn generated_source_less_writes_two_independent_cube_bodies() {
-    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let second_json = source_less
         .to_canonical_json()
         .expect("canonical cube JSON")

@@ -294,7 +294,7 @@ fn active_configuration_partition_disagreement_is_reported() {
 
 #[test]
 fn incoherent_configuration_bodies_are_reported() {
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let configuration = |id: &str, ordinal, bodies| DesignConfiguration {
         id: ConfigurationId::mint(id).expect("identity grammar"),
         ordinal,

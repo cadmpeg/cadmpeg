@@ -1191,7 +1191,7 @@ fn semantic_losses(
                     code.note(message).with_provenance(
                         cadmpeg_ir::SourceProvenance::in_stream(
                             "fcstd",
-                            const { cadmpeg_ir::StreamName::literal("Document.xml") },
+                            cadmpeg_ir::stream_name!("Document.xml"),
                             0,
                         )
                         .with_optional_tag(feature.native_ref.clone()),
@@ -1211,7 +1211,7 @@ fn semantic_losses(
                     .with_provenance(
                         cadmpeg_ir::SourceProvenance::in_stream(
                             "fcstd",
-                            const { cadmpeg_ir::StreamName::literal("Document.xml") },
+                            cadmpeg_ir::stream_name!("Document.xml"),
                             0,
                         )
                         .with_optional_tag(entity.native_ref.clone()),
@@ -1232,7 +1232,7 @@ fn semantic_losses(
                     .with_provenance(
                         cadmpeg_ir::SourceProvenance::in_stream(
                             "fcstd",
-                            const { cadmpeg_ir::StreamName::literal("Document.xml") },
+                            cadmpeg_ir::stream_name!("Document.xml"),
                             0,
                         )
                         .with_optional_tag(constraint.native_ref.clone()),

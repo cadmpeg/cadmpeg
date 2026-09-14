@@ -39,7 +39,7 @@ fn product_descriptions_transfer_from_product_and_definition() {
         [Some("Product description"), Some("Fallback description")]
     );
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model
         .product_definitions
         .push(cadmpeg_ir::products::ProductDefinition {
@@ -640,7 +640,7 @@ fn nested_drawing_mapped_items_do_not_place_exact_bodies() {
 
 #[test]
 fn two_dimensional_mapping_does_not_change_body_placement() {
-    let mut source = export(&unit_cube());
+    let mut source = export(&unit_cube().expect("unit cube fixture is admitted"));
     let representation_line = source
         .lines()
         .find(|line| line.contains("ADVANCED_BREP_SHAPE_REPRESENTATION("))
@@ -1320,7 +1320,7 @@ fn decode_applies_canonical_cartesian_operator_to_mapped_body() {
         [0.0, 0.0, 1.0, 2.0],
     ])
     .expect("affine transform");
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.bodies[0].transform = Some(transform);
     let mut output = Vec::new();
     write_step(

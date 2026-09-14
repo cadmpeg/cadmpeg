@@ -204,7 +204,8 @@ fn phase5_freeze_export_precondition_admissibility_fixtures() {
     // :50 precondition is full validate — empty passes validate.
     assert!(cadmpeg_ir::validate_neutral(&accepted, Vec::new()).is_ok());
     let rejected =
-        cadmpeg_ir::validate::admissibility_freeze::rejected_missing_point("sldprt:test");
+        cadmpeg_ir::validate::admissibility_freeze::rejected_missing_point("sldprt:test")
+            .expect("fixture identities are valid");
     assert!(!cadmpeg_ir::validate_neutral(&rejected, Vec::new()).is_ok());
 }
 

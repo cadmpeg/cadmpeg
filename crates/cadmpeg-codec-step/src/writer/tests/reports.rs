@@ -128,7 +128,7 @@ fn edgeless_doc() -> CadIr {
 
 #[test]
 fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.assets.push(
         cadmpeg_ir::assets::Asset::try_new(
             cadmpeg_ir::assets::AssetId::mint("test:model:asset#texture")
@@ -263,7 +263,7 @@ fn writer_reports_unrepresented_topology_metadata() {
 
 #[test]
 fn writer_reports_root_occurrence_scale() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let product = cadmpeg_ir::ids::ProductDefinitionId::mint("test:model:product#scaled")
         .expect("identity grammar");
     ir.model
@@ -312,7 +312,7 @@ fn writer_reports_root_occurrence_scale() {
 
 #[test]
 fn writer_reports_edge_loop_without_a_continuous_ordering() {
-    let mut source = unit_cube();
+    let mut source = unit_cube().expect("unit cube fixture is admitted");
     let edge_id = source
         .model
         .loops
@@ -356,7 +356,7 @@ fn ap242_writer_reports_unrepresented_tessellation_triangle_metadata() {
     use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
     use cadmpeg_ir::tessellation::{TessellationTextureAssignment, TessellationTriangleGroup};
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let texture = AssetId::mint("synthetic:test:asset#0").expect("identity grammar");
     ir.model.assets.push(
         Asset::try_new(
@@ -420,7 +420,7 @@ fn ap242_writer_reports_unrepresented_tessellation_triangle_metadata() {
 
 #[test]
 fn writer_reports_occurrence_with_parent_without_local_product() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let product =
         cadmpeg_ir::ids::ProductDefinitionId::mint("test:model:product-definition#product-child")
             .expect("identity grammar");
@@ -487,7 +487,7 @@ fn writer_reports_occurrence_with_parent_without_local_product() {
 
 #[test]
 fn writer_reports_region_without_shells() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.regions[0].shells.clear();
 
     let report = write_step(
@@ -505,7 +505,7 @@ fn writer_reports_region_without_shells() {
 
 #[test]
 fn writer_reports_topology_without_an_emitted_region() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.regions.clear();
     ir.model.bodies[0].regions.clear();
 
@@ -528,7 +528,7 @@ fn writer_reports_topology_without_an_emitted_region() {
 
 #[test]
 fn writer_reports_wire_region_without_connected_edges() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Wire;
     ir.model.shells[0]
         .edit_topology(|faces, wire_edges, _| {
@@ -557,7 +557,7 @@ fn writer_reports_wire_region_without_connected_edges() {
 
 #[test]
 fn writer_reports_wire_region_with_missing_shell_record() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Wire;
     ir.model.regions[0].shells =
         vec![
@@ -581,7 +581,7 @@ fn writer_reports_wire_region_with_missing_shell_record() {
 
 #[test]
 fn writer_reports_hidden_body_without_step_item() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let body = ir.model.bodies[0].id.clone();
     ir.model.bodies[0].visible = Some(false);
     ir.model.regions.clear();
@@ -603,7 +603,7 @@ fn writer_reports_dangling_appearance_binding() {
     use cadmpeg_ir::appearance::{AppearanceBinding, AppearanceTarget};
     use cadmpeg_ir::ids::AppearanceId;
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let binding = "test:model:appearance-binding#dangling";
     let appearance = AppearanceId::mint("test:model:appearance#missing").expect("identity grammar");
     ir.model.appearance_bindings.push(AppearanceBinding {
@@ -635,7 +635,7 @@ fn writer_reports_appearance_without_base_color() {
     use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
     use cadmpeg_ir::ids::AppearanceId;
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let appearance =
         AppearanceId::mint("test:model:appearance#colorless").expect("identity grammar");
     let binding = "test:model:appearance-binding#colorless";
@@ -680,7 +680,7 @@ fn duplicate_target_style_ir(body_target: bool, reverse: bool, same_color: bool)
     use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
     use cadmpeg_ir::ids::AppearanceId;
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let target = if body_target {
         AppearanceTarget::Body(ir.model.bodies[0].id.clone())
     } else {
@@ -800,7 +800,7 @@ fn writer_rejects_order_dependent_duplicate_target_styles() {
 
 #[test]
 fn writer_reports_reduced_tessellation_metadata_and_body_links() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.tessellations.push(
         Tessellation::new(
             "test:step:tessellation#metadata",
@@ -854,7 +854,7 @@ fn writer_reports_reduced_tessellation_metadata_and_body_links() {
 
 #[test]
 fn writer_reports_each_enclosing_topology_reduction_and_strict_mode_rejects() {
-    let mut outer_face = unit_cube();
+    let mut outer_face = unit_cube().expect("unit cube fixture is admitted");
     outer_face.model.faces[0].loops = cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new());
     let report = write_step(
         &outer_face,
@@ -869,7 +869,7 @@ fn writer_reports_each_enclosing_topology_reduction_and_strict_mode_rejects() {
             && loss.message.contains("has no writable bounds")
     }));
 
-    let mut inner_loop = unit_cube();
+    let mut inner_loop = unit_cube().expect("unit cube fixture is admitted");
     let face_loops = inner_loop.model.faces[0]
         .loops
         .iter()
@@ -893,7 +893,7 @@ fn writer_reports_each_enclosing_topology_reduction_and_strict_mode_rejects() {
             && loss.message.contains("has no writable topology")
     }));
 
-    let mut missing_edge = unit_cube();
+    let mut missing_edge = unit_cube().expect("unit cube fixture is admitted");
     missing_edge.model.coedges[0].edge =
         cadmpeg_ir::ids::EdgeId::mint("step:data:edge#missing").expect("identity grammar");
     let report = write_step(
@@ -909,7 +909,7 @@ fn writer_reports_each_enclosing_topology_reduction_and_strict_mode_rejects() {
             && loss.message.contains("edge")
     }));
 
-    let mut missing_void = unit_cube();
+    let mut missing_void = unit_cube().expect("unit cube fixture is admitted");
     missing_void.model.regions[0].shells.push(
         cadmpeg_ir::ids::ShellId::mint("step:data:shell#missing-void").expect("identity grammar"),
     );
@@ -1064,7 +1064,7 @@ fn consumed_unit_and_pmi_wrapper_records_are_strictly_writable() {
 
 #[test]
 fn ap203e1_does_not_emit_invisibility_entities() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.bodies[0].visible = Some(false);
     let mut output = Vec::new();
     let report = write_step(
@@ -1086,7 +1086,7 @@ fn ap203e1_reports_hidden_appearance_visibility_loss() {
     use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
     use cadmpeg_ir::ids::AppearanceId;
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let appearance = AppearanceId::mint("test:model:appearance#hidden").expect("identity grammar");
     ir.model.appearances.push(Appearance {
         id: appearance.clone(),
@@ -1135,7 +1135,7 @@ fn ap203e1_reports_hidden_presentation_layer_visibility_loss() {
     use cadmpeg_ir::ids::LayerId;
     use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let body = ir.model.bodies[0].id.clone();
     ir.model.presentation_layers.push(PresentationLayer {
         id: LayerId::mint("test:model:layer#hidden").expect("identity grammar"),
@@ -1296,7 +1296,7 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
         layer: None,
         instance_path: Vec::new(),
     };
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.subds.push(cadmpeg_ir::SubdSurface {
         id: cadmpeg_ir::ids::SubdId::mint("test:step:subd#0").expect("identity grammar"),
         scheme: cadmpeg_ir::SubdScheme::CatmullClark,
@@ -1347,7 +1347,7 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
 
 #[test]
 fn face_on_unknown_surface_is_skipped_and_reported() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let target = ir.model.faces[0].surface.as_str().to_owned();
     for s in &mut ir.model.surfaces {
         if s.id.as_str() == target {
@@ -1389,7 +1389,7 @@ fn face_on_unknown_surface_is_skipped_and_reported() {
 
 #[test]
 fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
-    let mut polygonal = unit_cube();
+    let mut polygonal = unit_cube().expect("unit cube fixture is admitted");
     let surface_id = polygonal.model.faces[0].surface.clone();
     polygonal
         .model
@@ -1421,7 +1421,7 @@ fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
             && loss.message.contains("unknown or STEP-unsupported surface")
     }));
 
-    let mut nested_unknown = unit_cube();
+    let mut nested_unknown = unit_cube().expect("unit cube fixture is admitted");
     let curve_id = nested_unknown.model.edges[0].curve().clone().unwrap();
     nested_unknown
         .model
@@ -1528,7 +1528,7 @@ fn procedural_curve_outside_the_writable_set_is_reported_not_panicked() {
 
 #[test]
 fn signed_analytic_radius_normalization_is_reported() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
         cadmpeg_ir::geometry::SphereSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
@@ -1556,7 +1556,7 @@ fn signed_analytic_radius_normalization_is_reported() {
 
 #[test]
 fn elliptical_cone_reduction_is_reported() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
         cadmpeg_ir::geometry::ConeSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
@@ -1586,7 +1586,7 @@ fn elliptical_cone_reduction_is_reported() {
 
 #[test]
 fn procedural_construction_reduction_is_reported() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let owner = ir.model.curves[0].id.clone();
     let procedural = cadmpeg_ir::geometry::ProceduralCurve::new(
         ProceduralCurveId::mint("test:model:procedural-curve#generated_int_cur")
@@ -1624,7 +1624,7 @@ fn procedural_construction_reduction_is_reported() {
 
 #[test]
 fn source_native_record_reduction_is_reported() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.native.namespace_mut("f3d").arenas_mut().insert(
         "asm_histories".into(),
         vec![

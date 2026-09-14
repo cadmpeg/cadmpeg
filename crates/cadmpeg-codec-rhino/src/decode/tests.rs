@@ -1143,7 +1143,8 @@ fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
 #[test]
 fn phase5_freeze_shared_admissibility_fixtures() {
     let accepted = cadmpeg_ir::validate::admissibility_freeze::accepted_empty();
-    let rejected = cadmpeg_ir::validate::admissibility_freeze::rejected_missing_point("rhino:test");
+    let rejected = cadmpeg_ir::validate::admissibility_freeze::rejected_missing_point("rhino:test")
+        .expect("fixture identities are valid");
     let annotations = cadmpeg_ir::Annotations::default();
 
     assert!(cadmpeg_ir::admit_with_annotations(

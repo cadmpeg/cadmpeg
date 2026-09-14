@@ -433,7 +433,7 @@ fn generated_source_less_writes_general_face_and_point_wire_body() {
 
 #[test]
 fn generated_source_less_writes_solid_and_wire_bodies_together() {
-    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let decoded_wire = F3dCodec
         .decode(
             &mut Cursor::new(f3d_with_smbh(&synthetic_wire_body_smbh())),

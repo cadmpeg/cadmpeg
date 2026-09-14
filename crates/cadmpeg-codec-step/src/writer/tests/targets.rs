@@ -25,7 +25,7 @@ fn source_declaring(identifier: &str) -> cadmpeg_ir::codec::DecodeResult {
     let written = StepSchema::Ap242Edition3;
     let mut bytes = Vec::new();
     crate::write_step(
-        &unit_cube(),
+        &unit_cube().expect("unit cube fixture is admitted"),
         &mut bytes,
         written,
         &StepWriteOptions::default(),
@@ -318,7 +318,7 @@ fn a_cross_format_conversion_writes_the_catalog_default() {
         .expect("the catalog has a default");
     assert_eq!(default.id.as_str(), "step:ap214");
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.source = Some(SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
             cadmpeg_core::dialect_id!("rhino:archive-50"),
@@ -352,12 +352,12 @@ fn nothing_to_inherit_falls_to_the_catalog_default() {
         .expect("the catalog has a default");
     assert_eq!(default.id.as_str(), "step:ap214");
 
-    let sourceless = unit_cube();
+    let sourceless = unit_cube().expect("unit cube fixture is admitted");
     let plan = inherit(&encoder, &sourceless).expect("a sourceless document takes the default");
     assert_eq!(target_of(&plan), Some("step:ap214".to_owned()));
     assert!(written_text(plan).contains("AUTOMOTIVE_DESIGN"));
 
-    let mut foreign = unit_cube();
+    let mut foreign = unit_cube().expect("unit cube fixture is admitted");
     foreign.source = Some(SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
             cadmpeg_core::dialect_id!("iges:5.3-fixed-ascii"),
@@ -463,7 +463,7 @@ fn the_catalog_is_the_schemas_the_writer_emits() {
 /// `step:ap242`, not any edition.
 #[test]
 fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
-    let cube = unit_cube();
+    let cube = unit_cube().expect("unit cube fixture is admitted");
     for schema in StepSchema::ALL {
         let plan = StepCodec::default()
             .plan(

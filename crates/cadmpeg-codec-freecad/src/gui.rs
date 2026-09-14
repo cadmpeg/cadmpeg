@@ -16,7 +16,7 @@ use cadmpeg_ir::presentation::{
 };
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::Color;
-use cadmpeg_ir::{SourceProvenance, StreamName};
+use cadmpeg_ir::SourceProvenance;
 
 use crate::brep::ShapePayloadRecord;
 use crate::loss::FreecadLossCode;
@@ -313,7 +313,7 @@ fn transfer_schema_one(
         let property_provenance = |property_name: &str, type_name: &str| {
             SourceProvenance::in_stream(
                 "fcstd",
-                const { StreamName::literal("GuiDocument.xml") },
+                cadmpeg_ir::stream_name!("GuiDocument.xml"),
                 property_nodes
                     .iter()
                     .find(|property| {
@@ -3711,7 +3711,7 @@ fn transfer_shape_appearances(
                 .with_provenance(
                     SourceProvenance::in_stream(
                         "fcstd",
-                        const { StreamName::literal("GuiDocument.xml") },
+                        cadmpeg_ir::stream_name!("GuiDocument.xml"),
                         property.xml.start(),
                     )
                     .with_tag(property.id.clone()),

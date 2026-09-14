@@ -33,7 +33,7 @@ fn encoder_writes_source_less_curved_sketches() {
         scalar::{Angle, Length},
     };
 
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.model.bodies[0].name = None;
     ir.model.faces.iter_mut().for_each(|face| face.name = None);
     ir.model
@@ -889,7 +889,7 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
         Sketch, SketchEntity, SketchEntityId, SketchGeometryDefinition, SketchId,
     };
 
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.model.bodies[0].name = None;
     ir.model.faces.iter_mut().for_each(|face| face.name = None);
     ir.model
@@ -989,7 +989,7 @@ fn encoder_writes_source_less_native_features() {
     };
     use std::collections::BTreeMap;
 
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.model.bodies[0].name = None;
     ir.model.faces.iter_mut().for_each(|face| face.name = None);
     ir.model

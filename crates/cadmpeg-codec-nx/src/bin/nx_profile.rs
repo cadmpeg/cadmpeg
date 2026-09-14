@@ -1342,7 +1342,7 @@ mod tests {
 
     #[test]
     fn effective_face_color_inherits_unique_body_color() {
-        let mut ir = cadmpeg_ir::examples::unit_cube();
+        let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
         let body_color = Color::new(0.2, 0.3, 0.4, 1.0).expect("valid color");
         ir.model.bodies[0].color = Some(body_color);
 

@@ -166,7 +166,7 @@ fn preserved_source_pipeline_applies_semantic_geometry_edits_without_losing_arch
 
 #[test]
 fn source_less_writer_pipeline_emits_a_fresh_valid_archive() {
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.source = None;
     drop(f3d_native_mut(&mut ir));
     let mut bytes = Vec::new();

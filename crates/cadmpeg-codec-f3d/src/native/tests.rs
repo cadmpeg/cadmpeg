@@ -409,7 +409,7 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
             && matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(ref curve)) if *curve == expected)
     }));
 
-    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let generated_curve_id = cadmpeg_ir::ids::CurveId::mint("generated:test:tolerant-use-curve#0")
         .expect("identity grammar");
     source_less.model.curves.push(cadmpeg_ir::geometry::Curve {

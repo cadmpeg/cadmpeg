@@ -8,7 +8,7 @@ use cadmpeg_ir::{FidelityResolution, RetainedSourceRecord, SourceFidelity};
 use crate::{loss::F3dLossCode, F3dCodec};
 
 fn sourced_ir(dialect: &'static str) -> CadIr {
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.source = Some(SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
             cadmpeg_core::dialect::DialectId::parse(dialect).expect("test id has dialect grammar"),

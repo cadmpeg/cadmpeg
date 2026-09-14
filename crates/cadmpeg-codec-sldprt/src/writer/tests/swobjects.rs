@@ -77,7 +77,7 @@ fn semantic_writer_rejects_edits_to_retained_swobjects_semantics() {
 
 #[test]
 fn encoder_writes_source_less_ir() {
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.model.bodies[0].name = None;
     ir.model.faces.iter_mut().for_each(|face| face.name = None);
     ir.model
@@ -112,7 +112,7 @@ fn encoder_writes_source_less_ir() {
 fn semantic_writer_emits_face_records_deterministically() {
     use cadmpeg_ir::topology::Color;
 
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.model.bodies[0].name = None;
     ir.model.faces.iter_mut().for_each(|face| face.name = None);
     ir.model
@@ -153,7 +153,7 @@ fn encoder_rejects_source_less_unresolved_extrusion_profile() {
         FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
     };
 
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.model.features.push(Feature {
         id: FeatureId::mint("synthetic:test:feature#extrude").expect("identity grammar"),
         ordinal: 0,
@@ -217,7 +217,7 @@ fn encoder_writes_source_less_line_sketches() {
         scalar::Angle,
     };
 
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.model.bodies[0].name = None;
     ir.model.faces.iter_mut().for_each(|face| face.name = None);
     ir.model
@@ -701,7 +701,7 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
         SpatialSketchGeometryDefinition, SpatialSketchId,
     };
 
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.model.bodies[0].name = None;
     ir.model.faces.iter_mut().for_each(|face| face.name = None);
     ir.model
@@ -864,7 +864,7 @@ fn encoder_rejects_unrepresentable_source_less_sketch_constraints() {
         SketchId,
     };
 
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let sketch_id = SketchId::mint("synthetic:test:sketch#profile").unwrap();
     let entity_id = SketchEntityId::mint("synthetic:test:sketch-entity#line").unwrap();
     ir.model.sketches.push(Sketch {

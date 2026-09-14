@@ -298,7 +298,8 @@ fn semantic_decode_barrier_rejects_invalid_cadir() {
 fn phase5_freeze_shared_admissibility_fixtures() {
     let accepted = cadmpeg_ir::validate::admissibility_freeze::accepted_empty();
     assert!(crate::reader::reject_invalid_semantic_ir(&accepted).is_ok());
-    let rejected = cadmpeg_ir::validate::admissibility_freeze::rejected_missing_point("iges:model");
+    let rejected = cadmpeg_ir::validate::admissibility_freeze::rejected_missing_point("iges:model")
+        .expect("fixture identities are valid");
     let error = crate::reader::reject_invalid_semantic_ir(&rejected).unwrap_err();
     assert!(error.to_string().contains("referential_integrity"));
 }
@@ -307,12 +308,8 @@ fn tagged_loss(tag: &str) -> LossNote {
     IgesLossCode::EntityRetainedUnprojected
         .note("attribution fixture")
         .with_provenance(
-            SourceProvenance::in_stream(
-                "iges",
-                const { cadmpeg_ir::StreamName::literal("iges") },
-                0,
-            )
-            .with_tag(tag.to_owned()),
+            SourceProvenance::in_stream("iges", cadmpeg_ir::stream_name!("iges"), 0)
+                .with_tag(tag.to_owned()),
         )
 }
 

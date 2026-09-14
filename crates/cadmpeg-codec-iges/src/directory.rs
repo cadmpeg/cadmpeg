@@ -218,7 +218,7 @@ impl DirectoryEntry {
     pub(crate) fn loss_provenance(&self) -> cadmpeg_ir::SourceProvenance {
         cadmpeg_ir::SourceProvenance::in_stream(
             "iges",
-            const { cadmpeg_ir::StreamName::literal("iges") },
+            cadmpeg_ir::stream_name!("iges"),
             self.source_offset,
         )
         .with_tag(format!("directory_entry:D{}", self.sequence))
@@ -304,7 +304,7 @@ impl QuarantinedDirectoryRecord {
                 self.cards()
             ))
         .with_provenance(
-            SourceProvenance::in_stream("iges", const { cadmpeg_ir::StreamName::literal("iges") }, self.source_offset)
+            SourceProvenance::in_stream("iges", cadmpeg_ir::stream_name!("iges"), self.source_offset)
                 .with_tag(format!("directory_entry:D{}", self.sequence)),
         )
     }
