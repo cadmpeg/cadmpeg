@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""Census of ``.expect(`` and ``.unwrap(`` calls in non-test crate source.
+"""Census of a call spelling in non-test crate source.
+
+With no argument the census is ``.expect(`` and ``.unwrap(``. ``--pattern`` takes
+any Python regular expression and censuses that spelling over the same scope and
+the same walk, so a clamp census and a panic census can never come from two
+different scopes.
 
 The rule is this file, not prose. Test source is found by parsing, never by a
 basename: the walk starts at every crate root (``src/lib.rs``, ``src/main.rs``
@@ -19,6 +24,7 @@ exclusions, and the per-file buckets of bare ``.unwrap()``.
 
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import re
 import sys
@@ -33,9 +39,9 @@ SOURCE_POLICY = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = SOURCE_POLICY
 SPEC.loader.exec_module(SOURCE_POLICY)
 
-PANIC_CALL = re.compile(r"\.(?:expect|unwrap)\(")
-EXPECT_CALL = re.compile(r"\.expect\(")
-BARE_UNWRAP = re.compile(r"\.unwrap\(\)")
+PANIC_CALL = re.compile(r"\.\s*(?:expect|unwrap)\s*\(")
+EXPECT_CALL = re.compile(r"\.\s*expect\s*\(")
+BARE_UNWRAP = re.compile(r"\.\s*unwrap\s*\(\s*\)")
 INCLUDE = re.compile(r'include!\s*\(\s*"([^"]+)"\s*\)')
 
 
@@ -58,6 +64,7 @@ def crate_roots() -> list[Path]:
 def declared_modules(path: Path, source: str) -> list[tuple[Path, bool]]:
     """Each file module the source declares, with whether it is test-gated."""
     lines = SOURCE_POLICY.mask_rust_non_code(source).splitlines(keepends=True)
+    original_lines = source.splitlines(keepends=True)
     children: list[tuple[Path, bool]] = []
     pending: list[str] = []
     blocks: list[tuple[str, int, bool]] = []
@@ -66,7 +73,9 @@ def declared_modules(path: Path, source: str) -> list[tuple[Path, bool]]:
     while index < len(lines):
         stripped = lines[index].lstrip()
         if stripped.startswith("#["):
-            attribute, index = SOURCE_POLICY.collect_attribute(lines, index)
+            start = index
+            _, index = SOURCE_POLICY.collect_attribute(lines, index)
+            attribute = "".join(original_lines[start:index])
             pending.append(attribute)
             continue
         if not stripped.strip():
@@ -94,10 +103,15 @@ def declared_modules(path: Path, source: str) -> list[tuple[Path, bool]]:
         while blocks and depth <= blocks[-1][1]:
             blocks.pop()
         index += 1
+    code = SOURCE_POLICY.mask_rust_non_code(source)
+    production, _ = SOURCE_POLICY.production_source(source)
     for included in INCLUDE.finditer(source):
+        if not code[included.start():included.start() + len("include!")].strip():
+            continue
         target = (path.parent / included.group(1)).resolve()
         if target.is_file():
-            children.append((target, False))
+            gated = not production[included.start():included.start() + len("include!")].strip()
+            children.append((target, gated))
     return children
 
 
@@ -114,11 +128,71 @@ def production_files() -> tuple[set[Path], set[Path]]:
         source = path.read_text(encoding="utf-8")
         for child, child_gated in declared_modules(path, source):
             pending.append((child, in_test or child_gated))
-    return kept - gated, gated
+    return kept, gated - kept
 
 
-def main() -> int:
-    """Print the census and answer 0."""
+def matching_lines(code: str, pattern: re.Pattern[str]) -> int:
+    """Count distinct starting lines, including calls split across lines."""
+    return len({code.count("\n", 0, match.start()) for match in pattern.finditer(code)})
+
+
+def list_sites(relative: str, source: str, code: str, pattern: re.Pattern[str]) -> None:
+    """Print each site's location and source, retaining its message expression."""
+    for match in pattern.finditer(code):
+        end = match.end()
+        if code[end - 1:end] == "(":
+            depth = 1
+            while end < len(code) and depth:
+                if code[end] == "(":
+                    depth += 1
+                elif code[end] == ")":
+                    depth -= 1
+                end += 1
+        line = code.count("\n", 0, match.start()) + 1
+        spelling = " ".join(source[match.start():end].splitlines())
+        print(f"{relative}:{line}\t{spelling}")
+
+
+def census_pattern(pattern: re.Pattern[str], label: str, listing: bool = False) -> int:
+    """Print the census of one spelling over the crate source scope."""
+    kept, gated = production_files()
+    raw_sites = 0
+    non_test_sites = 0
+    unreached = 0
+    buckets: dict[str, int] = {}
+    files_in_scope = 0
+    for path in scope():
+        files_in_scope += 1
+        source = path.read_text(encoding="utf-8")
+        raw_sites += len(pattern.findall(source))
+        resolved = path.resolve()
+        if resolved not in kept:
+            if resolved not in gated:
+                unreached += 1
+            else:
+                continue
+        code, _ = SOURCE_POLICY.production_source(source)
+        relative = path.relative_to(ROOT).as_posix()
+        found = len(pattern.findall(code))
+        if found:
+            non_test_sites += found
+            buckets[relative] = found
+            if listing:
+                list_sites(relative, source, code, pattern)
+    print(f"census: {label} in crate source")
+    print(f"scope: crates/*/src/**/*.rs, {files_in_scope} files")
+    print(f"files the module walk keeps as non-test: {len(kept)}")
+    print(f"files the walk reaches only through a #[cfg(test)] mod: {len(gated)}")
+    print(f"files in scope the walk never reaches: {unreached}")
+    print(f"raw matching sites over the whole scope: {raw_sites}")
+    print(f"non-test matching sites: {non_test_sites}")
+    for relative, count in sorted(buckets.items()):
+        print(f"  {relative} {count}")
+    return 0
+
+
+def census_panic_calls(listing: bool = False) -> int:
+    """Print the ``.expect(`` and ``.unwrap(`` census."""
     kept, gated = production_files()
     raw_lines = 0
     non_test_lines = 0
@@ -129,22 +203,22 @@ def main() -> int:
     for path in scope():
         files_in_scope += 1
         source = path.read_text(encoding="utf-8")
-        raw_lines += sum(1 for line in source.splitlines() if PANIC_CALL.search(line))
+        raw_lines += matching_lines(source, PANIC_CALL)
         resolved = path.resolve()
         if resolved not in kept:
             if resolved not in gated:
                 unreached += 1
-            continue
+            else:
+                continue
         code, _ = SOURCE_POLICY.production_source(source)
         relative = path.relative_to(ROOT).as_posix()
-        for line in code.splitlines():
-            if PANIC_CALL.search(line):
-                non_test_lines += 1
-            if EXPECT_CALL.search(line):
-                expect_lines += 1
-            bare = len(BARE_UNWRAP.findall(line))
-            if bare:
-                unwrap_buckets[relative] = unwrap_buckets.get(relative, 0) + bare
+        non_test_lines += matching_lines(code, PANIC_CALL)
+        expect_lines += matching_lines(code, EXPECT_CALL)
+        bare = len(BARE_UNWRAP.findall(code))
+        if bare:
+            unwrap_buckets[relative] = bare
+        if listing:
+            list_sites(relative, source, code, PANIC_CALL)
     print("census: .expect( and .unwrap( in crate source")
     print(f"scope: crates/*/src/**/*.rs, {files_in_scope} files")
     print(f"files the module walk keeps as non-test: {len(kept)}")
@@ -157,6 +231,29 @@ def main() -> int:
     for relative, count in sorted(unwrap_buckets.items()):
         print(f"  {relative} {count}")
     return 0
+
+
+def main() -> int:
+    """Print the census and answer 0."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--pattern",
+        help="census this regular expression instead of .expect( and .unwrap(",
+    )
+    parser.add_argument(
+        "--label",
+        help="the spelling the census names in its first line; defaults to --pattern",
+    )
+    parser.add_argument(
+        "--list", action="store_true",
+        help="print every counted file:line and call, including its message expression",
+    )
+    arguments = parser.parse_args()
+    if arguments.pattern is None:
+        return census_panic_calls(arguments.list)
+    return census_pattern(
+        re.compile(arguments.pattern), arguments.label or arguments.pattern, arguments.list
+    )
 
 
 if __name__ == "__main__":
