@@ -7,10 +7,12 @@ use crate::families::standard::fbb::{
 };
 use crate::families::standard::trim_packet::TrimPacket;
 use crate::solve::matching::unique_coordinate_bijection;
-use crate::solve::missing_edge::{standard_mesh_boundary_assignments, MeshFaceBoundaryAssignment};
+use crate::solve::missing_edge::{
+    standard_mesh_boundary_assignments, MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment,
+};
 use crate::solve::UnionFind;
 use cadmpeg_core::decode::alloc_filled;
-use cadmpeg_ir::topology::BodyKind;
+use cadmpeg_ir::{features::NonEmptyMembers, topology::BodyKind};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// Reconstructed standard-nested (or FBB-only) topology: the counted spine's
@@ -365,7 +367,19 @@ pub struct FaceTopology {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Boundary {
     /// The physical edge uses covering this cycle, in cycle order.
-    pub coedges: Vec<CoedgeUse>,
+    pub coedges: NonEmptyCoedges,
+}
+
+/// A face boundary cycle admitted with at least one matched coedge use.
+pub type NonEmptyCoedges = NonEmptyMembers<CoedgeUse>;
+
+impl Boundary {
+    /// Admit one reconstructed cycle after its source matching has completed.
+    pub(crate) fn new(coedges: Vec<CoedgeUse>) -> Option<Self> {
+        Some(Self {
+            coedges: NonEmptyMembers::try_from(coedges).ok()?,
+        })
+    }
 }
 
 /// One physical edge's use within a face boundary, oriented by its match
@@ -462,23 +476,20 @@ pub(crate) fn reconstruct_incidence_with_edge_classes_and_mesh(
             boundaries: cycles
                 .into_iter()
                 .map(|cycle| Boundary {
-                    coedges: cycle
-                        .into_iter()
-                        .map(|(edge_row, reversed)| {
-                            let [stored_start, stored_end] = edge_points[edge_row];
-                            let [start_vertex, end_vertex] = if reversed {
-                                [stored_end, stored_start]
-                            } else {
-                                [stored_start, stored_end]
-                            };
-                            CoedgeUse {
-                                edge_row,
-                                reversed,
-                                start_vertex,
-                                end_vertex,
-                            }
-                        })
-                        .collect(),
+                    coedges: cycle.map(|(edge_row, reversed)| {
+                        let [stored_start, stored_end] = edge_points[edge_row];
+                        let [start_vertex, end_vertex] = if reversed {
+                            [stored_end, stored_start]
+                        } else {
+                            [stored_start, stored_end]
+                        };
+                        CoedgeUse {
+                            edge_row,
+                            reversed,
+                            start_vertex,
+                            end_vertex,
+                        }
+                    }),
                 })
                 .collect(),
         });
@@ -592,6 +603,12 @@ pub(crate) fn complete_duplicate_face_slots(
             *operations += 1;
             let [start, end] = inputs.edge_points[edge];
             let start_add = 1 + u8::from(start == end);
+            let start_degree_before = degrees[face].get(&start).copied();
+            let end_degree_before = if start == end {
+                None
+            } else {
+                degrees[face].get(&end).copied()
+            };
             *degrees[face].entry(start).or_default() += start_add;
             if start != end {
                 *degrees[face].entry(end).or_default() += 1;
@@ -602,18 +619,22 @@ pub(crate) fn complete_duplicate_face_slots(
                 inputs, degrees, assignment, used, solutions, operations, exhausted,
             );
             used[index] = false;
-            let start_degree = degrees[face]
-                .get_mut(&start)
-                .expect("assigned start degree");
-            *start_degree -= start_add;
-            if *start_degree == 0 {
-                degrees[face].remove(&start);
+            match start_degree_before {
+                Some(degree) => {
+                    degrees[face].insert(start, degree);
+                }
+                None => {
+                    degrees[face].remove(&start);
+                }
             }
             if start != end {
-                let end_degree = degrees[face].get_mut(&end).expect("assigned end degree");
-                *end_degree -= 1;
-                if *end_degree == 0 {
-                    degrees[face].remove(&end);
+                match end_degree_before {
+                    Some(degree) => {
+                        degrees[face].insert(end, degree);
+                    }
+                    None => {
+                        degrees[face].remove(&end);
+                    }
                 }
             }
             if *exhausted || solutions.len() > 1 {
@@ -907,7 +928,7 @@ pub(crate) fn solve_boundary_orientation_constraints(
 pub(crate) fn incidence_cycles(
     incident: &[usize],
     edge_points: &[[usize; 2]],
-) -> Option<Vec<Vec<(usize, bool)>>> {
+) -> Option<Vec<NonEmptyMembers<(usize, bool)>>> {
     if incident.is_empty() {
         return None;
     }
@@ -916,7 +937,7 @@ pub(crate) fn incidence_cycles(
     for &edge in incident {
         let [start, end] = edge_points[edge];
         if start == end {
-            cycles.push(vec![(edge, false)]);
+            cycles.push(NonEmptyMembers::one((edge, false)));
             continue;
         }
         at_vertex.entry(start).or_default().push(edge);
@@ -943,14 +964,15 @@ pub(crate) fn incidence_cycles(
         let Some(&first) = ordered_unseen.get(next_unseen) else {
             break;
         };
-        let start_vertex = edge_points[first][0];
-        let mut vertex = start_vertex;
-        let mut edge = first;
-        let mut cycle = Vec::new();
-        loop {
-            if !unseen.remove(&edge) {
-                return None;
-            }
+        let [start_vertex, mut vertex] = edge_points[first];
+        unseen.remove(&first);
+        let mut cycle = NonEmptyMembers::one((first, false));
+        while vertex != start_vertex {
+            let edge = *at_vertex
+                .get(&vertex)?
+                .iter()
+                .find(|candidate| unseen.contains(candidate))?;
+            unseen.remove(&edge);
             let endpoints = edge_points[edge];
             let reversed = endpoints[1] == vertex;
             if !reversed && endpoints[0] != vertex {
@@ -958,13 +980,6 @@ pub(crate) fn incidence_cycles(
             }
             vertex = if reversed { endpoints[0] } else { endpoints[1] };
             cycle.push((edge, reversed));
-            if vertex == start_vertex {
-                break;
-            }
-            edge = *at_vertex
-                .get(&vertex)?
-                .iter()
-                .find(|candidate| unseen.contains(candidate))?;
         }
         cycles.push(cycle);
     }
@@ -1055,13 +1070,16 @@ pub(crate) fn reconstruct_mesh_selection(
         }
         let mut boundaries = Vec::with_capacity(face.boundaries.len());
         for (uses, directions) in face.boundaries.iter().zip(directions) {
-            if uses.len() != directions.len() || uses.is_empty() {
+            if uses.len() != directions.len() {
                 return None;
             }
+            let mut paired_uses = uses.iter().zip(directions).enumerate();
+            let (first_index, (first_use, &first_reversed)) = paired_uses.next()?;
             let corners = (0..uses.len()).map(|_| union.push()).collect::<Vec<_>>();
-            let mut coedges = Vec::with_capacity(uses.len());
-            for (use_index, (use_, &unmatched_reversed)) in uses.iter().zip(directions).enumerate()
-            {
+            let mut admit_coedge = |use_index: usize,
+                                    use_: &MeshBoundaryEdgeCandidate,
+                                    unmatched_reversed: bool|
+             -> Option<CoedgeUse> {
                 let reversed = use_.reversed.unwrap_or(unmatched_reversed);
                 if use_.reversed.is_some() && unmatched_reversed != reversed {
                     return None;
@@ -1080,12 +1098,17 @@ pub(crate) fn reconstruct_mesh_selection(
                     union.union(edge_start, start_vertex);
                     union.union(edge_end, end_vertex);
                 }
-                coedges.push(CoedgeUse {
+                Some(CoedgeUse {
                     edge_row: use_.edge,
                     reversed,
                     start_vertex,
                     end_vertex,
-                });
+                })
+            };
+            let mut coedges =
+                NonEmptyCoedges::one(admit_coedge(first_index, first_use, first_reversed)?);
+            for (use_index, (use_, &unmatched_reversed)) in paired_uses {
+                coedges.push(admit_coedge(use_index, use_, unmatched_reversed)?);
             }
             boundaries.push(Boundary { coedges });
         }

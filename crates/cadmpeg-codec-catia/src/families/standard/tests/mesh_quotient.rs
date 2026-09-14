@@ -689,14 +689,13 @@ fn radial_orientation_solves_each_face_boundary_independently() {
 fn open_standard_edge_incidence_classifies_a_sheet_body() {
     let mut topology = StandardTopology {
         faces: vec![FaceTopology {
-            boundaries: vec![Boundary {
-                coedges: vec![CoedgeUse {
-                    edge_row: 0,
-                    reversed: false,
-                    start_vertex: 0,
-                    end_vertex: 1,
-                }],
-            }],
+            boundaries: vec![Boundary::new(vec![CoedgeUse {
+                edge_row: 0,
+                reversed: false,
+                start_vertex: 0,
+                end_vertex: 1,
+            }])
+            .expect("nonempty topology boundary")],
         }],
         edge_rows: vec![
             EdgeRow {
@@ -730,24 +729,23 @@ fn solid_body_cycles_orient_independently_from_an_open_sheet_body() {
     let mut topology = StandardTopology {
         faces: vec![
             FaceTopology {
-                boundaries: vec![Boundary {
-                    coedges: vec![use_(0), use_(1)],
-                }],
+                boundaries: vec![
+                    Boundary::new(vec![use_(0), use_(1)]).expect("nonempty topology boundary")
+                ],
             },
             FaceTopology {
-                boundaries: vec![Boundary {
-                    coedges: vec![use_(0), use_(1)],
-                }],
+                boundaries: vec![
+                    Boundary::new(vec![use_(0), use_(1)]).expect("nonempty topology boundary")
+                ],
             },
             FaceTopology {
-                boundaries: vec![Boundary {
-                    coedges: vec![CoedgeUse {
-                        edge_row: 2,
-                        reversed: false,
-                        start_vertex: 0,
-                        end_vertex: 1,
-                    }],
-                }],
+                boundaries: vec![Boundary::new(vec![CoedgeUse {
+                    edge_row: 2,
+                    reversed: false,
+                    start_vertex: 0,
+                    end_vertex: 1,
+                }])
+                .expect("nonempty topology boundary")],
             },
         ],
         edge_rows: (0..3)

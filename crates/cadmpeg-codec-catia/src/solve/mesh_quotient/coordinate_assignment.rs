@@ -301,7 +301,11 @@ pub(super) fn close_coordinate_roots_with_incidence(
                                 .cycles
                                 .iter()
                                 .map(|cycle| {
-                                    deferred_boundary_cycle_matches(cycle, incidence, &missing)
+                                    deferred_boundary_cycle_matches(
+                                        cycle,
+                                        incidence.as_slice(),
+                                        &missing,
+                                    )
                                 })
                                 .collect::<Vec<_>>(),
                         )

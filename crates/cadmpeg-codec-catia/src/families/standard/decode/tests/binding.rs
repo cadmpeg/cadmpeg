@@ -819,14 +819,15 @@ fn standard_emission_reverses_only_face_pcurve_use_range() {
         }];
         let topology = crate::families::standard::topology::StandardTopology {
             faces: vec![crate::families::standard::topology::FaceTopology {
-                boundaries: vec![crate::families::standard::topology::Boundary {
-                    coedges: vec![crate::families::standard::topology::CoedgeUse {
+                boundaries: vec![crate::families::standard::topology::Boundary::new(vec![
+                    crate::families::standard::topology::CoedgeUse {
                         edge_row: 0,
                         reversed,
                         start_vertex: 0,
                         end_vertex: 1,
-                    }],
-                }],
+                    },
+                ])
+                .expect("nonempty topology boundary")],
             }],
             edge_rows: vec![crate::families::standard::topology::EdgeRow {
                 kind: 1,

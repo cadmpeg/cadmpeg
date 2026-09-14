@@ -415,18 +415,18 @@ pub fn standard_surface_records(
     let successors = &table.successors;
     let remaining_steps = face_count - 1;
     let level_count = usize::BITS as usize - remaining_steps.leading_zeros() as usize;
-    let mut jumps = Vec::new();
+    let mut jumps = Vec::with_capacity(level_count);
     if level_count > 0 {
-        jumps.push(successors.clone());
-    }
-    while jumps.len() < level_count {
-        let previous = jumps.last().expect("one lower jump level");
-        jumps.push(
-            previous
+        let mut previous = successors.clone();
+        for _ in 1..level_count {
+            let next = previous
                 .iter()
                 .map(|next| next.and_then(|middle| previous[middle]))
-                .collect(),
-        );
+                .collect();
+            jumps.push(previous);
+            previous = next;
+        }
+        jumps.push(previous);
     }
 
     let mut solution_start = None;

@@ -8,8 +8,8 @@
 
 use crate::features::{BodySelectionError, NonEmptyMembers};
 use crate::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
-    SurfaceId, VertexId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, IdentityKey, IdentityNamespace, LoopId, PcurveId,
+    PointId, RegionId, ShellId, SurfaceId, VertexId,
 };
 use crate::math::Point3;
 use crate::transform::Transform;
@@ -727,6 +727,36 @@ impl LoopRing {
         }
     }
 
+    /// Construct a generated ring from a nonempty vertex cycle.
+    ///
+    /// Each coedge identity is composed from `namespace`, `key_prefix`, and
+    /// its source ordinal. The corresponding vertex use is anchored to that
+    /// generated coedge, so the returned ring carries the member and anchor
+    /// relationship without reopening checked construction.
+    pub fn from_vertices(
+        namespace: &IdentityNamespace,
+        key_prefix: &IdentityKey,
+        vertices: NonEmptyMembers<VertexId>,
+    ) -> Self {
+        let member_count = vertices.count().get();
+        let mut coedges = Vec::with_capacity(member_count);
+        let mut vertex_uses = Vec::with_capacity(member_count);
+        for (ordinal, vertex) in vertices.into_iter().enumerate() {
+            let coedge = CoedgeId::compose(namespace, key_prefix.clone().colon(ordinal));
+            let vertex_use = AnchoredVertexUse {
+                vertex,
+                after: coedge.clone(),
+                pcurves: Vec::new(),
+            };
+            coedges.push(coedge);
+            vertex_uses.push(vertex_use);
+        }
+        Self {
+            coedges,
+            vertex_uses,
+        }
+    }
+
     /// Append a distinct coedge in traversal order.
     pub fn try_push(&mut self, coedge: CoedgeId) -> Result<(), LoopRingError> {
         if self.coedges.contains(&coedge) {
@@ -1351,6 +1381,7 @@ mod tests {
         coedge_ring_neighbors, AnchoredVertexUse, Coedge, CoedgeUseCurve, Face, FaceLoops, Loop,
         LoopBoundary, LoopBoundaryRole, LoopId, LoopRing,
     };
+    use crate::features::NonEmptyMembers;
 
     #[test]
     fn incremental_loop_ring_keeps_order_and_rejects_duplicates() {
@@ -1362,6 +1393,33 @@ mod tests {
         let before = ring.clone();
         assert!(ring.try_push(first).is_err());
         assert_eq!(ring, before);
+    }
+
+    #[test]
+    fn generated_loop_ring_anchors_each_vertex_to_its_generated_coedge() {
+        let coedge_namespace = crate::identity_namespace!("test", "model", "coedge");
+        let vertex_namespace = crate::identity_namespace!("test", "model", "vertex");
+        let mut vertices =
+            NonEmptyMembers::one(super::VertexId::compose(&vertex_namespace, 3_usize));
+        vertices.push(super::VertexId::compose(&vertex_namespace, 8_usize));
+
+        let ring = LoopRing::from_vertices(
+            &coedge_namespace,
+            &crate::ids::IdentityKey::from(4_usize).colon(2_usize),
+            vertices,
+        );
+        assert_eq!(
+            ring.coedges()
+                .iter()
+                .map(super::CoedgeId::as_str)
+                .collect::<Vec<_>>(),
+            ["test:model:coedge#4:2:0", "test:model:coedge#4:2:1"]
+        );
+        assert!(ring
+            .vertex_uses()
+            .iter()
+            .zip(ring.coedges())
+            .all(|(vertex_use, coedge)| vertex_use.after == *coedge));
     }
 
     #[test]

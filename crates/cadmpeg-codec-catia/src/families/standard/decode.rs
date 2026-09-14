@@ -12,14 +12,13 @@ use cadmpeg_ir::geometry::{
     SupportPcurve, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
+    BodyId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
     ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::schema::EntitySchema;
 use cadmpeg_ir::topology::{
-    AnchoredVertexUse, Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Region,
-    Sense, Shell, Vertex,
+    Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::Exactness;
 use cadmpeg_ir::{AnnotationBuilder, Annotations};
@@ -3538,34 +3537,31 @@ struct StandardLimitCurveBinding {
     parameter_range: [f64; 2],
 }
 
-fn split_bezier_half(control: &[Point3]) -> Option<(Vec<Point3>, Vec<Point3>)> {
-    let mut levels = vec![control.to_vec()];
-    while levels.last()?.len() > 1 {
-        levels.push(
-            levels
-                .last()?
-                .windows(2)
-                .map(|pair| {
-                    Point3::new(
-                        0.5 * (pair[0].x + pair[1].x),
-                        0.5 * (pair[0].y + pair[1].y),
-                        0.5 * (pair[0].z + pair[1].z),
-                    )
-                })
-                .collect(),
-        );
+type BezierSpan = [Point3; 6];
+
+fn bezier_levels(control: BezierSpan) -> [[Point3; 6]; 6] {
+    let mut levels = [control; 6];
+    for degree in 0..5 {
+        for index in 0..(5 - degree) {
+            levels[degree + 1][index] = Point3::new(
+                0.5 * (levels[degree][index].x + levels[degree][index + 1].x),
+                0.5 * (levels[degree][index].y + levels[degree][index + 1].y),
+                0.5 * (levels[degree][index].z + levels[degree][index + 1].z),
+            );
+        }
     }
-    let left = levels.iter().map(|level| level[0]).collect::<Vec<_>>();
-    let right = levels
-        .iter()
-        .rev()
-        .map(|level| *level.last().expect("nonempty Bézier level"))
-        .collect::<Vec<_>>();
-    Some((left, right))
+    levels
+}
+
+fn split_bezier_half(control: BezierSpan) -> (BezierSpan, BezierSpan) {
+    let levels = bezier_levels(control);
+    let left = std::array::from_fn(|index| levels[index][0]);
+    let right = std::array::from_fn(|index| levels[5 - index][index]);
+    (left, right)
 }
 
 fn collect_bezier_point_parameters(
-    control: &[Point3],
+    control: BezierSpan,
     range: [f64; 2],
     point: Point3,
     tolerance: f64,
@@ -3576,7 +3572,7 @@ fn collect_bezier_point_parameters(
     use std::collections::BinaryHeap;
 
     struct Node {
-        control: Vec<Point3>,
+        control: BezierSpan,
         range: [f64; 2],
         depth: usize,
     }
@@ -3605,37 +3601,19 @@ fn collect_bezier_point_parameters(
             .hypot(axis_distance(point.y, y0, y1))
             .hypot(axis_distance(point.z, z0, z1))
     };
-    let midpoint = |control: &[Point3]| {
-        let mut level = control.to_vec();
-        while level.len() > 1 {
-            level = level
-                .windows(2)
-                .map(|pair| {
-                    Point3::new(
-                        0.5 * (pair[0].x + pair[1].x),
-                        0.5 * (pair[0].y + pair[1].y),
-                        0.5 * (pair[0].z + pair[1].z),
-                    )
-                })
-                .collect();
-        }
-        level.first().copied()
-    };
+    let midpoint = |control: &BezierSpan| bezier_levels(*control)[5][0];
 
-    let root_lower_bound = lower_bound(control);
+    let root_lower_bound = lower_bound(&control);
     if root_lower_bound > tolerance {
         return;
     }
-    let Some(root_midpoint) = midpoint(control) else {
-        return;
-    };
+    let root_midpoint = midpoint(&control);
     let mut best = (
         0.5 * (range[0] + range[1]),
         root_midpoint.distance_squared(point).sqrt(),
     );
-    let Some((&first, &last)) = control.first().zip(control.last()) else {
-        return;
-    };
+    let first = control[0];
+    let last = control[5];
     for (parameter, position) in [(range[0], first), (range[1], last)] {
         let distance = position.distance_squared(point).sqrt();
         if distance < best.1 {
@@ -3644,7 +3622,7 @@ fn collect_bezier_point_parameters(
     }
 
     let mut nodes = vec![Node {
-        control: control.to_vec(),
+        control,
         range,
         depth: 0,
     }];
@@ -3656,9 +3634,7 @@ fn collect_bezier_point_parameters(
         }
         let node = &nodes[node_index];
         if node.depth >= 48 || node.range[1] - node.range[0] <= parameter_resolution {
-            let Some(position) = midpoint(&node.control) else {
-                continue;
-            };
+            let position = midpoint(&node.control);
             let candidate = (
                 0.5 * (node.range[0] + node.range[1]),
                 position.distance_squared(point).sqrt(),
@@ -3671,9 +3647,7 @@ fn collect_bezier_point_parameters(
             }
             continue;
         }
-        let Some((left, right)) = split_bezier_half(&node.control) else {
-            continue;
-        };
+        let (left, right) = split_bezier_half(node.control);
         let middle = 0.5 * (node.range[0] + node.range[1]);
         let depth = node.depth + 1;
         for (control, range) in [
@@ -3684,14 +3658,13 @@ fn collect_bezier_point_parameters(
             if lower > tolerance || lower > best.1 {
                 continue;
             }
-            if let Some(position) = midpoint(&control) {
-                let candidate = (
-                    0.5 * (range[0] + range[1]),
-                    position.distance_squared(point).sqrt(),
-                );
-                if candidate.1 < best.1 {
-                    best = candidate;
-                }
+            let position = midpoint(&control);
+            let candidate = (
+                0.5 * (range[0] + range[1]),
+                position.distance_squared(point).sqrt(),
+            );
+            if candidate.1 < best.1 {
+                best = candidate;
             }
             let index = nodes.len();
             nodes.push(Node {
@@ -3739,9 +3712,10 @@ fn standard_limit_curve_point_parameter(
     let parameter_resolution =
         0.05 * parameter_tolerance.min(EPS_PARAM_RESOLUTION_SPAN * parameter_span.max(1.0));
     let mut parameters = Vec::new();
-    for span in 0..span_count {
+    for (span, control_points) in curve.control_points().chunks_exact(6).enumerate() {
+        let control: BezierSpan = std::array::from_fn(|index| control_points[index]);
         collect_bezier_point_parameters(
-            &curve.control_points()[span * 6..(span + 1) * 6],
+            control,
             [curve.knots()[span * 6], curve.knots()[(span + 1) * 6]],
             point,
             tolerance,
@@ -5343,6 +5317,8 @@ fn emit_standard_topology(
         .map(|(index, curve)| (curve.id.clone(), index))
         .collect::<HashMap<_, _>>();
     let mut edge_coedges = vec![Vec::new(); ir.model.edges.len()];
+    let coedge_namespace = cadmpeg_ir::identity_namespace!("catia", "standard", "coedge");
+    let vertex_namespace = cadmpeg_ir::identity_namespace!("catia", "standard", "v");
     for (face_index, face_topology) in topology.faces().iter().enumerate() {
         let face_loops = standard_face_loops(
             ir,
@@ -5357,29 +5333,15 @@ fn emit_standard_topology(
                 &cadmpeg_ir::identity_namespace!("catia", "standard", "loop"),
                 cadmpeg_ir::ids::IdentityKey::from(face_index).colon(loop_index),
             );
-            let coedge_ids: Vec<CoedgeId> = (0..boundary.coedges.len())
-                .map(|coedge_index| {
-                    CoedgeId::compose(
-                        &cadmpeg_ir::identity_namespace!("catia", "standard", "coedge"),
-                        cadmpeg_ir::ids::IdentityKey::from(face_index)
-                            .colon(loop_index)
-                            .colon(coedge_index),
-                    )
-                })
-                .collect();
-            let vertex_uses: Vec<AnchoredVertexUse> = boundary
-                .coedges
-                .iter()
-                .enumerate()
-                .map(|(coedge_index, edge_use)| AnchoredVertexUse {
-                    vertex: VertexId::compose(
-                        &cadmpeg_ir::identity_namespace!("catia", "standard", "v"),
-                        point_assignment[edge_use.end_vertex],
-                    ),
-                    after: coedge_ids[coedge_index].clone(),
-                    pcurves: Vec::new(),
-                })
-                .collect();
+            let vertices = boundary.coedges.clone().map(|edge_use| {
+                VertexId::compose(&vertex_namespace, point_assignment[edge_use.end_vertex])
+            });
+            let ring = cadmpeg_ir::topology::LoopRing::from_vertices(
+                &coedge_namespace,
+                &loop_id.key(),
+                vertices,
+            );
+            let coedge_ids = ring.coedges();
             for (coedge_index, edge_use) in boundary.coedges.iter().enumerate() {
                 let support = &supports[edge_use.edge_row];
                 let logical_vertices = edge_vertices[edge_use.edge_row];
@@ -5513,10 +5475,7 @@ fn emit_standard_topology(
                     &cadmpeg_ir::identity_namespace!("catia", "standard", "face"),
                     face_index,
                 ),
-                boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                    cadmpeg_ir::topology::LoopRing::new(coedge_ids, vertex_uses)
-                        .expect("valid loop ring"),
-                ),
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
             });
         }
         ir.model.faces[face_index].loops = face_loops;
@@ -8666,11 +8625,9 @@ fn ensure_native_edge_support_surface(
         .filter(|surface| surface.source_object.as_ref() == Some(&source))
         .map(|surface| surface.id.clone())
         .collect::<HashSet<_>>();
-    if source_matches.len() == 1 {
-        return Ok(source_matches
-            .into_iter()
-            .next()
-            .expect("one identity-matched support surface"));
+    let source_matches_empty = source_matches.is_empty();
+    if let [surface_id] = source_matches.into_iter().collect::<Vec<_>>().as_slice() {
+        return Ok(surface_id.clone());
     }
     if let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(geometry) = carrier {
         let geometry_matches = ir
@@ -8680,25 +8637,33 @@ fn ensure_native_edge_support_surface(
             .filter(|surface| surface.geometry == *geometry)
             .map(|surface| surface.id.clone())
             .collect::<HashSet<_>>();
-        if source_matches.is_empty() && geometry_matches.len() == 1 {
-            return Ok(geometry_matches
-                .into_iter()
-                .next()
-                .expect("one geometry-matched support surface"));
+        if source_matches_empty {
+            if let [surface_id] = geometry_matches.into_iter().collect::<Vec<_>>().as_slice() {
+                return Ok(surface_id.clone());
+            }
         }
     }
     let id = SurfaceId::compose(
         &cadmpeg_ir::identity_namespace!("catia", "standard", "edge-support-surface"),
         surface_object_id,
     );
-    let procedural_id = match carrier {
+    let (geometry, procedural_id) = match carrier {
+        crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(geometry) => {
+            (geometry.clone(), None)
+        }
         crate::families::b5::transfer::ResolvedPcurveSurface::RollingBall { .. } => {
-            Some(ProceduralSurfaceId::compose(
+            let procedural_id = ProceduralSurfaceId::compose(
                 &cadmpeg_ir::identity_namespace!("catia", "standard", "edge-support-definition"),
                 surface_object_id,
-            ))
+            );
+            (
+                SurfaceGeometry::Procedural {
+                    construction: procedural_id.clone(),
+                    cache: None,
+                },
+                Some(procedural_id),
+            )
         }
-        crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(_) => None,
     };
     annotate(
         annotations,
@@ -8708,19 +8673,6 @@ fn ensure_native_edge_support_surface(
         "native_edge_support_surface",
         Exactness::ByteExact,
     );
-    let geometry = match carrier {
-        crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(geometry) => {
-            geometry.clone()
-        }
-        crate::families::b5::transfer::ResolvedPcurveSurface::RollingBall { .. } => {
-            SurfaceGeometry::Procedural {
-                construction: procedural_id
-                    .clone()
-                    .expect("rolling-ball support procedure id"),
-                cache: None,
-            }
-        }
-    };
     ir.model.surfaces.push(Surface {
         id: id.clone(),
         geometry,

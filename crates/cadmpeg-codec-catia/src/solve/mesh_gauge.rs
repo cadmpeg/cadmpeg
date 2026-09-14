@@ -8,7 +8,7 @@ use super::mesh_quotient::{
     MeshEndpointRelationChoice, MeshEndpointRelationSelection, MeshEndpointRelationStateSignature,
 };
 use crate::families::standard::topology::{
-    CoedgeUse, EdgeBoundaryLayout, EdgeRow, StandardTopology,
+    CoedgeUse, EdgeBoundaryLayout, EdgeRow, NonEmptyCoedges, StandardTopology,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -38,7 +38,7 @@ pub(crate) struct MeshCandidateGauge<'a> {
     pub(crate) coordinate_gauge: Option<&'a MeshCoordinateGauge>,
 }
 
-fn canonicalize_topology_boundary_gauges(topology: &mut StandardTopology) -> Option<()> {
+fn canonicalize_topology_boundary_gauges(topology: &mut StandardTopology) {
     fn signature(coedges: &[CoedgeUse]) -> Vec<(usize, bool, usize, usize)> {
         coedges
             .iter()
@@ -53,40 +53,40 @@ fn canonicalize_topology_boundary_gauges(topology: &mut StandardTopology) -> Opt
             .collect()
     }
 
-    fn rotate_to_minimum(coedges: &mut [CoedgeUse]) -> Option<()> {
-        let len = coedges.len();
-        let best = (0..len).min_by_key(|&start| {
-            (0..len)
-                .map(|offset| {
-                    let coedge = coedges[(start + offset) % len];
-                    (
-                        coedge.edge_row,
-                        coedge.reversed,
-                        coedge.start_vertex,
-                        coedge.end_vertex,
-                    )
-                })
-                .collect::<Vec<_>>()
-        })?;
+    fn rotate_to_minimum(coedges: &mut NonEmptyCoedges) {
+        let len = coedges.count().get();
+        let cycle = coedges.as_slice();
+        let key = |start: usize| {
+            (0..len).map(move |offset| {
+                let coedge = cycle[(start + offset) % len];
+                (
+                    coedge.edge_row,
+                    coedge.reversed,
+                    coedge.start_vertex,
+                    coedge.end_vertex,
+                )
+            })
+        };
+        let best = (1..len).fold(0, |best, start| {
+            if key(start).lt(key(best)) {
+                start
+            } else {
+                best
+            }
+        });
         coedges.rotate_left(best);
-        Some(())
     }
 
     for face in &mut topology.faces {
         for boundary in &mut face.boundaries {
-            rotate_to_minimum(&mut boundary.coedges)?;
-            let mut reversed = boundary
-                .coedges
-                .iter()
-                .rev()
-                .copied()
-                .map(|mut coedge| {
-                    coedge.reversed = !coedge.reversed;
-                    std::mem::swap(&mut coedge.start_vertex, &mut coedge.end_vertex);
-                    coedge
-                })
-                .collect::<Vec<_>>();
-            rotate_to_minimum(&mut reversed)?;
+            rotate_to_minimum(&mut boundary.coedges);
+            let mut reversed = boundary.coedges.clone();
+            reversed.reverse();
+            for coedge in &mut reversed {
+                coedge.reversed = !coedge.reversed;
+                std::mem::swap(&mut coedge.start_vertex, &mut coedge.end_vertex);
+            }
+            rotate_to_minimum(&mut reversed);
             if signature(&reversed) < signature(&boundary.coedges) {
                 boundary.coedges = reversed;
             }
@@ -94,7 +94,6 @@ fn canonicalize_topology_boundary_gauges(topology: &mut StandardTopology) -> Opt
         face.boundaries
             .sort_by_key(|boundary| signature(&boundary.coedges));
     }
-    Some(())
 }
 
 fn normalized_endpoint_options(options: &[[usize; 2]]) -> Vec<[usize; 2]> {
@@ -734,7 +733,7 @@ fn canonicalize_mesh_edge_row_gauges(
         coedge.edge_row = *row_permutation.get(coedge.edge_row)?;
     }
     topology.edge_rows = new_rows;
-    canonicalize_topology_boundary_gauges(&mut topology)?;
+    canonicalize_topology_boundary_gauges(&mut topology);
     Some(topology)
 }
 
@@ -809,7 +808,7 @@ fn canonicalize_mesh_coordinate_gauges(
         let mut best = None::<(Vec<u64>, StandardTopology)>;
         for permutation in permutations {
             let mut candidate = permute_mesh_coordinate_labels(topology.clone(), permutation)?;
-            canonicalize_topology_boundary_gauges(&mut candidate)?;
+            canonicalize_topology_boundary_gauges(&mut candidate);
             candidate = canonicalize_mesh_edge_row_gauges(candidate, gauge, Some(permutation))?;
             let key = mesh_topology_gauge_key(&candidate);
             if best.as_ref().is_none_or(|(best_key, _)| key < *best_key) {
@@ -882,7 +881,7 @@ fn canonicalize_mesh_candidate(
             coedge.reversed = !coedge.reversed;
         }
     }
-    canonicalize_topology_boundary_gauges(&mut topology)?;
+    canonicalize_topology_boundary_gauges(&mut topology);
     if let Some(gauge) = gauge {
         topology = canonicalize_mesh_coordinate_gauges(topology, gauge)?;
     }
@@ -1022,40 +1021,38 @@ fn mesh_candidate_comparison_collapses_coordinate_row_gauge() {
     let topology = |swapped: bool| StandardTopology {
         faces: vec![
             crate::families::standard::topology::FaceTopology {
-                boundaries: vec![crate::families::standard::topology::Boundary {
-                    coedges: vec![
-                        CoedgeUse {
-                            edge_row: 0,
-                            reversed: false,
-                            start_vertex: if swapped { 2 } else { 0 },
-                            end_vertex: if swapped { 3 } else { 1 },
-                        },
-                        CoedgeUse {
-                            edge_row: 1,
-                            reversed: false,
-                            start_vertex: if swapped { 3 } else { 1 },
-                            end_vertex: if swapped { 2 } else { 0 },
-                        },
-                    ],
-                }],
+                boundaries: vec![crate::families::standard::topology::Boundary::new(vec![
+                    CoedgeUse {
+                        edge_row: 0,
+                        reversed: false,
+                        start_vertex: if swapped { 2 } else { 0 },
+                        end_vertex: if swapped { 3 } else { 1 },
+                    },
+                    CoedgeUse {
+                        edge_row: 1,
+                        reversed: false,
+                        start_vertex: if swapped { 3 } else { 1 },
+                        end_vertex: if swapped { 2 } else { 0 },
+                    },
+                ])
+                .expect("nonempty topology boundary")],
             },
             crate::families::standard::topology::FaceTopology {
-                boundaries: vec![crate::families::standard::topology::Boundary {
-                    coedges: vec![
-                        CoedgeUse {
-                            edge_row: 0,
-                            reversed: false,
-                            start_vertex: if swapped { 2 } else { 0 },
-                            end_vertex: if swapped { 3 } else { 1 },
-                        },
-                        CoedgeUse {
-                            edge_row: 1,
-                            reversed: false,
-                            start_vertex: if swapped { 3 } else { 1 },
-                            end_vertex: if swapped { 2 } else { 0 },
-                        },
-                    ],
-                }],
+                boundaries: vec![crate::families::standard::topology::Boundary::new(vec![
+                    CoedgeUse {
+                        edge_row: 0,
+                        reversed: false,
+                        start_vertex: if swapped { 2 } else { 0 },
+                        end_vertex: if swapped { 3 } else { 1 },
+                    },
+                    CoedgeUse {
+                        edge_row: 1,
+                        reversed: false,
+                        start_vertex: if swapped { 3 } else { 1 },
+                        end_vertex: if swapped { 2 } else { 0 },
+                    },
+                ])
+                .expect("nonempty topology boundary")],
             },
         ],
         edge_rows: edge_rows.clone(),
@@ -1080,7 +1077,8 @@ fn mesh_candidate_comparison_collapses_coordinate_row_gauge() {
     ));
 
     let mut mismatched_topology = topology(false);
-    mismatched_topology.faces[1].boundaries[0].coedges.pop();
+    let boundary = &mut mismatched_topology.faces[1].boundaries[0];
+    boundary.coedges = NonEmptyCoedges::one(boundary.coedges[0]);
     let mismatched = (mismatched_topology, vec![0, 1, 2, 3]);
     assert!(!mesh_candidates_equivalent_with_context(
         &left,
@@ -1164,8 +1162,8 @@ fn mesh_candidate_comparison_collapses_independent_seam_row_coordinate_automorph
             })
             .collect::<Vec<_>>();
         let face = || crate::families::standard::topology::FaceTopology {
-            boundaries: vec![crate::families::standard::topology::Boundary {
-                coedges: endpoints
+            boundaries: vec![crate::families::standard::topology::Boundary::new(
+                endpoints
                     .iter()
                     .copied()
                     .enumerate()
@@ -1176,7 +1174,8 @@ fn mesh_candidate_comparison_collapses_independent_seam_row_coordinate_automorph
                         end_vertex,
                     })
                     .collect(),
-            }],
+            )
+            .expect("nonempty topology boundary")],
         };
         StandardTopology {
             faces: vec![face(), face()],
