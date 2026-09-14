@@ -2090,7 +2090,7 @@ fn finish_model_decode<'a>(
     body_visibilities: Vec<crate::records::BodyVisibility>,
     undecoded_candidates: usize,
     session_state: DecodeSessionState,
-) -> Result<Decoded, CodecError> {
+) -> Result<AuthoredDecoded, CodecError> {
     let (session, path) = F3dDecodeSession::from_geometry(
         ctx,
         scan,
@@ -2276,7 +2276,7 @@ impl<'a> F3dDecodeSession<'a> {
     }
 
     /// Decode design graph, products, annotations, and the report.
-    fn into_result(mut self, path: SessionPath) -> Result<Decoded, CodecError> {
+    fn into_result(mut self, path: SessionPath) -> Result<AuthoredDecoded, CodecError> {
         self.admit_model_entities("admit F3D geometry entities")?;
         self.decode_design_graph(&path)?;
         let path = self.decode_products(path)?;
@@ -2875,7 +2875,7 @@ impl<'a> F3dDecodeSession<'a> {
         Ok(finalize_path)
     }
 
-    fn finalize(mut self, path: FinalizePath) -> Result<Decoded, CodecError> {
+    fn finalize(mut self, path: FinalizePath) -> Result<AuthoredDecoded, CodecError> {
         let scan = self.scan;
         let ctx = self.ctx;
         let geometry = match path {
@@ -2987,6 +2987,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, Co
         container::F3dContainerKind::MultiDocument { .. } => crate::f3z::decode(ctx, &scan),
         container::F3dContainerKind::Document { .. } => {
             decode_scanned_document(ctx, &scan, crate::report::ReportScope::Standalone)
+                .map(AuthoredDecoded::into_decoded)
         }
     }
 }
@@ -2996,7 +2997,7 @@ pub(crate) fn decode_archive_member<'a>(
     ctx: &DecodeContext<'a>,
     scan: &'a ContainerScan<'a>,
     dialects: &cadmpeg_core::dialect::DialectLayers,
-) -> Result<Decoded, CodecError> {
+) -> Result<AuthoredDecoded, CodecError> {
     decode_scanned_document(
         ctx,
         scan,
@@ -3008,7 +3009,7 @@ fn decode_scanned_document<'a>(
     ctx: &DecodeContext<'a>,
     scan: &'a ContainerScan<'a>,
     report_scope: crate::report::ReportScope,
-) -> Result<Decoded, CodecError> {
+) -> Result<AuthoredDecoded, CodecError> {
     let mut admitted_entities = 0_u64;
     ctx.admit_entities(
         scan.entries.len() as u64,
@@ -3787,6 +3788,25 @@ fn apply_assembly_classification(
     }
 }
 
+/// A decoded member whose authored source remains available to archive composition.
+pub(crate) struct AuthoredDecoded {
+    pub(crate) ir: CadIr,
+    pub(crate) source: cadmpeg_ir::SourceMeta,
+    pub(crate) body: DecodeBody,
+    pub(crate) source_fidelity: cadmpeg_ir::SourceFidelity,
+}
+
+impl AuthoredDecoded {
+    pub(crate) fn into_decoded(mut self) -> Decoded {
+        self.ir.source = Some(self.source);
+        Decoded {
+            ir: self.ir,
+            body: self.body,
+            source_fidelity: self.source_fidelity,
+        }
+    }
+}
+
 struct RetainedArtifacts {
     annotations: cadmpeg_ir::Annotations,
     unknowns: Vec<UnknownRecord>,
@@ -3802,7 +3822,7 @@ fn decode_result(
     mut report: DecodeBody,
     retained: RetainedArtifacts,
     admitted_entities: &mut u64,
-) -> Result<Decoded, CodecError> {
+) -> Result<AuthoredDecoded, CodecError> {
     // ASM transfer already charged its delta; admit any remaining neutral entities
     // (sketches, appearances, products) before finalizing.
     ctx.admit_entities(
@@ -3827,9 +3847,9 @@ fn decode_result(
         cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
         hash,
     );
-    ir.source = Some(source);
-    Ok(Decoded {
+    Ok(AuthoredDecoded {
         ir,
+        source,
         body: report,
         source_fidelity,
     })

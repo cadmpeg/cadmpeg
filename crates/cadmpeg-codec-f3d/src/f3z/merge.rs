@@ -139,7 +139,7 @@ impl MergeSession<'_, '_> {
                 member_scan,
                 &self.archive.layers,
             ) {
-                Ok(component) => component,
+                Ok(component) => component.into_decoded(),
                 Err(error) => {
                     parent_report
                         .losses

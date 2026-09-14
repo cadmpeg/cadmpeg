@@ -12,6 +12,7 @@ use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::ContainerSummary;
 
 use crate::container::ContainerScan;
+use crate::decode::AuthoredDecoded;
 use crate::loss::F3dLossCode;
 
 mod archive;
@@ -54,8 +55,9 @@ pub fn decode<'a>(
     let (model_root, omitted_drawing_root) = archive::model_root(scan)?;
     let outer = archive::classify_members(ctx, scan)?;
     let root_scan = outer.member_scan(&model_root)?;
-    let Decoded {
+    let AuthoredDecoded {
         mut ir,
+        source,
         body: mut report,
         source_fidelity: mut fidelity,
     } = crate::decode::decode_archive_member(ctx, root_scan, &outer.layers)?;
@@ -80,7 +82,7 @@ pub fn decode<'a>(
     ));
     if ctx.container_only() {
         report.losses.extend(outer.losses);
-        return finalize_result(ir, report, fidelity);
+        return finalize_result(ir, source, report, fidelity);
     }
 
     let merged = merge::merge_archive(
@@ -105,19 +107,15 @@ pub fn decode<'a>(
     ));
     merge::make_sibling_ordinals_unique(&mut ir.model.occurrences)?;
     report.losses.extend(outer.losses);
-    finalize_result(ir, report, fidelity)
+    finalize_result(ir, source, report, fidelity)
 }
 
 fn finalize_result(
     mut ir: cadmpeg_ir::CadIr,
+    mut source: cadmpeg_ir::SourceMeta,
     body: DecodeBody,
     source_fidelity: cadmpeg_ir::SourceFidelity,
 ) -> Result<Decoded, CodecError> {
-    let Some(mut source) = ir.source.take() else {
-        return Err(CodecError::malformed(
-            "the decoded F3Z model root has no authored source metadata",
-        ));
-    };
     ir.finalize();
     let hash = crate::decode::document_local_sha256_with_source(&ir, &source)?;
     source.attributes.insert(
