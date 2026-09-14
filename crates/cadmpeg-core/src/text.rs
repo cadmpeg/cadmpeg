@@ -142,7 +142,6 @@ impl std::borrow::Borrow<str> for NonBlankString {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlankKey {
     record: String,
-    index: usize,
 }
 
 impl BlankKey {
@@ -150,21 +149,11 @@ impl BlankKey {
     pub fn record(&self) -> &str {
         &self.record
     }
-
-    /// The position of the property in the set the reader stated, counted from
-    /// zero in the order the reader supplied.
-    pub const fn index(&self) -> usize {
-        self.index
-    }
 }
 
 impl std::fmt::Display for BlankKey {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            formatter,
-            "{} states a property with a blank key at position {}",
-            self.record, self.index
-        )
+        write!(formatter, "{} states a property with a blank key", self.record)
     }
 }
 
@@ -177,6 +166,13 @@ impl std::error::Error for BlankKey {}
 /// the owning record so a blank key can be reported against the record that
 /// states it; it is rendered only when a key is blank.
 ///
+/// The blank key names its record and nothing else. The entries arrive as an
+/// iterator whose order this function does not know: most readers hand it an
+/// already-built `BTreeMap`, where the position of an entry is key order and a
+/// blank key sorts first, so a position counted here would name nothing in the
+/// source. A reader that does know where in its source the property sits puts
+/// that in `record`, which it builds.
+///
 /// This is the route for a reader that keeps the properties it can key and
 /// reports the rest. A reader that refuses the whole set uses
 /// [`named_entries`].
@@ -186,14 +182,13 @@ pub fn named_entries_with_blank<V>(
 ) -> (BTreeMap<NonBlankString, V>, Vec<BlankKey>) {
     let mut kept = BTreeMap::new();
     let mut blank = Vec::new();
-    for (index, (name, value)) in entries.into_iter().enumerate() {
+    for (name, value) in entries {
         match NonBlankString::new(name) {
             Some(key) => {
                 kept.insert(key, value);
             }
             None => blank.push(BlankKey {
                 record: record.to_string(),
-                index,
             }),
         }
     }
@@ -207,7 +202,7 @@ pub fn named_entries_with_blank<V>(
 ///
 /// # Errors
 ///
-/// Names the record and the position of the first blank key.
+/// Names the record that states the first blank key.
 pub fn named_entries<V>(
     record: impl std::fmt::Display,
     entries: impl IntoIterator<Item = (String, V)>,
@@ -318,10 +313,9 @@ mod tests {
         let (kept, blank) = named_entries_with_blank("feature 7", entries.clone());
         assert_eq!(blank.len(), 1);
         assert_eq!(blank[0].record(), "feature 7");
-        assert_eq!(blank[0].index(), 1);
         assert_eq!(
             blank[0].to_string(),
-            "feature 7 states a property with a blank key at position 1"
+            "feature 7 states a property with a blank key"
         );
         assert_eq!(
             kept.keys().map(NonBlankString::as_str).collect::<Vec<_>>(),
