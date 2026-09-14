@@ -9,6 +9,7 @@ Use --json for structured findings. See docs/source-policy.md for scope and limi
 from __future__ import annotations
 
 import argparse
+from bisect import bisect_right
 from dataclasses import asdict, dataclass
 import json
 import re
@@ -71,33 +72,93 @@ def is_production_rs(path: Path) -> bool:
     return "src" in parts
 
 
+OUTER_ATTRIBUTE = re.compile(r"#\s*\[")
+
+
+def attribute_end(code: str, start: int) -> int | None:
+    """End of one outer attribute in masked Rust, retaining exact offsets."""
+    opening = OUTER_ATTRIBUTE.match(code, start)
+    if opening is None:
+        return None
+    depth = 1
+    for index in range(opening.end(), len(code)):
+        if code[index] == "[":
+            depth += 1
+        elif code[index] == "]":
+            depth -= 1
+            if depth == 0:
+                return index + 1
+    return None
+
+
+def item_end(code: str, start: int) -> int | None:
+    """End one attributed item without consuming a following same-line item.
+
+    Nested delimiters in signatures and initializers do not end the item.
+    An incomplete item is retained conservatively by the caller.
+    """
+    stack: list[str] = []
+    closing = {")": "(", "]": "[", "}": "{"}
+    for index in range(start, len(code)):
+        char = code[index]
+        if char in "([{":
+            stack.append(char)
+        elif char in closing:
+            if not stack or stack.pop() != closing[char]:
+                return None
+            if char == "}" and not stack:
+                end = index + 1
+                after = end
+                while after < len(code) and code[after].isspace():
+                    after += 1
+                return after + 1 if code[after:after + 1] == ";" else end
+        elif char == ";" and not stack:
+            return index + 1
+    return None
+
+
 def production_source(source: str) -> tuple[str, int]:
     """Mask non-code and test-only items; return code and production line count."""
-    lines = mask_rust_non_code(source).splitlines(keepends=True)
-    production_lines = len(lines)
-    i = 0
-    while i < len(lines):
-        if not lines[i].lstrip().startswith("#["):
-            i += 1
-            continue
-        attrs = []
-        start = i
-        while i < len(lines):
-            stripped = lines[i].lstrip()
-            if stripped.startswith("#["):
-                attr, i = collect_attribute(lines, i)
-                attrs.append(attr)
-            elif not stripped.strip():
-                i += 1
-            else:
+    code = mask_rust_non_code(source)
+    spans: list[tuple[int, int]] = []
+    cursor = 0
+    while match := OUTER_ATTRIBUTE.search(code, cursor):
+        start = match.start()
+        cursor = start
+        attributes = []
+        while OUTER_ATTRIBUTE.match(code, cursor):
+            end = attribute_end(code, cursor)
+            if end is None:
+                cursor = len(code)
                 break
-        if not any(attr_is_test_cfg(attr) for attr in attrs):
+            attributes.append(code[cursor:end])
+            cursor = end
+            while cursor < len(code) and code[cursor].isspace():
+                cursor += 1
+        if not any(attr_is_test_cfg(attribute) for attribute in attributes):
             continue
-        i = skip_item(lines, i)
-        production_lines -= i - start
-        for index in range(start, i):
-            lines[index] = re.sub(r"[^\r\n]", " ", lines[index])
-    return "".join(lines), production_lines
+        end = item_end(code, cursor)
+        if end is not None:
+            spans.append((start, end))
+            cursor = end
+    if not spans:
+        return code, len(code.splitlines())
+    line_starts = [0, *(match.end() for match in re.finditer("\n", code))]
+    affected_lines: set[int] = set()
+    pieces = []
+    cursor = 0
+    for start, end in spans:
+        pieces.extend((code[cursor:start], re.sub(r"[^\r\n]", " ", code[start:end])))
+        affected_lines.update(range(
+            bisect_right(line_starts, start) - 1,
+            bisect_right(line_starts, end - 1),
+        ))
+        cursor = end
+    pieces.append(code[cursor:])
+    production = "".join(pieces)
+    lines = production.splitlines()
+    count = len(lines) - sum(not lines[index].strip() for index in affected_lines)
+    return production, count
 
 
 NON_CODE_START = re.compile(r'//|/\*|(?:br|cr|r)(?P<hashes>#{0,255})"|"|\'')
@@ -274,7 +335,7 @@ def collect_attribute(lines: list[str], start: int) -> tuple[str, int]:
 
 def attr_is_test_cfg(attr: str) -> bool:
     # The built-in test attribute removes its function from ordinary builds.
-    if re.fullmatch(r"#\[\s*test\s*\]", mask_rust_non_code(attr).strip()):
+    if re.fullmatch(r"#\s*\[\s*test\s*\]", mask_rust_non_code(attr).strip()):
         return True
     match = CFG_ATTR.match(attr.strip())
     if match is None:

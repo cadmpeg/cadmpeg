@@ -62,50 +62,58 @@ def crate_roots() -> list[Path]:
     return roots
 
 
+MODULE_TOKEN = re.compile(
+    r"#\s*\[|(?<![\w#])mod\s+(?:r#)?(?P<name>[^\W\d]\w*)\s*(?P<form>[;{])|[{}]"
+)
+MODULE_VISIBILITY = re.compile(r"(?:pub(?:\s*\([^)]*\))?\s*)?")
+
+
 def declared_modules(path: Path, source: str) -> list[tuple[Path, bool]]:
-    """Each file module the source declares, with whether it is test-gated."""
-    lines = SOURCE_POLICY.mask_rust_non_code(source).splitlines(keepends=True)
-    original_lines = source.splitlines(keepends=True)
-    children: list[tuple[Path, bool]] = []
-    pending: list[str] = []
-    blocks: list[tuple[str, int, bool]] = []
-    depth = 0
-    index = 0
-    while index < len(lines):
-        stripped = lines[index].lstrip()
-        if stripped.startswith("#["):
-            start = index
-            _, index = SOURCE_POLICY.collect_attribute(lines, index)
-            attribute = "".join(original_lines[start:index])
-            pending.append(attribute)
-            continue
-        if not stripped.strip():
-            index += 1
-            continue
-        declaration = SOURCE_POLICY.MOD_DECL.match(lines[index])
-        gated = any(SOURCE_POLICY.attr_is_test_cfg(attribute) for attribute in pending)
-        if declaration is not None and declaration.group(2) == ";":
-            explicit = None
-            for attribute in pending:
-                explicit = explicit or SOURCE_POLICY.path_attr_target(attribute)
-            directory = SOURCE_POLICY.child_module_dir(path)
-            for name, _, _ in blocks:
-                directory = directory / name
-            target = SOURCE_POLICY.resolve_module_target(
-                path, directory, declaration.group(1), explicit
-            )
-            if target is not None:
-                enclosing = any(block_gated for _, _, block_gated in blocks)
-                children.append((target.resolve(), gated or enclosing))
-        elif declaration is not None:
-            blocks.append((declaration.group(1), depth, gated))
-        pending = []
-        depth += lines[index].count("{") - lines[index].count("}")
-        while blocks and depth <= blocks[-1][1]:
-            blocks.pop()
-        index += 1
+    """Each file module and include, with the exact production item scope."""
     code = SOURCE_POLICY.mask_rust_non_code(source)
     production, _ = SOURCE_POLICY.production_source(source)
+    children: list[tuple[Path, bool]] = []
+    attributes: list[str] = []
+    attribute_tail = 0
+    blocks: list[tuple[str, int]] = []
+    depth = 0
+    cursor = 0
+    while token := MODULE_TOKEN.search(code, cursor):
+        cursor = token.end()
+        if SOURCE_POLICY.OUTER_ATTRIBUTE.match(code, token.start()):
+            end = SOURCE_POLICY.attribute_end(code, token.start())
+            if end is None:
+                break
+            if code[attribute_tail:token.start()].strip():
+                attributes = []
+            attributes.append(source[token.start():end])
+            cursor = attribute_tail = end
+            continue
+        if token.group("name") is not None:
+            if not MODULE_VISIBILITY.fullmatch(code[attribute_tail:token.start()].strip()):
+                attributes = []
+            name = token.group("name")
+            if token.group("form") == ";":
+                explicit = next((target for attribute in attributes
+                                 if (target := SOURCE_POLICY.path_attr_target(attribute)) is not None), None)
+                directory = SOURCE_POLICY.child_module_dir(path)
+                for block_name, _ in blocks:
+                    directory = directory / block_name
+                target = SOURCE_POLICY.resolve_module_target(path, directory, name, explicit)
+                if target is not None:
+                    gated = not production[token.start():token.start() + 3].strip()
+                    children.append((target.resolve(), gated))
+            else:
+                blocks.append((name, depth))
+                depth += 1
+        elif token.group() == "{":
+            depth += 1
+        else:
+            depth -= 1
+            while blocks and depth <= blocks[-1][1]:
+                blocks.pop()
+        attributes = []
+        attribute_tail = cursor
     for included in INCLUDE.finditer(source):
         if not code[included.start():included.start() + len("include!")].strip():
             continue

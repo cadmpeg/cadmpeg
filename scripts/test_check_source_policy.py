@@ -100,6 +100,21 @@ assert not classify('#[cfg(all(any(test, feature = "x")))]')
             ["from_le_bytes", "from_le_bytes"],
         )
 
+    def test_same_line_item_boundaries_preserve_locations_and_line_counts(self) -> None:
+        text = '#[test] fn fixture() {} fn production() { from_le_bytes(); }\n'
+        code, count = policy.production_source(text)
+        self.assertEqual(len(code), len(text))
+        self.assertEqual(count, 1)
+        self.assertNotIn("fixture", code)
+        self.assertEqual(code.index("from_le_bytes"), text.index("from_le_bytes"))
+        self.assertEqual(policy.production_source('#[test] fn fixture() {}\n')[1], 0)
+
+    def test_incomplete_test_item_is_retained_conservatively(self) -> None:
+        text = '#[test] fn fixture() { from_le_bytes();\n'
+        code, count = policy.production_source(text)
+        self.assertIn("from_le_bytes", code)
+        self.assertEqual(count, 1)
+
     def test_keeps_non_test_cfg(self) -> None:
         text = "#[cfg(feature = \"x\")]\nfn f() { from_le_bytes(); }\n"
         stripped, _ = policy.production_source(text)
