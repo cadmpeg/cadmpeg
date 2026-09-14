@@ -77,7 +77,10 @@ pub(super) fn emit_vertices(
         if !used_vertices.contains(&index) {
             continue;
         }
-        let point_id = PointId::mint(format!("catia:b5:point#{index}")).expect("identity grammar");
+        let point_id = PointId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "b5", "point"),
+            index,
+        );
         annotate(
             annotations,
             &point_id,
@@ -90,8 +93,10 @@ pub(super) fn emit_vertices(
             position: Point3::new(coordinates[0], coordinates[1], coordinates[2]),
             source_object: None,
         });
-        let vertex_id =
-            VertexId::mint(format!("catia:b5:vertex#{index}")).expect("identity grammar");
+        let vertex_id = VertexId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "b5", "vertex"),
+            index,
+        );
         annotate(
             annotations,
             &vertex_id,
@@ -113,7 +118,10 @@ pub(super) fn emit_vertices(
         if !used_vertices.contains(&index) {
             continue;
         }
-        let point_id = PointId::mint(format!("catia:b5:point#{index}")).expect("identity grammar");
+        let point_id = PointId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "b5", "point"),
+            index,
+        );
         annotate(
             annotations,
             &point_id,
@@ -126,8 +134,10 @@ pub(super) fn emit_vertices(
             position: Point3::new(vertex.point[0], vertex.point[1], vertex.point[2]),
             source_object: Some(cgm_source("vertex", vertex.object_id)?),
         });
-        let vertex_id =
-            VertexId::mint(format!("catia:b5:vertex#{index}")).expect("identity grammar");
+        let vertex_id = VertexId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "b5", "vertex"),
+            index,
+        );
         annotate(
             annotations,
             &vertex_id,

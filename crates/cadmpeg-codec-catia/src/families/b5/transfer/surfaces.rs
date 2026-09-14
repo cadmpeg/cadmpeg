@@ -573,7 +573,10 @@ pub(super) fn emit_surfaces(
         .map(|object_id| {
             (
                 *object_id,
-                SurfaceId::mint(format!("catia:b5:surface#{object_id}")).expect("identity grammar"),
+                SurfaceId::compose(
+                    &cadmpeg_ir::identity_namespace!("catia", "b5", "surface"),
+                    object_id,
+                ),
             )
         })
         .collect::<HashMap<_, _>>();
@@ -634,8 +637,10 @@ pub(super) fn emit_surfaces(
                 emit_extrusion_procedure(ir, annotations, &surface_ids, id, object_id, *extrusion)?;
             }
             Some(SurfaceProcedure::Revolution(revolution)) => {
-                let directrix_id = CurveId::mint(format!("catia:b5:profile#{object_id}"))
-                    .expect("identity grammar");
+                let directrix_id = CurveId::compose(
+                    &cadmpeg_ir::identity_namespace!("catia", "b5", "profile"),
+                    object_id,
+                );
                 annotate(
                     annotations,
                     &directrix_id,
@@ -653,9 +658,10 @@ pub(super) fn emit_surfaces(
                     )),
                     source_object: None,
                 });
-                let procedural_id =
-                    ProceduralSurfaceId::mint(format!("catia:b5:procedural-surface#{object_id}"))
-                        .expect("identity grammar");
+                let procedural_id = ProceduralSurfaceId::compose(
+                    &cadmpeg_ir::identity_namespace!("catia", "b5", "procedural-surface"),
+                    object_id,
+                );
                 annotate(
                     annotations,
                     &procedural_id,
@@ -691,9 +697,10 @@ pub(super) fn emit_surfaces(
                 .canonical_surface_id(object_id)
                 .is_some_and(|id| !graph.offset_surfaces.contains_key(&id)) =>
             {
-                let procedural_id =
-                    ProceduralSurfaceId::mint(format!("catia:b5:rolling-ball#{object_id}"))
-                        .expect("identity grammar");
+                let procedural_id = ProceduralSurfaceId::compose(
+                    &cadmpeg_ir::identity_namespace!("catia", "b5", "rolling-ball"),
+                    object_id,
+                );
                 let carrier_tag = format!("result_carrier:{carrier_object_id:08x}");
                 annotate(
                     annotations,
@@ -724,8 +731,10 @@ pub(super) fn emit_surfaces(
         ) else {
             continue;
         };
-        let procedural_id = ProceduralSurfaceId::mint(format!("catia:b5:offset#{object_id}"))
-            .expect("identity grammar");
+        let procedural_id = ProceduralSurfaceId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "b5", "offset"),
+            object_id,
+        );
         annotate(
             annotations,
             &procedural_id,
@@ -776,11 +785,10 @@ fn emit_extrusion_procedure(
     surface_object_id: u32,
     extrusion: super::ResolvedExtrusionSurface,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let directrix_id = CurveId::mint(format!(
-        "catia:b5:extrusion-directrix#{}",
-        extrusion.directrix_object_id
-    ))
-    .expect("identity grammar");
+    let directrix_id = CurveId::compose(
+        &cadmpeg_ir::identity_namespace!("catia", "b5", "extrusion-directrix"),
+        extrusion.directrix_object_id,
+    );
     match extrusion.directrix {
         super::ResolvedExtrusionDirectrix::Intersection {
             supports,
@@ -807,11 +815,10 @@ fn emit_extrusion_procedure(
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
                 source_object: Some(cgm_source("curve", extrusion.directrix_object_id)?),
             });
-            let procedure_id = ProceduralCurveId::mint(format!(
-                "catia:b5:extrusion-directrix-procedure#{}",
-                extrusion.directrix_object_id
-            ))
-            .expect("identity grammar");
+            let procedure_id = ProceduralCurveId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "b5", "extrusion-directrix-procedure"),
+                extrusion.directrix_object_id,
+            );
             annotate(
                 annotations,
                 &procedure_id,
@@ -863,10 +870,10 @@ fn emit_extrusion_procedure(
             distance,
             direction,
         } => {
-            let source_id = CurveId::mint(format!(
-                "catia:b5:extrusion-directrix-source#{source_object_id}"
-            ))
-            .expect("identity grammar");
+            let source_id = CurveId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "b5", "extrusion-directrix-source"),
+                source_object_id,
+            );
             annotate(
                 annotations,
                 &source_id,
@@ -891,11 +898,10 @@ fn emit_extrusion_procedure(
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
                 source_object: Some(cgm_source("curve", extrusion.directrix_object_id)?),
             });
-            let procedure_id = ProceduralCurveId::mint(format!(
-                "catia:b5:extrusion-directrix-procedure#{}",
-                extrusion.directrix_object_id
-            ))
-            .expect("identity grammar");
+            let procedure_id = ProceduralCurveId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "b5", "extrusion-directrix-procedure"),
+                extrusion.directrix_object_id,
+            );
             annotate(
                 annotations,
                 &procedure_id,
@@ -926,8 +932,10 @@ fn emit_extrusion_procedure(
             );
         }
     }
-    let procedure_id = ProceduralSurfaceId::mint(format!("catia:b5:extrusion#{surface_object_id}"))
-        .expect("identity grammar");
+    let procedure_id = ProceduralSurfaceId::compose(
+        &cadmpeg_ir::identity_namespace!("catia", "b5", "extrusion"),
+        surface_object_id,
+    );
     annotate(
         annotations,
         &procedure_id,

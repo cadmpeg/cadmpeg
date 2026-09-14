@@ -853,11 +853,10 @@ fn standard_extrusion_support_id(
     Ok(procedural_supports
         .entry(side.surface_object_id)
         .or_insert_with(|| {
-            let id = SurfaceId::mint(format!(
-                "catia:standard:procedural-support#{}",
-                side.surface_object_id
-            ))
-            .expect("identity grammar");
+            let id = SurfaceId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "standard", "procedural-support"),
+                side.surface_object_id,
+            );
             annotate(
                 annotations,
                 &id,
@@ -889,11 +888,10 @@ pub(crate) fn emit_standard_extrusion_definition(
         return Ok(definition.clone());
     }
     let surface_object_id = extrusion.surface_object_id;
-    let directrix_id = CurveId::mint(format!(
-        "catia:standard:extrusion-directrix#{}",
-        extrusion.directrix_object_id
-    ))
-    .expect("identity grammar");
+    let directrix_id = CurveId::compose(
+        &cadmpeg_ir::identity_namespace!("catia", "standard", "extrusion-directrix"),
+        extrusion.directrix_object_id,
+    );
     match extrusion.directrix {
         crate::families::b5::transfer::ResolvedExtrusionDirectrix::Intersection {
             supports,
@@ -930,11 +928,14 @@ pub(crate) fn emit_standard_extrusion_definition(
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
                 source_object: Some(cgm_source("curve", extrusion.directrix_object_id)?),
             });
-            let procedure_id = ProceduralCurveId::mint(format!(
-                "catia:standard:extrusion-directrix-procedure#{}",
-                extrusion.directrix_object_id
-            ))
-            .expect("identity grammar");
+            let procedure_id = ProceduralCurveId::compose(
+                &cadmpeg_ir::identity_namespace!(
+                    "catia",
+                    "standard",
+                    "extrusion-directrix-procedure"
+                ),
+                extrusion.directrix_object_id,
+            );
             annotate(
                 annotations,
                 &procedure_id,
@@ -990,10 +991,10 @@ pub(crate) fn emit_standard_extrusion_definition(
             distance,
             direction,
         } => {
-            let source_id = CurveId::mint(format!(
-                "catia:standard:extrusion-directrix-source#{source_object_id}"
-            ))
-            .expect("identity grammar");
+            let source_id = CurveId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "standard", "extrusion-directrix-source"),
+                source_object_id,
+            );
             annotate(
                 annotations,
                 &source_id,
@@ -1020,11 +1021,14 @@ pub(crate) fn emit_standard_extrusion_definition(
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
                 source_object: Some(cgm_source("curve", extrusion.directrix_object_id)?),
             });
-            let procedure_id = ProceduralCurveId::mint(format!(
-                "catia:standard:extrusion-directrix-procedure#{}",
-                extrusion.directrix_object_id
-            ))
-            .expect("identity grammar");
+            let procedure_id = ProceduralCurveId::compose(
+                &cadmpeg_ir::identity_namespace!(
+                    "catia",
+                    "standard",
+                    "extrusion-directrix-procedure"
+                ),
+                extrusion.directrix_object_id,
+            );
             annotate(
                 annotations,
                 &procedure_id,
@@ -1706,7 +1710,10 @@ fn try_decode_standard_population(
             else {
                 unreachable!()
             };
-            let id = SurfaceId::mint(format!("catia:standard:surf#{i}")).expect("identity grammar");
+            let id = SurfaceId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "standard", "surf"),
+                i,
+            );
             let geometry =
                 freeform_geometries
                     .get(tag)
@@ -1758,8 +1765,10 @@ fn try_decode_standard_population(
         match decoded {
             Some(geom) => {
                 typed.record(&geom);
-                let id =
-                    SurfaceId::mint(format!("catia:standard:surf#{i}")).expect("identity grammar");
+                let id = SurfaceId::compose(
+                    &cadmpeg_ir::identity_namespace!("catia", "standard", "surf"),
+                    i,
+                );
                 if let Some(forward) = crate::families::standard::records::face_sense(brep, prefix)
                 {
                     face_bindings.push((id.clone(), forward, prefix.pos));
@@ -1796,8 +1805,10 @@ fn try_decode_standard_population(
                 if prefix.kind == AnalyticSurfaceKind::Plane {
                     plane_faces += 1;
                 }
-                let id =
-                    SurfaceId::mint(format!("catia:standard:surf#{i}")).expect("identity grammar");
+                let id = SurfaceId::compose(
+                    &cadmpeg_ir::identity_namespace!("catia", "standard", "surf"),
+                    i,
+                );
                 if let Some(forward) = crate::families::standard::records::face_sense(brep, prefix)
                 {
                     face_bindings.push((id.clone(), forward, prefix.pos));
@@ -1812,10 +1823,10 @@ fn try_decode_standard_population(
                 surfaces.push(Surface {
                     id,
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                        record: Some(
-                            UnknownId::mint("catia:payload:unknown#brep-stream".to_string())
-                                .expect("identity grammar"),
-                        ),
+                        record: Some(UnknownId::compose(
+                            &cadmpeg_ir::identity_namespace!("catia", "payload", "unknown"),
+                            cadmpeg_ir::identity_key!("brep-stream"),
+                        )),
                     }),
                     source_object: Some(cgm_source("carrier", prefix.target).ok()?),
                 });
@@ -1839,9 +1850,10 @@ fn try_decode_standard_population(
     let mut procedural_supports = HashMap::<u32, SurfaceId>::new();
     let mut extrusion_definitions = HashMap::<u32, ProceduralSurfaceDefinition>::new();
     for (index, surface, tag, procedure) in procedural_surface_plans {
-        let procedural_id =
-            ProceduralSurfaceId::mint(format!("catia:standard:procedural-surf#{index}"))
-                .expect("identity grammar");
+        let procedural_id = ProceduralSurfaceId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "standard", "procedural-surf"),
+            index,
+        );
         let record_bounds = match &procedure {
             StandardSurfaceProcedure::Extrusion(extrusion) => {
                 Some(parameter_record_bounds(extrusion.parameter_bounds))
@@ -1879,10 +1891,14 @@ fn try_decode_standard_population(
                         procedural_supports
                             .entry(support_object_id)
                             .or_insert_with(|| {
-                                let id = SurfaceId::mint(format!(
-                                    "catia:standard:procedural-support#{support_object_id}"
-                                ))
-                                .expect("identity grammar");
+                                let id = SurfaceId::compose(
+                                    &cadmpeg_ir::identity_namespace!(
+                                        "catia",
+                                        "standard",
+                                        "procedural-support"
+                                    ),
+                                    support_object_id,
+                                );
                                 annotate(
                                     &mut annotations,
                                     &id,
@@ -1902,10 +1918,14 @@ fn try_decode_standard_population(
                     }
                     crate::families::b5::transfer::ResolvedOffsetSupport::Extrusion(extrusion) => {
                         let record_bounds = parameter_record_bounds(extrusion.parameter_bounds);
-                        let support_id = SurfaceId::mint(format!(
-                            "catia:standard:procedural-support#{support_object_id}"
-                        ))
-                        .expect("identity grammar");
+                        let support_id = SurfaceId::compose(
+                            &cadmpeg_ir::identity_namespace!(
+                                "catia",
+                                "standard",
+                                "procedural-support"
+                            ),
+                            support_object_id,
+                        );
                         annotate(
                             &mut annotations,
                             &support_id,
@@ -1930,10 +1950,14 @@ fn try_decode_standard_population(
                             *extrusion,
                         )
                         .ok()?;
-                        let construction = ProceduralSurfaceId::mint(format!(
-                            "catia:standard:procedural-support-definition#{support_object_id}"
-                        ))
-                        .expect("identity grammar");
+                        let construction = ProceduralSurfaceId::compose(
+                            &cadmpeg_ir::identity_namespace!(
+                                "catia",
+                                "standard",
+                                "procedural-support-definition"
+                            ),
+                            support_object_id,
+                        );
                         let attached = if let Some(surface) =
                             surfaces.iter_mut().find(|surface| surface.id == support_id)
                         {
@@ -2012,9 +2036,10 @@ fn try_decode_standard_population(
                 )
             }
             StandardSurfaceProcedure::Revolution(revolution) => {
-                let directrix_id =
-                    CurveId::mint(format!("catia:standard:revolution-profile#{tag}"))
-                        .expect("identity grammar");
+                let directrix_id = CurveId::compose(
+                    &cadmpeg_ir::identity_namespace!("catia", "standard", "revolution-profile"),
+                    tag,
+                );
                 annotate(
                     &mut annotations,
                     &directrix_id,
@@ -2098,7 +2123,10 @@ fn try_decode_standard_population(
     .ok()?;
 
     for (i, p) in points.iter().enumerate() {
-        let point_id = PointId::mint(format!("catia:standard:pt#{i}")).expect("identity grammar");
+        let point_id = PointId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "standard", "pt"),
+            i,
+        );
         annotate(
             &mut annotations,
             &point_id,
@@ -2116,7 +2144,10 @@ fn try_decode_standard_population(
                 .transpose()
                 .ok()?,
         });
-        let vertex_id = VertexId::mint(format!("catia:standard:v#{i}")).expect("identity grammar");
+        let vertex_id = VertexId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "standard", "v"),
+            i,
+        );
         annotate(
             &mut annotations,
             &vertex_id,
@@ -3185,14 +3216,24 @@ pub(crate) fn attach_standard_faces(
     if face_count == 0 || face_count != bindings.len() {
         return Ok(());
     }
-    let body_id = BodyId::mint("catia:standard:body#0".to_string()).expect("identity grammar");
-    let region_id =
-        RegionId::mint("catia:standard:region#0-0".to_string()).expect("identity grammar");
-    let shell_id = ShellId::mint("catia:standard:shell#0-0".to_string()).expect("identity grammar");
+    let body_id = BodyId::compose(
+        &cadmpeg_ir::identity_namespace!("catia", "standard", "body"),
+        cadmpeg_ir::identity_key!("0"),
+    );
+    let region_id = RegionId::compose(
+        &cadmpeg_ir::identity_namespace!("catia", "standard", "region"),
+        cadmpeg_ir::identity_key!("0-0"),
+    );
+    let shell_id = ShellId::compose(
+        &cadmpeg_ir::identity_namespace!("catia", "standard", "shell"),
+        cadmpeg_ir::identity_key!("0-0"),
+    );
     let mut face_ids = Vec::with_capacity(face_count);
     for (face_index, (surface, forward, offset)) in bindings.iter().enumerate() {
-        let face_id =
-            FaceId::mint(format!("catia:standard:face#{face_index}")).expect("identity grammar");
+        let face_id = FaceId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "standard", "face"),
+            face_index,
+        );
         annotate(
             annotations,
             &face_id,
@@ -3293,14 +3334,19 @@ pub(crate) fn partition_standard_face_components(
     {
         return false;
     }
-    let body_id = BodyId::mint("catia:standard:body#0".to_string()).expect("identity grammar");
+    let body_id = BodyId::compose(
+        &cadmpeg_ir::identity_namespace!("catia", "standard", "body"),
+        cadmpeg_ir::identity_key!("0"),
+    );
     let Some(body) = ir.model.bodies.iter_mut().find(|body| body.id == body_id) else {
         return false;
     };
     let region_ids: Vec<RegionId> = (0..components.len())
         .map(|component| {
-            RegionId::mint(format!("catia:standard:region#0-{component}"))
-                .expect("identity grammar")
+            RegionId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "standard", "region"),
+                cadmpeg_ir::identity_key!("0-").then(component),
+            )
         })
         .collect();
     body.regions.clone_from(&region_ids);
@@ -3310,12 +3356,17 @@ pub(crate) fn partition_standard_face_components(
 
     for (component, faces) in components.iter().enumerate() {
         let region_id = region_ids[component].clone();
-        let shell_id =
-            ShellId::mint(format!("catia:standard:shell#0-{component}")).expect("identity grammar");
+        let shell_id = ShellId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "standard", "shell"),
+            cadmpeg_ir::identity_key!("0-").then(component),
+        );
         let face_ids: Vec<FaceId> = faces
             .iter()
             .map(|face| {
-                FaceId::mint(format!("catia:standard:face#{face}")).expect("identity grammar")
+                FaceId::compose(
+                    &cadmpeg_ir::identity_namespace!("catia", "standard", "face"),
+                    face,
+                )
             })
             .collect();
         for &face in faces {
@@ -5068,8 +5119,10 @@ fn validate_standard_topology(
     }
     let Some(body_arena_indices) = (0..body_kinds.len())
         .map(|body_index| {
-            let id = BodyId::mint(format!("catia:standard:body#{body_index}"))
-                .expect("identity grammar");
+            let id = BodyId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "standard", "body"),
+                body_index,
+            );
             ir.model.bodies.iter().position(|body| body.id == id)
         })
         .collect::<Option<Vec<_>>>()
@@ -5100,8 +5153,10 @@ fn standard_face_loops(
     };
     let ids: Vec<LoopId> = (0..face_topology.boundaries.len())
         .map(|loop_index| {
-            LoopId::mint(format!("catia:standard:loop#{face_index}:{loop_index}"))
-                .expect("identity grammar")
+            LoopId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "standard", "loop"),
+                cadmpeg_ir::ids::IdentityKey::from(face_index).colon(loop_index),
+            )
         })
         .collect();
     let unspecified = || cadmpeg_ir::topology::FaceLoops::unspecified(ids.clone());
@@ -5196,8 +5251,10 @@ fn emit_standard_topology(
         } else {
             [start_point, end_point]
         };
-        let id =
-            EdgeId::mint(format!("catia:standard:edge#{edge_index}")).expect("identity grammar");
+        let id = EdgeId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "standard", "edge"),
+            edge_index,
+        );
         annotate(
             annotations,
             &id,
@@ -5225,9 +5282,14 @@ fn emit_standard_topology(
             id,
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(curve, param_range)
                 .map_err(cadmpeg_core::CodecError::malformed)?,
-            start: VertexId::mint(format!("catia:standard:v#{start_point}"))
-                .expect("identity grammar"),
-            end: VertexId::mint(format!("catia:standard:v#{end_point}")).expect("identity grammar"),
+            start: VertexId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "standard", "v"),
+                start_point,
+            ),
+            end: VertexId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "standard", "v"),
+                end_point,
+            ),
             tolerance: None,
         });
     }
@@ -5250,14 +5312,18 @@ fn emit_standard_topology(
             point_assignment,
         );
         for (loop_index, boundary) in face_topology.boundaries.iter().enumerate() {
-            let loop_id = LoopId::mint(format!("catia:standard:loop#{face_index}:{loop_index}"))
-                .expect("identity grammar");
+            let loop_id = LoopId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "standard", "loop"),
+                cadmpeg_ir::ids::IdentityKey::from(face_index).colon(loop_index),
+            );
             let coedge_ids: Vec<CoedgeId> = (0..boundary.coedges.len())
                 .map(|coedge_index| {
-                    CoedgeId::mint(format!(
-                        "catia:standard:coedge#{face_index}:{loop_index}:{coedge_index}"
-                    ))
-                    .expect("identity grammar")
+                    CoedgeId::compose(
+                        &cadmpeg_ir::identity_namespace!("catia", "standard", "coedge"),
+                        cadmpeg_ir::ids::IdentityKey::from(face_index)
+                            .colon(loop_index)
+                            .colon(coedge_index),
+                    )
                 })
                 .collect();
             let vertex_uses: Vec<AnchoredVertexUse> = boundary
@@ -5265,11 +5331,10 @@ fn emit_standard_topology(
                 .iter()
                 .enumerate()
                 .map(|(coedge_index, edge_use)| AnchoredVertexUse {
-                    vertex: VertexId::mint(format!(
-                        "catia:standard:v#{}",
-                        point_assignment[edge_use.end_vertex]
-                    ))
-                    .expect("identity grammar"),
+                    vertex: VertexId::compose(
+                        &cadmpeg_ir::identity_namespace!("catia", "standard", "v"),
+                        point_assignment[edge_use.end_vertex],
+                    ),
                     after: coedge_ids[coedge_index].clone(),
                     pcurves: Vec::new(),
                 })
@@ -5297,10 +5362,12 @@ fn emit_standard_topology(
                     refusal,
                 )
                 .map(|(geometry, range)| -> Result<_, cadmpeg_core::CodecError> {
-                    let id = PcurveId::mint(format!(
-                        "catia:standard:pcurve#{face_index}:{loop_index}:{coedge_index}"
-                    ))
-                    .expect("identity grammar");
+                    let id = PcurveId::compose(
+                        &cadmpeg_ir::identity_namespace!("catia", "standard", "pcurve"),
+                        cadmpeg_ir::ids::IdentityKey::from(face_index)
+                            .colon(loop_index)
+                            .colon(coedge_index),
+                    );
                     annotate(
                         annotations,
                         &id,
@@ -5349,8 +5416,10 @@ fn emit_standard_topology(
                 ir.model.coedges.push(Coedge {
                     id,
                     owner_loop: loop_id.clone(),
-                    edge: EdgeId::mint(format!("catia:standard:edge#{}", edge_use.edge_row))
-                        .expect("identity grammar"),
+                    edge: EdgeId::compose(
+                        &cadmpeg_ir::identity_namespace!("catia", "standard", "edge"),
+                        edge_use.edge_row,
+                    ),
                     radial_next: coedge_ids[coedge_index].clone(),
                     sense: if edge_use.reversed ^ edge_reversed[edge_use.edge_row] {
                         Sense::Reversed
@@ -5399,8 +5468,10 @@ fn emit_standard_topology(
             }
             ir.model.loops.push(Loop {
                 id: loop_id,
-                face: FaceId::mint(format!("catia:standard:face#{face_index}"))
-                    .expect("identity grammar"),
+                face: FaceId::compose(
+                    &cadmpeg_ir::identity_namespace!("catia", "standard", "face"),
+                    face_index,
+                ),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                     cadmpeg_ir::topology::LoopRing::new(coedge_ids, vertex_uses)
                         .expect("valid loop ring"),
@@ -8203,12 +8274,10 @@ pub(crate) fn build_standard_edge_curve(
                         ),
                         None => (
                             CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
-                                record: Some(
-                                    UnknownId::mint(
-                                        "catia:payload:unknown#brep-stream".to_string(),
-                                    )
-                                    .expect("identity grammar"),
-                                ),
+                                record: Some(UnknownId::compose(
+                                    &cadmpeg_ir::identity_namespace!("catia", "payload", "unknown"),
+                                    cadmpeg_ir::identity_key!("brep-stream"),
+                                )),
                             }),
                             None,
                         ),
@@ -8279,10 +8348,10 @@ pub(crate) fn build_standard_edge_curve(
                 }
                 None => (
                     CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
-                        record: Some(
-                            UnknownId::mint("catia:payload:unknown#brep-stream".to_string())
-                                .expect("identity grammar"),
-                        ),
+                        record: Some(UnknownId::compose(
+                            &cadmpeg_ir::identity_namespace!("catia", "payload", "unknown"),
+                            cadmpeg_ir::identity_key!("brep-stream"),
+                        )),
                     }),
                     None,
                 ),
@@ -8319,12 +8388,12 @@ pub(crate) fn build_standard_edge_curve(
                                     Some(geometry) => (geometry, None),
                                     None => (
                                         CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
-                                            record: Some(
-                                                UnknownId::mint(
-                                                    "catia:payload:unknown#brep-stream".to_string(),
-                                                )
-                                                .expect("identity grammar"),
-                                            ),
+                                            record: Some(UnknownId::compose(
+                                                &cadmpeg_ir::identity_namespace!(
+                                                    "catia", "payload", "unknown"
+                                                ),
+                                                cadmpeg_ir::identity_key!("brep-stream"),
+                                            )),
                                         }),
                                         None,
                                     ),
@@ -8376,8 +8445,10 @@ pub(crate) fn build_standard_edge_curve(
     } else {
         None
     };
-    let id =
-        CurveId::mint(format!("catia:standard:curve#{}", support.pos)).expect("identity grammar");
+    let id = CurveId::compose(
+        &cadmpeg_ir::identity_namespace!("catia", "standard", "curve"),
+        support.pos,
+    );
     annotate(
         annotations,
         &id,
@@ -8498,9 +8569,10 @@ pub(crate) fn build_standard_edge_curve(
                     .then(|| native_support.map_or([0.0, 1.0], |native| native.parameter_range))
             });
             if let Some(curve_parameter_range) = curve_parameter_range {
-                let procedural_id =
-                    ProceduralCurveId::mint(format!("catia:standard:intersection#{}", support.pos))
-                        .expect("identity grammar");
+                let procedural_id = ProceduralCurveId::compose(
+                    &cadmpeg_ir::identity_namespace!("catia", "standard", "intersection"),
+                    support.pos,
+                );
                 annotate(
                     annotations,
                     &procedural_id,
@@ -8574,17 +8646,17 @@ fn ensure_native_edge_support_surface(
                 .expect("one geometry-matched support surface"));
         }
     }
-    let id = SurfaceId::mint(format!(
-        "catia:standard:edge-support-surface#{surface_object_id}"
-    ))
-    .expect("identity grammar");
+    let id = SurfaceId::compose(
+        &cadmpeg_ir::identity_namespace!("catia", "standard", "edge-support-surface"),
+        surface_object_id,
+    );
     let procedural_id = match carrier {
-        crate::families::b5::transfer::ResolvedPcurveSurface::RollingBall { .. } => Some(
-            ProceduralSurfaceId::mint(format!(
-                "catia:standard:edge-support-definition#{surface_object_id}"
+        crate::families::b5::transfer::ResolvedPcurveSurface::RollingBall { .. } => {
+            Some(ProceduralSurfaceId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "standard", "edge-support-definition"),
+                surface_object_id,
             ))
-            .expect("identity grammar"),
-        ),
+        }
         crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(_) => None,
     };
     annotate(
@@ -9318,7 +9390,10 @@ pub(crate) fn attach_standard_circles(
             continue;
         }
         let index = ir.model.curves.len();
-        let id = CurveId::mint(format!("catia:standard:circle#{index}")).expect("identity grammar");
+        let id = CurveId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "standard", "circle"),
+            index,
+        );
         let Ok(payload) = cadmpeg_ir::geometry::CircleCurve::try_new(
             center,
             axis,
@@ -9531,7 +9606,10 @@ pub(crate) fn attach_standard_lines(
             continue;
         };
         let index = ir.model.curves.len();
-        let id = CurveId::mint(format!("catia:standard:line#{index}")).expect("identity grammar");
+        let id = CurveId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "standard", "line"),
+            index,
+        );
         let Ok(payload) = cadmpeg_ir::geometry::LineCurve::try_new(origin, direction) else {
             continue;
         };

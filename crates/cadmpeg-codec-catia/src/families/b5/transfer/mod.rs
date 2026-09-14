@@ -655,8 +655,10 @@ pub(crate) fn resolved_surface_geometry(
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<SurfaceGeometry> {
     let surface = graph.surfaces.get(&surface_id)?;
-    let payload =
-        UnknownId::mint("catia:payload:unknown#b5-surface".to_string()).expect("identity grammar");
+    let payload = UnknownId::compose(
+        &cadmpeg_ir::identity_namespace!("catia", "payload", "unknown"),
+        cadmpeg_ir::identity_key!("b5-surface"),
+    );
     let geometry =
         surfaces::neutral_surface(surface, graph, surface_id, &payload, refusal).geometry;
     (!matches!(
@@ -690,8 +692,10 @@ pub(crate) fn resolved_revolution_surface(
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<ResolvedRevolutionSurface> {
     let surface = graph.surfaces.get(&surface_id)?;
-    let payload =
-        UnknownId::mint("catia:payload:unknown#b5-surface".to_string()).expect("identity grammar");
+    let payload = UnknownId::compose(
+        &cadmpeg_ir::identity_namespace!("catia", "payload", "unknown"),
+        cadmpeg_ir::identity_key!("b5-surface"),
+    );
     let SurfacePlan {
         geometry,
         procedure,
@@ -816,8 +820,10 @@ pub(crate) fn resolved_surface_procedural_definition(
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<(u32, ProceduralSurfaceDefinition)> {
     let surface = graph.surfaces.get(&surface_id)?;
-    let payload =
-        UnknownId::mint("catia:payload:unknown#b5-surface".to_string()).expect("identity grammar");
+    let payload = UnknownId::compose(
+        &cadmpeg_ir::identity_namespace!("catia", "payload", "unknown"),
+        cadmpeg_ir::identity_key!("b5-surface"),
+    );
     match surfaces::neutral_surface(surface, graph, surface_id, &payload, refusal).procedure? {
         SurfaceProcedure::RollingBall {
             carrier_object_id,

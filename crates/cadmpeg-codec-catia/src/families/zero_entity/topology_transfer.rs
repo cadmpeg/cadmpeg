@@ -126,11 +126,10 @@ pub(crate) fn transfer_closed_face_topology(
             .iter()
             .find(|surface| surface.id == *surface_id)
             .map(|surface| &surface.geometry)?;
-        let face_id = FaceId::mint(format!(
-            "catia:zero-entity:topology-face#{}",
-            face.record_ordinal
-        ))
-        .expect("identity grammar");
+        let face_id = FaceId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "topology-face"),
+            face.record_ordinal,
+        );
         if face_id_by_ordinal
             .insert(face.record_ordinal, face_id.clone())
             .is_some()
@@ -179,10 +178,14 @@ pub(crate) fn transfer_closed_face_topology(
                         )?;
                         let parameter_range = pcurve_parameter_range(&geometry)?;
                         Some(OccurrencePcurve {
-                            id: PcurveId::mint(format!(
-                                "catia:zero-entity:topology-pcurve#{support_record_ordinal}"
-                            ))
-                            .expect("identity grammar"),
+                            id: PcurveId::compose(
+                                &cadmpeg_ir::identity_namespace!(
+                                    "catia",
+                                    "zero-entity",
+                                    "topology-pcurve"
+                                ),
+                                support_record_ordinal,
+                            ),
                             geometry,
                             parameter_range,
                         })
@@ -375,41 +378,47 @@ pub(crate) fn transfer_closed_face_topology(
     let first_face = support_runs.first()?.face.as_ref()?;
     let topology_scope = ownership_root.map_or_else(
         || {
-            format!(
-                "inferred-{}-{}",
-                first_face.record_ordinal,
-                support_runs.len()
-            )
+            cadmpeg_ir::identity_key!("inferred")
+                .dash(first_face.record_ordinal)
+                .dash(support_runs.len())
         },
-        |root| root.body_record_ordinal().to_string(),
+        |root| cadmpeg_ir::ids::IdentityKey::from(root.body_record_ordinal()),
     );
-    let body_id = BodyId::mint(format!("catia:zero-entity:topology-body#{topology_scope}"))
-        .expect("identity grammar");
-    let region_id = RegionId::mint(format!(
-        "catia:zero-entity:topology-region#{topology_scope}"
-    ))
-    .expect("identity grammar");
+    let body_id = BodyId::compose(
+        &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "topology-body"),
+        &topology_scope,
+    );
+    let region_id = RegionId::compose(
+        &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "topology-region"),
+        &topology_scope,
+    );
     let shell_scope = ownership_root.map_or_else(
         || topology_scope.clone(),
-        |root| root.shell_record_ordinal().to_string(),
+        |root| cadmpeg_ir::ids::IdentityKey::from(root.shell_record_ordinal()),
     );
-    let shell_id = ShellId::mint(format!("catia:zero-entity:topology-shell#{shell_scope}"))
-        .expect("identity grammar");
+    let shell_id = ShellId::compose(
+        &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "topology-shell"),
+        shell_scope,
+    );
 
     let point_ids = endpoint_loci
         .iter()
         .enumerate()
         .map(|(index, _)| {
-            PointId::mint(format!("catia:zero-entity:topology-point#{index}"))
-                .expect("identity grammar")
+            PointId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "topology-point"),
+                index,
+            )
         })
         .collect::<Vec<_>>();
     let vertex_ids = endpoint_loci
         .iter()
         .enumerate()
         .map(|(index, _)| {
-            VertexId::mint(format!("catia:zero-entity:topology-vertex#{index}"))
-                .expect("identity grammar")
+            VertexId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "topology-vertex"),
+                index,
+            )
         })
         .collect::<Vec<_>>();
 
@@ -508,11 +517,11 @@ pub(crate) fn transfer_closed_face_topology(
     for candidate in &edge_candidates {
         let first_occurrence =
             &occurrences[*occurrence_by_support.get(&candidate.support_record_ordinals[0])?];
-        let edge_id = EdgeId::mint(format!(
-            "catia:zero-entity:topology-edge#{}-{}",
-            candidate.support_record_ordinals[0], candidate.support_record_ordinals[1]
-        ))
-        .expect("identity grammar");
+        let edge_id = EdgeId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "topology-edge"),
+            cadmpeg_ir::ids::IdentityKey::from(candidate.support_record_ordinals[0])
+                .dash(candidate.support_record_ordinals[1]),
+        );
         let (oriented_curve, parameter_range) = first_occurrence.oriented_curve.as_ref()?;
         let param_range = Some(*parameter_range);
         let oriented_vertices = &occurrence_vertex_pairs
@@ -563,11 +572,10 @@ pub(crate) fn transfer_closed_face_topology(
             .iter()
             .flatten()
             .map(|loop_record| {
-                LoopId::mint(format!(
-                    "catia:zero-entity:topology-loop#{}",
-                    loop_record.record_ordinal
-                ))
-                .expect("identity grammar")
+                LoopId::compose(
+                    &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "topology-loop"),
+                    loop_record.record_ordinal,
+                )
             })
             .collect::<Vec<_>>();
         let outer_sense = match face
@@ -620,10 +628,10 @@ pub(crate) fn transfer_closed_face_topology(
                 .support_record_ordinals
                 .iter()
                 .map(|support_record_ordinal| {
-                    CoedgeId::mint(format!(
-                        "catia:zero-entity:topology-coedge#{support_record_ordinal}"
-                    ))
-                    .expect("identity grammar")
+                    CoedgeId::compose(
+                        &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "topology-coedge"),
+                        support_record_ordinal,
+                    )
                 })
                 .collect::<Vec<_>>();
             let vertex_uses = loop_record

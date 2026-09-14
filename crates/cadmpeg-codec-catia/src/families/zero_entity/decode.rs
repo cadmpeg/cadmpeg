@@ -245,16 +245,21 @@ fn transfer_closed_wire_loops(
             };
             let member_count = members.len();
 
-            let identity = format!(
-                "{}-{}-{}",
-                run.carrier_record_ordinal, face.record_ordinal, loop_record.record_ordinal
+            let identity = cadmpeg_ir::ids::IdentityKey::from(run.carrier_record_ordinal)
+                .dash(face.record_ordinal)
+                .dash(loop_record.record_ordinal);
+            let body_id = BodyId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "wire-body"),
+                &identity,
             );
-            let body_id = BodyId::mint(format!("catia:zero-entity:wire-body#{identity}"))
-                .expect("identity grammar");
-            let region_id = RegionId::mint(format!("catia:zero-entity:wire-region#{identity}"))
-                .expect("identity grammar");
-            let shell_id = ShellId::mint(format!("catia:zero-entity:wire-shell#{identity}"))
-                .expect("identity grammar");
+            let region_id = RegionId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "wire-region"),
+                &identity,
+            );
+            let shell_id = ShellId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "wire-shell"),
+                &identity,
+            );
             if !root_owns_support_runs {
                 annotate(
                     annotations,
@@ -285,12 +290,14 @@ fn transfer_closed_wire_loops(
             let mut vertex_ids = Vec::with_capacity(member_count);
             for (index, member) in members.iter().enumerate() {
                 let start = member.endpoints[0];
-                let point_id =
-                    PointId::mint(format!("catia:zero-entity:wire-point#{identity}-{index}"))
-                        .expect("identity grammar");
-                let vertex_id =
-                    VertexId::mint(format!("catia:zero-entity:wire-vertex#{identity}-{index}"))
-                        .expect("identity grammar");
+                let point_id = PointId::compose(
+                    &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "wire-point"),
+                    identity.clone().dash(index),
+                );
+                let vertex_id = VertexId::compose(
+                    &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "wire-vertex"),
+                    identity.clone().dash(index),
+                );
                 annotate(
                     annotations,
                     &point_id,
@@ -341,9 +348,10 @@ fn transfer_closed_wire_loops(
                     parameter_range,
                     ..
                 } = member;
-                let edge_id =
-                    EdgeId::mint(format!("catia:zero-entity:wire-edge#{identity}-{index}"))
-                        .expect("identity grammar");
+                let edge_id = EdgeId::compose(
+                    &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "wire-edge"),
+                    identity.clone().dash(index),
+                );
                 let (curve_id, param_range) = if let Some(parameters) = *parameter_range {
                     let oriented_range = if *forward {
                         parameters
@@ -494,10 +502,14 @@ fn transfer_closed_wire_loops(
                                     (curve.clone(), None)
                                 }
                             } else {
-                                let oriented_curve_id = CurveId::mint(format!(
-                                    "catia:zero-entity:wire-curve#{identity}-{index}"
-                                ))
-                                .expect("identity grammar");
+                                let oriented_curve_id = CurveId::compose(
+                                    &cadmpeg_ir::identity_namespace!(
+                                        "catia",
+                                        "zero-entity",
+                                        "wire-curve"
+                                    ),
+                                    identity.clone().dash(index),
+                                );
                                 append_oriented_wire_curve(
                                     ir,
                                     annotations,
@@ -604,12 +616,18 @@ fn transfer_closed_wire_loops(
             return Ok(counts);
         };
         let identity = root.body_record_ordinal();
-        let body_id = BodyId::mint(format!("catia:zero-entity:owned-wire-body#{identity}"))
-            .expect("identity grammar");
-        let region_id = RegionId::mint(format!("catia:zero-entity:owned-wire-region#{identity}"))
-            .expect("identity grammar");
-        let shell_id = ShellId::mint(format!("catia:zero-entity:owned-wire-shell#{identity}"))
-            .expect("identity grammar");
+        let body_id = BodyId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "owned-wire-body"),
+            identity,
+        );
+        let region_id = RegionId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "owned-wire-region"),
+            identity,
+        );
+        let shell_id = ShellId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "owned-wire-shell"),
+            identity,
+        );
         annotate(
             annotations,
             &body_id,
@@ -698,8 +716,10 @@ pub(crate) fn try_decode_zero_entity(
 
     let mut surface_ids_by_position = HashMap::new();
     for (index, surface) in surfaces.into_iter().enumerate() {
-        let id =
-            SurfaceId::mint(format!("catia:zero-entity:surf#{index}")).expect("identity grammar");
+        let id = SurfaceId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "surf"),
+            index,
+        );
         annotate(
             &mut annotations,
             &id,
@@ -724,11 +744,10 @@ pub(crate) fn try_decode_zero_entity(
             continue;
         };
         for support in &run.supports {
-            let curve_id = CurveId::mint(format!(
-                "catia:zero-entity:support-curve#{}",
-                support.record_ordinal
-            ))
-            .expect("identity grammar");
+            let curve_id = CurveId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "support-curve"),
+                support.record_ordinal,
+            );
             if let Some(geometry) = support.model_curve.clone() {
                 annotate(
                     &mut annotations,
@@ -816,11 +835,14 @@ pub(crate) fn try_decode_zero_entity(
                         "parametric_surface_curve",
                     )
                 };
-            let construction_id = ProceduralCurveId::mint(format!(
-                "catia:zero-entity:support-curve-construction#{}",
-                support.record_ordinal
-            ))
-            .expect("identity grammar");
+            let construction_id = ProceduralCurveId::compose(
+                &cadmpeg_ir::identity_namespace!(
+                    "catia",
+                    "zero-entity",
+                    "support-curve-construction"
+                ),
+                support.record_ordinal,
+            );
             annotate(
                 &mut annotations,
                 &curve_id,
