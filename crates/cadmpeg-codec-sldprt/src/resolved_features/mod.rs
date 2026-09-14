@@ -37,6 +37,30 @@ fn is_class_token(token: u16) -> bool {
     token & 0x8000 != 0 && token != u16::MAX
 }
 
+/// The end offset one object declares, proved to lie inside the bytes that
+/// carry it.
+///
+/// An object states where it ends. A declared end past the available bytes is
+/// a contradiction inside bytes that are present: the object does not frame
+/// there, and the shorter region is a different record. [`DeclaredEnd::of`] is
+/// the only constructor and refuses that state, so a reader cannot decode a
+/// truncated region as if it were the declared one - the overrun is not
+/// representable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DeclaredEnd(usize);
+
+impl DeclaredEnd {
+    /// The declared end, or `None` when `declared_end` runs past `available`.
+    fn of(declared_end: usize, available: usize) -> Option<Self> {
+        (declared_end <= available).then_some(Self(declared_end))
+    }
+
+    /// The declared end offset.
+    fn get(self) -> usize {
+        self.0
+    }
+}
+
 pub(crate) mod assembly;
 
 pub(crate) mod axes;

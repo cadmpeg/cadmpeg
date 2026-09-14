@@ -2434,9 +2434,15 @@ pub(crate) fn store(
                     scale: parameters.and_then(|record| record.number(4)),
                 }
             } else {
+                // A Form 2 line font states the visible/blank lengths before the
+                // final hexadecimal pattern token, so the length run ends one
+                // token earlier. A record with no primary token states no
+                // length run, so the run is empty. No source-stated value is
+                // floored here.
                 let pattern_end = parameters
-                    .map_or(0, |record| clamped_primary_end(entry.sequence, record))
-                    .saturating_sub(1);
+                    .map(|record| clamped_primary_end(entry.sequence, record))
+                    .filter(|end| *end > 0)
+                    .map_or(0, |end| end - 1);
                 let count =
                     overdeclared_counts.counted_tail(entry.sequence, parameters, pattern_end, 1, 1);
                 let declared = parameters.and_then(|record| record.integer(1));

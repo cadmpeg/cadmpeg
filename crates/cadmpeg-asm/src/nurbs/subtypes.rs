@@ -3,6 +3,7 @@
 
 use crate::kernel_header::RefWidth;
 use crate::sab::{int_le_at, Record};
+use crate::stream_error::{StreamError, StreamFormat};
 use cadmpeg_core::decode::View;
 
 /// Modern and legacy spellings of the same intcurve construction.
@@ -144,7 +145,35 @@ pub struct SubtypeTables {
 
 impl SubtypeTables {
     /// Build the tables by token-walking each framed record of `bytes`.
-    pub fn from_records(records: &[Record], bytes: &[u8]) -> Self {
+    ///
+    /// Every record states its own byte extent. A record whose extent ends
+    /// past `bytes` names a region that is not there, so the record and both
+    /// lengths are refused instead of walking a shortened span.
+    pub fn from_records(records: &[Record], bytes: &[u8]) -> Result<Self, StreamError> {
+        for record in records {
+            let end = record
+                .offset
+                .checked_add(record.len)
+                .ok_or_else(|| StreamError {
+                    format: StreamFormat::Binary,
+                    offset: record.offset,
+                    reason: format!(
+                        "record {} declares a length of {} bytes, which leaves the address space",
+                        record.index, record.len
+                    ),
+                })?;
+            if end > bytes.len() {
+                return Err(StreamError {
+                    format: StreamFormat::Binary,
+                    offset: record.offset,
+                    reason: format!(
+                        "record {} declares its end at byte {end}, but the stream holds {} bytes",
+                        record.index,
+                        bytes.len()
+                    ),
+                });
+            }
+        }
         let build = |walk_width| {
             let mut table = Vec::new();
             for record in records {
@@ -158,10 +187,10 @@ impl SubtypeTables {
             }
             table
         };
-        Self {
+        Ok(Self {
             eight: build(RefWidth::Eight),
             four: build(RefWidth::Four),
-        }
+        })
     }
 
     /// Build the tables by token-walking `bytes` as one contiguous token run.
@@ -195,7 +224,8 @@ impl SubtypeTables {
 }
 
 /// Append the token-boundary subtype-definition openings in
-/// `bytes[start..end]` to `table`. Stops at the first unwalkable token.
+/// `bytes[start..end]` to `table`. Stops at the first unwalkable token, a
+/// position with no byte at it included.
 fn collect_defs_in_span(
     bytes: &[u8],
     start: usize,
@@ -203,10 +233,9 @@ fn collect_defs_in_span(
     int_width: RefWidth,
     table: &mut Vec<usize>,
 ) {
-    let end = end.min(bytes.len());
     let mut pos = start;
     while pos < end {
-        if bytes[pos] == 0x0f && matches!(bytes.get(pos + 1), Some(0x0d | 0x0e)) {
+        if bytes.get(pos) == Some(&0x0f) && matches!(bytes.get(pos + 1), Some(0x0d | 0x0e)) {
             let len = usize::from(*bytes.get(pos + 2).unwrap_or(&0));
             if let Some(name) = bytes.get(pos + 3..pos + 3 + len) {
                 if name != b"ref" {

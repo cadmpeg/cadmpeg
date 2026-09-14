@@ -238,9 +238,8 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
 #14=SHAPE_REPRESENTATION('',(#13),$);",
     );
 
-    for (curve_id, expected) in [("#9", [2.0, 4.0]), ("#12", [2.0, 4.0])] {
-        let construction_id =
-            ids::construction(kind!("trimmed_curve"), curve_id.trim_start_matches('#'));
+    for (curve_id, expected) in [(9u64, [2.0, 4.0]), (12u64, [2.0, 4.0])] {
+        let construction_id = ids::construction(kind!("trimmed_curve"), curve_id);
         assert!(result.ir().model.procedural_curves.iter().any(|curve| {
             curve.id.as_str() == construction_id.as_str()
                 && match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((matched_payload.parameter_range(),), (parameter_range,) if *parameter_range == expected), _ => false }

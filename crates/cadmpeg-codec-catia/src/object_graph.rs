@@ -545,6 +545,11 @@ pub struct AliasGroupMembership {
 pub struct SurfaceAlias {
     /// Marker byte offset.
     pub pos: usize,
+    /// Byte offset of the row frame. The marker sits at
+    /// `outer_alias_row::MARKER` inside the row, and a row is admitted only
+    /// when that many bytes precede the marker, so this offset is inside the
+    /// image and never aliases the file head.
+    pub row_pos: usize,
     /// Complete preceding word.
     pub lead_raw: u32,
     /// Complete stored tag word.
@@ -605,6 +610,7 @@ pub fn surface_aliases(data: &[u8]) -> Vec<SurfaceAlias> {
             ];
             Some(SurfaceAlias {
                 pos,
+                row_pos: row,
                 lead_raw,
                 tag_raw,
                 flag: data[row + alias_row::FLAG],
@@ -657,7 +663,7 @@ pub(crate) fn surface_alias_tag_map(data: &[u8]) -> HashMap<u32, Option<u32>> {
 
     let mut rows = surface_aliases(data);
     rows.retain(|row| {
-        let row_start = row.pos.saturating_sub(4);
+        let row_start = row.row_pos;
         !object_graphs
             .iter()
             .any(|graph| extents_overlap(row_start, 24, graph.pos, graph.total_len))

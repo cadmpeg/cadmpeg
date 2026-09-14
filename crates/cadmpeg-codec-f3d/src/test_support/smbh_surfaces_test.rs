@@ -463,8 +463,9 @@ pub(crate) fn synthetic_taper_spl_sur_smbh(name: &str) -> Vec<u8> {
             t_dbl(&mut surface, 0.8);
             t_dbl(&mut surface, 1.25);
         }
-        "taper_spl_sur" => {}
-        _ => unreachable!(),
+        // "taper_spl_sur", and any taper name outside this set, states no
+        // extra field. The decode assertion in the calling test then fails.
+        _ => {}
     }
     surface.push(0x10);
     t_end(&mut surface);
@@ -1121,7 +1122,8 @@ pub(crate) fn synthetic_referenced_t_spl_sur_smbh() -> Vec<u8> {
         cadmpeg_asm::kernel_header::RefWidth::Eight,
     )
     .unwrap();
-    let tables = cadmpeg_asm::nurbs::subtypes::SubtypeTables::from_records(&records, &bytes);
+    let tables = cadmpeg_asm::nurbs::subtypes::SubtypeTables::from_records(&records, &bytes)
+        .expect("the fixture frames every record inside the stream");
     let index = tables
         .index_of_offset(
             cadmpeg_asm::kernel_header::RefWidth::Eight,

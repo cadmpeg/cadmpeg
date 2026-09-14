@@ -74,6 +74,26 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
     }
 }
 
+/// `store` emits one arena for every pinned name, empty families included.
+/// This is the registry-to-emitter agreement: a family added to
+/// `F3D_FAMILIES` without its name in `F3D_ARENA_NAMES`, or the reverse,
+/// fails here.
+#[test]
+fn store_emits_every_pinned_arena_name() {
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    crate::native::F3dNative::default()
+        .store(&mut namespace)
+        .unwrap();
+    assert_eq!(
+        namespace
+            .arenas()
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        crate::native::F3D_ARENA_NAMES
+    );
+}
+
 #[test]
 fn diff_reports_design_material_assignment_changes() {
     let decoded = F3dCodec

@@ -34,7 +34,7 @@ pub(super) fn move_body_translation_record(
     const TRAILER_OFFSET: usize = 200;
     const NON_COPY_TRAILER: [u8; 8] = [1, 0, 0, 0, 0, 0, 1, 0];
     let data_class_offset = usize::try_from(data_class_offset).ok()?;
-    let end = object_end.min(payload.len());
+    let end = super::DeclaredEnd::of(object_end, payload.len())?.get();
     if data_class_offset < object_start || data_class_offset >= end {
         return None;
     }
@@ -170,11 +170,16 @@ pub(crate) fn enrich_history_move_face_translations(
             {
                 continue;
             }
-            let end = starts
-                .get(index + 1)
-                .and_then(|entry| usize::try_from(entry.0).ok())
-                .unwrap_or(lane.native_payload.len())
-                .min(lane.native_payload.len());
+            let Some(end) = super::DeclaredEnd::of(
+                starts
+                    .get(index + 1)
+                    .and_then(|entry| usize::try_from(entry.0).ok())
+                    .unwrap_or(lane.native_payload.len()),
+                lane.native_payload.len(),
+            )
+            .map(super::DeclaredEnd::get) else {
+                continue;
+            };
             let Ok(start) = usize::try_from(start) else {
                 continue;
             };
@@ -300,11 +305,16 @@ pub(crate) fn enrich_history_move_body_translations(
             {
                 continue;
             }
-            let end = starts
-                .get(index + 1)
-                .and_then(|entry| usize::try_from(entry.0).ok())
-                .unwrap_or(lane.native_payload.len())
-                .min(lane.native_payload.len());
+            let Some(end) = super::DeclaredEnd::of(
+                starts
+                    .get(index + 1)
+                    .and_then(|entry| usize::try_from(entry.0).ok())
+                    .unwrap_or(lane.native_payload.len()),
+                lane.native_payload.len(),
+            )
+            .map(super::DeclaredEnd::get) else {
+                continue;
+            };
             let Some(start) = usize::try_from(start).ok().filter(|start| *start < end) else {
                 continue;
             };

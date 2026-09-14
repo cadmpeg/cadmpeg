@@ -586,13 +586,22 @@ pub(crate) fn rolling_ball_limit_curve(
         })
         .collect::<Vec<_>>();
     let knots = jet.knots();
-    let (knots, control_points) = crate::nurbs::quintic_jet_bspline3(
+    let Some((knots, control_points)) = crate::nurbs::quintic_jet_bspline3(
         A5FreeformCurve::DEGREE,
         &knots,
         &positions,
         &first,
         &second,
-    )?;
+    ) else {
+        refusal.push_solver(
+            format_args!(
+                "consolidated_a5_03_32 rolling-ball limit curve at byte {}",
+                jet.pos
+            ),
+            "states knot-aligned jet samples the degree-5 B-spline lowering does not close",
+        );
+        return None;
+    };
     crate::nurbs::note_refusal(
         NurbsCurve::from_lanes(
             A5FreeformCurve::DEGREE,

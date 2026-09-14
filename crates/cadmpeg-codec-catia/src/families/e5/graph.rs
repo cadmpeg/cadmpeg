@@ -917,11 +917,15 @@ fn parse_jet_pcurve(payload: &[u8], position: usize, surface: u32) -> Option<E5P
     let ddx = view.read_counted(site_count_u64, 8, View::f64_le)?;
     let ddy = view.read_counted(site_count_u64, 8, View::f64_le)?;
     let range_values = view.read_counted(2, 8, View::f64_le)?;
+    // `site_count == 0` is refused above and `site_count == 1` takes the first
+    // arm, so the interior station count is the exact difference. The checked
+    // subtraction refuses a stated count this arm cannot span instead of
+    // saturating it to an interior run of zero.
     let expected_multiplicities: Vec<u32> = if site_count == 1 {
         vec![degree + 1]
     } else {
         std::iter::once(degree + 1)
-            .chain(std::iter::repeat_n(3, site_count.saturating_sub(2)))
+            .chain(std::iter::repeat_n(3, site_count.checked_sub(2)?))
             .chain(std::iter::once(degree + 1))
             .collect()
     };

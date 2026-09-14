@@ -1745,9 +1745,13 @@ pub fn multi_instance_output_payload_lane(
         (record.payload().get(at..at + REFERENCE_PREFIX.len()) == Some(&REFERENCE_PREFIX))
             .then_some(())?;
         at += REFERENCE_PREFIX.len();
-        let mut trailing_references =
-            Vec::with_capacity(usize::from(instance_count.saturating_sub(1)));
-        for _ in 1..instance_count {
+        // The row ordinals state the instance count. One trailing reference
+        // follows for every instance after the first, so the ordinal domain
+        // states how many references the lane carries; `MultiInstanceOutputs`
+        // refuses a lane whose reference count does not cover every instance.
+        let trailing_instances = 1..instance_count;
+        let mut trailing_references = Vec::with_capacity(trailing_instances.len());
+        for _ in trailing_instances {
             let reference_offset = at;
             let object_index =
                 reference_index::FeatureReferenceToken::read(record.payload().get(at..)?)?;

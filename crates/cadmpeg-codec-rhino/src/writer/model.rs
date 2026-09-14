@@ -11,7 +11,8 @@ use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Loop, Sense, Vert
 
 use super::{
     admit_pcurve, check_frame, check_nurbs_curve, check_nurbs_surface, check_object_attributes,
-    close_point, generated_projected_brep_c2_curve, validate_nurbs_trim, EPS_WRITE_DEGENERATE,
+    close_point, generated_projected_brep_c2_curve, stated_write_tolerance, validate_nurbs_trim,
+    EPS_WRITE_DEGENERATE,
 };
 
 pub(super) struct WritableModel<'a> {
@@ -489,13 +490,7 @@ impl<'a> WritableModel<'a> {
             };
             let start = resolve(&vertex_positions, edge.start.as_str())?;
             let end = resolve(&vertex_positions, edge.end.as_str())?;
-            let tolerance = edge
-                .tolerance
-                .map_or(
-                    ir.tolerances.linear.get(),
-                    cadmpeg_ir::scalar::PositiveReal::get,
-                )
-                .max(EPS_WRITE_DEGENERATE);
+            let tolerance = stated_write_tolerance(edge.tolerance, ir, edge.id.as_str())?;
             if !close_point(vertices[start].point, expected_start, tolerance)
                 || !close_point(vertices[end].point, expected_end, tolerance)
             {
@@ -681,8 +676,13 @@ impl<'a> WritableModel<'a> {
                                 "coedge {} has no explicit pcurve", coedge.id.as_str(),
                             ))
                         })?;
+                        let face_tolerance = stated_write_tolerance(
+                            face.source.tolerance,
+                            ir,
+                            face.source.id.as_str(),
+                        )?;
                         validate_nurbs_trim(
-                            surface, face.source.tolerance.map_or(ir.tolerances.linear.get(), cadmpeg_ir::scalar::PositiveReal::get),
+                            surface, face_tolerance,
                             &edges[edge], coedge.sense, &pcurve,
                         )?;
                         pcurve.payload
@@ -805,14 +805,8 @@ impl<'a> WritableModel<'a> {
                     normal,
                     u_axis,
                 } => {
-                    let tolerance = face
-                        .source
-                        .tolerance
-                        .map_or(
-                            ir.tolerances.linear.get(),
-                            cadmpeg_ir::scalar::PositiveReal::get,
-                        )
-                        .max(EPS_WRITE_DEGENERATE);
+                    let tolerance =
+                        stated_write_tolerance(face.source.tolerance, ir, face.source.id.as_str())?;
                     let mut boundary = Vec::new();
                     for position in &loop_.coedges {
                         let coedge = &result.coedges[*position];

@@ -2122,6 +2122,10 @@ fn fitted_nurbs_offset_candidate(
             (-source_tangent.v * offset.u + source_tangent.u * offset.v) / source_length;
     }
     let scale = 1.0 + distances[0].abs().max(distances[1].abs());
+    // Both thresholds are comparison thresholds of this predicate, not the
+    // document tolerance: the constant is the double-precision noise floor of
+    // the distance arithmetic above, it is never read from the source, and no
+    // stated tolerance is stored or reported at the floored magnitude.
     ((distances[0] - distances[1]).abs()
         <= linear_tolerance.max(EPS_EVAL_FITTED_NURBS_OFFSET_CANDIDATE_E9 * scale)
         && distances[0].abs() > linear_tolerance.max(EPS_EVAL_FITTED_NURBS_OFFSET_CANDIDATE_E9))

@@ -3,6 +3,7 @@ use super::{
     blend, intersection, offset, parse_carrier, spline, subset, sweep, Carrier, CurveCarrier,
     SurfaceCarrier,
 };
+use cadmpeg_ir::report::LossNote;
 use std::collections::{HashMap, HashSet};
 
 /// An exact carrier or a derived intersection carrier.
@@ -33,9 +34,9 @@ pub(crate) struct CarrierIndex {
     offsets: HashMap<u16, offset::OffsetCarrier>,
     /// Zero-offset surface pairs referenced by rolling-ball constructions.
     blend_support_pairs: HashMap<u16, blend::SupportPairCarrier>,
-    /// Spline carriers whose pole and weight lanes do not pair, each naming its
-    /// attribute id and the pairing's own refusal.
-    pub(crate) lane_refusals: Vec<String>,
+    /// Spline carriers whose pole and weight lanes do not pair, each a loss
+    /// naming its attribute id and the pairing's own refusal.
+    pub(crate) lane_refusals: Vec<LossNote>,
 }
 
 impl CarrierIndex {

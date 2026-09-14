@@ -181,7 +181,7 @@ pub(super) fn operation_state_group_end_at(
     base_offset: usize,
 ) -> Option<usize> {
     let (_, count, mut cursor) = operation_state_group_header_at(bytes, at)?;
-    let member_count = usize::from(count.declared_count().saturating_sub(1));
+    let member_count = count.member_row_count();
     for _ in 0..member_count {
         cursor = operation_state_group_row_at(bytes, cursor, base_offset)?.1;
     }
@@ -195,7 +195,7 @@ pub(super) fn operation_state_group_at(
     base_offset: usize,
 ) -> Option<OperationStateGroup> {
     let (opener, count, mut cursor) = operation_state_group_header_at(bytes, at)?;
-    let member_count = usize::from(count.declared_count().saturating_sub(1));
+    let member_count = count.member_row_count();
     let mut rows = Vec::with_capacity(member_count);
     for _ in 0..member_count {
         let (row, row_end) = operation_state_group_row_at(bytes, cursor, base_offset)?;

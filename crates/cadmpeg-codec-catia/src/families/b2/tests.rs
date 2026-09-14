@@ -316,7 +316,7 @@ fn fixed_owner_backward_identities_resolve_in_the_local_allocation_sequence() {
         ]
     );
 
-    let records = crate::wire::records::consolidated_records_in_sources(
+    let records = crate::wire::records::consolidated_records_in_range_sources(
         &bytes,
         [
             std::iter::once(0..owner_pos),
@@ -481,7 +481,7 @@ fn owner_chart_requires_exact_source_closed_selector_rectangle() {
         );
 
         let owner_pos = chart.owner_pos;
-        let records = crate::wire::records::consolidated_records_in_sources(
+        let records = crate::wire::records::consolidated_records_in_range_sources(
             &bytes,
             [
                 std::iter::once(0..owner_pos),
@@ -670,7 +670,7 @@ fn b2_class5b5c_parser_retains_complete_source_local_control_lanes() {
 fn b2_class5b5c_parser_retains_bounded_source_coordinates() {
     let bytes = b2_class5b5c_stream();
     let split = 12 + 15;
-    let records = crate::wire::records::consolidated_records_in_sources(
+    let records = crate::wire::records::consolidated_records_in_range_sources(
         &bytes,
         [
             std::iter::once(0..split),

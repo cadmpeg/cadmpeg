@@ -276,6 +276,25 @@ fn loop_metadata_counts<'a>(
     })
 }
 
+/// Object-stream class code of a `b5 03 5f` face record.
+const B5_FACE_CLASS: u8 = 0x5f;
+
+/// Render an object-id population for a loss note: every id when the population
+/// is small, otherwise the leading ids and how many remain.
+fn object_id_statement(ids: &[u32]) -> String {
+    const LISTED: usize = 8;
+    let listed = ids
+        .iter()
+        .take(LISTED)
+        .map(u32::to_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+    match ids.len().checked_sub(LISTED) {
+        Some(rest) if rest > 0 => format!("{listed} and {rest} more"),
+        _ => listed,
+    }
+}
+
 pub(crate) fn try_decode_freeform_surfaces(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
@@ -483,6 +502,27 @@ pub(crate) fn try_decode_freeform_surfaces(
     let payload_index =
         preserve_raw_payload(&mut unknowns, &mut annotations, scan, payload_id.as_str());
     let b5_complete = b5_graph.as_ref().is_some_and(|graph| graph.complete);
+    // The graph moves into the transfer below. Keep the record identities the
+    // topology loss notes must name.
+    let b5_face_object_ids = b5_graph
+        .as_ref()
+        .map(|graph| {
+            graph
+                .faces
+                .iter()
+                .map(|face| face.object_id)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let b5_loop_object_ids = b5_graph
+        .as_ref()
+        .map(|graph| graph.loops.keys().copied().collect::<Vec<_>>())
+        .unwrap_or_default();
+    let census_face_object_ids = census_object_records
+        .iter()
+        .filter(|record| record.class == B5_FACE_CLASS)
+        .map(|record| record.object_id)
+        .collect::<Vec<_>>();
     let mut topology_ir = ir.clone();
     let mut topology_annotations = annotations.clone();
     let topology_transferred = b5_graph.take().is_some_and(|graph| {
@@ -627,21 +667,40 @@ pub(crate) fn try_decode_freeform_surfaces(
     let mut losses = if wire_topology_transferred {
         Vec::new()
     } else if topology_transferred && b5_complete {
-        vec![CatiaLossCode::TopologyB5GaugeSubstituted.note(
-            "The B5 reference graph is closed; face sense and body kind use a deterministic topology gauge because their source fields remain unresolved.",
-        )]
+        vec![CatiaLossCode::TopologyB5GaugeSubstituted.note(format!(
+            "The B5 reference graph is closed; face sense and body kind use a deterministic \
+             topology gauge because their source fields remain unresolved. Gauged b5 03 5f face \
+             records, by object id ({}): {}.",
+            b5_face_object_ids.len(),
+            object_id_statement(&b5_face_object_ids)
+        ))]
     } else if topology_transferred {
-        vec![CatiaLossCode::TopologyB5SubsetIncomplete.note(
-            "A maximal reference-closed B5 face/loop/pcurve/edge subset was transferred; variant nodes and unresolved endpoint lifts remain outside the connected graph.",
-        )]
+        vec![CatiaLossCode::TopologyB5SubsetIncomplete.note(format!(
+            "A maximal reference-closed B5 face/loop/pcurve/edge subset was transferred; variant \
+             nodes and unresolved endpoint lifts remain outside the connected graph. Transferred \
+             b5 03 5f face records, by object id ({}): {}. Transferred b5 03 62 loop records, by \
+             object id ({}): {}.",
+            b5_face_object_ids.len(),
+            object_id_statement(&b5_face_object_ids),
+            b5_loop_object_ids.len(),
+            object_id_statement(&b5_loop_object_ids)
+        ))]
     } else if object_stream_selection_exhausted {
-        vec![CatiaLossCode::TopologyObjectStreamWorkSliceExhausted.note(
-            "The object-stream graph exceeds the bounded frame-index and record-materialization work slice; its topology remains native.",
-        )]
+        vec![
+            CatiaLossCode::TopologyObjectStreamWorkSliceExhausted.note(format!(
+            "The object-stream graph exceeds the bounded frame-index and record-materialization \
+             work slice; its topology remains native. The {object_stream_run_count} object runs \
+             stay inside retained record {payload_id}."
+        )),
+        ]
     } else {
-        vec![CatiaLossCode::TopologyB5GraphUnclosed.note(
-            "Object-stream and consolidated NURBS carriers were decoded, but the face/loop/pcurve/edge graph did not close.",
-        )]
+        vec![CatiaLossCode::TopologyB5GraphUnclosed.note(format!(
+            "Object-stream and consolidated NURBS carriers were decoded, but the \
+             face/loop/pcurve/edge graph did not close. Unclosed b5 03 5f face records, by object \
+             id ({}): {}. The records stay inside retained record {payload_id}.",
+            census_face_object_ids.len(),
+            object_id_statement(&census_face_object_ids)
+        ))]
     };
     insert_unresolved_carrier_loss(&ir, &mut losses);
     link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations).ok()?;
@@ -1125,7 +1184,7 @@ fn standard_carrier_surface_ids(ir: &CadIr) -> HashMap<u32, Option<SurfaceId>> {
         let Some(source) = surface.source_object.as_ref() else {
             continue;
         };
-        if source.format != cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT) {
+        if source.format != cadmpeg_ir::codec_format!(crate::dialect::FORMAT) {
             continue;
         }
         let Some(tag) = source

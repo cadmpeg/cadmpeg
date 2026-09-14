@@ -1831,9 +1831,8 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
         .unwrap_or_else(|| u64::try_from(lane.native_payload.len()).unwrap_or(u64::MAX))
         .min(marker.offset());
     let class_start = usize::try_from(slot_class.offset).ok()?;
-    let class_end = usize::try_from(class_end)
-        .ok()?
-        .min(lane.native_payload.len());
+    let class_end =
+        super::DeclaredEnd::of(usize::try_from(class_end).ok()?, lane.native_payload.len())?.get();
     if class_start >= class_end {
         return None;
     }

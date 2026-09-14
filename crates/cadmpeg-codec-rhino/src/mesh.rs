@@ -956,11 +956,26 @@ fn read_buffer<'a>(
                         "compressed buffer body escapes the root view",
                     )
                 })?;
-            debug_assert_eq!(
-                source.window(),
-                &reader.backing_bytes()[chunk.body().start..chunk.body().end],
-                "expansion source must alias the compressed chunk body"
-            );
+            let body = reader
+                .backing_bytes()
+                .get(chunk.body().start..chunk.body().end)
+                .ok_or_else(|| {
+                    error(
+                        chunk.body().start,
+                        "compressed buffer body escapes the archive bytes",
+                    )
+                })?;
+            if source.window() != body {
+                return Err(error(
+                    chunk.body().start,
+                    &format!(
+                        "expansion source window of {} bytes does not alias \
+                         the {} byte compressed chunk body",
+                        source.window().len(),
+                        body.len()
+                    ),
+                ));
+            }
             let (view, compressed) = inflate(expand, source, declared)?;
             commit_mesh_buffer(expand, document_budget, declared, reader.position() - 4)?;
             if compressed != chunk.body().len() {

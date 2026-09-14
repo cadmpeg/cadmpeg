@@ -503,7 +503,9 @@ pub(crate) fn transfer_closed_face_topology(
 
     let mut edge_ids = Vec::with_capacity(edge_candidates.len());
     let mut coedges_by_support = HashMap::<u32, CoedgeId>::new();
-    for (edge_index, candidate) in edge_candidates.iter().enumerate() {
+    // Each candidate pushes exactly one edge id and the loop has no `continue`,
+    // so `edge_ids[i]` is the edge of `edge_candidates[i]` by construction.
+    for candidate in &edge_candidates {
         let first_occurrence =
             &occurrences[*occurrence_by_support.get(&candidate.support_record_ordinals[0])?];
         let edge_id = EdgeId::mint(format!(
@@ -551,7 +553,6 @@ pub(crate) fn transfer_closed_face_topology(
             ),
         });
         edge_ids.push(edge_id);
-        debug_assert_eq!(edge_index, edge_ids.len() - 1);
     }
 
     for (run_index, run) in support_runs.iter().enumerate() {

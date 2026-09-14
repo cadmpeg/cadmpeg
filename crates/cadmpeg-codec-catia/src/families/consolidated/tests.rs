@@ -730,7 +730,7 @@ fn width_coded_endpoint_distances_resolve_forward_class18_records() {
     reordered.extend_from_slice(&filler);
     let second_endpoint_pos = reordered.len();
     reordered.extend_from_slice(&endpoint);
-    let records = crate::wire::records::consolidated_records_in_sources(
+    let records = crate::wire::records::consolidated_records_in_range_sources(
         &reordered,
         [[
             edge_pos..filler_pos,
@@ -758,7 +758,7 @@ fn width_coded_endpoint_distances_resolve_forward_class18_records() {
     let spanning_second_endpoint = spanning.len();
     spanning.extend_from_slice(&endpoint);
     let split = filler_start + 10;
-    let records = crate::wire::records::consolidated_records_in_sources(
+    let records = crate::wire::records::consolidated_records_in_range_sources(
         &spanning,
         [[0..split, split..spanning.len()]],
     );

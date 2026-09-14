@@ -22,6 +22,30 @@ use crate::RhinoArchiveVersion;
 
 const EPS_WRITE_DEGENERATE: f64 = 1.0e-10;
 
+/// Returns the IR-stated linear tolerance that governs `owner`.
+///
+/// An absent per-entity tolerance defers to the document linear tolerance.
+/// Rhino Brep write routes compare evaluated geometry against this tolerance.
+/// A stated tolerance below `EPS_WRITE_DEGENERATE` is finer than the write
+/// route resolves, so the route refuses the document instead of widening the
+/// stated value.
+fn stated_write_tolerance(
+    stated: Option<cadmpeg_ir::scalar::PositiveReal>,
+    ir: &CadIr,
+    owner: &str,
+) -> Result<f64, CodecError> {
+    let (field, value) = stated.map_or_else(
+        || ("document linear tolerance", ir.tolerances.linear.get()),
+        |tolerance| ("tolerance", tolerance.get()),
+    );
+    if value >= EPS_WRITE_DEGENERATE {
+        return Ok(value);
+    }
+    Err(CodecError::InvalidInput(format!(
+        "{field} {value} of {owner} is finer than the Rhino Brep write bound {EPS_WRITE_DEGENERATE}"
+    )))
+}
+
 pub(crate) trait WriteSeek: Write + Seek {}
 impl<T: Write + Seek> WriteSeek for T {}
 
@@ -1250,6 +1274,11 @@ fn admit_pcurve<'a>(
     })
 }
 
+/// Checks that an explicit pcurve tracks its directed edge curve through the
+/// NURBS surface.
+///
+/// `face_tolerance` is an admitted IR-stated tolerance from
+/// `stated_write_tolerance`.
 fn validate_nurbs_trim(
     surface: &cadmpeg_ir::geometry::NurbsSurface,
     face_tolerance: f64,
@@ -1329,8 +1358,7 @@ fn validate_nurbs_trim(
                 .tolerance
                 .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get),
         )
-        .max(pcurve.fit_tolerance().unwrap_or(0.0))
-        .max(EPS_WRITE_DEGENERATE);
+        .max(pcurve.fit_tolerance().unwrap_or(0.0));
     for span in breaks.windows(2) {
         for step in 0..=16 {
             let fraction = f64::from(step) / 16.0;

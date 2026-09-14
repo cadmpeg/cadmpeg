@@ -562,11 +562,28 @@ impl<'a> CompoundSnapshot<'a> {
                 )
                 .ok_or_else(|| CodecError::Malformed("CFB ledger offset overflow".into()))?
                 as u64;
+            let window_len = self.root.window().len() as u64;
             let sector_end = start
                 .checked_add(self.parsed.version.sector_size() as u64)
-                .ok_or_else(|| CodecError::Malformed("CFB ledger offset overflow".into()))?
-                .min(self.root.window().len() as u64);
-            let sector_length = usize::try_from(sector_end.saturating_sub(start))
+                .ok_or_else(|| CodecError::Malformed("CFB ledger offset overflow".into()))?;
+            // The sector count divides the window with `div_ceil`, so the file
+            // holds a partial final sector when its length is not a whole
+            // number of sectors. Every other sector covers a whole sector.
+            let available = window_len.checked_sub(start).ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "CFB sector {index} starts at byte {start}, but the file holds {window_len} bytes"
+                ))
+            })?;
+            let sector_span = if sector_end <= window_len {
+                self.parsed.version.sector_size() as u64
+            } else if index + 1 == self.parsed.sector_count {
+                available
+            } else {
+                return malformed(format!(
+                    "CFB sector {index} declares its end at byte {sector_end}, but the file holds {window_len} bytes"
+                ));
+            };
+            let sector_length = usize::try_from(sector_span)
                 .map_err(|_| CodecError::Malformed("CFB ledger sector length overflow".into()))?;
             let sector = u32::try_from(index)
                 .map_err(|_| CodecError::Malformed("CFB sector id exceeds u32".into()))?;

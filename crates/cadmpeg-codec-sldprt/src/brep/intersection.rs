@@ -15,6 +15,7 @@ use cadmpeg_core::bytes::find_iter;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point2, Point3};
+use cadmpeg_ir::report::LossNote;
 
 use super::{CurveCarrier, LEN_TO_MM};
 
@@ -430,7 +431,7 @@ fn nearest_term(
 /// curve; only a unique complete width-4 record supplies solved pcurves.
 pub(super) fn scan_intersection_carriers(
     bytes: &[u8],
-    lane_refusals: &mut Vec<String>,
+    lane_refusals: &mut Vec<LossNote>,
 ) -> HashMap<u16, IntersectionCarrier> {
     let charts = chart_records(bytes);
     let terms = term_records(bytes);
@@ -477,12 +478,11 @@ pub(super) fn scan_intersection_carriers(
         for candidate in matches {
             ambiguous_after.push(candidate);
         }
-        lane_refusals.extend(
-            chart_refusal
-                .take_records()
-                .into_iter()
-                .map(|record| format!("intersection chart for attr {attr}: {record}")),
-        );
+        lane_refusals.extend(chart_refusal.take_records().into_iter().map(|record| {
+            crate::loss::spline_lane_refusal(&format!(
+                "intersection chart for attr {attr}: {record}"
+            ))
+        }));
         let Some(mut selected) = selected else {
             continue;
         };

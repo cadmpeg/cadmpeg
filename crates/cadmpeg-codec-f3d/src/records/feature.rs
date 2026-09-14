@@ -5097,6 +5097,10 @@ impl std::fmt::Display for DesignParameterScopePayloadError {
 
 impl std::error::Error for DesignParameterScopePayloadError {}
 
+/// Distance in bytes from the state word to the length-prefixed kind name of a
+/// parameter scope.
+const HISTORY_STATE_ID_BACK_OFFSET: u64 = 8;
+
 /// Indexed sketch or construction-operation record that scopes parameters.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(
@@ -5116,6 +5120,8 @@ pub struct DesignParameterScope {
     frame_length: u64,
     /// Byte offset of the kind's UTF-16LE code units.
     kind_offset: u64,
+    /// Byte offset of the state word before the length-prefixed kind name.
+    history_state_id_offset: u64,
     /// One-based ordinal among scopes of the same feature family.
     pub feature_ordinal: std::num::NonZeroU32,
     /// Byte offset of `feature_ordinal`.
@@ -6935,7 +6941,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 wire.kind
             )));
         }
-        if wire.history_state_id_offset != wire.kind_offset.saturating_sub(8) {
+        if wire.kind_offset.checked_sub(HISTORY_STATE_ID_BACK_OFFSET)
+            != Some(wire.history_state_id_offset)
+        {
             return Err(DesignParameterScopePayloadError(
                 "history_state_id_offset disagrees with kind_offset".into(),
             ));
@@ -7179,6 +7187,10 @@ impl DesignParameterScope {
         {
             return Err(fail("kind_offset/feature_ordinal_offset"));
         }
+        let history_state_id_offset = draft
+            .kind_offset
+            .checked_sub(HISTORY_STATE_ID_BACK_OFFSET)
+            .ok_or_else(|| fail("kind_offset"))?;
         let tail = draft
             .paired_byte_offset
             .checked_sub(draft.feature_ordinal_offset)
@@ -7245,6 +7257,7 @@ impl DesignParameterScope {
             record_index: draft.record_index,
             frame_length: draft.frame_length,
             kind_offset: draft.kind_offset,
+            history_state_id_offset,
             feature_ordinal: draft.feature_ordinal,
             feature_ordinal_offset: draft.feature_ordinal_offset,
             history_state_id: draft.history_state_id,
@@ -7333,7 +7346,7 @@ impl DesignParameterScope {
 impl DesignParameterScope {
     /// Byte offset of the state word before the length-prefixed kind name.
     pub fn history_state_id_offset(&self) -> u64 {
-        self.kind_offset.saturating_sub(8)
+        self.history_state_id_offset
     }
 
     /// Source feature-family name, derived from its construction variant.

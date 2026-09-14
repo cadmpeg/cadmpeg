@@ -20,15 +20,6 @@ use crate::parse::{Exchange, RawRecord, Value};
 use super::representation;
 use super::{decode_text, opaque_record_id, record_targets, StageOutcome};
 
-const DRAWING_ENTITIES: &[&str] = &[
-    "DRAWING_DEFINITION",
-    "DRAWING_REVISION",
-    "DRAWING_SHEET_REVISION",
-    "PRESENTATION_VIEW",
-    "PRESENTATION_SIZE",
-    "DRAUGHTING_MODEL",
-    "DRAUGHTING_CALLOUT",
-];
 const DRAWING_ASSOCIATION_TYPES: &[&str] = &[
     "DRAUGHTING_MODEL_ITEM_ASSOCIATION",
     "DRAUGHTING_MODEL_ITEM_ASSOCIATION_WITH_PLACEHOLDER",
@@ -97,8 +88,8 @@ pub(super) fn decode(
     let mut candidates = exchange
         .records
         .iter()
-        .filter_map(|(&id, record)| drawing_type(record).map(|name| (id, name)))
-        .filter(|(id, name)| {
+        .filter_map(|(&id, record)| drawing_type(record).map(|(name, kind)| (id, name, kind)))
+        .filter(|(id, name, _)| {
             let valid = required_parameter_count(name)
                 .is_none_or(|count| source_parameters(&exchange.records[id], name).len() >= count);
             if !valid {
@@ -109,7 +100,7 @@ pub(super) fn decode(
             valid
         })
         .collect::<Vec<_>>();
-    candidates.sort_by_key(|(id, _)| exchange.records[id].span.start);
+    candidates.sort_by_key(|(id, ..)| exchange.records[id].span.start);
 
     if candidates.is_empty() {
         return StageOutcome {
@@ -122,7 +113,7 @@ pub(super) fn decode(
 
     let drawing_ids = candidates
         .iter()
-        .map(|(id, _)| *id)
+        .map(|(id, ..)| *id)
         .collect::<BTreeSet<_>>();
     let hidden_drawing_ids = exchange
         .records
@@ -150,7 +141,7 @@ pub(super) fn decode(
 
     let drawing_identities = candidates
         .iter()
-        .map(|(id, name)| (*id, drawing_identity(*id, name)))
+        .map(|&(id, _, kind)| (id, ids::drawing(kind, id)))
         .collect::<BTreeMap<_, _>>();
     let mut target_identities = record_targets(ir, |record_id| known_typed.contains(&record_id));
     for (&id, identity) in &drawing_identities {
@@ -192,7 +183,7 @@ pub(super) fn decode(
     };
 
     let mut drawings = BTreeMap::<u64, Drawing>::new();
-    for (order, &(id, name)) in candidates.iter().enumerate() {
+    for (order, &(id, name, _)) in candidates.iter().enumerate() {
         let record = &exchange.records[&id];
         let identity = drawing_identities
             .get(&id)
@@ -267,16 +258,19 @@ pub(super) fn decode(
 }
 
 pub(super) fn is_supported_invisibility_target(record: &RawRecord) -> bool {
-    let Some(name) = drawing_type(record) else {
+    let Some((name, _)) = drawing_type(record) else {
         return false;
     };
     required_parameter_count(name)
         .is_none_or(|count| source_parameters(record, name).len() >= count)
 }
 
-fn referenced_target_ids(exchange: &Exchange, candidates: &[(u64, &str)]) -> BTreeSet<u64> {
+fn referenced_target_ids(
+    exchange: &Exchange,
+    candidates: &[(u64, &'static str, &'static crate::ids::IdentityKind)],
+) -> BTreeSet<u64> {
     let mut ids = BTreeSet::new();
-    for &(source_id, name) in candidates {
+    for &(source_id, name, _) in candidates {
         let parameters = source_parameters(&exchange.records[&source_id], name);
         for &(index, _) in relationship_fields(name) {
             if let Some(value) = parameters.get(index) {
@@ -378,11 +372,27 @@ fn is_wrapper_record(record: &RawRecord, exchange: &Exchange) -> bool {
         || mapped_representation(record, exchange).is_some()
 }
 
-fn drawing_type(record: &RawRecord) -> Option<&'static str> {
-    DRAWING_ENTITIES
-        .iter()
-        .copied()
-        .find(|name| record.partials.iter().any(|partial| partial.name == *name))
+/// Each drawing entity name and the identity kind that name spells.
+///
+/// The pairing is the type that makes the drawing mint path total: a drawing
+/// record reaches [`ids::drawing`] with a kind that came from this table, so
+/// no identity kind is ever derived from record text at run time.
+fn drawing_entities() -> [(&'static str, &'static crate::ids::IdentityKind); 7] {
+    [
+        ("DRAWING_DEFINITION", kind!("drawing_definition")),
+        ("DRAWING_REVISION", kind!("drawing_revision")),
+        ("DRAWING_SHEET_REVISION", kind!("drawing_sheet_revision")),
+        ("PRESENTATION_VIEW", kind!("presentation_view")),
+        ("PRESENTATION_SIZE", kind!("presentation_size")),
+        ("DRAUGHTING_MODEL", kind!("draughting_model")),
+        ("DRAUGHTING_CALLOUT", kind!("draughting_callout")),
+    ]
+}
+
+fn drawing_type(record: &RawRecord) -> Option<(&'static str, &'static crate::ids::IdentityKind)> {
+    drawing_entities()
+        .into_iter()
+        .find(|(name, _)| record.partials.iter().any(|partial| partial.name == *name))
 }
 
 fn drawing_kind(name: &str) -> DrawingKind {
@@ -392,11 +402,6 @@ fn drawing_kind(name: &str) -> DrawingKind {
         "DRAUGHTING_CALLOUT" => DrawingKind::Annotation,
         _ => DrawingKind::Other,
     }
-}
-
-fn drawing_identity(id: u64, name: &str) -> cadmpeg_ir::ids::Identity {
-    let derived = crate::ids::IdentityKind::parse(&name.to_ascii_lowercase());
-    ids::drawing(derived.as_ref().unwrap_or(kind!("drawing")), id)
 }
 
 fn required_parameter_count(name: &str) -> Option<usize> {

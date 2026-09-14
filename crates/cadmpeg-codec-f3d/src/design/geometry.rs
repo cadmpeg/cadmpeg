@@ -2803,13 +2803,8 @@ pub(crate) fn closed_sketch_profiles(
                     SketchGeometryDefinition::Line { .. }
                 )
             }) {
-                let branched_profiles = branched_line_profiles(
-                    &component,
-                    &edges,
-                    &edge_nodes,
-                    &adjacency,
-                    linear_tolerance,
-                );
+                let branched_profiles =
+                    branched_line_profiles(&component, &edges, &edge_nodes, linear_tolerance);
                 if branched_profiles.is_empty() {
                     if let Some(profile) = tangent_nested_line_profile(
                         &component,
@@ -2865,11 +2860,13 @@ pub(crate) fn closed_sketch_profiles(
     profiles
 }
 
+/// Half-edge walk over one branched line component. The local `outgoing` map
+/// is the only adjacency this walk needs: it is built here from `edge_nodes`,
+/// so every half-edge reaches its twin by construction.
 fn branched_line_profiles(
     component: &[usize],
     edges: &[(&cadmpeg_ir::sketches::SketchEntity, [Point2; 2])],
     edge_nodes: &[[usize; 2]],
-    adjacency: &HashMap<usize, Vec<usize>>,
     linear_tolerance: f64,
 ) -> Vec<Vec<cadmpeg_ir::sketches::SketchEntityUse>> {
     use cadmpeg_ir::sketches::SketchEntityUse;
@@ -2963,11 +2960,6 @@ fn branched_line_profiles(
         }
     }
 
-    debug_assert!(component.iter().all(|edge| {
-        edge_nodes[*edge]
-            .iter()
-            .all(|node| adjacency[node].contains(edge))
-    }));
     profiles
 }
 

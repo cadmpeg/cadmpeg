@@ -1439,9 +1439,6 @@ impl F3dNative {
         namespace: &mut cadmpeg_ir::NativeNamespace,
     ) -> Result<(), cadmpeg_ir::NativeConvertError> {
         F3D_CATALOGUE.emit_all(self, namespace)?;
-        debug_assert!(F3D_ARENA_NAMES
-            .iter()
-            .all(|name| namespace.arenas().contains_key(*name)));
         Ok(())
     }
 }

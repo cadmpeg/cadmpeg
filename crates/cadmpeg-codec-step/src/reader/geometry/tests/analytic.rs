@@ -521,15 +521,13 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
     );
 
     for (curve_id, expected_range) in [
-        ("#13", [-std::f64::consts::FRAC_PI_2, 0.0]),
-        ("#14", [-std::f64::consts::FRAC_PI_2, 0.0]),
-        ("#18", [-std::f64::consts::FRAC_PI_2, 0.0]),
-        ("#20", [-std::f64::consts::FRAC_PI_2, 0.0]),
+        (13u64, [-std::f64::consts::FRAC_PI_2, 0.0]),
+        (14u64, [-std::f64::consts::FRAC_PI_2, 0.0]),
+        (18u64, [-std::f64::consts::FRAC_PI_2, 0.0]),
+        (20u64, [-std::f64::consts::FRAC_PI_2, 0.0]),
     ] {
-        let construction_id = ProceduralCurveId::from(ids::construction(
-            kind!("trimmed_curve"),
-            curve_id.trim_start_matches('#'),
-        ));
+        let construction_id =
+            ProceduralCurveId::from(ids::construction(kind!("trimmed_curve"), curve_id));
         let construction = decoded
             .ir()
             .model

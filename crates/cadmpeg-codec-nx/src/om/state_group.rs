@@ -53,6 +53,20 @@ impl OperationStateGroupCount {
             Self::Counted(count) => count,
         }
     }
+
+    /// Rows the header states after the implicit owner slot.
+    ///
+    /// The declared count includes the owner slot, so a counted group of `n`
+    /// states `n - 1` rows. An empty group and a counted zero state no owner
+    /// slot and no rows. The count owns this arithmetic: a caller that
+    /// subtracts the owner slot itself can state a row count the header does
+    /// not carry.
+    pub fn member_row_count(self) -> usize {
+        match self {
+            Self::Empty | Self::Counted(0) => 0,
+            Self::Counted(count) => usize::from(count) - 1,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,7 +81,7 @@ pub(crate) struct StateGroupMembers<R>(GroupBody<R>);
 
 impl<R> StateGroupMembers<R> {
     pub(crate) fn new(count: OperationStateGroupCount, rows: Vec<R>) -> Result<Self, &'static str> {
-        if rows.len() != usize::from(count.declared_count().saturating_sub(1)) {
+        if rows.len() != count.member_row_count() {
             return Err("declared_count/rows: row count disagrees with header");
         }
         let body = match count {

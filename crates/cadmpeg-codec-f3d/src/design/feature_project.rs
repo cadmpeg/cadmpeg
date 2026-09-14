@@ -6539,6 +6539,25 @@ fn circular_pattern_axis(
     }
 }
 
+/// The gap count of an active rectangular pattern axis: one less than the
+/// instance count. An axis is active only when it states two or more
+/// instances, so the gap count is never zero and always divides.
+#[derive(Clone, Copy)]
+struct PatternIntervals(std::num::NonZeroU32);
+
+impl PatternIntervals {
+    /// Admit an active axis. An axis with fewer than two instances states no
+    /// gap and is refused here.
+    fn new(count: u32) -> Option<Self> {
+        std::num::NonZeroU32::new(count.checked_sub(1)?).map(Self)
+    }
+
+    /// The gap count.
+    const fn get(self) -> u32 {
+        self.0.get()
+    }
+}
+
 fn project_rectangular_pattern_scalars(
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
@@ -6565,9 +6584,11 @@ fn project_rectangular_pattern_scalars(
         ),
     ]
     .into_iter()
-    .filter(|(count, _, _)| *count > 1)
+    .filter_map(|(count, extent, inactive_count)| {
+        Some((count, PatternIntervals::new(count)?, extent, inactive_count))
+    })
     .collect::<Vec<_>>();
-    let [(count, extent, inactive_count)] = active.as_slice() else {
+    let [(count, intervals, extent, inactive_count)] = active.as_slice() else {
         return None;
     };
     if *inactive_count != 1 {
@@ -6639,7 +6660,7 @@ fn project_rectangular_pattern_scalars(
         seeds,
         pattern: PatternKind::new(PatternTransform::Linear {
             direction,
-            spacing: Length::new(extent.abs() * 10.0 / f64::from(count.saturating_sub(1)))?,
+            spacing: Length::new(extent.abs() * 10.0 / f64::from(intervals.get()))?,
             count: *count,
             second: None,
         })

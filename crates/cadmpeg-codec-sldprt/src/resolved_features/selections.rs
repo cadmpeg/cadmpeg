@@ -976,7 +976,9 @@ fn compact_surface_selection_candidates_for_class(
     let Some(body) = class_offset.checked_add(6 + class.name.len()) else {
         return Vec::new();
     };
-    let Some(bounded_payload) = payload.get(..end.min(payload.len())) else {
+    let Some(bounded_payload) =
+        super::DeclaredEnd::of(end, payload.len()).and_then(|end| payload.get(..end.get()))
+    else {
         return Vec::new();
     };
     let Some(last_marker) = bounded_payload
@@ -1151,7 +1153,10 @@ fn cosmetic_thread_repeated_component_edge_ranges(
     object_start: usize,
     object_end: usize,
 ) -> Vec<Range<usize>> {
-    let end = object_end.min(payload.len());
+    let Some(end) = super::DeclaredEnd::of(object_end, payload.len()).map(super::DeclaredEnd::get)
+    else {
+        return Vec::new();
+    };
     let Some(last_token) = end.checked_sub(2 + component_edge::LEN) else {
         return Vec::new();
     };
@@ -1408,7 +1413,10 @@ fn component_face_reference_candidates(
     start: usize,
     end: usize,
 ) -> Vec<(usize, Vec<FeatureInputComponentPathEntry>)> {
-    let bounded_end = end.min(payload.len());
+    let Some(bounded_end) = super::DeclaredEnd::of(end, payload.len()).map(super::DeclaredEnd::get)
+    else {
+        return Vec::new();
+    };
     let Some(bounded_payload) = payload.get(..bounded_end) else {
         return Vec::new();
     };

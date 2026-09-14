@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP boundary-representation ownership and orientation decoding.
 
-use crate::ids::kind;
+use crate::ids::{key_word, kind};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroUsize;
 use std::rc::Rc;
@@ -19,8 +19,8 @@ use cadmpeg_ir::geometry::{
     Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
-    SurfaceId, VertexId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, IdentityKey, IdentityKeyTail, LoopId, PcurveId,
+    PointId, RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -896,9 +896,9 @@ fn build_wire_set(
     let set_type = most_specific(set, &["CONNECTED_EDGE_SUB_SET", "CONNECTED_EDGE_SET"])?;
     let used_edges = connected_set_members(set, set_type)?;
     let suffix = if scoped {
-        format!("-set-{set_id}")
+        IdentityKeyTail::empty().dash(key_word!("set")).dash(set_id)
     } else {
-        String::new()
+        IdentityKeyTail::empty()
     };
     let mut typed = HashSet::from([id, set_id]);
     if set_type == "CONNECTED_EDGE_SUB_SET"
@@ -912,9 +912,20 @@ fn build_wire_set(
     for edge_id in used_edges {
         let edge = edefs.get(&edge_id)?;
         let (start, end) = edge.curve_vertices();
-        let edge_suffix = format!("-wire-{id}-set-{set_id}");
-        let ir_id = EdgeId::from(ids::data(kind!("edge"), format!("{edge_id}{edge_suffix}")));
-        let vertex_suffix = format!("-wire-{id}-set-{set_id}");
+        let edge_suffix = IdentityKeyTail::empty()
+            .dash(key_word!("wire"))
+            .dash(id)
+            .dash(key_word!("set"))
+            .dash(set_id);
+        let ir_id = EdgeId::from(ids::data(
+            kind!("edge"),
+            IdentityKey::from(edge_id).with_tail(&edge_suffix),
+        ));
+        let vertex_suffix = IdentityKeyTail::empty()
+            .dash(key_word!("wire"))
+            .dash(id)
+            .dash(key_word!("set"))
+            .dash(set_id);
         wire_edges.push(ir_id.clone());
         built_edges.push(Edge {
             id: ir_id,
@@ -923,9 +934,12 @@ fn build_wire_set(
             )),
             start: VertexId::from(ids::data(
                 kind!("vertex"),
-                format!("{start}{vertex_suffix}"),
+                IdentityKey::from(start).with_tail(&vertex_suffix),
             )),
-            end: VertexId::from(ids::data(kind!("vertex"), format!("{end}{vertex_suffix}"))),
+            end: VertexId::from(ids::data(
+                kind!("vertex"),
+                IdentityKey::from(end).with_tail(&vertex_suffix),
+            )),
             tolerance: None,
         });
         used_vertices.extend([start, end]);
@@ -934,7 +948,11 @@ fn build_wire_set(
             typed.insert(parent);
         }
     }
-    let vertex_suffix = format!("-wire-{id}-set-{set_id}");
+    let vertex_suffix = IdentityKeyTail::empty()
+        .dash(key_word!("wire"))
+        .dash(id)
+        .dash(key_word!("set"))
+        .dash(set_id);
     let mut built_vertices = Vec::new();
     for vertex_id in used_vertices {
         let vertex = vdefs.get(&vertex_id)?;
@@ -942,16 +960,25 @@ fn build_wire_set(
         built_vertices.push(Vertex {
             id: VertexId::from(ids::data(
                 kind!("vertex"),
-                format!("{vertex_id}{vertex_suffix}"),
+                IdentityKey::from(vertex_id).with_tail(&vertex_suffix),
             )),
             point: PointId::from(ids::data(kind!("point"), vertex.point)),
             tolerance: None,
         });
         typed.insert(vertex_id);
     }
-    let body = BodyId::from(ids::data(kind!("body"), format!("{id}{suffix}")));
-    let region = RegionId::from(ids::data(kind!("region"), format!("{id}{suffix}")));
-    let shell = ShellId::from(ids::data(kind!("shell"), format!("{id}{suffix}")));
+    let body = BodyId::from(ids::data(
+        kind!("body"),
+        IdentityKey::from(id).with_tail(&suffix),
+    ));
+    let region = RegionId::from(ids::data(
+        kind!("region"),
+        IdentityKey::from(id).with_tail(&suffix),
+    ));
+    let shell = ShellId::from(ids::data(
+        kind!("shell"),
+        IdentityKey::from(id).with_tail(&suffix),
+    ));
     let mut built = staged_topology(
         typed,
         built_vertices,
@@ -1105,11 +1132,17 @@ fn build_shell_wire_set(
         return None;
     }
     let suffix = if scoped {
-        format!("-shell-{shell_id}")
+        IdentityKeyTail::empty()
+            .dash(key_word!("shell"))
+            .dash(shell_id)
     } else {
-        String::new()
+        IdentityKeyTail::empty()
     };
-    let vertex_suffix = format!("-wire-{id}-shell-{shell_id}");
+    let vertex_suffix = IdentityKeyTail::empty()
+        .dash(key_word!("wire"))
+        .dash(id)
+        .dash(key_word!("shell"))
+        .dash(shell_id);
     let mut edges = Vec::new();
     let mut wire_edges = Vec::new();
     for (index, (edge_id, oriented_id, forward)) in edge_uses.into_iter().enumerate() {
@@ -1122,7 +1155,12 @@ fn build_shell_wire_set(
         };
         let ir_id = EdgeId::from(ids::data(
             kind!("edge"),
-            format!("{edge_id}-wire-{id}-{shell_id}-{oriented_id}-{index}"),
+            IdentityKey::from(edge_id)
+                .dash(key_word!("wire"))
+                .dash(id)
+                .dash(shell_id)
+                .dash(oriented_id)
+                .dash(index),
         ));
         wire_edges.push(ir_id.clone());
         edges.push(Edge {
@@ -1132,9 +1170,12 @@ fn build_shell_wire_set(
             )),
             start: VertexId::from(ids::data(
                 kind!("vertex"),
-                format!("{start}{vertex_suffix}"),
+                IdentityKey::from(start).with_tail(&vertex_suffix),
             )),
-            end: VertexId::from(ids::data(kind!("vertex"), format!("{end}{vertex_suffix}"))),
+            end: VertexId::from(ids::data(
+                kind!("vertex"),
+                IdentityKey::from(end).with_tail(&vertex_suffix),
+            )),
             tolerance: None,
         });
     }
@@ -1146,22 +1187,28 @@ fn build_shell_wire_set(
             Some(Vertex {
                 id: VertexId::from(ids::data(
                     kind!("vertex"),
-                    format!("{vertex_id}{vertex_suffix}"),
+                    IdentityKey::from(vertex_id).with_tail(&vertex_suffix),
                 )),
                 point: PointId::from(ids::data(kind!("point"), vertex.point)),
                 tolerance: None,
             })
         })
         .collect::<Option<Vec<_>>>()?;
-    let body = BodyId::from(ids::data(kind!("body"), format!("{id}{suffix}")));
-    let region = RegionId::from(ids::data(kind!("region"), format!("{id}{suffix}")));
+    let body = BodyId::from(ids::data(
+        kind!("body"),
+        IdentityKey::from(id).with_tail(&suffix),
+    ));
+    let region = RegionId::from(ids::data(
+        kind!("region"),
+        IdentityKey::from(id).with_tail(&suffix),
+    ));
     let shell = shell_identity(id, shell_id, scope_root);
     let free_vertices = free_vertices
         .into_iter()
         .map(|vertex| {
             VertexId::from(ids::data(
                 kind!("vertex"),
-                format!("{vertex}{vertex_suffix}"),
+                IdentityKey::from(vertex).with_tail(&vertex_suffix),
             ))
         })
         .collect();
@@ -1264,7 +1311,10 @@ fn build_geometric_set(
     let mut typed = HashSet::from([id]);
     let body = BodyId::from(ids::data(kind!("body"), id));
     let region = RegionId::from(ids::data(kind!("region"), id));
-    let shell_id = ShellId::from(ids::data(kind!("shell"), format!("geometric-set-{id}")));
+    let shell_id = ShellId::from(ids::data(
+        kind!("shell"),
+        key_word!("geometric").dash(key_word!("set")).dash(id),
+    ));
     let mut shell: Option<Shell> = None;
     let mut faces = Vec::new();
     for set_id in set_ids {
@@ -1293,7 +1343,10 @@ fn build_geometric_set(
                 let face = Face {
                     id: FaceId::from(ids::data(
                         kind!("face"),
-                        format!("{surface_step}-geometric-set-{id}"),
+                        IdentityKey::from(surface_step)
+                            .dash(key_word!("geometric"))
+                            .dash(key_word!("set"))
+                            .dash(id),
                     )),
                     shell: shell_id.clone(),
                     surface,
@@ -2025,17 +2078,19 @@ fn build(
             }
         };
         let suffix = if scoped {
-            Some(format!("-shell-{shell_step}"))
+            IdentityKeyTail::empty()
+                .dash(key_word!("shell"))
+                .dash(shell_step)
         } else {
-            None
+            IdentityKeyTail::empty()
         };
         let body = BodyId::from(ids::data(
             kind!("body"),
-            format!("{id}{}", suffix.as_deref().unwrap_or_default()),
+            IdentityKey::from(id).with_tail(&suffix),
         ));
         let region = RegionId::from(ids::data(
             kind!("region"),
-            format!("{id}{}", suffix.as_deref().unwrap_or_default()),
+            IdentityKey::from(id).with_tail(&suffix),
         ));
         if let Some(value) = build_one(
             id,
@@ -2234,19 +2289,28 @@ fn build_one(
             typed.extend(face_info.typed);
             let face_suffix = if scope_faces {
                 if scope_root {
-                    format!("-root-{id}-shell-{shell_step}")
+                    IdentityKeyTail::empty()
+                        .dash(key_word!("root"))
+                        .dash(id)
+                        .dash(key_word!("shell"))
+                        .dash(shell_step)
                 } else {
-                    format!("-shell-{shell_step}")
+                    IdentityKeyTail::empty()
+                        .dash(key_word!("shell"))
+                        .dash(shell_step)
                 }
             } else {
-                String::new()
+                IdentityKeyTail::empty()
             };
             let surface_id = if let Some(surface_step) = face_info.surface {
                 SurfaceId::from(ids::data(kind!("surface"), surface_step))
             } else {
                 let surface_id = SurfaceId::from(ids::data(
                     kind!("surface"),
-                    format!("implicit-face-{face_step}{face_suffix}"),
+                    key_word!("implicit")
+                        .dash(key_word!("face"))
+                        .dash(face_step)
+                        .with_tail(&face_suffix),
                 ));
                 if implicit_surface_ids.insert(surface_id.clone()) {
                     surfaces.push(Surface {
@@ -2271,7 +2335,7 @@ fn build_one(
             let face_same_sense = face_info.same_sense;
             let fid = FaceId::from(ids::data(
                 kind!("face"),
-                format!("{face_step}{face_suffix}"),
+                IdentityKey::from(face_step).with_tail(&face_suffix),
             ));
             let name = face_info.name.as_ref().and_then(|value| {
                 super::decode_text(
@@ -2314,7 +2378,10 @@ fn build_one(
                 )?;
                 let lid = LoopId::from(ids::data(
                     kind!("loop"),
-                    format!("{loop_step}-face-{face_step}{face_suffix}"),
+                    IdentityKey::from(loop_step)
+                        .dash(key_word!("face"))
+                        .dash(face_step)
+                        .with_tail(&face_suffix),
                 ));
                 if has_type(lr, "VERTEX_LOOP") {
                     let vertex_step = require_carrier(
@@ -2402,7 +2469,12 @@ fn build_one(
                         poly_points.extend([(shell_step, start_point), (shell_step, end_point)]);
                         let cid = CoedgeId::from(ids::data(
                             kind!("coedge"),
-                            format!("poly-{loop_step}-{index}-face-{face_step}{face_suffix}"),
+                            key_word!("poly")
+                                .dash(loop_step)
+                                .dash(index)
+                                .dash(key_word!("face"))
+                                .dash(face_step)
+                                .with_tail(&face_suffix),
                         ));
                         coedge_ids.push(cid.clone());
                         coedges.push(Coedge {
@@ -2479,7 +2551,10 @@ fn build_one(
                     )?;
                     let cid = CoedgeId::from(ids::data(
                         kind!("coedge"),
-                        format!("{use_step}-face-{face_step}{face_suffix}"),
+                        IdentityKey::from(use_step)
+                            .dash(key_word!("face"))
+                            .dash(face_step)
+                            .with_tail(&face_suffix),
                     ));
                     let pcurves: Vec<(PcurveId, Option<[f64; 2]>)> = if let OrientedKind::Seam {
                         pcurve,
@@ -2719,9 +2794,15 @@ fn build_one(
                 ShellId::from(ids::data(
                     kind!("shell"),
                     if scope_root {
-                        format!("{shell_step}-root-{id}-component-{component_index}")
+                        IdentityKey::from(shell_step)
+                            .dash(key_word!("root"))
+                            .dash(id)
+                            .dash(key_word!("component"))
+                            .dash(component_index)
                     } else {
-                        format!("{shell_step}-component-{component_index}")
+                        IdentityKey::from(shell_step)
+                            .dash(key_word!("component"))
+                            .dash(component_index)
                     },
                 ))
             };
@@ -3001,7 +3082,9 @@ fn shell_identity(root_id: u64, shell_step: u64, scope_root: bool) -> ShellId {
     if scope_root {
         ShellId::from(ids::data(
             kind!("shell"),
-            format!("{shell_step}-root-{root_id}"),
+            IdentityKey::from(shell_step)
+                .dash(key_word!("root"))
+                .dash(root_id),
         ))
     } else {
         ShellId::from(ids::data(kind!("shell"), shell_step))
@@ -3019,12 +3102,18 @@ fn scoped_edge_id(
         if scope_root {
             EdgeId::from(ids::data(
                 kind!("edge"),
-                format!("{edge_step}-root-{root_id}-shell-{shell_step}"),
+                IdentityKey::from(edge_step)
+                    .dash(key_word!("root"))
+                    .dash(root_id)
+                    .dash(key_word!("shell"))
+                    .dash(shell_step),
             ))
         } else {
             EdgeId::from(ids::data(
                 kind!("edge"),
-                format!("{edge_step}-shell-{shell_step}"),
+                IdentityKey::from(edge_step)
+                    .dash(key_word!("shell"))
+                    .dash(shell_step),
             ))
         }
     } else {
@@ -3043,12 +3132,18 @@ fn scoped_vertex_id(
         if scope_root {
             VertexId::from(ids::data(
                 kind!("vertex"),
-                format!("{vertex_step}-root-{root_id}-shell-{shell_step}"),
+                IdentityKey::from(vertex_step)
+                    .dash(key_word!("root"))
+                    .dash(root_id)
+                    .dash(key_word!("shell"))
+                    .dash(shell_step),
             ))
         } else {
             VertexId::from(ids::data(
                 kind!("vertex"),
-                format!("{vertex_step}-shell-{shell_step}"),
+                IdentityKey::from(vertex_step)
+                    .dash(key_word!("shell"))
+                    .dash(shell_step),
             ))
         }
     } else {
@@ -3067,18 +3162,28 @@ fn scoped_poly_vertex_id(
         if scope_root {
             VertexId::from(ids::data(
                 kind!("vertex"),
-                format!("poly-point-{point_step}-root-{root_id}-shell-{shell_step}"),
+                key_word!("poly")
+                    .dash(key_word!("point"))
+                    .dash(point_step)
+                    .dash(key_word!("root"))
+                    .dash(root_id)
+                    .dash(key_word!("shell"))
+                    .dash(shell_step),
             ))
         } else {
             VertexId::from(ids::data(
                 kind!("vertex"),
-                format!("poly-point-{point_step}-shell-{shell_step}"),
+                key_word!("poly")
+                    .dash(key_word!("point"))
+                    .dash(point_step)
+                    .dash(key_word!("shell"))
+                    .dash(shell_step),
             ))
         }
     } else {
         VertexId::from(ids::data(
             kind!("vertex"),
-            format!("poly-point-{point_step}"),
+            key_word!("poly").dash(key_word!("point")).dash(point_step),
         ))
     }
 }
@@ -3095,16 +3200,29 @@ fn poly_edge_id(
         if scope_root {
             EdgeId::from(ids::data(
                 kind!("edge"),
-                format!("poly-{start}-{end}-root-{root_id}-shell-{shell_step}"),
+                key_word!("poly")
+                    .dash(start)
+                    .dash(end)
+                    .dash(key_word!("root"))
+                    .dash(root_id)
+                    .dash(key_word!("shell"))
+                    .dash(shell_step),
             ))
         } else {
             EdgeId::from(ids::data(
                 kind!("edge"),
-                format!("poly-{start}-{end}-shell-{shell_step}"),
+                key_word!("poly")
+                    .dash(start)
+                    .dash(end)
+                    .dash(key_word!("shell"))
+                    .dash(shell_step),
             ))
         }
     } else {
-        EdgeId::from(ids::data(kind!("edge"), format!("poly-{start}-{end}")))
+        EdgeId::from(ids::data(
+            kind!("edge"),
+            key_word!("poly").dash(start).dash(end),
+        ))
     }
 }
 

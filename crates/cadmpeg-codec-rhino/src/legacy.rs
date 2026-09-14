@@ -874,10 +874,12 @@ fn v1_nurbs_curve_data(
         }
         control_values.push(values);
     }
-    debug_assert_eq!(
-        value_count,
-        control_values.iter().map(Vec::len).sum::<usize>()
-    );
+    let read_values = control_values.iter().map(Vec::len).sum::<usize>();
+    if read_values != value_count {
+        return Err(CodecError::malformed(format_args!(
+            "V1 NURBS curve declares {value_count} control values and carries {read_values}"
+        )));
+    }
     reader.skip_remaining().map_err(malformed)?;
     Ok(V1NurbsCurve {
         wire_version,

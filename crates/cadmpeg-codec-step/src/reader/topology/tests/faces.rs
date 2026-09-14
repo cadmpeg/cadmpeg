@@ -672,7 +672,13 @@ pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
             .next()
             .expect("a decoded face states a loop")
             .as_str(),
-        ids::data(kind!("loop"), format!("{outer_loop}-face-{face_step}")).as_str()
+        ids::data(
+            kind!("loop"),
+            cadmpeg_ir::ids::IdentityKey::from(outer_loop)
+                .dash(crate::ids::key_word!("face"))
+                .dash(face_step),
+        )
+        .as_str()
     );
 }
 

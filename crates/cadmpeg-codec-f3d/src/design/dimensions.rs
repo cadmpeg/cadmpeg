@@ -5090,6 +5090,9 @@ fn circular_entity_contains_point(
             let relative = Point2::new(point.u - center.u, point.v - center.v);
             let scale = 1.0 + radius.get().abs().max(point.u.abs().max(point.v.abs()));
             let point_tolerance = linear_tolerance.max(EPS_CIRCULAR_TANGENCY * scale.max(1.0));
+            // Not a stated value: the floored quantity is the length-to-angle ratio
+            // computed here, and the constant is the double-precision angular
+            // resolution of that division, never read from the file.
             let angular_tolerance =
                 (point_tolerance / radius.get().abs()).max(EPS_CIRCULAR_TANGENCY);
             let angle = relative.v.atan2(relative.u);

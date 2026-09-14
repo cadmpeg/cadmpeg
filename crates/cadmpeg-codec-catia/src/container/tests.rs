@@ -675,7 +675,7 @@ fn detect_high_on_outer_magic() {
 #[test]
 fn summary_preview_parser_extracts_exact_jpeg_and_dimensions() {
     let bytes = summary_preview_segment();
-    let segments = crate::container::finjpl_segments(&bytes, 0, bytes.len());
+    let segments = crate::container::finjpl_segments(&crate::container::BodyExtent::whole(&bytes));
     assert_eq!(segments[0].name.as_deref(), Some("CATSummaryInformation"));
     let previews = crate::container::preview_images(&bytes);
     assert_eq!(previews.len(), 1);
@@ -889,7 +889,7 @@ fn finjpl_parser_splits_segments_and_classifies_type_words() {
     use crate::container::FinjplKind;
 
     let bytes = finjpl_stream();
-    let segments = crate::container::finjpl_segments(&bytes, 0, bytes.len());
+    let segments = crate::container::finjpl_segments(&crate::container::BodyExtent::whole(&bytes));
     assert_eq!(segments.len(), 2);
     assert_eq!(segments[0].kind(), FinjplKind::Storage);
     assert_eq!(segments[0].type_word, 0x0000_008e);
@@ -955,7 +955,13 @@ fn consolidated_record_sources_follow_physical_stream_extents() {
         expected
     );
     assert_eq!(
-        crate::container::consolidated_record_sources(&scan),
+        crate::container::consolidated_record_sources(&scan)
+            .into_iter()
+            .map(|source| source
+                .into_iter()
+                .map(|extent| extent.range())
+                .collect::<Vec<_>>())
+            .collect::<Vec<_>>(),
         expected_sources
     );
     assert!(crate::container::consolidated_record_ranges(&scan)

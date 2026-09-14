@@ -94,7 +94,10 @@ pub(super) fn declared_line_reference_directions(
     let Ok(class_offset) = usize::try_from(class_offset) else {
         return Vec::new();
     };
-    let end = object_end.min(payload.len());
+    let Some(end) = super::DeclaredEnd::of(object_end, payload.len()).map(super::DeclaredEnd::get)
+    else {
+        return Vec::new();
+    };
     let mut directions = line_reference_direction(&payload[..end], class_offset as u64)
         .into_iter()
         .collect::<Vec<_>>();
@@ -179,7 +182,10 @@ pub(super) fn linear_pattern_display_directions(
     const DIRECTION_OFFSET: usize = 161;
     const LENGTH_TOLERANCE_M: f64 = 1e-8;
 
-    let end = object_end.min(payload.len());
+    let Some(end) = super::DeclaredEnd::of(object_end, payload.len()).map(super::DeclaredEnd::get)
+    else {
+        return Vec::new();
+    };
     ["D3", "D4"]
         .into_iter()
         .zip(expected_spacing_m)
@@ -281,7 +287,10 @@ pub(super) fn compact_line_reference_directions(
     excluded_handles: &[usize],
 ) -> Vec<Vector3> {
     const HANDLES: [u8; 8] = [0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
-    let end = object_end.min(payload.len());
+    let Some(end) = super::DeclaredEnd::of(object_end, payload.len()).map(super::DeclaredEnd::get)
+    else {
+        return Vec::new();
+    };
     let Some(final_handle) = end.checked_sub(80).filter(|end| *end >= object_start) else {
         return Vec::new();
     };
@@ -471,7 +480,7 @@ pub(super) fn revolution_line_reference_inputs(
     const HANDLE: [u8; 4] = [0xc7, 0xcf, 0xff, 0xff];
     const NATIVE_TO_IR: f64 = 1000.0;
 
-    let search_end = object_end.min(payload.len());
+    let search_end = super::DeclaredEnd::of(object_end, payload.len())?.get();
     let scalar = |offset: usize| {
         let value = View::f64_le_at(payload, offset)?;
         (value.is_finite() && value.abs() <= 1.0e6).then_some(value)
@@ -808,7 +817,7 @@ pub(super) fn temporary_axis_reference(
 ) -> Option<(Point3, Vector3)> {
     const NATIVE_TO_IR: f64 = 1000.0;
 
-    let end = object_end.min(payload.len());
+    let end = super::DeclaredEnd::of(object_end, payload.len())?.get();
     let last_declaration = end.checked_sub(temporary_axis::LEN)?;
     let mut candidates = (object_start..=last_declaration).filter_map(|declaration| {
         if payload.get(

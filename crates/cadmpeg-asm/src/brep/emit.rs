@@ -4237,7 +4237,7 @@ pub(crate) fn emit_passthrough_unknowns(
     bytes: &[u8],
     reach: &Reachable,
     format: IdFormat<'_>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let Reachable {
         undecoded_carriers,
         cached_unknown_procedural_surfaces,
@@ -4246,14 +4246,29 @@ pub(crate) fn emit_passthrough_unknowns(
     for r in records {
         let i = r.index as i64;
         if undecoded_carriers.contains(&i) || cached_unknown_procedural_surfaces.contains(&i) {
+            let end = r.offset.checked_add(r.len).ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed(format_args!(
+                    "record {} at byte {} declares a length of {} bytes, which leaves the address space",
+                    r.index, r.offset, r.len
+                ))
+            })?;
+            let retained = bytes.get(r.offset..end).ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed(format_args!(
+                    "record {} declares bytes {}..{end}, but the stream holds {} bytes",
+                    r.index,
+                    r.offset,
+                    bytes.len()
+                ))
+            })?;
             out.unknowns.push(UnknownRecord::retained(
                 UnknownId::mint(unknown_record_id(r, format)).expect("identity grammar"),
                 r.offset as u64,
-                bytes[r.offset..(r.offset + r.len).min(bytes.len())].to_vec(),
+                retained.to_vec(),
                 Vec::new(),
             ));
         }
     }
+    Ok(())
 }
 
 /// Count record kinds that were neither emitted nor preserved.
