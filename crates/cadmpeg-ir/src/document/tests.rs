@@ -585,3 +585,48 @@ fn a_document_holding_a_non_finite_coordinate_has_no_canonical_json() {
         .expect("a finite document writes");
     assert!(!text.contains("\"x\": null"));
 }
+
+/// The live document route reads `feature.name` through
+/// [`crate::features::FeatureRowWire`], and absence is the one spelling that
+/// route produces: `FeatureWriteWire` omits the key for `None`. A stated
+/// `null` is refused by name.
+///
+/// `suppressed` is the counter-case in the same record: its writing
+/// declaration states no `skip_serializing_if`, so `null` is that key's own
+/// spelling and the same document reads it back.
+#[test]
+fn a_stated_null_is_refused_on_every_feature_key_written_by_omission() {
+    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
+
+    let mut ir = unit_cube();
+    ir.model.features.push(Feature::new(
+        FeatureId::mint("test:model:feature#0").expect("identity grammar"),
+        0,
+        FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+    ));
+    let canonical = ir.to_canonical_json().unwrap();
+    let document: serde_json::Value = serde_json::from_str(&canonical).unwrap();
+
+    for key in ["name", "source_tag", "source_text", "native_ref"] {
+        let mut value = document.clone();
+        value["model"]["features"][0]
+            .as_object_mut()
+            .unwrap()
+            .insert(key.to_owned(), serde_json::Value::Null);
+        let json = serde_json::to_string(&value).unwrap();
+        let error = CadIr::from_json(&json).unwrap_err().to_string();
+        assert!(
+            error.contains("this key states a value or is left out; it does not state null"),
+            "feature.{key}: {error}"
+        );
+    }
+
+    let mut value = document.clone();
+    value["model"]["features"][0]
+        .as_object_mut()
+        .unwrap()
+        .insert("suppressed".to_owned(), serde_json::Value::Null);
+    let json = serde_json::to_string(&value).unwrap();
+    let read = CadIr::from_json(&json).unwrap();
+    assert_eq!(read.model.features[0].suppressed, None);
+}

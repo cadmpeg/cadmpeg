@@ -51,3 +51,23 @@ where
 
     deserializer.deserialize_option(Visitor(std::marker::PhantomData))
 }
+
+/// Read a stated optional key whose writer spells `None` as `null`.
+///
+/// A field with no `skip_serializing_if` writes `null` for `None`, so `null`
+/// is that key's own spelling of absence and the reader admits it. The helper
+/// exists so every optional key on a read type states which spelling its
+/// writer produces: [`present`] where the writer omits the key, this where the
+/// writer states `null`. A field that states neither is an undeclared key, and
+/// the wire-crate census names it.
+///
+/// # Errors
+///
+/// Returns the inner type's own error.
+pub fn nullable<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer)
+}

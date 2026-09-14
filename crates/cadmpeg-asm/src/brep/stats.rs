@@ -100,18 +100,23 @@ impl Stats {
 #[serde(deny_unknown_fields)]
 struct StatsWire {
     missing_face_surfaces: usize,
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     missing_face_surface_kinds: std::collections::BTreeMap<String, usize>,
     unknown_surface_faces: usize,
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     unknown_surface_kinds: std::collections::BTreeMap<String, usize>,
     mesh_surface_faces: usize,
     nurbs_surfaces: usize,
     nurbs_curves: usize,
     procedural_curve_edges: usize,
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     procedural_curve_kinds: std::collections::BTreeMap<String, usize>,
     undecoded_pcurve_refs: usize,
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     undecoded_pcurve_kinds: std::collections::BTreeMap<String, usize>,
     partial_procedural_supports: usize,
     other_records: usize,
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     other_record_kinds: std::collections::BTreeMap<String, usize>,
 }
 
@@ -197,5 +202,41 @@ impl<'de> Deserialize<'de> for Stats {
             partial_procedural_supports: wire.partial_procedural_supports,
             other_record_kinds: wire.other_record_kinds,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Stats;
+
+    /// One stats document whose `missing_face_surface_kinds` map is `kinds`.
+    fn document(kinds: &str) -> String {
+        format!(
+            "{{\"missing_face_surfaces\":3,\
+             \"missing_face_surface_kinds\":{kinds},\
+             \"unknown_surface_faces\":0,\"unknown_surface_kinds\":{{}},\
+             \"mesh_surface_faces\":0,\"nurbs_surfaces\":0,\"nurbs_curves\":0,\
+             \"procedural_curve_edges\":0,\"procedural_curve_kinds\":{{}},\
+             \"undecoded_pcurve_refs\":0,\"undecoded_pcurve_kinds\":{{}},\
+             \"partial_procedural_supports\":0,\
+             \"other_records\":0,\"other_record_kinds\":{{}}}}"
+        )
+    }
+
+    /// A restated kind key is refused by name while the map is read. The sum
+    /// check that follows sees only the map the document states, so a count
+    /// lost to a duplicate key cannot balance the total it belongs to: the
+    /// restated document below sums to the stated total and is still refused.
+    #[test]
+    fn a_restated_stats_kind_key_is_refused_by_name() {
+        let read: Stats = serde_json::from_str(&document("{\"cone\":1,\"plane\":2}"))
+            .expect("distinct kind keys");
+        assert_eq!(read.missing_face_surfaces(), 3);
+
+        let Err(error) = serde_json::from_str::<Stats>(&document("{\"cone\":1,\"cone\":3}")) else {
+            panic!("a restated kind key is refused")
+        };
+        let error = error.to_string();
+        assert!(error.contains("cone"), "{error}");
     }
 }

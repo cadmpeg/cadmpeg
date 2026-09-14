@@ -104,9 +104,12 @@ fn deserialize_uri<'de, D: serde::Deserializer<'de>>(
 #[serde(deny_unknown_fields)]
 struct AssetWire {
     id: AssetId,
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     name: Option<String>,
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     media_type: Option<String>,
     content: AssetContent,
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     native_ref: Option<String>,
 }
 

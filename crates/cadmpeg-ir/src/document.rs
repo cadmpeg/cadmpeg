@@ -1099,9 +1099,9 @@ struct CadIrWriteWire<'a> {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct CadIrReadWire {
-    #[serde(default, rename = "ir_version")]
+    #[serde(default, rename = "ir_version", deserialize_with = "cadmpeg_core::absent_key::present")]
     ir_version: Option<serde_json::Value>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     source: Option<SourceMeta>,
     #[serde(default, rename = "units")]
     _units: CanonicalUnitsWire,

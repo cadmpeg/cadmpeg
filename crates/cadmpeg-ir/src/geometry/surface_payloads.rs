@@ -743,7 +743,7 @@ struct SubsetSurfaceConstructionWire {
         deserialize_with = "cadmpeg_core::absent_key::present"
     )]
     v_sense: Option<bool>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     cache: Option<LegacyCache>,
 }
 
@@ -832,6 +832,7 @@ struct ParallelOffsetSurfaceConstructionWire {
     /// Signed offset distance.
     distance: f64,
     /// Whether the source classifies the result as self-intersecting.
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
     self_intersect: Option<bool>,
 }
 
@@ -1145,7 +1146,7 @@ pub struct CompoundSurfacePayload {
 #[serde(deny_unknown_fields)]
 struct CompoundSurfacePayloadWire {
     components: Vec<CompoundComponent<SurfaceId>>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     cache: Option<LegacyCache>,
 }
 impl CompoundSurfacePayload {
@@ -1330,7 +1331,7 @@ pub struct CompoundLoftSurfacePayload {
 #[serde(deny_unknown_fields)]
 struct CompoundLoftSurfacePayloadWire {
     construction: Box<CompoundLoftConstruction>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     cache: Option<LegacyCache>,
 }
 impl CompoundLoftSurfacePayload {
@@ -1417,7 +1418,7 @@ pub struct ScaledCompoundLoftSurfacePayload {
 #[serde(deny_unknown_fields)]
 struct ScaledCompoundLoftSurfacePayloadWire {
     construction: Box<ScaledCompoundLoftConstruction>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     cache: Option<LegacyCache>,
 }
 impl ScaledCompoundLoftSurfacePayload {
@@ -1587,7 +1588,7 @@ pub struct SkinSurfacePayload {
 #[serde(deny_unknown_fields)]
 struct SkinSurfacePayloadWire {
     construction: Box<SkinSurfaceConstruction>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     cache: Option<LegacyCache>,
 }
 impl SkinSurfacePayload {
@@ -1665,7 +1666,7 @@ pub struct NetSurfacePayload {
 #[serde(deny_unknown_fields)]
 struct NetSurfacePayloadWire {
     construction: Box<NetSurfaceConstruction>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     cache: Option<LegacyCache>,
 }
 impl NetSurfacePayload {
@@ -2067,7 +2068,7 @@ pub struct G2BlendSurfacePayload {
 #[serde(deny_unknown_fields)]
 struct G2BlendSurfacePayloadWire {
     construction: Box<G2BlendConstruction>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     cache: Option<LegacyCache>,
 }
 impl G2BlendSurfacePayload {

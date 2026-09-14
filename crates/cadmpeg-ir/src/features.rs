@@ -1291,27 +1291,27 @@ impl<'a> FeatureWriteWire<'a> {
 pub(crate) struct FeatureRowWire {
     id: FeatureId,
     ordinal: u64,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     name: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
     suppressed: Option<bool>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     regeneration_parent: Option<FeatureId>,
     #[serde(default, deserialize_with = "deserialize_dependencies")]
     dependencies: DistinctMembers<FeatureId>,
     #[serde(default)]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     source_properties: BTreeMap<NonBlankString, String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     source_tag: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     source_text: Option<String>,
     #[serde(default)]
     source_content: FeatureContent,
     #[serde(default)]
     outputs: Vec<BodyId>,
     definition: FeatureDefinition,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     native_ref: Option<String>,
 }
 
@@ -1348,25 +1348,25 @@ impl FeatureRowWire {
 struct FeatureReadWire {
     id: FeatureId,
     ordinal: u64,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     name: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
     suppressed: Option<bool>,
     #[serde(default, deserialize_with = "deserialize_dependencies")]
     dependencies: DistinctMembers<FeatureId>,
     #[serde(default)]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     source_properties: BTreeMap<NonBlankString, String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     source_tag: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     source_text: Option<String>,
     #[serde(default)]
     source_content: FeatureContent,
     #[serde(default)]
     outputs: Vec<BodyId>,
     definition: FeatureDefinition,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     native_ref: Option<String>,
 }
 
@@ -2532,8 +2532,10 @@ pub enum FeatureOperation {
     /// Rectangular solid primitive.
     Block {
         /// Ordered local x, y, and z dimensions, when resolved.
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
         dimensions: Option<[PositiveLength; 3]>,
         /// Local-to-model placement, when resolved.
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
         placement: Option<FeatureRigidPlacement>,
         /// Whether the primitive creates or combines material.
         op: BooleanOp,
@@ -3066,6 +3068,7 @@ pub enum FeatureOperation {
         /// Faces supplying the source surface geometry.
         faces: FaceSelection,
         /// Signed normal offset in canonical millimeters.
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
         distance: Option<Length>,
     },
     /// Joins selected surface bodies along coincident or near-coincident boundaries.
@@ -3073,8 +3076,10 @@ pub enum FeatureOperation {
         /// Faces participating in the knit operation.
         faces: FaceSelection,
         /// Whether coincident face and edge entities are merged.
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
         merge_entities: Option<bool>,
         /// Whether a closed result is converted to a solid body.
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
         create_solid: Option<bool>,
         /// Maximum boundary gap accepted by the operation.
         #[serde(
@@ -3089,6 +3094,7 @@ pub enum FeatureOperation {
         /// Bodies participating in the sew operation.
         bodies: SewBodySelection,
         /// Maximum accepted boundary gap, when resolved.
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
         gap_tolerance: Option<PositiveLength>,
     },
     /// Surface patch spanning a selected edge boundary.
@@ -3126,6 +3132,7 @@ pub enum FeatureOperation {
         /// Surface faces whose boundaries are extended.
         faces: FaceSelection,
         /// Positive extension distance in canonical millimeters.
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
         distance: Option<PositiveLength>,
         /// Geometric continuation law.
         method: SurfaceExtension,
@@ -3167,8 +3174,10 @@ pub enum FeatureOperation {
         /// Structurally selected anchor and pull frame.
         anchor: DraftAnchor,
         /// Signed draft angle.
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
         angle: Option<SlopeAngle>,
         /// Whether material is added away from the pull direction.
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
         outward: Option<bool>,
     },
     /// Boolean operation between existing bodies.
@@ -5005,7 +5014,10 @@ impl FilledSurfaceContinuity {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
-pub struct FilledSurfaceContinuityState(Option<FilledSurfaceContinuity>);
+pub struct FilledSurfaceContinuityState(
+    #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+    Option<FilledSurfaceContinuity>,
+);
 
 impl FilledSurfaceContinuityState {
     /// Creates an unresolved continuity state.
@@ -7230,7 +7242,7 @@ pub type SheetSweepSection = SweepSection<NoGeneratedSection>;
 )]
 pub enum SweepSection<G = GeneratedSweepSection> {
     /// The source requires a cross-section, but its carrier is unresolved.
-    Unresolved(Option<String>),
+    Unresolved(#[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")] Option<String>),
     /// Cross-section supplied by referenced profile geometry.
     Profile(PlanarProfileRef),
     /// Cross-section generated by the sweep construction itself.

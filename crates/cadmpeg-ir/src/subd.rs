@@ -589,7 +589,7 @@ pub struct SubdVertex {
 struct SubdVertexWire {
     point: Point3,
     tag: SubdVertexTag,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     secondary_grips: Option<SubdVertexGripLayout>,
 }
 
@@ -725,8 +725,10 @@ pub enum SubdGripWedge {
     /// One topology and grip slot in the vertex fan.
     Slot {
         /// IR edge for this fan slot.
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
         edge: Option<u32>,
         /// Face in the sector following this slot, or `None` for a boundary gap.
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
         sector_face: Option<u32>,
         /// Spoke grips ordered nearest-first from the owning vertex.
         spokes: Vec<Option<SubdSecondaryGrip>>,
@@ -841,7 +843,7 @@ struct SubdEdgeWire {
     vertices: [u32; 2],
     sharpness: [f64; 2],
     tag: SubdEdgeTag,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     knot_interval: Option<f64>,
     sector_coefficients: [f64; 2],
 }

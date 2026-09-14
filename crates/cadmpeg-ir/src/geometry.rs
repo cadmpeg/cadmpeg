@@ -237,6 +237,7 @@ pub enum SolvedCurveGeometry {
         /// Ordered curve uses and their continuity contracts.
         segments: CompositeCurveSegments,
         /// Whether the source classifies the complete curve as self-intersecting.
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
         self_intersect: Option<bool>,
     },
     /// Free-form NURBS curve.
@@ -456,6 +457,7 @@ pub struct ProceduralSurface {
     /// the neutral surface-carrier interval; its definition retains the
     /// source directrix interval separately. `None` when the record stores no
     /// bound fields.
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
     pub record_bounds: Option<[Option<f64>; 4]>,
 }
 
@@ -1610,6 +1612,7 @@ pub enum DeformableSurfaceData {
         /// First scalar after the flag.
         first_parameter: f64,
         /// Version-gated ASM long when present.
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
         version_value: Option<i64>,
         /// Second scalar after the optional long.
         second_parameter: f64,
@@ -1937,7 +1940,7 @@ struct HelixCurveConstructionWire {
     pitch: Vector3,
     apex_factor: f64,
     axis: Vector3,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     cache: Option<LegacyCache>,
 }
 
@@ -2328,6 +2331,7 @@ pub struct InlineTSplineSubtransform {
 enum InlineTSplineSubtransformWire {
     Inline {
         program: String,
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
         separator: Option<bool>,
         values: String,
     },
@@ -2385,6 +2389,7 @@ pub enum TSplineSubtransform {
 enum TSplineSubtransformWire {
     Inline {
         program: String,
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
         separator: Option<bool>,
         values: String,
     },
@@ -3810,11 +3815,13 @@ pub struct RollingBallSupportCurve<C = CurveId> {
 /// The optional rolling-ball extension clause.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(bound(deserialize = "P: Deserialize<'de>"))]
 #[serde(deny_unknown_fields)]
 pub struct RollingBallSideExtension<P = PcurveGeometry> {
     /// Native integer introducing the clause.
     pub value: i64,
     /// Tertiary BS2 pcurve, absent for `nullbs`.
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
     pub pcurve: Option<P>,
 }
 
@@ -5363,6 +5370,7 @@ pub enum SweepSurfaceLayout {
         /// Profile parameter interval.
         profile_range: [f64; 2],
         /// Optional explicit profile frame.
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
         profile_frame: Option<(Point3, Vector3)>,
         /// Sweep frame origin.
         origin: Point3,
@@ -5388,6 +5396,7 @@ pub enum SweepSurfaceLayout {
         /// Profile parameter interval.
         profile_range: [f64; 2],
         /// Optional explicit profile frame.
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
         profile_frame: Option<(Point3, Vector3)>,
         /// Sweep frame origin.
         origin: Point3,
@@ -5419,6 +5428,7 @@ pub enum SweepSurfaceLayout {
         /// Profile parameter interval.
         profile_range: [f64; 2],
         /// Optional explicit profile frame.
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
         profile_frame: Option<(Point3, Vector3)>,
         /// Sweep frame origin.
         origin: Point3,
@@ -5435,10 +5445,12 @@ pub enum SweepSurfaceLayout {
         /// Support surface controlling the sweep.
         support_surface: SurfaceId,
         /// Optional auxiliary curve.
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
         auxiliary_curve: Option<CurveId>,
         /// Native support-side boolean.
         support_flag: bool,
         /// Legacy pre-219 trailing boolean when present.
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
         legacy_flag: Option<bool>,
     },
     /// Explicit-prefix sweep layout controlled by recursive laws.
@@ -5448,6 +5460,7 @@ pub enum SweepSurfaceLayout {
         /// Profile parameter interval.
         profile_range: [f64; 2],
         /// Optional explicit profile frame.
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
         profile_frame: Option<(Point3, Vector3)>,
         /// Sweep frame origin.
         origin: Point3,
@@ -6060,6 +6073,7 @@ pub enum SpringLayout {
         /// First pcurve or its null replacement range.
         first_pcurve: SpringPcurve,
         /// Nullable second pcurve slot.
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
         second_pcurve: Option<PcurveGeometry>,
         /// Native solved-curve parameter interval.
         parameter_range: [f64; 2],

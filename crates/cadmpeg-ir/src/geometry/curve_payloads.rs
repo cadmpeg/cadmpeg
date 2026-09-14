@@ -504,6 +504,7 @@ struct SpatialOffsetCurveConstructionWire {
     /// Reference direction controlling the offset frame.
     reference_direction: Vector3,
     /// Whether the source classifies the result as self-intersecting.
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
     self_intersect: Option<bool>,
 }
 
@@ -593,7 +594,7 @@ struct TwoSidedOffsetCurveConstructionWire {
     discontinuity_flag: bool,
     /// Signed offset distance for each support side, in document length units.
     offsets: [f64; 2],
-    #[serde(default)]
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     cache: Option<LegacyCache>,
 }
 
@@ -674,7 +675,7 @@ struct VectorOffsetCurveConstructionWire {
     offset: Vector3,
     /// Integer codes attached to the two native roles.
     roles: VectorOffsetRoles,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     cache: Option<LegacyCache>,
 }
 
@@ -762,7 +763,7 @@ struct SubsetCurveConstructionWire {
     /// Whether the subset follows increasing parent parameters.
     #[serde(default = "default_true")]
     sense: bool,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     cache: Option<LegacyCache>,
 }
 

@@ -24,6 +24,7 @@ schemars = { workspace = true, optional = true }
 
 [dev-dependencies]
 cadmpeg-test-support.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true
