@@ -75,6 +75,14 @@ impl NonBlankString {
         Self(format!("{prefix}{suffix}"))
     }
 
+    /// Append text while retaining the admitted non-whitespace character.
+    #[must_use]
+    pub fn with_suffix(&self, suffix: &str) -> Self {
+        let mut value = self.0.clone();
+        value.push_str(suffix);
+        Self(value)
+    }
+
     /// Returns the source string.
     pub fn as_str(&self) -> &str {
         &self.0
