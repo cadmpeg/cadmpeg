@@ -974,23 +974,23 @@ pub(crate) fn b2_closed_owner_boundary_edges(
     targets: &[B2OwnerIdentityTarget],
     endpoint_records: &HashMap<usize, [usize; 2]>,
 ) -> Option<[B2OwnerBoundaryEdge; 4]> {
-    if targets.len() != 4
-        || targets
-            .iter()
-            .any(|target| target.target_class != crate::native::CatiaOwnerIdentityClass::Edge)
+    let [first, second, third, fourth] = targets else {
+        return None;
+    };
+    if targets
+        .iter()
+        .any(|target| target.target_class != crate::native::CatiaOwnerIdentityClass::Edge)
     {
         return None;
     }
-    let mut edges = targets
-        .iter()
-        .map(|target| {
-            Some(B2OwnerBoundaryEdge {
-                slot: target.slot,
-                target_pos: target.target_pos,
-                endpoint_records: *endpoint_records.get(&target.target_pos)?,
-            })
+    let edge = |target: &B2OwnerIdentityTarget| {
+        Some(B2OwnerBoundaryEdge {
+            slot: target.slot,
+            target_pos: target.target_pos,
+            endpoint_records: *endpoint_records.get(&target.target_pos)?,
         })
-        .collect::<Option<Vec<_>>>()?;
+    };
+    let mut edges = [edge(first)?, edge(second)?, edge(third)?, edge(fourth)?];
     edges.sort_unstable_by_key(|edge| edge.slot);
     if edges.windows(2).any(|pair| pair[0].slot == pair[1].slot)
         || edges
@@ -1015,8 +1015,7 @@ pub(crate) fn b2_closed_owner_boundary_edges(
         *degrees.entry(start).or_default() += 1;
         *degrees.entry(end).or_default() += 1;
     }
-    (degrees.len() == 4 && degrees.values().all(|degree| *degree == 2))
-        .then(|| edges.try_into().expect("four owner boundary edges"))
+    (degrees.len() == 4 && degrees.values().all(|degree| *degree == 2)).then_some(edges)
 }
 
 /// Decode source-closed carrier/reference/side/owner chart productions.
@@ -2437,14 +2436,10 @@ pub(crate) fn b2_cones_from_records(data: &[u8], records: &[ConsolidatedRecord])
         let Some(values) = read_f64_array::<23>(data, p) else {
             continue;
         };
-        let apex: [f64; 3] = values[0..3].try_into().expect("three apex values");
-        let t1: [f64; 3] = values[3..6]
-            .try_into()
-            .expect("three first-direction values");
-        let t2: [f64; 3] = values[6..9]
-            .try_into()
-            .expect("three second-direction values");
-        let axis: [f64; 3] = values[9..12].try_into().expect("three axis values");
+        let apex: [f64; 3] = [values[0], values[1], values[2]];
+        let t1: [f64; 3] = [values[3], values[4], values[5]];
+        let t2: [f64; 3] = [values[6], values[7], values[8]];
+        let axis: [f64; 3] = [values[9], values[10], values[11]];
         let half_angle = values[12];
         let reference_radius = values[13];
         let angular_range = [values[14], values[15]];
@@ -2543,13 +2538,9 @@ pub(crate) fn b2_revolutions_from_records(
         let Some(mean_angle_parameter) = f64_le(data, p + 166) else {
             continue;
         };
-        let direction_x: [f64; 3] = axis_frame[3..6]
-            .try_into()
-            .expect("three first-direction values");
-        let direction_y: [f64; 3] = axis_frame[6..9]
-            .try_into()
-            .expect("three second-direction values");
-        let axis: [f64; 3] = axis_frame[9..12].try_into().expect("three axis values");
+        let direction_x: [f64; 3] = [axis_frame[3], axis_frame[4], axis_frame[5]];
+        let direction_y: [f64; 3] = [axis_frame[6], axis_frame[7], axis_frame[8]];
+        let axis: [f64; 3] = [axis_frame[9], axis_frame[10], axis_frame[11]];
         let cross = [
             direction_x[1] * direction_y[2] - direction_x[2] * direction_y[1],
             direction_x[2] * direction_y[0] - direction_x[0] * direction_y[2],
@@ -2587,7 +2578,7 @@ pub(crate) fn b2_revolutions_from_records(
             pos: frame.pos,
             reference_token,
             profile_allocation_id,
-            origin: axis_frame[0..3].try_into().expect("three origin values"),
+            origin: [axis_frame[0], axis_frame[1], axis_frame[2]],
             direction_x,
             direction_y,
             axis,
@@ -2672,12 +2663,12 @@ pub(crate) fn b2_line_profiles_from_records(
                 return None;
             }
             let values = read_f64_array::<9>(data, frame.payload)?;
-            let direction: [f64; 3] = values[3..6].try_into().expect("three direction values");
+            let direction: [f64; 3] = [values[3], values[4], values[5]];
             let direction = ExactUnitVector3::new(direction)?;
             let range = OrderedInterval::new([values[7], values[8]])?;
             (values[6].to_bits() == 1.0_f64.to_bits()).then_some(B2LineProfile {
                 pos: frame.pos,
-                origin: values[0..3].try_into().expect("three origin values"),
+                origin: [values[0], values[1], values[2]],
                 direction,
                 range,
             })
@@ -2700,14 +2691,10 @@ pub(crate) fn b2_tori_from_records(data: &[u8], records: &[ConsolidatedRecord]) 
             let p = frame.payload;
             (frame.end.checked_sub(p) == Some(200)).then_some(())?;
             let values = read_f64_array::<25>(data, p)?;
-            let center: [f64; 3] = values[0..3].try_into().expect("three centre values");
-            let direction_x: [f64; 3] = values[3..6]
-                .try_into()
-                .expect("three first-direction values");
-            let direction_y: [f64; 3] = values[6..9]
-                .try_into()
-                .expect("three second-direction values");
-            let axis: [f64; 3] = values[9..12].try_into().expect("three axis values");
+            let center: [f64; 3] = [values[0], values[1], values[2]];
+            let direction_x: [f64; 3] = [values[3], values[4], values[5]];
+            let direction_y: [f64; 3] = [values[6], values[7], values[8]];
+            let axis: [f64; 3] = [values[9], values[10], values[11]];
             let major_radius = values[12];
             let minor_radius = values[13];
             let major_angular_range = [values[14], values[15]];
@@ -2782,14 +2769,10 @@ pub(crate) fn b2_spheres_from_records(
             let p = frame.payload;
             (frame.end.checked_sub(p) == Some(152)).then_some(())?;
             let values = read_f64_array::<19>(data, p)?;
-            let center: [f64; 3] = values[0..3].try_into().expect("three centre values");
-            let stored_x: [f64; 3] = values[3..6]
-                .try_into()
-                .expect("three first-direction values");
-            let stored_y: [f64; 3] = values[6..9]
-                .try_into()
-                .expect("three second-direction values");
-            let stored_axis: [f64; 3] = values[9..12].try_into().expect("three axis values");
+            let center: [f64; 3] = [values[0], values[1], values[2]];
+            let stored_x: [f64; 3] = [values[3], values[4], values[5]];
+            let stored_y: [f64; 3] = [values[6], values[7], values[8]];
+            let stored_axis: [f64; 3] = [values[9], values[10], values[11]];
             let radius = values[12];
             let azimuth_range = [values[13], values[14]];
             let latitude_range = [values[15], values[16]];

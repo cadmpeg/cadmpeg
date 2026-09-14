@@ -800,16 +800,10 @@ fn finish_decode(
         fully_resolved_consolidated_edge_run_count,
     ) = native.consolidated_edge_runs.iter().fold(
         (0_usize, 0_usize, 0_usize),
-        |(unresolved, partial, full), run| match run
-            .support_bindings
-            .iter()
-            .filter(|binding| binding.is_some())
-            .count()
-        {
-            0 => (unresolved + 1, partial, full),
-            1 => (unresolved, partial + 1, full),
-            2 => (unresolved, partial, full + 1),
-            _ => unreachable!("a consolidated edge run has exactly two support sides"),
+        |(unresolved, partial, full), run| match &run.support_bindings {
+            [None, None] => (unresolved + 1, partial, full),
+            [Some(_), None] | [None, Some(_)] => (unresolved, partial + 1, full),
+            [Some(_), Some(_)] => (unresolved, partial, full + 1),
         },
     );
     let consolidated_edge_run_shared_locus_count = native

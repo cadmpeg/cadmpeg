@@ -7,6 +7,24 @@ use super::{
 };
 
 #[test]
+fn decimal_key_padding_preserves_the_complete_unsigned_value() {
+    for (value, width, expected) in [
+        (0, 0, "0"),
+        (0, 10, "0000000000"),
+        (42, 10, "0000000042"),
+        (123, 2, "123"),
+        (u64::MAX, 10, "18446744073709551615"),
+    ] {
+        let key = IdentityKey::zero_padded(value, width);
+        assert_eq!(key.as_str(), expected);
+        assert!(is_valid_identity(
+            super::Identity::compose(&crate::identity_namespace!("test", "model", "key"), key)
+                .as_str()
+        ));
+    }
+}
+
+#[test]
 fn kind_replacement_preserves_admitted_namespace_and_key() {
     for key in ["0", "owner:child", "é:部", ":"] {
         let source = super::Identity::new(format!("catia:graph:object#{key}")).unwrap();
