@@ -124,6 +124,38 @@ fn production() { value.expect("production"); }
         self.assertIn('lib.rs:4\t.expect("production")', result)
         self.assertIn('non-test lines calling .expect(: 1', result)
 
+    def test_same_line_attributes_and_adjacent_items_keep_production_calls(self) -> None:
+        for source in [
+            '#[test] fn fixture() { a.expect("fixture"); }\nfn prod() { b.expect("production"); }\n',
+            '#[cfg(test)]\nfn fixture() { a.expect("fixture"); } fn prod() { b.expect("production"); }\n',
+            '#[allow(dead_code)] #[test] fn fixture() { a.expect("fixture"); } fn prod() { b.expect("production"); }\n',
+        ]:
+            with self.subTest(source=source):
+                self.write("lib.rs", source)
+                result = self.output()
+                self.assertNotIn('.expect("fixture")', result)
+                self.assertIn('.expect("production")', result)
+                self.assertIn('non-test lines calling .expect(: 1', result)
+
+    def test_same_line_test_module_does_not_gate_the_next_module(self) -> None:
+        self.write("lib.rs", '#[cfg(test)] mod tests { mod fixture; }\nmod live;\n')
+        fixture = self.write("tests/fixture.rs", 'fn f() { value.expect("fixture"); }\n')
+        live = self.write("live.rs", 'fn f() { value.expect("production"); }\n')
+        kept, gated = census.production_files()
+        self.assertIn(live, kept)
+        self.assertIn(fixture, gated)
+        result = self.output()
+        self.assertIn('live.rs:1\t.expect("production")', result)
+        self.assertNotIn('fixture.rs:1', result)
+
+    def test_same_line_path_attribute_and_modules_are_followed(self) -> None:
+        self.write("lib.rs", '#[path = "actual.rs"] mod alias; mod second;\n')
+        actual = self.write("actual.rs", "fn f() {}\n")
+        second = self.write("second.rs", "fn f() {}\n")
+        kept, _ = census.production_files()
+        self.assertIn(actual, kept)
+        self.assertIn(second, kept)
+
     def test_check_fails_for_a_production_call(self) -> None:
         self.write("lib.rs", 'fn f() { value.expect("not a type guarantee"); }\n')
         with redirect_stdout(io.StringIO()):
