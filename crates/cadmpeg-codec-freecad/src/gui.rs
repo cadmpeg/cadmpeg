@@ -536,7 +536,14 @@ fn transfer_schema_one(
         &mut material_losses,
     )?;
     graph.losses.extend(material_losses);
-    transfer_neutral_presentation(&mut plan, &graph, neutral_schema_version)?;
+    let mut presentation_losses = Vec::new();
+    transfer_neutral_presentation(
+        &mut plan,
+        &graph,
+        neutral_schema_version,
+        &mut presentation_losses,
+    )?;
+    graph.losses.extend(presentation_losses);
     Ok((graph, plan))
 }
 
@@ -554,11 +561,18 @@ fn presentation_property_type(name: &str) -> Option<&'static str> {
     }
 }
 
+/// Transfers the GUI graph's presentation layer into `plan`.
+///
+/// A property whose key is blank is charged to `losses` and the rest of the
+/// property set survives: a blank key is one unreadable property of one record,
+/// not a reason to answer no GUI presentation at all.
 fn transfer_neutral_presentation(
     plan: &mut AppearancePlan,
     graph: &Graph,
     neutral_schema_version: Option<u32>,
+    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
 ) -> Result<(), CodecError> {
+    let mut state_losses = Vec::new();
     for document in &graph.documents {
         let mut presentation = PresentationDocument::new(
             PresentationId::mint("fcstd:presentation:document#0").expect("identity grammar"),
@@ -572,17 +586,23 @@ fn transfer_neutral_presentation(
                     .iter()
                     .enumerate()
                     .map(|(order, state)| {
+                        let (attributes, blank) =
+                            cadmpeg_core::text::named_entries_with_blank(
+                                format_args!("the gui {} state", state.kind),
+                                state.attributes.clone(),
+                            );
+                        charge_blank_gui_keys(&mut state_losses, &blank);
                         Ok(PresentationState {
                             kind: if state.kind == "Camera" {
-                                PresentationStateKind::Camera(camera_state_value(state)?)
+                                PresentationStateKind::Camera(camera_state_value(
+                                    state,
+                                    &mut state_losses,
+                                )?)
                             } else {
                                 PresentationStateKind::Native(state.kind.clone())
                             },
                             order: order as u32,
-                            attributes: cadmpeg_core::text::named_entries(
-                                format_args!("the gui {} state", state.kind),
-                                state.attributes.clone(),
-                            )?,
+                            attributes,
                             assets: state
                                 .side_entries
                                 .iter()
@@ -595,6 +615,7 @@ fn transfer_neutral_presentation(
             .map_err(CodecError::malformed)?;
         plan.presentation_documents.push(presentation);
     }
+    losses.append(&mut state_losses);
 
     let properties = graph.properties.iter().fold(
         HashMap::<&str, Vec<&GuiPropertyRecord>>::new(),
@@ -634,6 +655,17 @@ fn transfer_neutral_presentation(
                 })
             })
             .transpose()?;
+        let (provider_properties, blank) = cadmpeg_core::text::named_entries_with_blank(
+            &provider.id,
+            owned.iter().map(|property| {
+                (
+                    property.name.clone(),
+                    gui_property_value(property)
+                        .map_or_else(|| property.xml.text().to_owned(), str::to_owned),
+                )
+            }),
+        );
+        charge_blank_gui_keys(losses, &blank);
         plan.view_presentations.push(ViewPresentation {
             id: PresentationId::mint(crate::native::model_id(
                 "presentation-view",
@@ -654,16 +686,7 @@ fn transfer_neutral_presentation(
                 .map(str::to_owned),
             line_width,
             point_size,
-            properties: cadmpeg_core::text::named_entries(
-                &provider.id,
-                owned.iter().map(|property| {
-                    (
-                        property.name.clone(),
-                        gui_property_value(property)
-                            .map_or_else(|| property.xml.text().to_owned(), str::to_owned),
-                    )
-                }),
-            )?,
+            properties: provider_properties,
             native_ref: Some(provider.id.clone()),
         });
     }
@@ -680,7 +703,23 @@ fn gui_property_value(property: &GuiPropertyRecord) -> Option<&str> {
     })
 }
 
-fn camera_state_value(state: &GuiStateRecord) -> Result<CameraState, CodecError> {
+/// One loss per blank property key, naming the key's own record.
+fn charge_blank_gui_keys(
+    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
+    blank: &[cadmpeg_core::text::BlankKey],
+) {
+    for key in blank {
+        losses.push(
+            FreecadLossCode::SourceGuiPropertyKeyBlank
+                .note(format!("{key}; the property value is not transferred")),
+        );
+    }
+}
+
+fn camera_state_value(
+    state: &GuiStateRecord,
+    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
+) -> Result<CameraState, CodecError> {
     let settings = state
         .attributes
         .get("settings")
@@ -702,13 +741,15 @@ fn camera_state_value(state: &GuiStateRecord) -> Result<CameraState, CodecError>
             })
         })
         .transpose()?;
+    let (properties, blank) = cadmpeg_core::text::named_entries_with_blank(
+        format_args!("the gui {} state", state.kind),
+        state.attributes.clone(),
+    );
+    charge_blank_gui_keys(losses, &blank);
     Ok(CameraState {
         position,
         orientation,
-        properties: cadmpeg_core::text::named_entries(
-            format_args!("the gui {} state", state.kind),
-            state.attributes.clone(),
-        )?,
+        properties,
     })
 }
 

@@ -34,6 +34,8 @@ pub enum FreecadLossCode {
     SourceDialectUnverified,
     /// The GUI document used schema-1 vocabulary under another declaration.
     SourceGuiSchemaUnverified,
+    /// A GUI property states a blank key, so its value has no name to carry.
+    SourceGuiPropertyKeyBlank,
     /// A parameter-space curve could not enter neutral geometry.
     PcurveNotTransferred,
 }
@@ -49,6 +51,7 @@ impl FreecadLossCode {
         Self::AppearanceTopologyColorCountMismatch,
         Self::SourceDialectUnverified,
         Self::SourceGuiSchemaUnverified,
+        Self::SourceGuiPropertyKeyBlank,
         Self::PcurveNotTransferred,
     ];
 
@@ -65,6 +68,7 @@ impl FreecadLossCode {
             }
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::SourceGuiSchemaUnverified => "source.gui-schema-unverified",
+            Self::SourceGuiPropertyKeyBlank => "source.gui-property-key-blank",
             Self::PcurveNotTransferred => "pcurve.not-transferred",
         }
     }
@@ -80,6 +84,7 @@ impl FreecadLossCode {
             Self::AppearanceTopologyColorCountMismatch
             | Self::SourceDialectUnverified
             | Self::SourceGuiSchemaUnverified
+            | Self::SourceGuiPropertyKeyBlank
             | Self::PcurveNotTransferred => Severity::Warning,
         }
     }
@@ -91,6 +96,7 @@ impl FreecadLossCode {
             }
             Self::SketchNativeGeometry
             | Self::SketchNativeConstraint
+            | Self::SourceGuiPropertyKeyBlank
             | Self::PcurveNotTransferred => LossTaxonomy::RecordNotTyped,
             Self::AppearanceTopologyColorCountMismatch => LossTaxonomy::MaterialNotTransferred,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
@@ -149,6 +155,7 @@ mod tests {
                 "appearance.topology-color-count-mismatch",
                 "source.dialect-unverified",
                 "source.gui-schema-unverified",
+                "source.gui-property-key-blank",
                 "pcurve.not-transferred",
             ]
         );
