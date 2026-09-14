@@ -177,6 +177,7 @@ fn feature_wire_refuses_the_deleted_parent_key() {
             {
                 "id": "test:model:feature#parent",
                 "ordinal": 0,
+                "suppressed": null,
                 "definition": {
                     "definition": "tree_node",
                     "role": "history",
@@ -186,6 +187,7 @@ fn feature_wire_refuses_the_deleted_parent_key() {
             {
                 "id": "test:model:feature#child",
                 "ordinal": 1,
+                "suppressed": null,
                 "parent": "test:model:feature#parent",
                 "definition": {"definition": "stored_geometry"}
             }
