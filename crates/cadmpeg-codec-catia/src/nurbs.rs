@@ -368,8 +368,7 @@ pub(crate) fn canonical_model_curve_range(
         return None;
     }
     match geometry {
-        CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))
-        | CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_)) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_)) => {
             let normalized = canonical_periodic_range(range);
             if normalized.is_none() {
                 refusal.push_range(record, range);
