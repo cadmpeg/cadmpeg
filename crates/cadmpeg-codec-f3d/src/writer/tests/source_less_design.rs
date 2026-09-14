@@ -718,8 +718,14 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             auxiliary_references: crate::records::ReferenceRun::located(Vec::new()),
             rectangular_counted_reference_count: None,
             members: (vec![
-                SketchRelationMember::from_index(100),
-                SketchRelationMember::from_index(600),
+                SketchRelationMember {
+                    relation_ordinal: Some(0),
+                    ..SketchRelationMember::from_index(100)
+                },
+                SketchRelationMember {
+                    relation_ordinal: Some(0),
+                    ..SketchRelationMember::from_index(600)
+                },
             ])
             .try_into()
             .expect("uniform member resolution"),
@@ -799,7 +805,10 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             .try_edit(|draft| {
                 draft.members = ([100, 600, 100, 600, 100, 600, 100, 600]
                     .into_iter()
-                    .map(SketchRelationMember::from_index)
+                    .map(|record_index| SketchRelationMember {
+                        relation_ordinal: Some(0),
+                        ..SketchRelationMember::from_index(record_index)
+                    })
                     .collect::<Vec<_>>())
                 .try_into()
                 .expect("uniform member resolution")

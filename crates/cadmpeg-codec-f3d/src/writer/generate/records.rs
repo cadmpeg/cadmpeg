@@ -813,7 +813,17 @@ fn encode_sketch_relation(
     record.extend_from_slice(&member_count.to_le_bytes());
     for member in relation.members().iter() {
         write_reference(&mut record, member.reference.record_index());
-        record.extend_from_slice(&member.relation_ordinal.unwrap_or(0).to_le_bytes());
+        // The member's ordinal is a stated u32 in the record, and `0` is a
+        // stated ordinal there, not an absent one. A member that retains none
+        // has no bytes to write.
+        let relation_ordinal = member.relation_ordinal.ok_or_else(|| {
+            CodecError::InvalidInput(
+                "sketch relation member relation_ordinal: the Design record states a u32 \
+                 ordinal for every member, and this member retains none"
+                    .into(),
+            )
+        })?;
+        record.extend_from_slice(&relation_ordinal.to_le_bytes());
     }
     // The base level's property-block presence byte, then the block when the
     // relation carries an `EntityGenesis` origin.
@@ -1030,6 +1040,15 @@ mod tests {
         SketchRelationDraft, SketchRelationMember, SketchRelationReturnMember,
     };
 
+    /// One member whose ordinal the wire states, which is what the writer
+    /// needs: `SketchRelationMember::from_index` retains none.
+    fn stated_member(record_index: u32) -> SketchRelationMember {
+        SketchRelationMember {
+            relation_ordinal: Some(0),
+            ..SketchRelationMember::from_index(record_index)
+        }
+    }
+
     fn relation(member_count: u32) -> SketchRelation {
         let members = (1..=member_count).collect::<Vec<_>>();
         SketchRelation::try_new(SketchRelationDraft {
@@ -1046,7 +1065,7 @@ mod tests {
             members: members
                 .iter()
                 .copied()
-                .map(SketchRelationMember::from_index)
+                .map(stated_member)
                 .collect::<Vec<_>>()
                 .try_into()
                 .unwrap(),
@@ -1103,5 +1122,58 @@ mod tests {
         let longer = encoded(7);
         assert!(longer.len() > long.len());
         assert_eq!(u32::from_le_bytes(longer[20..24].try_into().unwrap()), 7);
+    }
+}
+
+#[cfg(test)]
+mod relation_ordinal_tests {
+    #![allow(clippy::unwrap_used)]
+    use super::encode_sketch_relation;
+    use crate::records::{
+        DesignClassTag, ReferenceRun, SketchRelation, SketchRelationDefinition,
+        SketchRelationDraft, SketchRelationMember, SketchRelationReturnMember,
+    };
+
+    /// The record states a u32 ordinal for every member, so a member that
+    /// retains none has no bytes to write. Writing `0` there would state the
+    /// ordinal `0`, which the reader reads back as a stated ordinal.
+    #[test]
+    fn a_member_with_no_retained_ordinal_is_refused_by_name() {
+        let draft = |relation_ordinal: Option<u32>| SketchRelationDraft {
+            id: "f3d:native:sketch-relation#ordinal".into(),
+            record_index: 10,
+            class_tag: DesignClassTag::try_from("300".to_owned()).unwrap(),
+            byte_offset: 0,
+            state_offset: 0,
+            owner_reference: 1,
+            owner_entity_id: None,
+            owner_reference_offset: 0,
+            auxiliary_references: ReferenceRun::located(Vec::new()),
+            rectangular_counted_reference_count: None,
+            members: vec![SketchRelationMember {
+                relation_ordinal,
+                ..SketchRelationMember::from_index(1)
+            }]
+            .try_into()
+            .unwrap(),
+            definition: SketchRelationDefinition::new(1, None).unwrap(),
+            entity_genesis: None,
+            return_members: vec![SketchRelationReturnMember::from_index(1)]
+                .try_into()
+                .unwrap(),
+            raw_bytes: vec![0; 160],
+        };
+
+        let mut out = Vec::new();
+        encode_sketch_relation(&mut out, &SketchRelation::try_new(draft(Some(0))).unwrap())
+            .expect("a stated ordinal writes");
+
+        let mut out = Vec::new();
+        let error = encode_sketch_relation(&mut out, &SketchRelation::try_new(draft(None)).unwrap())
+            .expect_err("a member that retains no ordinal has no bytes to write");
+        assert!(
+            error.to_string().contains("relation_ordinal"),
+            "the refusal names the field: {error}"
+        );
     }
 }
