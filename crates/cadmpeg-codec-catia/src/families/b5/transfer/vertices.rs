@@ -132,7 +132,7 @@ pub(super) fn emit_vertices(
         ir.model.points.push(Point {
             id: point_id.clone(),
             position: Point3::new(vertex.point[0], vertex.point[1], vertex.point[2]),
-            source_object: Some(cgm_source("vertex", vertex.object_id)?),
+            source_object: Some(cgm_source("vertex", vertex.object_id)),
         });
         let vertex_id = VertexId::compose(
             &cadmpeg_ir::identity_namespace!("catia", "b5", "vertex"),
