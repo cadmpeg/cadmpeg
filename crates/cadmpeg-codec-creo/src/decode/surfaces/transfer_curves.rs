@@ -96,8 +96,7 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
             ];
             Some(points)
         })();
-        let curve_id =
-            CurveId::mint(format!("creo:visibgeom:curve#{}", row.id)).expect("identity grammar");
+        let curve_id = CurveId::compose(&crate::identity::VISIBGEOM_CURVE, row.id);
         let allow_unresolved_endpoint_witness = endpoint_evidence
             .get(&row.id)
             .is_some_and(|evidence| !evidence.complete)
@@ -254,8 +253,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
             continue;
         };
         let geometry = |surface_id| {
-            let id = SurfaceId::mint(format!("creo:visibgeom:surface#{surface_id}"))
-                .expect("identity grammar");
+            let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, surface_id);
             exactly_one(ir.model.surfaces.iter().filter(|surface| surface.id == id))
                 .map(|surface| &surface.geometry)
         };
@@ -319,8 +317,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
             note_refused_boundary_lanes(row.id, refusal, losses);
             continue;
         };
-        let id =
-            CurveId::mint(format!("creo:visibgeom:curve#{}", row.id)).expect("identity grammar");
+        let id = CurveId::compose(&crate::identity::VISIBGEOM_CURVE, row.id);
         if ir.model.curves.iter().any(|curve| curve.id == id) {
             continue;
         }

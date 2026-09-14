@@ -220,7 +220,9 @@ fn dimension_identity_includes_its_feature_definition() {
         feature_dimension_parameter_id(&sketch_1104, 3)
     );
     assert_eq!(
-        feature_dimension_parameter_id(&sketch_917, 3).as_str(),
+        feature_dimension_parameter_id(&sketch_917, 3)
+            .expect("valid test identity")
+            .as_str(),
         "creo:featdefs:parameter#917:3"
     );
     assert_eq!(

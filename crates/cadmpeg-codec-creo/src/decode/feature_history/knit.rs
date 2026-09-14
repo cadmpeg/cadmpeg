@@ -492,9 +492,11 @@ pub(in super::super) fn feature_result_topology(
         .collect::<Vec<_>>();
     (!faces.is_empty() || !edges.is_empty()).then_some(())?;
     FeatureResultTopology::new(
-        FeatureResultTopologyId::mint(format!("creo:model:feature-result-topology#{feature_id}"))
-            .expect("identity grammar"),
-        IrFeatureId::mint(format!("creo:model:feature#{feature_id}")).expect("identity grammar"),
+        FeatureResultTopologyId::compose(
+            &crate::identity::MODEL_FEATURE_RESULT_TOPOLOGY,
+            feature_id,
+        ),
+        IrFeatureId::compose(&crate::identity::MODEL_FEATURE, feature_id),
         Vec::new(),
         faces,
         edges,
@@ -514,8 +516,7 @@ pub(in super::super) fn generated_surface_face_refs(
         .iter()
         .map(|surface_id| {
             let row = crate::surface::unique_surface_row(rows, *surface_id)?;
-            let feature = IrFeatureId::mint(format!("creo:model:feature#{}", row.feature_id))
-                .expect("identity grammar");
+            let feature = IrFeatureId::compose(&crate::identity::MODEL_FEATURE, row.feature_id);
             (available_features.contains(&feature)
                 && result_surface_ids
                     .get(&row.feature_id)

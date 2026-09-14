@@ -75,8 +75,9 @@ pub(in super::super) fn preserve_passthrough_sections(
                 Exactness::Unknown,
             )
         };
-        let id = UnknownId::mint(format!("creo:{}:section#{}", section.name(), offset))
+        let namespace = cadmpeg_ir::ids::IdentityNamespace::new("creo", section.name(), "section")
             .map_err(CodecError::malformed)?;
+        let id = UnknownId::compose(&namespace, offset);
         annotate(
             annotations,
             &id,

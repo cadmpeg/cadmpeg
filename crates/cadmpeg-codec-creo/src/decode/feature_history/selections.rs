@@ -73,7 +73,7 @@ pub(in super::super) fn feature_edge_selection(
     let result_edge_ids = feature_result_edge_ids_by_feature(&scan.curves.topology_rows);
     let edges = ids
         .iter()
-        .map(|id| EdgeId::mint(format!("creo:visibgeom:edge#{id}")).expect("identity grammar"))
+        .map(|id| EdgeId::compose(&crate::identity::VISIBGEOM_EDGE, id))
         .collect::<Vec<_>>();
     let unique = edges.iter().collect::<BTreeSet<_>>().len() == edges.len();
     if unique
@@ -121,8 +121,7 @@ pub(in super::super) fn generated_curve_edge_refs(
         .iter()
         .map(|curve_id| {
             let row = unique_rows.get(curve_id)?;
-            let feature = IrFeatureId::mint(format!("creo:model:feature#{}", row.feature_id))
-                .expect("identity grammar");
+            let feature = IrFeatureId::compose(&crate::identity::MODEL_FEATURE, row.feature_id);
             (available_features.contains(&feature)
                 && result_edge_ids
                     .get(&row.feature_id)

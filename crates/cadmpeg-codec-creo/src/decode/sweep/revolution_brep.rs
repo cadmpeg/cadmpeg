@@ -22,8 +22,8 @@ use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{Curve, Surface};
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
-    SurfaceId, VertexId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, IdentityKey, LoopId, PcurveId, PointId, RegionId,
+    ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::{
@@ -217,13 +217,21 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             );
             continue;
         };
-        let prefix = format!("creo:feature:revolution#{feature_id}");
-        let body_id = BodyId::mint(format!("{prefix}:body")).expect("identity grammar");
+        let feature_key = IdentityKey::from(feature_id);
+        macro_rules! revolution_id {
+            ($id:ident, $key:expr) => {
+                $id::compose(
+                    &crate::identity::FEATURE_REVOLUTION,
+                    feature_key.clone().colon($key),
+                )
+            };
+        }
+        let body_id = revolution_id!(BodyId, cadmpeg_ir::identity_key!("body"));
         if ir.model.bodies.iter().any(|body| body.id == body_id) {
             continue;
         }
-        let region_id = RegionId::mint(format!("{prefix}:region")).expect("identity grammar");
-        let shell_id = ShellId::mint(format!("{prefix}:shell")).expect("identity grammar");
+        let region_id = revolution_id!(RegionId, cadmpeg_ir::identity_key!("region"));
+        let shell_id = revolution_id!(ShellId, cadmpeg_ir::identity_key!("shell"));
         let count = profile.len();
         let Ok(mut edges) = alloc_filled(count, None, "creo revolution profile edges") else {
             continue;
@@ -236,14 +244,26 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             else {
                 continue;
             };
-            let curve_id =
-                CurveId::mint(format!("{prefix}:curve:vertex:{index}")).expect("identity grammar");
-            let point_id =
-                PointId::mint(format!("{prefix}:point:vertex:{index}")).expect("identity grammar");
+            let curve_id = revolution_id!(
+                CurveId,
+                cadmpeg_ir::identity_key!("curve")
+                    .colon(cadmpeg_ir::identity_key!("vertex"))
+                    .colon(index)
+            );
+            let point_id = revolution_id!(
+                PointId,
+                cadmpeg_ir::identity_key!("point")
+                    .colon(cadmpeg_ir::identity_key!("vertex"))
+                    .colon(index)
+            );
             let vertex_id =
-                VertexId::mint(format!("{prefix}:vertex:{index}")).expect("identity grammar");
-            let edge_id =
-                EdgeId::mint(format!("{prefix}:edge:vertex:{index}")).expect("identity grammar");
+                revolution_id!(VertexId, cadmpeg_ir::identity_key!("vertex").colon(index));
+            let edge_id = revolution_id!(
+                EdgeId,
+                cadmpeg_ir::identity_key!("edge")
+                    .colon(cadmpeg_ir::identity_key!("vertex"))
+                    .colon(index)
+            );
             let position = section_point_in_model(transform, entity.start());
             ir.model.curves.push(Curve {
                 id: curve_id.clone(),
@@ -282,8 +302,8 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         {
             let next = (index + 1) % count;
             let surface_id =
-                SurfaceId::mint(format!("{prefix}:surface:{index}")).expect("identity grammar");
-            let face_id = FaceId::mint(format!("{prefix}:face:{index}")).expect("identity grammar");
+                revolution_id!(SurfaceId, cadmpeg_ir::identity_key!("surface").colon(index));
+            let face_id = revolution_id!(FaceId, cadmpeg_ir::identity_key!("face").colon(index));
             ir.model.surfaces.push(Surface {
                 id: surface_id.clone(),
                 geometry: surface_geometry.clone(),
@@ -303,10 +323,20 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     continue;
                 };
                 let boundary_key = boundary.key();
-                let loop_id = LoopId::mint(format!("{prefix}:loop:{index}:{boundary_key}"))
-                    .expect("identity grammar");
-                let coedge_id = CoedgeId::mint(format!("{prefix}:coedge:{index}:{boundary_key}"))
-                    .expect("identity grammar");
+                let loop_id = revolution_id!(
+                    LoopId,
+                    cadmpeg_ir::identity_key!("loop").colon(index).colon(
+                        IdentityKey::try_new(boundary_key)
+                            .map_err(cadmpeg_core::CodecError::malformed,)?
+                    )
+                );
+                let coedge_id = revolution_id!(
+                    CoedgeId,
+                    cadmpeg_ir::identity_key!("coedge").colon(index).colon(
+                        IdentityKey::try_new(boundary_key)
+                            .map_err(cadmpeg_core::CodecError::malformed,)?
+                    )
+                );
                 let radial_index = match boundary {
                     RevolutionBoundary::Start => (index + count - 1) % count,
                     RevolutionBoundary::End => next,
@@ -315,8 +345,13 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 let pcurve = add_extrusion_pcurve(
                     ir,
                     annotations,
-                    PcurveId::mint(format!("{prefix}:pcurve:{index}:{boundary_key}"))
-                        .expect("identity grammar"),
+                    revolution_id!(
+                        PcurveId,
+                        cadmpeg_ir::identity_key!("pcurve").colon(index).colon(
+                            IdentityKey::try_new(boundary_key)
+                                .map_err(cadmpeg_core::CodecError::malformed,)?
+                        )
+                    ),
                     transform.offset,
                     pcurve_geometry,
                 )?;
@@ -325,17 +360,22 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     face: face_id.clone(),
                     boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                         cadmpeg_ir::topology::LoopRing::new(vec![coedge_id.clone()], Vec::new())
-                            .expect("valid loop ring"),
+                            .map_err(cadmpeg_core::CodecError::malformed)?,
                     ),
                 });
                 ir.model.coedges.push(Coedge {
                     id: coedge_id.clone(),
                     owner_loop: loop_id.clone(),
                     edge: edge_id,
-                    radial_next: CoedgeId::mint(format!(
-                        "{prefix}:coedge:{radial_index}:{radial_boundary}"
-                    ))
-                    .expect("identity grammar"),
+                    radial_next: revolution_id!(
+                        CoedgeId,
+                        cadmpeg_ir::identity_key!("coedge")
+                            .colon(radial_index)
+                            .colon(
+                                IdentityKey::try_new(radial_boundary)
+                                    .map_err(cadmpeg_core::CodecError::malformed,)?
+                            )
+                    ),
                     sense,
                     pcurves: vec![PcurveUse {
                         pcurve,

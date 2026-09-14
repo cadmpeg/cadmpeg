@@ -81,13 +81,6 @@ pub(crate) enum LegacySurfaceNamespace {
 }
 
 impl LegacySurfaceNamespace {
-    pub(crate) const fn ir_prefix(self) -> &'static str {
-        match self {
-            Self::Visible => "creo:visibgeom:surface#",
-            Self::NonVisible => "creo:novisgeom:surface#",
-        }
-    }
-
     pub(crate) const fn source_prefix(self) -> &'static str {
         match self {
             Self::Visible => "VisibGeom:",

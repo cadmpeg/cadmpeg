@@ -868,8 +868,7 @@ pub(in super::super) fn round_placed_cylinder_radius(
     ir: &CadIr,
     row: &crate::surface::SurfaceRow,
 ) -> Option<f64> {
-    let id =
-        SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id)).expect("identity grammar");
+    let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, row.id);
     exactly_one(ir.model.surfaces.iter().filter(|surface| surface.id == id)).and_then(|surface| {
         match surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
@@ -1015,8 +1014,7 @@ fn chamfer_cone_equation(
             frame.half_angle(),
         );
     }
-    let id =
-        SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id)).expect("identity grammar");
+    let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, row.id);
     let surface = exactly_one(ir.model.surfaces.iter().filter(|surface| surface.id == id))?;
     let Some(SolvedSurfaceGeometry::Cone(cone_surface)) = surface.geometry.solved() else {
         return None;
@@ -1074,8 +1072,7 @@ pub(in super::super) fn chamfer_constant_distance(
             .collect::<Vec<_>>();
         let is_support_plane = match rows.as_slice() {
             [] => {
-                let model_id = SurfaceId::mint(format!("creo:visibgeom:surface#{id}"))
-                    .expect("identity grammar");
+                let model_id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, id);
                 let model_surfaces = ir
                     .model
                     .surfaces

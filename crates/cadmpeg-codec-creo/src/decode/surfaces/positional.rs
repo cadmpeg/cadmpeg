@@ -98,8 +98,7 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
             continue;
         };
         for row in rows {
-            let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
-                .expect("identity grammar");
+            let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, row.id);
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
@@ -197,8 +196,7 @@ pub(in super::super) fn transfer_positional_tori(
         let Some(frame) = record.positional_torus_frame() else {
             continue;
         };
-        let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
-            .expect("identity grammar");
+        let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, row.id);
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
@@ -311,8 +309,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
         ) else {
             continue;
         };
-        let surface_id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", record.surface_id))
-            .expect("identity grammar");
+        let surface_id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, record.surface_id);
         if ir
             .model
             .surfaces
@@ -321,16 +318,14 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
         {
             continue;
         }
-        let curve_id = CurveId::mint(format!(
-            "creo:visibgeom:surface_directrix#{}",
-            record.surface_id
-        ))
-        .expect("identity grammar");
-        let procedural_id = ProceduralSurfaceId::mint(format!(
-            "creo:visibgeom:surface_extrusion#{}",
-            record.surface_id
-        ))
-        .expect("identity grammar");
+        let curve_id = CurveId::compose(
+            &crate::identity::VISIBGEOM_SURFACE_DIRECTRIX,
+            record.surface_id,
+        );
+        let procedural_id = ProceduralSurfaceId::compose(
+            &crate::identity::VISIBGEOM_SURFACE_EXTRUSION,
+            record.surface_id,
+        );
         let Ok(line_curve) = cadmpeg_ir::geometry::LineCurve::try_new(
             Point3::new(
                 frame.directrix[0][0],
@@ -552,13 +547,11 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             );
             continue;
         };
-        let curve_id = CurveId::mint(format!(
-            "creo:visibgeom:tabulated_directrix#{}",
-            replay.surface_id
-        ))
-        .expect("identity grammar");
-        let surface_id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", replay.surface_id))
-            .expect("identity grammar");
+        let curve_id = CurveId::compose(
+            &crate::identity::VISIBGEOM_TABULATED_DIRECTRIX,
+            replay.surface_id,
+        );
+        let surface_id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, replay.surface_id);
         if ir
             .model
             .surfaces
@@ -567,11 +560,10 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
         {
             continue;
         }
-        let procedural_id = ProceduralSurfaceId::mint(format!(
-            "creo:visibgeom:tabulated_extrusion#{}",
-            replay.surface_id
-        ))
-        .expect("identity grammar");
+        let procedural_id = ProceduralSurfaceId::compose(
+            &crate::identity::VISIBGEOM_TABULATED_EXTRUSION,
+            replay.surface_id,
+        );
         annotate(
             annotations,
             &curve_id,

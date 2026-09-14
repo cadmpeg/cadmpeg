@@ -35,7 +35,7 @@ const EPS_COPLANAR_RESIDUAL: f64 = 1.0e-9;
 const EPS_RADIAL_SPEED: f64 = 1.0e-10;
 const EPS_AXIAL_RATE: f64 = 1.0e-10;
 const EPS_MAJOR_RADIUS: f64 = 1.0e-10;
-use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
+use cadmpeg_ir::ids::{CurveId, IdentityKey, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition, SketchId};
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
@@ -292,15 +292,17 @@ pub(in super::super) fn transfer_saved_spline_curves(
                 ));
                 continue;
             };
-            let suffix = spline.entity_id.map_or_else(
-                || format!("offset{}", spline.offset),
-                |entity_id| entity_id.to_string(),
+            let suffix_key = spline
+                .entity_id
+                .map_or_else(
+                    || IdentityKey::try_new(format!("offset{}", spline.offset)),
+                    |entity_id| Ok(IdentityKey::from(entity_id)),
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+            let curve_id = CurveId::compose(
+                &crate::identity::FEATDEFS_SAVED_SPLINE_CURVE,
+                IdentityKey::from(definition.identity.id()).colon(suffix_key.clone()),
             );
-            let curve_id = CurveId::mint(format!(
-                "creo:featdefs:saved_spline_curve#{}:{suffix}",
-                definition.identity.id()
-            ))
-            .expect("identity grammar");
             if ir.model.curves.iter().any(|curve| curve.id == curve_id) {
                 continue;
             }
@@ -321,7 +323,8 @@ pub(in super::super) fn transfer_saved_spline_curves(
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                        "FeatDefs:saved_spline#{suffix}"
+                        "FeatDefs:saved_spline#{}",
+                        suffix_key.as_str()
                     ))
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
@@ -569,8 +572,10 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             ) else {
                 continue;
             };
-            let id = SurfaceId::mint(format!("creo:visibgeom:surface#{surface_id}"))
-                .expect("identity grammar");
+            let id = SurfaceId::compose(
+                &crate::identity::VISIBGEOM_SURFACE,
+                IdentityKey::from(surface_id),
+            );
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
@@ -630,8 +635,10 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             ) {
                 continue;
             }
-            let id = SurfaceId::mint(format!("creo:visibgeom:surface#{native_surface_id}"))
-                .expect("identity grammar");
+            let id = SurfaceId::compose(
+                &crate::identity::VISIBGEOM_SURFACE,
+                IdentityKey::from(native_surface_id),
+            );
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
@@ -739,11 +746,11 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 }
                 continue;
             };
-            let suffix = internal_id.to_string();
-            let curve_id = CurveId::mint(format!(
-                "creo:feature:extrusion_directrix#{feature_id}:{suffix}"
-            ))
-            .expect("identity grammar");
+            let suffix_key = IdentityKey::from(internal_id);
+            let curve_id = CurveId::compose(
+                &crate::identity::FEATURE_EXTRUSION_DIRECTRIX,
+                IdentityKey::from(feature_id).colon(suffix_key.clone()),
+            );
             if !ir.model.curves.iter().any(|curve| curve.id == curve_id) {
                 annotate(
                     annotations,
@@ -759,7 +766,8 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                            "FeatDefs:saved_spline#{suffix}"
+                            "FeatDefs:saved_spline#{}",
+                            suffix_key.as_str()
                         ))
                         .ok_or_else(|| {
                             cadmpeg_core::CodecError::malformed(
@@ -774,15 +782,17 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     }),
                 });
             }
-            let surface_id = SurfaceId::mint(format!("creo:visibgeom:surface#{native_surface_id}"))
-                .expect("identity grammar");
+            let surface_id = SurfaceId::compose(
+                &crate::identity::VISIBGEOM_SURFACE,
+                IdentityKey::from(native_surface_id),
+            );
             if ir.model.surfaces.iter().any(|item| item.id == surface_id) {
                 continue;
             }
-            let procedural_id = ProceduralSurfaceId::mint(format!(
-                "creo:feature:extrusion_construction#{feature_id}:{suffix}"
-            ))
-            .expect("identity grammar");
+            let procedural_id = ProceduralSurfaceId::compose(
+                &crate::identity::FEATURE_EXTRUSION_CONSTRUCTION,
+                IdentityKey::from(feature_id).colon(suffix_key),
+            );
             annotate(
                 annotations,
                 &surface_id,
@@ -817,14 +827,22 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     instance_path: Vec::new(),
                 }),
             });
+            let Some((&lower_knot, &upper_knot)) =
+                directrix.knots().first().zip(directrix.knots().last())
+            else {
+                losses.push(
+                    crate::loss::CreoLossCode::SectionSplineUnresolved.note(format!(
+                    "Extrusion directrix for feature {feature_id} at offset {} has no knot range",
+                    spline.offset
+                )),
+                );
+                continue;
+            };
             let _attached = ir.model.add_procedural_surface(
                 surface_id,
                 cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
                     curve_id,
-                    Some([
-                        *directrix.knots().first().expect("validated spline knots"),
-                        *directrix.knots().last().expect("validated spline knots"),
-                    ]),
+                    Some([lower_knot, upper_knot]),
                     Vector3::new(sweep[0], sweep[1], sweep[2]),
                     None,
                     cadmpeg_ir::geometry::CacheContract::from_form(None),

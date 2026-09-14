@@ -152,9 +152,9 @@ pub fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllipse> {
         let Some(frame) = conic.local_system else {
             continue;
         };
-        let center: [f64; 3] = frame[9..12].try_into().expect("three frame origin slots");
-        let first_frame: [f64; 3] = frame[..3].try_into().expect("three frame axis slots");
-        let second_frame: [f64; 3] = frame[3..6].try_into().expect("three frame axis slots");
+        let center = [frame[9], frame[10], frame[11]];
+        let first_frame = [frame[0], frame[1], frame[2]];
+        let second_frame = [frame[3], frame[4], frame[5]];
         let Some((first_frame, first_length)) = normalize_with_length(first_frame) else {
             continue;
         };
@@ -439,7 +439,8 @@ fn conic_local_system(body: &[u8], cache: &ScalarCache) -> Option<[f64; 12]> {
     (cursor.pos() == body.len()
         && values.len() == 12
         && values.iter().all(|value| value.is_finite()))
-    .then(|| values.try_into().expect("twelve bounded conic frame slots"))
+    .then(|| values.try_into().ok())
+    .flatten()
 }
 
 fn named_conic_local_system(
@@ -839,10 +840,16 @@ pub fn lines(payload: &[u8]) -> Vec<ReferenceLine> {
             let Some(values) = scalar_suffix(&payload[start..end], 6, &cache) else {
                 continue;
             };
+            let Some(line_start) = values[..3].try_into().ok() else {
+                continue;
+            };
+            let Some(line_end) = values[3..].try_into().ok() else {
+                continue;
+            };
             result.push(ReferenceLine {
                 kind: ReferenceLineKind::Line,
-                start: values[..3].try_into().expect("three bounded coordinates"),
-                end: values[3..].try_into().expect("three bounded coordinates"),
+                start: line_start,
+                end: line_end,
                 offset: start,
             });
         }

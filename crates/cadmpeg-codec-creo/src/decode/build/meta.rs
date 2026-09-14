@@ -629,18 +629,29 @@ pub(in super::super) fn source_meta(
             .map(|variables| variables.rows.len())
             .sum::<usize>(),
     );
+    let missing_feature_solver_variable_count = scan
+        .features
+        .definitions
+        .iter()
+        .filter_map(|definition| definition.variables.as_ref())
+        .try_fold(0usize, |total, variables| {
+            let declared_count = usize::try_from(variables.declared_count).map_err(|_| {
+                cadmpeg_core::CodecError::malformed(
+                    "feature solver variable count does not fit the host index type",
+                )
+            })?;
+            let missing = declared_count
+                .checked_sub(variables.rows.len())
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed(
+                        "feature solver variable rows exceed the declared variable count",
+                    )
+                })?;
+            Ok::<usize, cadmpeg_core::CodecError>(total + missing)
+        })?;
     coverage.record(
         crate::coverage::MISSING_FEATURE_SOLVER_VARIABLE_COUNT,
-        scan.features
-            .definitions
-            .iter()
-            .filter_map(|definition| definition.variables.as_ref())
-            .map(|variables| {
-                usize::try_from(variables.declared_count)
-                    .expect("u32 variable count fits usize")
-                    .saturating_sub(variables.rows.len())
-            })
-            .sum::<usize>(),
+        missing_feature_solver_variable_count,
     );
     let (
         decoded_dimension_driven_variable_count,

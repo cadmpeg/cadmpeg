@@ -93,23 +93,22 @@ pub(in super::super) fn connected_sketch_profile_vertices(
                 .flat_map(|(start, end)| start.iter().chain(end))
                 .map(|coordinate| coordinate.abs())
                 .fold(1.0, f64::max);
-            uses.windows(2)
-                .all(|adjacent| {
-                    let end = adjacent[0].1;
-                    let next = adjacent[1].0;
-                    (end[0] - next[0]).hypot(end[1] - next[1]) <= EPS_ENDPOINT_AGREEMENT * scale
-                })
-                .then(|| {
-                    let mut vertices = uses.iter().map(|(start, _)| *start).collect::<Vec<_>>();
-                    let first = uses[0].0;
-                    let terminal = uses.last().expect("profile is not empty").1;
-                    if (terminal[0] - first[0]).hypot(terminal[1] - first[1])
-                        > EPS_ENDPOINT_AGREEMENT * scale
-                    {
-                        vertices.push(terminal);
-                    }
-                    (profile_index, vertices)
-                })
+            if !uses.windows(2).all(|adjacent| {
+                let end = adjacent[0].1;
+                let next = adjacent[1].0;
+                (end[0] - next[0]).hypot(end[1] - next[1]) <= EPS_ENDPOINT_AGREEMENT * scale
+            }) {
+                return None;
+            }
+            let first = uses.first()?.0;
+            let terminal = uses.last()?.1;
+            let mut vertices = uses.iter().map(|(start, _)| *start).collect::<Vec<_>>();
+            if (terminal[0] - first[0]).hypot(terminal[1] - first[1])
+                > EPS_ENDPOINT_AGREEMENT * scale
+            {
+                vertices.push(terminal);
+            }
+            Some((profile_index, vertices))
         })
         .collect()
 }

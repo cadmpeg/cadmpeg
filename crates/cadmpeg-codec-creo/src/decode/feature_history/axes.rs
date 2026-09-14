@@ -92,8 +92,7 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
     for row in rows {
         (crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(row))
             .then_some(())?;
-        let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
-            .expect("identity grammar");
+        let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, row.id);
         let surfaces = ir
             .model
             .surfaces
@@ -346,16 +345,13 @@ pub(in super::super) fn model_feature_ids(scan: &ContainerScan) -> BTreeSet<IrFe
         .map(|operation| operation.feature_id)
         .chain(scan.features.rows.iter().map(|row| row.feature_id))
         .chain(scan.planes.datums.iter().map(|datum| datum.feature_id))
-        .map(|feature_id| {
-            IrFeatureId::mint(format!("creo:model:feature#{feature_id}")).expect("identity grammar")
-        })
+        .map(|feature_id| IrFeatureId::compose(&crate::identity::MODEL_FEATURE, feature_id))
         .collect::<BTreeSet<_>>();
     ids.extend(
         geometry_generator_features(scan)
             .into_iter()
             .map(|generator| {
-                IrFeatureId::mint(format!("creo:model:feature#{}", generator.feature_id))
-                    .expect("identity grammar")
+                IrFeatureId::compose(&crate::identity::MODEL_FEATURE, generator.feature_id)
             }),
     );
     ids

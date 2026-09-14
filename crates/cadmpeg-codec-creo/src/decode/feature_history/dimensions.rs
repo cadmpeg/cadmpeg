@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature dimension parameters, relation tables, and transfer.
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::Write as _;
-
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::sketches::SketchId;
 use cadmpeg_ir::{
@@ -13,6 +10,7 @@ use cadmpeg_ir::{
     scalar::{Angle, Length},
 };
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::container::ContainerScan;
 use crate::feature::definitions::SolverSubtable;
@@ -20,35 +18,34 @@ use crate::feature::definitions::SolverSubtable;
 use super::super::native::annotate;
 use super::super::sketch_ids::{
     feature_sketch_record_id_in_scan, model_sketch_id, section_owner_feature_id,
-    sketch_identity_scope,
+    sketch_identity_key, sketch_identity_scope,
 };
 use super::super::uniqueness::exactly_one;
 
 pub(in super::super) fn feature_dimension_parameter_id(
     sketch: &SketchId,
     external_id: u32,
-) -> ParameterId {
-    ParameterId::mint(format!(
-        "creo:featdefs:parameter#{}:{external_id}",
-        sketch_identity_scope(sketch),
+) -> Option<ParameterId> {
+    Some(ParameterId::compose(
+        &crate::identity::FEATDEFS_PARAMETER,
+        sketch_identity_key(sketch)?.colon(external_id),
     ))
-    .expect("identity grammar")
 }
 
 pub(in super::super) fn feature_dimension_parameter_row_id(
     sketch: &SketchId,
     external_id: u32,
     occurrence: Option<usize>,
-) -> ParameterId {
+) -> Option<ParameterId> {
     occurrence.map_or_else(
         || feature_dimension_parameter_id(sketch, external_id),
         |occurrence| {
-            ParameterId::mint(format!(
-                "creo:featdefs:parameter#{}:{external_id}:{}",
-                sketch_identity_scope(sketch),
-                occurrence + 1
+            Some(ParameterId::compose(
+                &crate::identity::FEATDEFS_PARAMETER,
+                sketch_identity_key(sketch)?
+                    .colon(external_id)
+                    .colon(occurrence + 1),
             ))
-            .expect("identity grammar")
         },
     )
 }
@@ -66,12 +63,11 @@ pub(in super::super) fn resolved_feature_dimension_parameter<'a>(
         .filter(|candidate| candidate.external_id == dimension.external_id)
         .count()
         == 1)
-        .then(|| {
-            (
-                dimension,
-                feature_dimension_parameter_id(sketch, dimension.external_id),
-            )
-        })
+        .then_some(())?;
+    Some((
+        dimension,
+        feature_dimension_parameter_id(sketch, dimension.external_id)?,
+    ))
 }
 
 pub(in super::super) fn planned_feature_dimension_parameter_ids(
@@ -201,7 +197,9 @@ pub(in super::super) fn transfer_feature_dimensions(
         let Some(sketch) = model_sketch_id(scan, definition) else {
             continue;
         };
-        let owner = section_owner_feature_id(scan, definition.identity.id(), &sketch);
+        let Some(owner) = section_owner_feature_id(scan, definition.identity.id(), &sketch) else {
+            continue;
+        };
         if !feature_ids.contains(&owner) {
             continue;
         }
@@ -233,8 +231,15 @@ pub(in super::super) fn transfer_feature_dimensions(
     for ((sketch, definition, source_ordinal, dimension), (ordinal, name, occurrence)) in
         candidates.into_iter().zip(layout)
     {
-        let owner_id = section_owner_feature_id(scan, definition.identity.id(), &sketch);
-        let id = feature_dimension_parameter_row_id(&sketch, dimension.external_id, occurrence);
+        let Some(owner_id) = section_owner_feature_id(scan, definition.identity.id(), &sketch)
+        else {
+            continue;
+        };
+        let Some(id) =
+            feature_dimension_parameter_row_id(&sketch, dimension.external_id, occurrence)
+        else {
+            continue;
+        };
         if unique_external_ids[&dimension.external_id] == 1 {
             relation_parameters.insert(format!("d{}", dimension.external_id), id.clone());
         }
@@ -279,7 +284,7 @@ pub(in super::super) fn transfer_feature_dimensions(
                 let value_token = token.iter().fold(
                     String::with_capacity(token.len() * 2),
                     |mut encoded, byte| {
-                        write!(encoded, "{byte:02x}").expect("writing to a string cannot fail");
+                        encoded.push_str(&format!("{byte:02x}"));
                         encoded
                     },
                 );

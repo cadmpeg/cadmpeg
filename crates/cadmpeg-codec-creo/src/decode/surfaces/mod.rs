@@ -63,13 +63,13 @@ pub(super) fn native_surface_id(scan: &ContainerScan, surface_id: u32) -> Surfac
         .iter()
         .any(|cylinder| cylinder.id == surface_id);
     if visible_present {
-        SurfaceId::mint(format!("creo:visibgeom:surface#{surface_id}")).expect("identity grammar")
+        SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, surface_id)
     } else if nonvisible_present {
-        SurfaceId::mint(format!("creo:novisgeom:surface#{surface_id}")).expect("identity grammar")
+        SurfaceId::compose(&crate::identity::NOVISGEOM_SURFACE, surface_id)
     } else if active_datum_present {
-        SurfaceId::mint(format!("creo:actdatums:surface#{surface_id}")).expect("identity grammar")
+        SurfaceId::compose(&crate::identity::ACTDATUM_SURFACE, surface_id)
     } else {
-        SurfaceId::mint(format!("creo:visibgeom:surface#{surface_id}")).expect("identity grammar")
+        SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, surface_id)
     }
 }
 
@@ -125,10 +125,14 @@ pub(super) fn transfer_part_product(
     };
     let model_name_offset = model_name.offset;
     let model_name = &model_name.name;
-    let product_id = ProductDefinitionId::mint("creo:model:product_definition#root".to_string())
-        .expect("identity grammar");
-    let occurrence_id =
-        OccurrenceId::mint("creo:model:occurrence#root".to_string()).expect("identity grammar");
+    let product_id = ProductDefinitionId::compose(
+        &crate::identity::MODEL_PRODUCT_DEFINITION,
+        cadmpeg_ir::identity_key!("root"),
+    );
+    let occurrence_id = OccurrenceId::compose(
+        &crate::identity::MODEL_OCCURRENCE,
+        cadmpeg_ir::identity_key!("root"),
+    );
     annotate(
         annotations,
         &product_id,
@@ -379,8 +383,7 @@ pub(super) fn transfer_fc05_cap_circles(
             surface_origin[axis_index.index()] = frame.origin[axis_index.index()];
         }
         let (center, axis, ref_direction) = (witness.origin, witness.axis, witness.ref_direction);
-        let id = CurveId::mint(format!("creo:visibgeom:curve#{}", circle.curve_id))
-            .expect("identity grammar");
+        let id = CurveId::compose(&crate::identity::VISIBGEOM_CURVE, circle.curve_id);
         if !ir.model.curves.iter().any(|curve| curve.id == id) {
             let Ok(circle_curve) = cadmpeg_ir::geometry::CircleCurve::try_new(
                 Point3::new(center[0], center[1], center[2]),
@@ -418,8 +421,7 @@ pub(super) fn transfer_fc05_cap_circles(
                 }),
             });
         }
-        let surface_id = SurfaceId::mint(format!("creo:visibgeom:surface#{cylinder_id}"))
-            .expect("identity grammar");
+        let surface_id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, cylinder_id);
         if ir
             .model
             .surfaces

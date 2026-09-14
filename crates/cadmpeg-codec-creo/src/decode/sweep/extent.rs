@@ -13,7 +13,7 @@ use crate::vecmath::normalize;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, LinearTermination};
 use cadmpeg_ir::geometry::{NurbsSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
-use cadmpeg_ir::ids::SurfaceId;
+use cadmpeg_ir::ids::{IdentityKey, SurfaceId};
 
 const EPS_SWEEP_EXTENT_GEOMETRY: f64 = 1.0e-9;
 const EPS_SWEEP_EXTENT_DEGENERATE: f64 = 1.0e-10;
@@ -212,8 +212,10 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
     for (row, kind) in rows {
         (crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(row))
             .then_some(())?;
-        let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
-            .expect("identity grammar");
+        let id = SurfaceId::compose(
+            &crate::identity::VISIBGEOM_SURFACE,
+            IdentityKey::from(row.id),
+        );
         let surfaces = ir
             .model
             .surfaces
@@ -467,8 +469,10 @@ pub(in super::super) fn generated_nurbs_translation_extent(
     for (row, kind) in rows {
         (crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(row))
             .then_some(())?;
-        let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
-            .expect("identity grammar");
+        let id = SurfaceId::compose(
+            &crate::identity::VISIBGEOM_SURFACE,
+            IdentityKey::from(row.id),
+        );
         let surfaces = ir
             .model
             .surfaces
@@ -702,8 +706,10 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
     for row in rows {
         (crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(row))
             .then_some(())?;
-        let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
-            .expect("identity grammar");
+        let id = SurfaceId::compose(
+            &crate::identity::VISIBGEOM_SURFACE,
+            IdentityKey::from(row.id),
+        );
         let surfaces = ir
             .model
             .surfaces

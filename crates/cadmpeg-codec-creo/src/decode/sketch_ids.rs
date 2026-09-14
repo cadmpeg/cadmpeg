@@ -2,6 +2,7 @@
 //! Sketch native identity, table headers, and feature-definition record ids.
 
 use cadmpeg_ir::features::FeatureId as IrFeatureId;
+use cadmpeg_ir::ids::{CurveId, IdentityKey};
 use cadmpeg_ir::sketches::{SketchConstraintId, SketchEntityId, SketchId};
 
 use crate::container::ContainerScan;
@@ -227,7 +228,11 @@ pub(crate) fn model_sketch_id(
     definition: &crate::feature::FeatureDefinition,
 ) -> Option<SketchId> {
     let native_id = feature_sketch_record_id_in_scan(scan, definition);
-    SketchId::mint(native_id.replacen("creo:featdefs:sketch#", "creo:model:sketch#", 1)).ok()
+    let scope = native_id.strip_prefix("creo:featdefs:sketch#")?;
+    Some(SketchId::compose(
+        &crate::identity::MODEL_SKETCH,
+        IdentityKey::try_new(scope.to_owned()).ok()?,
+    ))
 }
 
 pub(crate) fn sketch_identity_scope(sketch: &SketchId) -> &str {
@@ -237,26 +242,28 @@ pub(crate) fn sketch_identity_scope(sketch: &SketchId) -> &str {
         .unwrap_or(sketch.as_str())
 }
 
+pub(crate) fn sketch_identity_key(sketch: &SketchId) -> Option<IdentityKey> {
+    IdentityKey::try_new(sketch_identity_scope(sketch).to_owned()).ok()
+}
+
 pub(crate) fn sketch_entity_id(
     sketch: &SketchId,
     suffix: impl std::fmt::Display,
 ) -> Option<SketchEntityId> {
-    SketchEntityId::mint(format!(
-        "creo:featdefs:sketch_entity#{}:{suffix}",
-        sketch_identity_scope(sketch)
+    Some(SketchEntityId::compose(
+        &crate::identity::FEATDEFS_SKETCH_ENTITY,
+        sketch_identity_key(sketch)?.colon(IdentityKey::try_new(suffix.to_string()).ok()?),
     ))
-    .ok()
 }
 
 pub(crate) fn sketch_constraint_id(
     sketch: &SketchId,
     suffix: impl std::fmt::Display,
 ) -> Option<SketchConstraintId> {
-    SketchConstraintId::mint(format!(
-        "creo:featdefs:sketch_constraint#{}:{suffix}",
-        sketch_identity_scope(sketch)
+    Some(SketchConstraintId::compose(
+        &crate::identity::FEATDEFS_SKETCH_CONSTRAINT,
+        sketch_identity_key(sketch)?.colon(IdentityKey::try_new(suffix.to_string()).ok()?),
     ))
-    .ok()
 }
 
 pub(crate) fn sketch_native_ref(sketch: &SketchId) -> String {
@@ -270,27 +277,40 @@ pub(crate) fn sketch_section_curve_id(sketch: &SketchId, suffix: impl std::fmt::
     )
 }
 
+pub(crate) fn typed_sketch_section_curve_id(
+    sketch: &SketchId,
+    suffix: impl std::fmt::Display,
+) -> Option<CurveId> {
+    let suffix = IdentityKey::try_new(suffix.to_string()).ok()?;
+    Some(CurveId::compose(
+        &crate::identity::FEATDEFS_SECTION_CURVE,
+        sketch_identity_key(sketch)?.colon(suffix),
+    ))
+}
+
 pub(crate) fn sketch_point_ref(sketch: &SketchId, point: u32) -> String {
     format!("{}:point#{point}", sketch_native_ref(sketch))
 }
 
-pub(crate) fn sketch_feature_id(sketch: &SketchId) -> IrFeatureId {
-    IrFeatureId::mint(format!(
-        "creo:model:sketch_feature#{}",
-        sketch_identity_scope(sketch)
+pub(crate) fn sketch_feature_id(sketch: &SketchId) -> Option<IrFeatureId> {
+    Some(IrFeatureId::compose(
+        &crate::identity::MODEL_SKETCH_FEATURE,
+        sketch_identity_key(sketch)?,
     ))
-    .expect("identity grammar")
 }
 
 pub(crate) fn section_owner_feature_id(
     scan: &ContainerScan,
     definition_id: u32,
     sketch: &SketchId,
-) -> IrFeatureId {
+) -> Option<IrFeatureId> {
     owned_section_feature_id(scan, definition_id).map_or_else(
         || sketch_feature_id(sketch),
         |feature_id| {
-            IrFeatureId::mint(format!("creo:model:feature#{feature_id}")).expect("identity grammar")
+            Some(IrFeatureId::compose(
+                &crate::identity::MODEL_FEATURE,
+                feature_id,
+            ))
         },
     )
 }

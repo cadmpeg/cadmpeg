@@ -275,11 +275,10 @@ pub(crate) fn transfer_curve_expression_features(
     {
         let source_section = source_section(scan, record.offset);
         let ordinal = ordinal_base + expression_ordinal as u64;
-        let feature_id = IrFeatureId::mint(format!(
-            "creo:depdb:curve_expression_feature#{}-{}",
-            record.entity_id, record.offset
-        ))
-        .expect("identity grammar");
+        let feature_id = IrFeatureId::compose(
+            &crate::identity::DEPDB_CURVE_EXPRESSION_FEATURE,
+            cadmpeg_ir::ids::IdentityKey::from(record.entity_id).dash(record.offset),
+        );
         let mut assignment_indices_by_name = BTreeMap::<String, Option<usize>>::new();
         for (assignment_ordinal, assignment) in record.assignments.iter().enumerate() {
             if assignment.activation == crate::curve::CurveExpressionActivation::Inactive {
@@ -323,11 +322,12 @@ pub(crate) fn transfer_curve_expression_features(
             let Some(&ordinal) = emitted_ordinals.get(&assignment_ordinal) else {
                 continue;
             };
-            let parameter_id = ParameterId::mint(format!(
-                "creo:depdb:curve_expression_parameter#{}-{}-{}",
-                record.entity_id, record.offset, assignment_ordinal
-            ))
-            .expect("identity grammar");
+            let parameter_id = ParameterId::compose(
+                &crate::identity::DEPDB_CURVE_EXPRESSION_PARAMETER,
+                cadmpeg_ir::ids::IdentityKey::from(record.entity_id)
+                    .dash(record.offset)
+                    .dash(assignment_ordinal),
+            );
             let mut dependencies = assignment
                 .dependencies
                 .iter()
@@ -341,11 +341,12 @@ pub(crate) fn transfer_curve_expression_features(
                     seen.insert(dependency).then_some(dependency)
                 })
                 .map(|dependency| {
-                    ParameterId::mint(format!(
-                        "creo:depdb:curve_expression_parameter#{}-{}-{}",
-                        record.entity_id, record.offset, dependency
-                    ))
-                    .expect("identity grammar")
+                    ParameterId::compose(
+                        &crate::identity::DEPDB_CURVE_EXPRESSION_PARAMETER,
+                        cadmpeg_ir::ids::IdentityKey::from(record.entity_id)
+                            .dash(record.offset)
+                            .dash(dependency),
+                    )
                 })
                 .collect::<Vec<_>>();
             dependencies.extend(assignment.dependencies.iter().filter_map(|name| {
@@ -427,9 +428,15 @@ pub(crate) fn transfer_curve_expression_features(
                     ),
                 );
             }
-            let parameter_name = parameter_names[assignment_ordinal]
-                .as_ref()
-                .expect("emitted parameter assignment has a parameter name");
+            let Some(parameter_name) = parameter_names
+                .get(assignment_ordinal)
+                .and_then(Option::as_ref)
+            else {
+                return Err(cadmpeg_core::CodecError::malformed(format!(
+                    "curve expression record {} assignment {} has no parameter name",
+                    record.entity_id, assignment_ordinal
+                )));
+            };
             if parameter_name != assignment_name {
                 properties.insert("source_name".to_string(), assignment_name.to_owned());
             }
@@ -517,16 +524,11 @@ pub(crate) fn transfer_curve_expression_features(
                     curve_expression_helix_feature_definition(helix, procedural)
                 });
         if let Some(procedural_definition) = placed_helix {
-            let curve_id = CurveId::mint(format!(
-                "creo:depdb:curve_expression_curve#{}-{}",
-                record.entity_id, record.offset
-            ))
-            .expect("identity grammar");
-            let procedural_id = ProceduralCurveId::mint(format!(
-                "creo:depdb:curve_expression_helix#{}-{}",
-                record.entity_id, record.offset
-            ))
-            .expect("identity grammar");
+            let key = cadmpeg_ir::ids::IdentityKey::from(record.entity_id).dash(record.offset);
+            let curve_id =
+                CurveId::compose(&crate::identity::DEPDB_CURVE_EXPRESSION_CURVE, key.clone());
+            let procedural_id =
+                ProceduralCurveId::compose(&crate::identity::DEPDB_CURVE_EXPRESSION_HELIX, key);
             annotate(
                 annotations,
                 curve_id.as_str(),
