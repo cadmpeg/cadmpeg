@@ -12,7 +12,7 @@ pub struct NativeRecordNamespace {
 impl NativeRecordNamespace {
     /// Identify the namespace of an unqualified ASM stream.
     #[must_use]
-    pub fn new(format: IdFormat<'_>) -> Self {
+    pub fn new(format: IdFormat) -> Self {
         Self {
             namespace: format!("{format}:asm"),
         }

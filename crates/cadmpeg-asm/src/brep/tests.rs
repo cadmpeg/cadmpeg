@@ -17,7 +17,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Loop, Shell};
 use std::collections::{HashMap, HashSet};
 
-const FORMAT: IdFormat<'static> = IdFormat("f3d");
+const FORMAT: IdFormat = crate::asm_format!("f3d");
 
 fn exact_circle_directrix() -> cadmpeg_ir::geometry::NurbsCurve {
     let center = Point3::new(2.0, 3.0, 4.0);
@@ -472,7 +472,7 @@ fn saved_top_level_edge_projects_as_a_wire_body() {
     assert_eq!(brep.shells.len(), 1);
     assert_eq!(
         brep.shells[0].wire_edges(),
-        vec![EdgeId::mint(id(FORMAT, 1)).expect("identity grammar")]
+        vec![EdgeId::mint(id(FORMAT, 1).into_string()).expect("identity grammar")]
     );
     assert_eq!(brep.edges.len(), 1);
     assert_eq!(brep.vertices.len(), 2);
@@ -762,7 +762,7 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
     let face_id = FaceId::mint("test:model:face#0").expect("identity grammar");
     let mut brep = AsmBrep {
         shells: vec![Shell::new(
-            ShellId::mint(id(FORMAT, 3)).expect("identity grammar"),
+            ShellId::mint(id(FORMAT, 3).into_string()).expect("identity grammar"),
             RegionId::mint("test:model:region#0").expect("identity grammar"),
             vec![face_id.clone()],
             Vec::new(),
@@ -770,7 +770,7 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
         )
         .unwrap()],
         loops: vec![Loop {
-            id: LoopId::mint(id(FORMAT, 4)).expect("identity grammar"),
+            id: LoopId::mint(id(FORMAT, 4).into_string()).expect("identity grammar"),
             face: face_id,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                 cadmpeg_ir::topology::LoopRing::new(
@@ -797,9 +797,13 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
         HashSet::from([1, 2])
     );
     assert!(brep.attributes.iter().any(|attribute| attribute.target
-        == AttributeTarget::Shell(ShellId::mint(id(FORMAT, 3)).expect("identity grammar"))));
+        == AttributeTarget::Shell(
+            ShellId::mint(id(FORMAT, 3).into_string()).expect("identity grammar")
+        )));
     assert!(brep.attributes.iter().any(|attribute| attribute.target
-        == AttributeTarget::Loop(LoopId::mint(id(FORMAT, 4)).expect("identity grammar"))));
+        == AttributeTarget::Loop(
+            LoopId::mint(id(FORMAT, 4).into_string()).expect("identity grammar")
+        )));
 }
 
 #[test]
@@ -851,19 +855,19 @@ fn lump_named_attributes_bind_to_their_owning_body() {
         .iter()
         .map(|record| (record.index as i64, record))
         .collect();
-    let body_id = BodyId::mint(id(FORMAT, 1)).expect("identity grammar");
+    let body_id = BodyId::mint(id(FORMAT, 1).into_string()).expect("identity grammar");
     let mut brep = AsmBrep {
         bodies: vec![Body {
             id: body_id.clone(),
             kind: BodyKind::Sheet,
-            regions: vec![RegionId::mint(id(FORMAT, 2)).expect("identity grammar")],
+            regions: vec![RegionId::mint(id(FORMAT, 2).into_string()).expect("identity grammar")],
             transform: None,
             name: None,
             color: None,
             visible: None,
         }],
         regions: vec![Region {
-            id: RegionId::mint(id(FORMAT, 2)).expect("identity grammar"),
+            id: RegionId::mint(id(FORMAT, 2).into_string()).expect("identity grammar"),
             body: body_id.clone(),
             shells: Vec::new(),
         }],
@@ -1131,7 +1135,7 @@ fn the_join_projections_read_the_key_records() {
     let body =
         cadmpeg_ir::ids::BodyId::mint("asm:test:body#1".to_string()).expect("identity grammar");
     let mut brep = AsmBrep::default();
-    let namespace = records::identity::NativeRecordNamespace::new(crate::ids::IdFormat("f3d"));
+    let namespace = records::identity::NativeRecordNamespace::new(crate::asm_format!("f3d"));
     brep.face_native_keys.push(records::FaceNativeKey {
         source_namespace: namespace.clone(),
         record_index: 1,

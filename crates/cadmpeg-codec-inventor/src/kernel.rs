@@ -6,7 +6,6 @@ use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
 use cadmpeg_asm::brep::{decode_with_header, AsmBrep, DecodePurpose};
-use cadmpeg_asm::ids::IdFormat;
 use cadmpeg_asm::kernel_header::BinaryHeader;
 use cadmpeg_asm::sab;
 use cadmpeg_asm::{acis_header, asm_header};
@@ -123,7 +122,7 @@ pub(crate) fn decode_kernel_carrier(
         bytes,
         Some(header.metadata.clone()),
         &stream,
-        IdFormat("inventor"),
+        cadmpeg_asm::asm_format!("inventor"),
         DecodePurpose::Model,
     )?;
     Ok(DecodedKernelCarrier {

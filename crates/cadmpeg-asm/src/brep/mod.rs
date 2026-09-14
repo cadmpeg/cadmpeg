@@ -39,6 +39,7 @@ use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, Pcurve, PcurveGeometry, ProceduralCurve, ProceduralSurface, Surface,
     SurfaceGeometry,
 };
+use cadmpeg_ir::ids::Identity;
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
 use cadmpeg_ir::unknown::UnknownRecord;
@@ -402,8 +403,8 @@ pub(crate) fn count_kind(counts: &mut std::collections::BTreeMap<String, usize>,
 // ---- geometry carrier decode -------------------------------------------------
 
 /// Formats the stable IR id for the entity emitted from record `index`.
-pub fn id(format: IdFormat<'_>, index: i64) -> String {
-    format!("{format}:brep:entity#{index}")
+pub fn id(format: IdFormat, index: i64) -> Identity {
+    format.brep_identity(&cadmpeg_ir::identity_component!("entity"), index)
 }
 
 /// Construction and fit metadata separated from the cache geometry.
@@ -486,7 +487,7 @@ pub fn decode_with_purpose(
     records: &[Record],
     bytes: &[u8],
     stream: &str,
-    format: IdFormat<'_>,
+    format: IdFormat,
     purpose: DecodePurpose,
 ) -> Result<AsmBrep, cadmpeg_core::CodecError> {
     let header = asm_header::parse(bytes).map(|header| header.metadata);
@@ -504,7 +505,7 @@ pub fn decode_with_header(
     bytes: &[u8],
     header: Option<crate::kernel_header::KernelHeader>,
     stream: &str,
-    format: IdFormat<'_>,
+    format: IdFormat,
     purpose: DecodePurpose,
 ) -> Result<AsmBrep, cadmpeg_core::CodecError> {
     let mut out = AsmBrep::default();
@@ -538,7 +539,7 @@ pub fn decode_with_header(
         &mut reach,
         purpose,
         format,
-    );
+    )?;
     walk_reachable_topology(
         &mut out,
         &by_index,

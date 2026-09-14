@@ -2,11 +2,11 @@
 //! Decode source attribute chains into typed attribute values, colors, names,
 //! and transforms.
 
-use crate::ids::IdFormat;
+use crate::ids::{brep_id, IdFormat};
 use crate::nurbs::reader::LEN_TO_MM;
 use crate::sab::{Record, Token};
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
-use cadmpeg_ir::ids::AttributeId;
+use cadmpeg_ir::ids::{AttributeId, Identity, IdentityComponent, UnknownId};
 use cadmpeg_ir::topology::Color;
 use std::collections::{HashMap, HashSet};
 
@@ -19,7 +19,7 @@ pub fn collect_attributes(
     by_index: &HashMap<i64, &Record>,
     emitted: &mut HashSet<i64>,
     out: &mut Vec<SourceAttribute>,
-    format: IdFormat<'_>,
+    format: IdFormat,
 ) {
     let mut current = entity.ref_at(0);
     let mut chain = HashSet::new();
@@ -144,11 +144,10 @@ pub fn attribute_key(attribute: &SourceAttribute) -> &str {
 pub fn source_attribute(
     record: &Record,
     target: AttributeTarget,
-    format: IdFormat<'_>,
+    format: IdFormat,
 ) -> SourceAttribute {
     SourceAttribute {
-        id: AttributeId::mint(format!("{format}:brep:attribute#{}", record.index))
-            .expect("identity grammar"),
+        id: brep_id!(format, AttributeId, "attribute", record.index),
         target,
         name: record.name.clone(),
         // Chunks, not raw tokens: the serialized value list is defined over the
@@ -161,7 +160,7 @@ pub fn source_attribute(
     }
 }
 
-fn attribute_value(token: &Token, format: IdFormat<'_>) -> AttributeValue {
+fn attribute_value(token: &Token, format: IdFormat) -> AttributeValue {
     match token {
         Token::Char(value) => AttributeValue::Integer(i64::from(*value)),
         Token::Short(value) => AttributeValue::Integer(i64::from(*value)),
@@ -173,7 +172,9 @@ fn attribute_value(token: &Token, format: IdFormat<'_>) -> AttributeValue {
         Token::Str(value) => AttributeValue::String(value.clone()),
         Token::True => AttributeValue::Boolean(true),
         Token::False => AttributeValue::Boolean(false),
-        Token::Ref(value) => AttributeValue::Reference(format!("{format}:brep:entity#{value}")),
+        Token::Ref(value) => {
+            AttributeValue::Reference(brep_id!(format, Identity, "entity", value).into_string())
+        }
         Token::SubtypeOpen => AttributeValue::String("subtype_open".into()),
         Token::SubtypeClose => AttributeValue::String("subtype_close".into()),
         Token::Position(value) | Token::Vector3(value) => AttributeValue::Vector(value.to_vec()),
@@ -394,8 +395,16 @@ pub fn attribute_chain_name(entity: &Record, by_index: &HashMap<i64, &Record>) -
 /// The `UnknownId` for a preserved carrier record. Shared by the passthrough
 /// `UnknownRecord` and any `SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown)` that links to it, so the
 /// reference resolves under validation.
-pub fn unknown_record_id(rec: &Record, format: IdFormat<'_>) -> String {
-    format!("{format}:brep:{}#{}", rec.head(), rec.index)
+pub fn unknown_record_id(
+    rec: &Record,
+    format: IdFormat,
+) -> Result<UnknownId, cadmpeg_core::CodecError> {
+    let kind = IdentityComponent::try_new(rec.head().to_owned()).map_err(|error| {
+        cadmpeg_core::CodecError::malformed(format_args!(
+            "invalid ASM source identity component: {error}"
+        ))
+    })?;
+    Ok(UnknownId::from(format.brep_identity(&kind, rec.index)))
 }
 
 #[cfg(test)]

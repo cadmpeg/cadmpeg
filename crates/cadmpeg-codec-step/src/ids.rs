@@ -11,8 +11,8 @@ use cadmpeg_ir::ids::{Identity, IdentityComponent, IdentityKey, IdentityNamespac
 ///
 /// The component holds at least one character and no `:`, `#` or whitespace,
 /// checked when the value is built. The `kind!` macro builds one from a source
-/// literal when the crate compiles; `IdentityKind::new` builds one from
-/// file-derived text and returns `None` when the text cannot be a kind.
+/// literal when the crate compiles; `IdentityKind::try_new` admits
+/// file-derived text and returns an error when the text cannot be a kind.
 pub type IdentityKind = IdentityComponent;
 
 /// The `<format>` component of every STEP identity.
