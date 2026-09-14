@@ -264,7 +264,7 @@ pub struct FaceSidednessWire {
     record_index: u32,
     native_sense: cadmpeg_ir::topology::Sense,
     normalized_sense: cadmpeg_ir::topology::Sense,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "cadmpeg_core::absent_key::present")]
     containment: Option<FaceContainment>,
 }
 
@@ -332,7 +332,7 @@ pub enum EvaluatedToleranceSlot {
         /// Trailing LONG following the slot, retained verbatim; absent in
         /// older streams, a small non-negative per-entity change counter when
         /// present.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "cadmpeg_core::absent_key::present")]
         trailing: Option<i64>,
     },
     /// The slot holds a tolerance, stored on the vertex.
@@ -340,7 +340,7 @@ pub enum EvaluatedToleranceSlot {
         /// Trailing LONG following the slot, retained verbatim; absent in
         /// older streams, a small non-negative per-entity change counter when
         /// present.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "cadmpeg_core::absent_key::present")]
         trailing: Option<i64>,
     },
 }
@@ -418,22 +418,26 @@ pub enum TolerantCoedgeExtension {
     /// Releases 215 through 219 carry one nullable entity reference.
     Reference {
         /// Referenced record index; `None` is the native null reference.
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
         target: Option<i64>,
     },
     /// Modern releases carry no embedded tolerant-curve payload.
     Empty {
         /// Nullable record reference preceding the zero selector.
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
         target: Option<i64>,
     },
     /// Modern releases carry one balanced embedded tolerant-curve payload.
     EmbeddedCurve {
         /// Nullable record reference preceding the one selector.
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
         target: Option<i64>,
         /// Whether the embedded intcurve is evaluated with parameter negation.
         curve_reversed: bool,
         /// Number of tokens inside the balanced outer subtype delimiters.
         payload_token_count: u32,
         /// Optional parameter interval following the embedded subtype.
+        #[serde(default, deserialize_with = "cadmpeg_core::absent_key::nullable")]
         parameter_range: Option<[f64; 2]>,
     },
 }
@@ -508,7 +512,7 @@ impl WireMembers {
 struct WireMembersWire {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     edges: Vec<EdgeId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "cadmpeg_core::absent_key::present")]
     free_vertex: Option<VertexId>,
 }
 
@@ -686,5 +690,34 @@ mod tests {
         );
         let error = WireMembers::deserialize(mixed).expect_err("mixed wire members");
         assert!(error.to_string().contains("edges and free_vertex"));
+    }
+    /// `free_vertex` is written by omission, so absence is the one spelling of
+    /// an edge-ring wire and a stated `null` is refused by name.
+    #[test]
+    fn a_stated_null_free_vertex_is_refused() {
+        let error = serde_json::from_str::<WireMembers>("{\"free_vertex\":null}")
+            .expect_err("a stated null is not a second spelling of absence")
+            .to_string();
+        assert!(
+            error.contains("this key states a value or is left out; it does not state null"),
+            "{error}"
+        );
+        assert_eq!(
+            serde_json::from_str::<WireMembers>("{}").expect("an omitted free_vertex"),
+            WireMembers::Edges(Vec::new())
+        );
+    }
+
+    /// `target` carries no `skip_serializing_if`, so its writer states `null`
+    /// for the native null reference and the reader admits that spelling.
+    #[test]
+    fn a_stated_null_tolerant_coedge_target_is_the_native_null_reference() {
+        assert_eq!(
+            serde_json::from_str::<super::TolerantCoedgeExtension>(
+                "{\"layout\":\"reference\",\"target\":null}"
+            )
+            .expect("a stated null target"),
+            super::TolerantCoedgeExtension::Reference { target: None }
+        );
     }
 }

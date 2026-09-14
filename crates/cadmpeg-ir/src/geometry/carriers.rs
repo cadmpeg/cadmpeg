@@ -4185,11 +4185,11 @@ pub struct PcurveGeneralForm {
 #[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct PcurveGeneralFormWire {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     wrapper_reversed: Option<bool>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     parameter_range: Option<[f64; 2]>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "cadmpeg_core::absent_key::present")]
     fit_tolerance: Option<f64>,
 }
 

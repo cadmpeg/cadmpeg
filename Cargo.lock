@@ -194,6 +194,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde-value",
+ "serde_json",
 ]
 
 [[package]]
