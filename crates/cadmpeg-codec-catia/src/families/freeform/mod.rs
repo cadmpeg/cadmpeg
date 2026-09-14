@@ -2142,7 +2142,10 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                             &pcurve.geometry,
                             resolved.block.parameters.range,
                             refusal,
-                            "consolidated surface-curve pcurve reversed onto its edge",
+                            &format!(
+                                "consolidated surface-curve pcurve of the edge block at byte {} reversed onto its edge",
+                                resolved.block.pcurves[0].pos
+                            ),
                         )
                         .map(Some),
                         None => Some(None),
@@ -2247,7 +2250,10 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                                     &pcurve,
                                     resolved.block.parameters.range,
                                     refusal,
-                                    "consolidated partner pcurve reversed onto its edge",
+                                    &format!(
+                                        "consolidated partner pcurve of the edge block at byte {} reversed onto its edge",
+                                        resolved.block.pcurves[0].pos
+                                    ),
                                 )?;
                             }
                             pcurve
@@ -2326,7 +2332,10 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                                     &geometry,
                                     resolved.block.parameters.range,
                                     refusal,
-                                    "standard pcurve reversed onto its coedge",
+                                    &format!(
+                                        "standard pcurve of the edge block at byte {} reversed onto coedge {coedge}",
+                                        resolved.block.pcurves[0].pos
+                                    ),
                                 )?;
                             }
                             // A pcurve binds to a face only when it lifts onto

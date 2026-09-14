@@ -259,3 +259,78 @@ fn a_route_that_exits_after_a_refusal_still_delivers_both_notes() {
         );
     }
 }
+
+/// The router states a fall-through by name. A route that refuses records and
+/// then transfers no model leaves both its refusal notes and one fall-through
+/// note in the report of whatever route or fallback finishes the decode.
+#[test]
+fn a_route_that_refuses_and_falls_through_states_both_notes_in_the_report() {
+    fn refusing_route(
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _scan: &crate::container::ContainerScan,
+        refusal: &mut crate::nurbs::LaneRefusals,
+    ) -> Option<crate::families::FamilyOutput> {
+        crate::nurbs::note_refusal(
+            cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![
+                    cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                    cadmpeg_ir::math::Point2::new(1.0, 0.0),
+                ],
+                Some(vec![1.0]),
+                false,
+            ),
+            refusal,
+            "e5 NURBS pcurve record at byte 96",
+        )?;
+        Some(crate::families::FamilyOutput {
+            ir: cadmpeg_ir::CadIr::empty(),
+            report: cadmpeg_ir::codec::DecodeBody::new(
+                cadmpeg_ir::report::DecodeTransfer::ContainerOnly {},
+            ),
+            annotations: cadmpeg_ir::Annotations::default(),
+            unknowns: Vec::new(),
+        })
+    }
+
+    const ROUTES: &[crate::families::Route] = &[crate::families::Route {
+        name: "the test route",
+        applicable: |_| true,
+        decode: refusing_route,
+        standard_face_population: false,
+    }];
+
+    let bytes = standard_catpart();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("a context over the synthetic container");
+    let mut refusal = crate::nurbs::LaneRefusals::new();
+    let decoded = super::decode_over_routes(&ctx, root, ROUTES, &mut refusal)
+        .expect("the metadata fallback finishes the decode");
+
+    let messages: Vec<&str> = decoded
+        .body
+        .losses
+        .iter()
+        .map(|note| note.message.as_str())
+        .collect();
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("e5 NURBS pcurve record at byte 96")),
+        "the refusal the fallen-through route stated: {messages:?}"
+    );
+    assert!(
+        messages.iter().any(|message| {
+            message.contains("the test route refused 1 CATIA record(s)")
+                && message.contains("the decode continued to the metadata fallback")
+        }),
+        "the fall-through statement: {messages:?}"
+    );
+    assert!(
+        refusal.take_notes().is_empty(),
+        "the sink is drained into the report"
+    );
+}

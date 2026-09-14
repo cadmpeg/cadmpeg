@@ -54,15 +54,23 @@ fn schema_configuration_row_chain_coverage(native: &CatiaNative) -> (usize, usiz
 /// exhausting the table yields the metadata-only fallback.
 pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     // The sink outlives every route exit: a route that answers `None` after a
-    // refusal has already stated the refusal here, so the fall-through to the
-    // next route and to the metadata fallback is reported, not silent.
+    // refusal has already stated the refusal here, and `finish_decode` drains
+    // the sink into the report before its first fallible step and again after
+    // the native decode, so no `?` sits between a push and its drain. The
+    // fall-through to the next route and to the metadata fallback is stated in
+    // the report by name.
     let mut refusal = crate::nurbs::LaneRefusals::new();
-    decode_stating_lane_refusals(ctx, root, &mut refusal)
+    decode_over_routes(ctx, root, families::ROUTES, &mut refusal)
 }
 
-fn decode_stating_lane_refusals(
+/// Decodes `root` over `routes`, the ordered fall-back table.
+///
+/// `routes` is a parameter so a test can drive the router with a table whose
+/// behaviour it states: the production call passes [`families::ROUTES`].
+fn decode_over_routes(
     ctx: &DecodeContext<'_>,
     root: View<'_>,
+    routes: &[families::Route],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Decoded, CodecError> {
     let scan = container::scan_bytes(root.window());
@@ -74,21 +82,37 @@ fn decode_stating_lane_refusals(
         return decode_result(&scan, &matched, ir, report, annotations, unknowns);
     }
 
-    for route in families::ROUTES {
-        if (route.applicable)(scan.variant) {
-            if let Some(out) = (route.decode)(ctx, &scan, refusal) {
-                return finish_decode(
-                    ctx,
-                    &scan,
-                    &matched,
-                    out.ir,
-                    out.report,
-                    out.annotations,
-                    out.unknowns,
-                    route.standard_face_population,
-                    refusal,
-                );
-            }
+    let applicable: Vec<&families::Route> = routes
+        .iter()
+        .filter(|route| (route.applicable)(scan.variant))
+        .collect();
+    let mut fell_through = Vec::new();
+    for (index, route) in applicable.iter().enumerate() {
+        let stated = refusal.note_count();
+        if let Some(out) = (route.decode)(ctx, &scan, refusal) {
+            return finish_decode(
+                ctx,
+                &scan,
+                &matched,
+                out.ir,
+                out.report,
+                out.annotations,
+                out.unknowns,
+                route.standard_face_population,
+                &fell_through,
+                refusal,
+            );
+        }
+        let refused = refusal.note_count() - stated;
+        if refused > 0 {
+            let next = applicable
+                .get(index + 1)
+                .map_or("the metadata fallback", |next| next.name);
+            fell_through.push(format!(
+                "{} refused {refused} CATIA record(s) and then transferred no model; \
+                 the decode continued to {next}",
+                route.name
+            ));
         }
     }
 
@@ -103,6 +127,7 @@ fn decode_stating_lane_refusals(
         annotations,
         unknowns,
         false,
+        &fell_through,
         refusal,
     )
 }
@@ -166,8 +191,19 @@ fn finish_decode(
     mut annotations: Annotations,
     unknowns: Vec<UnknownRecord>,
     standard_face_population: bool,
+    fell_through: &[String],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Decoded, CodecError> {
+    // Drain before the first fallible step: every refusal a route stated is in
+    // the report even when the charge, the transfer, or the native store below
+    // answers `Err`. The fall-through statements say which route refused and
+    // where the decode went next.
+    for statement in fell_through {
+        report
+            .losses
+            .push(CatiaLossCode::SourceRouteFellThrough.note(statement.clone()));
+    }
+    report.losses.extend(refusal.take_notes());
     // Retained unknown records are source entities even when a route transfers
     // no neutral model entity (for example, an unrecognized storage variant).
     ctx.charge_entities(unknowns.len() as u64, "admit CATIA retained source records")?;
@@ -182,6 +218,10 @@ fn finish_decode(
     let consolidated_record_sources = container::consolidated_record_sources(scan);
     let native =
         CatiaNative::decode_with_record_sources(&scan.data, &consolidated_record_sources, refusal);
+    // The native decode is the second and last producer of lane refusals, and
+    // it cannot fail; drain it here, before the transfers below can answer
+    // `Err`.
+    report.losses.extend(refusal.take_notes());
     let modeling_graph_scope = modeling_graph_scope(
         !scan.outer_container_declarations.is_empty(),
         &native.object_graphs,
@@ -3524,10 +3564,6 @@ fn finish_decode(
             appearance_transfer.transferred_packets,
         )));
     }
-    // Every refusal any route or the native decode stated, whichever route the
-    // codec finished on. The sink was created by `decode` and owns them across
-    // every route exit, so a fall-through after a refusal is reported here.
-    report.losses.extend(refusal.take_notes());
     native.store_owned(ir.native.namespace_mut("catia"))?;
     ctx.admit_entities(
         ir.model.entity_count() as u64,

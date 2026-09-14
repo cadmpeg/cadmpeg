@@ -1208,7 +1208,10 @@ fn plan_e5_boundary(
                         &geometry,
                         range,
                         refusal,
-                        "e5 boundary pcurve record",
+                        &format!(
+                            "e5 boundary pcurve of loop record {} member {member_index}",
+                            loop_.record_id
+                        ),
                     ) else {
                         return None;
                     };
@@ -1230,7 +1233,10 @@ fn plan_e5_boundary(
                             &curve,
                             curve_range,
                             refusal,
-                            "e5 boundary curve record",
+                            &format!(
+                                "e5 boundary curve of loop record {} member {member_index}",
+                                loop_.record_id
+                            ),
                         ) else {
                             return None;
                         };
@@ -1350,7 +1356,7 @@ fn plan_e5_boundary(
                     &curve,
                     curve_range,
                     refusal,
-                    "e5 boundary curve record",
+                    &format!("e5 boundary curve of edge {edge_ref} pcurve {pcurve_ref}"),
                 ) else {
                     continue;
                 };
@@ -1361,7 +1367,7 @@ fn plan_e5_boundary(
                     &geometry,
                     range,
                     refusal,
-                    "e5 boundary pcurve record",
+                    &format!("e5 boundary pcurve of edge {edge_ref} pcurve {pcurve_ref}"),
                 ) else {
                     continue;
                 };
@@ -2200,7 +2206,10 @@ pub(crate) fn e5_pcurve_on_surface(
                 &first_derivatives,
                 &second_derivatives,
                 refusal,
-                "e5 quintic-jet pcurve record",
+                &format!(
+                    "e5 quintic-jet pcurve on surface record {} at byte {}",
+                    decoded_surface.record_id, decoded_surface.pos
+                ),
             )?;
             let PcurveGeometry::Nurbs { nurbs } = &geometry else {
                 return None;
@@ -2249,7 +2258,10 @@ pub(crate) fn e5_pcurve_on_surface(
                 nurbs: crate::nurbs::note_refusal(
                     PcurveNurbs::from_lanes(*degree, knots, control_points, None, false),
                     refusal,
-                    "e5 NURBS pcurve record",
+                    format_args!(
+                        "e5 NURBS pcurve on surface record {} at byte {}",
+                        decoded_surface.record_id, decoded_surface.pos
+                    ),
                 )?,
             };
             let uv = range.map(|parameter| cadmpeg_ir::eval::pcurve_uv(&geometry, parameter));

@@ -225,7 +225,14 @@ pub(crate) fn transfer_closed_face_topology(
                     .as_ref()
                     .map(|pcurve| pcurve.parameter_range)
             })
-            .and_then(|range| canonical_model_curve_range(&curve_geometry, range));
+            .and_then(|range| {
+                canonical_model_curve_range(
+                    &curve_geometry,
+                    range,
+                    refusal,
+                    "zero-entity edge curve source parameter range",
+                )
+            });
         let raw_indices =
             endpoint_indices(occurrence.oriented_endpoints, occurrence.raw_endpoints)?;
         let direct_orientation = if matches!(
@@ -262,9 +269,12 @@ pub(crate) fn transfer_closed_face_topology(
                         .find(|curve| curve.id == occurrence.curve)?;
                     match reversed_geometry {
                         Some((geometry, parameter_range)) => {
-                            if let Some(parameter_range) =
-                                canonical_model_curve_range(&geometry, parameter_range)
-                            {
+                            if let Some(parameter_range) = canonical_model_curve_range(
+                                &geometry,
+                                parameter_range,
+                                refusal,
+                                "zero-entity edge curve reversed parameter range",
+                            ) {
                                 curve.geometry = geometry;
                                 annotations.derived(&occurrence.curve, "geometry").ok()?;
                                 (occurrence.curve.clone(), parameter_range)

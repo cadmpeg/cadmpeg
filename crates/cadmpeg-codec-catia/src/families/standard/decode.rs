@@ -8100,13 +8100,21 @@ fn standard_oriented_native_support_pcurves(
             &native.pcurves[0],
             native.parameter_range,
             refusal,
-            "standard native edge-support pcurve reversed onto its edge",
+            &format!(
+                "standard native edge-support pcurve 0 of the edge between points {} and {}, \
+                 reversed onto its edge",
+                endpoint_pair[0], endpoint_pair[1]
+            ),
         )?,
         crate::nurbs::reverse_pcurve_geometry(
             &native.pcurves[1],
             native.parameter_range,
             refusal,
-            "standard native edge-support pcurve reversed onto its edge",
+            &format!(
+                "standard native edge-support pcurve 1 of the edge between points {} and {}, \
+                 reversed onto its edge",
+                endpoint_pair[0], endpoint_pair[1]
+            ),
         )?,
     ])
 }

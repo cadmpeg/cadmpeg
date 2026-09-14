@@ -653,7 +653,7 @@ fn e5_nurbs_surface(
                     false,
                 ),
                 refusal,
-                "e5 NURBS surface record",
+                format_args!("e5 NURBS surface record at byte {}", record.pos),
             )
             .map(SolvedSurfaceGeometry::Nurbs)
             .map(SurfaceGeometry::Solved)
