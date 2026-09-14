@@ -1236,11 +1236,14 @@ fn decode_container<'a>(
     };
     let kernel_brep = kernel_brep.unwrap_or_else(AsmBrep::default);
     let face_keys = cadmpeg_asm::brep::key_maps::face_keys(&kernel_brep.face_native_keys);
-    let AsmTransferRemainder {
-        unknowns: kernel_unknowns,
-        stats: kernel_stats,
-        annotation_records: kernel_annotations,
-    } = transfer_into_ir(ctx, &mut ir, "inventor", kernel_brep)?;
+    let (
+        _,
+        AsmTransferRemainder {
+            unknowns: kernel_unknowns,
+            stats: kernel_stats,
+            annotation_records: kernel_annotations,
+        },
+    ) = transfer_into_ir(ctx, &mut ir, "inventor", kernel_brep)?;
     ir.set_native_unknowns("inventor", &[] as &[NativeUnknownRecord])?;
     let geometry_transferred =
         !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());

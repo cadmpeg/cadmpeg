@@ -4,6 +4,7 @@
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::native::NativeNamespace;
 use cadmpeg_ir::unknown::UnknownRecord;
 
 use super::annotations::AnnotationRecord;
@@ -39,12 +40,12 @@ pub struct AsmTransferRemainder {
 ///
 /// The exhaustive [`AsmBrep`] destructure makes a newly added decoder field a
 /// compile error until this boundary assigns its disposition.
-pub fn transfer_into_ir(
+pub fn transfer_into_ir<'ir>(
     ctx: &DecodeContext<'_>,
-    ir: &mut CadIr,
+    ir: &'ir mut CadIr,
     native_format: &str,
     brep: AsmBrep,
-) -> Result<AsmTransferRemainder, CodecError> {
+) -> Result<(&'ir NativeNamespace, AsmTransferRemainder), CodecError> {
     if ir.native.namespace(native_format).is_some_and(|namespace| {
         ASM_NATIVE_ARENAS.iter().any(|name| {
             namespace
@@ -115,8 +116,9 @@ pub fn transfer_into_ir(
             .map_err(|error| CodecError::malformed(error.to_string()))?;
     }
     ir.model.attributes.extend(attributes);
+    // Every transfer above appends entities; procedural attachment removes none.
     ctx.charge_entities(
-        ir.model.entity_count().saturating_sub(before) as u64,
+        (ir.model.entity_count() - before) as u64,
         "admit ASM entities",
     )?;
 
@@ -134,11 +136,14 @@ pub fn transfer_into_ir(
     namespace.set_arena("transform_hints", &transform_hints)?;
     namespace.set_arena("body_native_keys", &body_native_keys)?;
 
-    Ok(AsmTransferRemainder {
-        unknowns,
-        stats,
-        annotation_records,
-    })
+    Ok((
+        namespace,
+        AsmTransferRemainder {
+            unknowns,
+            stats,
+            annotation_records,
+        },
+    ))
 }
 
 #[cfg(test)]
@@ -154,11 +159,10 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &DecodePolicy::default())
             .expect("test root fits policy");
         let mut ir = CadIr::empty();
-        let remainder = transfer_into_ir(&ctx, &mut ir, "test", AsmBrep::default())
+        let (namespace, remainder) = transfer_into_ir(&ctx, &mut ir, "test", AsmBrep::default())
             .expect("empty ASM transfer succeeds");
         assert!(remainder.unknowns.is_empty());
         assert!(remainder.annotation_records.is_empty());
-        let namespace = ir.native.namespace("test").expect("namespace exists");
         assert_eq!(namespace.arenas().len(), 12);
     }
 
