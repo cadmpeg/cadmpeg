@@ -1177,17 +1177,14 @@ fn attribute_names(
 
 /// One f32 coordinate triple per vertex.
 fn decode_vertices(stream: &[u8]) -> Result<Vec<[f64; 3]>, CodecError> {
-    if !stream.len().is_multiple_of(12) {
-        return Err(malformed(
-            "paramesh vertex stream is not a whole number of coordinate triples",
-        ));
-    }
+    let mut view = View::over_retained(stream);
     let mut vertices = Vec::with_capacity(stream.len() / 12);
-    for triple in stream.chunks_exact(12) {
+    while !view.is_empty() {
         let mut point = [0.0f64; 3];
-        for (value, raw) in point.iter_mut().zip(triple.chunks_exact(4)) {
-            let component = View::f32_le_at(raw, 0)
-                .ok_or_else(|| malformed("paramesh vertex component is truncated"))?;
+        for value in &mut point {
+            let component = view.f32_le().ok_or_else(|| {
+                malformed("paramesh vertex stream is not a whole number of coordinate triples")
+            })?;
             if !component.is_finite() {
                 return Err(malformed("paramesh vertex coordinate is not finite"));
             }
@@ -1204,30 +1201,28 @@ fn decode_vertices(stream: &[u8]) -> Result<Vec<[f64; 3]>, CodecError> {
 /// two's-complement difference to the next corner. The final stored value does
 /// not continue the sequence.
 fn decode_triangles(stream: &[u8], vertices: usize) -> Result<Vec<[u32; 3]>, CodecError> {
-    if !stream.len().is_multiple_of(4) || stream.is_empty() {
+    let mut view = View::over_retained(stream);
+    let mut words = Vec::with_capacity(stream.len() / 4);
+    while !view.is_empty() {
+        words.push(i64::from(view.i32_le().ok_or_else(|| {
+            malformed("paramesh corner stream is not a whole number of values")
+        })?));
+    }
+    let Some((_, deltas)) = words.split_last() else {
         return Err(malformed(
             "paramesh corner stream is not a whole number of values",
         ));
-    }
-    let values = stream.len() / 4;
+    };
+    let values = words.len();
     if !values.is_multiple_of(3) {
         return Err(malformed(
             "paramesh corner count is not a whole number of triangles",
         ));
     }
-    let deltas = stream
-        .chunks_exact(4)
-        .take(values - 1)
-        .map(|raw| {
-            View::i32_le_at(raw, 0)
-                .map(i64::from)
-                .ok_or_else(|| malformed("paramesh corner delta is truncated"))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
     let mut relative = 0i64;
     let mut minimum = 0i64;
     let mut maximum = 0i64;
-    for delta in &deltas {
+    for delta in deltas {
         relative = relative
             .checked_add(*delta)
             .ok_or_else(|| malformed("paramesh corner delta accumulation overflows"))?;
@@ -1256,7 +1251,7 @@ fn decode_triangles(stream: &[u8], vertices: usize) -> Result<Vec<[u32; 3]>, Cod
         u32::try_from(current).map_err(|_| malformed("paramesh corner index is out of range"))?,
     );
     for delta in deltas {
-        current += delta;
+        current += *delta;
         let index = u32::try_from(current)
             .map_err(|_| malformed("paramesh corner index is out of range"))?;
         if usize::try_from(index).is_ok_and(|index| index >= vertices) {
@@ -1276,54 +1271,38 @@ fn decode_triangles(stream: &[u8], vertices: usize) -> Result<Vec<[u32; 3]>, Cod
 /// final word is the absolute u32 value of the final element. The first value
 /// is therefore the terminal minus the sum of the differences.
 fn decode_terminal_delta_values(stream: &[u8]) -> Result<Vec<u32>, CodecError> {
-    if !stream.len().is_multiple_of(4) {
-        return Err(malformed(
-            "paramesh terminal-delta stream is not a whole number of values",
-        ));
+    let mut view = View::over_retained(stream);
+    let mut words = Vec::with_capacity(stream.len() / 4);
+    while !view.is_empty() {
+        words.push(view.u32_le().ok_or_else(|| {
+            malformed("paramesh terminal-delta stream is not a whole number of values")
+        })?);
     }
-    if stream.is_empty() {
+    let Some((terminal, deltas)) = words.split_last_mut() else {
         return Ok(Vec::new());
-    }
-
-    let value_count = stream.len() / 4;
-    let terminal_at = (value_count - 1) * 4;
-    let terminal = i64::from(
-        View::u32_le_at(stream, terminal_at)
-            .ok_or_else(|| malformed("paramesh terminal word is truncated"))?,
-    );
+    };
     let mut delta_total = 0i64;
-    for raw in stream[..terminal_at].chunks_exact(4) {
-        let delta = i64::from(
-            View::i32_le_at(raw, 0)
-                .ok_or_else(|| malformed("paramesh terminal delta is truncated"))?,
-        );
+    for word in deltas.iter() {
+        // Delta words use the same bits as signed two's-complement values.
+        let delta = i64::from(*word as i32);
         delta_total = delta_total
             .checked_add(delta)
             .ok_or_else(|| malformed("paramesh terminal-delta accumulation overflows"))?;
     }
-    let start = terminal
+    let mut current = i64::from(*terminal)
         .checked_sub(delta_total)
         .ok_or_else(|| malformed("paramesh terminal-delta start overflows"))?;
-    let mut values = Vec::with_capacity(value_count);
-    let mut current = start;
-    values.push(
-        u32::try_from(current)
-            .map_err(|_| malformed("paramesh terminal-delta value is out of range"))?,
-    );
-    for raw in stream[..terminal_at].chunks_exact(4) {
-        let delta = i64::from(
-            View::i32_le_at(raw, 0)
-                .ok_or_else(|| malformed("paramesh terminal delta is truncated"))?,
-        );
+    for word in deltas {
+        let delta = i64::from(*word as i32);
+        *word = u32::try_from(current)
+            .map_err(|_| malformed("paramesh terminal-delta value is out of range"))?;
         current = current
             .checked_add(delta)
             .ok_or_else(|| malformed("paramesh terminal-delta value overflows"))?;
-        values.push(
-            u32::try_from(current)
-                .map_err(|_| malformed("paramesh terminal-delta value is out of range"))?,
-        );
     }
-    Ok(values)
+    *terminal = u32::try_from(current)
+        .map_err(|_| malformed("paramesh terminal-delta value is out of range"))?;
+    Ok(words)
 }
 
 /// Resolve an indexed channel's delta-coded corner positions.
@@ -1442,18 +1421,13 @@ fn decode_corner_normals(
             "paramesh registry declares more than one corner-normal channel",
         ));
     }
-    if !values.len().is_multiple_of(PACKED_DIRECTION_BYTES as usize) {
-        return Err(malformed(
-            "paramesh corner-normal channel has no complete packed-direction table",
-        ));
-    }
+    let mut view = View::over_retained(values);
     let mut table = Vec::with_capacity(values.len() / PACKED_DIRECTION_BYTES as usize);
-    for raw in values.chunks_exact(PACKED_DIRECTION_BYTES as usize) {
-        let x = View::f32_le_at(raw, 0)
-            .ok_or_else(|| malformed("paramesh packed direction is truncated"))?;
-        let y = View::f32_le_at(raw, 4)
-            .ok_or_else(|| malformed("paramesh packed direction is truncated"))?;
-        table.push(decode_packed_direction([x, y])?);
+    while !view.is_empty() {
+        let pair = view.f32_le().zip(view.f32_le()).ok_or_else(|| {
+            malformed("paramesh corner-normal channel has no complete packed-direction table")
+        })?;
+        table.push(decode_packed_direction([pair.0, pair.1])?);
     }
 
     if attribute.addressing.domain() == MeshAttributeDomain::Triangle {
