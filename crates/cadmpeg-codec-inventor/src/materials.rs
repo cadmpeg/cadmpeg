@@ -320,7 +320,7 @@ mod tests {
             records: vec![color, texture(), texture()],
             rejected: Vec::new(),
         }];
-        let catalog = project_catalog(&instances).unwrap();
+        let catalog = project_catalog(&instances).expect("the fixture states named properties");
 
         assert_eq!(catalog.appearances.len(), 1);
         assert_eq!(

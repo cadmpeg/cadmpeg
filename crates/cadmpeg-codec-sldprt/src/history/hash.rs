@@ -56,8 +56,7 @@ struct FeatureHashView<'a> {
     suppressed: Option<bool>,
     parent: Option<&'a cadmpeg_ir::features::FeatureId>,
     dependencies: &'a cadmpeg_ir::features::DistinctMembers<cadmpeg_ir::features::FeatureId>,
-    source_properties:
-        &'a std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+    source_properties: &'a std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     source_tag: Option<&'a str>,
     source_text: Option<&'a str>,
     source_content: &'a cadmpeg_ir::features::FeatureContent,

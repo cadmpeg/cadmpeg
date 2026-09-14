@@ -1360,14 +1360,10 @@ pub(crate) fn project(
         );
         properties.insert("antecedent_objects".to_string(), list(&record.antecedents));
         properties.insert("descendant_objects".to_string(), list(&record.descendants));
-        let (properties, blank) = cadmpeg_core::text::named_entries_with_blank(
-            &native_ids[index],
-            properties,
-        );
-        let (parameters, blank_parameters) = cadmpeg_core::text::named_entries_with_blank(
-            &native_ids[index],
-            parameters,
-        );
+        let (properties, blank) =
+            cadmpeg_core::text::named_entries_with_blank(&native_ids[index], properties);
+        let (parameters, blank_parameters) =
+            cadmpeg_core::text::named_entries_with_blank(&native_ids[index], parameters);
         for key in blank.into_iter().chain(blank_parameters) {
             sink.warnings.push_coded(
                 crate::loss::RhinoLossCode::ObjectAttributesDegraded,
