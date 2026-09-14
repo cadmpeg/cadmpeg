@@ -333,7 +333,7 @@ pub(super) fn emit_edges(
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry,
-            source_object: Some(cgm_source("edge", edge_id)?),
+            source_object: Some(cgm_source("edge", edge_id)),
         });
         let procedural = helix
             .as_ref()
