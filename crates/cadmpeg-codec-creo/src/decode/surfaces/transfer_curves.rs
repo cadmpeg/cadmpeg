@@ -7,7 +7,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    Curve, CurveGeometry, NurbsSurface, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
@@ -171,6 +171,27 @@ pub(in super::super) enum NurbsBoundaryKind {
     SharedExtrusionGenerator,
 }
 
+/// Boundary curve of an extrusion surface against a plane, with the
+/// section-generator fallback.
+///
+/// The sink is reported before the fallback runs, so the fallback's own `?` on
+/// the caller never sits between a refusal and the report that names it.
+fn extrusion_plane_boundary_curve(
+    ctx: &DecodeContext<'_>,
+    nurbs: &NurbsSurface,
+    plane: PlaneEquation,
+    refusal: &mut crate::lane_refusal::LaneRefusals,
+) -> Result<Option<(CurveGeometry, NurbsBoundaryKind)>, CodecError> {
+    if let Some(geometry) = nurbs_plane_boundary_curve(nurbs, plane, refusal) {
+        return Ok(Some((geometry, NurbsBoundaryKind::ExtrusionPlane)));
+    }
+    if let Some(error) = refusal.take_error() {
+        return Err(error);
+    }
+    Ok(cubic_extrusion_plane_generator_curve(ctx, nurbs, plane)?
+        .map(|geometry| (geometry, NurbsBoundaryKind::ExtrusionPlaneSectionGenerator)))
+}
+
 pub(in super::super) fn transfer_nurbs_boundary_curves(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
@@ -224,13 +245,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
                     origin: [origin.x, origin.y, origin.z],
                     normal: [normal.x, normal.y, normal.z],
                 };
-                if let Some(geometry) = nurbs_plane_boundary_curve(nurbs, plane, refusal) {
-                    Some((geometry, NurbsBoundaryKind::ExtrusionPlane))
-                } else {
-                    cubic_extrusion_plane_generator_curve(ctx, nurbs, plane)?.map(|geometry| {
-                        (geometry, NurbsBoundaryKind::ExtrusionPlaneSectionGenerator)
-                    })
-                }
+                extrusion_plane_boundary_curve(ctx, nurbs, plane, refusal)?
             }
             (
                 crate::surface::SurfaceKind::Plane,
@@ -244,13 +259,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
                     origin: [origin.x, origin.y, origin.z],
                     normal: [normal.x, normal.y, normal.z],
                 };
-                if let Some(geometry) = nurbs_plane_boundary_curve(nurbs, plane, refusal) {
-                    Some((geometry, NurbsBoundaryKind::ExtrusionPlane))
-                } else {
-                    cubic_extrusion_plane_generator_curve(ctx, nurbs, plane)?.map(|geometry| {
-                        (geometry, NurbsBoundaryKind::ExtrusionPlaneSectionGenerator)
-                    })
-                }
+                extrusion_plane_boundary_curve(ctx, nurbs, plane, refusal)?
             }
             (
                 crate::surface::SurfaceKind::Extrusion(_),
