@@ -366,12 +366,11 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
     );
 
     let mut malformed = references;
-    malformed[0].position =
-        crate::om::sketch_references::SketchReferencePosition::new(
-            crate::om::sketch_references::SketchReferenceCount::from_count_byte(3),
-            2,
-        )
-        .unwrap();
+    malformed[0].position = crate::om::sketch_references::SketchReferencePosition::new(
+        crate::om::sketch_references::SketchReferenceCount::from_count_byte(3),
+        2,
+    )
+    .unwrap();
     assert!(super::feature_sketch_construction_inputs(&sketches, &malformed).is_empty());
 }
 

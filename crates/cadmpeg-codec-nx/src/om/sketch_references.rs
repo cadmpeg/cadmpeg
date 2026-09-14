@@ -259,11 +259,17 @@ mod tests {
         let field =
             SketchReferenceField::read(OperationPayload::new(&bytes, 100, "SKETCH").unwrap(), 0)
                 .unwrap();
-        assert_eq!(field.declared_count(), SketchReferenceCount::from_count_byte(255));
+        assert_eq!(
+            field.declared_count(),
+            SketchReferenceCount::from_count_byte(255)
+        );
         assert_eq!(field.references().len(), 255);
         for (ordinal, (position, reference)) in field.into_positioned().enumerate() {
             assert_eq!(position.ordinal(), ordinal as u32);
-            assert_eq!(position.declared_count(), SketchReferenceCount::from_count_byte(255));
+            assert_eq!(
+                position.declared_count(),
+                SketchReferenceCount::from_count_byte(255)
+            );
             assert_eq!(position.terminal(), ordinal == 254);
             assert_eq!(
                 reference.offset,
@@ -292,10 +298,20 @@ mod tests {
                 .unwrap_err()
                 .to_string()
                 .contains("terminal"));
-            for ordinal in [u32::from(SketchReferenceCount::from_count_byte(count).effective().get()), u32::MAX] {
-                assert!(SketchReferencePosition::new(SketchReferenceCount::from_count_byte(count), ordinal)
-                    .unwrap_err()
-                    .contains("ordinal"));
+            for ordinal in [
+                u32::from(
+                    SketchReferenceCount::from_count_byte(count)
+                        .effective()
+                        .get(),
+                ),
+                u32::MAX,
+            ] {
+                assert!(SketchReferencePosition::new(
+                    SketchReferenceCount::from_count_byte(count),
+                    ordinal
+                )
+                .unwrap_err()
+                .contains("ordinal"));
             }
         }
     }
