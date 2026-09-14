@@ -857,14 +857,12 @@ pub fn parse_runs(data: &[u8]) -> Vec<Vec<EntityRecord>> {
         .fold(
             Vec::<Vec<EntityRecordCandidates>>::new(),
             |mut runs, variants| {
-                if runs
-                    .last()
-                    .and_then(|run| run.last())
-                    .is_some_and(|last| last.pos.checked_add(last.total_len) == Some(variants.pos))
-                {
-                    runs.last_mut()
-                        .expect("a final record implies a final run")
-                        .push(variants);
+                if let Some(run) = runs.last_mut().filter(|run| {
+                    run.last().is_some_and(|last| {
+                        last.pos.checked_add(last.total_len) == Some(variants.pos)
+                    })
+                }) {
+                    run.push(variants);
                 } else {
                     runs.push(vec![variants]);
                 }
@@ -935,7 +933,7 @@ struct MonotonePathState {
 
 fn unique_monotone_run(records: &[EntityRecordCandidates]) -> Option<Vec<EntityIdentityCandidate>> {
     let first = &records.first()?.identities;
-    let mut layers = vec![first
+    let mut previous = first
         .iter()
         .copied()
         .map(|identity| MonotonePathState {
@@ -943,9 +941,9 @@ fn unique_monotone_run(records: &[EntityRecordCandidates]) -> Option<Vec<EntityI
             path_count: PathCount::One,
             predecessor: None,
         })
-        .collect::<Vec<_>>()];
+        .collect::<Vec<_>>();
+    let mut layers = Vec::new();
     for record in &records[1..] {
-        let previous = layers.last().expect("first candidate layer");
         let mut ordered_predecessors = previous.iter().enumerate().collect::<Vec<_>>();
         ordered_predecessors.sort_by_key(|(_, state)| state.identity.entity_id);
         let mut cumulative = Vec::with_capacity(ordered_predecessors.len());
@@ -976,9 +974,9 @@ fn unique_monotone_run(records: &[EntityRecordCandidates]) -> Option<Vec<EntityI
         if layer.is_empty() {
             return None;
         }
-        layers.push(layer);
+        layers.push(std::mem::replace(&mut previous, layer));
     }
-    let final_layer = layers.last()?;
+    let final_layer = &previous;
     if final_layer
         .iter()
         .fold(PathCount::None, |count, state| count.join(state.path_count))
@@ -989,8 +987,8 @@ fn unique_monotone_run(records: &[EntityRecordCandidates]) -> Option<Vec<EntityI
     let mut state_index = final_layer
         .iter()
         .position(|state| state.path_count == PathCount::One)?;
-    let mut result = Vec::with_capacity(layers.len());
-    for layer in layers.iter().rev() {
+    let mut result = Vec::with_capacity(records.len());
+    for layer in std::iter::once(final_layer).chain(layers.iter().rev()) {
         let state = &layer[state_index];
         result.push(state.identity);
         if let Some(predecessor) = state.predecessor {
@@ -1137,12 +1135,12 @@ pub(crate) fn parse_definition_schema_selectors(prefix: &[u8]) -> Vec<Definition
     let mut selectors = Vec::new();
     let mut at = 0;
     while at < prefix.len() {
-        if prefix.get(at) == Some(&0x32) && at.checked_add(5).is_some_and(|end| end <= prefix.len())
-        {
-            selectors.push(DefinitionSchemaSelector {
-                value: u32_le(prefix, at + 1).expect("checked definition atom extent"),
-                offset: at,
-            });
+        let selector = match prefix.get(at) {
+            Some(0x32) => u32_le(prefix, at + 1),
+            _ => None,
+        };
+        if let Some(value) = selector {
+            selectors.push(DefinitionSchemaSelector { value, offset: at });
             at += 5;
         } else {
             at += 1;
