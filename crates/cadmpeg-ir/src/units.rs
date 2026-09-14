@@ -34,12 +34,8 @@ enum CanonicalLengthUnitWire {
 /// accepts is one the topology contract also accepts.
 pub const COINCIDENCE_TOLERANCE: f64 = 0.01;
 
-const DEFAULT_LINEAR_TOLERANCE_VALUE: f64 = 1.0e-6;
-const DEFAULT_ANGULAR_TOLERANCE_VALUE: f64 = 1.0e-10;
-const DEFAULT_LINEAR_TOLERANCE: PositiveReal =
-    PositiveReal::new(DEFAULT_LINEAR_TOLERANCE_VALUE).unwrap();
-const DEFAULT_ANGULAR_TOLERANCE: PositiveReal =
-    PositiveReal::new(DEFAULT_ANGULAR_TOLERANCE_VALUE).unwrap();
+const DEFAULT_LINEAR_TOLERANCE: PositiveReal = PositiveReal::UNIT_LINEAR_DEFAULT;
+const DEFAULT_ANGULAR_TOLERANCE: PositiveReal = PositiveReal::UNIT_ANGULAR_DEFAULT;
 
 /// An array of finite coordinates.
 #[derive(Debug, Clone, Copy, PartialEq)]

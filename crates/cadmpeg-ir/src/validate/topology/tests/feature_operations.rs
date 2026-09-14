@@ -17,7 +17,7 @@ fn feature_operation_geometry_is_validated() {
         }),
     ];
     let expected = ["references missing Form control cage `synthetic:test:subd#missing`"];
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     for (ordinal, definition) in definitions.into_iter().enumerate() {
         ir.model.features.push(Feature {
             id: FeatureId::mint(format!("synthetic:test:feature#invalid-{ordinal}"))

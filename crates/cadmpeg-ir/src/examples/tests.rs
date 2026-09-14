@@ -25,7 +25,7 @@ fn directed_subd_sum_fixture_matches_schema_shape() {
 
 #[test]
 fn unit_cube_has_expected_census() {
-    let ir = unit_cube();
+    let ir = unit_cube().expect("valid unit cube fixture");
     assert_eq!(ir.model.bodies.len(), 1);
     assert_eq!(ir.model.regions.len(), 1);
     assert_eq!(ir.model.shells.len(), 1);
@@ -41,7 +41,7 @@ fn unit_cube_has_expected_census() {
 
 #[test]
 fn unit_cube_validates_clean() {
-    let ir = unit_cube();
+    let ir = unit_cube().expect("valid unit cube fixture");
     let report = validate_neutral(&ir, Vec::new());
     assert!(
         report.is_ok(),
@@ -55,7 +55,7 @@ fn unit_cube_validates_clean() {
 
 #[test]
 fn every_cube_edge_has_two_opposite_sense_coedges() {
-    let ir = unit_cube();
+    let ir = unit_cube().expect("valid unit cube fixture");
     for edge in &ir.model.edges {
         let coedges: Vec<_> = ir
             .model

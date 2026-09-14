@@ -94,6 +94,554 @@ impl Display for Identity {
     }
 }
 
+/// Return the Unicode scalar at `index` and the number of bytes it occupies.
+///
+/// `str` guarantees valid UTF-8, so this decoder needs no error arm. Keeping
+/// the decoder here makes the identity grammar available to const evaluation;
+/// `str::chars` is not const on the supported toolchain.
+const fn decode_scalar(bytes: &[u8], index: usize) -> (u32, usize) {
+    let first = bytes[index];
+    if first < 0x80 {
+        (first as u32, 1)
+    } else if first < 0xe0 {
+        (
+            (((first & 0x1f) as u32) << 6) | ((bytes[index + 1] & 0x3f) as u32),
+            2,
+        )
+    } else if first < 0xf0 {
+        (
+            (((first & 0x0f) as u32) << 12)
+                | (((bytes[index + 1] & 0x3f) as u32) << 6)
+                | ((bytes[index + 2] & 0x3f) as u32),
+            3,
+        )
+    } else {
+        (
+            (((first & 0x07) as u32) << 18)
+                | (((bytes[index + 1] & 0x3f) as u32) << 12)
+                | (((bytes[index + 2] & 0x3f) as u32) << 6)
+                | ((bytes[index + 3] & 0x3f) as u32),
+            4,
+        )
+    }
+}
+
+/// True for the Unicode `White_Space` property used by `char::is_whitespace`.
+const fn is_unicode_whitespace(codepoint: u32) -> bool {
+    matches!(
+        codepoint,
+        0x0009..=0x000d
+            | 0x0020
+            | 0x0085
+            | 0x00a0
+            | 0x1680
+            | 0x2000..=0x200a
+            | 0x2028
+            | 0x2029
+            | 0x202f
+            | 0x205f
+            | 0x3000
+    )
+}
+
+/// True when `value` contains Unicode whitespace.
+const fn contains_unicode_whitespace(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        let (codepoint, width) = decode_scalar(bytes, index);
+        if is_unicode_whitespace(codepoint) {
+            return true;
+        }
+        index += width;
+    }
+    false
+}
+
+/// True when `value` is a valid namespace component.
+const fn valid_component_text(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.is_empty() || contains_unicode_whitespace(value) {
+        return false;
+    }
+    let mut index = 0;
+    while index < bytes.len() {
+        if matches!(bytes[index], b':' | b'#') {
+            return false;
+        }
+        index += 1;
+    }
+    true
+}
+
+/// True when `value` is a valid identity key.
+const fn valid_key_text(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.is_empty() || contains_unicode_whitespace(value) {
+        return false;
+    }
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'#' {
+            return false;
+        }
+        index += 1;
+    }
+    true
+}
+
+/// A static component whose grammar was admitted during const evaluation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct StaticIdentityComponent {
+    value: &'static str,
+}
+
+impl StaticIdentityComponent {
+    /// Admit a static component, returning `None` for invalid grammar.
+    #[must_use]
+    pub const fn new(value: &'static str) -> Option<Self> {
+        if valid_component_text(value) {
+            Some(Self { value })
+        } else {
+            None
+        }
+    }
+}
+
+/// A `<format>`, `<scope>` or `<kind>` component of an entity identity.
+///
+/// The component grammar is: at least one character, and no `:`, `#` or
+/// Unicode whitespace. A value of this type exists only because that check
+/// passed, so typed composition has no failure route.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct IdentityComponent(std::borrow::Cow<'static, str>);
+
+impl IdentityComponent {
+    /// Admit component text from a runtime source.
+    #[must_use]
+    pub fn new(value: impl Into<String>) -> Option<Self> {
+        let value = value.into();
+        valid_component_text(&value).then_some(Self(std::borrow::Cow::Owned(value)))
+    }
+
+    /// Admit component text and retain a useful error for the source route.
+    pub fn try_new(value: impl Into<String>) -> Result<Self, IdentityError> {
+        let value = value.into();
+        if valid_component_text(&value) {
+            Ok(Self(std::borrow::Cow::Owned(value)))
+        } else {
+            Err(IdentityError::InvalidComponent {
+                label: "component",
+                value,
+            })
+        }
+    }
+
+    /// Construct a component from a static proof.
+    #[must_use]
+    pub const fn from_static(proof: StaticIdentityComponent) -> Self {
+        Self(std::borrow::Cow::Borrowed(proof.value))
+    }
+
+    /// The component text.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for IdentityComponent {
+    type Error = IdentityError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::try_new(value)
+    }
+}
+
+impl TryFrom<&str> for IdentityComponent {
+    type Error = IdentityError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::try_new(value.to_owned())
+    }
+}
+
+/// A static key whose grammar was admitted during const evaluation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct StaticIdentityKey {
+    value: &'static str,
+}
+
+impl StaticIdentityKey {
+    /// Admit a static key, returning `None` for invalid grammar.
+    #[must_use]
+    pub const fn new(value: &'static str) -> Option<Self> {
+        if valid_key_text(value) {
+            Some(Self { value })
+        } else {
+            None
+        }
+    }
+}
+
+/// The `<key>` component of an entity identity.
+///
+/// The key grammar is: at least one character, and no `#` or Unicode
+/// whitespace. A `:` is part of the grammar because the key follows the `#`
+/// that ends the namespace. A value of this type exists only because that
+/// check passed.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct IdentityKey(std::borrow::Cow<'static, str>);
+
+impl IdentityKey {
+    /// Admit key text from a runtime source.
+    #[must_use]
+    pub fn new(value: impl Into<String>) -> Option<Self> {
+        let value = value.into();
+        valid_key_text(&value).then_some(Self(std::borrow::Cow::Owned(value)))
+    }
+
+    /// Admit key text and retain the rejected value for the source route.
+    pub fn try_new(value: impl Into<String>) -> Result<Self, IdentityError> {
+        let value = value.into();
+        if valid_key_text(&value) {
+            Ok(Self(std::borrow::Cow::Owned(value)))
+        } else {
+            Err(IdentityError::InvalidKey { value })
+        }
+    }
+
+    /// Construct a key from a static proof.
+    #[must_use]
+    pub const fn from_static(proof: StaticIdentityKey) -> Self {
+        Self(std::borrow::Cow::Borrowed(proof.value))
+    }
+
+    /// The key text.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for IdentityKey {
+    type Error = IdentityError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::try_new(value)
+    }
+}
+
+impl TryFrom<&str> for IdentityKey {
+    type Error = IdentityError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::try_new(value.to_owned())
+    }
+}
+
+/// A static namespace whose three components were admitted during const evaluation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct StaticIdentityNamespace {
+    format: &'static str,
+    scope: &'static str,
+    kind: &'static str,
+}
+
+impl StaticIdentityNamespace {
+    /// Admit a static namespace, returning `None` for invalid grammar.
+    #[must_use]
+    pub const fn new(
+        format: &'static str,
+        scope: &'static str,
+        kind: &'static str,
+    ) -> Option<Self> {
+        if valid_component_text(format)
+            && valid_component_text(scope)
+            && valid_component_text(kind)
+        {
+            Some(Self {
+                format,
+                scope,
+                kind,
+            })
+        } else {
+            None
+        }
+    }
+}
+
+/// The three typed components before an identity's `#` key.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct IdentityNamespace {
+    format: IdentityComponent,
+    scope: IdentityComponent,
+    kind: IdentityComponent,
+}
+
+impl IdentityNamespace {
+    /// Admit a namespace assembled from runtime text.
+    pub fn new(
+        format: impl Into<String>,
+        scope: impl Into<String>,
+        kind: impl Into<String>,
+    ) -> Result<Self, IdentityError> {
+        let format = format.into();
+        let scope = scope.into();
+        let kind = kind.into();
+        let format_component = Self::component("format", format)?;
+        let scope_component = Self::component("scope", scope)?;
+        let kind_component = Self::component("kind", kind)?;
+        Ok(Self {
+            format: format_component,
+            scope: scope_component,
+            kind: kind_component,
+        })
+    }
+
+    /// Construct a namespace from a static proof.
+    #[must_use]
+    pub const fn from_static(proof: StaticIdentityNamespace) -> Self {
+        Self {
+            format: IdentityComponent(std::borrow::Cow::Borrowed(proof.format)),
+            scope: IdentityComponent(std::borrow::Cow::Borrowed(proof.scope)),
+            kind: IdentityComponent(std::borrow::Cow::Borrowed(proof.kind)),
+        }
+    }
+
+    /// Combine three already-admitted runtime components.
+    #[must_use]
+    pub fn from_components(
+        format: &IdentityComponent,
+        scope: &IdentityComponent,
+        kind: &IdentityComponent,
+    ) -> Self {
+        Self {
+            format: format.clone(),
+            scope: scope.clone(),
+            kind: kind.clone(),
+        }
+    }
+
+    fn component(label: &'static str, value: String) -> Result<IdentityComponent, IdentityError> {
+        if valid_component_text(&value) {
+            Ok(IdentityComponent(std::borrow::Cow::Owned(value)))
+        } else {
+            Err(IdentityError::InvalidComponent { label, value })
+        }
+    }
+
+    /// The format component.
+    #[must_use]
+    pub fn format(&self) -> &str {
+        self.format.as_str()
+    }
+
+    /// The scope component.
+    #[must_use]
+    pub fn scope(&self) -> &str {
+        self.scope.as_str()
+    }
+
+    /// The kind component.
+    #[must_use]
+    pub fn kind(&self) -> &str {
+        self.kind.as_str()
+    }
+}
+
+/// Build a checked namespace from three literal components.
+#[macro_export]
+macro_rules! identity_namespace {
+    ($format:literal, $scope:literal, $kind:literal $(,)?) => {{
+        const STATIC_IDENTITY_NAMESPACE: $crate::ids::StaticIdentityNamespace = match
+            $crate::ids::StaticIdentityNamespace::new($format, $scope, $kind)
+        {
+            Some(namespace) => namespace,
+            None => panic!("identity namespace literal has invalid grammar"),
+        };
+        $crate::ids::IdentityNamespace::from_static(STATIC_IDENTITY_NAMESPACE)
+    }};
+}
+
+/// Build a checked namespace component from one literal.
+#[macro_export]
+macro_rules! identity_component {
+    ($value:literal) => {{
+        const STATIC_IDENTITY_COMPONENT: $crate::ids::StaticIdentityComponent = match
+            $crate::ids::StaticIdentityComponent::new($value)
+        {
+            Some(component) => component,
+            None => panic!("identity component literal has invalid grammar"),
+        };
+        $crate::ids::IdentityComponent::from_static(STATIC_IDENTITY_COMPONENT)
+    }};
+}
+
+/// Build a checked identity key from one literal.
+#[macro_export]
+macro_rules! identity_key {
+    ($value:literal) => {{
+        const STATIC_IDENTITY_KEY: $crate::ids::StaticIdentityKey = match
+            $crate::ids::StaticIdentityKey::new($value)
+        {
+            Some(key) => key,
+            None => panic!("identity key literal has invalid grammar"),
+        };
+        $crate::ids::IdentityKey::from_static(STATIC_IDENTITY_KEY)
+    }};
+}
+
+/// A tail appended to an identity key.
+///
+/// A tail may be empty, and it holds no `#` and no whitespace. Appending one
+/// to an [`IdentityKey`] therefore always yields an [`IdentityKey`], which is
+/// how an optional scope suffix reaches a key without a second grammar check.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+pub struct IdentityKeyTail(String);
+
+impl IdentityKeyTail {
+    /// The tail that appends nothing.
+    #[must_use]
+    pub fn empty() -> Self {
+        Self(String::new())
+    }
+
+    /// This tail, then `-`, then `part`.
+    #[must_use]
+    pub fn dash(mut self, part: impl Into<IdentityKey>) -> Self {
+        self.0.push('-');
+        self.0.push_str(part.into().as_str());
+        self
+    }
+
+    /// This tail, then `part`, with no separator.
+    #[must_use]
+    pub fn then(mut self, part: impl Into<IdentityKey>) -> Self {
+        self.0.push_str(part.into().as_str());
+        self
+    }
+
+    /// The tail text.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl IdentityKey {
+    /// This key, then `-`, then `part`.
+    #[must_use]
+    pub fn dash(self, part: impl Into<IdentityKey>) -> Self {
+        let mut text = self.0.into_owned();
+        text.push('-');
+        text.push_str(part.into().as_str());
+        Self(std::borrow::Cow::Owned(text))
+    }
+
+    /// This key, then `:`, then `part`.
+    ///
+    /// A `:` follows the `#` that ends the namespace, so it is part of the key
+    /// grammar and never splits the identity.
+    #[must_use]
+    pub fn colon(self, part: impl Into<IdentityKey>) -> Self {
+        let mut text = self.0.into_owned();
+        text.push(':');
+        text.push_str(part.into().as_str());
+        Self(std::borrow::Cow::Owned(text))
+    }
+
+    /// This key, then `part`, with no separator.
+    #[must_use]
+    pub fn then(self, part: impl Into<IdentityKey>) -> Self {
+        let mut text = self.0.into_owned();
+        text.push_str(part.into().as_str());
+        Self(std::borrow::Cow::Owned(text))
+    }
+
+    /// This key, then `tail`.
+    #[must_use]
+    pub fn with_tail(self, tail: &IdentityKeyTail) -> Self {
+        let mut text = self.0.into_owned();
+        text.push_str(tail.as_str());
+        Self(std::borrow::Cow::Owned(text))
+    }
+}
+
+macro_rules! identity_key_from_number {
+    ($($number:ty),* $(,)?) => {$(
+        impl From<$number> for IdentityKey {
+            fn from(value: $number) -> Self {
+                Self(std::borrow::Cow::Owned(value.to_string()))
+            }
+        }
+
+        impl From<&$number> for IdentityKey {
+            fn from(value: &$number) -> Self {
+                Self(std::borrow::Cow::Owned(value.to_string()))
+            }
+        }
+
+        impl From<&&$number> for IdentityKey {
+            fn from(value: &&$number) -> Self {
+                Self(std::borrow::Cow::Owned(value.to_string()))
+            }
+        }
+    )*};
+}
+
+identity_key_from_number!(u8, u16, u32, u64, u128, usize);
+
+impl From<&IdentityKey> for IdentityKey {
+    fn from(value: &IdentityKey) -> Self {
+        value.clone()
+    }
+}
+
+impl Display for IdentityKeyTail {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl Display for IdentityComponent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl Display for IdentityKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl Identity {
+    /// Compose an identity from an admitted namespace and key.
+    ///
+    /// Both arguments carry their own grammar, so this operation cannot
+    /// refuse and cannot produce a malformed identity.
+    #[must_use]
+    pub fn compose(namespace: &IdentityNamespace, key: impl Into<IdentityKey>) -> Self {
+        let key = key.into();
+        let mut value = String::with_capacity(
+            namespace.format().len()
+                + namespace.scope().len()
+                + namespace.kind().len()
+                + key.as_str().len()
+                + 4,
+        );
+        value.push_str(namespace.format());
+        value.push(':');
+        value.push_str(namespace.scope());
+        value.push(':');
+        value.push_str(namespace.kind());
+        value.push('#');
+        value.push_str(key.as_str());
+        Self(value)
+    }
+}
+
 /// Format a three-component identity and reject grammar violations.
 ///
 /// # Errors
@@ -106,24 +654,9 @@ pub fn format_identity(
     kind: &str,
     key: impl Display,
 ) -> Result<Identity, IdentityError> {
-    for (label, part) in [("format", format), ("scope", scope), ("kind", kind)] {
-        if part.is_empty()
-            || part.contains(':')
-            || part.contains('#')
-            || part.chars().any(char::is_whitespace)
-        {
-            return Err(IdentityError::InvalidComponent {
-                label,
-                value: part.to_owned(),
-            });
-        }
-    }
+    let namespace = IdentityNamespace::new(format, scope, kind)?;
     let key = key.to_string();
-    if key.is_empty() || key.contains('#') || key.chars().any(char::is_whitespace) {
-        return Err(IdentityError::InvalidKey { value: key });
-    }
-    let id = format!("{format}:{scope}:{kind}#{key}");
-    Ok(Identity(id))
+    Ok(Identity::compose(&namespace, IdentityKey::try_new(key)?))
 }
 
 /// Failure to mint an entity identity.
@@ -183,6 +716,15 @@ macro_rules! id_type {
             /// Mint an identity that matches `<format>:<scope>:<kind>#<key>`.
             pub fn mint(value: impl Into<String>) -> Result<Self, $crate::ids::IdentityError> {
                 $crate::ids::Identity::new(value).map(Self::from)
+            }
+
+            /// Compose an identity from an admitted namespace and key.
+            #[must_use]
+            pub fn compose(
+                namespace: &$crate::ids::IdentityNamespace,
+                key: impl Into<$crate::ids::IdentityKey>,
+            ) -> Self {
+                Self($crate::ids::Identity::compose(namespace, key))
             }
 
             /// Return the underlying id string.

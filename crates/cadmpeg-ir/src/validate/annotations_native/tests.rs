@@ -10,7 +10,7 @@ use std::collections::HashSet;
 
 #[test]
 fn model_entity_wins_when_native_id_collides() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let id = ir.model.points[0].id.as_str().to_owned();
     let mut namespace = NativeNamespace::default();
     namespace.arenas_mut().insert(
@@ -29,7 +29,7 @@ fn model_entity_wins_when_native_id_collides() {
 
 #[test]
 fn annotation_keys_and_field_paths_are_checked() {
-    let ir = unit_cube();
+    let ir = unit_cube().expect("valid unit cube fixture");
     let mut source_fidelity = crate::SourceFidelity::default();
     let mut annotations = crate::AnnotationBuilder::new();
     let stream = annotations.stream("test:source");
@@ -50,7 +50,7 @@ fn annotation_keys_and_field_paths_are_checked() {
 
 #[test]
 fn native_topology_link_must_resolve() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.native.namespace_mut("f3d").arenas_mut().insert(
         "sketch_curve_links".into(),
         vec![NativeRecord::new(
@@ -68,7 +68,7 @@ fn native_topology_link_must_resolve() {
 
 #[test]
 fn parameter_native_ref_must_resolve() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let id = crate::features::ParameterId::mint("synthetic:test:parameter#native-ref")
         .expect("identity grammar");
     ir.model.parameters.push(crate::features::DesignParameter {
@@ -113,7 +113,7 @@ fn parameter_native_ref_must_resolve() {
 
 #[test]
 fn unresolved_unknown_record_link_is_reported_once() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.set_native_unknowns(
         "test",
         &[crate::NativeUnknownRecord {

@@ -11,8 +11,6 @@
 #![deny(clippy::disallowed_methods)]
 
 use std::collections::BTreeMap;
-use std::fmt::Write as _;
-
 use serde::ser::{self, Serialize};
 
 /// One serialized value: rendered text, or a buffered object kept apart so
@@ -51,13 +49,13 @@ fn render_object(entries: &BTreeMap<String, String>) -> String {
 
 /// Render a raw key as a JSON string.
 fn escape_key(key: &str) -> String {
-    serde_json::to_string(key).expect("a string always renders")
+    serde_json::Value::String(key.to_owned()).to_string()
 }
 
 /// Render one finite or non-finite double the way `serde_json::Value` does.
 fn render_f64(value: f64) -> String {
     if value.is_finite() {
-        serde_json::to_string(&value).expect("a finite double always renders")
+        serde_json::Value::from(value).to_string()
     } else {
         "null".to_owned()
     }
@@ -154,7 +152,7 @@ impl ser::Serializer for CanonValue {
             if ordinal > 0 {
                 out.push(',');
             }
-            write!(out, "{byte}").expect("a string accepts every byte");
+            out.push_str(&byte.to_string());
         }
         out.push(']');
         Ok(Node::Text(out))

@@ -20,7 +20,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         scalar::Length,
     };
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let sketch = SpatialSketchId::mint("synthetic:test:spatial-sketch#one").unwrap();
     let circle =
         SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#circle").unwrap();

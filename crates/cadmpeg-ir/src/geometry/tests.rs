@@ -29,7 +29,7 @@ fn make_first_face_surface_unknown(ir: &mut crate::CadIr, record: Option<Unknown
 
 #[test]
 fn unknown_surface_json_round_trips() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let rec = UnknownId::mint("synthetic:cube:unknown#0").expect("valid identity");
     ir.set_native_unknowns(
         "synthetic",
@@ -1191,7 +1191,7 @@ fn a_law_surface_full_tail_states_its_solved_cache_contract() {
 /// One-pcurve document built on the unit cube, used to drive the pcurve
 /// carriers over the same route a checked-in document takes.
 fn document_with_pcurve(geometry: &serde_json::Value) -> serde_json::Value {
-    let mut document = serde_json::to_value(unit_cube()).unwrap();
+    let mut document = serde_json::to_value(unit_cube().expect("valid unit cube fixture")).unwrap();
     document["model"]["pcurves"] = serde_json::json!([{
         "id": "synthetic:cube:pcurve#0",
         "geometry": geometry.clone(),

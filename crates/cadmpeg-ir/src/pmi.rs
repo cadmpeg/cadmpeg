@@ -635,7 +635,7 @@ mod tests {
 
     #[test]
     fn curve_target_resolves_against_the_curve_arena() {
-        let mut ir = crate::examples::unit_cube();
+        let mut ir = crate::examples::unit_cube().expect("valid unit cube fixture");
         let curve = ir.model.curves[0].id.clone();
         ir.model.pmi.push(PmiAnnotation {
             id: PmiId::mint("synthetic:model:pmi#curve-target").expect("valid identity"),

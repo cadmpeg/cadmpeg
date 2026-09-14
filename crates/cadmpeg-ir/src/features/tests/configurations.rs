@@ -18,7 +18,7 @@ fn configuration_body_membership_round_trips_and_validates() {
     };
     use std::collections::BTreeMap;
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let configuration_id =
         ConfigurationId::mint("synthetic:test:configuration#0").expect("identity grammar");
     let parameter_id =
@@ -329,7 +329,7 @@ fn configuration_suppression_is_read_from_feature_states_and_refuses_the_deleted
     };
     use std::collections::BTreeMap;
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let feature = Feature::new(
         FeatureId::mint("synthetic:test:feature#suppressed").expect("identity grammar"),
         0,

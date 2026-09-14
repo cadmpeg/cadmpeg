@@ -610,7 +610,7 @@ mod tests {
         ir.source = Some(crate::document::SourceMeta::classified(
             cadmpeg_core::dialect::DialectLayers::of(
                 cadmpeg_core::dialect::DialectMatch::admitted(
-                    cadmpeg_core::dialect::DialectId::pinned("pin:test"),
+                    cadmpeg_core::dialect_id!("pin:test"),
                 ),
             ),
             [
@@ -734,13 +734,13 @@ mod tests {
     fn local_digest_fixture_with_source_image(
         source_image: UnknownRecord,
     ) -> (CadIr, crate::SourceFidelity) {
-        let mut ir = unit_cube();
+        let mut ir = unit_cube().expect("valid unit cube fixture");
         ir.model.faces.reverse();
         ir.model.surfaces.reverse();
         ir.source = Some(crate::SourceMeta::classified(
             cadmpeg_core::dialect::DialectLayers::of(
                 cadmpeg_core::dialect::DialectMatch::admitted(
-                    cadmpeg_core::dialect::DialectId::pinned("synthetic:test"),
+                    cadmpeg_core::dialect_id!("synthetic:test"),
                 ),
             ),
             [

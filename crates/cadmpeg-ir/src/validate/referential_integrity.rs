@@ -83,7 +83,7 @@ mod tests {
         }])
         .expect("valid local texture assignment");
         let owner = tessellation.id.clone();
-        let mut ir = unit_cube();
+        let mut ir = unit_cube().expect("valid unit cube fixture");
         ir.model.tessellations.push(tessellation);
         let mut findings = Vec::new();
         check_typed_references(&ir, &ModelIndex::new(&ir), &mut findings);

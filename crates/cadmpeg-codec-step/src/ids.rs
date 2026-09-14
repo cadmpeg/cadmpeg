@@ -1,144 +1,119 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Codec-owned STEP identity builders.
 //!
-//! Every mint path validates `<format>:<scope>:<kind>#<key>` at construction so
-//! a two-component id such as `step:signature#0` cannot be produced.
+//! Every mint path composes `<format>:<scope>:<kind>#<key>` from parts that
+//! already hold the identity grammar, so a two-component id such as
+//! `step:signature#0` cannot be produced and no mint path can fail.
 
-use std::borrow::Cow;
-use std::fmt::Display;
+use cadmpeg_ir::ids::{Identity, IdentityComponent, IdentityKey, IdentityNamespace, UnknownId};
 
-use cadmpeg_ir::ids::{format_identity, Identity, UnknownId};
+/// The `<kind>` component of a STEP identity.
+///
+/// The component holds at least one character and no `:`, `#` or whitespace,
+/// checked when the value is built. The `kind!` macro builds one from a source
+/// literal when the crate compiles; `IdentityKind::new` builds one from
+/// file-derived text and returns `None` when the text cannot be a kind.
+pub type IdentityKind = IdentityComponent;
 
-/// The `<kind>` component of a STEP identity, checked at construction.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IdentityKind(Cow<'static, str>);
+/// The `<format>` component of every STEP identity.
+static FORMAT: IdentityComponent = cadmpeg_ir::identity_component!("step");
 
-impl IdentityKind {
-    /// Builds a kind from a literal the [`literal`] module has already checked.
-    ///
-    /// Total: the only way to hold a [`literal::ValidKindLiteral`] is to have
-    /// passed its check, so this constructor has no failure route at all.
-    pub(crate) const fn from_valid(literal: literal::ValidKindLiteral) -> Self {
-        Self(Cow::Borrowed(literal.get()))
-    }
+/// The `<scope>` component of a file-level identity.
+static SCOPE_FILE: IdentityComponent = cadmpeg_ir::identity_component!("file");
 
-    /// Builds a kind from file-derived text, or `None` when the text cannot be one.
-    #[must_use]
-    pub fn parse(value: &str) -> Option<Self> {
-        (!value.is_empty()
-            && !value.contains(':')
-            && !value.contains('#')
-            && !value.chars().any(char::is_whitespace))
-        .then(|| Self(Cow::Owned(value.to_owned())))
-    }
+/// The `<scope>` component of a DATA-section identity.
+static SCOPE_DATA: IdentityComponent = cadmpeg_ir::identity_component!("data");
 
-    fn as_str(&self) -> &str {
-        &self.0
-    }
-}
+/// The `<scope>` component of a product-structure identity.
+static SCOPE_PRODUCT: IdentityComponent = cadmpeg_ir::identity_component!("product");
 
-/// The checked door for source literals used as identity kinds.
-pub(crate) mod literal {
-    /// A source literal proven to be a `<kind>` component.
-    #[derive(Clone, Copy)]
-    pub struct ValidKindLiteral(&'static str);
+/// The `<scope>` component of a presentation or PMI identity.
+static SCOPE_PRESENTATION: IdentityComponent = cadmpeg_ir::identity_component!("presentation");
 
-    impl ValidKindLiteral {
-        /// Checks one source literal, or `None` when it cannot be a kind.
-        pub const fn new(literal: &'static str) -> Option<Self> {
-            if is_valid(literal.as_bytes()) {
-                Some(Self(literal))
-            } else {
-                None
-            }
-        }
+/// The `<scope>` component of a construction identity.
+static SCOPE_CONSTRUCTION: IdentityComponent = cadmpeg_ir::identity_component!("construction");
 
-        /// The checked literal.
-        pub const fn get(self) -> &'static str {
-            self.0
-        }
-    }
+/// The `<scope>` component of a tessellation identity.
+static SCOPE_TESSELLATION: IdentityComponent = cadmpeg_ir::identity_component!("tessellation");
 
-    const fn is_valid(bytes: &[u8]) -> bool {
-        if bytes.is_empty() {
-            return false;
-        }
-        let mut index = 0;
-        while index < bytes.len() {
-            match bytes[index] {
-                b':' | b'#' | b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c => return false,
-                _ => index += 1,
-            }
-        }
-        true
-    }
-}
+/// The `<scope>` component of a drawing-graph identity.
+static SCOPE_DRAWING: IdentityComponent = cadmpeg_ir::identity_component!("drawing");
 
-/// Builds an [`IdentityKind`] from a string literal, checked when the crate compiles.
+/// The `<kind>` component a source literal spells.
+///
+/// The literal is checked in the initializer of a `static` item, so a literal
+/// outside the kind grammar is an E0080 under `cargo check`.
 macro_rules! kind {
     ($literal:literal) => {{
-        static KIND: $crate::ids::IdentityKind = $crate::ids::IdentityKind::from_valid(
-            match $crate::ids::literal::ValidKindLiteral::new($literal) {
-                Some(literal) => literal,
-                None => {
-                    panic!("a STEP identity kind is nonempty and free of ':', '#' and whitespace")
-                }
-            },
-        );
+        static KIND: $crate::ids::IdentityKind = cadmpeg_ir::identity_component!($literal);
         &KIND
     }};
 }
 
 pub(crate) use kind;
 
+/// The `<key>` component a source literal spells.
+///
+/// The literal is checked in the initializer of a `static` item, so a literal
+/// outside the key grammar is an E0080 under `cargo check`. Compose a longer
+/// key from these with [`IdentityKey::dash`], [`IdentityKey::colon`] and
+/// [`IdentityKey::then`], each of which keeps the grammar.
+macro_rules! key_word {
+    ($literal:literal) => {{
+        static KEY_WORD: cadmpeg_ir::ids::IdentityKey = cadmpeg_ir::identity_key!($literal);
+        KEY_WORD.clone()
+    }};
+}
+
+pub(crate) use key_word;
+
 /// File-level signature opaque record: `step:file:signature#{index}`.
 #[must_use]
 pub fn signature(index: usize) -> UnknownId {
-    UnknownId::from(
-        format_identity("step", "file", "signature", index)
-            .expect("step:file:signature#N is always valid"),
-    )
+    let namespace = IdentityNamespace::from_components(&FORMAT, &SCOPE_FILE, kind!("signature"));
+    UnknownId::from(Identity::compose(&namespace, IdentityKey::from(index)))
 }
 
 /// DATA-section geometry or opaque kind: `step:data:{kind}#{key}`.
 #[must_use]
-pub fn data(kind: &IdentityKind, key: impl Display) -> Identity {
-    mint("data", kind, key)
+pub fn data(kind: &IdentityKind, key: impl Into<IdentityKey>) -> Identity {
+    let namespace = IdentityNamespace::from_components(&FORMAT, &SCOPE_DATA, kind);
+    Identity::compose(&namespace, key)
 }
 
 /// Product structure identity: `step:product:{kind}#{key}`.
 #[must_use]
-pub fn product(kind: &IdentityKind, key: impl Display) -> Identity {
-    mint("product", kind, key)
+pub fn product(kind: &IdentityKind, key: impl Into<IdentityKey>) -> Identity {
+    let namespace = IdentityNamespace::from_components(&FORMAT, &SCOPE_PRODUCT, kind);
+    Identity::compose(&namespace, key)
 }
 
 /// Presentation / PMI identity: `step:presentation:{kind}#{key}`.
 #[must_use]
-pub fn presentation(kind: &IdentityKind, key: impl Display) -> Identity {
-    mint("presentation", kind, key)
+pub fn presentation(kind: &IdentityKind, key: impl Into<IdentityKey>) -> Identity {
+    let namespace = IdentityNamespace::from_components(&FORMAT, &SCOPE_PRESENTATION, kind);
+    Identity::compose(&namespace, key)
 }
 
 /// Construction / procedural identity: `step:construction:{kind}#{key}`.
 #[must_use]
-pub fn construction(kind: &IdentityKind, key: impl Display) -> Identity {
-    mint("construction", kind, key)
+pub fn construction(kind: &IdentityKind, key: impl Into<IdentityKey>) -> Identity {
+    let namespace = IdentityNamespace::from_components(&FORMAT, &SCOPE_CONSTRUCTION, kind);
+    Identity::compose(&namespace, key)
 }
 
 /// Tessellation identity: `step:tessellation:{kind}#{key}`.
 #[must_use]
-pub fn tessellation(kind: &IdentityKind, key: impl Display) -> Identity {
-    mint("tessellation", kind, key)
+pub fn tessellation(kind: &IdentityKind, key: impl Into<IdentityKey>) -> Identity {
+    let namespace = IdentityNamespace::from_components(&FORMAT, &SCOPE_TESSELLATION, kind);
+    Identity::compose(&namespace, key)
 }
 
 /// Drawing graph identity: `step:drawing:{kind}#{key}`.
 #[must_use]
-pub fn drawing(kind: &IdentityKind, key: impl Display) -> Identity {
-    mint("drawing", kind, key)
-}
-
-fn mint(scope: &str, kind: &IdentityKind, key: impl Display) -> Identity {
-    format_identity("step", scope, kind.as_str(), key)
-        .unwrap_or_else(|error| panic!("step {scope} identity: {error}"))
+pub fn drawing(kind: &IdentityKind, key: impl Into<IdentityKey>) -> Identity {
+    let namespace = IdentityNamespace::from_components(&FORMAT, &SCOPE_DRAWING, kind);
+    Identity::compose(&namespace, key)
 }
 
 #[cfg(test)]

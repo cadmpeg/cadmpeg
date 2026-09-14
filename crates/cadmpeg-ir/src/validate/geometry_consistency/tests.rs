@@ -615,7 +615,7 @@ fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
 
 #[test]
 fn procedural_surface_carrier_requires_its_exact_owner() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let construction =
         ProceduralSurfaceId::mint("synthetic:cube:procedural-surface#0").expect("valid identity");
     ir.model.surfaces[0].geometry = SurfaceGeometry::Procedural {
@@ -652,7 +652,7 @@ fn procedural_surface_carrier_requires_its_exact_owner() {
 
 #[test]
 fn procedural_curve_carrier_requires_its_exact_owner() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let construction =
         ProceduralCurveId::mint("synthetic:cube:procedural-curve#0").expect("valid identity");
     ir.model.curves[0].geometry = CurveGeometry::Procedural {
@@ -686,7 +686,7 @@ fn procedural_curve_carrier_requires_its_exact_owner() {
 fn self_referential_composite_curve_is_invalid() {
     use crate::geometry::{CompositeCurveSegment, CompositeCurveTransition};
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let id = CurveId::mint("synthetic:test:curve#recursive").expect("valid identity");
     ir.model.curves.push(Curve {
         id: id.clone(),
@@ -712,7 +712,7 @@ fn self_referential_composite_curve_is_invalid() {
 
 #[test]
 fn edge_endpoint_mismatch_is_flagged() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let report = validate_neutral(&ir, Vec::new());
     assert!(
         !report
@@ -723,7 +723,7 @@ fn edge_endpoint_mismatch_is_flagged() {
         report.findings
     );
 
-    let mut source_tolerant = unit_cube();
+    let mut source_tolerant = unit_cube().expect("valid unit cube fixture");
     source_tolerant.model.points[0].position.z += 0.015;
     source_tolerant.tolerances.linear =
         crate::scalar::PositiveReal::new(0.02).expect("positive finite tolerance");
@@ -798,7 +798,7 @@ fn pcurve_surface_mismatch_is_flagged() {
     // `(0,0,0)` to `(10,0,0)`, so its parameter image is the line
     // `(0,0) -> (10,0)`.
     let checked = |u_end: f64, v_end: f64, fit_tolerance: Option<f64>| {
-        let mut ir = unit_cube();
+        let mut ir = unit_cube().expect("valid unit cube fixture");
         ir.model.pcurves.push(crate::geometry::Pcurve {
             id: crate::ids::PcurveId::mint("synthetic:cube:pcurve#0").expect("valid identity"),
             geometry: crate::geometry::PcurveGeometry::Nurbs {
@@ -863,7 +863,7 @@ fn pcurve_surface_mismatch_is_flagged() {
         tolerance_qualified.findings
     );
 
-    let mut procedural = unit_cube();
+    let mut procedural = unit_cube().expect("valid unit cube fixture");
     procedural.model.pcurves.push(crate::geometry::Pcurve {
         id: crate::ids::PcurveId::mint("synthetic:cube:pcurve#procedural").expect("valid identity"),
         geometry: crate::geometry::PcurveGeometry::Nurbs {
@@ -949,7 +949,7 @@ fn pcurve_surface_mismatch_is_flagged() {
         exact_report.findings
     );
 
-    let mut negative_parameterization = unit_cube();
+    let mut negative_parameterization = unit_cube().expect("valid unit cube fixture");
     negative_parameterization
         .model
         .pcurves

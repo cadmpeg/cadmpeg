@@ -15,21 +15,21 @@ pub fn accepted_empty() -> CadIr {
 }
 
 /// Vertex → missing point: rejected (`ReferentialIntegrity`).
-pub fn rejected_missing_point(prefix: &str) -> CadIr {
+pub fn rejected_missing_point(prefix: &str) -> Result<CadIr, crate::ids::IdentityError> {
     let mut ir = CadIr::empty();
     ir.model.vertices.push(Vertex {
-        id: VertexId::mint(format!("{prefix}:vertex#0")).expect("valid identity"),
-        point: PointId::mint(format!("{prefix}:point#missing")).expect("valid identity"),
+        id: VertexId::mint(format!("{prefix}:vertex#0"))?,
+        point: PointId::mint(format!("{prefix}:point#missing"))?,
         tolerance: None,
     });
-    ir
+    Ok(ir)
 }
 
 /// Shell → missing region: rejected (`ReferentialIntegrity` / topology).
-pub fn rejected_missing_region(prefix: &str) -> CadIr {
+pub fn rejected_missing_region(prefix: &str) -> Result<CadIr, crate::ids::IdentityError> {
     let mut ir = CadIr::empty();
-    let point = PointId::mint(format!("{prefix}:point#0")).expect("valid identity");
-    let vertex = VertexId::mint(format!("{prefix}:vertex#0")).expect("valid identity");
+    let point = PointId::mint(format!("{prefix}:point#0"))?;
+    let vertex = VertexId::mint(format!("{prefix}:vertex#0"))?;
     ir.model.points.push(Point {
         id: point.clone(),
         position: crate::math::Point3::new(0.0, 0.0, 0.0),
@@ -41,11 +41,11 @@ pub fn rejected_missing_region(prefix: &str) -> CadIr {
         tolerance: None,
     });
     ir.model.shells.push(Shell::with_free_vertex(
-        ShellId::mint(format!("{prefix}:shell#0")).expect("valid identity"),
-        RegionId::mint(format!("{prefix}:region#missing")).expect("valid identity"),
+        ShellId::mint(format!("{prefix}:shell#0"))?,
+        RegionId::mint(format!("{prefix}:region#missing"))?,
         vertex,
     ));
-    ir
+    Ok(ir)
 }
 
 #[cfg(test)]
@@ -80,7 +80,7 @@ mod tests {
 
     #[test]
     fn freeze_rejected_missing_point_under_current_gates() {
-        let ir = rejected_missing_point("test:model");
+        let ir = rejected_missing_point("test:model").expect("valid identity");
         let annotations = Annotations::default();
         let report = validate_neutral(&ir, Vec::new());
         assert!(!report.is_ok(), "{report:?}");
@@ -94,7 +94,7 @@ mod tests {
 
     #[test]
     fn freeze_rejected_missing_region_under_current_gates() {
-        let ir = rejected_missing_region("test:model");
+        let ir = rejected_missing_region("test:model").expect("valid identity");
         let annotations = Annotations::default();
         assert!(!validate_neutral(&ir, Vec::new()).is_ok());
         assert!(!rhino_draft_gate(&ir, &annotations));

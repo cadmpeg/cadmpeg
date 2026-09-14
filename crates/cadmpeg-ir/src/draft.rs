@@ -50,26 +50,19 @@ pub struct ModelCheckpoint {
 impl ModelCheckpoint {
     /// Captures every neutral arena length.
     pub fn capture(model: &Model) -> Self {
-        let mut lengths = Vec::with_capacity(EntityKind::ALL.len());
         macro_rules! capture_lengths {
             ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
-                $(lengths.push(model.$field.len());)*
+                [$(model.$field.len()),*]
             };
         }
-        crate::document::arena_registry!(capture_lengths);
+        let lengths = crate::document::arena_registry!(capture_lengths);
         Self {
-            lengths: lengths
-                .try_into()
-                .expect("arena registry and EntityKind::ALL have equal length"),
+            lengths,
         }
     }
 
     fn length<T: ArenaEntity>(&self) -> usize {
-        let index = EntityKind::ALL
-            .iter()
-            .position(|kind| *kind == T::KIND)
-            .expect("arena entity kind is registered");
-        self.lengths[index]
+        self.lengths[T::KIND.index()]
     }
 
     /// Returns the captured length of one typed arena.

@@ -21,7 +21,7 @@ fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
         crate::eval::curve_point(&geometry, 2.5)
     );
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
     let curve_id = ir.model.edges[0].curve().clone().unwrap();
     ir.model
         .curves

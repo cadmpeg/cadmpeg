@@ -109,6 +109,13 @@ checked_scalar!(
     Fraction, value, value >= 0.0 && value <= 1.0, "Fraction must be between zero and one"
 );
 
+impl PositiveReal {
+    /// Default linear tolerance in canonical units.
+    pub(crate) const UNIT_LINEAR_DEFAULT: Self = Self(1.0e-6);
+    /// Default angular tolerance in canonical units.
+    pub(crate) const UNIT_ANGULAR_DEFAULT: Self = Self(1.0e-10);
+}
+
 impl Length {
     /// Zero in canonical units.
     pub const ZERO: Self = Self(0.0);

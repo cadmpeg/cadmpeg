@@ -13,31 +13,20 @@ use serde_json::Value;
 
 /// Emit the JSON value held in `json` into `serializer`.
 ///
-/// # Panics
-///
-/// Panics if `json` is not a complete JSON value.
 pub(super) fn emit<S: ser::Serializer>(json: &str, serializer: S) -> Result<S::Ok, S::Error> {
     let mut deserializer = serde_json::Deserializer::from_str(json);
     let emitted = de::Deserializer::deserialize_any(&mut deserializer, Emit(serializer))
         .map_err(de_to_ser)?;
-    deserializer
-        .end()
-        .expect("stored record text is one complete JSON value");
+    deserializer.end().map_err(de_to_ser)?;
     Ok(emitted)
 }
 
 /// Parse the `name` member of the JSON object held in `json`.
 ///
-/// # Panics
-///
-/// Panics if `json` is not a complete JSON object.
 pub(super) fn field(json: &str, name: &str) -> Option<Value> {
     let mut deserializer = serde_json::Deserializer::from_str(json);
-    let found = de::Deserializer::deserialize_map(&mut deserializer, PickField(name))
-        .expect("stored record text is one complete JSON object");
-    deserializer
-        .end()
-        .expect("stored record text is one complete JSON object");
+    let found = de::Deserializer::deserialize_map(&mut deserializer, PickField(name)).ok()?;
+    deserializer.end().ok()?;
     found
 }
 
@@ -122,10 +111,12 @@ struct Replay<D>(RefCell<Option<D>>);
 
 impl<'de, D: de::Deserializer<'de>> ser::Serialize for Replay<D> {
     fn serialize<S: ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.0
-            .borrow_mut()
-            .take()
-            .expect("a replayed value is serialized once")
+        let Some(deserializer) = self.0.borrow_mut().take() else {
+            return Err(<S::Error as ser::Error>::custom(
+                "a replayed value was serialized more than once",
+            ));
+        };
+        deserializer
             .deserialize_any(Emit(serializer))
             .map_err(de_to_ser)
     }
