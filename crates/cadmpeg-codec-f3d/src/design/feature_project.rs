@@ -5131,7 +5131,7 @@ fn normalize_parameter_ordinals(parameters: &mut [cadmpeg_ir::features::DesignPa
         let mut unresolved = indices.into_iter().collect::<HashSet<_>>();
         let mut resolved = HashSet::<ParameterId>::new();
         let mut order = Vec::with_capacity(unresolved.len());
-        while let Some(first) = unresolved.iter().copied().next() {
+        while !unresolved.is_empty() {
             let mut ready = unresolved
                 .iter()
                 .copied()
@@ -5147,31 +5147,128 @@ fn normalize_parameter_ordinals(parameters: &mut [cadmpeg_ir::features::DesignPa
                 pa.ordinal.cmp(&pb.ordinal).then_with(|| pa.id.cmp(&pb.id))
             });
             if ready.is_empty() {
-                let breaker = unresolved.iter().copied().fold(first, |best, index| {
-                    let candidate = &parameters[index];
-                    let current = &parameters[best];
-                    if (candidate.ordinal, &candidate.id) < (current.ordinal, &current.id) {
-                        index
-                    } else {
-                        best
-                    }
-                });
-                parameters[breaker].dependencies.retain(|dependency| {
-                    owners.get(dependency) != Some(&owner) || resolved.contains(dependency)
-                });
-                ready.push(breaker);
+                // Every blocked parameter has an unresolved dependency, so the
+                // remaining graph contains a cycle. Break its lowest-ordinal
+                // member, then resume ordering before selecting another cycle.
+                let cycle = cyclic_parameter_components(parameters, &unresolved)
+                    .into_iter()
+                    .map(|(first, remaining)| {
+                        let breaker = remaining.iter().copied().fold(first, |best, index| {
+                            let candidate = &parameters[index];
+                            let current = &parameters[best];
+                            if (candidate.ordinal, &candidate.id) < (current.ordinal, &current.id) {
+                                index
+                            } else {
+                                best
+                            }
+                        });
+                        (breaker, first, remaining)
+                    })
+                    .min_by(|(a, _, _), (b, _, _)| {
+                        let a = &parameters[*a];
+                        let b = &parameters[*b];
+                        (a.ordinal, &a.id).cmp(&(b.ordinal, &b.id))
+                    });
+                if let Some((breaker, first, remaining)) = cycle {
+                    let members = std::iter::once(first)
+                        .chain(remaining)
+                        .map(|index| parameters[index].id.clone())
+                        .collect::<HashSet<_>>();
+                    parameters[breaker]
+                        .dependencies
+                        .retain(|dependency| !members.contains(dependency));
+                }
+                continue;
             }
             for index in ready {
-                if unresolved.remove(&index) {
-                    resolved.insert(parameters[index].id.clone());
-                    order.push(index);
-                }
+                unresolved.remove(&index);
+                resolved.insert(parameters[index].id.clone());
+                order.push(index);
             }
         }
         for (index, ordinal) in order.into_iter().zip(ordinals) {
             parameters[index].ordinal = ordinal;
         }
     }
+}
+
+/// Strongly connected components of the unresolved parameter graph that contain a cycle.
+/// Each component retains one member separately from its remaining members.
+fn cyclic_parameter_components(
+    parameters: &[cadmpeg_ir::features::DesignParameter],
+    unresolved: &HashSet<usize>,
+) -> Vec<(usize, Vec<usize>)> {
+    enum Visit {
+        Enter(usize),
+        Leave(usize),
+    }
+
+    let indices = unresolved.iter().copied().collect::<Vec<_>>();
+    let local_by_id = indices
+        .iter()
+        .enumerate()
+        .map(|(local, index)| (&parameters[*index].id, local))
+        .collect::<HashMap<_, _>>();
+    let edges = indices
+        .iter()
+        .map(|index| {
+            parameters[*index]
+                .dependencies
+                .iter()
+                .filter_map(|dependency| local_by_id.get(dependency).copied())
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let mut incoming = (0..indices.len()).map(|_| Vec::new()).collect::<Vec<_>>();
+    for (source, dependencies) in edges.iter().enumerate() {
+        for &target in dependencies {
+            incoming[target].push(source);
+        }
+    }
+
+    // Iterative graph walks keep long source dependency chains off the call stack.
+    let mut visited = HashSet::new();
+    let mut finished = Vec::new();
+    for root in 0..indices.len() {
+        if visited.contains(&root) {
+            continue;
+        }
+        let mut pending = vec![Visit::Enter(root)];
+        while let Some(visit) = pending.pop() {
+            match visit {
+                Visit::Enter(node) => {
+                    if !visited.insert(node) {
+                        continue;
+                    }
+                    pending.push(Visit::Leave(node));
+                    pending.extend(edges[node].iter().copied().map(Visit::Enter));
+                }
+                Visit::Leave(node) => finished.push(node),
+            }
+        }
+    }
+
+    let mut assigned = HashSet::new();
+    let mut cycles = Vec::new();
+    for root in finished.into_iter().rev() {
+        if !assigned.insert(root) {
+            continue;
+        }
+        let mut remaining_members = Vec::new();
+        let mut pending = vec![root];
+        while let Some(node) = pending.pop() {
+            for &source in &incoming[node] {
+                if assigned.insert(source) {
+                    remaining_members.push(indices[source]);
+                    pending.push(source);
+                }
+            }
+        }
+        if !remaining_members.is_empty() || edges[root].contains(&root) {
+            cycles.push((indices[root], remaining_members));
+        }
+    }
+    cycles
 }
 
 fn design_positive_length(
