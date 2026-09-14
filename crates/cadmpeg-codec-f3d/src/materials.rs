@@ -1482,14 +1482,13 @@ fn body_node_candidate(
         .iter()
         .rposition(|(_, value)| value == APPEARANCE_MARKER)?;
     let start = marker.saturating_sub(3);
-    let candidates = strings[start..marker_index.saturating_sub(1)]
+    let mut candidates = strings[start..marker_index.saturating_sub(1)]
         .iter()
-        .filter_map(|(_, candidate)| nodes.get(&candidate.to_ascii_lowercase()).copied())
-        .collect::<std::collections::HashSet<_>>();
-    if candidates.len() != 1 {
-        return None;
-    }
-    candidates.into_iter().next()
+        .filter_map(|(_, candidate)| nodes.get(&candidate.to_ascii_lowercase()).copied());
+    let first = candidates.next()?;
+    candidates
+        .all(|candidate| candidate == first)
+        .then_some(first)
 }
 
 fn bind_bodies(
@@ -1667,20 +1666,22 @@ fn decode_design_object_types(
                 position += 1;
                 continue;
             }
-            let Some(count) = View::u32_le_at(bytes, after_type).map(|n| n as usize) else {
+            let mut view = View::over_retained(&bytes[after_type..]);
+            let Some(count) = view.u32_le() else {
                 break;
             };
-            if count > 200 || after_type + 4 + count * 8 > bytes.len() {
+            if count > 200 {
                 position += 1;
                 continue;
             }
-            for id_bytes in bytes[after_type + 4..after_type + 4 + count * 8].chunks_exact(8) {
-                let id = View::u64_le_at(id_bytes, 0).ok_or_else(|| {
-                    CodecError::malformed("F3D object-type stream contains a truncated entity id")
-                })?;
+            let Some(ids) = view.read_counted(u64::from(count), 8, View::u64_le) else {
+                position += 1;
+                continue;
+            };
+            for id in ids {
                 out.insert(id, object_type.clone());
             }
-            position = after_type + 4 + count * 8;
+            position = after_type + view.position();
         }
     }
     Ok(out)
@@ -1708,16 +1709,13 @@ fn decode_act_channels(
                 position += 1;
                 continue;
             }
-            let Some(header) = bytes.get(after_tag..after_tag + 18) else {
+            let Some(count) = View::u32_le_at(bytes, after_tag + 14) else {
                 break;
             };
-            if header.get(4..14) != Some(&[0u8; 10]) {
+            if bytes.get(after_tag + 4..after_tag + 14) != Some(&[0u8; 10]) {
                 position += 1;
                 continue;
             }
-            let count = View::u32_le_at(header, 14)
-                .ok_or_else(|| CodecError::malformed("F3D ACT channel header is truncated"))?
-                as usize;
             if !(1..=8).contains(&count) {
                 position += 1;
                 continue;
