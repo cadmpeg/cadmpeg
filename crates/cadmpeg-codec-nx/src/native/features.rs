@@ -5491,7 +5491,7 @@ pub fn feature_sketch_construction_inputs(
         let Some((terminal, members)) = field.split_last() else {
             continue;
         };
-        let expected_len = usize::from(terminal.position.declared_count().max(1));
+        let expected_len = usize::from(terminal.position.declared_count().effective().get());
         if field.len() != expected_len
             || field.iter().enumerate().any(|(ordinal, reference)| {
                 reference.position.declared_count() != terminal.position.declared_count()
@@ -6185,8 +6185,11 @@ pub fn feature_sketch_preceding_named_point_uses(
             .enumerate()
             .all(|(ordinal, reference)| {
                 reference.position.ordinal() == ordinal as u32
-                    && usize::from(reference.position.declared_count())
-                        == operation_references.len()
+                    && matches!(
+                        reference.position.declared_count(),
+                        crate::om::sketch_references::SketchReferenceCount::Declared(count)
+                            if usize::from(count.get()) == operation_references.len()
+                    )
                     && reference.data_block.is_some()
             });
         if !complete_lane {

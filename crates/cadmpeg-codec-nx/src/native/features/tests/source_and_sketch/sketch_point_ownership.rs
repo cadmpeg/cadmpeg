@@ -96,8 +96,11 @@ fn sketch_named_point_block_uses_require_exact_shared_block_identity() {
         |id: &str, ordinal: u32, count: u8, block: Option<&str>| FeatureSketchReference {
             id: id.to_string(),
             operation_label: "nx:feature-history:operation-label#1-4".to_string(),
-            position: crate::om::sketch_references::SketchReferencePosition::new(count, ordinal)
-                .unwrap(),
+            position: crate::om::sketch_references::SketchReferencePosition::new(
+                crate::om::sketch_references::SketchReferenceCount::from_count_byte(count),
+                ordinal,
+            )
+            .unwrap(),
             token: crate::om::reference_index::ReferenceIndexToken::from_wire(
                 10 + ordinal,
                 &[0xf0, (10 + ordinal) as u8],
@@ -131,7 +134,7 @@ fn sketch_preceding_named_point_uses_require_a_complete_unique_consecutive_lane(
         id: format!("reference-{ordinal}"),
         operation_label: "nx:feature-history:operation-label#1-4".to_string(),
         position: crate::om::sketch_references::SketchReferencePosition::new(
-            declared_count,
+            crate::om::sketch_references::SketchReferenceCount::from_count_byte(declared_count),
             ordinal,
         )
         .unwrap(),

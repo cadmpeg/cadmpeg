@@ -694,7 +694,10 @@ fn om_sketch_payload_reference_field_is_counted_ordered_and_canonical() {
     let payload = b"\x01\x00\x01\x05\xf0\xff\xf1\x01\x00\xf1\x01\x01\xf1\x01\x02\x00\x00\xf1\x01\x03\x01\x00\x00\x00";
     let record = crate::om::operation_record::OperationPayload::new(payload, 200, label).unwrap();
     let field = super::sketch_payload_references(record).unwrap();
-    assert_eq!(field.declared_count(), 5);
+    assert_eq!(
+        field.declared_count(),
+        crate::om::sketch_references::SketchReferenceCount::from_count_byte(5)
+    );
     let references: [super::PayloadObjectReference; 5] =
         field.references().to_vec().try_into().unwrap();
     assert_eq!(
@@ -729,7 +732,10 @@ fn om_sketch_payload_reference_field_is_counted_ordered_and_canonical() {
         .unwrap(),
     )
     .unwrap();
-    assert_eq!(field.declared_count(), 0);
+    assert_eq!(
+        field.declared_count(),
+        crate::om::sketch_references::SketchReferenceCount::from_count_byte(0)
+    );
     assert_eq!(field.references().len(), 1);
     assert_eq!(field.references()[0].token.value(), 0x42);
     let two = b"\x01\x00\x01\x02\xf0\x41\x00\x00\xf0\x42\x01\x00\x00\x00";
@@ -742,7 +748,10 @@ fn om_sketch_payload_reference_field_is_counted_ordered_and_canonical() {
         .unwrap(),
     )
     .unwrap();
-    assert_eq!(field.declared_count(), 2);
+    assert_eq!(
+        field.declared_count(),
+        crate::om::sketch_references::SketchReferenceCount::from_count_byte(2)
+    );
     assert_eq!(
         field
             .references()

@@ -288,7 +288,11 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
     let reference = |ordinal, index| FeatureSketchReference {
         id: format!("nx:feature-history:sketch-reference#0-7-{ordinal}"),
         operation_label: label.id.clone(),
-        position: crate::om::sketch_references::SketchReferencePosition::new(2, ordinal).unwrap(),
+        position: crate::om::sketch_references::SketchReferencePosition::new(
+            crate::om::sketch_references::SketchReferenceCount::from_count_byte(2),
+            ordinal,
+        )
+        .unwrap(),
         token: crate::om::reference_index::ReferenceIndexToken::from_wire(
             index,
             &[0xf0, index as u8],
@@ -363,7 +367,11 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
 
     let mut malformed = references;
     malformed[0].position =
-        crate::om::sketch_references::SketchReferencePosition::new(3, 2).unwrap();
+        crate::om::sketch_references::SketchReferencePosition::new(
+            crate::om::sketch_references::SketchReferenceCount::from_count_byte(3),
+            2,
+        )
+        .unwrap();
     assert!(super::feature_sketch_construction_inputs(&sketches, &malformed).is_empty());
 }
 

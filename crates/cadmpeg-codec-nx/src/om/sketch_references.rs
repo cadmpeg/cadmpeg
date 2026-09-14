@@ -9,7 +9,49 @@ use std::num::NonZeroU8;
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum References {
     Implicit(PayloadObjectReference),
-    Explicit(Vec<PayloadObjectReference>),
+    Explicit {
+        count: NonZeroU8,
+        references: Vec<PayloadObjectReference>,
+    },
+}
+
+/// The reference count a sketch field states.
+///
+/// The field's third payload byte selects the form. Value `0` states no count
+/// and the field carries one implicit terminal reference. Value `1` is followed
+/// by the count byte, which the source states and which is never zero.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SketchReferenceCount {
+    /// No count byte; one implicit terminal reference.
+    Implicit,
+    /// The count byte the source states.
+    Declared(NonZeroU8),
+}
+
+impl SketchReferenceCount {
+    /// References the field carries. The implicit form carries its terminal alone.
+    pub(crate) fn effective(self) -> NonZeroU8 {
+        match self {
+            Self::Implicit => NonZeroU8::MIN,
+            Self::Declared(count) => count,
+        }
+    }
+
+    /// The count byte: `0` for the implicit form, the stated count otherwise.
+    pub(crate) fn count_byte(self) -> u8 {
+        match self {
+            Self::Implicit => 0,
+            Self::Declared(count) => count.get(),
+        }
+    }
+
+    /// Read a count byte. `0` is the implicit form, never a declared zero.
+    pub(crate) fn from_count_byte(value: u8) -> Self {
+        match NonZeroU8::new(value) {
+            None => Self::Implicit,
+            Some(count) => Self::Declared(count),
+        }
+    }
 }
 
 /// One implicit terminal or one through 255 explicitly counted references.
@@ -48,17 +90,17 @@ impl SketchReferenceField {
         (bytes.get(at..at + 4) == Some(&[1, 0, 0, 0])).then_some(())?;
         Some(Self(match count {
             None => References::Implicit(terminal),
-            Some(_) => {
+            Some(count) => {
                 references.push(terminal);
-                References::Explicit(references)
+                References::Explicit { count, references }
             }
         }))
     }
 
-    pub(crate) fn declared_count(&self) -> u8 {
+    pub(crate) fn declared_count(&self) -> SketchReferenceCount {
         match &self.0 {
-            References::Implicit(_) => 0,
-            References::Explicit(references) => references.len() as u8,
+            References::Implicit(_) => SketchReferenceCount::Implicit,
+            References::Explicit { count, .. } => SketchReferenceCount::Declared(*count),
         }
     }
 
@@ -66,7 +108,7 @@ impl SketchReferenceField {
     pub(crate) fn references(&self) -> &[PayloadObjectReference] {
         match &self.0 {
             References::Implicit(terminal) => std::slice::from_ref(terminal),
-            References::Explicit(references) => references,
+            References::Explicit { references, .. } => references,
         }
     }
 
@@ -76,7 +118,7 @@ impl SketchReferenceField {
         let declared_count = self.declared_count();
         let references = match self.0 {
             References::Implicit(terminal) => vec![terminal],
-            References::Explicit(references) => references,
+            References::Explicit { references, .. } => references,
         };
         references
             .into_iter()
@@ -97,13 +139,16 @@ impl SketchReferenceField {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(try_from = "PositionWire", into = "PositionWire")]
 pub(crate) struct SketchReferencePosition {
-    declared_count: u8,
+    declared_count: SketchReferenceCount,
     ordinal: u8,
 }
 
 impl SketchReferencePosition {
-    pub(crate) fn new(declared_count: u8, ordinal: u32) -> Result<Self, &'static str> {
-        if ordinal >= u32::from(declared_count.max(1)) {
+    pub(crate) fn new(
+        declared_count: SketchReferenceCount,
+        ordinal: u32,
+    ) -> Result<Self, &'static str> {
+        if ordinal >= u32::from(declared_count.effective().get()) {
             return Err(
                 "ordinal/declared_count: ordinal must be within the effective reference count",
             );
@@ -116,11 +161,11 @@ impl SketchReferencePosition {
     pub(crate) fn ordinal(self) -> u32 {
         u32::from(self.ordinal)
     }
-    pub(crate) fn declared_count(self) -> u8 {
+    pub(crate) fn declared_count(self) -> SketchReferenceCount {
         self.declared_count
     }
     pub(crate) fn terminal(self) -> bool {
-        self.ordinal == self.declared_count.max(1) - 1
+        self.ordinal == self.declared_count.effective().get() - 1
     }
 }
 
@@ -135,7 +180,7 @@ impl From<SketchReferencePosition> for PositionWire {
     fn from(position: SketchReferencePosition) -> Self {
         Self {
             ordinal: position.ordinal(),
-            declared_count: position.declared_count(),
+            declared_count: position.declared_count().count_byte(),
             terminal: position.terminal(),
         }
     }
@@ -144,7 +189,10 @@ impl From<SketchReferencePosition> for PositionWire {
 impl TryFrom<PositionWire> for SketchReferencePosition {
     type Error = &'static str;
     fn try_from(wire: PositionWire) -> Result<Self, Self::Error> {
-        let position = Self::new(wire.declared_count, wire.ordinal)?;
+        let position = Self::new(
+            SketchReferenceCount::from_count_byte(wire.declared_count),
+            wire.ordinal,
+        )?;
         if wire.terminal != position.terminal() {
             return Err("terminal: must match ordinal within declared_count");
         }
@@ -156,15 +204,21 @@ impl TryFrom<PositionWire> for SketchReferencePosition {
 mod tests {
     // Source fixtures and wire assertions construct checked positions directly.
     #![allow(clippy::unwrap_used)]
-    use super::{OperationPayload, SketchReferenceField, SketchReferencePosition};
+    use super::{
+        OperationPayload, SketchReferenceCount, SketchReferenceField, SketchReferencePosition,
+    };
 
     #[test]
     fn implicit_and_explicit_single_reference_fields_retain_distinct_counts() {
         for (bytes, count, offset) in [
-            (&b"\x01\x00\x00\x00\x00\xf0\x42\x01\x00\x00\x00"[..], 0, 105),
+            (
+                &b"\x01\x00\x00\x00\x00\xf0\x42\x01\x00\x00\x00"[..],
+                SketchReferenceCount::Implicit,
+                105,
+            ),
             (
                 &b"\x01\x00\x01\x01\x00\x00\xf0\x42\x01\x00\x00\x00"[..],
-                1,
+                SketchReferenceCount::from_count_byte(1),
                 106,
             ),
         ] {
@@ -205,11 +259,11 @@ mod tests {
         let field =
             SketchReferenceField::read(OperationPayload::new(&bytes, 100, "SKETCH").unwrap(), 0)
                 .unwrap();
-        assert_eq!(field.declared_count(), 255);
+        assert_eq!(field.declared_count(), SketchReferenceCount::from_count_byte(255));
         assert_eq!(field.references().len(), 255);
         for (ordinal, (position, reference)) in field.into_positioned().enumerate() {
             assert_eq!(position.ordinal(), ordinal as u32);
-            assert_eq!(position.declared_count(), 255);
+            assert_eq!(position.declared_count(), SketchReferenceCount::from_count_byte(255));
             assert_eq!(position.terminal(), ordinal == 254);
             assert_eq!(
                 reference.offset,
@@ -238,11 +292,36 @@ mod tests {
                 .unwrap_err()
                 .to_string()
                 .contains("terminal"));
-            for ordinal in [u32::from(count.max(1)), u32::MAX] {
-                assert!(SketchReferencePosition::new(count, ordinal)
+            for ordinal in [u32::from(SketchReferenceCount::from_count_byte(count).effective().get()), u32::MAX] {
+                assert!(SketchReferencePosition::new(SketchReferenceCount::from_count_byte(count), ordinal)
                     .unwrap_err()
                     .contains("ordinal"));
             }
         }
+    }
+    #[test]
+    fn a_stated_zero_count_is_the_implicit_form_and_never_a_declared_one() {
+        // Count byte zero states no count. The field carries its terminal
+        // alone, so the effective count is one, and that one is the form's own
+        // cardinality, not a floored zero: the implicit form and a declared
+        // count of one are distinct values.
+        let implicit = SketchReferenceCount::from_count_byte(0);
+        assert_eq!(implicit, SketchReferenceCount::Implicit);
+        assert_eq!(implicit.effective().get(), 1);
+        assert_ne!(implicit, SketchReferenceCount::from_count_byte(1));
+        assert_eq!(implicit.count_byte(), 0);
+
+        // A second ordinal has no place in an implicit field.
+        assert!(SketchReferencePosition::new(implicit, 1)
+            .unwrap_err()
+            .contains("ordinal"));
+
+        // The explicit form refuses a zero count byte at the source.
+        let zero_count_byte = b"\x01\x00\x01\x00\x00\x00\xf0\x42\x01\x00\x00\x00";
+        assert!(SketchReferenceField::read(
+            OperationPayload::new(zero_count_byte, 100, "SKETCH").unwrap(),
+            0
+        )
+        .is_none());
     }
 }

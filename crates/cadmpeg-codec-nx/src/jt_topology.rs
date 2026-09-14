@@ -5,6 +5,7 @@ const MAX_TOPOLOGY_ITEMS: usize = 1_000_000;
 const MAX_TOPOLOGY_SLOTS: usize = 8_000_000;
 
 use cadmpeg_core::decode::alloc_filled;
+use std::num::NonZeroUsize;
 
 mod face_slots;
 use face_slots::FaceSlots;
@@ -29,6 +30,32 @@ struct Face {
     vertices: FaceSlots,
     attribute_mask: Vec<bool>,
     attributes: Vec<u32>,
+}
+
+/// One of the eight face-attribute-mask contexts a dual face consumes its mask
+/// from. A face of degree `d` takes context `min(7, max(0, d - 2))`: degrees one
+/// and two occur at non-manifold display seams and share context zero, degrees
+/// three through nine take contexts one through seven in turn, and every higher
+/// degree shares context seven.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct AttributeMaskContext(u8);
+
+impl AttributeMaskContext {
+    /// The context whose mask spans three lanes: a low 30-bit lane, the next
+    /// 30 bits, and the upper four bits.
+    const COMBINED: Self = Self(7);
+
+    fn of(degree: NonZeroUsize) -> Self {
+        Self(match degree.get() {
+            1 | 2 => 0,
+            3..=9 => degree.get() as u8 - 2,
+            _ => Self::COMBINED.0,
+        })
+    }
+
+    fn lane(self) -> usize {
+        usize::from(self.0)
+    }
 }
 
 /// Attribute-mask symbol lanes consumed while faces are created.
@@ -79,13 +106,15 @@ impl Symbols<'_> {
         (face > 0).then_some((face, position))
     }
 
-    fn attribute_mask(&mut self, degree: usize) -> Option<Vec<bool>> {
+    fn attribute_mask(&mut self, degree: NonZeroUsize) -> Option<Vec<bool>> {
+        let context = AttributeMaskContext::of(degree);
+        let lane = context.lane();
+        let degree = degree.get();
         if degree <= 64 {
-            let context = degree.saturating_sub(2).min(7);
-            let position = self.attribute_mask_pos[context];
+            let position = self.attribute_mask_pos[lane];
             let low =
-                u64::from(u32::try_from(*self.attribute_masks.small[context].get(position)?).ok()?);
-            let mask = if context == 7 {
+                u64::from(u32::try_from(*self.attribute_masks.small[lane].get(position)?).ok()?);
+            let mask = if context == AttributeMaskContext::COMBINED {
                 let next = u64::from(
                     u32::try_from(*self.attribute_masks.context_7_next_30.get(position)?).ok()?,
                 );
@@ -102,7 +131,7 @@ impl Symbols<'_> {
             if degree < 64 && mask >> degree != 0 {
                 return None;
             }
-            self.attribute_mask_pos[context] += 1;
+            self.attribute_mask_pos[lane] += 1;
             let mut result = Vec::new();
             result.try_reserve_exact(degree).ok()?;
             for bit in 0..degree {
@@ -270,11 +299,11 @@ impl Decoder<'_> {
         let context = self.face_context(vertex)?;
         let degree = self.symbols.degree(context)?;
         if degree != 0 {
-            let degree = usize::try_from(degree).ok()?;
-            if degree == 0 || degree > MAX_TOPOLOGY_ITEMS {
+            let degree = NonZeroUsize::new(usize::try_from(degree).ok()?)?;
+            if degree.get() > MAX_TOPOLOGY_ITEMS {
                 return None;
             }
-            self.slot_count = self.slot_count.checked_add(degree)?;
+            self.slot_count = self.slot_count.checked_add(degree.get())?;
             if self.slot_count > MAX_TOPOLOGY_SLOTS {
                 return None;
             }
@@ -292,7 +321,7 @@ impl Decoder<'_> {
             self.removed.try_reserve(1).ok()?;
             self.active.try_reserve(1).ok()?;
             self.faces.push(Face {
-                vertices: FaceSlots::new(degree)?,
+                vertices: FaceSlots::new(degree.get())?,
                 attribute_mask,
                 attributes,
             });
