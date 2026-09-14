@@ -259,20 +259,18 @@ fn required_implicit_coordinate_pairs_scale_with_root_domains_not_their_product(
     assert_eq!(implicit.collect::<Vec<_>>(), vec![[0, 1], [1, 2], [1, 3]]);
 
     let mut visited = Vec::new();
-    assert_eq!(
-        domains.any_implicit_edge_candidate_with_point(0, 1, None, |pair| {
+    assert!(domains
+        .implicit_edge_candidate_with_point(0, 1, None, |pair| {
             visited.push(pair);
             pair == [1, 3]
-        }),
-        Some(true)
-    );
+        })
+        .is_some());
     assert_eq!(visited, vec![[0, 1], [1, 2], [1, 3]]);
 
     let budget = WorkBudget::new(2);
-    assert_eq!(
-        domains.any_implicit_edge_candidate_with_point(0, 1, Some(&budget), |_| false),
-        None
-    );
+    assert!(domains
+        .implicit_edge_candidate_with_point(0, 1, Some(&budget), |_| false)
+        .is_none());
     assert!(budget.exhausted());
 }
 

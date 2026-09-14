@@ -680,6 +680,7 @@ enum IncidenceBranch {
         edge: usize,
         candidates: MeshImplicitEdgeCandidates,
     },
+    Complete(Vec<(usize, [usize; 2])>),
 }
 
 enum IncidenceCandidatePairs {
@@ -695,10 +696,14 @@ enum IncidenceConstraintOptions {
 }
 
 struct AppliedFaceConfiguration {
-    assigned: Vec<(usize, [usize; 2])>,
+    assigned: Vec<(usize, [usize; 2], IncidenceDegreeUndo)>,
     affected_faces: Vec<usize>,
     coordinate_domains: Option<Arc<MeshCoordinateRootDomains>>,
     factor_checkpoint: Option<FaceFactorCheckpoint>,
+}
+
+pub(crate) struct IncidenceDegreeUndo {
+    entries: Vec<(usize, usize, Option<u8>)>,
 }
 
 struct FaceFactorCheckpoint {
@@ -1491,6 +1496,7 @@ impl Iterator for IncidenceBranch {
         match self {
             Self::Options(options) => options.next(),
             Self::Implicit { edge, candidates } => candidates.next().map(|pair| (*edge, pair)),
+            Self::Complete(_) => None,
         }
     }
 }
@@ -1783,6 +1789,42 @@ pub(crate) fn compact_boundary_domains_jointly_viable<'a>(
     )
 }
 
+fn adjust_incidence_degrees(
+    degrees: &mut [BTreeMap<usize, u8>],
+    edge_faces: &[[usize; 2]],
+    edge: usize,
+    pair: [usize; 2],
+) -> IncidenceDegreeUndo {
+    let mut undo = IncidenceDegreeUndo {
+        entries: Vec::new(),
+    };
+    let faces = edge_faces[edge];
+    for (rank, face) in faces.into_iter().enumerate() {
+        if rank > 0 && face == faces[0] {
+            continue;
+        }
+        for point in pair {
+            let previous = degrees[face].get(&point).copied();
+            *degrees[face].entry(point).or_default() += 1;
+            undo.entries.push((face, point, previous));
+        }
+    }
+    undo
+}
+
+fn restore_incidence_degrees(degrees: &mut [BTreeMap<usize, u8>], undo: IncidenceDegreeUndo) {
+    for (face, point, previous) in undo.entries.into_iter().rev() {
+        match previous {
+            Some(degree) => {
+                degrees[face].insert(point, degree);
+            }
+            None => {
+                degrees[face].remove(&point);
+            }
+        }
+    }
+}
+
 impl IncidenceComponentSearch<'_, '_> {
     fn candidate_pairs(
         &self,
@@ -1987,31 +2029,16 @@ impl IncidenceComponentSearch<'_, '_> {
                     if let Some(domains) =
                         coordinate_domains.filter(|_| self.choices[supporting_edge].is_empty())
                     {
-                        let mut witness = None;
-                        if domains
-                            .any_implicit_edge_candidate_with_point(
-                                supporting_edge,
-                                point,
-                                Some(self.degree_support_budget),
-                                |pair| {
-                                    if fits(pair) {
-                                        witness = Some(pair);
-                                        true
-                                    } else {
-                                        false
-                                    }
-                                },
-                            )
-                            .unwrap_or(false)
-                        {
+                        if let Some(witness) = domains.implicit_edge_candidate_with_point(
+                            supporting_edge,
+                            point,
+                            Some(self.degree_support_budget),
+                            fits,
+                        ) {
                             self.remember_degree_support_witness(
                                 face,
                                 point,
-                                (
-                                    supporting_edge,
-                                    witness
-                                        .expect("successful implicit search retains its witness"),
-                                ),
+                                (supporting_edge, witness),
                             );
                             return true;
                         }
@@ -2389,6 +2416,22 @@ impl IncidenceComponentSearch<'_, '_> {
                 return Some(self.narrowest_edge_branch(edges, coordinate_domains));
             }
         }
+        if !self
+            .constraints
+            .iter()
+            .any(|&(face, point)| self.degree(face, point) == 1)
+        {
+            let complete = self.edges.iter().copied().try_fold(
+                Vec::with_capacity(self.edges.len()),
+                |mut complete, edge| {
+                    complete.push((edge, self.assignment[edge]?));
+                    Some(complete)
+                },
+            );
+            if let Some(complete) = complete {
+                return Some(IncidenceBranch::Complete(complete));
+            }
+        }
         let edges = self
             .edges
             .iter()
@@ -2406,26 +2449,12 @@ impl IncidenceComponentSearch<'_, '_> {
         Some(self.branch(coordinate_domains)?.collect())
     }
 
-    pub(crate) fn adjust(&mut self, edge: usize, pair: [usize; 2], increase: bool) {
-        let faces = self.edge_faces[edge];
-        for (rank, face) in faces.into_iter().enumerate() {
-            if rank > 0 && face == faces[0] {
-                continue;
-            }
-            for point in pair {
-                if increase {
-                    *self.degrees[face].entry(point).or_default() += 1;
-                } else {
-                    let degree = self.degrees[face]
-                        .get_mut(&point)
-                        .expect("assigned incidence degree");
-                    *degree -= 1;
-                    if *degree == 0 {
-                        self.degrees[face].remove(&point);
-                    }
-                }
-            }
-        }
+    pub(crate) fn adjust(&mut self, edge: usize, pair: [usize; 2]) -> IncidenceDegreeUndo {
+        adjust_incidence_degrees(&mut self.degrees, self.edge_faces, edge, pair)
+    }
+
+    fn restore_adjustment(&mut self, undo: IncidenceDegreeUndo) {
+        restore_incidence_degrees(&mut self.degrees, undo);
     }
 
     fn advance_ordered_faces(
@@ -2722,9 +2751,9 @@ impl IncidenceComponentSearch<'_, '_> {
                 };
                 next_coordinate_domains = Some(refined);
             }
-            self.adjust(edge, pair, true);
+            let undo = self.adjust(edge, pair);
             self.assignment[edge] = Some(pair);
-            assigned.push((edge, pair));
+            assigned.push((edge, pair, undo));
             affected_faces.extend(self.edge_faces[edge]);
         }
         if assigned.is_empty()
@@ -2748,8 +2777,12 @@ impl IncidenceComponentSearch<'_, '_> {
             self.rollback_face_configuration(assigned);
             return None;
         }
+        let assigned_pairs = assigned
+            .iter()
+            .map(|(edge, pair, _)| (*edge, *pair))
+            .collect::<Vec<_>>();
         let factor_checkpoint = match &mut self.face_configuration_domains {
-            Some(factors) => match factors.refine_edges(&assigned) {
+            Some(factors) => match factors.refine_edges(&assigned_pairs) {
                 Ok(checkpoint) => checkpoint,
                 Err(()) => {
                     self.rollback_face_configuration(assigned);
@@ -2766,10 +2799,13 @@ impl IncidenceComponentSearch<'_, '_> {
         })
     }
 
-    fn rollback_face_configuration(&mut self, assigned: Vec<(usize, [usize; 2])>) {
-        for (edge, pair) in assigned.into_iter().rev() {
+    fn rollback_face_configuration(
+        &mut self,
+        assigned: Vec<(usize, [usize; 2], IncidenceDegreeUndo)>,
+    ) {
+        for (edge, _, undo) in assigned.into_iter().rev() {
             self.assignment[edge] = None;
-            self.adjust(edge, pair, false);
+            self.restore_adjustment(undo);
         }
     }
 
@@ -2925,40 +2961,29 @@ impl IncidenceComponentSearch<'_, '_> {
             self.state = IncidenceSearchState::Exhausted;
             return;
         }
-        let Some(mut options) = branch else {
+        let Some(branch) = branch else {
             return;
         };
-        let Some(first_option) = options.next() else {
-            if self
-                .edges
-                .iter()
-                .any(|&edge| self.assignment[edge].is_none())
-                || self
-                    .constraints
-                    .iter()
-                    .any(|&(face, point)| self.degree(face, point) == 1)
-            {
-                return;
-            }
-            let solution = self
-                .edges
-                .iter()
-                .map(|&edge| Some((edge, self.assignment[edge]?)))
-                .collect::<Option<Vec<_>>>()
-                .expect("every component edge is assigned");
-            if self
-                .solution_filter
-                .is_some_and(|filter| !filter(&solution))
-            {
-                return;
-            }
-            if let Some(visitor) = self.solution_visitor.as_deref_mut() {
-                if (visitor)(&solution).is_break() {
-                    self.state = IncidenceSearchState::Stopped;
+        let mut options = match branch {
+            IncidenceBranch::Complete(solution) => {
+                if self
+                    .solution_filter
+                    .is_some_and(|filter| !filter(&solution))
+                {
+                    return;
                 }
-            } else {
-                self.solutions.push(solution);
+                if let Some(visitor) = self.solution_visitor.as_deref_mut() {
+                    if (visitor)(&solution).is_break() {
+                        self.state = IncidenceSearchState::Stopped;
+                    }
+                } else {
+                    self.solutions.push(solution);
+                }
+                return;
             }
+            branch => branch,
+        };
+        let Some(first_option) = options.next() else {
             return;
         };
         for (edge, pair) in std::iter::once(first_option).chain(options) {
@@ -2984,14 +3009,14 @@ impl IncidenceComponentSearch<'_, '_> {
             } else {
                 None
             };
-            self.adjust(edge, pair, true);
+            let undo = self.adjust(edge, pair);
             self.assignment[edge] = Some(pair);
             let factor_checkpoint = match &mut self.face_configuration_domains {
                 Some(factors) => match factors.refine_edges(&[(edge, pair)]) {
                     Ok(checkpoint) => checkpoint,
                     Err(()) => {
                         self.assignment[edge] = None;
-                        self.adjust(edge, pair, false);
+                        self.restore_adjustment(undo);
                         continue;
                     }
                 },
@@ -3015,7 +3040,7 @@ impl IncidenceComponentSearch<'_, '_> {
                 }
             }
             self.assignment[edge] = None;
-            self.adjust(edge, pair, false);
+            self.restore_adjustment(undo);
             if let Some(factors) = &mut self.face_configuration_domains {
                 factors.restore(factor_checkpoint);
             }
@@ -3162,15 +3187,10 @@ fn augment_cycle_matching(
             continue;
         }
         seen[incidence] = true;
-        let previous = matched_mesh[incidence];
-        if previous.is_none()
-            || augment_cycle_matching(
-                previous.expect("occupied incidence match"),
-                compatible,
-                seen,
-                matched_mesh,
-            )
-        {
+        let reassigned = matched_mesh[incidence].is_none_or(|previous| {
+            augment_cycle_matching(previous, compatible, seen, matched_mesh)
+        });
+        if reassigned {
             matched_mesh[incidence] = Some(mesh);
             return true;
         }
@@ -3851,16 +3871,13 @@ where
                 downstream_control = Err(());
                 return ControlFlow::Break(());
             }
+            let mut degree_undo = Vec::with_capacity(solution.len());
             for &(edge, pair) in solution {
                 assignment[edge] = Some(pair);
-                for (rank, face) in edge_faces[edge].into_iter().enumerate() {
-                    if rank > 0 && face == edge_faces[edge][0] {
-                        continue;
-                    }
-                    for point in pair {
-                        *degrees[face].entry(point).or_default() += 1;
-                    }
-                }
+                degree_undo.push((
+                    edge,
+                    adjust_incidence_degrees(degrees, edge_faces, edge, pair),
+                ));
             }
             let candidates = coordinate_domains.map(|_| {
                 assignment
@@ -3918,22 +3935,9 @@ where
             } else {
                 Ok(ControlFlow::Continue(()))
             };
-            for &(edge, pair) in solution.iter().rev() {
+            for (edge, undo) in degree_undo.into_iter().rev() {
                 assignment[edge] = None;
-                for (rank, face) in edge_faces[edge].into_iter().enumerate() {
-                    if rank > 0 && face == edge_faces[edge][0] {
-                        continue;
-                    }
-                    for point in pair {
-                        let degree = degrees[face]
-                            .get_mut(&point)
-                            .expect("assigned incidence degree");
-                        *degree -= 1;
-                        if *degree == 0 {
-                            degrees[face].remove(&point);
-                        }
-                    }
-                }
+                restore_incidence_degrees(degrees, undo);
             }
             match control {
                 Ok(ControlFlow::Continue(())) => ControlFlow::Continue(()),

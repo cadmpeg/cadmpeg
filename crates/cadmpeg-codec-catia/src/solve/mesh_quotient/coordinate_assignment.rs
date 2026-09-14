@@ -22,6 +22,13 @@ pub(super) fn close_coordinate_roots_with_incidence(
 ) -> Option<HashMap<usize, usize>> {
     const MAX_COORDINATE_CLOSURE_STATES: usize = 256;
 
+    struct LocalIncidence<'a> {
+        edge_faces: Vec<[usize; 2]>,
+        face_edges: Vec<Vec<usize>>,
+        closed_faces: Vec<bool>,
+        boundary_domains: &'a [MeshFaceBoundaryDomain],
+    }
+
     fn pair_supported(candidates: &[[usize; 2]], left: usize, right: usize) -> bool {
         candidates.is_empty()
             || candidates
@@ -68,10 +75,11 @@ pub(super) fn close_coordinate_roots_with_incidence(
         };
 
         assignment.boundaries.iter().all(|boundary| {
-            let Some(first) = boundary.first().copied() else {
+            let Some((first, tail)) = boundary.split_first() else {
                 return false;
             };
-            directions(first)
+            let last = tail.last().copied().unwrap_or(*first);
+            directions(*first)
                 .into_iter()
                 .flatten()
                 .any(|first_direction| {
@@ -100,14 +108,10 @@ pub(super) fn close_coordinate_roots_with_incidence(
                         previous = next;
                     }
                     previous.into_iter().any(|previous_direction| {
-                        let Some(left) = port_root(
-                            *boundary.last().expect("nonempty boundary"),
-                            previous_direction,
-                            true,
-                        ) else {
+                        let Some(left) = port_root(last, previous_direction, true) else {
                             return false;
                         };
-                        let Some(right) = port_root(first, first_direction, false) else {
+                        let Some(right) = port_root(*first, first_direction, false) else {
                             return false;
                         };
                         compatible(left, right, false)
@@ -331,10 +335,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
         local_edge_by_id: &HashMap<usize, usize>,
         root_edges: &[Vec<usize>],
         edge_candidates: &[Vec<[usize; 2]>],
-        edge_faces: Option<&[[usize; 2]]>,
-        face_edges: Option<&[Vec<usize>]>,
-        closed_faces: Option<&[bool]>,
-        boundary_domains: Option<&[MeshFaceBoundaryDomain]>,
+        incidence: Option<&LocalIncidence<'_>>,
         component_points: &HashSet<usize>,
         assigned: &mut [Option<usize>],
         point_uses: &mut [usize],
@@ -345,18 +346,30 @@ pub(super) fn close_coordinate_roots_with_incidence(
         base_degrees: &mut HashMap<(usize, usize), u8>,
         budget: Option<&WorkBudget<'_>>,
     ) {
+        enum CoordinateBranch {
+            Search { root: usize, values: Vec<usize> },
+            Complete(Vec<usize>),
+        }
+
+        struct DegreeUndo {
+            entries: Vec<((usize, usize), Option<u8>)>,
+        }
+
         fn adjust_assignment_degrees(
             root: usize,
-            increase: bool,
             assigned: &[Option<usize>],
             edges: &[[usize; 2]],
             root_edges: &[Vec<usize>],
-            edge_faces: Option<&[[usize; 2]]>,
+            incidence: Option<&LocalIncidence<'_>>,
             degrees: &mut HashMap<(usize, usize), u8>,
-        ) {
-            let Some(edge_faces) = edge_faces else {
-                return;
+        ) -> DegreeUndo {
+            let mut undo = DegreeUndo {
+                entries: Vec::new(),
             };
+            let Some(incidence) = incidence else {
+                return undo;
+            };
+            let edge_faces = &incidence.edge_faces;
             for &edge in &root_edges[root] {
                 let [left, right] = edges[edge];
                 let [Some(left), Some(right)] = [assigned[left], assigned[right]] else {
@@ -368,17 +381,24 @@ pub(super) fn close_coordinate_roots_with_incidence(
                         continue;
                     }
                     for point in [left, right] {
-                        if increase {
-                            *degrees.entry((face, point)).or_default() += 1;
-                        } else {
-                            let degree = degrees
-                                .get_mut(&(face, point))
-                                .expect("assigned edge contributes its face degree");
-                            *degree -= 1;
-                            if *degree == 0 {
-                                degrees.remove(&(face, point));
-                            }
-                        }
+                        let key = (face, point);
+                        let previous = degrees.get(&key).copied();
+                        *degrees.entry(key).or_default() += 1;
+                        undo.entries.push((key, previous));
+                    }
+                }
+            }
+            undo
+        }
+
+        fn restore_assignment_degrees(degrees: &mut HashMap<(usize, usize), u8>, undo: DegreeUndo) {
+            for (key, previous) in undo.entries.into_iter().rev() {
+                match previous {
+                    Some(degree) => {
+                        degrees.insert(key, degree);
+                    }
+                    None => {
+                        degrees.remove(&key);
                     }
                 }
             }
@@ -391,29 +411,26 @@ pub(super) fn close_coordinate_roots_with_incidence(
             assigned: &mut [Option<usize>],
             edges: &[[usize; 2]],
             root_edges: &[Vec<usize>],
-            edge_faces: Option<&[[usize; 2]]>,
+            incidence: Option<&LocalIncidence<'_>>,
             degrees: &mut HashMap<(usize, usize), u8>,
             budget: Option<&WorkBudget<'_>>,
-        ) -> bool {
+        ) -> Option<DegreeUndo> {
             if budget.is_some_and(|budget| !budget.charge_by(root_edges[root].len())) {
-                return false;
+                return None;
             }
             assigned[root] = Some(point);
-            adjust_assignment_degrees(root, true, assigned, edges, root_edges, edge_faces, degrees);
-            true
+            Some(adjust_assignment_degrees(
+                root, assigned, edges, root_edges, incidence, degrees,
+            ))
         }
 
         fn unassign(
             root: usize,
             assigned: &mut [Option<usize>],
-            edges: &[[usize; 2]],
-            root_edges: &[Vec<usize>],
-            edge_faces: Option<&[[usize; 2]]>,
             degrees: &mut HashMap<(usize, usize), u8>,
+            undo: DegreeUndo,
         ) {
-            adjust_assignment_degrees(
-                root, false, assigned, edges, root_edges, edge_faces, degrees,
-            );
+            restore_assignment_degrees(degrees, undo);
             assigned[root] = None;
         }
 
@@ -421,15 +438,12 @@ pub(super) fn close_coordinate_roots_with_incidence(
         fn rollback(
             assigned: &mut [Option<usize>],
             point_uses: &mut [usize],
-            propagated: Vec<(usize, usize)>,
-            edges: &[[usize; 2]],
-            root_edges: &[Vec<usize>],
-            edge_faces: Option<&[[usize; 2]]>,
+            propagated: Vec<(usize, usize, DegreeUndo)>,
             degrees: &mut HashMap<(usize, usize), u8>,
         ) {
-            for (root, point) in propagated.into_iter().rev() {
+            for (root, point, undo) in propagated.into_iter().rev() {
                 point_uses[point] -= 1;
-                unassign(root, assigned, edges, root_edges, edge_faces, degrees);
+                unassign(root, assigned, degrees, undo);
             }
         }
 
@@ -437,21 +451,20 @@ pub(super) fn close_coordinate_roots_with_incidence(
             root: usize,
             root_edges: &[Vec<usize>],
             edges: &[[usize; 2]],
-            edge_faces: Option<&[[usize; 2]]>,
-            face_edges: Option<&[Vec<usize>]>,
+            incidence: Option<&LocalIncidence<'_>>,
         ) -> HashSet<usize> {
             let mut affected = HashSet::new();
             for &edge in &root_edges[root] {
                 affected.extend(edges[edge]);
-                let (Some(edge_faces), Some(face_edges)) = (edge_faces, face_edges) else {
+                let Some(incidence) = incidence else {
                     continue;
                 };
-                let faces = edge_faces[edge];
+                let faces = incidence.edge_faces[edge];
                 for (rank, face) in faces.into_iter().enumerate() {
                     if rank > 0 && face == faces[0] {
                         continue;
                     }
-                    for &face_edge in &face_edges[face] {
+                    for &face_edge in &incidence.face_edges[face] {
                         affected.extend(edges[face_edge]);
                     }
                 }
@@ -485,9 +498,10 @@ pub(super) fn close_coordinate_roots_with_incidence(
                     if !pair_viable {
                         return false;
                     }
-                    let Some(edge_faces) = edge_faces else {
+                    let Some(incidence) = incidence else {
                         return true;
                     };
+                    let edge_faces = &incidence.edge_faces;
                     if work_budget
                         .is_some_and(|budget| !budget.charge_by(root_edges[root].len().max(1)))
                     {
@@ -526,15 +540,12 @@ pub(super) fn close_coordinate_roots_with_incidence(
                         if degree != 1 || !affected_faces.contains(&face) {
                             continue;
                         }
-                        let Some(face_edges) = face_edges else {
-                            return false;
-                        };
-                        if work_budget
-                            .is_some_and(|budget| !budget.charge_by(face_edges[face].len().max(1)))
-                        {
+                        if work_budget.is_some_and(|budget| {
+                            !budget.charge_by(incidence.face_edges[face].len().max(1))
+                        }) {
                             return false;
                         }
-                        let supported = face_edges[face].iter().copied().any(|edge| {
+                        let supported = incidence.face_edges[face].iter().copied().any(|edge| {
                             let [left, right] = edges[edge];
                             if value(left).is_some() && value(right).is_some() {
                                 return false;
@@ -550,12 +561,14 @@ pub(super) fn close_coordinate_roots_with_incidence(
                             return false;
                         }
                     }
-                    if let (Some(boundary_domains), Some(closed_faces)) =
-                        (boundary_domains, closed_faces)
-                    {
-                        let boundaries_viable =
-                            boundary_domains.iter().enumerate().all(|(face, domain)| {
-                                if !closed_faces[face] || !affected_faces.contains(&face) {
+                    let boundaries_viable =
+                        incidence
+                            .boundary_domains
+                            .iter()
+                            .enumerate()
+                            .all(|(face, domain)| {
+                                if !incidence.closed_faces[face] || !affected_faces.contains(&face)
+                                {
                                     return true;
                                 }
                                 match domain {
@@ -583,9 +596,8 @@ pub(super) fn close_coordinate_roots_with_incidence(
                                     ),
                                 }
                             });
-                        if !boundaries_viable {
-                            return false;
-                        }
+                    if !boundaries_viable {
+                        return false;
                     }
                     true
                 })
@@ -594,7 +606,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
 
         let mut propagated = Vec::new();
         let mut pending_roots = None::<HashSet<usize>>;
-        let branch = loop {
+        let branch: Option<CoordinateBranch> = loop {
             let mut scanned_roots = pending_roots.take().map_or_else(
                 || (0..domains.len()).collect::<Vec<_>>(),
                 |roots| roots.into_iter().collect(),
@@ -664,26 +676,24 @@ pub(super) fn close_coordinate_roots_with_incidence(
                     unused_point_roots.entry(point).or_default().push(root);
                 }
                 if let [point] = values.as_slice() {
-                    if !assign(
+                    let Some(undo) = assign(
                         root,
                         *point,
                         assigned,
                         edges,
                         root_edges,
-                        edge_faces,
+                        incidence,
                         base_degrees,
                         budget,
-                    ) {
+                    ) else {
                         *exhausted = true;
                         break;
-                    }
+                    };
                     point_uses[*point] += 1;
-                    propagated.push((root, *point));
+                    propagated.push((root, *point, undo));
                     progress = true;
-                    if edge_faces.is_some() || bounded_scan {
-                        pending_roots = Some(affected_roots(
-                            root, root_edges, edges, edge_faces, face_edges,
-                        ));
+                    if incidence.is_some() || bounded_scan {
+                        pending_roots = Some(affected_roots(root, root_edges, edges, incidence));
                         break;
                     }
                 } else {
@@ -707,8 +717,8 @@ pub(super) fn close_coordinate_roots_with_incidence(
                 let best = viable_domains
                     .into_iter()
                     .min_by_key(|(_, values)| values.len());
-                if best.is_some() {
-                    break Some(best);
+                if let Some((root, values)) = best {
+                    break Some(CoordinateBranch::Search { root, values });
                 }
                 if partial_scan {
                     pending_roots = None;
@@ -747,24 +757,22 @@ pub(super) fn close_coordinate_roots_with_incidence(
                 {
                     break None;
                 }
-                if !assign(
+                let Some(undo) = assign(
                     root,
                     point,
                     assigned,
                     edges,
                     root_edges,
-                    edge_faces,
+                    incidence,
                     base_degrees,
                     budget,
-                ) {
+                ) else {
                     *exhausted = true;
                     break None;
-                }
+                };
                 point_uses[point] += 1;
-                propagated.push((root, point));
-                pending_roots = Some(affected_roots(
-                    root, root_edges, edges, edge_faces, face_edges,
-                ));
+                propagated.push((root, point, undo));
+                pending_roots = Some(affected_roots(root, root_edges, edges, incidence));
                 continue;
             }
             let matching_budget = budget.map(|budget| WorkBudget::new(budget.remaining()));
@@ -835,24 +843,22 @@ pub(super) fn close_coordinate_roots_with_incidence(
                     break None;
                 }
                 if let Some((point, root)) = matching_forced {
-                    if !assign(
+                    let Some(undo) = assign(
                         root,
                         point,
                         assigned,
                         edges,
                         root_edges,
-                        edge_faces,
+                        incidence,
                         base_degrees,
                         budget,
-                    ) {
+                    ) else {
                         *exhausted = true;
                         break None;
-                    }
+                    };
                     point_uses[point] += 1;
-                    propagated.push((root, point));
-                    pending_roots = Some(affected_roots(
-                        root, root_edges, edges, edge_faces, face_edges,
-                    ));
+                    propagated.push((root, point, undo));
+                    pending_roots = Some(affected_roots(root, root_edges, edges, incidence));
                     continue;
                 }
                 for (root, values) in &mut viable_domains {
@@ -868,75 +874,69 @@ pub(super) fn close_coordinate_roots_with_incidence(
                     viable_domains.iter().find(|(_, values)| values.len() == 1)
                 {
                     let point = values[0];
-                    if !assign(
+                    let Some(undo) = assign(
                         root,
                         point,
                         assigned,
                         edges,
                         root_edges,
-                        edge_faces,
+                        incidence,
                         base_degrees,
                         budget,
-                    ) {
+                    ) else {
                         *exhausted = true;
                         break None;
-                    }
+                    };
                     point_uses[point] += 1;
-                    propagated.push((root, point));
-                    pending_roots = Some(affected_roots(
-                        root, root_edges, edges, edge_faces, face_edges,
-                    ));
+                    propagated.push((root, point, undo));
+                    pending_roots = Some(affected_roots(root, root_edges, edges, incidence));
                     continue;
                 }
             }
             let best = viable_domains
                 .into_iter()
                 .min_by_key(|(_, values)| values.len());
-            break Some(best);
+            if let Some((root, values)) = best {
+                break Some(CoordinateBranch::Search { root, values });
+            }
+            let Some(complete) = assigned.iter().copied().collect::<Option<Vec<_>>>() else {
+                break None;
+            };
+            break Some(CoordinateBranch::Complete(complete));
         };
         let Some(branch) = branch else {
-            rollback(
-                assigned,
-                point_uses,
-                propagated,
-                edges,
-                root_edges,
-                edge_faces,
-                base_degrees,
-            );
+            rollback(assigned, point_uses, propagated, base_degrees);
             return;
         };
-        let Some((root, values)) = branch else {
-            let incidence_closed =
-                edge_faces
-                    .zip(closed_faces)
-                    .is_none_or(|(edge_faces, closed_faces)| {
-                        if budget.is_some_and(|budget| !budget.charge_by(edges.len())) {
-                            return false;
-                        }
-                        let mut degrees = HashMap::<(usize, usize), u8>::new();
-                        for (edge, [left, right]) in edges.iter().copied().enumerate() {
-                            let [Some(left), Some(right)] = [assigned[left], assigned[right]]
-                            else {
-                                return false;
-                            };
-                            let faces = edge_faces[edge];
-                            for (rank, face) in faces.into_iter().enumerate() {
-                                if rank > 0 && face == faces[0] {
-                                    continue;
-                                }
-                                for point in [left, right] {
-                                    *degrees.entry((face, point)).or_default() += 1;
-                                }
+        let (root, values) = match branch {
+            CoordinateBranch::Complete(solution) => {
+                let incidence_closed = incidence.is_none_or(|incidence| {
+                    if budget.is_some_and(|budget| !budget.charge_by(edges.len())) {
+                        return false;
+                    }
+                    let mut degrees = HashMap::<(usize, usize), u8>::new();
+                    for (edge, [left, right]) in edges.iter().copied().enumerate() {
+                        let [left, right] = [solution[left], solution[right]];
+                        let faces = incidence.edge_faces[edge];
+                        for (rank, face) in faces.into_iter().enumerate() {
+                            if rank > 0 && face == faces[0] {
+                                continue;
+                            }
+                            for point in [left, right] {
+                                *degrees.entry((face, point)).or_default() += 1;
                             }
                         }
-                        degrees
-                            .into_iter()
-                            .all(|((face, _), degree)| !closed_faces[face] || degree == 2)
-                    });
-            let boundaries_close = boundary_domains.zip(closed_faces).is_none_or(
-                |(boundary_domains, closed_faces)| {
-                    let closed_face_count = closed_faces.iter().filter(|closed| **closed).count();
+                    }
+                    degrees
+                        .into_iter()
+                        .all(|((face, _), degree)| !incidence.closed_faces[face] || degree == 2)
+                });
+                let boundaries_close = incidence.is_none_or(|incidence| {
+                    let closed_face_count = incidence
+                        .closed_faces
+                        .iter()
+                        .filter(|closed| **closed)
+                        .count();
                     if budget.is_some_and(|budget| {
                         !budget.charge_by(edge_ids.len().saturating_add(closed_face_count))
                     }) {
@@ -944,17 +944,15 @@ pub(super) fn close_coordinate_roots_with_incidence(
                     }
                     let mut selected = vec![None; edge_candidates.len()];
                     for (local_edge, &edge) in edge_ids.iter().enumerate() {
-                        let [left, right] = edges[local_edge];
-                        let [Some(left), Some(right)] = [assigned[left], assigned[right]] else {
-                            return false;
-                        };
+                        let [left, right] = edges[local_edge].map(|root| solution[root]);
                         selected[edge] = Some([left, right]);
                     }
-                    closed_faces
+                    incidence
+                        .closed_faces
                         .iter()
                         .enumerate()
                         .filter(|(_, closed)| **closed)
-                        .all(|(face, _)| match &boundary_domains[face] {
+                        .all(|(face, _)| match &incidence.boundary_domains[face] {
                             MeshFaceBoundaryDomain::Ordered(assignments) => {
                                 assignments.iter().any(|assignment| {
                                     complete_ordered_assignment_viable(
@@ -964,66 +962,45 @@ pub(super) fn close_coordinate_roots_with_incidence(
                             }
                             domain => compact_boundary_domain_viable(domain, &selected, None),
                         })
-                },
-            );
-            if budget.is_some_and(WorkBudget::exhausted) {
-                *exhausted = true;
+                });
+                if budget.is_some_and(WorkBudget::exhausted) {
+                    *exhausted = true;
+                }
+                if !*exhausted
+                    && incidence_closed
+                    && boundaries_close
+                    && component_points.iter().all(|point| point_uses[*point] > 0)
+                {
+                    solutions.push(solution);
+                }
+                rollback(assigned, point_uses, propagated, base_degrees);
+                return;
             }
-            if !*exhausted
-                && incidence_closed
-                && boundaries_close
-                && component_points.iter().all(|point| point_uses[*point] > 0)
-            {
-                solutions.push(
-                    assigned
-                        .iter()
-                        .copied()
-                        .collect::<Option<Vec<_>>>()
-                        .expect("complete coordinate assignment"),
-                );
-            }
-            rollback(
-                assigned,
-                point_uses,
-                propagated,
-                edges,
-                root_edges,
-                edge_faces,
-                base_degrees,
-            );
-            return;
+            CoordinateBranch::Search { root, values } => (root, values),
         };
         if *states >= state_limit {
             if let Some(budget) = budget {
                 budget.exhaust();
             }
             *exhausted = true;
-            rollback(
-                assigned,
-                point_uses,
-                propagated,
-                edges,
-                root_edges,
-                edge_faces,
-                base_degrees,
-            );
+            rollback(assigned, point_uses, propagated, base_degrees);
             return;
         }
         *states += 1;
         for point in values {
-            if !assign(
+            let Some(undo) = assign(
                 root,
                 point,
                 assigned,
                 edges,
                 root_edges,
-                edge_faces,
+                incidence,
                 base_degrees,
                 budget,
-            ) {
+            ) else {
                 *exhausted = true;
                 break;
-            }
+            };
             point_uses[point] += 1;
             walk(
                 domains,
@@ -1032,10 +1009,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
                 local_edge_by_id,
                 root_edges,
                 edge_candidates,
-                edge_faces,
-                face_edges,
-                closed_faces,
-                boundary_domains,
+                incidence,
                 component_points,
                 assigned,
                 point_uses,
@@ -1047,20 +1021,12 @@ pub(super) fn close_coordinate_roots_with_incidence(
                 budget,
             );
             point_uses[point] -= 1;
-            unassign(root, assigned, edges, root_edges, edge_faces, base_degrees);
+            unassign(root, assigned, base_degrees, undo);
             if solutions.len() > 1 || *exhausted {
                 break;
             }
         }
-        rollback(
-            assigned,
-            point_uses,
-            propagated,
-            edges,
-            root_edges,
-            edge_faces,
-            base_degrees,
-        );
+        rollback(assigned, point_uses, propagated, base_degrees);
     }
 
     let mut roots = Vec::new();
@@ -1147,9 +1113,10 @@ pub(super) fn close_coordinate_roots_with_incidence(
     }
     let mut components = components.into_values().collect::<Vec<_>>();
     components.sort_by_key(|component| component[0]);
-    let face_incidence_counts = incidence.map(|(edge_faces, boundary_domains)| {
+    let incidence = if let Some((edge_faces, boundary_domains)) = incidence {
         if budget.is_some_and(|budget| !budget.charge_by(edge_faces.len())) {
-            return Vec::new();
+            exhausted.set(true);
+            return None;
         }
         let mut counts = vec![0usize; boundary_domains.len()];
         for faces in edge_faces {
@@ -1159,11 +1126,10 @@ pub(super) fn close_coordinate_roots_with_incidence(
                 }
             }
         }
-        counts
-    });
-    if face_incidence_counts.as_ref().is_some_and(Vec::is_empty) {
-        return None;
-    }
+        Some((edge_faces, boundary_domains, counts))
+    } else {
+        None
+    };
     let mut assignment = vec![None; roots.len()];
     let shared_budget = budget;
     for component in components {
@@ -1228,41 +1194,38 @@ pub(super) fn close_coordinate_roots_with_incidence(
             .enumerate()
             .map(|(local, edge)| (edge, local))
             .collect::<HashMap<_, _>>();
-        let local_edge_faces = incidence.map(|(edge_faces, _)| {
-            edge_ids
-                .iter()
-                .map(|edge| edge_faces[*edge])
-                .collect::<Vec<_>>()
-        });
-        let face_edges = incidence.and_then(|(_, boundary_domains)| {
-            if budget.is_some_and(|budget| !budget.charge_by(edge_ids.len().max(1))) {
-                return None;
-            }
-            let mut face_edges = vec![Vec::new(); boundary_domains.len()];
-            for (edge, faces) in local_edge_faces.as_ref()?.iter().copied().enumerate() {
-                for (rank, face) in faces.into_iter().enumerate() {
-                    if rank == 0 || face != faces[0] {
-                        face_edges[face].push(edge);
+        let local_incidence = match incidence.as_ref() {
+            Some((edge_faces, boundary_domains, counts)) => {
+                if budget.is_some_and(|budget| !budget.charge_by(edge_ids.len().max(1))) {
+                    exhausted.set(true);
+                    return None;
+                }
+                let local_edge_faces = edge_ids
+                    .iter()
+                    .map(|edge| edge_faces[*edge])
+                    .collect::<Vec<_>>();
+                let mut face_edges = vec![Vec::new(); boundary_domains.len()];
+                for (edge, faces) in local_edge_faces.iter().copied().enumerate() {
+                    for (rank, face) in faces.into_iter().enumerate() {
+                        if rank == 0 || face != faces[0] {
+                            face_edges[face].push(edge);
+                        }
                     }
                 }
+                let closed_faces = face_edges
+                    .iter()
+                    .zip(counts.iter())
+                    .map(|(local, total)| local.len() == *total)
+                    .collect::<Vec<_>>();
+                Some(LocalIncidence {
+                    edge_faces: local_edge_faces,
+                    face_edges,
+                    closed_faces,
+                    boundary_domains,
+                })
             }
-            Some(face_edges)
-        });
-        if incidence.is_some() && face_edges.is_none() {
-            if budget.is_some_and(WorkBudget::exhausted) {
-                exhausted.set(true);
-            }
-            return None;
-        }
-        let closed_faces = face_incidence_counts.as_ref().map(|counts| {
-            face_edges
-                .as_ref()
-                .expect("incidence face edges accompany incidence counts")
-                .iter()
-                .zip(counts)
-                .map(|(local, total)| local.len() == *total)
-                .collect::<Vec<_>>()
-        });
+            None => None,
+        };
         let mut local_domains = component
             .iter()
             .map(|root| domains[*root].clone())
@@ -1339,10 +1302,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
             &local_edge_by_id,
             &root_edges,
             edge_candidates,
-            local_edge_faces.as_deref(),
-            face_edges.as_deref(),
-            closed_faces.as_deref(),
-            incidence.map(|(_, boundary_domains)| boundary_domains),
+            local_incidence.as_ref(),
             &component_points,
             &mut local_assignment,
             &mut point_degrees,

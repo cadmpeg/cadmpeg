@@ -573,13 +573,13 @@ impl MeshCoordinateRootDomains {
         })
     }
 
-    pub(crate) fn any_implicit_edge_candidate_with_point(
+    pub(crate) fn implicit_edge_candidate_with_point(
         &self,
         edge: usize,
         required: usize,
         budget: Option<&WorkBudget<'_>>,
         mut valid: impl FnMut([usize; 2]) -> bool,
-    ) -> Option<bool> {
+    ) -> Option<[usize; 2]> {
         self.edge_candidates.get(edge)?.is_empty().then_some(())?;
         let &[left, right] = self.edges.get(edge)?;
         let pair = |point| {
@@ -600,12 +600,12 @@ impl MeshCoordinateRootDomains {
                     return None;
                 }
                 if valid(pair(point)) {
-                    return Some(true);
+                    return Some(pair(point));
                 }
             }
         }
         if self.domains[right].binary_search(&required).is_err() {
-            return Some(false);
+            return None;
         }
         for point in self.domains[left]
             .iter()
@@ -617,10 +617,10 @@ impl MeshCoordinateRootDomains {
                 return None;
             }
             if valid(pair(point)) {
-                return Some(true);
+                return Some(pair(point));
             }
         }
-        Some(false)
+        None
     }
 
     fn coverage_matching(
@@ -4238,9 +4238,8 @@ pub(crate) fn mesh_assignment_endpoint_cycle_support_by<'a>(
         let identity = identity_relation(&points);
         let mut prefixes = Vec::with_capacity(layers.len() + 1);
         prefixes.push(identity.clone());
-        for (_, _, relation) in &layers {
-            let composed =
-                compose_relations(prefixes.last().expect("prefix identity"), relation, budget)?;
+        for (index, (_, _, relation)) in layers.iter().enumerate() {
+            let composed = compose_relations(&prefixes[index], relation, budget)?;
             prefixes.push(composed);
         }
         let mut suffixes = alloc_filled(
@@ -4861,10 +4860,13 @@ fn canonical_mesh_boundary_directions(directions: &[Vec<bool>]) -> Vec<Vec<bool>
         .collect()
 }
 
+type EndpointRelationKey = Vec<Option<[usize; 2]>>;
+type EndpointRelationKeys<'a> = Vec<(&'a MeshEndpointRelationChoice, EndpointRelationKey)>;
+
 fn canonical_endpoint_relation_key(
     choice: &MeshEndpointRelationChoice,
     edges: &[usize],
-) -> Option<Vec<[usize; 2]>> {
+) -> EndpointRelationKey {
     edges
         .iter()
         .map(|&edge| {
@@ -4881,6 +4883,18 @@ fn canonical_endpoint_relation_key(
                 })
         })
         .collect()
+}
+
+fn complete_endpoint_relation_keys<'a>(
+    choices: &'a [MeshEndpointRelationChoice],
+    edges: &[usize],
+) -> (bool, EndpointRelationKeys<'a>) {
+    let keys = choices
+        .iter()
+        .map(|choice| (choice, canonical_endpoint_relation_key(choice, edges)))
+        .collect::<EndpointRelationKeys<'_>>();
+    let complete = keys.iter().all(|(_, key)| key.iter().all(Option::is_some));
+    (complete, keys)
 }
 
 fn build_endpoint_relation_constraints(
@@ -4914,49 +4928,31 @@ fn build_endpoint_relation_constraints(
         .collect::<Vec<_>>();
     let choice_counts = domains.iter().map(Vec::len).collect::<Vec<_>>();
     for ((face, neighbor), edges) in shared_edges {
-        let left_complete = domains[face].iter().all(|choice| {
-            edges.iter().all(|edge| {
-                choice
-                    .selection
-                    .edge_pairs()
-                    .iter()
-                    .any(|(candidate, _)| candidate == edge)
-            })
-        });
-        let right_complete = domains[neighbor].iter().all(|choice| {
-            edges.iter().all(|edge| {
-                choice
-                    .selection
-                    .edge_pairs()
-                    .iter()
-                    .any(|(candidate, _)| candidate == edge)
-            })
-        });
+        let index_work = domains[face]
+            .len()
+            .saturating_add(domains[neighbor].len())
+            .max(1);
+        if !budget.charge_by(index_work) {
+            return None;
+        }
+        let (left_complete, left_choices) = complete_endpoint_relation_keys(&domains[face], &edges);
+        let (right_complete, right_choices) =
+            complete_endpoint_relation_keys(&domains[neighbor], &edges);
         let supports = if left_complete && right_complete {
-            let index_work = domains[face]
-                .len()
-                .saturating_add(domains[neighbor].len())
-                .max(1);
-            if !budget.charge_by(index_work) {
-                return None;
-            }
-            let mut index = HashMap::<Vec<[usize; 2]>, Vec<usize>>::new();
-            for choice in &domains[neighbor] {
-                let key = canonical_endpoint_relation_key(choice, &edges)?;
+            let mut index = HashMap::<EndpointRelationKey, Vec<usize>>::new();
+            for (choice, key) in right_choices {
                 index.entry(key).or_default().push(choice.id);
             }
-            domains[face]
+            left_choices
                 .iter()
-                .map(|choice| {
-                    let key = canonical_endpoint_relation_key(choice, &edges)
-                        .expect("complete relation choice contains shared edge");
+                .map(|(_, key)| {
                     let mut mask = alloc_filled(
                         (domains[neighbor].len().saturating_add(63) / 64).max(1),
                         0u64,
                         "catia_endpoint_relation_support_mask",
                     )
                     .ok()?;
-                    for &other in index.get(&key).into_iter().flatten() {
+                    for &other in index.get(key).into_iter().flatten() {
                         mask[other / 64] |= 1u64 << (other % 64);
                     }
                     Some(mask)
@@ -4970,27 +4966,21 @@ fn build_endpoint_relation_constraints(
             if !budget.charge_by(comparison_work) {
                 return None;
             }
-            domains[face]
+            left_choices
                 .iter()
-                .map(|choice| {
+                .map(|(_, left_key)| {
                     let mut mask = alloc_filled(
                         (domains[neighbor].len().saturating_add(63) / 64).max(1),
                         0u64,
                         "catia_endpoint_relation_support_mask",
                     )
                     .ok()?;
-                    for other in &domains[neighbor] {
-                        let compatible =
-                            edges.iter().all(|&edge| {
-                                let left = choice.selection.edge_pairs().iter().find_map(
-                                    |&(candidate, pair)| (candidate == edge).then_some(pair),
-                                );
-                                let right = other.selection.edge_pairs().iter().find_map(
-                                    |&(candidate, pair)| (candidate == edge).then_some(pair),
-                                );
-                                left.zip(right)
-                                    .is_none_or(|(left, right)| same_unordered_pair(left, right))
-                            });
+                    for (other, right_key) in &right_choices {
+                        let compatible = left_key.iter().zip(right_key).all(|(left, right)| {
+                            left.as_ref()
+                                .zip(right.as_ref())
+                                .is_none_or(|(left, right)| same_unordered_pair(*left, *right))
+                        });
                         if compatible {
                             mask[other.id / 64] |= 1u64 << (other.id % 64);
                         }
@@ -7569,14 +7559,12 @@ impl MeshSelectionSearch<'_> {
         if options.is_empty() {
             return;
         }
-        if options.len() == 1 {
-            let (assignment_index, directions, next_quotient) =
-                options.pop().expect("one mesh option");
-            let changed_edges = changed_quotient_edges(&measured, &next_quotient);
-            self.selected[face] = Some((assignment_index, directions));
+        if let [(assignment_index, directions, next_quotient)] = options.as_slice() {
+            let changed_edges = changed_quotient_edges(&measured, next_quotient);
+            self.selected[face] = Some((*assignment_index, directions.clone()));
             if self.selected_orientable() {
                 if let Some(next_quotient) =
-                    self.prepare_selected_branch(&next_quotient, &changed_edges, propagation_budget)
+                    self.prepare_selected_branch(next_quotient, &changed_edges, propagation_budget)
                 {
                     // The branch preflight has already run. Continue the
                     // forced suffix without another memo entry or preflight.

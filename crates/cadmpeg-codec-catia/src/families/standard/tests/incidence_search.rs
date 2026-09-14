@@ -1449,7 +1449,7 @@ fn incidence_candidate_uses_a_separate_global_quotient_validation_budget() {
 
     assert!(search.candidate_fits(0, [0, 0]));
     assert!(!budget.exhausted());
-    search.adjust(0, [0, 0], true);
+    search.adjust(0, [0, 0]);
     search.assignment[0] = Some([0, 0]);
     assert!(search.ordered_faces_feasible([0]));
     assert!(!budget.exhausted());
