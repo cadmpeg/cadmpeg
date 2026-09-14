@@ -45,7 +45,8 @@ fn byte_accounting_claims_controls_inside_print_directives() {
     let input = b"1\\\x01N\x02\\2";
     let mut classes = vec![ByteClass::Unclassified; input.len()];
 
-    claim_trivia(input, 1..input.len(), &mut classes);
+    claim_trivia(input, 1..input.len(), &mut classes)
+        .expect("print directive fits the trivia range");
 
     assert!(classes[1..6]
         .iter()
