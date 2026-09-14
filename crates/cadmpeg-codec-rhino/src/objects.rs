@@ -1274,8 +1274,7 @@ pub(crate) fn parse_attributes(
                     finite_attribute(reader.f64()?, reader.position(), "linetype scale")?;
             }
             AttributeItem::HatchBackground => {
-                attributes.hatch_background =
-                    reader.array::<4>()?;
+                attributes.hatch_background = reader.array::<4>()?;
             }
             AttributeItem::HatchBoundaryVisible => {
                 attributes.hatch_boundary_visible =
@@ -1358,9 +1357,7 @@ pub(crate) fn read_uuid_list(
 }
 
 fn uuid_reader(reader: &mut crate::chunks::BoundedReader<'_>) -> Result<Uuid, FramingError> {
-    Ok(Uuid::from_wire(
-        reader.array::<16>()?,
-    ))
+    Ok(Uuid::from_wire(reader.array::<16>()?))
 }
 
 pub(crate) fn parse_attribute_userdata(

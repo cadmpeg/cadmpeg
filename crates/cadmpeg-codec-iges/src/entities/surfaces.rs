@@ -797,16 +797,18 @@ fn ruled_surface_carrier(
     let Some((degree, u_knots, control_points, weights)) = lanes else {
         return Ok(None);
     };
-    Ok(Some(NurbsSurface::from_lanes(
-        NurbsSurfaceAxis::new(degree, u_knots, first.periodic() && second.periodic()),
-        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        NurbsSurfaceLanes::new(
-            control_points.chunks(2_usize).map(<[_]>::to_vec).collect(),
-            weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
-        ),
-        false,
-    )
-    .map_err(cadmpeg_core::CodecError::malformed)?))
+    Ok(Some(
+        NurbsSurface::from_lanes(
+            NurbsSurfaceAxis::new(degree, u_knots, first.periodic() && second.periodic()),
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsSurfaceLanes::new(
+                control_points.chunks(2_usize).map(<[_]>::to_vec).collect(),
+                weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
+            ),
+            false,
+        )
+        .map_err(cadmpeg_core::CodecError::malformed)?,
+    ))
 }
 
 type RuledSpanLanes = (u32, Vec<f64>, Vec<Point3>, Option<Vec<f64>>);

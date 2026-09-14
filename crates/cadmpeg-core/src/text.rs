@@ -153,7 +153,11 @@ impl BlankKey {
 
 impl std::fmt::Display for BlankKey {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "{} states a property with a blank key", self.record)
+        write!(
+            formatter,
+            "{} states a property with a blank key",
+            self.record
+        )
     }
 }
 

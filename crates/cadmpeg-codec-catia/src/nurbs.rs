@@ -970,7 +970,11 @@ mod tests {
         );
         let notes = refusal.take_notes();
         assert_eq!(notes.len(), 1);
-        assert!(notes[0].message.contains("test curve states [1, 0]"), "{:?}", notes[0]);
+        assert!(
+            notes[0].message.contains("test curve states [1, 0]"),
+            "{:?}",
+            notes[0]
+        );
     }
 
     #[test]

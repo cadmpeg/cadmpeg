@@ -1169,8 +1169,9 @@ mod relation_ordinal_tests {
             .expect("a stated ordinal writes");
 
         let mut out = Vec::new();
-        let error = encode_sketch_relation(&mut out, &SketchRelation::try_new(draft(None)).unwrap())
-            .expect_err("a member that retains no ordinal has no bytes to write");
+        let error =
+            encode_sketch_relation(&mut out, &SketchRelation::try_new(draft(None)).unwrap())
+                .expect_err("a member that retains no ordinal has no bytes to write");
         assert!(
             error.to_string().contains("relation_ordinal"),
             "the refusal names the field: {error}"

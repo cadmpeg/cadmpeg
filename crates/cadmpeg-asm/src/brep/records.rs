@@ -264,7 +264,11 @@ pub struct FaceSidednessWire {
     record_index: u32,
     native_sense: cadmpeg_ir::topology::Sense,
     normalized_sense: cadmpeg_ir::topology::Sense,
-    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "cadmpeg_core::absent_key::present")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     containment: Option<FaceContainment>,
 }
 
@@ -332,7 +336,11 @@ pub enum EvaluatedToleranceSlot {
         /// Trailing LONG following the slot, retained verbatim; absent in
         /// older streams, a small non-negative per-entity change counter when
         /// present.
-        #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "cadmpeg_core::absent_key::present")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         trailing: Option<i64>,
     },
     /// The slot holds a tolerance, stored on the vertex.
@@ -340,7 +348,11 @@ pub enum EvaluatedToleranceSlot {
         /// Trailing LONG following the slot, retained verbatim; absent in
         /// older streams, a small non-negative per-entity change counter when
         /// present.
-        #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "cadmpeg_core::absent_key::present")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "cadmpeg_core::absent_key::present"
+        )]
         trailing: Option<i64>,
     },
 }
@@ -512,7 +524,11 @@ impl WireMembers {
 struct WireMembersWire {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     edges: Vec<EdgeId>,
-    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "cadmpeg_core::absent_key::present")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "cadmpeg_core::absent_key::present"
+    )]
     free_vertex: Option<VertexId>,
 }
 

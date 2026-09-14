@@ -799,13 +799,17 @@ fn helper_at_guard_site(items: &[syn::Item], site: &str, field: &str) -> Result<
         let fields = match item {
             syn::Item::Struct(declaration) if declaration.ident == type_name => {
                 if variant_name.is_some() {
-                    return Err(format!("{site} names a variant, but {type_name} is a struct"));
+                    return Err(format!(
+                        "{site} names a variant, but {type_name} is a struct"
+                    ));
                 }
                 &declaration.fields
             }
             syn::Item::Enum(declaration) if declaration.ident == type_name => {
                 let Some(wanted) = variant_name else {
-                    return Err(format!("{site} names no variant, but {type_name} is an enum"));
+                    return Err(format!(
+                        "{site} names no variant, but {type_name} is an enum"
+                    ));
                 };
                 let Some(variant) = declaration
                     .variants
