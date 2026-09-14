@@ -810,3 +810,51 @@ fn semantic_writer_expands_indexed_tessellation() {
         Err(cadmpeg_core::CodecError::NotImplemented(_))
     ));
 }
+
+#[test]
+fn semantic_writer_refuses_more_auxiliary_channels_than_the_table_carries() {
+    use cadmpeg_ir::tessellation::Tessellation;
+
+    // The display-list table carries exactly three auxiliary channels after
+    // the strip, position and normal channels. A mesh stating a fourth is an
+    // IR value the format cannot carry, so the write refuses and names the
+    // field instead of writing the first three and dropping the rest.
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_display_list(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let original = decoded.ir().model.tessellations[0].clone();
+    assert_eq!(original.channels().len(), 6);
+    let mut channels = original.channels().to_vec();
+    channels.push(channels[5].clone());
+    let mut extended = Tessellation::new(
+        "synthetic:test:tessellation#extra-channel",
+        original.mesh().clone(),
+        channels,
+    )
+    .unwrap();
+    extended.id = original.id.clone();
+    extended.body = original.body.clone();
+    extended.faces = original.faces.clone();
+    decoded.ir_mut().model.tessellations[0] = extended;
+
+    let error = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::InvalidInput(_)),
+        "{error}"
+    );
+    assert!(
+        error.to_string().contains(
+            "tessellation channels: the SLDPRT display-list table carries exactly three auxiliary channels"
+        ),
+        "{error}"
+    );
+}

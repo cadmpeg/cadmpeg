@@ -2000,9 +2000,13 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
             }
         }
         descriptor(&mut out, 12, 100, 2, mesh.vertex_normals().len(), &normals);
+        // `has_core_tessellation_channels` matches at least three channels, so
+        // the remainder after the core three is the complete auxiliary run.
+        // The display-list table carries exactly three auxiliary channels; the
+        // consistency check below refuses any other number rather than
+        // truncating the run the mesh states.
         let auxiliary_start = usize::from(has_core_tessellation_channels(mesh.channels())) * 3;
-        let auxiliary_count = mesh.channels().len().saturating_sub(auxiliary_start).min(3);
-        let auxiliary = &mesh.channels()[auxiliary_start..auxiliary_start + auxiliary_count];
+        let auxiliary = &mesh.channels()[auxiliary_start..];
         let strip_lengths = mesh
             .strip_lengths()
             .iter()
@@ -2012,8 +2016,10 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
         if !auxiliary.is_empty()
             && !crate::tessellation::auxiliary_channels_are_consistent(&strip_lengths, auxiliary)
         {
-            return Err(CodecError::Malformed(
-                "tessellation auxiliary channels are incomplete or inconsistent".into(),
+            return Err(CodecError::InvalidInput(
+                "tessellation channels: the SLDPRT display-list table carries exactly three \
+                 auxiliary channels after the strip, position and normal channels"
+                    .into(),
             ));
         }
         for channel in auxiliary {
@@ -2048,7 +2054,9 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
             },
             |out, _| descriptor(out, 1, 8, 2, 0, &[]),
         ];
-        for append in append.iter().skip(auxiliary_count) {
+        // The run is empty or the exact three the table carries, so the
+        // synthesized defaults fill in only for a mesh that states none.
+        for append in append.iter().skip(auxiliary.len()) {
             append(&mut out, &list_c);
         }
     }
