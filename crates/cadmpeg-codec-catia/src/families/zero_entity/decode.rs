@@ -714,7 +714,10 @@ pub(crate) fn try_decode_zero_entity(
         &mut unknowns,
         &mut annotations,
         scan,
-        "catia:payload:unknown#zero-entity",
+        cadmpeg_ir::ids::UnknownId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "payload", "unknown"),
+            cadmpeg_ir::identity_key!("zero-entity"),
+        ),
     );
 
     let mut surface_ids_by_position = HashMap::new();

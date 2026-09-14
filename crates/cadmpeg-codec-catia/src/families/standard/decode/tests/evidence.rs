@@ -1303,6 +1303,16 @@ fn native_support_pcurve_midpoint_selects_an_unwitnessed_circle_branch() {
 }
 
 #[test]
+fn standard_empty_vertex_population_creates_no_owner_or_annotations() {
+    let mut ir = CadIr::empty();
+    let before = ir.clone();
+    let mut annotations = AnnotationBuilder::new();
+    attach_free_vertices(&mut ir, &mut annotations);
+    assert_eq!(ir, before);
+    assert_eq!(annotations.build(), AnnotationBuilder::new().build());
+}
+
+#[test]
 fn standard_unbound_vertices_receive_one_free_vertex_owner() {
     let mut ir = CadIr::empty();
     ir.model.vertices.push(Vertex {
@@ -1311,12 +1321,7 @@ fn standard_unbound_vertices_receive_one_free_vertex_owner() {
         tolerance: None,
     });
     let mut annotations = AnnotationBuilder::new();
-    attach_free_vertices(
-        &mut ir,
-        &mut annotations,
-        "standard",
-        "MainDataStream+SurfacicReps",
-    );
+    attach_free_vertices(&mut ir, &mut annotations);
     assert_eq!(ir.model.bodies.len(), 1);
     assert_eq!(ir.model.regions.len(), 1);
     assert_eq!(ir.model.shells.len(), 1);
