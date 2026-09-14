@@ -1084,7 +1084,8 @@ mod route_tests {
         assert!(neutral_model_is_admissible(&mut valid, &[]));
 
         let mut invalid =
-            cadmpeg_ir::validate::admissibility_freeze::rejected_missing_region("catia:test");
+            cadmpeg_ir::validate::admissibility_freeze::rejected_missing_region("catia:test")
+                .expect("fixture identities are valid");
         assert!(!neutral_model_is_admissible(&mut invalid, &[]));
     }
 
@@ -1094,7 +1095,8 @@ mod route_tests {
         let mut accepted = cadmpeg_ir::validate::admissibility_freeze::accepted_empty();
         assert!(neutral_model_is_admissible(&mut accepted, &[]));
         let mut rejected =
-            cadmpeg_ir::validate::admissibility_freeze::rejected_missing_region("catia:test");
+            cadmpeg_ir::validate::admissibility_freeze::rejected_missing_region("catia:test")
+                .expect("fixture identities are valid");
         assert!(!neutral_model_is_admissible(&mut rejected, &[]));
     }
 

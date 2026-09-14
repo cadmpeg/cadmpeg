@@ -25,7 +25,7 @@ use crate::F3dCodec;
 fn generated_source_less_rejects_act_without_segment_metadata() {
     use crate::records::ActEntity;
 
-    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let mut native = f3d_native_mut(&mut source_less);
     native.act_entities = vec![ActEntity::try_new(
         "f3d:generated:act-entity#7".into(),

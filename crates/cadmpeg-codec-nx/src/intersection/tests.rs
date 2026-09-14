@@ -20,7 +20,7 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
     };
     use cadmpeg_ir::ids::{PcurveId, ProceduralCurveId};
 
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let edge = ir.model.edges[0].clone();
     let incident = ir
         .model
@@ -493,7 +493,7 @@ fn intersection_support_uv_scan_does_not_admit_nested_counted_candidates() {
 
 #[test]
 fn intersection_pcurve_attachment_requires_face_incidence() {
-    let ir = cadmpeg_ir::examples::unit_cube();
+    let ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let edge = cadmpeg_ir::ids::EdgeId::mint("synthetic:cube:edge#0").expect("identity grammar");
     let surface = ir
         .model

@@ -445,7 +445,7 @@ mod tests {
     }
 
     fn node_guids_for_order(reverse: bool) -> std::collections::BTreeMap<u64, String> {
-        let mut target = cadmpeg_ir::examples::unit_cube();
+        let mut target = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
         let mut first = target.model.bodies[0].clone();
         first.id = cadmpeg_ir::ids::BodyId::mint("test:model:body#synthetic:stable-body:a")
             .expect("identity grammar");
@@ -543,7 +543,7 @@ mod tests {
 
     #[test]
     fn generated_presentation_records_do_not_alias_their_body_entity() {
-        let mut target = cadmpeg_ir::examples::unit_cube();
+        let mut target = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
         target.model.bodies[0].visible = Some(true);
         let native = crate::native::F3dNative::default();
         let attributes = super::AttributeIndex::new(&target, &native)
@@ -569,7 +569,7 @@ mod tests {
 
     #[test]
     fn generated_body_map_replaces_stale_type_membership() {
-        let mut target = cadmpeg_ir::examples::unit_cube();
+        let mut target = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
         target.model.bodies[0].visible = Some(true);
         let native = crate::native::F3dNative {
             design_types: vec![body_map_type(vec![17])],
@@ -601,7 +601,7 @@ mod tests {
 
     #[test]
     fn generated_browser_nodes_replace_stale_type_membership() {
-        let mut target = cadmpeg_ir::examples::unit_cube();
+        let mut target = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
         target.model.bodies[0].visible = Some(true);
         let native = crate::native::F3dNative {
             design_types: vec![browser_node_type(vec![17])],
@@ -635,7 +635,7 @@ mod tests {
 
     #[test]
     fn full_record_index_space_is_irrelevant_without_generated_nodes() {
-        let target = cadmpeg_ir::examples::unit_cube();
+        let target = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
         let native = crate::native::F3dNative {
             design_types: vec![browser_node_type(vec![u64::from(u32::MAX)])],
             ..Default::default()

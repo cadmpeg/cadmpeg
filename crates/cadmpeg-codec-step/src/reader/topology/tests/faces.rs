@@ -591,7 +591,7 @@ pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
     use cadmpeg_ir::ids::LoopId;
     use cadmpeg_ir::topology::Loop;
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let face = ir.model.faces[0].id.clone();
     let vertex = ir.model.vertices[0].id.clone();
     let inner = LoopId::mint("zzzz:test:loop#inner").expect("identity grammar");
@@ -785,7 +785,7 @@ fn duplicate_face_outer_bound_witnesses_reject_topology_in_any_order() {
 
 #[test]
 fn failed_face_bounds_do_not_duplicate_the_shared_surface() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.faces[0].surface = ir.model.faces[1].surface.clone();
     ir.model.faces[0].loops = cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new());
     let output = export(&ir);

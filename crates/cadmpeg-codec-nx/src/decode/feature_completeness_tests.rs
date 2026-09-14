@@ -531,7 +531,7 @@ fn nx_loft_completeness_checks_native_point_sections_and_centerlines() {
     };
     use cadmpeg_ir::math::Point3;
 
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let output = ir.model.bodies[0].id.clone();
     let definition = |sections, centerline: Option<PathRef>| {
         FeatureDefinition::Operation(FeatureOperation::Loft {
@@ -702,7 +702,7 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
     };
     use cadmpeg_ir::ids::FeatureResultTopologyId;
 
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let output = ir.model.bodies[0].id.clone();
     let definition = |direction, start, solid| {
         FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -811,7 +811,7 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
     };
     use cadmpeg_ir::math::{Point3, Vector3};
 
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let output = ir.model.bodies[0].id.clone();
     let face = ir.model.faces[0].id.clone();
     let complete = RevolveConstruction::Resolved {
@@ -1027,7 +1027,7 @@ fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
         SketchEntity, SketchEntityId, SketchGeometry, SketchId,
     };
 
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let sketch_id = SketchId::mint("test:test:sketch#0").unwrap();
     ir.model.features.push(Feature {
         id: FeatureId::mint("test:test:feature#sketch").expect("identity grammar"),
@@ -1127,7 +1127,7 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
         ParameterValue,
     };
 
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let bodies = ir
         .model
         .bodies
@@ -1687,7 +1687,7 @@ fn nx_sew_completeness_does_not_invent_a_gap_tolerance() {
         BodySelection, Feature, FeatureDefinition, FeatureId, FeatureOperation,
     };
 
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let first = ir.model.bodies[0].id.clone();
     let mut second_body = ir.model.bodies[0].clone();
     second_body.id =

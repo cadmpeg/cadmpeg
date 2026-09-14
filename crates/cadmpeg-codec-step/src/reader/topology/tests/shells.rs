@@ -721,7 +721,7 @@ fn strict_decode_rejects_a_destroyed_solid() {
 
 #[test]
 pub(crate) fn every_region_of_a_body_is_retained_as_a_shape_item() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let body = ir.model.bodies[0].id.clone();
     let mut region = ir.model.regions[0].clone();
     region.id = "zzzz:test:region#second"
@@ -736,7 +736,7 @@ pub(crate) fn every_region_of_a_body_is_retained_as_a_shape_item() {
 
 #[test]
 fn advanced_brep_representation_reuses_its_committed_solid_body() {
-    let source = export(&unit_cube()).replace(
+    let source = export(&unit_cube().expect("unit cube fixture is admitted")).replace(
         "ADVANCED_BREP_SHAPE_REPRESENTATION",
         "ADVANCED_BREP_REPRESENTATION",
     );
@@ -757,7 +757,7 @@ fn advanced_brep_representation_reuses_its_committed_solid_body() {
 
 #[test]
 fn advanced_brep_mapped_representation_reuses_its_committed_solid_body() {
-    let mut source = export(&unit_cube()).replace(
+    let mut source = export(&unit_cube().expect("unit cube fixture is admitted")).replace(
         "ADVANCED_BREP_SHAPE_REPRESENTATION",
         "ADVANCED_BREP_REPRESENTATION",
     );

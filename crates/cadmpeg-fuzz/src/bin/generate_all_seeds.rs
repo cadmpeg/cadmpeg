@@ -117,8 +117,8 @@ mod f3d {
         push_u8_string(&mut b, "ASM 231.6.3.65535 OSX");
         push_u8_string(&mut b, "Tue Mar 31 16:16:19 2026");
         push_tagged_f64(&mut b, 60.0);
-    push_tagged_f64(&mut b, SEED_LINEAR_TOLERANCE);
-    push_tagged_f64(&mut b, SEED_ANGULAR_TOLERANCE);
+        push_tagged_f64(&mut b, SEED_LINEAR_TOLERANCE);
+        push_tagged_f64(&mut b, SEED_ANGULAR_TOLERANCE);
         b
     }
 
@@ -1173,10 +1173,9 @@ mod nx {
 // ============================================================================
 
 fn generate_ir_seeds() {
-    let minimal = cadmpeg_ir::CadIr::empty()
-        .to_canonical_json()
-        .unwrap();
+    let minimal = cadmpeg_ir::CadIr::empty().to_canonical_json().unwrap();
     let cube = cadmpeg_ir::examples::unit_cube()
+        .expect("unit cube fixture is admitted")
         .to_canonical_json()
         .unwrap();
     let directed_subd_sum = cadmpeg_ir::examples::directed_subd_sum()

@@ -420,7 +420,7 @@ fn complex_geometric_set_representation_uses_its_named_items() {
 pub(crate) fn reader_recovers_a_valid_solid_from_writer_output() {
     use cadmpeg_ir::topology::BodyKind;
 
-    let source = unit_cube();
+    let source = unit_cube().expect("unit cube fixture is admitted");
     let mut bytes = Vec::new();
     write_step(
         &source,

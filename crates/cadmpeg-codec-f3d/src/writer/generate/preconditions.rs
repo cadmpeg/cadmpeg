@@ -1426,7 +1426,7 @@ mod tests {
 
     #[test]
     fn tolerant_vertex_precondition_rejects_unset_with_a_neutral_tolerance() {
-        let mut target = cadmpeg_ir::examples::unit_cube();
+        let mut target = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
         target.model.vertices[0].tolerance = Some(PositiveReal::new(0.025).unwrap());
         let native = F3dNative {
             tolerant_vertex_tails: vec![TolerantVertexTail {

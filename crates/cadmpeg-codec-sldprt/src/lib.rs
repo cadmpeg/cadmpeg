@@ -448,7 +448,11 @@ mod tests {
             ..cadmpeg_ir::SourceFidelity::default()
         };
 
-        let records = crate::source_records(&cadmpeg_ir::examples::unit_cube(), &fidelity).unwrap();
+        let records = crate::source_records(
+            &cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted"),
+            &fidelity,
+        )
+        .unwrap();
         let retained = records[0].data.expect("retained source bytes");
         assert_eq!(retained.as_ptr(), payload_ptr);
     }

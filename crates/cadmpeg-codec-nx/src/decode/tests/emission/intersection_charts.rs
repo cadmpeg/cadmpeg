@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let edge_id = ir.model.edges[0].id.clone();
     let expected_endpoints = [&ir.model.edges[0].start, &ir.model.edges[0].end].map(|vertex_id| {
         let point_id = &ir
@@ -131,7 +131,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
 
 #[test]
 fn tolerant_edge_does_not_replace_a_serialized_fin_curve() {
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let edge_id = ir.model.edges[0].id.clone();
     ir.model.edges[0].set_curve(None).unwrap();
     ir.model.edges[0].set_param_range(None).unwrap();

@@ -843,7 +843,7 @@ fn generated_source_less_f3d_rejects_unbacked_design_parameters() {
 
 #[test]
 fn generated_source_less_f3d_writes_document_design_parameters() {
-    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
     let native_id = format!("f3d:{stream}:design-parameter#0");
     f3d_native_mut(&mut source_less).design_parameters.push(

@@ -25,7 +25,7 @@ use crate::F3dCodec;
 fn generated_source_less_writes_design_type_metastream() {
     use crate::records::SegmentType;
 
-    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let mut native = f3d_native_mut(&mut source_less);
     native.design_types = vec![
         SegmentType {
@@ -161,7 +161,7 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
         PersistentReferenceKind,
     };
 
-    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let mut native = f3d_native_mut(&mut source_less);
     native.construction_recipes = [
         ConstructionRecipeKind::Body,
@@ -358,7 +358,7 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
 fn generated_source_less_writes_design_ownership_and_record_headers() {
     use crate::records::{DesignBodyMember, DesignEntityHeader, DesignRecordHeader, SegmentType};
 
-    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let mut native = f3d_native_mut(&mut source_less);
     native.design_types = vec![SegmentType {
         id: "f3d:generated:design-type#0".into(),
@@ -487,7 +487,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
-    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let mut native = f3d_native_mut(&mut source_less);
     native.design_types = vec![
         SegmentType {

@@ -1319,7 +1319,7 @@ fn body_layers_and_visibility_cover_every_region_shape_item() {
     use cadmpeg_ir::ids::LayerId;
     use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let body = ir.model.bodies[0].id.clone();
     let mut region = ir.model.regions[0].clone();
     region.id = "zzzz:test:region#second"
@@ -1459,7 +1459,7 @@ fn presentation_reader_resolves_complex_datum_reference_inheritance() {
 
 #[test]
 pub(crate) fn hidden_body_geometry_and_visibility_round_trip() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.bodies[0].visible = Some(false);
     let mut buf = Vec::new();
     let report = write_step(
@@ -1479,7 +1479,7 @@ pub(crate) fn hidden_body_geometry_and_visibility_round_trip() {
         .expect("decode hidden body");
     assert_eq!(decoded.ir().model.bodies[0].visible, Some(false));
 
-    let mut transformed = unit_cube();
+    let mut transformed = unit_cube().expect("unit cube fixture is admitted");
     transformed.model.bodies[0].visible = Some(false);
     transformed.model.bodies[0].transform = Some(
         cadmpeg_ir::transform::Transform::affine([
@@ -1501,7 +1501,7 @@ pub(crate) fn hidden_body_geometry_and_visibility_round_trip() {
     assert_eq!(decoded.ir().model.bodies[0].visible, Some(false));
 
     // An explicitly visible body exports unchanged.
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.bodies[0].visible = Some(true);
     let s = export(&ir);
     assert!(s.contains("MANIFOLD_SOLID_BREP"));
@@ -1509,7 +1509,7 @@ pub(crate) fn hidden_body_geometry_and_visibility_round_trip() {
 
 #[test]
 pub(crate) fn body_color_becomes_per_face_styled_item_presentation() {
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.bodies[0].color =
         Some(cadmpeg_ir::topology::Color::new(0.25, 0.5, 0.75, 1.0).expect("valid color"));
     let face_count = ir.model.faces.len();
@@ -1546,7 +1546,7 @@ pub(crate) fn face_appearance_binding_styles_the_advanced_face() {
     use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
     use cadmpeg_ir::ids::AppearanceId;
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let face = ir.model.faces[0].id.clone();
     ir.model.appearances.push(Appearance {
         id: AppearanceId::mint("test:model:appearance#black".to_string())
@@ -1596,7 +1596,7 @@ fn vertex_appearance_binding_styles_the_vertex_point() {
     use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
     use cadmpeg_ir::ids::AppearanceId;
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let vertex = ir.model.vertices[0].id.clone();
     ir.model.appearances.push(Appearance {
         id: AppearanceId::mint("test:model:appearance#vertex".to_string())
@@ -1652,7 +1652,7 @@ fn point_presentation_layer_writes_the_cartesian_point_carrier() {
     use cadmpeg_ir::ids::LayerId;
     use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let point = ir.model.points[0].id.clone();
     ir.model.presentation_layers.push(PresentationLayer {
         id: LayerId::mint("test:model:layer#point".to_string()).expect("identity grammar"),
@@ -1685,7 +1685,7 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
     use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
     use cadmpeg_ir::products::{Occurrence, OccurrenceParent, ProductDefinition};
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let body = ir.model.bodies[0].id.clone();
     let parent_product =
         ProductDefinitionId::mint("test:model:product#parent").expect("identity grammar");
@@ -1822,7 +1822,7 @@ pub(crate) fn face_override_wins_over_body_color_and_body_fills_the_rest() {
     use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
     use cadmpeg_ir::ids::AppearanceId;
 
-    let mut ir = unit_cube();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let face_count = ir.model.faces.len();
     // White body base color.
     ir.model.bodies[0].color =

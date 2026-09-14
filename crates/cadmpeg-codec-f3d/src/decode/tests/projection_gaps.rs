@@ -719,7 +719,7 @@ fn design_projection_gaps_accept_a_dependency_collapsed_through_an_internal_scop
 #[test]
 fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
     let stream = "f3d:test/BulkStream.dat";
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let mut native = F3dNative::default();
     native.design_parameters.push(
         crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
@@ -918,7 +918,7 @@ fn appearance_base_colors_fill_only_uncolored_unambiguous_targets() {
     use cadmpeg_ir::ids::AppearanceId;
     use cadmpeg_ir::topology::Color;
 
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let body = ir.model.bodies[0].id.clone();
     let first_face = ir.model.faces[0].id.clone();
     let second_face = ir.model.faces[1].id.clone();

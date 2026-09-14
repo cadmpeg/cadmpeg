@@ -47,7 +47,7 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
             .for_each(|edge| edge.set_param_range(None).unwrap());
     };
 
-    let mut base = cadmpeg_ir::examples::unit_cube();
+    let mut base = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     prepare(&mut base);
     base.model.bodies[0].transform = None;
     let mut base_bytes = Vec::new();
@@ -67,7 +67,7 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
         .collect();
 
     for (rows, apply) in motions {
-        let mut moved = cadmpeg_ir::examples::unit_cube();
+        let mut moved = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
         prepare(&mut moved);
         moved.model.bodies[0].transform = Some(Transform::affine(rows).expect("affine transform"));
         let mut bytes = Vec::new();

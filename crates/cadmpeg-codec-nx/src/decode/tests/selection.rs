@@ -1330,7 +1330,7 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
         Feature, FeatureDefinition, FeatureId, FeatureOperation, UnresolvedFamily,
     };
 
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let body = ir.model.bodies[0].id.clone();
     ir.model.features.extend([
         Feature {
@@ -1446,7 +1446,7 @@ fn design_intent_losses_do_not_scope_to_retained_base_feature_alone() {
         BodySelection, Feature, FeatureDefinition, FeatureId, FeatureOperation,
     };
 
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let body = ir.model.bodies[0].id.clone();
     ir.model.features.extend([
         Feature {

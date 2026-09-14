@@ -554,7 +554,11 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
         native_ref: None,
     };
     let mut ir = CadIr::empty();
-    let mut body_record = cadmpeg_ir::examples::unit_cube().model.bodies.remove(0);
+    let mut body_record = cadmpeg_ir::examples::unit_cube()
+        .expect("unit cube fixture is admitted")
+        .model
+        .bodies
+        .remove(0);
     body_record.id = body.clone();
     ir.model.bodies.push(body_record);
     ir.model.features = vec![

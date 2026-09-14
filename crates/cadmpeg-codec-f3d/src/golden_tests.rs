@@ -264,7 +264,7 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
 }
 
 fn encoder_generated_unit_cube() -> Vec<u8> {
-    let ir = examples::unit_cube();
+    let ir = examples::unit_cube().expect("unit cube fixture is admitted");
     let mut bytes = Vec::new();
     F3dCodec
         .encode(&ir, &mut bytes)

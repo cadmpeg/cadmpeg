@@ -110,7 +110,7 @@ fn validation_accepts_class_410_component_insert_identity_frame() {
         });
     }
 
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     {
         let mut native = f3d_native_mut(&mut ir);
         native.design_record_headers.extend([
@@ -192,7 +192,7 @@ fn validation_accepts_only_the_class_397_symmetric_extent_frame() {
             }));
         })
         .unwrap();
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     {
         let mut native = f3d_native_mut(&mut ir);
         for record_index in [11, 22, 33, 44, 55, 66, 77, 88, 3970] {
@@ -330,7 +330,7 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
         .unwrap()],
         ..crate::native::F3dNative::default()
     };
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     native.store(ir.native.namespace_mut("f3d")).unwrap();
     let findings = crate::validate::validate_native(&ir);
     assert!(
@@ -414,7 +414,7 @@ fn validation_accepts_carrier_local_component_references() {
         )
         .unwrap()
     };
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     {
         let mut native = f3d_native_mut(&mut ir);
         native.design_component_occurrences.extend([
@@ -442,7 +442,7 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
     };
 
     let stream = "f3d:Design/BulkStream.dat";
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let mut scopes = Vec::new();
     let mut headers = Vec::new();
     let mut recipes = Vec::new();
@@ -604,7 +604,7 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
     use crate::records::DesignRecordHeader;
 
     let stream = "f3d:Design/BulkStream.dat";
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let mut scope = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#10"),
         crate::records::feature::DesignFeatureKind::Hole,
@@ -750,7 +750,7 @@ fn validation_checks_pipe_path_group_roles() {
 
     let stream = "f3d:Design/BulkStream.dat";
     let scope_id = format!("{stream}:design-parameter-scope#10");
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let mut scope = DesignParameterScope::empty(
         &scope_id,
         crate::records::feature::DesignFeatureKind::Pipe,
@@ -1117,7 +1117,7 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
     use crate::records::{DesignParameterCompanion, DesignParameterOwner, DesignRecordHeader};
 
     const DESIGN_STREAM: &str = "Design/BulkStream.dat";
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let owned_parameter =
         crate::records::DesignParameter::try_from(crate::records::DesignParameterDraft {
             id: crate::ids::native_design_parameter_id(DESIGN_STREAM, 101),
@@ -1250,7 +1250,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
     };
     use crate::records::topology::{DesignConstructionOperandGroup, DesignSketchProfileOperand};
 
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let profile = DesignSketchProfileOperand::try_new(
         crate::records::topology::DesignSketchProfileOperandDraft {
             scope_reference_ordinal: 0,
@@ -1424,7 +1424,7 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
     use crate::records::DesignRecordHeader;
 
     let stream = "f3d:Design/BulkStream.dat";
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let group = DesignConstructionOperandGroup::try_from(
         crate::records::topology::DesignConstructionOperandGroupDraft {
             id: format!("{stream}:operand-group#100"),
@@ -1636,7 +1636,7 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
         },
     )
     .unwrap();
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     {
         let mut native = f3d_native_mut(&mut ir);
         native.design_construction_operand_groups.push(group);

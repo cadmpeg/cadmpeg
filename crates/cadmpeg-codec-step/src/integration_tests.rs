@@ -135,7 +135,7 @@ fn pmi_pipeline_composes_semantic_presentation_dimension_datum_and_tolerance_ent
 
 #[test]
 fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_strict_output() {
-    let ir = unit_cube();
+    let ir = unit_cube().expect("unit cube fixture is admitted");
     for schema in [
         StepSchema::Ap203Edition1,
         StepSchema::Ap203Edition2,

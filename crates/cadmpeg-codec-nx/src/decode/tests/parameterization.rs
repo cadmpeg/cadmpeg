@@ -667,7 +667,7 @@ fn decode_completes_one_non_sentinel_ext11_uv_lane_analytically() {
 
 #[test]
 fn completed_intersection_support_lane_attaches_after_topology_emission() {
-    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let edge = cadmpeg_ir::ids::EdgeId::mint("synthetic:cube:edge#0").expect("identity grammar");
     let target_index = ir
         .model
