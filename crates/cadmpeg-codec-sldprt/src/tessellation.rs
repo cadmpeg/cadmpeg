@@ -26,6 +26,35 @@ const EPS_CYLINDER_ANGLE: f64 = 1.0e-12;
 const DISPLAY_QUANTIZATION_ULPS: f64 = 8.0;
 const MAX_PLANAR_TRIM_ARC_SEGMENTS: usize = 4096;
 const MIN_TESSELLATION_NORMAL_ALIGNMENT: f64 = 1.0 - 1.0e-4;
+
+/// The evaluation tolerance of one face in the display lane.
+///
+/// The display lane quantizes coordinates to `f32`, so a tolerance below
+/// [`EPS_DISPLAY_QUANTIZATION`] states a resolution the lane does not carry.
+/// [`FaceEvaluationTolerance::of`] is the only constructor: a stated tolerance
+/// under that bound is refused, so no stated value is floored, and a face that
+/// states no tolerance evaluates at the bound.
+#[derive(Debug, Clone, Copy)]
+struct FaceEvaluationTolerance(f64);
+
+impl FaceEvaluationTolerance {
+    /// The evaluation tolerance of `face`, or `None` when its stated
+    /// tolerance is finer than the display lane resolves. Callers validate
+    /// every face before evaluating any trim, so this `None` cannot silently
+    /// discard a source face during assignment.
+    fn of(face: &cadmpeg_ir::topology::Face) -> Option<Self> {
+        let Some(stated) = face.tolerance else {
+            return Some(Self(EPS_DISPLAY_QUANTIZATION));
+        };
+        (stated.get() >= EPS_DISPLAY_QUANTIZATION).then_some(Self(stated.get()))
+    }
+
+    /// The tolerance value.
+    fn get(self) -> f64 {
+        self.0
+    }
+}
+
 const FACE_TESSELLATION_CLASS: &[u8] = b"uoTempFaceTessData_c";
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -481,11 +510,24 @@ pub(crate) fn section_display_faces(
         let Some(tables) = parse_table_sequence(payload, start, limit)? else {
             continue;
         };
-        if !tables.first().is_some_and(|(_, _, mesh)| {
-            usize::try_from(triangle_count).ok() == Some(mesh.triangle_count())
-                && usize::try_from(strip_count).ok() == Some(mesh.strip_count())
-        }) {
-            continue;
+        // The face header states the mesh of its first table. A disagreement is
+        // a contradiction inside bytes that are present, so it takes the same
+        // disposition as a lane disagreement inside the same table.
+        let [(table_start, _, first_mesh), ..] = tables.as_slice() else {
+            return Err(cadmpeg_core::CodecError::malformed(format_args!(
+                "sldprt display-face header at byte {header} states no table"
+            )));
+        };
+        let parsed_triangles = first_mesh.triangle_count();
+        let parsed_strips = first_mesh.strip_count();
+        if usize::try_from(triangle_count).ok() != Some(parsed_triangles)
+            || usize::try_from(strip_count).ok() != Some(parsed_strips)
+        {
+            return Err(cadmpeg_core::CodecError::malformed(format_args!(
+                "sldprt display-face table at byte {table_start}: header states {triangle_count} \
+                 triangle(s) and {strip_count} strip(s); the parsed mesh has {parsed_triangles} \
+                 triangle(s) and {parsed_strips} strip(s)"
+            )));
         }
         for (start, end, mesh) in tables {
             let (Some(table), Some(metadata)) =
@@ -715,6 +757,18 @@ struct SurfaceCandidate<'a> {
 pub(crate) fn assign_unique_surface_owners(
     model: &mut cadmpeg_ir::document::Model,
 ) -> Result<Vec<String>, cadmpeg_core::CodecError> {
+    for face in &model.faces {
+        if let Some(stated) = face.tolerance {
+            if stated.get() < EPS_DISPLAY_QUANTIZATION {
+                return Err(cadmpeg_core::CodecError::malformed(format_args!(
+                    "sldprt face {} evaluation tolerance {} is below display quantization floor {}",
+                    face.id,
+                    stated.get(),
+                    EPS_DISPLAY_QUANTIZATION
+                )));
+            }
+        }
+    }
     let surfaces = model
         .surfaces
         .iter()
@@ -1612,10 +1666,7 @@ fn planar_trim(
     curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
 ) -> Option<PlanarTrim> {
     let frame = plane_frame(surface.solved()?)?;
-    let tolerance = face
-        .tolerance
-        .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get)
-        .max(EPS_DISPLAY_QUANTIZATION);
+    let tolerance = FaceEvaluationTolerance::of(face)?.get();
     let coordinate_scale = points
         .values()
         .flat_map(|point| [point.x.abs(), point.y.abs(), point.z.abs()])
@@ -1768,10 +1819,7 @@ fn planar_hole_trim(
     curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
 ) -> Option<PlanarTrim> {
     let frame = plane_frame(surface.solved()?)?;
-    let tolerance = face
-        .tolerance
-        .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get)
-        .max(EPS_DISPLAY_QUANTIZATION);
+    let tolerance = FaceEvaluationTolerance::of(face)?.get();
     let face_loops = face
         .loops
         .iter()
@@ -1829,10 +1877,7 @@ fn cylindrical_trim(
     if loop_.face != face.id || loop_.coedges().is_empty() || loop_.vertices().next().is_some() {
         return None;
     }
-    let tolerance = face
-        .tolerance
-        .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get)
-        .max(EPS_DISPLAY_QUANTIZATION);
+    let tolerance = FaceEvaluationTolerance::of(face)?.get();
     let mut axial_bounds = None::<(f64, f64)>;
     for coedge_id in loop_.coedges() {
         let coedge = *coedges.get(coedge_id)?;
@@ -1945,10 +1990,7 @@ fn conical_trim(
     if loop_.face != face.id || loop_.coedges().is_empty() || loop_.vertices().next().is_some() {
         return None;
     }
-    let tolerance = face
-        .tolerance
-        .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get)
-        .max(EPS_DISPLAY_QUANTIZATION);
+    let tolerance = FaceEvaluationTolerance::of(face)?.get();
     let mut axial_bounds = None::<(f64, f64)>;
     let mut angles = Vec::new();
     for coedge_id in loop_.coedges() {

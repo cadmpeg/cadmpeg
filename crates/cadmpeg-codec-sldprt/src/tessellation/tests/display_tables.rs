@@ -154,3 +154,28 @@ fn a_strip_span_past_the_vertex_lane_refuses_the_recognised_table() {
         "{text}"
     );
 }
+
+#[test]
+fn a_declared_face_count_disagreement_refuses_the_display_face() {
+    // The face header states one strip and one triangle for the table that
+    // follows. A header stating two triangles over the same table contradicts
+    // bytes that are present, so the table is refused, not skipped.
+    let mut payload = Vec::new();
+    class(&mut payload, "uoTempFaceTessData_c", &[]);
+    payload.extend(2_u32.to_le_bytes());
+    payload.extend(1_u32.to_le_bytes());
+    payload.extend(table());
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x41, "Contents/DisplayLists", &payload));
+    let error = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect_err("a display-face count disagreement refuses the decode");
+    let text = error.to_string();
+    assert!(
+        text.contains("sldprt display-face table at byte")
+            && text.contains("header states 2 triangle(s) and 1 strip(s)")
+            && text.contains("parsed mesh has 1 triangle(s) and 1 strip(s)"),
+        "{text}"
+    );
+}
