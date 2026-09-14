@@ -208,7 +208,20 @@ struct HomogeneousBezierSpan {
     controls: Vec<[f64; 4]>,
 }
 
-type HomogeneousBezierSplit = (Vec<[f64; 4]>, Vec<[f64; 4]>);
+struct HomogeneousBezierSplit {
+    left: Vec<[f64; 4]>,
+    point: [f64; 4],
+    right_reversed: Vec<[f64; 4]>,
+}
+
+impl HomogeneousBezierSplit {
+    fn into_polygons(mut self) -> (Vec<[f64; 4]>, Vec<[f64; 4]>) {
+        self.left.push(self.point);
+        self.right_reversed.push(self.point);
+        self.right_reversed.reverse();
+        (self.left, self.right_reversed)
+    }
+}
 
 fn insert_homogeneous_knot(
     degree: usize,
@@ -456,30 +469,44 @@ fn split_homogeneous_bezier(
     controls: &[[f64; 4]],
     parameter: f64,
 ) -> Option<HomogeneousBezierSplit> {
-    if controls.is_empty() || !parameter.is_finite() || !(0.0..=1.0).contains(&parameter) {
+    if !parameter.is_finite() || !(0.0..=1.0).contains(&parameter) {
         return None;
     }
-    let mut levels = vec![controls.to_vec()];
-    while levels.last()?.len() > 1 {
-        levels.push(
-            levels
-                .last()?
-                .windows(2)
-                .map(|pair| {
-                    std::array::from_fn(|axis| {
-                        (1.0 - parameter) * pair[0][axis] + parameter * pair[1][axis]
-                    })
-                })
-                .collect(),
-        );
+    split_homogeneous_bezier_with(controls, |left, right| {
+        std::array::from_fn(|axis| (1.0 - parameter) * left[axis] + parameter * right[axis])
+    })
+}
+
+fn split_homogeneous_bezier_midpoint(controls: &[[f64; 4]]) -> Option<HomogeneousBezierSplit> {
+    split_homogeneous_bezier_with(controls, |left, right| {
+        std::array::from_fn(|axis| 0.5 * (left[axis] + right[axis]))
+    })
+}
+
+fn split_homogeneous_bezier_with(
+    controls: &[[f64; 4]],
+    blend: impl Fn([f64; 4], [f64; 4]) -> [f64; 4],
+) -> Option<HomogeneousBezierSplit> {
+    let (&first, rest) = controls.split_first()?;
+    let mut first = first;
+    let mut rest = rest.to_vec();
+    let mut left = Vec::with_capacity(controls.len());
+    let mut right = Vec::with_capacity(controls.len());
+    while let Some((&second, tail)) = rest.split_first() {
+        left.push(first);
+        right.push(tail.last().copied().unwrap_or(second));
+        first = blend(first, second);
+        rest = rest
+            .iter()
+            .zip(tail)
+            .map(|(&first, &second)| blend(first, second))
+            .collect();
     }
-    let left = levels.iter().map(|level| level[0]).collect();
-    let right = levels
-        .iter()
-        .rev()
-        .map(|level| *level.last().expect("nonempty de Casteljau level"))
-        .collect();
-    Some((left, right))
+    Some(HomogeneousBezierSplit {
+        left,
+        point: first,
+        right_reversed: right,
+    })
 }
 
 fn restrict_homogeneous_bezier(
@@ -493,15 +520,15 @@ fn restrict_homogeneous_bezier(
         return Some(restricted);
     }
     if start == end {
-        let point = split_homogeneous_bezier(controls, start)?.0.pop()?;
+        let point = split_homogeneous_bezier(controls, start)?.point;
         return alloc_filled(controls.len(), point, "ir_bezier_collapsed_controls").ok();
     }
-    let left = split_homogeneous_bezier(controls, end)?.0;
+    let left = split_homogeneous_bezier(controls, end)?.into_polygons().0;
     if start == 0.0 {
         return Some(left);
     }
     let relative_start = start / end;
-    split_homogeneous_bezier(&left, relative_start).map(|(_, right)| right)
+    split_homogeneous_bezier(&left, relative_start).map(|split| split.into_polygons().1)
 }
 
 fn binomial_coefficient(degree: usize, index: usize) -> f64 {
@@ -760,24 +787,9 @@ fn split_rational_surface_patch(
         } else {
             patch.controls[line * (patch.v_degree + 1)..(line + 1) * (patch.v_degree + 1)].to_vec()
         };
-        let mut levels = vec![controls];
-        while levels.last()?.len() > 1 {
-            levels.push(
-                levels
-                    .last()?
-                    .windows(2)
-                    .map(|pair| std::array::from_fn(|axis| 0.5 * (pair[0][axis] + pair[1][axis])))
-                    .collect(),
-            );
-        }
-        first_lines.push(levels.iter().map(|level| level[0]).collect::<Vec<_>>());
-        second_lines.push(
-            levels
-                .iter()
-                .rev()
-                .map(|level| *level.last().expect("nonempty de Casteljau level"))
-                .collect::<Vec<_>>(),
-        );
+        let (first, second) = split_homogeneous_bezier_midpoint(&controls)?.into_polygons();
+        first_lines.push(first);
+        second_lines.push(second);
     }
     let assemble = |lines: Vec<Vec<[f64; 4]>>| {
         if split_u {
