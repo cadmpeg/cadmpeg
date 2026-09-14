@@ -819,7 +819,8 @@ pub(in super::super) fn schema_feature_definition(
         ));
     }
     if schema_class.and_then(schema_operation_kind).is_none() {
-        if let Some(definition) = named_or_referenced_feature_definition(scan, ir, feature_id, kind)
+        if let Some(definition) =
+            named_or_referenced_feature_definition(scan, ir, feature_id, kind)?
         {
             return Ok(definition);
         }

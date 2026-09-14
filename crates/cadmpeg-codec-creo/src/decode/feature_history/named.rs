@@ -9,6 +9,8 @@ use super::{
     preceding_features_establish_body, schema_feature_definition, section_sweep_boolean_operation,
     sweep_output_kind, sweep_solid, thicken_feature_definition,
 };
+use cadmpeg_core::CodecError;
+
 use crate::container::ContainerScan;
 use crate::decode::sketch_transfer::recipe::{
     current_feature_operation, feature_recipe_effect, feature_revolution_extent,
@@ -27,6 +29,31 @@ use cadmpeg_ir::topology::BodyKind;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(in super::super) fn named_feature_definition(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+    kind: &str,
+) -> Result<Option<IrFeatureDefinition>, CodecError> {
+    if let Some(definition) = name_only_feature_definition(scan, ir, feature_id, kind) {
+        return Ok(Some(definition));
+    }
+    let schema_class = match kind {
+        "Datum Plane" | "Bezugsebene" => SchemaClass::DatumPlane,
+        "Hole" => SchemaClass::Hole,
+        "Round" | "Rundung" => SchemaClass::Round,
+        "Chamfer" => SchemaClass::Chamfer,
+        "Draft" | "Schräge" => SchemaClass::Draft,
+        _ => return Ok(None),
+    };
+    schema_feature_definition(scan, ir, feature_id, Some(schema_class), kind).map(Some)
+}
+
+/// The definition a feature name alone establishes, before the schema class
+/// is consulted.
+///
+/// Every answer here comes from the name and the scan, so the function has no
+/// failure of its own; `None` means the name establishes nothing.
+fn name_only_feature_definition(
     scan: &ContainerScan,
     ir: &CadIr,
     feature_id: u32,
@@ -124,15 +151,7 @@ pub(in super::super) fn named_feature_definition(
             scan, ir, feature_id, op,
         ));
     }
-    let schema_class = match kind {
-        "Datum Plane" | "Bezugsebene" => SchemaClass::DatumPlane,
-        "Hole" => SchemaClass::Hole,
-        "Round" | "Rundung" => SchemaClass::Round,
-        "Chamfer" => SchemaClass::Chamfer,
-        "Draft" | "Schräge" => SchemaClass::Draft,
-        _ => return None,
-    };
-    schema_feature_definition(scan, ir, feature_id, Some(schema_class), kind).ok()
+    None
 }
 
 pub(in super::super) fn named_or_referenced_feature_definition(
@@ -140,20 +159,22 @@ pub(in super::super) fn named_or_referenced_feature_definition(
     ir: &CadIr,
     feature_id: u32,
     kind: &str,
-) -> Option<IrFeatureDefinition> {
-    named_feature_definition(scan, ir, feature_id, kind).or_else(|| {
-        if kind == "Native Feature"
-            && current_feature_operation(&scan.features.operations, feature_id)
-                .is_some_and(|operation| operation.display_state_conflict)
-        {
-            return None;
-        }
-        feature_reference_name(scan, feature_id)
-            .filter(|reference_name| *reference_name != kind)
-            .and_then(|reference_name| {
-                named_feature_definition(scan, ir, feature_id, &reference_name)
-            })
-    })
+) -> Result<Option<IrFeatureDefinition>, CodecError> {
+    if let Some(definition) = named_feature_definition(scan, ir, feature_id, kind)? {
+        return Ok(Some(definition));
+    }
+    if kind == "Native Feature"
+        && current_feature_operation(&scan.features.operations, feature_id)
+            .is_some_and(|operation| operation.display_state_conflict)
+    {
+        return Ok(None);
+    }
+    let Some(reference_name) =
+        feature_reference_name(scan, feature_id).filter(|reference_name| *reference_name != kind)
+    else {
+        return Ok(None);
+    };
+    named_feature_definition(scan, ir, feature_id, &reference_name)
 }
 
 pub(in super::super) fn extrude_feature_definition_with_profile(

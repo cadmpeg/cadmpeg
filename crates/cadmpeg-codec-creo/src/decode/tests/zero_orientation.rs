@@ -709,6 +709,7 @@ fn named_revolve_transfers_profile_axis() {
             op: BooleanOp::NewBody,
         },
     )) = named_feature_definition(&scan, &ir, 822, "Revolve")
+        .expect("a named revolve states no blank key")
     else {
         panic!("named revolve axis");
     };
@@ -735,6 +736,7 @@ fn named_extrude_with_evaluated_body_is_new_body() {
     let Some(cadmpeg_ir::features::FeatureDefinition::Operation(
         cadmpeg_ir::features::FeatureOperation::Extrude { op, solid, .. },
     )) = named_feature_definition(&scan, &ir, 822, "Extrude")
+        .expect("a named extrude states no blank key")
     else {
         panic!("named extrude definition");
     };
@@ -805,11 +807,15 @@ fn conflicting_section_sweep_names_remain_unresolved() {
         "Revolve 822",
     ] {
         assert!(
-            named_feature_definition(&scan, &ir, 822, kind).is_none(),
+            named_feature_definition(&scan, &ir, 822, kind)
+                .expect("a conflicting name states no blank key")
+                .is_none(),
             "conflicting section-sweep name projected: {kind}"
         );
     }
-    assert!(named_or_referenced_feature_definition(&scan, &ir, 822, "Native Feature").is_none());
+    assert!(named_or_referenced_feature_definition(&scan, &ir, 822, "Native Feature")
+        .expect("a native feature states no blank key")
+        .is_none());
 }
 
 #[test]
@@ -838,7 +844,9 @@ fn conflicting_display_states_do_not_select_reference_family() {
         });
     let ir = CadIr::empty();
 
-    assert!(named_or_referenced_feature_definition(&scan, &ir, 822, "Native Feature").is_none());
+    assert!(named_or_referenced_feature_definition(&scan, &ir, 822, "Native Feature")
+        .expect("a native feature states no blank key")
+        .is_none());
 }
 
 #[test]

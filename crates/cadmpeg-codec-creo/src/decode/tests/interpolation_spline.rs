@@ -1017,10 +1017,10 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
     for kind in ["Revolve", "Revolve 2"] {
         assert!(matches!(
             named_feature_definition(&scan, &ir, 822, kind),
-            Some(IrFeatureDefinition::Operation(IrFeatureOperation::Revolve {
+            Ok(Some(IrFeatureDefinition::Operation(IrFeatureOperation::Revolve {
                 ref construction,
                 op: BooleanOp::Unresolved,
-            })) if matches!(construction.profile(), Some(PlanarProfileRef::Native(profile))
+            }))) if matches!(construction.profile(), Some(PlanarProfileRef::Native(profile))
                 if profile == "creo:featdefs:sketch#822")
                 && construction.axis().is_none()
                 && construction.extent().is_none()
@@ -1035,10 +1035,10 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
         });
     assert!(matches!(
         named_feature_definition(&scan, &ir, 822, "Revolve"),
-        Some(IrFeatureDefinition::Operation(IrFeatureOperation::Revolve {
+        Ok(Some(IrFeatureDefinition::Operation(IrFeatureOperation::Revolve {
             ref construction,
             ..
-        })) if matches!(construction.extent(), Some(cadmpeg_ir::features::RevolveExtent::OneSided {
+        }))) if matches!(construction.extent(), Some(cadmpeg_ir::features::RevolveExtent::OneSided {
                     termination: AngularTermination::Angle { angle: value },
                 }) if (value.get() - std::f64::consts::TAU).abs() < EPS_FULL_TURN)
     ));
@@ -1137,7 +1137,9 @@ fn named_linear_sweep_reuses_materialized_cap_extent() {
                     },
             },
         ..
-    }) = named_feature_definition(&scan, &ir, 7, "Protrusion").expect("named sweep")
+    }) = named_feature_definition(&scan, &ir, 7, "Protrusion")
+        .expect("a named sweep states no blank key")
+        .expect("named sweep")
     else {
         panic!("named sweep did not resolve the cap extent");
     };

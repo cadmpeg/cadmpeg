@@ -200,16 +200,15 @@ pub(super) fn emit_model_features(
                         )
                     })
                     .or_else(|| {
-                        current_operation
-                            .and_then(|operation| {
-                                named_or_referenced_feature_definition(
-                                    scan,
-                                    ir,
-                                    operation.feature_id,
-                                    operation.kind.as_str(),
-                                )
-                            })
-                            .map(Ok)
+                        current_operation.and_then(|operation| {
+                            named_or_referenced_feature_definition(
+                                scan,
+                                ir,
+                                operation.feature_id,
+                                operation.kind.as_str(),
+                            )
+                            .transpose()
+                        })
                     })
                     .or_else(|| {
                         unbounded_feature_plane_definition(scan, ir, operation.feature_id).map(Ok)
@@ -400,7 +399,7 @@ pub(super) fn emit_model_features(
         let parameters = feature_parameters(scan, feature_id);
         let mut source_properties = feature_source_properties(scan, feature_id);
         let definition = schema_class.map_or_else(
-            || match named_feature_definition(scan, ir, feature_id, kind)
+            || match named_feature_definition(scan, ir, feature_id, kind)?
                 .or_else(|| unbounded_feature_plane_definition(scan, ir, feature_id))
             {
                 Some(definition) => Ok(definition),
