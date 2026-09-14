@@ -3025,9 +3025,13 @@ fn write_face_list(
     disc: u16,
 ) -> Result<u16, CodecError> {
     let chunks = owners.chunks(5).collect::<Vec<_>>();
-    let attrs = (0..chunks.len().max(1))
-        .map(|_| take_attr(next))
-        .collect::<Result<Vec<_>, _>>()?;
+    // The list always states a head node: an empty owner run writes the one
+    // node that names no face. The head is a value, so the answer is not an
+    // index into a list whose length the function would have to floor first.
+    let head = take_attr(next)?;
+    let attrs = std::iter::once(Ok(head))
+        .chain((1..chunks.len()).map(|_| take_attr(next)))
+        .collect::<Result<Vec<_>, CodecError>>()?;
     for (index, attr) in attrs.iter().enumerate() {
         let mut refs = [0u16; 6];
         refs[0] = attrs.get(index + 1).copied().unwrap_or(0);
@@ -3036,7 +3040,7 @@ fn write_face_list(
         }
         entity51(out, 2, *attr, disc, &refs);
     }
-    Ok(attrs[0])
+    Ok(head)
 }
 
 fn entity51(out: &mut Vec<u8>, flags: u32, attr: u16, disc: u16, refs: &[u16; 6]) {
