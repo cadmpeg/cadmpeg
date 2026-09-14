@@ -217,13 +217,6 @@ impl StaticIdentityComponent {
 pub struct IdentityComponent(std::borrow::Cow<'static, str>);
 
 impl IdentityComponent {
-    /// Admit component text from a runtime source.
-    #[must_use]
-    pub fn new(value: impl Into<String>) -> Option<Self> {
-        let value = value.into();
-        valid_component_text(&value).then_some(Self(std::borrow::Cow::Owned(value)))
-    }
-
     /// Admit component text and retain a useful error for the source route.
     pub fn try_new(value: impl Into<String>) -> Result<Self, IdentityError> {
         let value = value.into();
@@ -294,13 +287,6 @@ impl StaticIdentityKey {
 pub struct IdentityKey(std::borrow::Cow<'static, str>);
 
 impl IdentityKey {
-    /// Admit key text from a runtime source.
-    #[must_use]
-    pub fn new(value: impl Into<String>) -> Option<Self> {
-        let value = value.into();
-        valid_key_text(&value).then_some(Self(std::borrow::Cow::Owned(value)))
-    }
-
     /// Admit key text and retain the rejected value for the source route.
     pub fn try_new(value: impl Into<String>) -> Result<Self, IdentityError> {
         let value = value.into();
@@ -356,9 +342,7 @@ impl StaticIdentityNamespace {
         scope: &'static str,
         kind: &'static str,
     ) -> Option<Self> {
-        if valid_component_text(format)
-            && valid_component_text(scope)
-            && valid_component_text(kind)
+        if valid_component_text(format) && valid_component_text(scope) && valid_component_text(kind)
         {
             Some(Self {
                 format,
@@ -451,15 +435,20 @@ impl IdentityNamespace {
 }
 
 /// Build a checked namespace from three literal components.
+///
+/// ```compile_fail
+/// # fn main() {
+/// let _ = cadmpeg_ir::identity_namespace!("bad#format", "scope", "kind");
+/// # }
+/// ```
 #[macro_export]
 macro_rules! identity_namespace {
     ($format:literal, $scope:literal, $kind:literal $(,)?) => {{
-        const STATIC_IDENTITY_NAMESPACE: $crate::ids::StaticIdentityNamespace = match
-            $crate::ids::StaticIdentityNamespace::new($format, $scope, $kind)
-        {
-            Some(namespace) => namespace,
-            None => panic!("identity namespace literal has invalid grammar"),
-        };
+        const STATIC_IDENTITY_NAMESPACE: $crate::ids::StaticIdentityNamespace =
+            match $crate::ids::StaticIdentityNamespace::new($format, $scope, $kind) {
+                Some(namespace) => namespace,
+                None => panic!("identity namespace literal has invalid grammar"),
+            };
         $crate::ids::IdentityNamespace::from_static(STATIC_IDENTITY_NAMESPACE)
     }};
 }
@@ -468,12 +457,11 @@ macro_rules! identity_namespace {
 #[macro_export]
 macro_rules! identity_component {
     ($value:literal) => {{
-        const STATIC_IDENTITY_COMPONENT: $crate::ids::StaticIdentityComponent = match
-            $crate::ids::StaticIdentityComponent::new($value)
-        {
-            Some(component) => component,
-            None => panic!("identity component literal has invalid grammar"),
-        };
+        const STATIC_IDENTITY_COMPONENT: $crate::ids::StaticIdentityComponent =
+            match $crate::ids::StaticIdentityComponent::new($value) {
+                Some(component) => component,
+                None => panic!("identity component literal has invalid grammar"),
+            };
         $crate::ids::IdentityComponent::from_static(STATIC_IDENTITY_COMPONENT)
     }};
 }
@@ -482,12 +470,11 @@ macro_rules! identity_component {
 #[macro_export]
 macro_rules! identity_key {
     ($value:literal) => {{
-        const STATIC_IDENTITY_KEY: $crate::ids::StaticIdentityKey = match
-            $crate::ids::StaticIdentityKey::new($value)
-        {
-            Some(key) => key,
-            None => panic!("identity key literal has invalid grammar"),
-        };
+        const STATIC_IDENTITY_KEY: $crate::ids::StaticIdentityKey =
+            match $crate::ids::StaticIdentityKey::new($value) {
+                Some(key) => key,
+                None => panic!("identity key literal has invalid grammar"),
+            };
         $crate::ids::IdentityKey::from_static(STATIC_IDENTITY_KEY)
     }};
 }

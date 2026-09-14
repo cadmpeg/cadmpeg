@@ -307,15 +307,20 @@ impl StreamName {
 }
 
 /// Build a checked stream name from a literal.
+///
+/// ```compile_fail
+/// # fn main() {
+/// let _ = cadmpeg_ir::stream_name!("");
+/// # }
+/// ```
 #[macro_export]
 macro_rules! stream_name {
     ($value:literal) => {{
-        const STATIC_STREAM_NAME: $crate::StaticStreamName = match
-            $crate::StaticStreamName::new($value)
-        {
-            Some(name) => name,
-            None => panic!("a source stream name cannot be empty"),
-        };
+        const STATIC_STREAM_NAME: $crate::StaticStreamName =
+            match $crate::StaticStreamName::new($value) {
+                Some(name) => name,
+                None => panic!("a source stream name cannot be empty"),
+            };
         $crate::StreamName::from_static(STATIC_STREAM_NAME)
     }};
 }

@@ -556,8 +556,16 @@ fn disagreement(path: &str, detail: &str) -> String {
 /// in a panic or a report.
 fn truncate(value: &Value) -> String {
     let text = value.to_string();
-    if text.len() > 120 {
-        format!("{}…", &text[..120])
+    let Some((end, last)) = text
+        .char_indices()
+        .take_while(|(index, _)| *index < 120)
+        .last()
+    else {
+        return text;
+    };
+    let end = end + last.len_utf8();
+    if end < text.len() {
+        format!("{}…", &text[..end])
     } else {
         text
     }
@@ -566,6 +574,8 @@ fn truncate(value: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use std::fmt::Write as _;
+
+    use serde_json::Value;
 
     use super::{
         fixed_ascii_card_texts_agree, floats_agree, is_fixed_ascii_card_text, texts_agree,
@@ -665,6 +675,14 @@ mod tests {
             let error = agree(left, right).expect_err("an exact-match field must be reported");
             assert!(error.contains(expected_path), "{left} vs {right}: {error}");
         }
+    }
+
+    #[test]
+    fn a_long_unicode_string_difference_has_a_bounded_error() {
+        let left = Value::String("é".repeat(100));
+        let right = Value::String("ê".repeat(100));
+        let error = super::values_agree(&left, &right).expect_err("strings differ");
+        assert!(error.contains("…"), "{error}");
     }
 
     #[test]

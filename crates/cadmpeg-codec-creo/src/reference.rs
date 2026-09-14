@@ -295,14 +295,14 @@ fn arc_z_coordinate(data: &[u8], offset: usize, cache: &ScalarCache) -> Option<(
         .or_else(|| scalar::decode_model_reference_coordinate(data, offset, cache))
 }
 
-fn scalar_suffix(row: &[u8], count: usize, cache: &ScalarCache) -> Option<Vec<f64>> {
+fn scalar_suffix<const COUNT: usize>(row: &[u8], cache: &ScalarCache) -> Option<[f64; COUNT]> {
     let mut candidate = None;
     for start in 0..row.len() {
         let Some(values) = (|| {
             let mut cursor = crate::psb::Cursor::at(row, start);
-            let mut values = Vec::with_capacity(count);
-            while values.len() < count {
-                values.push(cursor.take_with(|data, pos| coordinate(data, pos, cache))?);
+            let mut values = [0.0; COUNT];
+            for value in &mut values {
+                *value = cursor.take_with(|data, pos| coordinate(data, pos, cache))?;
             }
             (cursor.pos() == row.len() && values.iter().all(|value| value.is_finite()))
                 .then_some(values)
@@ -436,11 +436,16 @@ fn conic_local_system(body: &[u8], cache: &ScalarCache) -> Option<[f64; 12]> {
         let run = cursor.take_with(|data, pos| conic_frame_run(data, pos, cache))?;
         values.extend_from_slice(run.as_slice());
     }
-    (cursor.pos() == body.len()
-        && values.len() == 12
-        && values.iter().all(|value| value.is_finite()))
-    .then(|| values.try_into().ok())
-    .flatten()
+    if cursor.pos() != body.len()
+        || values.len() != 12
+        || !values.iter().all(|value| value.is_finite())
+    {
+        return None;
+    }
+    let [a0, a1, a2, b0, b1, b2, c0, c1, c2, x, y, z] = values.as_slice() else {
+        return None;
+    };
+    Some([*a0, *a1, *a2, *b0, *b1, *b2, *c0, *c1, *c2, *x, *y, *z])
 }
 
 fn named_conic_local_system(
@@ -837,19 +842,15 @@ pub fn lines(payload: &[u8]) -> Vec<ReferenceLine> {
             if start >= end {
                 continue;
             }
-            let Some(values) = scalar_suffix(&payload[start..end], 6, &cache) else {
-                continue;
-            };
-            let Some(line_start) = values[..3].try_into().ok() else {
-                continue;
-            };
-            let Some(line_end) = values[3..].try_into().ok() else {
+            let Some([first_x, first_y, first_z, last_x, last_y, last_z]) =
+                scalar_suffix::<6>(&payload[start..end], &cache)
+            else {
                 continue;
             };
             result.push(ReferenceLine {
                 kind: ReferenceLineKind::Line,
-                start: line_start,
-                end: line_end,
+                start: [first_x, first_y, first_z],
+                end: [last_x, last_y, last_z],
                 offset: start,
             });
         }

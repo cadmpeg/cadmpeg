@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use super::{format_identity, is_valid_identity, IdentityError, IdentityKey, IdentityNamespace};
+use super::{
+    format_identity, is_valid_identity, IdentityComponent, IdentityError, IdentityKey,
+    IdentityNamespace,
+};
 
 #[test]
 fn three_component_ids_are_valid() {
@@ -207,6 +210,13 @@ fn runtime_namespace_and_key_admission_reports_the_rejected_value() {
         IdentityKey::try_from("a\u{00a0}b"),
         Err(IdentityError::InvalidKey { .. })
     ));
+    assert!(matches!(
+        IdentityComponent::try_from("a:b"),
+        Err(IdentityError::InvalidComponent {
+            label: "component",
+            ..
+        })
+    ));
 }
 
 #[test]
@@ -215,4 +225,51 @@ fn literal_helpers_reject_unicode_whitespace_without_a_runtime_panic() {
     assert!(super::StaticIdentityComponent::new("a\u{3000}b").is_none());
     assert!(super::StaticIdentityNamespace::new("step", "file", "signature").is_some());
     assert!(super::StaticIdentityNamespace::new("step", "bad#scope", "signature").is_none());
+}
+
+#[test]
+fn const_whitespace_grammar_matches_runtime_identity_grammar_for_every_scalar() {
+    let mut component = String::with_capacity(8);
+    let mut identity = String::with_capacity(16);
+    let mut key = String::with_capacity(8);
+
+    for scalar in 0..=0x10_ffff {
+        let Some(character) = char::from_u32(scalar) else {
+            continue;
+        };
+        let is_whitespace = character.is_whitespace();
+
+        component.clear();
+        component.push('a');
+        component.push(character);
+        component.push('b');
+        assert_eq!(
+            super::contains_unicode_whitespace(&component),
+            is_whitespace,
+            "const whitespace parser disagrees for U+{scalar:04X}"
+        );
+
+        identity.clear();
+        identity.push('a');
+        identity.push(character);
+        identity.push_str("b:c:d#key");
+        assert_eq!(
+            super::valid_component_text(&component),
+            super::is_valid_identity(&identity),
+            "namespace grammar disagrees with identity grammar for U+{scalar:04X}"
+        );
+
+        key.clear();
+        key.push('k');
+        key.push(character);
+        key.push('z');
+        identity.clear();
+        identity.push_str("a:b:c#");
+        identity.push_str(&key);
+        assert_eq!(
+            super::valid_key_text(&key),
+            super::is_valid_identity(&identity),
+            "key grammar disagrees with identity grammar for U+{scalar:04X}"
+        );
+    }
 }
