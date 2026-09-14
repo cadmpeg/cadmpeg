@@ -7,7 +7,7 @@ use std::ops::Range;
 
 use crate::chunks::{
     chunk_at, direct_checksum_ranges, verify_checksum, verify_checksum_ranges, ArchiveVersion,
-    BoundedReader, ChecksumStatus, FramingError,
+    BoundedReader, Chunk, ChecksumStatus, FramingError,
 };
 use crate::container::Record;
 use crate::layout::class_uuid_chunk_body as class_uuid_body;
@@ -36,6 +36,34 @@ pub(crate) const OBSOLETE_CUSTOM_MESH_USERDATA: Uuid = Uuid::from_canonical([
 pub(crate) const PER_OBJECT_MESH_PARAMETERS_USERDATA: Uuid = Uuid::from_canonical([
     0xb5, 0x62, 0x8c, 0xa9, 0x82, 0xc4, 0x4c, 0xae, 0x98, 0x83, 0x48, 0x7b, 0x3e, 0x4a, 0xb2, 0x8b,
 ]);
+
+/// Reads the class UUID a `CLASS_UUID` chunk carries.
+///
+/// The specification states the body outright: twenty bytes, the sixteen-byte
+/// UUID and then its checksum. Both facts are proved here, so the answer is the
+/// array the UUID needs and no later read restates the width.
+fn class_uuid_wire(
+    bytes: &[u8],
+    uuid_chunk: &Chunk,
+) -> Result<[u8; class_uuid_body::CRC32], FramingError> {
+    if uuid_chunk.declared_end() - uuid_chunk.body().start != class_uuid_body::LEN {
+        return Err(FramingError::structural(
+            uuid_chunk.header_start,
+            "class UUID chunk must have a 20-byte body",
+        ));
+    }
+    bytes
+        .get(uuid_chunk.body().start..)
+        .and_then(<[u8]>::first_chunk::<{ class_uuid_body::CRC32 }>)
+        .copied()
+        .ok_or_else(|| {
+            FramingError::structural(
+                uuid_chunk.header_start,
+                "class UUID chunk body runs past the archive",
+            )
+        })
+}
+
 const HISTORY_HEADER: u32 = 0x0200_8075;
 const HISTORY_DATA: u32 = 0x0200_8076;
 const HIDDEN_OBJECT_MODE: u8 = 1;
@@ -496,20 +524,11 @@ pub(crate) fn parse_class_wrapper_with_userdata(
         true,
     )?;
     require_long(&uuid_chunk, CLASS_UUID)?;
-    if uuid_chunk.declared_end() - uuid_chunk.body().start != class_uuid_body::LEN {
-        return Err(FramingError::structural(
-            uuid_chunk.header_start,
-            "class UUID chunk must have a 20-byte body",
-        ));
-    }
+    let class_uuid_bytes = class_uuid_wire(bytes, &uuid_chunk)?;
     if let Some(note) = checksum_warning(bytes, &uuid_chunk)? {
         warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, note);
     }
-    let class_uuid = Uuid::from_wire(
-        bytes[uuid_chunk.body().start..uuid_chunk.body().start + class_uuid_body::CRC32]
-            .try_into()
-            .expect("UUID length checked"),
-    );
+    let class_uuid = Uuid::from_wire(class_uuid_bytes);
     if class_uuid == Uuid::nil() {
         if uuid_chunk.next_offset() != wrapper.body().end {
             return Err(FramingError::structural(
@@ -1643,20 +1662,11 @@ pub(crate) fn parse_object_record(
     offset = class.body().start;
     let uuid_chunk = chunk_at(bytes, offset, class.body().end, archive, true)?;
     require_long(&uuid_chunk, CLASS_UUID)?;
-    if uuid_chunk.declared_end() - uuid_chunk.body().start != class_uuid_body::LEN {
-        return Err(FramingError::structural(
-            uuid_chunk.header_start,
-            "class UUID chunk must have a 20-byte body",
-        ));
-    }
+    let class_uuid_bytes = class_uuid_wire(bytes, &uuid_chunk)?;
     if let Some(note) = checksum_warning(bytes, &uuid_chunk)? {
         warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, note);
     }
-    let class_uuid = Uuid::from_wire(
-        bytes[uuid_chunk.body().clone()]
-            .try_into()
-            .expect("UUID length checked"),
-    );
+    let class_uuid = Uuid::from_wire(class_uuid_bytes);
     offset = uuid_chunk.next_offset();
     let data_chunk = chunk_at(bytes, offset, class.body().end, archive, false)?;
     require_long(&data_chunk, CLASS_DATA)?;
