@@ -67,6 +67,20 @@ impl Identity {
         &self.0
     }
 
+    /// Copy the key whose grammar was admitted with this identity.
+    #[must_use]
+    pub fn key(&self) -> IdentityKey {
+        // Admission guarantees exactly one separator and a nonempty key.
+        IdentityKey(std::borrow::Cow::Owned(self.0.split('#').skip(1).collect()))
+    }
+
+    /// Append an admitted tail to this identity's key.
+    #[must_use]
+    pub fn with_key_tail(mut self, tail: &IdentityKeyTail) -> Self {
+        self.0.push_str(tail.as_str());
+        self
+    }
+
     /// Consume the identity into its string.
     #[must_use]
     pub fn into_string(self) -> String {
@@ -287,6 +301,22 @@ impl StaticIdentityKey {
 pub struct IdentityKey(std::borrow::Cow<'static, str>);
 
 impl IdentityKey {
+    /// Construct a key from the two lowercase hexadecimal digits of a byte.
+    #[must_use]
+    pub fn hex_byte(value: u8) -> Self {
+        let mut text = String::with_capacity(2);
+        append_hex_bytes(&mut text, &[value]);
+        Self(std::borrow::Cow::Owned(text))
+    }
+
+    /// Append two lowercase hexadecimal digits for each byte.
+    #[must_use]
+    pub fn with_hex_bytes(self, bytes: &[u8]) -> Self {
+        let mut text = self.0.into_owned();
+        append_hex_bytes(&mut text, bytes);
+        Self(std::borrow::Cow::Owned(text))
+    }
+
     /// Admit key text and retain the rejected value for the source route.
     pub fn try_new(value: impl Into<String>) -> Result<Self, IdentityError> {
         let value = value.into();
@@ -307,6 +337,14 @@ impl IdentityKey {
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+fn append_hex_bytes(text: &mut String, bytes: &[u8]) {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    for byte in bytes {
+        text.push(char::from(DIGITS[usize::from(byte >> 4)]));
+        text.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
     }
 }
 
@@ -724,6 +762,12 @@ macro_rules! id_type {
             #[must_use]
             pub fn as_str(&self) -> &str {
                 self.0.as_str()
+            }
+
+            /// Copy the admitted key.
+            #[must_use]
+            pub fn key(&self) -> $crate::ids::IdentityKey {
+                self.0.key()
             }
         }
 
