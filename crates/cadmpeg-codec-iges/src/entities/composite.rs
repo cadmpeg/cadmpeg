@@ -479,30 +479,43 @@ impl<T> ConcatenatedSegments<T> {
 
 // This conversion consumes the input carrier at the typed construction boundary.
 #[allow(clippy::needless_pass_by_value)]
+/// Reflects a child about its own parameter domain.
+///
+/// Every answer here is either the reversed child or a named cause: the values
+/// read are the child's own stated degree, knots and interval, so a reader that
+/// cannot reflect them states which of them it refused.
 fn reverse_nurbs(
     curve: NurbsCurve,
     interval: [f64; 2],
-) -> Result<Option<(NurbsCurve, [f64; 2])>, NurbsError> {
+) -> Result<(NurbsCurve, [f64; 2]), CompositeCurveError> {
     let Ok(degree) = usize::try_from(curve.degree()) else {
-        return Ok(None);
+        return Err(CompositeCurveError::ReversedChildDegree {
+            degree: curve.degree(),
+        });
     };
     let control_count = curve.control_points().len();
     if curve.knots().iter().any(|knot| !knot.is_finite()) || !knots_nondecreasing(curve.knots()) {
-        return Ok(None);
+        return Err(CompositeCurveError::ReversedChildKnots);
     }
     let [start, end] = interval;
     if !start.is_finite() || !end.is_finite() || start > end {
-        return Ok(None);
+        return Err(CompositeCurveError::ReversedChildInterval { start, end });
     }
     let domain_start = curve.knots()[degree];
     let domain_end = curve.knots()[control_count];
-    if !domain_start.is_finite()
-        || !domain_end.is_finite()
-        || domain_start >= domain_end
-        || start < domain_start
-        || end > domain_end
-    {
-        return Ok(None);
+    if !domain_start.is_finite() || !domain_end.is_finite() || domain_start >= domain_end {
+        return Err(CompositeCurveError::ReversedChildReflectionNonFinite {
+            domain_start,
+            domain_end,
+        });
+    }
+    if start < domain_start || end > domain_end {
+        return Err(CompositeCurveError::ReversedChildIntervalOutsideDomain {
+            start,
+            end,
+            domain_start,
+            domain_end,
+        });
     }
     let sum = domain_start + domain_end;
     let reversed_range = [sum - end, sum - start];
@@ -511,7 +524,10 @@ fn reverse_nurbs(
             .iter()
             .any(|parameter| !parameter.is_finite())
     {
-        return Ok(None);
+        return Err(CompositeCurveError::ReversedChildReflectionNonFinite {
+            domain_start,
+            domain_end,
+        });
     }
     let knots = curve
         .knots()
@@ -520,7 +536,10 @@ fn reverse_nurbs(
         .map(|knot| sum - knot)
         .collect::<Vec<_>>();
     if knots.iter().any(|knot| !knot.is_finite()) {
-        return Ok(None);
+        return Err(CompositeCurveError::ReversedChildReflectionNonFinite {
+            domain_start,
+            domain_end,
+        });
     }
     let reversed = NurbsCurve::from_lanes(
         curve.degree(),
@@ -531,7 +550,7 @@ fn reverse_nurbs(
             .map(|weights| weights.iter().rev().copied().collect()),
         curve.periodic(),
     )?;
-    Ok(Some((reversed, reversed_range)))
+    Ok((reversed, reversed_range))
 }
 
 fn insert_homogeneous_knot(
@@ -810,6 +829,48 @@ pub(super) enum CompositeCurveError {
         first: f64,
         /// Last knot of the child.
         last: f64,
+    },
+    /// The composite nests deeper than the decode policy admits.
+    #[error(transparent)]
+    Budget(#[from] cadmpeg_core::CodecError),
+    /// A child's degree does not fit the platform's index width.
+    #[error("a reversed child states the degree {degree}, which is not a usize")]
+    ReversedChildDegree {
+        /// Degree the child states.
+        degree: u32,
+    },
+    /// A reversed child states a knot vector this reader cannot reflect.
+    #[error("a reversed child states a non-finite or decreasing knot vector")]
+    ReversedChildKnots,
+    /// A reversed child's stated interval is non-finite or decreasing.
+    #[error("a reversed child states the interval [{start}, {end}]")]
+    ReversedChildInterval {
+        /// Stated interval start.
+        start: f64,
+        /// Stated interval end.
+        end: f64,
+    },
+    /// A reversed child's stated interval leaves its own knot domain.
+    #[error(
+        "a reversed child states the interval [{start}, {end}], which is outside its domain [{domain_start}, {domain_end}]"
+    )]
+    ReversedChildIntervalOutsideDomain {
+        /// Stated interval start.
+        start: f64,
+        /// Stated interval end.
+        end: f64,
+        /// First domain knot of the child.
+        domain_start: f64,
+        /// Last domain knot of the child.
+        domain_end: f64,
+    },
+    /// Reflecting a child's domain does not stay finite.
+    #[error("reflecting a child about its domain [{domain_start}, {domain_end}] is not finite")]
+    ReversedChildReflectionNonFinite {
+        /// First domain knot of the child.
+        domain_start: f64,
+        /// Last domain knot of the child.
+        domain_end: f64,
     },
     /// A child's stated interval does not increase.
     #[error("child {child} states the reversed interval [{start}, {end}]")]
@@ -1267,14 +1328,13 @@ fn bounded_nurbs_for_id(
             policy.min(MAX_COMPOSITE_DEPTH)
         });
     if depth >= depth_limit {
-        if let Some(ctx) = ctx {
-            let _ = ctx.refuse_codec_limit(
-                "iges_composite_depth",
-                depth_limit as u64,
-                depth.saturating_add(1) as u64,
-            );
-        }
-        return Ok(None);
+        let requested = depth.saturating_add(1) as u64;
+        return Err(CompositeCurveError::Budget(match ctx {
+            Some(ctx) => {
+                ctx.refuse_codec_limit("iges_composite_depth", depth_limit as u64, requested)
+            }
+            None => refuse_local_limit("iges_composite_depth", depth_limit as u64, requested),
+        }));
     }
     let curve = match index {
         Some(index) => index
@@ -1294,13 +1354,10 @@ fn bounded_nurbs_for_id(
             else {
                 return Ok(None);
             };
-            let oriented = if segment.same_sense {
-                Some(child)
+            let (curve, range) = if segment.same_sense {
+                child
             } else {
                 reverse_nurbs(child.0, child.1)?
-            };
-            let Some((curve, range)) = oriented else {
-                return Ok(None);
             };
             children.push((curve, range, ()));
         }
