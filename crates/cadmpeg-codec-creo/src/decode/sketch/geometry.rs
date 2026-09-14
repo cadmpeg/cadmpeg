@@ -407,14 +407,14 @@ pub(crate) struct SavedSectionArc {
 }
 
 impl SavedSectionArc {
-    pub(crate) fn into_geometry(self) -> SketchGeometry {
+    pub(crate) fn into_geometry(self) -> Option<SketchGeometry> {
         SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: self.center.into(),
             radius: self.radius.into(),
             start_angle: self.start_angle,
             end_angle: self.end_angle,
         })
-        .expect("a finite center and a positive radius admit an arc")
+        .ok()
     }
 }
 
@@ -929,7 +929,7 @@ pub(crate) fn resolved_section_segment_geometry_with_missing_line(
 ) -> Option<SketchGeometry> {
     let stored = section_segment_geometry(points, segment);
     let saved = saved_section_line_geometry(definition, segment)
-        .or_else(|| saved_section_arc(definition, segment).map(SavedSectionArc::into_geometry))
+        .or_else(|| saved_section_arc(definition, segment).and_then(SavedSectionArc::into_geometry))
         .or_else(|| {
             missing_line
                 .filter(|(offset, _)| *offset == segment.offset)

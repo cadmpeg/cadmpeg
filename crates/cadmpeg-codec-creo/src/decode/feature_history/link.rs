@@ -26,12 +26,12 @@ pub(in super::super) fn link_feature_sketch_history(scan: &ContainerScan, ir: &m
             .is_some()
         })
         .filter_map(|transform| {
-            let owner = IrFeatureId::mint(format!("creo:model:feature#{}", transform.feature_id?))
-                .expect("identity grammar");
+            let owner =
+                IrFeatureId::compose(&crate::identity::MODEL_FEATURE, transform.feature_id?);
             let definition =
                 unique_feature_definition_for_transform(&scan.features.definitions, transform)?;
             let sketch = model_sketch_id(scan, definition)?;
-            let sketch_feature = section_owner_feature_id(scan, transform.definition_id, &sketch);
+            let sketch_feature = section_owner_feature_id(scan, transform.definition_id, &sketch)?;
             exactly_one(
                 ir.model
                     .features

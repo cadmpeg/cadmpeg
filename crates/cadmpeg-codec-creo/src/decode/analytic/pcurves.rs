@@ -37,12 +37,9 @@ const PCURVE_CARRIER_PARALLEL_EPS_SQUARED: f64 = 1e-18;
 const PCURVE_CARRIER_SAMPLE_PARAMETERS: [f64; 5] = [0.0, 0.25, 0.5, 0.75, 1.0];
 
 fn unique_model_surface(surfaces: &[Surface], face_id: u32) -> Option<&Surface> {
-    let visible_id =
-        SurfaceId::mint(format!("creo:visibgeom:surface#{face_id}")).expect("identity grammar");
-    let nonvisible_id =
-        SurfaceId::mint(format!("creo:novisgeom:surface#{face_id}")).expect("identity grammar");
-    let active_datum_id =
-        SurfaceId::mint(format!("creo:actdatums:surface#{face_id}")).expect("identity grammar");
+    let visible_id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, face_id);
+    let nonvisible_id = SurfaceId::compose(&crate::identity::NOVISGEOM_SURFACE, face_id);
+    let active_datum_id = SurfaceId::compose(&crate::identity::ACTDATUM_SURFACE, face_id);
     for id in [visible_id, nonvisible_id, active_datum_id] {
         if !surfaces.iter().any(|surface| surface.id == id) {
             continue;
@@ -567,9 +564,9 @@ fn collect_support_cone_plane_witness(
 
 fn unique_model_surface_mut(surfaces: &mut [Surface], face_id: u32) -> Option<&mut Surface> {
     let ids = [
-        SurfaceId::mint(format!("creo:visibgeom:surface#{face_id}")).expect("identity grammar"),
-        SurfaceId::mint(format!("creo:novisgeom:surface#{face_id}")).expect("identity grammar"),
-        SurfaceId::mint(format!("creo:actdatums:surface#{face_id}")).expect("identity grammar"),
+        SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, face_id),
+        SurfaceId::compose(&crate::identity::NOVISGEOM_SURFACE, face_id),
+        SurfaceId::compose(&crate::identity::ACTDATUM_SURFACE, face_id),
     ];
     for id in ids {
         let matches = surfaces
@@ -1436,8 +1433,7 @@ pub fn transfer_analytic_pcurve_carriers(
             .map(|(_, offset)| *offset)
             .min()
             .unwrap_or(*offset);
-        let id =
-            CurveId::mint(format!("creo:visibgeom:curve#{curve_id}")).expect("identity grammar");
+        let id = CurveId::compose(&crate::identity::VISIBGEOM_CURVE, curve_id);
         if ir.model.curves.iter().any(|curve| curve.id == id) {
             continue;
         }

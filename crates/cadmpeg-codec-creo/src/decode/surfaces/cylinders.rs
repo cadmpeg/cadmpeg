@@ -201,7 +201,7 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
         else {
             continue;
         };
-        let cap_planes: [PlaneEquation; 2] = planes[..cap_ids.len()].try_into().expect("two caps");
+        let cap_planes = [planes[0], planes[1]];
         let Some(cylinder) = slot_fillet_cylinder(cap_planes, &planes[cap_ids.len()..]) else {
             continue;
         };
@@ -214,16 +214,14 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
                     && row.kind == crate::surface::SurfaceKind::Cylinder
                     && !ir.model.surfaces.iter().any(|surface| {
                         surface.id
-                            == SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
-                                .expect("identity grammar")
+                            == SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, row.id)
                     })
             })
             .collect::<Vec<_>>();
         let [row] = unresolved_rows.as_slice() else {
             continue;
         };
-        let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
-            .expect("identity grammar");
+        let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, row.id);
         let Ok(cylinder_surface) = cadmpeg_ir::geometry::CylinderSurface::try_new(
             Point3::new(cylinder.origin[0], cylinder.origin[1], cylinder.origin[2]),
             Vector3::new(cylinder.axis[0], cylinder.axis[1], cylinder.axis[2]),
@@ -289,8 +287,7 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
         &scan.features.entity_tables,
         &scan.surfaces.rows,
     ) {
-        let sibling = SurfaceId::mint(format!("creo:visibgeom:surface#{sibling_id}"))
-            .expect("identity grammar");
+        let sibling = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, sibling_id);
         let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))) =
             exactly_one(
                 ir.model
@@ -302,8 +299,7 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
         else {
             continue;
         };
-        let id = SurfaceId::mint(format!("creo:visibgeom:surface#{rowless_id}"))
-            .expect("identity grammar");
+        let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, rowless_id);
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
@@ -362,8 +358,7 @@ pub(in super::super) fn transfer_hole_cylinders(
         };
         for (row, geometry) in cylinders {
             let cylinder_id = row.id;
-            let id = SurfaceId::mint(format!("creo:visibgeom:surface#{cylinder_id}"))
-                .expect("identity grammar");
+            let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, cylinder_id);
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
@@ -484,8 +479,7 @@ pub(in super::super) fn transfer_split_outline_cylinders(
             continue;
         };
         for cylinder_id in [*first_id, *second_id] {
-            let id = SurfaceId::mint(format!("creo:visibgeom:surface#{cylinder_id}"))
-                .expect("identity grammar");
+            let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, cylinder_id);
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
@@ -1131,8 +1125,7 @@ pub(in super::super) fn transfer_positional_cylinders(
         {
             continue;
         }
-        let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", record.surface_id))
-            .expect("identity grammar");
+        let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, record.surface_id);
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             if row_local_frame_selected
                 && ir
@@ -1417,8 +1410,7 @@ pub(in super::super) fn transfer_positional_cones(
         else {
             continue;
         };
-        let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", record.surface_id))
-            .expect("identity grammar");
+        let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, record.surface_id);
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
@@ -1494,8 +1486,7 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
         };
         for row in &sweep.cylinder_rows {
             let cylinder_id = row.id;
-            let id = SurfaceId::mint(format!("creo:visibgeom:surface#{cylinder_id}"))
-                .expect("identity grammar");
+            let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, cylinder_id);
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
@@ -1550,11 +1541,10 @@ pub(in super::super) fn transfer_cross_section_planes(
         if is_axis_aligned(normal) {
             continue;
         }
-        let id = SurfaceId::mint(format!(
-            "creo:cross_section_geometry:surface#{}",
-            frame.surface_id
-        ))
-        .expect("identity grammar");
+        let id = SurfaceId::compose(
+            &crate::identity::CROSS_SECTION_GEOMETRY_SURFACE,
+            frame.surface_id,
+        );
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
@@ -1595,11 +1585,10 @@ pub(in super::super) fn transfer_cross_section_planes(
         transferred += 1;
     }
     for plane in &scan.planes.cross_section_outlines {
-        let id = SurfaceId::mint(format!(
-            "creo:cross_section_geometry:surface#{}",
-            plane.surface_id
-        ))
-        .expect("identity grammar");
+        let id = SurfaceId::compose(
+            &crate::identity::CROSS_SECTION_GEOMETRY_SURFACE,
+            plane.surface_id,
+        );
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }

@@ -11,7 +11,7 @@ use crate::vecmath::normalize;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, LinearTermination};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
-use cadmpeg_ir::ids::SurfaceId;
+use cadmpeg_ir::ids::{IdentityKey, SurfaceId};
 use std::collections::{BTreeMap, BTreeSet};
 
 const EPS_CYLINDER_CARRIER: f64 = 1.0e-9;
@@ -216,8 +216,10 @@ fn cylinder_frame_agrees_with_model(
     surface_id: u32,
     frame: &crate::surface::PositionalCylinderFrame,
 ) -> bool {
-    let model_id =
-        SurfaceId::mint(format!("creo:visibgeom:surface#{surface_id}")).expect("identity grammar");
+    let model_id = SurfaceId::compose(
+        &crate::identity::VISIBGEOM_SURFACE,
+        IdentityKey::from(surface_id),
+    );
     let model_surfaces = ir
         .model
         .surfaces

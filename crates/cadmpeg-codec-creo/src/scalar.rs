@@ -170,13 +170,15 @@ impl ScalarCache {
             let Some(bytes) = section.get(offset..offset + 8) else {
                 continue;
             };
-            let raw: [u8; 8] = bytes.try_into().expect("bounded eight-byte slice");
+            let Ok(raw) = <[u8; 8]>::try_from(bytes) else {
+                continue;
+            };
             if !seen.insert(raw) {
                 continue;
             }
             let mut ieee = raw;
             ieee[0] = 0x40;
-            let tail = raw[2..].try_into().expect("six-byte cache tail");
+            let tail = [raw[2], raw[3], raw[4], raw[5], raw[6], raw[7]];
             let paired_byte_1 = paired_byte_1_by_tail.entry(tail).or_insert(Some(raw[1]));
             if let Some(existing) = *paired_byte_1 {
                 if existing != raw[1] {
@@ -1066,8 +1068,8 @@ fn plane_support_layout(values: &[f64; 12], saw_zero_slot_prefix: bool) -> Plane
     let direct_zero_rank = values[3..6].iter().all(|value| *value == 0.0);
     let direct_frame = direct_zero_rank
         && valid_equal_scale_orthogonal_directions(
-            values[0..3].try_into().expect("three direction slots"),
-            values[6..9].try_into().expect("three direction slots"),
+            [values[0], values[1], values[2]],
+            [values[6], values[7], values[8]],
         );
     if direct_frame {
         return PlaneSupportFrameLayout::DirectNormalTriples;
@@ -1491,10 +1493,12 @@ fn decode_local_system_slot_prefix(
         values.push(value);
         cursor = next;
     }
-    (values.len() == 12).then(|| LocalSystemSlotPrefix {
-        values: values
-            .try_into()
-            .expect("twelve bounded local-system slots"),
+    if values.len() != 12 {
+        return None;
+    }
+    let values = values.try_into().ok()?;
+    Some(LocalSystemSlotPrefix {
+        values,
         cursor,
         saw_zero_slot_prefix,
     })

@@ -81,8 +81,7 @@ pub(super) fn emit_model_features(
         if operation_feature_ids.contains(&datum.feature_id) {
             continue;
         }
-        let id = IrFeatureId::mint(format!("creo:model:feature#{}", datum.feature_id))
-            .expect("identity grammar");
+        let id = IrFeatureId::compose(&crate::identity::MODEL_FEATURE, datum.feature_id);
         if ir.model.features.iter().any(|feature| feature.id == id) {
             continue;
         }
@@ -121,8 +120,7 @@ pub(super) fn emit_model_features(
     let mut geometry_generator_feature_count = 0;
     for generator in geometry_generator_features(scan) {
         let feature_id = generator.feature_id;
-        let id = IrFeatureId::mint(format!("creo:model:feature#{feature_id}"))
-            .expect("identity grammar");
+        let id = IrFeatureId::compose(&crate::identity::MODEL_FEATURE, feature_id);
         if ir.model.features.iter().any(|feature| feature.id == id) {
             continue;
         }
@@ -171,8 +169,7 @@ pub(super) fn emit_model_features(
     }
     let operation_ordinal_base = ir.model.features.len();
     for (operation_index, operation) in scan.features.operations.iter().enumerate() {
-        let id = IrFeatureId::mint(format!("creo:model:feature#{}", operation.feature_id))
-            .expect("identity grammar");
+        let id = IrFeatureId::compose(&crate::identity::MODEL_FEATURE, operation.feature_id);
         let current_operation =
             current_feature_operation(&scan.features.operations, operation.feature_id);
         let outputs = feature_output_bodies(scan, ir, operation.feature_id);
@@ -244,8 +241,8 @@ pub(super) fn emit_model_features(
         );
         let parent = current_feature_recipe_parent(&scan.features.operations, operation.feature_id)
             .and_then(|parent_feature_id| {
-                let parent = IrFeatureId::mint(format!("creo:model:feature#{parent_feature_id}"))
-                    .expect("identity grammar");
+                let parent =
+                    IrFeatureId::compose(&crate::identity::MODEL_FEATURE, parent_feature_id);
                 ir.model
                     .features
                     .iter()
@@ -365,8 +362,7 @@ pub(super) fn emit_model_features(
         refresh_feature_outputs(scan, ir);
     }
     for feature_id in row_feature_ids {
-        let id = IrFeatureId::mint(format!("creo:model:feature#{feature_id}"))
-            .expect("identity grammar");
+        let id = IrFeatureId::compose(&crate::identity::MODEL_FEATURE, feature_id);
         if ir.model.features.iter().any(|feature| feature.id == id) {
             continue;
         }

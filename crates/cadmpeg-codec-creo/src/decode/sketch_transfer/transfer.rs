@@ -899,7 +899,9 @@ pub(in super::super) fn transfer_sketches(
             native_ref: Some(sketch_native_ref(&sketch_id)),
         });
         if owned_section_feature_id(scan, definition.identity.id()).is_none() {
-            let feature_id = sketch_feature_id(&sketch_id);
+            let Some(feature_id) = sketch_feature_id(&sketch_id) else {
+                continue;
+            };
             annotate(
                 annotations,
                 feature_id.as_str(),

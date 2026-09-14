@@ -8,7 +8,7 @@ use super::super::native::annotate;
 use super::super::sketch::{saved_profile_chains, saved_section_entity_geometry};
 use super::super::sketch_ids::{
     sketch_entity_id, sketch_identity_scope, sketch_native_ref, sketch_point_ref,
-    sketch_section_curve_id,
+    typed_sketch_section_curve_id,
 };
 use super::super::sweep::{
     placed_section_geometry_curve, placed_sketch_curve_ref, saved_spline_sketch_geometry,
@@ -25,7 +25,7 @@ use crate::decode::sketch_transfer::profiles::{
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::Curve;
-use cadmpeg_ir::ids::CurveId;
+use cadmpeg_ir::ids::{CurveId, IdentityKey};
 use cadmpeg_ir::sketches::{
     SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition,
     SketchId,
@@ -638,8 +638,9 @@ pub(super) fn transfer_section_entities(
                 )
             })
         });
-        let curve_id =
-            CurveId::mint(sketch_section_curve_id(sketch_id, &suffix)).expect("identity grammar");
+        let Some(curve_id) = typed_sketch_section_curve_id(sketch_id, &suffix) else {
+            continue;
+        };
         annotate(
             annotations,
             entity_id.as_str(),
@@ -710,23 +711,29 @@ pub(super) fn transfer_section_entities(
                 &scan.surfaces.rows,
             )
         });
+        let Some(suffix_key) = IdentityKey::try_new(suffix.clone()).ok() else {
+            continue;
+        };
+        let Some(scope_key) =
+            IdentityKey::try_new(sketch_identity_scope(sketch_id).to_owned()).ok()
+        else {
+            continue;
+        };
         let Some(entity_id) = external_id.map_or_else(
             || {
-                SketchEntityId::mint(format!(
-                    "creo:featdefs:saved_spline#{}:{suffix}",
-                    sketch_identity_scope(sketch_id)
+                Some(SketchEntityId::compose(
+                    &crate::identity::FEATDEFS_SAVED_SPLINE,
+                    scope_key.clone().colon(suffix_key.clone()),
                 ))
-                .ok()
             },
             |external_id| sketch_entity_id(sketch_id, external_id),
         ) else {
             continue;
         };
-        let curve_id = CurveId::mint(format!(
-            "creo:featdefs:saved_spline_curve#{}:{suffix}",
-            sketch_identity_scope(sketch_id)
-        ))
-        .expect("identity grammar");
+        let curve_id = CurveId::compose(
+            &crate::identity::FEATDEFS_SAVED_SPLINE_CURVE,
+            scope_key.colon(suffix_key),
+        );
         if entities.iter().any(|entity| entity.id() == &entity_id) {
             continue;
         }
@@ -800,8 +807,9 @@ pub(super) fn transfer_section_entities(
                 continue;
             };
             let suffix = section_segment_identity_suffix(unique_segment_ids, segment);
-            let id = CurveId::mint(sketch_section_curve_id(sketch_id, &suffix))
-                .expect("identity grammar");
+            let Some(id) = typed_sketch_section_curve_id(sketch_id, &suffix) else {
+                continue;
+            };
             if ir.model.curves.iter().any(|existing| existing.id == id) {
                 continue;
             }
@@ -849,8 +857,9 @@ pub(super) fn transfer_section_entities(
             } else {
                 format!("circle:offset:{}", segment.offset)
             };
-            let id = CurveId::mint(sketch_section_curve_id(sketch_id, &suffix))
-                .expect("identity grammar");
+            let Some(id) = typed_sketch_section_curve_id(sketch_id, &suffix) else {
+                continue;
+            };
             if ir.model.curves.iter().any(|existing| existing.id == id) {
                 continue;
             }
@@ -899,8 +908,9 @@ pub(super) fn transfer_section_entities(
             } else {
                 format!("centered_line:offset:{}", segment.offset)
             };
-            let id = CurveId::mint(sketch_section_curve_id(sketch_id, &suffix))
-                .expect("identity grammar");
+            let Some(id) = typed_sketch_section_curve_id(sketch_id, &suffix) else {
+                continue;
+            };
             if ir.model.curves.iter().any(|existing| existing.id == id) {
                 continue;
             }

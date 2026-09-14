@@ -31,8 +31,7 @@ pub(in super::super) fn feature_dependencies(
     )
     .into_iter()
     .filter_map(|dependency| {
-        let id = IrFeatureId::mint(format!("creo:model:feature#{dependency}"))
-            .expect("identity grammar");
+        let id = IrFeatureId::compose(&crate::identity::MODEL_FEATURE, dependency);
         ir.model
             .features
             .iter()
@@ -449,9 +448,7 @@ pub(in super::super) fn reconcile_feature_links(
                 .map_or(&[], Vec::as_slice),
         )
         .into_iter()
-        .map(|dependency| {
-            IrFeatureId::mint(format!("creo:model:feature#{dependency}")).expect("identity grammar")
-        })
+        .map(|dependency| IrFeatureId::compose(&crate::identity::MODEL_FEATURE, dependency))
         .filter(|dependency| emitted.contains(dependency))
         .filter(|dependency| *dependency != feature.id);
         let generated_dependencies =
@@ -465,9 +462,7 @@ pub(in super::super) fn reconcile_feature_links(
         .into_iter()
         .collect();
         let parent = current_feature_recipe_parent(&scan.features.operations, feature_id)
-            .map(|parent| {
-                IrFeatureId::mint(format!("creo:model:feature#{parent}")).expect("identity grammar")
-            })
+            .map(|parent| IrFeatureId::compose(&crate::identity::MODEL_FEATURE, parent))
             .filter(|parent| *parent != feature.id && emitted.contains(parent));
         if let Some(parent) = parent {
             regeneration_edges.push((feature.id.clone(), parent));

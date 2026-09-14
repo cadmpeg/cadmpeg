@@ -576,8 +576,7 @@ pub fn solve_topological_vertices(
         let Some(vertices) = edge_start_vertices.get(&row.id).copied() else {
             continue;
         };
-        let id =
-            CurveId::mint(format!("creo:visibgeom:curve#{}", row.id)).expect("identity grammar");
+        let id = CurveId::compose(&crate::identity::VISIBGEOM_CURVE, row.id);
         if !nurbs_endpoint_witnesses.contains(&id) {
             continue;
         }
@@ -596,8 +595,7 @@ pub fn solve_topological_vertices(
     let analytic_curves = topology_rows
         .into_iter()
         .filter_map(|row| {
-            let id = CurveId::mint(format!("creo:visibgeom:curve#{}", row.id))
-                .expect("identity grammar");
+            let id = CurveId::compose(&crate::identity::VISIBGEOM_CURVE, row.id);
             let geometry = &unique_model_curve(ir, &id)?.geometry;
             let evaluable = matches!(
                 geometry,

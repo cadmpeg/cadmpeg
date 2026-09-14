@@ -93,10 +93,7 @@ pub(in super::super) fn thicken_feature_definition(
             );
             let faces = source_ids
                 .iter()
-                .map(|surface_id| {
-                    FaceId::mint(format!("creo:visibgeom:face#{surface_id}"))
-                        .expect("identity grammar")
-                })
+                .map(|surface_id| FaceId::compose(&crate::identity::VISIBGEOM_FACE, surface_id))
                 .collect::<Vec<_>>();
             if faces
                 .iter()
@@ -268,8 +265,7 @@ pub(in super::super) fn schema_feature_definition(
         let available_features = model_feature_ids(scan);
         let face_selection = |surface_id| {
             let native = format!("creo:visibgeom:surface#{surface_id}");
-            let face = FaceId::mint(format!("creo:visibgeom:face#{surface_id}"))
-                .expect("identity grammar");
+            let face = FaceId::compose(&crate::identity::VISIBGEOM_FACE, surface_id);
             if ir.model.faces.iter().any(|candidate| candidate.id == face) {
                 FaceSelection::Resolved {
                     faces: vec![face],
@@ -723,12 +719,12 @@ pub(in super::super) fn schema_feature_definition(
             .collect::<Vec<_>>();
         if let [definition] = definitions.as_slice() {
             if let Some(values) = crate::placement::unique_complete_local_system(definition) {
-                let raw_normal: [f64; 3] = values[6..9].try_into().expect("three values");
-                let raw_u_axis: [f64; 3] = values[0..3].try_into().expect("three values");
+                let raw_normal = [values[6], values[7], values[8]];
+                let raw_u_axis = [values[0], values[1], values[2]];
                 if let (Some(normal), Some(u_axis)) = (normalize(raw_normal), normalize(raw_u_axis))
                 {
                     if dot(normal, u_axis).abs() <= EPS_FRAME_ORTHONORMAL {
-                        let origin: [f64; 3] = values[9..12].try_into().expect("three values");
+                        let origin = [values[9], values[10], values[11]];
                         if let Some(frame) = cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
                             Point3::new(origin[0], origin[1], origin[2]),
                             Vector3::new(normal[0], normal[1], normal[2]),
@@ -760,10 +756,10 @@ pub(in super::super) fn schema_feature_definition(
             .collect::<Vec<_>>();
         if let [definition] = definitions.as_slice() {
             if let Some(values) = crate::placement::unique_complete_local_system(definition) {
-                let x_axis = normalize(values[0..3].try_into().expect("three values"));
-                let y_axis = normalize(values[3..6].try_into().expect("three values"));
-                let z_axis = normalize(values[6..9].try_into().expect("three values"));
-                let origin: [f64; 3] = values[9..12].try_into().expect("three values");
+                let x_axis = normalize([values[0], values[1], values[2]]);
+                let y_axis = normalize([values[3], values[4], values[5]]);
+                let z_axis = normalize([values[6], values[7], values[8]]);
+                let origin = [values[9], values[10], values[11]];
                 if let (Some(x_axis), Some(y_axis), Some(z_axis)) = (x_axis, y_axis, z_axis) {
                     let right_handed =
                         dot(cross(x_axis, y_axis), z_axis) >= 1.0 - EPS_FRAME_ORTHONORMAL;
@@ -873,8 +869,7 @@ fn reconciled_datum_plane_definition(
         .get(&surface_id)
         .map(|(_, u_axis, _)| Vector3::new(u_axis[0], u_axis[1], u_axis[2]))
         .or_else(|| {
-            let model_id = SurfaceId::mint(format!("creo:visibgeom:surface#{surface_id}"))
-                .expect("identity grammar");
+            let model_id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, surface_id);
             let surfaces = ir
                 .model
                 .surfaces

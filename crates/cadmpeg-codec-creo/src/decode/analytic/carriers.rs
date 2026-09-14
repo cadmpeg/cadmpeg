@@ -79,8 +79,7 @@ pub fn transfer_topology_bound_planes(
         .into_iter()
         .filter(|row| row.kind == crate::surface::SurfaceKind::Plane)
     {
-        let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
-            .expect("identity grammar");
+        let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, row.id);
         let points = solved_vertices
             .iter()
             .filter_map(|(vertex_id, point)| {
@@ -100,8 +99,7 @@ pub fn transfer_topology_bound_planes(
                 unique_curve_ids
                     .contains(&half_edge.curve_id)
                     .then_some(())?;
-                let id = CurveId::mint(format!("creo:visibgeom:curve#{}", half_edge.curve_id))
-                    .expect("identity grammar");
+                let id = CurveId::compose(&crate::identity::VISIBGEOM_CURVE, half_edge.curve_id);
                 let curve = exactly_one(ir.model.curves.iter().filter(|curve| curve.id == id))?;
                 Some(&curve.geometry)
             })
@@ -208,8 +206,11 @@ pub fn retain_unresolved_surface_carriers(
         ),
     ] {
         for row in crate::surface::uniquely_identified_rows(rows) {
-            let id = SurfaceId::mint(format!("{}{}", namespace.ir_prefix(), row.id))
-                .expect("identity grammar");
+            let identity_namespace = match namespace {
+                LegacySurfaceNamespace::Visible => &crate::identity::VISIBGEOM_SURFACE,
+                LegacySurfaceNamespace::NonVisible => &crate::identity::NOVISGEOM_SURFACE,
+            };
+            let id = SurfaceId::compose(identity_namespace, row.id);
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
@@ -258,8 +259,7 @@ pub fn retain_unresolved_surface_carriers(
         }
     }
     for row in crate::topology::uniquely_identified_rows(&scan.curves.topology_rows) {
-        let id =
-            CurveId::mint(format!("creo:visibgeom:curve#{}", row.id)).expect("identity grammar");
+        let id = CurveId::compose(&crate::identity::VISIBGEOM_CURVE, row.id);
         if ir.model.curves.iter().any(|curve| curve.id == id) {
             continue;
         }
@@ -527,13 +527,11 @@ pub fn geometry_section_record(scan: &ContainerScan, offset: usize) -> Option<Un
             offset >= section.offset && offset < section.offset.saturating_add(section.length)
         })
         .map(|section| {
-            UnknownId::mint(format!(
-                "creo:{}:section#{}",
-                section.name(),
-                section.offset
-            ))
-            .expect("identity grammar")
+            let namespace =
+                cadmpeg_ir::ids::IdentityNamespace::new("creo", section.name(), "section").ok()?;
+            Some(UnknownId::compose(&namespace, section.offset))
         })
+        .flatten()
 }
 
 #[cfg(test)]

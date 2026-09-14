@@ -74,13 +74,26 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         let Some(span) = resolved_feature_extrusion_span(scan, ir, definition, transform) else {
             continue;
         };
-        let prefix = format!("creo:feature:extrusion#{feature_id}");
-        let body_id = BodyId::mint(format!("{prefix}:body")).expect("identity grammar");
+        let feature_key = cadmpeg_ir::ids::IdentityKey::from(feature_id);
+        let body_id = BodyId::compose(
+            &crate::identity::FEATURE_EXTRUSION,
+            feature_key.clone().colon(cadmpeg_ir::identity_key!("body")),
+        );
         if ir.model.bodies.iter().any(|body| body.id == body_id) {
             continue;
         }
-        let region_id = RegionId::mint(format!("{prefix}:region")).expect("identity grammar");
-        let shell_id = ShellId::mint(format!("{prefix}:shell")).expect("identity grammar");
+        let region_id = RegionId::compose(
+            &crate::identity::FEATURE_EXTRUSION,
+            feature_key
+                .clone()
+                .colon(cadmpeg_ir::identity_key!("region")),
+        );
+        let shell_id = ShellId::compose(
+            &crate::identity::FEATURE_EXTRUSION,
+            feature_key
+                .clone()
+                .colon(cadmpeg_ir::identity_key!("shell")),
+        );
         // Both caps state the same full-turn circle in section parameters, so
         // the cap pcurve is stated once and before the first record of this
         // body reaches the model. A refused lane here leaves no partial body
@@ -123,32 +136,101 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         let mut cap_coedges = Vec::new();
         let mut side_coedges = Vec::new();
         for (side_index, (side, offset)) in sides.into_iter().enumerate() {
-            let cap_surface =
-                SurfaceId::mint(format!("{prefix}:surface:{side}")).expect("identity grammar");
-            let cap_face = FaceId::mint(format!("{prefix}:face:{side}")).expect("identity grammar");
-            let cap_loop = LoopId::mint(format!("{prefix}:loop:{side}")).expect("identity grammar");
-            let curve_id =
-                CurveId::mint(format!("{prefix}:curve:{side}")).expect("identity grammar");
-            let edge_id = EdgeId::mint(format!("{prefix}:edge:{side}")).expect("identity grammar");
-            let point_id =
-                PointId::mint(format!("{prefix}:point:{side}")).expect("identity grammar");
-            let vertex_id =
-                VertexId::mint(format!("{prefix}:vertex:{side}")).expect("identity grammar");
-            let cap_coedge =
-                CoedgeId::mint(format!("{prefix}:coedge:{side}:cap")).expect("identity grammar");
-            let side_coedge =
-                CoedgeId::mint(format!("{prefix}:coedge:{side}:side")).expect("identity grammar");
+            let side_key = match side {
+                "bottom" => cadmpeg_ir::identity_key!("bottom"),
+                "top" => cadmpeg_ir::identity_key!("top"),
+                _ => continue,
+            };
+            let cap_surface = SurfaceId::compose(
+                &crate::identity::FEATURE_EXTRUSION,
+                feature_key
+                    .clone()
+                    .colon(cadmpeg_ir::identity_key!("surface"))
+                    .colon(&side_key),
+            );
+            let cap_face = FaceId::compose(
+                &crate::identity::FEATURE_EXTRUSION,
+                feature_key
+                    .clone()
+                    .colon(cadmpeg_ir::identity_key!("face"))
+                    .colon(&side_key),
+            );
+            let cap_loop = LoopId::compose(
+                &crate::identity::FEATURE_EXTRUSION,
+                feature_key
+                    .clone()
+                    .colon(cadmpeg_ir::identity_key!("loop"))
+                    .colon(&side_key),
+            );
+            let curve_id = CurveId::compose(
+                &crate::identity::FEATURE_EXTRUSION,
+                feature_key
+                    .clone()
+                    .colon(cadmpeg_ir::identity_key!("curve"))
+                    .colon(&side_key),
+            );
+            let edge_id = EdgeId::compose(
+                &crate::identity::FEATURE_EXTRUSION,
+                feature_key
+                    .clone()
+                    .colon(cadmpeg_ir::identity_key!("edge"))
+                    .colon(&side_key),
+            );
+            let point_id = PointId::compose(
+                &crate::identity::FEATURE_EXTRUSION,
+                feature_key
+                    .clone()
+                    .colon(cadmpeg_ir::identity_key!("point"))
+                    .colon(&side_key),
+            );
+            let vertex_id = VertexId::compose(
+                &crate::identity::FEATURE_EXTRUSION,
+                feature_key
+                    .clone()
+                    .colon(cadmpeg_ir::identity_key!("vertex"))
+                    .colon(&side_key),
+            );
+            let cap_coedge = CoedgeId::compose(
+                &crate::identity::FEATURE_EXTRUSION,
+                feature_key
+                    .clone()
+                    .colon(cadmpeg_ir::identity_key!("coedge"))
+                    .colon(&side_key)
+                    .colon(cadmpeg_ir::identity_key!("cap")),
+            );
+            let side_coedge = CoedgeId::compose(
+                &crate::identity::FEATURE_EXTRUSION,
+                feature_key
+                    .clone()
+                    .colon(cadmpeg_ir::identity_key!("coedge"))
+                    .colon(&side_key)
+                    .colon(cadmpeg_ir::identity_key!("side")),
+            );
             let cap_pcurve = add_extrusion_pcurve(
                 ir,
                 annotations,
-                PcurveId::mint(format!("{prefix}:pcurve:{side}:cap")).expect("identity grammar"),
+                PcurveId::compose(
+                    &crate::identity::FEATURE_EXTRUSION,
+                    feature_key
+                        .clone()
+                        .colon(cadmpeg_ir::identity_key!("pcurve"))
+                        .colon(&side_key)
+                        .colon(cadmpeg_ir::identity_key!("cap")),
+                ),
                 transform.offset,
                 cap_geometry.clone(),
             )?;
             let side_pcurve = add_extrusion_pcurve(
                 ir,
                 annotations,
-                PcurveId::mint(format!("{prefix}:pcurve:{side}:side")).expect("identity grammar"),
+                PcurveId::compose(
+                    &crate::identity::FEATURE_EXTRUSION,
+                    feature_key
+                        .clone()
+                        .colon(cadmpeg_ir::identity_key!("pcurve"))
+                        .colon(&side_key)
+                        .colon(cadmpeg_ir::identity_key!("side")),
+                ),
                 transform.offset,
                 line_pcurve([0.0, offset], [std::f64::consts::TAU, offset]).ok_or_else(|| {
                     cadmpeg_core::CodecError::malformed("extrusion pcurve geometry is invalid")
@@ -232,8 +314,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 id: cap_loop.clone(),
                 face: cap_face.clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                    cadmpeg_ir::topology::LoopRing::new(vec![cap_coedge.clone()], Vec::new())
-                        .expect("valid loop ring"),
+                    cadmpeg_ir::topology::LoopRing::single(cap_coedge.clone()),
                 ),
             });
             ir.model.coedges.push(Coedge {
@@ -271,9 +352,20 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             cap_coedges.push(cap_coedge);
             side_coedges.push((side_coedge, edge_id, side_pcurve));
         }
-        let side_surface =
-            SurfaceId::mint(format!("{prefix}:surface:side")).expect("identity grammar");
-        let side_face = FaceId::mint(format!("{prefix}:face:side")).expect("identity grammar");
+        let side_surface = SurfaceId::compose(
+            &crate::identity::FEATURE_EXTRUSION,
+            feature_key
+                .clone()
+                .colon(cadmpeg_ir::identity_key!("surface"))
+                .colon(cadmpeg_ir::identity_key!("side")),
+        );
+        let side_face = FaceId::compose(
+            &crate::identity::FEATURE_EXTRUSION,
+            feature_key
+                .clone()
+                .colon(cadmpeg_ir::identity_key!("face"))
+                .colon(cadmpeg_ir::identity_key!("side")),
+        );
         let mut side_loops = Vec::new();
         ir.model.surfaces.push(Surface {
             id: side_surface.clone(),
@@ -299,14 +391,24 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         for (side_index, ((side, _), (coedge, edge, pcurve))) in
             sides.into_iter().zip(side_coedges).enumerate()
         {
-            let loop_id =
-                LoopId::mint(format!("{prefix}:loop:side:{side}")).expect("identity grammar");
+            let side_key = match side {
+                "bottom" => cadmpeg_ir::identity_key!("bottom"),
+                "top" => cadmpeg_ir::identity_key!("top"),
+                _ => continue,
+            };
+            let loop_id = LoopId::compose(
+                &crate::identity::FEATURE_EXTRUSION,
+                feature_key
+                    .clone()
+                    .colon(cadmpeg_ir::identity_key!("loop"))
+                    .colon(cadmpeg_ir::identity_key!("side"))
+                    .colon(&side_key),
+            );
             ir.model.loops.push(IrLoop {
                 id: loop_id.clone(),
                 face: side_face.clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                    cadmpeg_ir::topology::LoopRing::new(vec![coedge.clone()], Vec::new())
-                        .expect("valid loop ring"),
+                    cadmpeg_ir::topology::LoopRing::single(coedge.clone()),
                 ),
             });
             ir.model.coedges.push(Coedge {

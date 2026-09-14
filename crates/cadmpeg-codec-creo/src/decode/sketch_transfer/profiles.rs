@@ -75,11 +75,13 @@ pub(in super::super) fn resolved_profile_chains(
         if !matches!(endpoints.len(), 0 | 2) {
             continue;
         }
-        let first_row = component
+        let Some(first_row) = component
             .iter()
             .min_by_key(|index| rows[**index].1)
             .copied()
-            .expect("component contains seed");
+        else {
+            continue;
+        };
         let mut vertex = endpoints
             .iter()
             .min()
@@ -200,11 +202,13 @@ pub(in super::super) fn resolved_segment_profile_chains(
         }) {
             continue;
         }
-        let first = component
+        let Some(first) = component
             .iter()
             .min_by_key(|index| rows[**index].external_id)
             .copied()
-            .expect("component contains seed");
+        else {
+            continue;
+        };
         let mut point = rows[first].point_ids()[0].min(rows[first].point_ids()[1]);
         let start = point;
         let mut unused = component;
@@ -218,7 +222,10 @@ pub(in super::super) fn resolved_segment_profile_chains(
             let index = if profile.is_empty() && candidates.contains(&first) {
                 first
             } else if candidates.len() == 1 {
-                *candidates.first().expect("one candidate")
+                let Some(index) = candidates.first().copied() else {
+                    break;
+                };
+                index
             } else {
                 break;
             };

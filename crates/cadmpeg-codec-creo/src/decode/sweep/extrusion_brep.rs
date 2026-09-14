@@ -29,8 +29,8 @@ use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
-    SurfaceId, VertexId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, IdentityKey, LoopId, PcurveId, PointId, RegionId,
+    ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::{Sketch, SketchEntityId};
@@ -68,11 +68,10 @@ pub(in super::super) fn sketch_profiles_cover_generated_extrusion_sides(
         .flat_map(|table| {
             table.entries.iter().filter_map(|entry| {
                 let external_id = entry.source_entity_id()?;
-                let entity = SketchEntityId::mint(format!(
-                    "creo:featdefs:sketch_entity#{}:{external_id}",
-                    definition.identity.id()
-                ))
-                .ok()?;
+                let entity = SketchEntityId::compose(
+                    &crate::identity::FEATDEFS_SKETCH_ENTITY,
+                    IdentityKey::from(definition.identity.id()).colon(external_id),
+                );
                 (profile_entity_set.contains(&entity)
                     && generated_profile_entry_is_admissible(
                         feature_id,
@@ -128,6 +127,15 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         let Some(span) = resolved_feature_extrusion_span(scan, ir, definition, transform) else {
             continue;
         };
+        let feature_key = IdentityKey::from(feature_id);
+        macro_rules! extrusion_id {
+            ($id:ident, $key:expr) => {
+                $id::compose(
+                    &crate::identity::FEATURE_EXTRUSION,
+                    feature_key.clone().colon($key),
+                )
+            };
+        }
         let length = span.upper - span.lower;
         let Some(sketch) = exactly_one(
             ir.model
@@ -146,8 +154,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         let Some(profiles) = ordered_extrusion_profiles(profiles) else {
             continue;
         };
-        let prefix = format!("creo:feature:extrusion#{feature_id}");
-        let body_id = BodyId::mint(format!("{prefix}:body")).expect("identity grammar");
+        let body_id = extrusion_id!(BodyId, cadmpeg_ir::identity_key!("body"));
         if ir.model.bodies.iter().any(|body| body.id == body_id) {
             continue;
         }
@@ -197,17 +204,26 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         }
         let forward_caps = profiles[0].area() > 0.0;
 
-        let region_id = RegionId::mint(format!("{prefix}:region")).expect("identity grammar");
-        let shell_id = ShellId::mint(format!("{prefix}:shell")).expect("identity grammar");
-        let bottom_face = FaceId::mint(format!("{prefix}:face:bottom")).expect("identity grammar");
-        let top_face = FaceId::mint(format!("{prefix}:face:top")).expect("identity grammar");
+        let region_id = extrusion_id!(RegionId, cadmpeg_ir::identity_key!("region"));
+        let shell_id = extrusion_id!(ShellId, cadmpeg_ir::identity_key!("shell"));
+        let bottom_face = extrusion_id!(
+            FaceId,
+            cadmpeg_ir::identity_key!("face").colon(cadmpeg_ir::identity_key!("bottom"))
+        );
+        let top_face = extrusion_id!(
+            FaceId,
+            cadmpeg_ir::identity_key!("face").colon(cadmpeg_ir::identity_key!("top"))
+        );
         let mut shell_faces = vec![bottom_face.clone(), top_face.clone()];
         for (profile_index, profile) in profiles.iter().enumerate() {
             for index in 0..profile.entities().len() {
-                shell_faces.push(
-                    FaceId::mint(format!("{prefix}:face:{profile_index}:side:{index}"))
-                        .expect("identity grammar"),
-                );
+                shell_faces.push(extrusion_id!(
+                    FaceId,
+                    cadmpeg_ir::identity_key!("face")
+                        .colon(profile_index)
+                        .colon(cadmpeg_ir::identity_key!("side"))
+                        .colon(index)
+                ));
             }
         }
         let shell = match Shell::new(
@@ -225,10 +241,14 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 continue;
             }
         };
-        let bottom_surface =
-            SurfaceId::mint(format!("{prefix}:surface:bottom")).expect("identity grammar");
-        let top_surface =
-            SurfaceId::mint(format!("{prefix}:surface:top")).expect("identity grammar");
+        let bottom_surface = extrusion_id!(
+            SurfaceId,
+            cadmpeg_ir::identity_key!("surface").colon(cadmpeg_ir::identity_key!("bottom"))
+        );
+        let top_surface = extrusion_id!(
+            SurfaceId,
+            cadmpeg_ir::identity_key!("surface").colon(cadmpeg_ir::identity_key!("top"))
+        );
         for (id, offset) in [(&bottom_surface, span.lower), (&top_surface, span.upper)] {
             annotate(
                 annotations,
@@ -279,12 +299,25 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     ("top", span.upper, &mut top_vertices),
                 ] {
                     let position = section_point_in_model(transform, start);
-                    let point_id =
-                        PointId::mint(format!("{prefix}:point:{profile_index}:{index}:{side}"))
-                            .expect("identity grammar");
-                    let vertex_id =
-                        VertexId::mint(format!("{prefix}:vertex:{profile_index}:{index}:{side}"))
-                            .expect("identity grammar");
+                    let side_key = match side {
+                        "bottom" => cadmpeg_ir::identity_key!("bottom"),
+                        "top" => cadmpeg_ir::identity_key!("top"),
+                        _ => continue,
+                    };
+                    let point_id = extrusion_id!(
+                        PointId,
+                        cadmpeg_ir::identity_key!("point")
+                            .colon(profile_index)
+                            .colon(index)
+                            .colon(&side_key)
+                    );
+                    let vertex_id = extrusion_id!(
+                        VertexId,
+                        cadmpeg_ir::identity_key!("vertex")
+                            .colon(profile_index)
+                            .colon(index)
+                            .colon(&side_key)
+                    );
                     ir.model.points.push(Point {
                         id: point_id.clone(),
                         position: Point3::new(
@@ -320,12 +353,25 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     ("bottom", span.lower, &bottom_vertices, &mut bottom_edges),
                     ("top", span.upper, &top_vertices, &mut top_edges),
                 ] {
-                    let curve_id =
-                        CurveId::mint(format!("{prefix}:curve:{profile_index}:{index}:{side}"))
-                            .expect("identity grammar");
-                    let edge_id =
-                        EdgeId::mint(format!("{prefix}:edge:{profile_index}:{index}:{side}"))
-                            .expect("identity grammar");
+                    let side_key = match side {
+                        "bottom" => cadmpeg_ir::identity_key!("bottom"),
+                        "top" => cadmpeg_ir::identity_key!("top"),
+                        _ => continue,
+                    };
+                    let curve_id = extrusion_id!(
+                        CurveId,
+                        cadmpeg_ir::identity_key!("curve")
+                            .colon(profile_index)
+                            .colon(index)
+                            .colon(&side_key)
+                    );
+                    let edge_id = extrusion_id!(
+                        EdgeId,
+                        cadmpeg_ir::identity_key!("edge")
+                            .colon(profile_index)
+                            .colon(index)
+                            .colon(&side_key)
+                    );
                     let curve = match geometry {
                         ProfileGeometry::Line { .. } => {
                             let placed_start = section_point_in_model(transform, start);
@@ -437,12 +483,20 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     });
                     arena.push(edge_id);
                 }
-                let curve_id =
-                    CurveId::mint(format!("{prefix}:curve:{profile_index}:{index}:vertical"))
-                        .expect("identity grammar");
-                let edge_id =
-                    EdgeId::mint(format!("{prefix}:edge:{profile_index}:{index}:vertical"))
-                        .expect("identity grammar");
+                let curve_id = extrusion_id!(
+                    CurveId,
+                    cadmpeg_ir::identity_key!("curve")
+                        .colon(profile_index)
+                        .colon(index)
+                        .colon(cadmpeg_ir::identity_key!("vertical"))
+                );
+                let edge_id = extrusion_id!(
+                    EdgeId,
+                    cadmpeg_ir::identity_key!("edge")
+                        .colon(profile_index)
+                        .colon(index)
+                        .colon(cadmpeg_ir::identity_key!("vertical"))
+                );
                 let origin = section_point_in_model(transform, start);
                 ir.model.curves.push(Curve {
                     id: curve_id.clone(),
@@ -477,25 +531,41 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 vertical_edges.push(edge_id);
             }
 
-            let bottom_loop = LoopId::mint(format!("{prefix}:loop:{profile_index}:bottom"))
-                .expect("identity grammar");
-            let top_loop = LoopId::mint(format!("{prefix}:loop:{profile_index}:top"))
-                .expect("identity grammar");
+            let bottom_loop = extrusion_id!(
+                LoopId,
+                cadmpeg_ir::identity_key!("loop")
+                    .colon(profile_index)
+                    .colon(cadmpeg_ir::identity_key!("bottom"))
+            );
+            let top_loop = extrusion_id!(
+                LoopId,
+                cadmpeg_ir::identity_key!("loop")
+                    .colon(profile_index)
+                    .colon(cadmpeg_ir::identity_key!("top"))
+            );
             bottom_loops.push(bottom_loop.clone());
             top_loops.push(top_loop.clone());
             let bottom_coedges = (0..count)
                 .rev()
                 .map(|index| {
-                    CoedgeId::mint(format!(
-                        "{prefix}:coedge:{profile_index}:{index}:bottom-cap"
-                    ))
-                    .expect("identity grammar")
+                    extrusion_id!(
+                        CoedgeId,
+                        cadmpeg_ir::identity_key!("coedge")
+                            .colon(profile_index)
+                            .colon(index)
+                            .colon(cadmpeg_ir::identity_key!("bottom-cap"))
+                    )
                 })
                 .collect::<Vec<_>>();
             let top_coedges = (0..count)
                 .map(|index| {
-                    CoedgeId::mint(format!("{prefix}:coedge:{profile_index}:{index}:top-cap"))
-                        .expect("identity grammar")
+                    extrusion_id!(
+                        CoedgeId,
+                        cadmpeg_ir::identity_key!("coedge")
+                            .colon(profile_index)
+                            .colon(index)
+                            .colon(cadmpeg_ir::identity_key!("top-cap"))
+                    )
                 })
                 .collect::<Vec<_>>();
             ir.model.loops.push(IrLoop {
@@ -503,7 +573,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 face: bottom_face.clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                     cadmpeg_ir::topology::LoopRing::new(bottom_coedges.clone(), Vec::new())
-                        .expect("valid loop ring"),
+                        .map_err(cadmpeg_core::CodecError::malformed)?,
                 ),
             });
             ir.model.loops.push(IrLoop {
@@ -511,7 +581,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 face: top_face.clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                     cadmpeg_ir::topology::LoopRing::new(top_coedges.clone(), Vec::new())
-                        .expect("valid loop ring"),
+                        .map_err(cadmpeg_core::CodecError::malformed)?,
                 ),
             });
             for ring_index in 0..count {
@@ -529,10 +599,13 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 let bottom_pcurve = add_extrusion_pcurve(
                     ir,
                     annotations,
-                    PcurveId::mint(format!(
-                        "{prefix}:pcurve:{profile_index}:{edge_index}:bottom-cap"
-                    ))
-                    .expect("identity grammar"),
+                    extrusion_id!(
+                        PcurveId,
+                        cadmpeg_ir::identity_key!("pcurve")
+                            .colon(profile_index)
+                            .colon(edge_index)
+                            .colon(cadmpeg_ir::identity_key!("bottom-cap"))
+                    ),
                     transform.offset,
                     {
                         let mut refusal = crate::lane_refusal::LaneRefusals::new();
@@ -568,10 +641,13 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     id,
                     owner_loop: bottom_loop.clone(),
                     edge: bottom_edges[edge_index].clone(),
-                    radial_next: CoedgeId::mint(format!(
-                        "{prefix}:coedge:{profile_index}:{edge_index}:side-bottom"
-                    ))
-                    .expect("identity grammar"),
+                    radial_next: extrusion_id!(
+                        CoedgeId,
+                        cadmpeg_ir::identity_key!("coedge")
+                            .colon(profile_index)
+                            .colon(edge_index)
+                            .colon(cadmpeg_ir::identity_key!("side-bottom"))
+                    ),
                     sense: Sense::Reversed,
                     pcurves: vec![PcurveUse {
                         pcurve: bottom_pcurve,
@@ -593,10 +669,13 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 let top_pcurve = add_extrusion_pcurve(
                     ir,
                     annotations,
-                    PcurveId::mint(format!(
-                        "{prefix}:pcurve:{profile_index}:{ring_index}:top-cap"
-                    ))
-                    .expect("identity grammar"),
+                    extrusion_id!(
+                        PcurveId,
+                        cadmpeg_ir::identity_key!("pcurve")
+                            .colon(profile_index)
+                            .colon(ring_index)
+                            .colon(cadmpeg_ir::identity_key!("top-cap"))
+                    ),
                     transform.offset,
                     {
                         let mut refusal = crate::lane_refusal::LaneRefusals::new();
@@ -632,10 +711,13 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     id,
                     owner_loop: top_loop.clone(),
                     edge: top_edges[ring_index].clone(),
-                    radial_next: CoedgeId::mint(format!(
-                        "{prefix}:coedge:{profile_index}:{ring_index}:side-top"
-                    ))
-                    .expect("identity grammar"),
+                    radial_next: extrusion_id!(
+                        CoedgeId,
+                        cadmpeg_ir::identity_key!("coedge")
+                            .colon(profile_index)
+                            .colon(ring_index)
+                            .colon(cadmpeg_ir::identity_key!("side-top"))
+                    ),
                     sense: Sense::Forward,
                     pcurves: vec![PcurveUse {
                         pcurve: top_pcurve,
@@ -655,9 +737,13 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 let start = entity.start();
 
                 let next = (index + 1) % count;
-                let surface_id =
-                    SurfaceId::mint(format!("{prefix}:surface:{profile_index}:side:{index}"))
-                        .expect("identity grammar");
+                let surface_id = extrusion_id!(
+                    SurfaceId,
+                    cadmpeg_ir::identity_key!("surface")
+                        .colon(profile_index)
+                        .colon(cadmpeg_ir::identity_key!("side"))
+                        .colon(index)
+                );
                 let mut refusal = crate::lane_refusal::LaneRefusals::new();
                 let record =
                     format!("extrusion feature {feature_id} profile {profile_index} side {index}");
@@ -689,32 +775,56 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     geometry: surface_geometry,
                     source_object: None,
                 });
-                let face_id = FaceId::mint(format!("{prefix}:face:{profile_index}:side:{index}"))
-                    .expect("identity grammar");
-                let loop_id = LoopId::mint(format!("{prefix}:loop:{profile_index}:side:{index}"))
-                    .expect("identity grammar");
+                let face_id = extrusion_id!(
+                    FaceId,
+                    cadmpeg_ir::identity_key!("face")
+                        .colon(profile_index)
+                        .colon(cadmpeg_ir::identity_key!("side"))
+                        .colon(index)
+                );
+                let loop_id = extrusion_id!(
+                    LoopId,
+                    cadmpeg_ir::identity_key!("loop")
+                        .colon(profile_index)
+                        .colon(cadmpeg_ir::identity_key!("side"))
+                        .colon(index)
+                );
                 let coedges = [
-                    CoedgeId::mint(format!(
-                        "{prefix}:coedge:{profile_index}:{index}:side-bottom"
-                    ))
-                    .expect("identity grammar"),
-                    CoedgeId::mint(format!(
-                        "{prefix}:coedge:{profile_index}:{next}:side-vertical-out"
-                    ))
-                    .expect("identity grammar"),
-                    CoedgeId::mint(format!("{prefix}:coedge:{profile_index}:{index}:side-top"))
-                        .expect("identity grammar"),
-                    CoedgeId::mint(format!(
-                        "{prefix}:coedge:{profile_index}:{index}:side-vertical-in"
-                    ))
-                    .expect("identity grammar"),
+                    extrusion_id!(
+                        CoedgeId,
+                        cadmpeg_ir::identity_key!("coedge")
+                            .colon(profile_index)
+                            .colon(index)
+                            .colon(cadmpeg_ir::identity_key!("side-bottom"))
+                    ),
+                    extrusion_id!(
+                        CoedgeId,
+                        cadmpeg_ir::identity_key!("coedge")
+                            .colon(profile_index)
+                            .colon(next)
+                            .colon(cadmpeg_ir::identity_key!("side-vertical-out"))
+                    ),
+                    extrusion_id!(
+                        CoedgeId,
+                        cadmpeg_ir::identity_key!("coedge")
+                            .colon(profile_index)
+                            .colon(index)
+                            .colon(cadmpeg_ir::identity_key!("side-top"))
+                    ),
+                    extrusion_id!(
+                        CoedgeId,
+                        cadmpeg_ir::identity_key!("coedge")
+                            .colon(profile_index)
+                            .colon(index)
+                            .colon(cadmpeg_ir::identity_key!("side-vertical-in"))
+                    ),
                 ];
                 ir.model.loops.push(IrLoop {
                     id: loop_id.clone(),
                     face: face_id.clone(),
                     boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                         cadmpeg_ir::topology::LoopRing::new(coedges.to_vec(), Vec::new())
-                            .expect("valid loop ring"),
+                            .map_err(cadmpeg_core::CodecError::malformed)?,
                     ),
                 });
                 let edge_uses = [
@@ -733,24 +843,34 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 for use_index in 0..4 {
                     let radial_next = match use_index {
                         0 => bottom_coedges[count - 1 - index].clone(),
-                        1 => CoedgeId::mint(format!(
-                            "{prefix}:coedge:{profile_index}:{next}:side-vertical-in"
-                        ))
-                        .expect("identity grammar"),
+                        1 => extrusion_id!(
+                            CoedgeId,
+                            cadmpeg_ir::identity_key!("coedge")
+                                .colon(profile_index)
+                                .colon(next)
+                                .colon(cadmpeg_ir::identity_key!("side-vertical-in"))
+                        ),
                         2 => top_coedges[index].clone(),
-                        3 => CoedgeId::mint(format!(
-                            "{prefix}:coedge:{profile_index}:{index}:side-vertical-out"
-                        ))
-                        .expect("identity grammar"),
-                        _ => unreachable!(),
+                        3 => extrusion_id!(
+                            CoedgeId,
+                            cadmpeg_ir::identity_key!("coedge")
+                                .colon(profile_index)
+                                .colon(index)
+                                .colon(cadmpeg_ir::identity_key!("side-vertical-out"))
+                        ),
+                        _ => continue,
                     };
                     let pcurve = add_extrusion_pcurve(
                         ir,
                         annotations,
-                        PcurveId::mint(format!(
-                            "{prefix}:pcurve:{profile_index}:{index}:side:{use_index}"
-                        ))
-                        .expect("identity grammar"),
+                        extrusion_id!(
+                            PcurveId,
+                            cadmpeg_ir::identity_key!("pcurve")
+                                .colon(profile_index)
+                                .colon(index)
+                                .colon(cadmpeg_ir::identity_key!("side"))
+                                .colon(use_index)
+                        ),
                         transform.offset,
                         line_pcurve(side_uvs[use_index][0], side_uvs[use_index][1]).ok_or_else(
                             || {

@@ -29,7 +29,6 @@ use cadmpeg_ir::geometry::{
     SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
-use cadmpeg_ir::sketches::SketchId;
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -89,9 +88,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             .flat_map(|table| &table.rows)
             .filter_map(|row| trim_segment_id(definition, row))
             .collect::<BTreeSet<_>>();
-        let Ok(sketch_id) =
-            SketchId::mint(format!("creo:model:sketch#{}", definition.identity.id()))
-        else {
+        let Some(sketch_id) = model_sketch_id(scan, definition) else {
             continue;
         };
         if let Some(sketch) = exactly_one(
@@ -178,16 +175,14 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             };
             let surface_id = native_surface.map_or_else(
                 || {
-                    SurfaceId::mint(format!(
-                        "creo:feature:revolution_surface#{feature_id}:segment{}",
-                        segment.external_id
-                    ))
-                    .expect("identity grammar")
+                    SurfaceId::compose(
+                        &crate::identity::FEATURE_REVOLUTION_SURFACE,
+                        cadmpeg_ir::ids::IdentityKey::from(feature_id)
+                            .colon(cadmpeg_ir::identity_key!("segment"))
+                            .then(segment.external_id),
+                    )
                 },
-                |id| {
-                    SurfaceId::mint(format!("creo:visibgeom:surface#{id}"))
-                        .expect("identity grammar")
-                },
+                |id| SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, id),
             );
             if ir.model.surfaces.iter().any(|item| item.id == surface_id) {
                 continue;
@@ -249,8 +244,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     continue;
                 };
                 let surface_id =
-                    SurfaceId::mint(format!("creo:visibgeom:surface#{native_surface}"))
-                        .expect("identity grammar");
+                    SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, native_surface);
                 if ir.model.surfaces.iter().any(|item| item.id == surface_id) {
                     continue;
                 }
@@ -291,15 +285,21 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 _ => None,
             })
         {
-            let suffix = spline.entity_id.map_or_else(
-                || format!("offset{}", spline.offset),
-                |entity_id| entity_id.to_string(),
+            let suffix_key = match spline.entity_id {
+                Some(entity_id) => cadmpeg_ir::ids::IdentityKey::from(entity_id),
+                None => cadmpeg_ir::ids::IdentityKey::try_new(format!("offset{}", spline.offset))
+                    .map_err(|error| {
+                    cadmpeg_core::CodecError::malformed(format!(
+                        "FeatDefs saved spline identity at offset {}: {error}",
+                        spline.offset
+                    ))
+                })?,
+            };
+            let curve_id = CurveId::compose(
+                &crate::identity::FEATDEFS_SAVED_SPLINE_CURVE,
+                cadmpeg_ir::ids::IdentityKey::from(definition.identity.id())
+                    .colon(suffix_key.clone()),
             );
-            let curve_id = CurveId::mint(format!(
-                "creo:featdefs:saved_spline_curve#{}:{suffix}",
-                definition.identity.id()
-            ))
-            .expect("identity grammar");
             let Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix))) =
                 exactly_one(ir.model.curves.iter().filter(|curve| curve.id == curve_id))
                     .map(|curve| &curve.geometry)
@@ -337,12 +337,12 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             let Some(native_surface) = native_surface else {
                 continue;
             };
-            let surface_id = SurfaceId::mint(format!("creo:visibgeom:surface#{native_surface}"))
-                .expect("identity grammar");
-            let procedural_id = ProceduralSurfaceId::mint(format!(
-                "creo:feature:revolution_construction#{feature_id}:{suffix}"
-            ))
-            .expect("identity grammar");
+            let surface_id =
+                SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, native_surface);
+            let procedural_id = ProceduralSurfaceId::compose(
+                &crate::identity::FEATURE_REVOLUTION_CONSTRUCTION,
+                cadmpeg_ir::ids::IdentityKey::from(feature_id).colon(suffix_key),
+            );
             if ir.model.surfaces.iter().any(|item| item.id == surface_id) {
                 continue;
             }
@@ -388,8 +388,18 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     [0.0, std::f64::consts::TAU],
                     None,
                     [
-                        *directrix.knots().first().expect("validated spline knots"),
-                        *directrix.knots().last().expect("validated spline knots"),
+                        *directrix.knots().first().ok_or_else(|| {
+                            cadmpeg_core::CodecError::malformed(format!(
+                                "FeatDefs saved spline at offset {} has no knots",
+                                spline.offset
+                            ))
+                        })?,
+                        *directrix.knots().last().ok_or_else(|| {
+                            cadmpeg_core::CodecError::malformed(format!(
+                                "FeatDefs saved spline at offset {} has no knots",
+                                spline.offset
+                            ))
+                        })?,
                     ]
                     .into(),
                     false,
@@ -451,9 +461,7 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
         ) else {
             continue;
         };
-        let Ok(sketch_id) =
-            SketchId::mint(format!("creo:model:sketch#{}", definition.identity.id()))
-        else {
+        let Some(sketch_id) = model_sketch_id(scan, definition) else {
             continue;
         };
         for (profile_index, vertices) in connected_sketch_profile_vertices(ir, &sketch_id) {
@@ -464,9 +472,14 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
                 let geometry = CurveGeometry::try_from(geometry)
                     .map_err(cadmpeg_core::CodecError::malformed)?;
                 pending.push((
-                    CurveId::mint(format!(
-                        "creo:feature:revolution_vertex_orbit#{feature_id}:profile{profile_index}:vertex{vertex_index}"
-                    )).expect("identity grammar"),
+                    CurveId::compose(
+                        &crate::identity::FEATURE_REVOLUTION_VERTEX_ORBIT,
+                        cadmpeg_ir::ids::IdentityKey::from(feature_id)
+                            .colon(cadmpeg_ir::identity_key!("profile"))
+                            .then(profile_index)
+                            .colon(cadmpeg_ir::identity_key!("vertex"))
+                            .then(vertex_index),
+                    ),
                     geometry,
                     transform.offset,
                     format!(
@@ -545,9 +558,14 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
                     continue;
                 };
                 pending.push((
-                    CurveId::mint(format!(
-                        "creo:feature:extrusion_vertex_orbit#{feature_id}:profile{profile_index}:vertex{vertex_index}"
-                    )).expect("identity grammar"),
+                    CurveId::compose(
+                        &crate::identity::FEATURE_EXTRUSION_VERTEX_ORBIT,
+                        cadmpeg_ir::ids::IdentityKey::from(feature_id)
+                            .colon(cadmpeg_ir::identity_key!("profile"))
+                            .then(profile_index)
+                            .colon(cadmpeg_ir::identity_key!("vertex"))
+                            .then(vertex_index),
+                    ),
                     geometry,
                     transform.offset,
                     format!(

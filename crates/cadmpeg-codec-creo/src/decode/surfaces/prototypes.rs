@@ -450,8 +450,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
             }
         };
-        let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
-            .expect("identity grammar");
+        let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, row.id);
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
@@ -588,8 +587,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
             }
             continue;
         };
-        let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
-            .expect("identity grammar");
+        let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, row.id);
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
@@ -790,12 +788,11 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
             }
             _ => continue,
         };
-        let id = SurfaceId::mint(format!(
-            "{}{}",
-            carrier.namespace.ir_prefix(),
-            carrier.surface_id
-        ))
-        .expect("identity grammar");
+        let namespace = match carrier.namespace {
+            LegacySurfaceNamespace::Visible => &crate::identity::VISIBGEOM_SURFACE,
+            LegacySurfaceNamespace::NonVisible => &crate::identity::NOVISGEOM_SURFACE,
+        };
+        let id = SurfaceId::compose(namespace, carrier.surface_id);
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }

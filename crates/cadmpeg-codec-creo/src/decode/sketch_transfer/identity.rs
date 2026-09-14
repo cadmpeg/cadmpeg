@@ -5,6 +5,7 @@ use super::super::sketch::saved_section_entity_geometry;
 use super::super::sketch_ids::{sketch_entity_id, sketch_identity_scope, sketch_native_ref};
 use super::super::sweep::saved_spline_sketch_geometry;
 use crate::feature::segment_rows::SegmentRow;
+use cadmpeg_ir::ids::IdentityKey;
 use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchId};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -182,16 +183,22 @@ pub(in super::super) fn unresolved_saved_section_entity(
     };
     let id = external_id.map_or_else(
         || match kind {
-            SavedSectionEntityKind::Spline => SketchEntityId::mint(format!(
-                "creo:featdefs:saved_spline#{}:{suffix}",
-                sketch_identity_scope(sketch)
-            ))
-            .ok(),
-            SavedSectionEntityKind::Dummy => SketchEntityId::mint(format!(
-                "creo:featdefs:saved_dummy#{}:{suffix}",
-                sketch_identity_scope(sketch)
-            ))
-            .ok(),
+            SavedSectionEntityKind::Spline => {
+                let scope = IdentityKey::try_new(sketch_identity_scope(sketch).to_owned()).ok()?;
+                let suffix = IdentityKey::try_new(suffix.clone()).ok()?;
+                Some(SketchEntityId::compose(
+                    &crate::identity::FEATDEFS_SAVED_SPLINE,
+                    scope.colon(suffix),
+                ))
+            }
+            SavedSectionEntityKind::Dummy => {
+                let scope = IdentityKey::try_new(sketch_identity_scope(sketch).to_owned()).ok()?;
+                let suffix = IdentityKey::try_new(suffix.clone()).ok()?;
+                Some(SketchEntityId::compose(
+                    &crate::identity::FEATDEFS_SAVED_DUMMY,
+                    scope.colon(suffix),
+                ))
+            }
             _ => sketch_entity_id(sketch, &suffix),
         },
         |external_id| sketch_entity_id(sketch, external_id),

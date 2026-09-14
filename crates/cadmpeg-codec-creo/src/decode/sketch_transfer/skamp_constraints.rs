@@ -80,6 +80,8 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
             let active = section_skamp_active(skamp.status);
             let native_constraint = || {
                 let native_ref = sketch_native_ref(sketch);
+                let skamp_kind = cadmpeg_core::text::NonBlankString::new("skamp_ptr")?;
+                let item_field = cadmpeg_core::text::NonBlankString::new("items.entity_id")?;
                 let entities = skamp
                     .items
                     .iter()
@@ -90,11 +92,9 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                     .items
                     .iter()
                     .map(|item| SketchNativeOperand {
-                        native_kind: cadmpeg_core::text::NonBlankString::new("skamp_ptr")
-                            .expect("source operand kind is nonempty"),
+                        native_kind: skamp_kind.clone(),
                         field: Some(NativeOperandField {
-                            name: cadmpeg_core::text::NonBlankString::new("items.entity_id")
-                                .expect("source field name is nonempty"),
+                            name: item_field.clone(),
                             role: Some(item.sense),
                         }),
                         object_index: Some(item.entity_id),
@@ -102,12 +102,12 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                     })
                     .collect::<Vec<_>>();
                 if let Some(equation_id) = joined_equation_id {
+                    let triples_kind = cadmpeg_core::text::NonBlankString::new("triples_ptr")?;
+                    let equation_field = cadmpeg_core::text::NonBlankString::new("equation_id")?;
                     operands.push(SketchNativeOperand {
-                        native_kind: cadmpeg_core::text::NonBlankString::new("triples_ptr")
-                            .expect("source operand kind is nonempty"),
+                        native_kind: triples_kind,
                         field: Some(NativeOperandField {
-                            name: cadmpeg_core::text::NonBlankString::new("equation_id")
-                                .expect("source field name is nonempty"),
+                            name: equation_field,
                             role: None,
                         }),
                         object_index: Some(equation_id),
@@ -454,29 +454,29 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                                 .ok()?,
                             }
                         } else if !active {
-                            let [first, second] = skamp.items.as_slice() else {
-                                unreachable!();
-                            };
-                            match (
-                                inactive_point_locus(first),
-                                inactive_point_locus(second),
-                                section_skamp_same_coordinate_axis(skamp),
-                            ) {
-                                (Some(first), Some(second), Some(axis)) => {
-                                    match cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
-                                        first,
-                                        second,
-                                        [SketchCoordinateAxis::U, SketchCoordinateAxis::V]
-                                            [axis.index()],
-                                    ) {
-                                        Ok(relation) => {
-                                            SketchConstraintDefinitionInput::SameCoordinate {
-                                                relation,
+                            match skamp.items.as_slice() {
+                                [first, second] => match (
+                                    inactive_point_locus(first),
+                                    inactive_point_locus(second),
+                                    section_skamp_same_coordinate_axis(skamp),
+                                ) {
+                                    (Some(first), Some(second), Some(axis)) => {
+                                        match cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                                            first,
+                                            second,
+                                            [SketchCoordinateAxis::U, SketchCoordinateAxis::V]
+                                                [axis.index()],
+                                        ) {
+                                            Ok(relation) => {
+                                                SketchConstraintDefinitionInput::SameCoordinate {
+                                                    relation,
+                                                }
                                             }
+                                            Err(_) => native_constraint()?,
                                         }
-                                        Err(_) => native_constraint()?,
                                     }
-                                }
+                                    _ => native_constraint()?,
+                                },
                                 _ => native_constraint()?,
                             }
                         } else {

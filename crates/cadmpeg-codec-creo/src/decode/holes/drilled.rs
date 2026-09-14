@@ -173,7 +173,9 @@ fn split_patch_table_is_counterbore(
     if plane_ids_by_source.len() != 1 {
         return false;
     }
-    let plane_source = *plane_ids_by_source.keys().next().expect("one plane source");
+    let Some(&plane_source) = plane_ids_by_source.keys().next() else {
+        return false;
+    };
     cylinder_ids_by_source.len() == 2
         && cylinder_id_count == 4
         && unique_cylinder_id_count == 4

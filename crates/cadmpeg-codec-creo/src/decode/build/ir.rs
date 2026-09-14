@@ -199,19 +199,36 @@ fn transfer_reference_lines(
         let Some(direction) = normalize(direction) else {
             continue;
         };
-        let (family, native_identity) = match &line.kind {
-            crate::reference::ReferenceLineKind::Line => ("line", line.offset.to_string()),
+        let (family, native_identity, id) = match &line.kind {
+            crate::reference::ReferenceLineKind::Line => (
+                "line",
+                line.offset.to_string(),
+                CurveId::compose(&crate::identity::MDL_REF_INFO_LINE, line.offset),
+            ),
             crate::reference::ReferenceLineKind::Line3d { entity_id, .. } => {
-                let identity = if line3d_id_counts.get(entity_id) == Some(&1) {
-                    entity_id.to_string()
+                let (identity, key) = if line3d_id_counts.get(entity_id) == Some(&1) {
+                    (
+                        entity_id.to_string(),
+                        cadmpeg_ir::ids::IdentityKey::from(*entity_id),
+                    )
                 } else {
-                    format!("{entity_id}@{}", line.offset)
+                    let identity = format!("{entity_id}@{}", line.offset);
+                    let key = cadmpeg_ir::ids::IdentityKey::try_new(identity.clone()).map_err(
+                        |error| {
+                            CodecError::malformed(format!(
+                                "MdlRefInfo line3d identity for source line: {error}"
+                            ))
+                        },
+                    )?;
+                    (identity, key)
                 };
-                ("line3d", identity)
+                (
+                    "line3d",
+                    identity,
+                    CurveId::compose(&crate::identity::MDL_REF_INFO_LINE3D, key),
+                )
             }
         };
-        let prefix = format!("creo:mdl_ref_info:{family}#{native_identity}");
-        let id = CurveId::mint(prefix).expect("identity grammar");
         annotate(
             annotations,
             &id,
@@ -271,8 +288,17 @@ fn transfer_reference_circles(
         } else {
             format!("{}@{}", circle.entity_id, circle.offset)
         };
-        let id = CurveId::mint(format!("creo:mdl_ref_info:arc_z#{native_identity}"))
-            .expect("identity grammar");
+        let native_key = if circle_id_counts.get(&circle.entity_id) == Some(&1) {
+            cadmpeg_ir::ids::IdentityKey::from(circle.entity_id)
+        } else {
+            cadmpeg_ir::ids::IdentityKey::try_new(format!("{}@{}", circle.entity_id, circle.offset))
+                .map_err(|error| {
+                    CodecError::malformed(format!(
+                        "MdlRefInfo arc_z identity for source circle: {error}"
+                    ))
+                })?
+        };
+        let id = CurveId::compose(&crate::identity::MDL_REF_INFO_ARC_Z, native_key);
         annotate(
             annotations,
             &id,
@@ -329,8 +355,20 @@ fn transfer_reference_ellipses(
         } else {
             format!("{}@{}", ellipse.source_entity_id, ellipse.offset)
         };
-        let id = CurveId::mint(format!("creo:mdl_ref_info:conic#{native_identity}"))
-            .expect("identity grammar");
+        let native_key = if ellipse_id_counts.get(&ellipse.source_entity_id) == Some(&1) {
+            cadmpeg_ir::ids::IdentityKey::from(ellipse.source_entity_id)
+        } else {
+            cadmpeg_ir::ids::IdentityKey::try_new(format!(
+                "{}@{}",
+                ellipse.source_entity_id, ellipse.offset
+            ))
+            .map_err(|error| {
+                CodecError::malformed(format!(
+                    "MdlRefInfo conic identity for source ellipse: {error}"
+                ))
+            })?
+        };
+        let id = CurveId::compose(&crate::identity::MDL_REF_INFO_CONIC, native_key);
         annotate(
             annotations,
             &id,
@@ -435,8 +473,7 @@ fn transfer_datum_plane_surfaces(
 ) -> Result<(), CodecError> {
     for plane in &scan.planes.datums {
         let normal = plane.plane.normal();
-        let id = SurfaceId::mint(format!("creo:actdatums:surface#{}", plane.id))
-            .expect("identity grammar");
+        let id = SurfaceId::compose(&crate::identity::ACTDATUM_SURFACE, plane.id);
         annotate(
             annotations,
             &id,
@@ -487,8 +524,7 @@ fn transfer_placed_plane_surfaces_into_ir(
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), CodecError> {
     for (surface_id, (plane, u_axis, offset)) in placed_plane_surfaces(scan) {
-        let id = SurfaceId::mint(format!("creo:visibgeom:surface#{surface_id}"))
-            .expect("identity grammar");
+        let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, surface_id);
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }

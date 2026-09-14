@@ -6813,8 +6813,8 @@ fn decode_local_system_suffix_cylinder_frame(
             )
         })
         .filter(|slots| {
-            let first: [f64; 3] = slots[0..3].try_into().expect("three support slots");
-            let second: [f64; 3] = slots[3..6].try_into().expect("three support slots");
+            let first = [slots[0], slots[1], slots[2]];
+            let second = [slots[3], slots[4], slots[5]];
             let first_magnitude = first.iter().map(|value| value * value).sum::<f64>().sqrt();
             let second_magnitude = second.iter().map(|value| value * value).sum::<f64>().sqrt();
             let scale = first_magnitude.max(second_magnitude).max(1.0);
