@@ -287,7 +287,12 @@ fn b5_face_loops(
     let ids: Vec<LoopId> = face
         .loops
         .iter()
-        .map(|loop_id| LoopId::mint(format!("catia:b5:loop#{loop_id}")).expect("identity grammar"))
+        .map(|loop_id| {
+            LoopId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "b5", "loop"),
+                loop_id,
+            )
+        })
         .collect();
     let unspecified = || cadmpeg_ir::topology::FaceLoops::unspecified(ids.clone());
     if let [single] = ids.as_slice() {
@@ -343,13 +348,19 @@ pub(super) fn emit_faces(
     let components = ownership.components();
     let loop_orientation = &plan.loop_orientation;
 
-    let body_id = BodyId::mint("catia:b5:body#0".to_string()).expect("identity grammar");
+    let body_id = BodyId::compose(
+        &cadmpeg_ir::identity_namespace!("catia", "b5", "body"),
+        cadmpeg_ir::identity_key!("0"),
+    );
     let region_ids: BTreeMap<usize, RegionId> = components
         .keys()
         .map(|&component| {
             (
                 component,
-                RegionId::mint(format!("catia:b5:region#{component}")).expect("identity grammar"),
+                RegionId::compose(
+                    &cadmpeg_ir::identity_namespace!("catia", "b5", "region"),
+                    component,
+                ),
             )
         })
         .collect();
@@ -378,8 +389,10 @@ pub(super) fn emit_faces(
     });
     for (component_index, component_faces) in &components {
         let region_id = region_ids[component_index].clone();
-        let shell_id =
-            ShellId::mint(format!("catia:b5:shell#{component_index}")).expect("identity grammar");
+        let shell_id = ShellId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "b5", "shell"),
+            component_index,
+        );
         annotate(
             annotations,
             &region_id,
@@ -420,8 +433,10 @@ pub(super) fn emit_faces(
                 component_faces
                     .iter()
                     .map(|face| {
-                        FaceId::mint(format!("catia:b5:face#{}", graph.faces[*face].object_id))
-                            .expect("identity grammar")
+                        FaceId::compose(
+                            &cadmpeg_ir::identity_namespace!("catia", "b5", "face"),
+                            graph.faces[*face].object_id,
+                        )
                     })
                     .collect(),
                 Vec::new(),
@@ -437,13 +452,14 @@ pub(super) fn emit_faces(
 
     let mut coedges_by_edge = HashMap::<u32, Vec<usize>>::new();
     for (face_index, face) in graph.faces.iter().enumerate() {
-        let face_id =
-            FaceId::mint(format!("catia:b5:face#{}", face.object_id)).expect("identity grammar");
-        let shell_id = ShellId::mint(format!(
-            "catia:b5:shell#{}",
-            ownership.face_components[face_index]
-        ))
-        .expect("identity grammar");
+        let face_id = FaceId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "b5", "face"),
+            face.object_id,
+        );
+        let shell_id = ShellId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "b5", "shell"),
+            ownership.face_components[face_index],
+        );
         let face_loops = b5_face_loops(ir, graph, face, loop_orientation, surface_ids, pcurve_uses);
         annotate(
             annotations,
@@ -473,12 +489,16 @@ pub(super) fn emit_faces(
         for loop_id_value in &face.loops {
             let loop_ = &graph.loops[loop_id_value];
             let orientation = &loop_orientation[loop_id_value];
-            let loop_id =
-                LoopId::mint(format!("catia:b5:loop#{loop_id_value}")).expect("identity grammar");
+            let loop_id = LoopId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "b5", "loop"),
+                loop_id_value,
+            );
             let coedge_ids_by_member: Vec<CoedgeId> = (0..loop_.members.len())
                 .map(|index| {
-                    CoedgeId::mint(format!("catia:b5:coedge#{loop_id_value}-{index}"))
-                        .expect("identity grammar")
+                    CoedgeId::compose(
+                        &cadmpeg_ir::identity_namespace!("catia", "b5", "coedge"),
+                        cadmpeg_ir::ids::IdentityKey::from(loop_id_value).dash(index),
+                    )
                 })
                 .collect();
             let coedge_ids: Vec<CoedgeId> = orientation
@@ -493,8 +513,10 @@ pub(super) fn emit_faces(
                     let endpoint = endpoints[1 - usize::from(orientation.members[member].reversed)]
                         .combined_index(graph.vertices.raw_points().len());
                     AnchoredVertexUse {
-                        vertex: VertexId::mint(format!("catia:b5:vertex#{endpoint}"))
-                            .expect("identity grammar"),
+                        vertex: VertexId::compose(
+                            &cadmpeg_ir::identity_namespace!("catia", "b5", "vertex"),
+                            endpoint,
+                        ),
                         after: coedge_ids_by_member[member].clone(),
                         pcurves: Vec::new(),
                     }

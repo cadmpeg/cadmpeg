@@ -121,7 +121,8 @@ pub(crate) fn try_decode_e5(
         "catia:payload:unknown#e5",
     );
     for (index, point) in points.iter().enumerate() {
-        let point_id = PointId::mint(format!("catia:e5:pt#{index}")).expect("identity grammar");
+        let point_id =
+            PointId::compose(&cadmpeg_ir::identity_namespace!("catia", "e5", "pt"), index);
         annotate(
             &mut annotations,
             &point_id,
@@ -135,7 +136,8 @@ pub(crate) fn try_decode_e5(
             position: *point,
             source_object: None,
         });
-        let vertex_id = VertexId::mint(format!("catia:e5:v#{index}")).expect("identity grammar");
+        let vertex_id =
+            VertexId::compose(&cadmpeg_ir::identity_namespace!("catia", "e5", "v"), index);
         annotate(
             &mut annotations,
             &vertex_id,
@@ -152,7 +154,10 @@ pub(crate) fn try_decode_e5(
         });
     }
     for (index, circle) in circles.iter().enumerate() {
-        let id = CurveId::mint(format!("catia:e5:curve#{index}")).expect("identity grammar");
+        let id = CurveId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "e5", "curve"),
+            index,
+        );
         annotate(
             &mut annotations,
             &id,
@@ -168,7 +173,10 @@ pub(crate) fn try_decode_e5(
         });
     }
     for (index, surface) in surfaces.iter().enumerate() {
-        let id = SurfaceId::mint(format!("catia:e5:surf#{index}")).expect("identity grammar");
+        let id = SurfaceId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "e5", "surf"),
+            index,
+        );
         annotate(
             &mut annotations,
             &id,
@@ -192,11 +200,14 @@ pub(crate) fn try_decode_e5(
     }
     for (index, jet) in rolling_ball_jets.iter().enumerate() {
         let surface_index = surfaces.len() + index;
-        let surface_id =
-            SurfaceId::mint(format!("catia:e5:surf#{surface_index}")).expect("identity grammar");
-        let procedural_id =
-            ProceduralSurfaceId::mint(format!("catia:e5:procedural-surf#{surface_index}"))
-                .expect("identity grammar");
+        let surface_id = SurfaceId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "e5", "surf"),
+            surface_index,
+        );
+        let procedural_id = ProceduralSurfaceId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "e5", "procedural-surf"),
+            surface_index,
+        );
         annotate(
             &mut annotations,
             &surface_id,
@@ -926,12 +937,18 @@ pub(crate) fn canonical_direction(mut direction: Vector3) -> Vector3 {
 }
 
 pub(crate) fn attach_e5_free_vertices(ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
-    let body_id =
-        BodyId::mint("catia:e5:body#unbound-points".to_string()).expect("identity grammar");
-    let region_id =
-        RegionId::mint("catia:e5:region#unbound-points".to_string()).expect("identity grammar");
-    let shell_id =
-        ShellId::mint("catia:e5:shell#unbound-points".to_string()).expect("identity grammar");
+    let body_id = BodyId::compose(
+        &cadmpeg_ir::identity_namespace!("catia", "e5", "body"),
+        cadmpeg_ir::identity_key!("unbound-points"),
+    );
+    let region_id = RegionId::compose(
+        &cadmpeg_ir::identity_namespace!("catia", "e5", "region"),
+        cadmpeg_ir::identity_key!("unbound-points"),
+    );
+    let shell_id = ShellId::compose(
+        &cadmpeg_ir::identity_namespace!("catia", "e5", "shell"),
+        cadmpeg_ir::identity_key!("unbound-points"),
+    );
     for id in [body_id.as_str(), region_id.as_str(), shell_id.as_str()] {
         annotate(
             annotations,
@@ -1036,8 +1053,10 @@ pub(crate) fn transfer_e5_topology(
                 (
                     surface.record_id,
                     (
-                        SurfaceId::mint(format!("catia:e5:surf#{index}"))
-                            .expect("identity grammar"),
+                        SurfaceId::compose(
+                            &cadmpeg_ir::identity_namespace!("catia", "e5", "surf"),
+                            index,
+                        ),
                         surface,
                     ),
                 )
@@ -1050,7 +1069,7 @@ pub(crate) fn transfer_e5_topology(
         .map(|(index, reference)| {
             (
                 *reference,
-                VertexId::mint(format!("catia:e5:v#{index}")).expect("identity grammar"),
+                VertexId::compose(&cadmpeg_ir::identity_namespace!("catia", "e5", "v"), index),
             )
         })
         .collect();
@@ -1093,7 +1112,10 @@ pub(crate) fn transfer_e5_topology(
         .map(|record_id| {
             (
                 *record_id,
-                EdgeId::mint(format!("catia:e5:edge#{record_id}")).expect("identity grammar"),
+                EdgeId::compose(
+                    &cadmpeg_ir::identity_namespace!("catia", "e5", "edge"),
+                    record_id,
+                ),
             )
         })
         .collect();
@@ -1540,8 +1562,10 @@ fn resolve_e5_ownership(topology: &crate::families::e5::graph::E5Topology) -> Op
     let mut face_shell = HashMap::new();
     for (body, plan) in bodies.iter().enumerate() {
         for (component, faces) in plan.components.iter().enumerate() {
-            let shell = ShellId::mint(format!("catia:e5:shell#{body}-{component}"))
-                .expect("identity grammar");
+            let shell = ShellId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "e5", "shell"),
+                cadmpeg_ir::ids::IdentityKey::from(body).dash(component),
+            );
             for face in faces {
                 face_shell.insert(*face, shell.clone());
             }
@@ -1567,7 +1591,10 @@ fn emit_e5_curves_and_edges(
         .map(|&record_id| {
             (
                 record_id,
-                CurveId::mint(format!("catia:e5:curve#{record_id}")).expect("identity grammar"),
+                CurveId::compose(
+                    &cadmpeg_ir::identity_namespace!("catia", "e5", "curve"),
+                    record_id,
+                ),
             )
         })
         .collect();
@@ -1592,8 +1619,10 @@ fn emit_e5_curves_and_edges(
     }
     for (&record_id, context) in intersection_plan {
         let curve = edge_curve_ids[&record_id].clone();
-        let id = ProceduralCurveId::mint(format!("catia:e5:intersection#{record_id}"))
-            .expect("identity grammar");
+        let id = ProceduralCurveId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "e5", "intersection"),
+            record_id,
+        );
         annotate(
             annotations,
             &id,
@@ -1625,8 +1654,10 @@ fn emit_e5_curves_and_edges(
             continue;
         }
         let curve = edge_curve_ids[&record_id].clone();
-        let id = ProceduralCurveId::mint(format!("catia:e5:surface-curve#{record_id}"))
-            .expect("identity grammar");
+        let id = ProceduralCurveId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "e5", "surface-curve"),
+            record_id,
+        );
         annotate(
             annotations,
             &id,
@@ -1712,7 +1743,10 @@ fn emit_e5_pcurves(
     pcurve_plan: &BTreeMap<u32, (PcurveGeometry, [f64; 2])>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     for (&record_id, (geometry, range)) in pcurve_plan {
-        let id = PcurveId::mint(format!("catia:e5:pcurve#{record_id}")).expect("identity grammar");
+        let id = PcurveId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "e5", "pcurve"),
+            record_id,
+        );
         annotate(
             annotations,
             &id,
@@ -1741,15 +1775,19 @@ fn emit_e5_bodies(
     bodies: &[E5BodyPlan],
 ) -> Result<(), cadmpeg_core::CodecError> {
     for (body_index, plan) in bodies.iter().enumerate() {
-        let body_id = BodyId::mint(plan.record_id.map_or_else(
-            || format!("catia:e5:body#inferred-{body_index}"),
-            |id| format!("catia:e5:body#{id}"),
-        ))
-        .expect("identity grammar");
+        let body_id = BodyId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "e5", "body"),
+            plan.record_id.map_or_else(
+                || cadmpeg_ir::identity_key!("inferred").dash(body_index),
+                cadmpeg_ir::ids::IdentityKey::from,
+            ),
+        );
         let region_ids: Vec<RegionId> = (0..plan.components.len())
             .map(|component| {
-                RegionId::mint(format!("catia:e5:region#{body_index}-{component}"))
-                    .expect("identity grammar")
+                RegionId::compose(
+                    &cadmpeg_ir::identity_namespace!("catia", "e5", "region"),
+                    cadmpeg_ir::ids::IdentityKey::from(body_index).dash(component),
+                )
             })
             .collect();
         annotate(
@@ -1780,8 +1818,10 @@ fn emit_e5_bodies(
         });
         for (component, component_faces) in plan.components.iter().enumerate() {
             let region_id = region_ids[component].clone();
-            let shell_id = ShellId::mint(format!("catia:e5:shell#{body_index}-{component}"))
-                .expect("identity grammar");
+            let shell_id = ShellId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "e5", "shell"),
+                cadmpeg_ir::ids::IdentityKey::from(body_index).dash(component),
+            );
             annotate(
                 annotations,
                 &region_id,
@@ -1820,7 +1860,10 @@ fn emit_e5_bodies(
                     component_faces
                         .iter()
                         .map(|face| {
-                            FaceId::mint(format!("catia:e5:face#{face}")).expect("identity grammar")
+                            FaceId::compose(
+                                &cadmpeg_ir::identity_namespace!("catia", "e5", "face"),
+                                face,
+                            )
                         })
                         .collect(),
                     Vec::new(),
@@ -1857,14 +1900,18 @@ fn emit_e5_faces_loops_coedges(
 ) -> bool {
     let mut coedges_by_edge = HashMap::<u32, Vec<usize>>::new();
     for face in &topology.faces {
-        let face_id =
-            FaceId::mint(format!("catia:e5:face#{}", face.record_id)).expect("identity grammar");
+        let face_id = FaceId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "e5", "face"),
+            face.record_id,
+        );
         let loop_ids: Vec<LoopId> = face
             .loops
             .iter()
             .map(|loop_| {
-                LoopId::mint(format!("catia:e5:loop#{}", loop_.record_id))
-                    .expect("identity grammar")
+                LoopId::compose(
+                    &cadmpeg_ir::identity_namespace!("catia", "e5", "loop"),
+                    loop_.record_id,
+                )
             })
             .collect();
         annotate(
@@ -1902,12 +1949,16 @@ fn emit_e5_faces_loops_coedges(
         });
 
         for loop_ in &face.loops {
-            let loop_id = LoopId::mint(format!("catia:e5:loop#{}", loop_.record_id))
-                .expect("identity grammar");
+            let loop_id = LoopId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "e5", "loop"),
+                loop_.record_id,
+            );
             let coedge_ids_by_member: Vec<CoedgeId> = (0..loop_.members.len())
                 .map(|index| {
-                    CoedgeId::mint(format!("catia:e5:coedge#{}-{index}", loop_.record_id))
-                        .expect("identity grammar")
+                    CoedgeId::compose(
+                        &cadmpeg_ir::identity_namespace!("catia", "e5", "coedge"),
+                        cadmpeg_ir::ids::IdentityKey::from(loop_.record_id).dash(index),
+                    )
                 })
                 .collect();
             let members = loop_
@@ -2005,8 +2056,10 @@ fn emit_e5_faces_loops_coedges(
                         Sense::Forward
                     },
                     pcurves: vec![cadmpeg_ir::topology::PcurveUse {
-                        pcurve: PcurveId::mint(format!("catia:e5:pcurve#{pcurve_ref}"))
-                            .expect("identity grammar"),
+                        pcurve: PcurveId::compose(
+                            &cadmpeg_ir::identity_namespace!("catia", "e5", "pcurve"),
+                            pcurve_ref,
+                        ),
                         isoparametric: None,
                         parameter_range: match pcurve_parameter_range
                             .map(cadmpeg_ir::geometry::DirectedParameterRange::new)

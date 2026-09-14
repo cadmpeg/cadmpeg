@@ -685,8 +685,10 @@ pub(crate) fn build_metadata_fallback(
     // Preserve the reconstructed BREP stream (or, absent one, the whole file) as
     // an unknown passthrough so no recognized data is silently dropped.
     if let Some(brep) = &scan.brep {
-        let id = UnknownId::mint("catia:payload:unknown#brep-stream".to_string())
-            .expect("identity grammar");
+        let id = UnknownId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "payload", "unknown"),
+            cadmpeg_ir::identity_key!("brep-stream"),
+        );
         annotate(
             &mut annotations,
             &id,

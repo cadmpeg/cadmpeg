@@ -80,10 +80,14 @@ pub(crate) fn append_consolidated_revolutions(
                 + profile.center_pair[0] * direction_y.z
                 + profile.center_pair[1] * axis.z,
         );
-        let directrix = CurveId::mint(format!(
-            "catia:consolidated:surface-revolution-directrix#{index}"
-        ))
-        .expect("identity grammar");
+        let directrix = CurveId::compose(
+            &cadmpeg_ir::identity_namespace!(
+                "catia",
+                "consolidated",
+                "surface-revolution-directrix"
+            ),
+            index,
+        );
         let Ok(payload) = cadmpeg_ir::geometry::CircleCurve::try_new(
             center,
             direction_x,
@@ -105,10 +109,10 @@ pub(crate) fn append_consolidated_revolutions(
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(payload)),
             source_object: Some(cgm_source("profile-circle", profile.record_id)?),
         });
-        let surface = SurfaceId::mint(format!(
-            "catia:consolidated:surface-revolution-surface#{index}"
-        ))
-        .expect("identity grammar");
+        let surface = SurfaceId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "consolidated", "surface-revolution-surface"),
+            index,
+        );
         let center_offset = Vector3::new(
             center.x - origin.x,
             center.y - origin.y,
@@ -193,10 +197,14 @@ pub(crate) fn append_consolidated_revolutions(
             )
             .and_then(|admitted_payload| {
                 ProceduralSurface::new(
-                    ProceduralSurfaceId::mint(format!(
-                        "catia:consolidated:surface-revolution#{index}"
-                    ))
-                    .expect("identity grammar"),
+                    ProceduralSurfaceId::compose(
+                        &cadmpeg_ir::identity_namespace!(
+                            "catia",
+                            "consolidated",
+                            "surface-revolution"
+                        ),
+                        index,
+                    ),
                     ProceduralSurfaceDefinition::Revolution(admitted_payload),
                     None,
                 )
@@ -497,8 +505,10 @@ pub(crate) fn try_decode_freeform_surfaces(
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
-    let payload_id =
-        UnknownId::mint("catia:payload:unknown#freeform".to_string()).expect("identity grammar");
+    let payload_id = UnknownId::compose(
+        &cadmpeg_ir::identity_namespace!("catia", "payload", "unknown"),
+        cadmpeg_ir::identity_key!("freeform"),
+    );
     let payload_index =
         preserve_raw_payload(&mut unknowns, &mut annotations, scan, payload_id.as_str());
     let b5_complete = b5_graph.as_ref().is_some_and(|graph| graph.complete);
@@ -544,7 +554,10 @@ pub(crate) fn try_decode_freeform_surfaces(
             None => freeform_surface_carriers(&scan.data, &consolidated_records, refusal).ok()?,
         };
         for (index, surface) in surfaces.iter().enumerate() {
-            let id = SurfaceId::mint(format!("catia:a8:surf#{index}")).expect("identity grammar");
+            let id = SurfaceId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "a8", "surf"),
+                index,
+            );
             annotate(
                 &mut annotations,
                 &id,
@@ -575,8 +588,10 @@ pub(crate) fn try_decode_freeform_surfaces(
     )
     .ok()?;
     for curve in b2_nurbs_curves {
-        let id = CurveId::mint(format!("catia:b2:nurbs-curve#{}", ir.model.curves.len()))
-            .expect("identity grammar");
+        let id = CurveId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "b2", "nurbs-curve"),
+            ir.model.curves.len(),
+        );
         let parameter_range = [
             *curve.geometry.knots().first().expect("parsed knot vector"),
             *curve.geometry.knots().last().expect("parsed knot vector"),
@@ -599,8 +614,10 @@ pub(crate) fn try_decode_freeform_surfaces(
         standalone_wires.push((id, parameter_range, curve.pos));
     }
     for curve in a5_nurbs_curves {
-        let id = CurveId::mint(format!("catia:a5:nurbs-curve#{}", ir.model.curves.len()))
-            .expect("identity grammar");
+        let id = CurveId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "a5", "nurbs-curve"),
+            ir.model.curves.len(),
+        );
         let parameter_range = [
             *curve.geometry.knots().first().expect("parsed knot vector"),
             *curve.geometry.knots().last().expect("parsed knot vector"),
@@ -623,8 +640,10 @@ pub(crate) fn try_decode_freeform_surfaces(
         standalone_wires.push((id, parameter_range, curve.pos));
     }
     for circle in b2_spatial_circles {
-        let id = CurveId::mint(format!("catia:b2:circle#{}", ir.model.curves.len()))
-            .expect("identity grammar");
+        let id = CurveId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "b2", "circle"),
+            ir.model.curves.len(),
+        );
         let parameter_range = [
             circle.range.lower() / circle.radius.get(),
             circle.range.upper() / circle.radius.get(),
@@ -934,15 +953,25 @@ fn attach_standalone_wires(
     let Some(plans) = plans else {
         return false;
     };
-    let body_id = BodyId::mint("catia:freeform:wire-body#0".to_string()).expect("identity grammar");
-    let region_id =
-        RegionId::mint("catia:freeform:wire-region#0".to_string()).expect("identity grammar");
-    let shell_id =
-        ShellId::mint("catia:freeform:wire-shell#0".to_string()).expect("identity grammar");
+    let body_id = BodyId::compose(
+        &cadmpeg_ir::identity_namespace!("catia", "freeform", "wire-body"),
+        cadmpeg_ir::identity_key!("0"),
+    );
+    let region_id = RegionId::compose(
+        &cadmpeg_ir::identity_namespace!("catia", "freeform", "wire-region"),
+        cadmpeg_ir::identity_key!("0"),
+    );
+    let shell_id = ShellId::compose(
+        &cadmpeg_ir::identity_namespace!("catia", "freeform", "wire-shell"),
+        cadmpeg_ir::identity_key!("0"),
+    );
     let edge_ids = plans
         .iter()
         .map(|(index, ..)| {
-            EdgeId::mint(format!("catia:freeform:wire-edge#{index}")).expect("identity grammar")
+            EdgeId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "freeform", "wire-edge"),
+                index,
+            )
         })
         .collect();
     let Ok(shell) = Shell::new(
@@ -966,19 +995,29 @@ fn attach_standalone_wires(
     }
     for (index, carrier, pos, start, end) in plans {
         let point_ids = [
-            PointId::mint(format!("catia:freeform:wire-point#{index}:start"))
-                .expect("identity grammar"),
-            PointId::mint(format!("catia:freeform:wire-point#{index}:end"))
-                .expect("identity grammar"),
+            PointId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "freeform", "wire-point"),
+                cadmpeg_ir::ids::IdentityKey::from(index).then(cadmpeg_ir::identity_key!(":start")),
+            ),
+            PointId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "freeform", "wire-point"),
+                cadmpeg_ir::ids::IdentityKey::from(index).then(cadmpeg_ir::identity_key!(":end")),
+            ),
         ];
         let vertex_ids = [
-            VertexId::mint(format!("catia:freeform:wire-vertex#{index}:start"))
-                .expect("identity grammar"),
-            VertexId::mint(format!("catia:freeform:wire-vertex#{index}:end"))
-                .expect("identity grammar"),
+            VertexId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "freeform", "wire-vertex"),
+                cadmpeg_ir::ids::IdentityKey::from(index).then(cadmpeg_ir::identity_key!(":start")),
+            ),
+            VertexId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "freeform", "wire-vertex"),
+                cadmpeg_ir::ids::IdentityKey::from(index).then(cadmpeg_ir::identity_key!(":end")),
+            ),
         ];
-        let edge_id =
-            EdgeId::mint(format!("catia:freeform:wire-edge#{index}")).expect("identity grammar");
+        let edge_id = EdgeId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "freeform", "wire-edge"),
+            index,
+        );
         for id in [
             point_ids[0].as_str(),
             point_ids[1].as_str(),
@@ -1233,8 +1272,10 @@ fn append_consolidated_line_profiles(
         .into_iter()
         .enumerate()
     {
-        let id = CurveId::mint(format!("catia:consolidated:line-profile-curve#{index}"))
-            .expect("identity grammar");
+        let id = CurveId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "consolidated", "line-profile-curve"),
+            index,
+        );
         let Ok(payload) = cadmpeg_ir::geometry::LineCurve::try_new(
             Point3::new(line.origin[0], line.origin[1], line.origin[2]),
             Vector3::from(line.direction.get()),
@@ -1280,7 +1321,10 @@ pub(crate) fn append_freeform_surface_pools(
     for surface in &surfaces {
         let (source_object, source_tag) = freeform_surface_source(surface)?;
         let index = ir.model.surfaces.len();
-        let id = SurfaceId::mint(format!("catia:freeform:surf#{index}")).expect("identity grammar");
+        let id = SurfaceId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "freeform", "surf"),
+            index,
+        );
         carrier_ids.push(id.clone());
         annotate(
             annotations,
@@ -1307,8 +1351,10 @@ pub(crate) fn append_freeform_surface_pools(
         .filter_map(|(offset, carrier)| Some((offset, carrier?)))
     {
         let surface_index = ir.model.surfaces.len();
-        let surface_id = SurfaceId::mint(format!("catia:offset:surf#{surface_index}"))
-            .expect("identity grammar");
+        let surface_id = SurfaceId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "offset", "surf"),
+            surface_index,
+        );
         annotate(
             annotations,
             &surface_id,
@@ -1323,11 +1369,10 @@ pub(crate) fn append_freeform_surface_pools(
             source_object: None,
         });
 
-        let procedural_id = ProceduralSurfaceId::mint(format!(
-            "catia:offset:construction#{}",
-            ir.model.procedural_surfaces.len()
-        ))
-        .expect("identity grammar");
+        let procedural_id = ProceduralSurfaceId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "offset", "construction"),
+            ir.model.procedural_surfaces.len(),
+        );
         annotate(
             annotations,
             &procedural_id,
@@ -1408,8 +1453,10 @@ pub(crate) fn append_freeform_surface_pools(
             None,
             false,
         )?;
-        let id = CurveId::mint(format!("catia:guide:curve#{}", ir.model.curves.len()))
-            .expect("identity grammar");
+        let id = CurveId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "guide", "curve"),
+            ir.model.curves.len(),
+        );
         annotate(
             annotations,
             &id,
@@ -1435,8 +1482,10 @@ pub(crate) fn append_freeform_surface_pools(
                 continue;
             };
             let side = usize::from(second_limit);
-            let id = CurveId::mint(format!("catia:rolling-ball:limit#{}:{side}", jet.pos))
-                .expect("identity grammar");
+            let id = CurveId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "rolling-ball", "limit"),
+                cadmpeg_ir::ids::IdentityKey::from(jet.pos).colon(side),
+            );
             annotate(
                 annotations,
                 &id,
@@ -1480,13 +1529,14 @@ pub(crate) fn append_freeform_surface_pools(
             })
             .collect::<Vec<_>>();
         let surface_index = ir.model.surfaces.len();
-        let surface_id = SurfaceId::mint(format!("catia:rolling-ball:surf#{surface_index}"))
-            .expect("identity grammar");
-        let procedural_id = ProceduralSurfaceId::mint(format!(
-            "catia:rolling-ball:construction#{}",
-            ir.model.procedural_surfaces.len()
-        ))
-        .expect("identity grammar");
+        let surface_id = SurfaceId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "rolling-ball", "surf"),
+            surface_index,
+        );
+        let procedural_id = ProceduralSurfaceId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "rolling-ball", "construction"),
+            ir.model.procedural_surfaces.len(),
+        );
         annotate(
             annotations,
             &surface_id,
@@ -1917,11 +1967,14 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                     if let Some(id) = surface_ids.get(&key) {
                         id.clone()
                     } else {
-                        let id = SurfaceId::mint(format!(
-                            "catia:consolidated:nurbs-offset#{}",
-                            ir.model.surfaces.len()
-                        ))
-                        .expect("identity grammar");
+                        let id = SurfaceId::compose(
+                            &cadmpeg_ir::identity_namespace!(
+                                "catia",
+                                "consolidated",
+                                "nurbs-offset"
+                            ),
+                            ir.model.surfaces.len(),
+                        );
                         annotate(
                             annotations,
                             &id,
@@ -1937,11 +1990,14 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                             }),
                             source_object: None,
                         });
-                        let procedural_id = ProceduralSurfaceId::mint(format!(
-                            "catia:consolidated:nurbs-offset-construction#{}",
-                            ir.model.procedural_surfaces.len()
-                        ))
-                        .expect("identity grammar");
+                        let procedural_id = ProceduralSurfaceId::compose(
+                            &cadmpeg_ir::identity_namespace!(
+                                "catia",
+                                "consolidated",
+                                "nurbs-offset-construction"
+                            ),
+                            ir.model.procedural_surfaces.len(),
+                        );
                         annotate(
                             annotations,
                             &procedural_id,
@@ -2502,11 +2558,14 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                 }
                 binding_counts.standard_face_pcurves += partner_pcurves.coedges.len();
                 for (coedge_index, geometry) in partner_pcurves.coedges {
-                    let pcurve_id = PcurveId::mint(format!(
-                        "catia:consolidated:standard-pcurve#{}",
-                        ir.model.pcurves.len()
-                    ))
-                    .expect("identity grammar");
+                    let pcurve_id = PcurveId::compose(
+                        &cadmpeg_ir::identity_namespace!(
+                            "catia",
+                            "consolidated",
+                            "standard-pcurve"
+                        ),
+                        ir.model.pcurves.len(),
+                    );
                     annotate(
                         annotations,
                         &pcurve_id,
@@ -2556,11 +2615,10 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                 .derived(&procedural.id, "definition")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
         } else {
-            let curve_id = CurveId::mint(format!(
-                "catia:consolidated:curve#{}",
-                ir.model.curves.len()
-            ))
-            .expect("identity grammar");
+            let curve_id = CurveId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "consolidated", "curve"),
+                ir.model.curves.len(),
+            );
             annotate(
                 annotations,
                 &curve_id,
@@ -2574,11 +2632,10 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
                 source_object: None,
             });
-            let procedural_id = ProceduralCurveId::mint(format!(
-                "catia:consolidated:construction#{}",
-                ir.model.procedural_curves.len()
-            ))
-            .expect("identity grammar");
+            let procedural_id = ProceduralCurveId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "consolidated", "construction"),
+                ir.model.procedural_curves.len(),
+            );
             annotate(
                 annotations,
                 &procedural_id,
@@ -2933,16 +2990,14 @@ pub(crate) fn append_a8_rolling_ball_pools(
         else {
             continue;
         };
-        let surface_id = SurfaceId::mint(format!(
-            "catia:a8-rolling-ball:surf#{}",
-            ir.model.surfaces.len()
-        ))
-        .expect("identity grammar");
-        let procedural_id = ProceduralSurfaceId::mint(format!(
-            "catia:a8-rolling-ball:construction#{}",
-            ir.model.procedural_surfaces.len()
-        ))
-        .expect("identity grammar");
+        let surface_id = SurfaceId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "a8-rolling-ball", "surf"),
+            ir.model.surfaces.len(),
+        );
+        let procedural_id = ProceduralSurfaceId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "a8-rolling-ball", "construction"),
+            ir.model.procedural_surfaces.len(),
+        );
         annotate(
             annotations,
             &surface_id,

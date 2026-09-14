@@ -280,9 +280,14 @@ pub(super) fn emit_edges(
     let mut edge_id_map = HashMap::new();
     let edge_ids = std::mem::take(&mut plan.edge_ids);
     for edge_id in edge_ids {
-        let id = EdgeId::mint(format!("catia:b5:edge#{edge_id}")).expect("identity grammar");
-        let curve_id =
-            CurveId::mint(format!("catia:b5:curve#{edge_id}")).expect("identity grammar");
+        let id = EdgeId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "b5", "edge"),
+            edge_id,
+        );
+        let curve_id = CurveId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "b5", "curve"),
+            edge_id,
+        );
         let endpoints = graph.vertices.edges()[&edge_id]
             .map(|vertex| vertex.combined_index(graph.vertices.raw_points().len()));
         let curve_plan = plan
@@ -414,10 +419,14 @@ pub(super) fn emit_edges(
             id,
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), edge_range)
                 .map_err(cadmpeg_core::CodecError::malformed)?,
-            start: VertexId::mint(format!("catia:b5:vertex#{}", endpoints[0]))
-                .expect("identity grammar"),
-            end: VertexId::mint(format!("catia:b5:vertex#{}", endpoints[1]))
-                .expect("identity grammar"),
+            start: VertexId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "b5", "vertex"),
+                endpoints[0],
+            ),
+            end: VertexId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "b5", "vertex"),
+                endpoints[1],
+            ),
             tolerance: edge_tolerance,
         });
     }

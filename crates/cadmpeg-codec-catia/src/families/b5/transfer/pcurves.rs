@@ -740,10 +740,17 @@ pub(super) fn emit_pcurves(
         let range_count = ranges.len();
         for (rank, (range_bits, occurrences)) in ranges.into_iter().enumerate() {
             let id = if range_count == 1 {
-                PcurveId::mint(format!("catia:b5:pcurve#{object_id}")).expect("identity grammar")
+                PcurveId::compose(
+                    &cadmpeg_ir::identity_namespace!("catia", "b5", "pcurve"),
+                    object_id,
+                )
             } else {
-                PcurveId::mint(format!("catia:b5:pcurve#{object_id}@{rank}"))
-                    .expect("identity grammar")
+                PcurveId::compose(
+                    &cadmpeg_ir::identity_namespace!("catia", "b5", "pcurve"),
+                    cadmpeg_ir::ids::IdentityKey::from(object_id)
+                        .then(cadmpeg_ir::identity_key!("@"))
+                        .then(rank),
+                )
             };
             annotate(
                 annotations,
