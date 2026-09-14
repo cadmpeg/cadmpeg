@@ -24,10 +24,11 @@ pub(crate) fn prepare_parameters_for_write(
     native: &mut Option<crate::native::SldprtNative>,
     feature_parameter_changes_authorized: bool,
 ) -> Result<(), CodecError> {
-    let neutral_hash = parameter_hash(&ir.model.parameters);
+    let neutral_hash = parameter_hash(&ir.model.parameters)?;
     let native_hash = native
         .as_ref()
-        .map(|value| native_parameter_hash(&value.feature_histories));
+        .map(|value| native_parameter_hash(&value.feature_histories))
+        .transpose()?;
     let baseline_neutral = ir.source.as_ref().and_then(|source| {
         source
             .attributes
@@ -60,7 +61,7 @@ pub(crate) fn prepare_parameters_for_write(
                 .as_ref()
                 .map(|value| project_parameters(&value.feature_histories))
                 .unwrap_or_default();
-            if parameter_hash(&projected) == neutral_hash {
+            if parameter_hash(&projected)? == neutral_hash {
                 Ok(())
             } else {
                 Err(CodecError::Malformed(

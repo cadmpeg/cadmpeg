@@ -1,12 +1,11 @@
 //! Stable digests over projected sketches, constraints and lanes.
 
-use sha2::Digest;
-use sha2::Sha256;
-use std::fmt::Write as _;
+use crate::history::hash_records;
+use cadmpeg_core::CodecError;
 
 /// Stable hash of neutral sketch records.
-pub(crate) fn sketch_hash(ir: &cadmpeg_ir::CadIr) -> String {
-    hash_debug(&(
+pub(crate) fn sketch_hash(ir: &cadmpeg_ir::CadIr) -> Result<String, CodecError> {
+    hash_records(&(
         &ir.model.sketches,
         &ir.model.sketch_entities,
         &ir.model.sketch_constraints,
@@ -16,20 +15,11 @@ pub(crate) fn sketch_hash(ir: &cadmpeg_ir::CadIr) -> String {
 }
 
 /// Stable hash of neutral sketch constraints.
-pub(crate) fn constraint_hash(ir: &cadmpeg_ir::CadIr) -> String {
-    hash_debug(&ir.model.sketch_constraints)
+pub(crate) fn constraint_hash(ir: &cadmpeg_ir::CadIr) -> Result<String, CodecError> {
+    hash_records(&ir.model.sketch_constraints)
 }
 
 /// Stable hash of retained native feature-input lanes.
-pub(crate) fn lane_hash(native: &crate::native::SldprtNative) -> String {
-    hash_debug(&native.feature_input_lanes)
-}
-
-fn hash_debug<T: std::fmt::Debug + ?Sized>(value: &T) -> String {
-    let bytes = format!("{value:?}");
-    let mut out = String::with_capacity(64);
-    for byte in Sha256::digest(bytes.as_bytes()) {
-        write!(&mut out, "{byte:02x}").expect("writing to String cannot fail");
-    }
-    out
+pub(crate) fn lane_hash(native: &crate::native::SldprtNative) -> Result<String, CodecError> {
+    hash_records(&native.feature_input_lanes)
 }
