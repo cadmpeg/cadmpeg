@@ -56,9 +56,7 @@ impl ModelCheckpoint {
             };
         }
         let lengths = crate::document::arena_registry!(capture_lengths);
-        Self {
-            lengths,
-        }
+        Self { lengths }
     }
 
     fn length<T: ArenaEntity>(&self) -> usize {

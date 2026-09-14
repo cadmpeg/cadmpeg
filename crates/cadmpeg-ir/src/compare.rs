@@ -214,10 +214,9 @@ fn fixed_ascii_cards_agree(left_lines: &[&str], right_lines: &[&str]) -> bool {
             return false;
         }
         let agree = if left_bytes[72] == b'P' {
-            let (Some(left_text), Some(right_text)) = (
-                card_text(&left_bytes[..64]),
-                card_text(&right_bytes[..64]),
-            ) else {
+            let (Some(left_text), Some(right_text)) =
+                (card_text(&left_bytes[..64]), card_text(&right_bytes[..64]))
+            else {
                 return false;
             };
             texts_agree(left_text, right_text)
@@ -296,10 +295,9 @@ fn fixed_ascii_non_parameter_cards_agree(left: &str, right: &str) -> bool {
         b'D' => fixed_ascii_directory_cards_agree(left_bytes, right_bytes),
         b'T' => fixed_ascii_terminate_cards_agree(left_bytes, right_bytes),
         _ => {
-            let (Some(left_text), Some(right_text)) = (
-                card_text(&left_bytes[..72]),
-                card_text(&right_bytes[..72]),
-            ) else {
+            let (Some(left_text), Some(right_text)) =
+                (card_text(&left_bytes[..72]), card_text(&right_bytes[..72]))
+            else {
                 return false;
             };
             texts_agree(left_text, right_text)

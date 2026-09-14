@@ -1230,7 +1230,11 @@ mod tests {
 
     #[test]
     fn edge_parameter_edits_commit_only_valid_pairs() {
-        let mut edge = crate::examples::unit_cube().expect("valid unit cube fixture").model.edges.remove(0);
+        let mut edge = crate::examples::unit_cube()
+            .expect("valid unit cube fixture")
+            .model
+            .edges
+            .remove(0);
         let original = edge.clone();
         assert!(edge.set_param_range(Some([2.0, 1.0])).is_err());
         assert_eq!(edge, original);
@@ -1454,7 +1458,9 @@ mod tests {
 
     #[test]
     fn a_coedge_states_no_ring_neighbor_and_its_loop_order_survives_a_round_trip() {
-        let model = crate::examples::unit_cube().expect("valid unit cube fixture").model;
+        let model = crate::examples::unit_cube()
+            .expect("valid unit cube fixture")
+            .model;
         let coedge = &model.coedges[0];
         let wire = serde_json::to_value(coedge).unwrap();
         assert!(wire.get("next").is_none(), "{wire}");
@@ -1592,7 +1598,9 @@ mod tests {
 
     #[test]
     fn a_classified_face_states_its_outer_loop_once() {
-        let mut model = crate::examples::unit_cube().expect("valid unit cube fixture").model;
+        let mut model = crate::examples::unit_cube()
+            .expect("valid unit cube fixture")
+            .model;
         let face = &mut model.faces[0];
         let mut members = face.loops.iter().cloned();
         let outer = members.next().expect("a cube face states a loop");
@@ -1615,7 +1623,9 @@ mod tests {
 
     #[test]
     fn an_unclassified_face_states_its_loops_in_source_order() {
-        let model = crate::examples::unit_cube().expect("valid unit cube fixture").model;
+        let model = crate::examples::unit_cube()
+            .expect("valid unit cube fixture")
+            .model;
         let face = &model.faces[0];
         assert!(matches!(face.loops, FaceLoops::Unspecified { .. }));
         let wire = serde_json::to_value(face).unwrap();

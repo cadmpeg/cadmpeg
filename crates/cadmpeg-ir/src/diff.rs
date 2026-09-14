@@ -767,9 +767,9 @@ mod tests {
         let mut ir = unit_cube().expect("valid unit cube fixture");
         ir.source = Some(crate::document::SourceMeta::classified(
             cadmpeg_core::dialect::DialectLayers::of(
-                cadmpeg_core::dialect::DialectMatch::admitted(
-                    cadmpeg_core::dialect_id!("rhino:archive-80"),
-                ),
+                cadmpeg_core::dialect::DialectMatch::admitted(cadmpeg_core::dialect_id!(
+                    "rhino:archive-80"
+                )),
             ),
             cadmpeg_core::text::named_entries(
                 "the fixture document",
@@ -905,15 +905,15 @@ mod tests {
         let mut right = left.clone();
         classify_source(
             &mut left,
-            cadmpeg_core::dialect::DialectMatch::admitted(
-                cadmpeg_core::dialect_id!("rhino:archive-70"),
-            ),
+            cadmpeg_core::dialect::DialectMatch::admitted(cadmpeg_core::dialect_id!(
+                "rhino:archive-70"
+            )),
         );
         classify_source(
             &mut right,
-            cadmpeg_core::dialect::DialectMatch::admitted(
-                cadmpeg_core::dialect_id!("rhino:archive-80"),
-            ),
+            cadmpeg_core::dialect::DialectMatch::admitted(cadmpeg_core::dialect_id!(
+                "rhino:archive-80"
+            )),
         );
 
         let result = diff(&left, &right);
@@ -926,9 +926,9 @@ mod tests {
         let mut declared_right = declared_left.clone();
         classify_source(
             &mut declared_left,
-            cadmpeg_core::dialect::DialectMatch::admitted(
-                cadmpeg_core::dialect_id!("rhino:archive-70"),
-            )
+            cadmpeg_core::dialect::DialectMatch::admitted(cadmpeg_core::dialect_id!(
+                "rhino:archive-70"
+            ))
             .with_declared(BTreeMap::from([(
                 cadmpeg_core::nonblank_literal!("archive_version"),
                 "70".into(),
@@ -936,9 +936,9 @@ mod tests {
         );
         classify_source(
             &mut declared_right,
-            cadmpeg_core::dialect::DialectMatch::admitted(
-                cadmpeg_core::dialect_id!("rhino:archive-70"),
-            )
+            cadmpeg_core::dialect::DialectMatch::admitted(cadmpeg_core::dialect_id!(
+                "rhino:archive-70"
+            ))
             .with_declared(BTreeMap::from([(
                 cadmpeg_core::nonblank_literal!("archive_version"),
                 "80".into(),
