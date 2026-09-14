@@ -126,9 +126,12 @@ fn append_oriented_wire_curve(
     procedural: Option<(ProceduralCurveDefinition, Option<f64>)>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let geometry = if let Some((definition, cache_fit_tolerance)) = procedural {
-        let construction_id =
-            ProceduralCurveId::mint(format!("{}-construction", curve_id.as_str()))
-                .expect("identity grammar");
+        let construction_id = ProceduralCurveId::from(
+            cadmpeg_ir::ids::Identity::from(curve_id.clone()).with_key_tail(
+                &cadmpeg_ir::ids::IdentityKeyTail::empty()
+                    .dash(cadmpeg_ir::identity_key!("construction")),
+            ),
+        );
         annotate(
             annotations,
             &construction_id,
