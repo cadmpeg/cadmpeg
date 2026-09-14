@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
-use cadmpeg_ir::ids::AppearanceId;
+use cadmpeg_ir::ids::{AppearanceBindingId, AppearanceId, IdentityKey};
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::CadIr;
 
@@ -13,11 +13,24 @@ use crate::value_block::ValueField;
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct TransferResult {
-    pub(crate) decoded_packets: usize,
-    pub(crate) transferred_packets: usize,
-    pub(crate) unresolved_packets: usize,
+    transferred_packets: usize,
+    unresolved_packets: usize,
     pub(crate) emitted_assets: usize,
     pub(crate) emitted_bindings: usize,
+}
+
+impl TransferResult {
+    pub(crate) fn decoded_packets(&self) -> usize {
+        self.transferred_packets + self.unresolved_packets
+    }
+
+    pub(crate) fn transferred_packets(&self) -> usize {
+        self.transferred_packets
+    }
+
+    pub(crate) fn unresolved_packets(&self) -> usize {
+        self.unresolved_packets
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -56,16 +69,14 @@ impl SourcedPacket {
 /// packets is positional; its authoritative face colors are the ABGR payloads
 /// in the standard FBB face rows.
 ///
-/// Every decoded packet reaches exactly one of the transferred and the
-/// unresolved population. A decoded count the two populations do not add up to
-/// is an accounting inconsistency over packets that are present, so the
-/// transfer refuses instead of returning a result that states it.
+/// Every decoded packet reaches exactly one of the transferred and unresolved
+/// populations. Their sum is the decoded packet count.
 pub(crate) fn transfer(
     ir: &mut CadIr,
     native: &CatiaNative,
     graph_scope: &crate::decode::ModelingGraphScope,
     standard_fbb: Option<&[u8]>,
-) -> Result<TransferResult, cadmpeg_core::CodecError> {
+) -> TransferResult {
     let initial_assets = ir.model.appearances.len();
     let initial_bindings = ir.model.appearance_bindings.len();
     let packets = native
@@ -95,10 +106,7 @@ pub(crate) fn transfer(
                 })
         })
         .collect::<Vec<_>>();
-    let mut result = TransferResult {
-        decoded_packets: packets.len(),
-        ..TransferResult::default()
-    };
+    let mut result = TransferResult::default();
 
     let all_faces = packets
         .iter()
@@ -186,18 +194,7 @@ pub(crate) fn transfer(
     }
     result.emitted_assets = ir.model.appearances.len() - initial_assets;
     result.emitted_bindings = ir.model.appearance_bindings.len() - initial_bindings;
-    let accounted = result.transferred_packets + result.unresolved_packets;
-    if result.decoded_packets != accounted {
-        return Err(cadmpeg_core::CodecError::malformed(format!(
-            "CATIA appearance transfer decoded {} presentation packets but accounts for {} \
-             ({} transferred, {} unresolved)",
-            result.decoded_packets,
-            accounted,
-            result.transferred_packets,
-            result.unresolved_packets
-        )));
-    }
-    Ok(result)
+    result
 }
 
 fn same_color_multiset(left: &[[u8; 4]], right: &[[u8; 4]]) -> bool {
@@ -223,11 +220,10 @@ fn packet(field: &ValueField) -> Option<Packet> {
 }
 
 fn insert_appearance(ir: &mut CadIr, rgba: [u8; 4]) -> AppearanceId {
-    let id = AppearanceId::mint(format!(
-        "catia:appearance:rgba#{:02x}{:02x}{:02x}{:02x}",
-        rgba[0], rgba[1], rgba[2], rgba[3]
-    ))
-    .expect("identity grammar");
+    let id = AppearanceId::compose(
+        &cadmpeg_ir::identity_namespace!("catia", "appearance", "rgba"),
+        IdentityKey::hex_byte(rgba[0]).with_hex_bytes(&rgba[1..]),
+    );
     if !ir
         .model
         .appearances
@@ -257,58 +253,43 @@ fn insert_binding(
     target: AppearanceTarget,
     index: usize,
 ) {
-    let appearance_key = appearance
-        .as_str()
-        .rsplit_once('#')
-        .map_or(appearance.as_str(), |(_, key)| key);
     insert_binding_record(
         ir,
         appearance,
         target,
-        format!("catia:appearance:binding#{index}:{appearance_key}"),
+        AppearanceBindingId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "appearance", "binding"),
+            IdentityKey::from(index).colon(appearance.key()),
+        ),
     );
 }
 
 fn insert_source_binding(ir: &mut CadIr, packet: &SourcedPacket) {
     let appearance = insert_appearance(ir, packet.rgba());
-    let appearance_key = appearance
-        .as_str()
-        .rsplit_once('#')
-        .map_or(appearance.as_str(), |(_, key)| key);
-    let source_key = identity_key_fragment(&packet.source_id);
+    // Hex encoding preserves the source token while excluding key delimiters.
+    let source_key =
+        cadmpeg_ir::identity_key!("source-").with_hex_bytes(packet.source_id.as_bytes());
     insert_binding_record(
         ir,
         &appearance,
         AppearanceTarget::Source {
             source_id: packet.source_id.clone(),
         },
-        format!("catia:appearance:source-binding#source-{source_key}:{appearance_key}"),
+        AppearanceBindingId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "appearance", "source-binding"),
+            source_key.colon(appearance.key()),
+        ),
     );
-}
-
-/// Encode a source token before embedding it in an entity identity key.
-///
-/// Source tokens are retained verbatim in [`AppearanceTarget::Source`], but
-/// their delimiters are not part of the entity-key grammar. Hex encoding is
-/// injective and keeps the binding identity to one reserved `#` separator.
-fn identity_key_fragment(value: &str) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut fragment = String::with_capacity(value.len() * 2);
-    for byte in value.bytes() {
-        fragment.push(HEX[usize::from(byte >> 4)] as char);
-        fragment.push(HEX[usize::from(byte & 0x0f)] as char);
-    }
-    fragment
 }
 
 fn insert_binding_record(
     ir: &mut CadIr,
     appearance: &AppearanceId,
     target: AppearanceTarget,
-    id: String,
+    id: AppearanceBindingId,
 ) {
     ir.model.appearance_bindings.push(AppearanceBinding {
-        id: id.try_into().expect("valid identity"),
+        id,
         target,
         appearance: appearance.clone(),
         source_entity_id: None,
@@ -419,6 +400,49 @@ mod tests {
     }
 
     #[test]
+    fn every_packet_is_accounted_for_across_target_populations() {
+        for all_face_count in 0..=3 {
+            for body_packet_count in 0..=3 {
+                let fields = std::iter::repeat_with(|| inline(&[1, 0x10, 0x20, 0x30]))
+                    .take(all_face_count)
+                    .chain(
+                        std::iter::repeat_with(|| inline(&[3, 0x40, 0x50, 0x60, 0xff]))
+                            .take(body_packet_count),
+                    )
+                    .collect::<Vec<_>>();
+                let native = native(fields);
+                for face_count in [0, 2] {
+                    for body_count in 0..=2 {
+                        let mut ir = model(face_count);
+                        let body = ir.model.bodies[0].clone();
+                        ir.model.bodies = (0..body_count)
+                            .map(|index| Body {
+                                id: BodyId::compose(
+                                    &cadmpeg_ir::identity_namespace!("catia", "test", "body"),
+                                    index,
+                                ),
+                                ..body.clone()
+                            })
+                            .collect();
+                        let result = transfer(
+                            &mut ir,
+                            &native,
+                            &crate::decode::ModelingGraphScope::Unscoped,
+                            None,
+                        );
+                        assert_eq!(
+                            result.decoded_packets(),
+                            all_face_count + body_packet_count,
+                            "{all_face_count} all-face packets, {body_packet_count} body packets, \
+                             {face_count} faces, {body_count} bodies",
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn transfers_unstyled_body_and_all_faces_without_inventing_targets() {
         let mut ir = model(6);
         assert_eq!(
@@ -427,8 +451,7 @@ mod tests {
                 &CatiaNative::default(),
                 &crate::decode::ModelingGraphScope::Unscoped,
                 None
-            )
-            .expect("empty appearance transfer accounts for zero packets"),
+            ),
             TransferResult::default()
         );
         assert!(ir.model.appearances.is_empty());
@@ -439,11 +462,10 @@ mod tests {
             &native(vec![inline(&[3, 0xd1, 0x1a, 0x1f, 0xff])]),
             &crate::decode::ModelingGraphScope::Unscoped,
             None,
-        )
-        .expect("body appearance transfer accounts for its packet");
+        );
         assert_eq!(
             (
-                result.decoded_packets,
+                result.decoded_packets(),
                 result.transferred_packets,
                 result.unresolved_packets,
                 result.emitted_assets,
@@ -466,11 +488,10 @@ mod tests {
             &native(vec![inline(&[1, 0xd1, 0x1a, 0x1f])]),
             &crate::decode::ModelingGraphScope::Unscoped,
             None,
-        )
-        .expect("all-face appearance transfer accounts for its packet");
+        );
         assert_eq!(
             (
-                result.decoded_packets,
+                result.decoded_packets(),
                 result.transferred_packets,
                 result.unresolved_packets,
                 result.emitted_assets,
@@ -496,11 +517,10 @@ mod tests {
             ]),
             &crate::decode::ModelingGraphScope::Unscoped,
             None,
-        )
-        .expect("unbound appearance transfer accounts for both packets");
+        );
         assert_eq!(
             (
-                result.decoded_packets,
+                result.decoded_packets(),
                 result.transferred_packets,
                 result.unresolved_packets,
                 result.emitted_assets,
@@ -573,11 +593,10 @@ mod tests {
             &native(fields.clone()),
             &crate::decode::ModelingGraphScope::Unscoped,
             Some(&six_face_brep(rgba)),
-        )
-        .expect("matching face colors account for every packet");
+        );
         assert_eq!(
             (
-                result.decoded_packets,
+                result.decoded_packets(),
                 result.transferred_packets,
                 result.unresolved_packets,
                 result.emitted_assets,
@@ -602,11 +621,10 @@ mod tests {
             &native(fields),
             &crate::decode::ModelingGraphScope::Unscoped,
             Some(&six_face_brep([0x14, 0x3d, 0xe0, 0xff])),
-        )
-        .expect("mismatched face colors account for every packet");
+        );
         assert_eq!(
             (
-                result.decoded_packets,
+                result.decoded_packets(),
                 result.transferred_packets,
                 result.unresolved_packets,
                 result.emitted_bindings
@@ -632,11 +650,10 @@ mod tests {
             &native(fields),
             &crate::decode::ModelingGraphScope::Unscoped,
             None,
-        )
-        .expect("unproven positional colors account for every packet");
+        );
         assert_eq!(
             (
-                result.decoded_packets,
+                result.decoded_packets(),
                 result.transferred_packets,
                 result.unresolved_packets,
                 result.emitted_bindings,
@@ -661,11 +678,10 @@ mod tests {
             &native(fields.clone()),
             &crate::decode::ModelingGraphScope::Unscoped,
             Some(&six_face_brep(rgba)),
-        )
-        .expect("positional face colors account for every packet");
+        );
         assert_eq!(
             (
-                result.decoded_packets,
+                result.decoded_packets(),
                 result.transferred_packets,
                 result.unresolved_packets,
                 result.emitted_assets,
@@ -685,11 +701,10 @@ mod tests {
             &native(fields),
             &crate::decode::ModelingGraphScope::Unscoped,
             Some(&six_face_brep([0x14, 0x3d, 0xe0, 0xff])),
-        )
-        .expect("unmatched positional colors account for every packet");
+        );
         assert_eq!(
             (
-                result.decoded_packets,
+                result.decoded_packets(),
                 result.transferred_packets,
                 result.unresolved_packets,
                 result.emitted_bindings
@@ -732,11 +747,10 @@ mod tests {
                 ]),
                 &crate::decode::ModelingGraphScope::Unscoped,
                 Some(&brep),
-            )
-            .expect("base and override colors account for every packet");
+            );
             assert_eq!(
                 (
-                    result.decoded_packets,
+                    result.decoded_packets(),
                     result.transferred_packets,
                     result.unresolved_packets,
                     result.emitted_assets,
@@ -782,11 +796,10 @@ mod tests {
             &native(fields.clone()),
             &crate::decode::ModelingGraphScope::Unscoped,
             Some(&brep),
-        )
-        .expect("distinct overrides account for every packet");
+        );
         assert_eq!(
             (
-                result.decoded_packets,
+                result.decoded_packets(),
                 result.transferred_packets,
                 result.unresolved_packets,
                 result.emitted_bindings
@@ -808,8 +821,7 @@ mod tests {
             &native(fields),
             &crate::decode::ModelingGraphScope::Unscoped,
             Some(&mismatched),
-        )
-        .expect("mismatched overrides account for every packet");
+        );
         assert_eq!(
             (
                 result.transferred_packets,
