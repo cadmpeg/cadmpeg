@@ -5534,9 +5534,7 @@ fn project_chamfer(
     edge_treatment_vertex_operands: &[DesignEdgeTreatmentVertexOperand],
     histories: &[crate::history_records::AsmHistory],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{
-        ChamferGroup, ChamferSpec, EdgeSelection, FeatureDefinition, FeatureOperation,
-    };
+    use cadmpeg_ir::features::{ChamferGroup, ChamferSpec, FeatureDefinition, FeatureOperation};
 
     let native_scope = native_stream(&scope.id);
     let mut edge_groups = construction_groups
@@ -5548,7 +5546,10 @@ fn project_chamfer(
         })
         .collect::<Vec<_>>();
     edge_groups.sort_by_key(|group| group.scope_reference_ordinal);
-    let group_count = edge_groups.len().max(1);
+    // The edge groups the source states are the whole population: every parameter lane below
+    // pairs one value with one group, so a scope that states no group carries no typed chamfer
+    // and the caller writes the native feature instead.
+    let group_count = edge_groups.len();
 
     let ordered_parameters = |source_kind: &str| {
         let mut matches = parameters
@@ -5706,26 +5707,20 @@ fn project_chamfer(
 
     let groups: Vec<_> = candidates
         .into_iter()
-        .enumerate()
-        .map(|(index, spec)| {
-            let edge_group = edge_groups.get(index).copied();
-            ChamferGroup {
-                edges: match edge_group {
-                    Some(group) => resolved_edge_treatment_group_with_corners(
-                        group,
-                        construction_groups,
-                        edge_operands,
-                        edge_identity_operands,
-                        edge_treatment_vertex_operands,
-                        histories,
-                        scope.previous_history_state_id(),
-                        &neutral_feature_id(scope),
-                        None,
-                    ),
-                    None => EdgeSelection::Native(scope.id.clone()),
-                },
-                spec,
-            }
+        .zip(edge_groups)
+        .map(|(spec, group)| ChamferGroup {
+            edges: resolved_edge_treatment_group_with_corners(
+                group,
+                construction_groups,
+                edge_operands,
+                edge_identity_operands,
+                edge_treatment_vertex_operands,
+                histories,
+                scope.previous_history_state_id(),
+                &neutral_feature_id(scope),
+                None,
+            ),
+            spec,
         })
         .collect();
     Some(FeatureDefinition::Operation(FeatureOperation::Chamfer {
