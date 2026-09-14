@@ -525,19 +525,19 @@ fn round_replay_short_scalar(body: &[u8], start: usize, end: usize) -> Option<us
 
 fn round_replay_token_end(body: &[u8], offset: usize, end: usize) -> Option<usize> {
     let head = *body.get(offset)?;
-    let width = match head {
-        0x19 | 0x28 | 0x32 | 0x37 | 0x41 => 8,
-        0x31 | 0x4f | 0x90 | 0xd5 | 0xd7 => 7,
-        0x18 => {
-            let (_, compact_end) = psb::compact_int(body, offset + 1);
-            compact_end.saturating_sub(offset).max(1)
-        }
+    let next = match head {
+        0x19 | 0x28 | 0x32 | 0x37 | 0x41 => offset.checked_add(8)?,
+        0x31 | 0x4f | 0x90 | 0xd5 | 0xd7 => offset.checked_add(7)?,
+        // The token is the head byte and one compact integer, so it ends where the
+        // compact integer ends.
+        0x18 => psb::compact_int(body, offset + 1).1,
         _ => scalar::decode(body, offset)
-            .map(|(_, scalar_end)| scalar_end.saturating_sub(offset))
-            .or_else(|| psb::token_at(body, offset).map(|token| token.length))?,
+            .map(|(_, scalar_end)| scalar_end)
+            .or_else(|| {
+                psb::token_at(body, offset).and_then(|token| offset.checked_add(token.length))
+            })?,
     };
-    let next = offset.checked_add(width)?;
-    (width > 0 && next <= end).then_some(next)
+    (next > offset && next <= end).then_some(next)
 }
 
 /// Bound recognized procedural-choice labels within decoded feature rows.
