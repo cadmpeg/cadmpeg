@@ -30,19 +30,19 @@ use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::Exactness;
 use std::collections::{BTreeMap, HashMap};
 
-/// Keys one source element's attributes, charging every key that names
-/// nothing.
+/// Keys one source element's attributes, charging every key the reader cannot
+/// key.
 ///
 /// The element is still transferred. A key holding no non-whitespace character
-/// cannot be asked for, so the charge names the element and the position of
-/// the attribute that did not reach the record.
+/// cannot be asked for, and a key the element states twice is already taken, so
+/// the charge names the element and, for a restated key, the key itself.
 fn keyed_attributes(
     losses: &mut Vec<LossNote>,
     record: &str,
     entries: impl IntoIterator<Item = (String, String)>,
 ) -> BTreeMap<cadmpeg_core::text::NonBlankString, String> {
-    let (kept, blank) = cadmpeg_core::text::named_entries_with_blank(record, entries);
-    for key in blank {
+    let (kept, refused) = cadmpeg_core::text::named_entries_reporting(record, entries);
+    for key in refused {
         losses.push(
             crate::loss::SldprtLossCode::SourcePropertyKeyBlank
                 .note(format!("{key}; the property is not transferred")),

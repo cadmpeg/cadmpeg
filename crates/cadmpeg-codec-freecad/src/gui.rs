@@ -586,11 +586,11 @@ fn transfer_neutral_presentation(
                     .iter()
                     .enumerate()
                     .map(|(order, state)| {
-                        let (attributes, blank) = cadmpeg_core::text::named_entries_with_blank(
+                        let (attributes, refused) = cadmpeg_core::text::named_entries_reporting(
                             format_args!("the gui {} state", state.kind),
                             state.attributes.clone(),
                         );
-                        charge_blank_gui_keys(&mut state_losses, &blank);
+                        charge_refused_gui_keys(&mut state_losses, &refused);
                         Ok(PresentationState {
                             kind: if state.kind == "Camera" {
                                 PresentationStateKind::Camera(camera_state_value(
@@ -654,7 +654,7 @@ fn transfer_neutral_presentation(
                 })
             })
             .transpose()?;
-        let (provider_properties, blank) = cadmpeg_core::text::named_entries_with_blank(
+        let (provider_properties, refused) = cadmpeg_core::text::named_entries_reporting(
             &provider.id,
             owned.iter().map(|property| {
                 (
@@ -664,7 +664,7 @@ fn transfer_neutral_presentation(
                 )
             }),
         );
-        charge_blank_gui_keys(losses, &blank);
+        charge_refused_gui_keys(losses, &refused);
         plan.view_presentations.push(ViewPresentation {
             id: PresentationId::mint(crate::native::model_id(
                 "presentation-view",
@@ -702,12 +702,13 @@ fn gui_property_value(property: &GuiPropertyRecord) -> Option<&str> {
     })
 }
 
-/// One loss per blank property key, naming the key's own record.
-fn charge_blank_gui_keys(
+/// One loss per property key the reader could not key, naming the key's own
+/// record and, for a restated key, the key.
+fn charge_refused_gui_keys(
     losses: &mut Vec<cadmpeg_ir::report::LossNote>,
-    blank: &[cadmpeg_core::text::BlankKey],
+    refused: &[cadmpeg_core::text::NamedEntryError],
 ) {
-    for key in blank {
+    for key in refused {
         losses.push(
             FreecadLossCode::SourceGuiPropertyKeyBlank
                 .note(format!("{key}; the property value is not transferred")),
@@ -740,11 +741,11 @@ fn camera_state_value(
             })
         })
         .transpose()?;
-    let (properties, blank) = cadmpeg_core::text::named_entries_with_blank(
+    let (properties, refused) = cadmpeg_core::text::named_entries_reporting(
         format_args!("the gui {} state", state.kind),
         state.attributes.clone(),
     );
-    charge_blank_gui_keys(losses, &blank);
+    charge_refused_gui_keys(losses, &refused);
     Ok(CameraState {
         position,
         orientation,

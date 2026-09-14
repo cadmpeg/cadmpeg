@@ -1360,11 +1360,11 @@ pub(crate) fn project(
         );
         properties.insert("antecedent_objects".to_string(), list(&record.antecedents));
         properties.insert("descendant_objects".to_string(), list(&record.descendants));
-        let (properties, blank) =
-            cadmpeg_core::text::named_entries_with_blank(&native_ids[index], properties);
-        let (parameters, blank_parameters) =
-            cadmpeg_core::text::named_entries_with_blank(&native_ids[index], parameters);
-        for key in blank.into_iter().chain(blank_parameters) {
+        let (properties, refused) =
+            cadmpeg_core::text::named_entries_reporting(&native_ids[index], properties);
+        let (parameters, refused_parameters) =
+            cadmpeg_core::text::named_entries_reporting(&native_ids[index], parameters);
+        for key in refused.into_iter().chain(refused_parameters) {
             sink.warnings.push_coded(
                 crate::loss::RhinoLossCode::ObjectAttributesDegraded,
                 format!("{key}; the property is not transferred"),

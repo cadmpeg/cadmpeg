@@ -746,19 +746,20 @@ impl<'a> DecodeContext<'a> {
         self.transition(source_order, GeometryOutcome::NativeRetained(code))
     }
 
-    /// Keys one source record's open property set, charging every key that
-    /// names nothing.
+    /// Keys one source record's open property set, charging every key the
+    /// reader cannot key.
     ///
-    /// A blank key cannot be asked for, so the property it carries cannot
-    /// reach the document. The record is still transferred; the charge names
-    /// the record and the position of the property that did not.
+    /// A blank key cannot be asked for and a restated key is already taken, so
+    /// the property either carries cannot reach the document. The record is
+    /// still transferred; the charge names the record, and the key when the
+    /// record states it twice.
     fn named_record_entries(
         &mut self,
         record: &str,
         entries: impl IntoIterator<Item = (String, String)>,
     ) -> BTreeMap<cadmpeg_core::text::NonBlankString, String> {
-        let (kept, blank) = cadmpeg_core::text::named_entries_with_blank(record, entries);
-        for key in blank {
+        let (kept, refused) = cadmpeg_core::text::named_entries_reporting(record, entries);
+        for key in refused {
             self.report.typed_losses.push(
                 RhinoLossCode::ObjectAttributesDegraded
                     .note(format_args!("{key}; the property is not transferred")),
@@ -2543,9 +2544,9 @@ impl<'a> DecodeContext<'a> {
         // residual admission and its loss cannot be reported apart.
         losses.extend(crate::dialect::admission_loss(&primary));
         let attributes = full_source_attributes(self.scan);
-        let (attributes, blank) =
-            cadmpeg_core::text::named_entries_with_blank("the rhino document", attributes);
-        for key in blank {
+        let (attributes, refused) =
+            cadmpeg_core::text::named_entries_reporting("the rhino document", attributes);
+        for key in refused {
             losses.push(
                 RhinoLossCode::ObjectAttributesDegraded
                     .note(format_args!("{key}; the attribute is not transferred")),

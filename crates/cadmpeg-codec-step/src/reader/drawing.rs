@@ -65,19 +65,19 @@ impl TargetContext<'_> {
     }
 }
 
-/// Keys one drawing record's open property set, charging every key that names
-/// nothing.
+/// Keys one drawing record's open property set, charging every key the reader
+/// cannot key.
 ///
 /// The drawing is still transferred. A key holding no non-whitespace character
-/// cannot be asked for, so the charge names the record and the position of the
-/// property that did not reach it.
+/// cannot be asked for, and a key the record states twice is already taken, so
+/// the charge names the record and, for a restated key, the key itself.
 fn keyed_properties<V>(
     losses: &mut Vec<LossNote>,
     record: &str,
     entries: impl IntoIterator<Item = (String, V)>,
 ) -> BTreeMap<cadmpeg_core::text::NonBlankString, V> {
-    let (kept, blank) = cadmpeg_core::text::named_entries_with_blank(record, entries);
-    for key in blank {
+    let (kept, refused) = cadmpeg_core::text::named_entries_reporting(record, entries);
+    for key in refused {
         losses.push(
             StepLossCode::MetadataStringInvalid
                 .note(format!("{key}; the property is not transferred")),
