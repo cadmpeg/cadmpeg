@@ -342,7 +342,10 @@ pub(super) fn rational_arc(
     if !span_count.is_finite() || span_count > crate::MAX_EXACT_ARC_SPANS as f64 {
         return None;
     }
-    let span_count = (span_count as usize).max(1);
+    // `ceil` answers zero only for an angular span of exactly zero: an arc that
+    // sweeps no angle states no span, which this route refuses as it refuses
+    // every other degeneracy.
+    let span_count = std::num::NonZeroUsize::new(span_count as usize)?.get();
     let control_count = span_count.checked_mul(2)?.checked_add(1)?;
     let mut control_points = Vec::with_capacity(control_count);
     let mut weights = Vec::with_capacity(control_points.capacity());
@@ -405,7 +408,10 @@ pub(super) fn revolve_nurbs(
     if !span_count.is_finite() || span_count > crate::MAX_EXACT_ARC_SPANS as f64 {
         return None;
     }
-    let span_count = (span_count as usize).max(1);
+    // `ceil` answers zero only for an angular span of exactly zero: an arc that
+    // sweeps no angle states no span, which this route refuses as it refuses
+    // every other degeneracy.
+    let span_count = std::num::NonZeroUsize::new(span_count as usize)?.get();
     let angular_count = span_count.checked_mul(2)?.checked_add(1)?;
     let control_count =
         crate::nurbs_surface_control_count(profile.control_points().len(), angular_count)?;

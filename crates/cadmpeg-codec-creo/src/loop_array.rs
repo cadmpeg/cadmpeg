@@ -202,7 +202,10 @@ fn row_end(data: &[u8], body_start: usize, end: usize) -> Option<usize> {
         if matches!(token.kind, psb::TokenKind::CompoundClose) {
             return Some(cursor);
         }
-        cursor = cursor.checked_add(token.length.max(1))?;
+        // `token_at` answers only for an offset inside `data`, so every token
+        // it states spans at least its own head byte. A zero-length token would
+        // not advance the walk, and the mint refuses it instead of flooring it.
+        cursor = cursor.checked_add(std::num::NonZeroUsize::new(token.length)?.get())?;
     }
     None
 }
