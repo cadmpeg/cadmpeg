@@ -14,7 +14,7 @@ one declared inside an inline ``mod`` block, whose directory the block names --
 and marks a module test source when its own declaration carries ``#[cfg(test)]``,
 when an enclosing inline ``mod`` block does, or when the module that declares it
 is already test source. Inside a file that the walk kept, every ``#[cfg(test)]``
-item is masked by attribute parsing and brace matching. An ``include!`` target
+or bare ``#[test]`` item is masked by attribute parsing and brace matching. An ``include!`` target
 is followed the same way as a module. Comments and string literals are masked before counting, so a call
 spelled inside one does not count.
 

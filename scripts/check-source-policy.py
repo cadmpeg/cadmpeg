@@ -273,6 +273,9 @@ def collect_attribute(lines: list[str], start: int) -> tuple[str, int]:
 
 
 def attr_is_test_cfg(attr: str) -> bool:
+    # The built-in test attribute removes its function from ordinary builds.
+    if re.fullmatch(r"#\[\s*test\s*\]", mask_rust_non_code(attr).strip()):
+        return True
     match = CFG_ATTR.match(attr.strip())
     if match is None:
         return False

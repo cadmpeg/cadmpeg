@@ -113,6 +113,17 @@ mod tests {
         self.assertIn('lib.rs:4\t.expect("second")', result)
         self.assertIn('non-test lines calling .expect(: 2', result)
 
+    def test_bare_test_functions_are_not_production(self) -> None:
+        self.write("lib.rs", '''
+#[test]
+fn fixture() { value.expect("test-only"); }
+fn production() { value.expect("production"); }
+''')
+        result = self.output()
+        self.assertNotIn('lib.rs:3\t.expect("test-only")', result)
+        self.assertIn('lib.rs:4\t.expect("production")', result)
+        self.assertIn('non-test lines calling .expect(: 1', result)
+
     def test_check_fails_for_a_production_call(self) -> None:
         self.write("lib.rs", 'fn f() { value.expect("not a type guarantee"); }\n')
         with redirect_stdout(io.StringIO()):
