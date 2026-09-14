@@ -798,7 +798,7 @@ fn transfer_native_operation(
     let object = candidate.object;
     let kind = candidate.kind;
     let NativeOperationDefinitionProperties {
-        source_properties: properties,
+        source_properties,
         definition_value_count,
         definition_chain_value_count,
         range_count,
@@ -811,8 +811,8 @@ fn transfer_native_operation(
         entities,
         design_objects,
         native_operation_object_ids,
-    )?;
-    let (definition, source_properties) = native_operation_definition(kind, &object.id, properties);
+    );
+    let definition = native_operation_definition(kind, &object.id);
     let feature_id = FeatureId::from(neutral_history_id(
         &object.id,
         &cadmpeg_ir::identity_component!("feature"),
@@ -855,15 +855,8 @@ fn transfer_native_operation(
 /// proves the family identity; it does not prove profile, axis, extent,
 /// result, edge group, pattern seed, pattern axis, pattern angle, pattern
 /// count, or operation-specific dependency roles.
-fn native_operation_definition(
-    kind: NativeOperationClass,
-    native_ref: &str,
-    properties: BTreeMap<cadmpeg_core::text::NonBlankString, String>,
-) -> (
-    FeatureDefinition,
-    BTreeMap<cadmpeg_core::text::NonBlankString, String>,
-) {
-    let definition = match kind {
+fn native_operation_definition(kind: NativeOperationClass, native_ref: &str) -> FeatureDefinition {
+    match kind {
         NativeOperationClass::PrismEndLimitLength
         | NativeOperationClass::PrismThickThin1
         | NativeOperationClass::PrismThickThin2 => {
@@ -906,8 +899,7 @@ fn native_operation_definition(
                 family: UnresolvedFamily::Fillet,
             })
         }
-    };
-    (definition, properties)
+    }
 }
 
 /// Exact source properties and records retained for one native operation.
@@ -933,7 +925,7 @@ fn native_operation_definition_properties(
     entities: &HashMap<&str, &CatiaEntityRecord>,
     design_objects: &HashMap<&str, &CatiaDesignObject>,
     native_operation_object_ids: &HashSet<&str>,
-) -> Result<NativeOperationDefinitionProperties, cadmpeg_core::CodecError> {
+) -> NativeOperationDefinitionProperties {
     let mut properties = BTreeMap::new();
     let mut definition_value_count = 0;
     let mut definition_chain_value_count = 0;
@@ -970,22 +962,22 @@ fn native_operation_definition_properties(
     for (ordinal, (entity, value)) in definition_values.into_iter().enumerate() {
         definition_value_count += 1;
         definition_value_records.insert(entity.object_record.clone());
-        let prefix = format!("catia_definition_value_{ordinal}");
-        properties.insert(format!("{prefix}_entity"), entity.id.clone());
+        let prefix = cadmpeg_core::nonblank_literal!("catia_definition_value_{ordinal}");
+        properties.insert(prefix.with_suffix("_entity"), entity.id.clone());
         insert_schema_value_properties(
             &mut properties,
-            &format!("{prefix}_definition"),
+            &prefix.with_suffix("_definition"),
             &value.definition,
         );
         insert_suffix_payload_properties(
             &mut properties,
-            &format!("{prefix}_payload"),
+            &prefix.with_suffix("_payload"),
             &value.payload,
         );
         if let Some(selection) = value.schema_selection.as_ref() {
             insert_schema_selection_properties(
                 &mut properties,
-                &format!("{prefix}_schema_selection"),
+                &prefix.with_suffix("_schema_selection"),
                 selection,
             );
         }
@@ -1006,17 +998,17 @@ fn native_operation_definition_properties(
     for (ordinal, (entity, value)) in definition_chain_values.into_iter().enumerate() {
         definition_chain_value_count += 1;
         definition_chain_value_records.insert(entity.object_record.clone());
-        let prefix = format!("catia_definition_chain_value_{ordinal}");
-        properties.insert(format!("{prefix}_entity"), entity.id.clone());
+        let prefix = cadmpeg_core::nonblank_literal!("catia_definition_chain_value_{ordinal}");
+        properties.insert(prefix.with_suffix("_entity"), entity.id.clone());
         insert_schema_value_properties(
             &mut properties,
-            &format!("{prefix}_selector"),
+            &prefix.with_suffix("_selector"),
             &value.selector,
         );
-        insert_schema_value_properties(&mut properties, &format!("{prefix}_role"), &value.role);
+        insert_schema_value_properties(&mut properties, &prefix.with_suffix("_role"), &value.role);
         insert_schema_selected_value_properties(
             &mut properties,
-            &format!("{prefix}_value"),
+            &prefix.with_suffix("_value"),
             &value.value,
         );
     }
@@ -1046,20 +1038,20 @@ fn native_operation_definition_properties(
     for (ordinal, (entity, range)) in range_intervals.into_iter().enumerate() {
         range_count += 1;
         range_records.insert(entity.object_record.clone());
-        let prefix = format!("catia_range_{ordinal}");
-        properties.insert(format!("{prefix}_entity"), entity.id.clone());
+        let prefix = cadmpeg_core::nonblank_literal!("catia_range_{ordinal}");
+        properties.insert(prefix.with_suffix("_entity"), entity.id.clone());
         insert_range_interval_properties(&mut properties, &prefix, range);
     }
 
-    Ok(NativeOperationDefinitionProperties {
-        source_properties: cadmpeg_core::text::named_entries(&object.id, properties)?,
+    NativeOperationDefinitionProperties {
+        source_properties: properties,
         definition_value_count,
         definition_chain_value_count,
         range_count,
         definition_value_records,
         definition_chain_value_records,
         range_records,
-    })
+    }
 }
 
 /// Return whether a design object belongs to one operation's exact structural
@@ -1096,84 +1088,87 @@ fn native_operation_owner_chain_reaches(
 }
 
 fn insert_schema_value_properties(
-    properties: &mut BTreeMap<String, String>,
-    prefix: &str,
+    properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+    prefix: &cadmpeg_core::text::NonBlankString,
     value: &crate::native::CatiaEntitySchemaValue,
 ) {
-    properties.insert(format!("{prefix}_entry"), value.entry.clone());
-    properties.insert(format!("{prefix}_ordinal"), value.ordinal.to_string());
-    properties.insert(format!("{prefix}_offset"), value.offset.to_string());
-    properties.insert(format!("{prefix}_value"), value.value.clone());
+    properties.insert(prefix.with_suffix("_entry"), value.entry.clone());
+    properties.insert(prefix.with_suffix("_ordinal"), value.ordinal.to_string());
+    properties.insert(prefix.with_suffix("_offset"), value.offset.to_string());
+    properties.insert(prefix.with_suffix("_value"), value.value.clone());
 }
 
 fn insert_range_interval_properties(
-    properties: &mut BTreeMap<String, String>,
-    prefix: &str,
+    properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+    prefix: &cadmpeg_core::text::NonBlankString,
     range: &CatiaRangeInterval,
 ) {
-    insert_schema_value_properties(properties, &format!("{prefix}_selector"), &range.range);
+    insert_schema_value_properties(properties, &prefix.with_suffix("_selector"), &range.range);
     match &range.interval.prefix {
         RangeIntervalPrefix::Compact { value, width } => {
-            properties.insert(format!("{prefix}_prefix_kind"), "compact".to_string());
-            properties.insert(format!("{prefix}_prefix_value"), value.to_string());
-            properties.insert(format!("{prefix}_prefix_width"), width.to_string());
+            properties.insert(prefix.with_suffix("_prefix_kind"), "compact".to_string());
+            properties.insert(prefix.with_suffix("_prefix_value"), value.to_string());
+            properties.insert(prefix.with_suffix("_prefix_width"), width.to_string());
         }
         RangeIntervalPrefix::EscapedWord { word } => {
-            properties.insert(format!("{prefix}_prefix_kind"), "escaped_word".to_string());
-            properties.insert(format!("{prefix}_prefix_word"), word.to_string());
+            properties.insert(
+                prefix.with_suffix("_prefix_kind"),
+                "escaped_word".to_string(),
+            );
+            properties.insert(prefix.with_suffix("_prefix_word"), word.to_string());
         }
     }
     match &range.interval.slots {
         Some([lower, upper]) => {
-            properties.insert(format!("{prefix}_slots"), "two".to_string());
-            insert_range_slot_properties(properties, &format!("{prefix}_lower"), lower);
-            insert_range_slot_properties(properties, &format!("{prefix}_upper"), upper);
+            properties.insert(prefix.with_suffix("_slots"), "two".to_string());
+            insert_range_slot_properties(properties, &prefix.with_suffix("_lower"), lower);
+            insert_range_slot_properties(properties, &prefix.with_suffix("_upper"), upper);
         }
         None => {
-            properties.insert(format!("{prefix}_slots"), "none".to_string());
+            properties.insert(prefix.with_suffix("_slots"), "none".to_string());
         }
     }
     if let Some(nominal) = range.nominal.as_ref() {
-        properties.insert(format!("{prefix}_nominal_kind"), "finite".to_string());
+        properties.insert(prefix.with_suffix("_nominal_kind"), "finite".to_string());
         properties.insert(
-            format!("{prefix}_nominal_framing"),
+            prefix.with_suffix("_nominal_framing"),
             range_nominal_framing_name(nominal.framing).to_string(),
         );
         properties.insert(
-            format!("{prefix}_nominal_bits"),
+            prefix.with_suffix("_nominal_bits"),
             format!("{:016x}", nominal.bits),
         );
         properties.insert(
-            format!("{prefix}_nominal_opcode_offset"),
+            prefix.with_suffix("_nominal_opcode_offset"),
             nominal.evaluation_opcode_offset.to_string(),
         );
     } else {
-        properties.insert(format!("{prefix}_nominal_kind"), "absent".to_string());
+        properties.insert(prefix.with_suffix("_nominal_kind"), "absent".to_string());
     }
     properties.insert(
-        format!("{prefix}_incoming_payload_reference_count"),
+        prefix.with_suffix("_incoming_payload_reference_count"),
         range.incoming_references.len().to_string(),
     );
     properties.insert(
-        format!("{prefix}_incoming_storage_reference_count"),
+        prefix.with_suffix("_incoming_storage_reference_count"),
         range.incoming_storage_references.len().to_string(),
     );
 }
 
 fn insert_range_slot_properties(
-    properties: &mut BTreeMap<String, String>,
-    prefix: &str,
+    properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+    prefix: &cadmpeg_core::text::NonBlankString,
     slot: &RangeIntervalSlot,
 ) {
     match slot {
         RangeIntervalSlot::Binary64 { bits, offset } => {
-            properties.insert(format!("{prefix}_kind"), "binary64".to_string());
-            properties.insert(format!("{prefix}_bits"), format!("{bits:016x}"));
-            properties.insert(format!("{prefix}_offset"), offset.to_string());
+            properties.insert(prefix.with_suffix("_kind"), "binary64".to_string());
+            properties.insert(prefix.with_suffix("_bits"), format!("{bits:016x}"));
+            properties.insert(prefix.with_suffix("_offset"), offset.to_string());
         }
         RangeIntervalSlot::Unset { offset } => {
-            properties.insert(format!("{prefix}_kind"), "unset".to_string());
-            properties.insert(format!("{prefix}_offset"), offset.to_string());
+            properties.insert(prefix.with_suffix("_kind"), "unset".to_string());
+            properties.insert(prefix.with_suffix("_offset"), offset.to_string());
         }
     }
 }
@@ -1188,8 +1183,8 @@ fn range_nominal_framing_name(framing: CatiaRangeNominalFraming) -> &'static str
 }
 
 fn insert_suffix_payload_properties(
-    properties: &mut BTreeMap<String, String>,
-    prefix: &str,
+    properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+    prefix: &cadmpeg_core::text::NonBlankString,
     payload: &crate::native::CatiaEntitySuffixPayload,
 ) {
     match payload {
@@ -1198,145 +1193,160 @@ fn insert_suffix_payload_properties(
             evaluation,
             encoding,
         } => {
-            properties.insert(format!("{prefix}_kind"), "evaluation".to_string());
-            properties.insert(format!("{prefix}_opcode_offset"), opcode_offset.to_string());
+            properties.insert(prefix.with_suffix("_kind"), "evaluation".to_string());
             properties.insert(
-                format!("{prefix}_encoding"),
+                prefix.with_suffix("_opcode_offset"),
+                opcode_offset.to_string(),
+            );
+            properties.insert(
+                prefix.with_suffix("_encoding"),
                 evaluation_encoding_name(*encoding).to_string(),
             );
             insert_evaluation_properties(properties, prefix, evaluation);
         }
         crate::native::CatiaEntitySuffixPayload::Atom { value } => {
-            properties.insert(format!("{prefix}_kind"), "atom".to_string());
-            properties.insert(format!("{prefix}_value"), value.to_string());
+            properties.insert(prefix.with_suffix("_kind"), "atom".to_string());
+            properties.insert(prefix.with_suffix("_value"), value.to_string());
         }
         crate::native::CatiaEntitySuffixPayload::SchemaSelected {
             selector_offset,
             selector,
             value,
         } => {
-            properties.insert(format!("{prefix}_kind"), "schema_selected".to_string());
+            properties.insert(prefix.with_suffix("_kind"), "schema_selected".to_string());
             properties.insert(
-                format!("{prefix}_selector_offset"),
+                prefix.with_suffix("_selector_offset"),
                 selector_offset.to_string(),
             );
-            properties.insert(format!("{prefix}_selector"), selector.to_string());
-            insert_selected_value_properties(properties, &format!("{prefix}_selected"), value);
+            properties.insert(prefix.with_suffix("_selector"), selector.to_string());
+            insert_selected_value_properties(properties, &prefix.with_suffix("_selected"), value);
         }
         crate::native::CatiaEntitySuffixPayload::ControlE8 => {
-            properties.insert(format!("{prefix}_kind"), "control_e8".to_string());
+            properties.insert(prefix.with_suffix("_kind"), "control_e8".to_string());
         }
         crate::native::CatiaEntitySuffixPayload::ControlE9 => {
-            properties.insert(format!("{prefix}_kind"), "control_e9".to_string());
+            properties.insert(prefix.with_suffix("_kind"), "control_e9".to_string());
         }
         crate::native::CatiaEntitySuffixPayload::Separator37 => {
-            properties.insert(format!("{prefix}_kind"), "separator_37".to_string());
+            properties.insert(prefix.with_suffix("_kind"), "separator_37".to_string());
         }
     }
 }
 
 fn insert_selected_value_properties(
-    properties: &mut BTreeMap<String, String>,
-    prefix: &str,
+    properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+    prefix: &cadmpeg_core::text::NonBlankString,
     value: &crate::native::CatiaEntitySuffixSelectedValue,
 ) {
     match value {
         crate::native::CatiaEntitySuffixSelectedValue::Atom { value } => {
-            properties.insert(format!("{prefix}_kind"), "atom".to_string());
-            properties.insert(format!("{prefix}_value"), value.to_string());
+            properties.insert(prefix.with_suffix("_kind"), "atom".to_string());
+            properties.insert(prefix.with_suffix("_value"), value.to_string());
         }
         crate::native::CatiaEntitySuffixSelectedValue::Evaluation {
             opcode_offset,
             evaluation,
         } => {
-            properties.insert(format!("{prefix}_kind"), "evaluation".to_string());
-            properties.insert(format!("{prefix}_opcode_offset"), opcode_offset.to_string());
+            properties.insert(prefix.with_suffix("_kind"), "evaluation".to_string());
+            properties.insert(
+                prefix.with_suffix("_opcode_offset"),
+                opcode_offset.to_string(),
+            );
             insert_evaluation_properties(properties, prefix, evaluation);
         }
         crate::native::CatiaEntitySuffixSelectedValue::ControlE8 => {
-            properties.insert(format!("{prefix}_kind"), "control_e8".to_string());
+            properties.insert(prefix.with_suffix("_kind"), "control_e8".to_string());
         }
         crate::native::CatiaEntitySuffixSelectedValue::Separator37 => {
-            properties.insert(format!("{prefix}_kind"), "separator_37".to_string());
+            properties.insert(prefix.with_suffix("_kind"), "separator_37".to_string());
         }
         crate::native::CatiaEntitySuffixSelectedValue::SchemaSelector {
             offset, ordinal, ..
         } => {
-            properties.insert(format!("{prefix}_kind"), "schema_selector".to_string());
-            properties.insert(format!("{prefix}_offset"), offset.to_string());
-            properties.insert(format!("{prefix}_ordinal"), ordinal.to_string());
+            properties.insert(prefix.with_suffix("_kind"), "schema_selector".to_string());
+            properties.insert(prefix.with_suffix("_offset"), offset.to_string());
+            properties.insert(prefix.with_suffix("_ordinal"), ordinal.to_string());
         }
     }
 }
 
 fn insert_schema_selection_properties(
-    properties: &mut BTreeMap<String, String>,
-    prefix: &str,
+    properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+    prefix: &cadmpeg_core::text::NonBlankString,
     selection: &crate::native::CatiaEntitySuffixSchemaSelection,
 ) {
-    properties.insert(format!("{prefix}_offset"), selection.offset.to_string());
-    properties.insert(format!("{prefix}_ordinal"), selection.ordinal.to_string());
-    properties.insert(format!("{prefix}_entry"), selection.entry.clone());
-    properties.insert(format!("{prefix}_name"), selection.name.clone());
+    properties.insert(prefix.with_suffix("_offset"), selection.offset.to_string());
+    properties.insert(
+        prefix.with_suffix("_ordinal"),
+        selection.ordinal.to_string(),
+    );
+    properties.insert(prefix.with_suffix("_entry"), selection.entry.clone());
+    properties.insert(prefix.with_suffix("_name"), selection.name.clone());
     insert_schema_selected_value_properties(
         properties,
-        &format!("{prefix}_value"),
+        &prefix.with_suffix("_value"),
         &selection.value,
     );
 }
 
 fn insert_schema_selected_value_properties(
-    properties: &mut BTreeMap<String, String>,
-    prefix: &str,
+    properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+    prefix: &cadmpeg_core::text::NonBlankString,
     value: &crate::native::CatiaEntitySuffixSchemaValue,
 ) {
     match value {
         crate::native::CatiaEntitySuffixSchemaValue::Atom { value } => {
-            properties.insert(format!("{prefix}_kind"), "atom".to_string());
-            properties.insert(format!("{prefix}_atom"), value.to_string());
+            properties.insert(prefix.with_suffix("_kind"), "atom".to_string());
+            properties.insert(prefix.with_suffix("_atom"), value.to_string());
         }
         crate::native::CatiaEntitySuffixSchemaValue::Evaluation {
             opcode_offset,
             evaluation,
         } => {
-            properties.insert(format!("{prefix}_kind"), "evaluation".to_string());
-            properties.insert(format!("{prefix}_opcode_offset"), opcode_offset.to_string());
+            properties.insert(prefix.with_suffix("_kind"), "evaluation".to_string());
+            properties.insert(
+                prefix.with_suffix("_opcode_offset"),
+                opcode_offset.to_string(),
+            );
             insert_evaluation_properties(properties, prefix, evaluation);
         }
         crate::native::CatiaEntitySuffixSchemaValue::ControlE8 => {
-            properties.insert(format!("{prefix}_kind"), "control_e8".to_string());
+            properties.insert(prefix.with_suffix("_kind"), "control_e8".to_string());
         }
         crate::native::CatiaEntitySuffixSchemaValue::Separator37 => {
-            properties.insert(format!("{prefix}_kind"), "separator_37".to_string());
+            properties.insert(prefix.with_suffix("_kind"), "separator_37".to_string());
         }
         crate::native::CatiaEntitySuffixSchemaValue::SchemaSelector {
             offset,
             ordinal,
             resolution,
         } => {
-            properties.insert(format!("{prefix}_kind"), "schema_selector".to_string());
-            properties.insert(format!("{prefix}_offset"), offset.to_string());
-            properties.insert(format!("{prefix}_ordinal"), ordinal.to_string());
+            properties.insert(prefix.with_suffix("_kind"), "schema_selector".to_string());
+            properties.insert(prefix.with_suffix("_offset"), offset.to_string());
+            properties.insert(prefix.with_suffix("_ordinal"), ordinal.to_string());
             if let Some(class) = resolution {
-                properties.insert(format!("{prefix}_entry"), class.entry.clone());
-                properties.insert(format!("{prefix}_name"), class.name.clone());
+                properties.insert(prefix.with_suffix("_entry"), class.entry.clone());
+                properties.insert(prefix.with_suffix("_name"), class.name.clone());
             }
         }
     }
 }
 
 fn insert_evaluation_properties(
-    properties: &mut BTreeMap<String, String>,
-    prefix: &str,
+    properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+    prefix: &cadmpeg_core::text::NonBlankString,
     evaluation: &crate::native::CatiaEntityEvaluation,
 ) {
     match evaluation {
         crate::native::CatiaEntityEvaluation::Unset => {
-            properties.insert(format!("{prefix}_evaluation"), "unset".to_string());
+            properties.insert(prefix.with_suffix("_evaluation"), "unset".to_string());
         }
         crate::native::CatiaEntityEvaluation::Scalar { bits } => {
-            properties.insert(format!("{prefix}_evaluation"), "scalar".to_string());
-            properties.insert(format!("{prefix}_evaluation_bits"), format!("{bits:016x}"));
+            properties.insert(prefix.with_suffix("_evaluation"), "scalar".to_string());
+            properties.insert(
+                prefix.with_suffix("_evaluation_bits"),
+                format!("{bits:016x}"),
+            );
         }
     }
 }
