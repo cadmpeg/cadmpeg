@@ -236,7 +236,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     else {
         panic!("SurfaceStitch face selection remains unresolved");
     };
-    let prefix = crate::ids::history_input_prefix("42", 1);
+    let prefix = crate::ids::history_input_prefix(&cadmpeg_ir::identity_key!("42"), 1);
     assert_eq!(
         state,
         &crate::design::edge_resolve::feature_input_topology_id(&feature_id, 1)

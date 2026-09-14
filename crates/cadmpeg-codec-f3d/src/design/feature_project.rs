@@ -1190,7 +1190,7 @@ pub fn project_parameter_design_with_edge_identities(
                             }),
                             |operation| FeatureDefinition::Operation(FeatureOperation::InsertComponent {
                                 occurrence: crate::ids::neutral_component_occurrence_id(
-                                    operation.copied_occurrence_guid.as_str(),
+                                    &operation.copied_occurrence_guid,
                                 ),
                             }),
                         )
@@ -1744,11 +1744,8 @@ fn project_work_point_construction(
             return Some(EdgeSelection::Native(operand.id.clone()));
         };
         let feature_id = neutral_feature_id(scope);
-        let feature_key = feature_id
-            .as_str()
-            .split_once('#')
-            .map_or(feature_id.as_str(), |(_, key)| key);
-        let prefix = ids::history_input_prefix(feature_key, state_id);
+        let feature_key = feature_id.key();
+        let prefix = ids::history_input_prefix(&feature_key, state_id);
         Some(
             EdgeSelection::historical(
                 feature_input_topology_id(&feature_id, state_id),
@@ -1795,11 +1792,8 @@ fn project_work_point_construction(
                     let state_id = resolution.state_id;
                     let vertex_slot = resolution.vertex_slot();
                     let feature_id = neutral_feature_id(scope);
-                    let feature_key = feature_id
-                        .as_str()
-                        .split_once('#')
-                        .map_or(feature_id.as_str(), |(_, key)| key);
-                    let prefix = ids::history_input_prefix(feature_key, state_id);
+                    let feature_key = feature_id.key();
+                    let prefix = ids::history_input_prefix(&feature_key, state_id);
                     VertexSelection::historical(
                         feature_input_topology_id(&feature_id, state_id),
                         ids::history_input_vertex_id(&prefix, vertex_slot),
@@ -1867,11 +1861,8 @@ fn project_work_plane(
         });
     };
     let feature_id = neutral_feature_id(scope);
-    let feature_key = feature_id
-        .as_str()
-        .split_once('#')
-        .map_or(feature_id.as_str(), |(_, key)| key);
-    let prefix = ids::history_input_prefix(feature_key, state_id);
+    let feature_key = feature_id.key();
+    let prefix = ids::history_input_prefix(&feature_key, state_id);
     let points = construction
         .inputs()
         .iter()
@@ -2992,11 +2983,8 @@ fn selected_historical_face_selection(
         return None;
     }
     let feature = neutral_feature_id(scope);
-    let feature_key = feature
-        .as_str()
-        .split_once('#')
-        .map_or(feature.as_str(), |(_, key)| key);
-    let prefix = ids::history_input_prefix(feature_key, previous_state_id);
+    let feature_key = feature.key();
+    let prefix = ids::history_input_prefix(&feature_key, previous_state_id);
     Some(
         cadmpeg_ir::features::FaceSelection::historical(
             feature_input_topology_id(&feature, previous_state_id),
@@ -3167,11 +3155,8 @@ fn resolved_split_face_path(
         crate::history::effective_scope_previous_history_state_id(scope, histories)?;
     let stream = native_stream(&scope.id)?;
     let feature = neutral_feature_id(scope);
-    let feature_key = feature
-        .as_str()
-        .split_once('#')
-        .map_or(feature.as_str(), |(_, key)| key);
-    let prefix = ids::history_input_prefix(feature_key, previous_state_id);
+    let feature_key = feature.key();
+    let prefix = ids::history_input_prefix(&feature_key, previous_state_id);
     let mut edge_slots = Vec::with_capacity(group.members().len());
     for (ordinal, member) in group
         .members()
@@ -4132,13 +4117,10 @@ pub(crate) fn direct_face_selection(
         .map(|operand| (operand.id.as_str(), operand.resolved_face_slots.as_slice()))
         .collect::<Vec<_>>();
     let feature_id = neutral_feature_id(scope);
-    let feature_key = feature_id
-        .as_str()
-        .split_once('#')
-        .map_or(feature_id.as_str(), |(_, key)| key);
+    let feature_key = feature_id.key();
     let historical_face = |previous_state_id, slot| {
         ids::history_input_face_id(
-            &ids::history_input_prefix(feature_key, previous_state_id),
+            &ids::history_input_prefix(&feature_key, previous_state_id),
             slot,
         )
     };
@@ -5149,7 +5131,7 @@ fn normalize_parameter_ordinals(parameters: &mut [cadmpeg_ir::features::DesignPa
         let mut unresolved = indices.into_iter().collect::<HashSet<_>>();
         let mut resolved = HashSet::<ParameterId>::new();
         let mut order = Vec::with_capacity(unresolved.len());
-        while !unresolved.is_empty() {
+        while let Some(first) = unresolved.iter().copied().next() {
             let mut ready = unresolved
                 .iter()
                 .copied()
@@ -5165,12 +5147,15 @@ fn normalize_parameter_ordinals(parameters: &mut [cadmpeg_ir::features::DesignPa
                 pa.ordinal.cmp(&pb.ordinal).then_with(|| pa.id.cmp(&pb.id))
             });
             if ready.is_empty() {
-                let breaker = *unresolved
-                    .iter()
-                    .min_by_key(|index| {
-                        (parameters[**index].ordinal, parameters[**index].id.clone())
-                    })
-                    .expect("nonempty unresolved parameter group");
+                let breaker = unresolved.iter().copied().fold(first, |best, index| {
+                    let candidate = &parameters[index];
+                    let current = &parameters[best];
+                    if (candidate.ordinal, &candidate.id) < (current.ordinal, &current.id) {
+                        index
+                    } else {
+                        best
+                    }
+                });
                 parameters[breaker].dependencies.retain(|dependency| {
                     owners.get(dependency) != Some(&owner) || resolved.contains(dependency)
                 });
@@ -5905,12 +5890,7 @@ pub(crate) fn bind_revolve_face_axes(
                 _ => None,
             };
             let entity_axis = entity_face_slot.and_then(|face_slot| {
-                analytic_axis_for_face(
-                    &cadmpeg_ir::ids::FaceId::mint(ids::brep_entity_id(face_slot))
-                        .expect("identity grammar"),
-                    faces,
-                    surfaces,
-                )
+                analytic_axis_for_face(&ids::brep_face_id(face_slot), faces, surfaces)
             });
             let recipe_axis = revolve_face_axis_operand(scope, group, *member, face_operands)
                 .and_then(|operand| {
@@ -6617,7 +6597,7 @@ fn project_rectangular_pattern_scalars(
                 seed, ..
             } => Some(PatternSeed::Occurrences(
                 (vec![crate::ids::neutral_component_occurrence_id(
-                    seed.occurrence_guid.as_str(),
+                    &seed.occurrence_guid,
                 )])
                 .try_into()
                 .ok()?,

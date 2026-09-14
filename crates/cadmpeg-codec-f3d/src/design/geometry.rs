@@ -2404,7 +2404,7 @@ pub(crate) fn historical_member_points_in_state(
                 SketchRelationOperand::Point { .. } => AsmHistoricalEntityKind::Point,
                 SketchRelationOperand::Curve { .. } => AsmHistoricalEntityKind::Curve,
                 SketchRelationOperand::Surface { .. } | SketchRelationOperand::Record { .. } => {
-                    return None
+                    return None;
                 }
             };
             (kind, i64::try_from(member.local_id).ok()?)
@@ -2903,19 +2903,9 @@ fn branched_line_profiles(
     }
 
     let mut next = HashMap::new();
-    for edge in &component {
-        for half_edge in [edge * 2, edge * 2 + 1] {
-            let destination = edge_nodes[*edge][usize::from(half_edge.is_multiple_of(2))];
-            let around = &outgoing[&destination];
-            let twin = half_edge ^ 1;
-            let twin_position = around
-                .iter()
-                .position(|candidate| *candidate == twin)
-                .expect("each line half-edge has a twin at its destination");
-            next.insert(
-                half_edge,
-                around[(twin_position + around.len() - 1) % around.len()],
-            );
+    for around in outgoing.values() {
+        for (&previous, &twin) in around.iter().zip(around.iter().cycle().skip(1)) {
+            next.insert(twin ^ 1, previous);
         }
     }
 

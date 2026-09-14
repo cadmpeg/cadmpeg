@@ -208,10 +208,12 @@ fn encode_source_less_wires(
             edge_base += shell.wire_edges().len();
         }
         for (free_ordinal, vertex_id) in shell.free_vertices().iter().enumerate() {
-            let vertex_ordinal = vertex_ordinals
-                .get(vertex_id)
-                .copied()
-                .expect("free vertex existence was validated");
+            let vertex_ordinal = vertex_ordinals.get(vertex_id).copied().ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "shell {} references missing free vertex {}",
+                    shell.id, vertex_id
+                ))
+            })?;
             let owner = native_record_index(wire_start, wire_ordinal)?;
             free_vertex_owners.insert(vertex_id.clone(), owner);
             native_ident(records, "wire")?;
@@ -830,15 +832,17 @@ fn encode_face_topology_smbh(
             if source_less_wire_count(shell) == 0 {
                 -1
             } else {
-                source_less_wire_record_for_shell(
-                    model,
-                    wire_start,
-                    model
-                        .shells
-                        .iter()
-                        .position(|item| item.id == shell.id)
-                        .expect("current shell is present"),
-                )?
+                let shell_ordinal = model
+                    .shells
+                    .iter()
+                    .position(|item| item.id == shell.id)
+                    .ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "shell {} is absent from the target model",
+                            shell.id
+                        ))
+                    })?;
+                source_less_wire_record_for_shell(model, wire_start, shell_ordinal)?
             },
         );
         native_ref(

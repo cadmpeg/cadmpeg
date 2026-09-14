@@ -243,27 +243,29 @@ pub(crate) fn validate_configuration_variant_order(
 
 fn ordered_configuration_variants(
     configuration: &DesignConfiguration,
-) -> Vec<(&String, &serde_json::Value)> {
+) -> Result<Vec<(&String, &serde_json::Value)>, CodecError> {
     let Some(variants) = configuration
         .payload()
         .get("configurations")
         .and_then(serde_json::Value::as_object)
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if configuration.variant_order().is_empty() {
-        return variants.iter().collect();
+        return Ok(variants.iter().collect());
     }
     configuration
         .variant_order()
         .iter()
         .map(|name| {
-            (
-                name,
-                variants
-                    .get(name)
-                    .expect("validated configuration order names a table member"),
-            )
+            variants
+                .get(name)
+                .map(|value| (name, value))
+                .ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "F3D configuration order names missing table member: {name}"
+                    ))
+                })
         })
         .collect()
 }
@@ -303,9 +305,11 @@ impl Serialize for OrderedConfigurationPayload<'_> {
         let mut map = serializer.serialize_map(Some(object.len()))?;
         for (name, value) in object {
             if name == "configurations" && self.0.kind() == DesignConfigurationKind::Table {
-                let variants = value
-                    .as_object()
-                    .expect("validated configuration variants are an object");
+                let Some(variants) = value.as_object() else {
+                    return Err(serde::ser::Error::custom(
+                        "F3D configuration variants are not an object",
+                    ));
+                };
                 map.serialize_entry(
                     name,
                     &OrderedConfigurationVariants {
@@ -369,7 +373,7 @@ pub fn project_configurations(
             .payload()
             .get("active")
             .and_then(serde_json::Value::as_str);
-        for (name, definition) in ordered_configuration_variants(table) {
+        for (name, definition) in ordered_configuration_variants(table)? {
             let mut properties = BTreeMap::new();
             let definition = definition.as_object();
             if let Some(parameters) = definition
@@ -457,29 +461,22 @@ pub fn bind_configuration_parameter_overrides(
     parameters: &[cadmpeg_ir::features::DesignParameter],
 ) {
     for configuration in configurations {
-        let override_names = configuration
-            .properties
-            .keys()
-            .filter_map(|key| key.as_str().strip_prefix("parameter:"))
-            .map(str::to_owned)
-            .collect::<Vec<_>>();
-        for name in override_names {
+        configuration.properties.retain(|key, expression| {
+            let Some(name) = key.as_str().strip_prefix("parameter:") else {
+                return true;
+            };
             let mut matches = parameters.iter().filter(|parameter| parameter.name == name);
             let Some(parameter) = matches.next() else {
-                continue;
+                return true;
             };
             if matches.next().is_some() {
-                continue;
+                return true;
             }
-            let key = format!("parameter:{name}");
-            let expression = configuration
-                .properties
-                .remove(key.as_str())
-                .expect("configuration override key came from this map");
             configuration
                 .parameter_overrides
-                .insert(parameter.id.clone(), expression);
-        }
+                .insert(parameter.id.clone(), std::mem::take(expression));
+            false
+        });
     }
 }
 
@@ -490,25 +487,19 @@ pub fn bind_configuration_suppressed_features(
     features: &[cadmpeg_ir::features::Feature],
 ) {
     for configuration in configurations {
-        let names = configuration
-            .properties
-            .keys()
-            .filter_map(|key| key.as_str().strip_prefix("suppressed:"))
-            .map(str::to_owned)
-            .collect::<Vec<_>>();
-        for name in names {
+        configuration.properties.retain(|key, _| {
+            let Some(name) = key.as_str().strip_prefix("suppressed:") else {
+                return true;
+            };
             let mut matches = features
                 .iter()
-                .filter(|feature| feature.name.as_deref() == Some(name.as_str()));
+                .filter(|feature| feature.name.as_deref() == Some(name));
             let Some(feature) = matches.next() else {
-                continue;
+                return true;
             };
             if matches.next().is_some() {
-                continue;
+                return true;
             }
-            configuration
-                .properties
-                .remove(format!("suppressed:{name}").as_str());
             configuration.feature_states.insert(
                 feature.id.clone(),
                 cadmpeg_ir::features::ConfigurationFeatureState {
@@ -517,7 +508,8 @@ pub fn bind_configuration_suppressed_features(
                     definition: feature.evaluation.definition().clone(),
                 },
             );
-        }
+            false
+        });
     }
 }
 

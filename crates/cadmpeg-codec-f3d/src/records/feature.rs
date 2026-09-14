@@ -5781,7 +5781,7 @@ impl From<DesignSketchEntityBinding> for DesignSketchEntityBindingWire {
     fn from(value: DesignSketchEntityBinding) -> Self {
         let entity_suffix = value.entity_id.suffix();
         Self {
-            entity_id: value.entity_id.0,
+            entity_id: value.entity_id.text,
             entity_suffix,
             entity_reference_offset: value.entity_reference_offset,
         }

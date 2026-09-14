@@ -195,7 +195,7 @@ impl Brep {
     /// coexist in one document model without record-index collisions.
     pub fn qualify_ids(
         &mut self,
-        format: IdFormat<'_>,
+        format: IdFormat,
         namespace: &str,
     ) -> Result<(), cadmpeg_core::CodecError> {
         let annotations = std::mem::take(&mut self.asm.annotation_records);
@@ -257,7 +257,7 @@ pub fn decode(
     records: &[Record],
     bytes: &[u8],
     stream: &str,
-    format: IdFormat<'_>,
+    format: IdFormat,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
     Ok(Brep::from_asm(decode_with_purpose(
         records,
@@ -278,7 +278,7 @@ pub fn decode_text(
     stream: &cadmpeg_asm::sat::TextStream,
     bytes: &[u8],
     entry: &str,
-    format: IdFormat<'_>,
+    format: IdFormat,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
     Ok(Brep::from_asm(decode_with_header(
         &stream.records,
@@ -296,7 +296,7 @@ pub fn decode_text(
 pub(crate) fn decode_history_topology(
     records: &[Record],
     bytes: &[u8],
-    format: IdFormat<'_>,
+    format: IdFormat,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
     Ok(Brep::from_asm(decode_with_purpose(
         records,

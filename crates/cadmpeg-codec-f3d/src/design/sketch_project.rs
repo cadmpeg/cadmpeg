@@ -677,7 +677,7 @@ pub fn project_spatial_sketch_design(
                 point.persistent_id().map_or_else(
                     || neutral_spatial_sketch_record_id(&sketch, point.record_index),
                     |persistent_id| neutral_spatial_sketch_point_id(&sketch, persistent_id),
-                )?,
+                ),
                 sketch,
                 SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point {
                     position: transform_point(
@@ -701,11 +701,7 @@ pub fn project_spatial_sketch_design(
             continue;
         };
         let sketch = neutral_spatial_sketch_id(placement);
-        let Some(entity_id) =
-            neutral_spatial_sketch_surface_id(&sketch, surface.persistent_id.get())
-        else {
-            continue;
-        };
+        let entity_id = neutral_spatial_sketch_surface_id(&sketch, surface.persistent_id.get());
         entities.push(
             SpatialSketchEntity::new(
                 entity_id,
@@ -995,7 +991,7 @@ pub fn project_spatial_sketch_constraints(
                 _ => return None,
             };
             Some(SpatialSketchConstraint {
-                id: neutral_sketch_constraint_id(&relation.id, relation.record_index)?,
+                id: neutral_sketch_constraint_id(&relation.id, relation.record_index),
                 sketch: sketch.clone(),
                 definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::try_from(
                     definition,

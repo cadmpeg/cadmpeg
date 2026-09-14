@@ -290,9 +290,12 @@ fn decode_sketch_visibilities_in_stream(
                 frame.entity_id
             )));
         }
-        let Some((entity_id, _, header_end)) =
-            parse_settled_entity_header(&bytes[..frame.end], frame.start)
-                .or_else(|| parse_genesis_entity_header(&bytes[..frame.end], frame.start))
+        let Some(NamedEntityHeader {
+            entity_id,
+            end: header_end,
+            ..
+        }) = parse_settled_entity_header(&bytes[..frame.end], frame.start)
+            .or_else(|| parse_genesis_entity_header(&bytes[..frame.end], frame.start))
         else {
             return Err(CodecError::malformed(format_args!(
                 "F3D sketch container {} has an invalid entity header",
@@ -733,10 +736,7 @@ pub fn decode_lost_edge_references(
 /// Parse the fixed entity-header layout at `start`: a u64 entity suffix, five
 /// zero bytes, an optional slot, and the UTF-16LE entity id whose numeric
 /// suffix equals the header's entity suffix.
-pub(crate) fn parse_settled_entity_header(
-    bytes: &[u8],
-    start: usize,
-) -> Option<(crate::records::DesignEntityId, bool, usize)> {
+pub(crate) fn parse_settled_entity_header(bytes: &[u8], start: usize) -> Option<NamedEntityHeader> {
     let entity_suffix = View::u64_le_at(bytes, start + 7)?;
     if entity_suffix == 0 || bytes.get(start + 15..start + 20) != Some(&[0u8; 5]) {
         return None;
@@ -748,7 +748,20 @@ pub(crate) fn parse_settled_entity_header(
     };
     let (entity_id, end) = lp_utf16_bounded(bytes, string_offset, 1..=256)?;
     let entity_id = crate::records::DesignEntityId::try_from(entity_id).ok()?;
-    (entity_id.suffix() == entity_suffix).then_some((entity_id, optional_slot_present, end))
+    (entity_id.suffix() == entity_suffix).then_some(NamedEntityHeader {
+        entity_id,
+        entity_id_offset: string_offset + 4,
+        optional_slot_present,
+        end,
+    })
+}
+
+/// An admitted entity identity and its source header locations.
+pub(crate) struct NamedEntityHeader {
+    pub entity_id: crate::records::DesignEntityId,
+    pub entity_id_offset: usize,
+    pub optional_slot_present: bool,
+    pub end: usize,
 }
 
 /// Parse the `EntityGenesis` entity-header layout at `start`: the u32 record
@@ -756,10 +769,7 @@ pub(crate) fn parse_settled_entity_header(
 /// `0x01`-marked u32 1, the `EntityGenesis` and `IntrinsicMetaTypeuint64`
 /// key strings, the u64 origin bitfield, and the UTF-16LE entity id whose
 /// numeric suffix equals the record index.
-pub(crate) fn parse_genesis_entity_header(
-    bytes: &[u8],
-    start: usize,
-) -> Option<(crate::records::DesignEntityId, bool, usize)> {
+pub(crate) fn parse_genesis_entity_header(bytes: &[u8], start: usize) -> Option<NamedEntityHeader> {
     let entity_suffix = u64::from(View::u32_le_at(bytes, start + 7)?);
     if entity_suffix == 0 {
         return None;
@@ -785,7 +795,12 @@ pub(crate) fn parse_genesis_entity_header(
     }
     let (entity_id, end) = lp_utf16_bounded(bytes, after_type + 8, 1..=256)?;
     let entity_id = crate::records::DesignEntityId::try_from(entity_id).ok()?;
-    (entity_id.suffix() == entity_suffix).then_some((entity_id, false, end))
+    (entity_id.suffix() == entity_suffix).then_some(NamedEntityHeader {
+        entity_id,
+        entity_id_offset: after_type + 12,
+        optional_slot_present: false,
+        end,
+    })
 }
 
 /// Parse the counted member-record run of the paired same-index container
@@ -971,8 +986,12 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
             let class_tag = header.class_tag.clone();
             let settled = parse_settled_entity_header(bytes, start);
             let genesis_form = settled.is_none();
-            let Some((entity_id, optional_slot_present, end)) =
-                settled.or_else(|| parse_genesis_entity_header(bytes, start))
+            let Some(NamedEntityHeader {
+                entity_id,
+                optional_slot_present,
+                end,
+                ..
+            }) = settled.or_else(|| parse_genesis_entity_header(bytes, start))
             else {
                 continue;
             };

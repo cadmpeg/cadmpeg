@@ -122,9 +122,7 @@ impl<'a> Cursor<'a> {
         if !raw.iter().all(|byte| matches!(byte, 0x20..=0x7e)) {
             return Err(malformed(field, "contains a non-printable ASCII byte"));
         }
-        Ok(std::str::from_utf8(raw)
-            .expect("invariant: printable ASCII is UTF-8")
-            .to_owned())
+        Ok(raw.iter().copied().map(char::from).collect())
     }
 
     fn expect_ascii(&mut self, field: &str, expected: &str) -> Result<(), CodecError> {

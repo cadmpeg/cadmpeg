@@ -381,7 +381,7 @@ fn project_qualified_operands(
                 .collect();
             Some(match occurrence {
                 Some(_) => JointOperand::occurrence(
-                    crate::ids::neutral_component_occurrence_id(root_guid.as_str()),
+                    crate::ids::neutral_component_occurrence_id(root_guid),
                     object,
                     subelements,
                 ),

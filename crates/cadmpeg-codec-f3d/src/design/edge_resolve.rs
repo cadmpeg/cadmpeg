@@ -110,17 +110,14 @@ pub(crate) fn resolved_surface_patch_edge_group(
     else {
         return fallback();
     };
-    let feature_key = feature_id
-        .as_str()
-        .split_once('#')
-        .map_or(feature_id.as_str(), |(_, key)| key);
+    let feature_key = feature_id.key();
     cadmpeg_ir::features::EdgeSelection::historical(
         feature_input_topology_id(feature_id, state_id),
         edge_slots
             .into_iter()
             .map(|edge_slot| {
                 ids::history_input_edge_id(
-                    &ids::history_input_prefix(feature_key, state_id),
+                    &ids::history_input_prefix(&feature_key, state_id),
                     edge_slot,
                 )
             })
@@ -247,10 +244,7 @@ pub(crate) fn resolved_edge_flange_group(
     if edges.is_empty() {
         return selection;
     }
-    let feature_key = feature_id
-        .as_str()
-        .split_once('#')
-        .map_or(feature_id.as_str(), |(_, key)| key);
+    let feature_key = feature_id.key();
     let state = feature_input_topology_id(feature_id, previous_state_id);
     EdgeSelection::historical(
         state,
@@ -258,7 +252,7 @@ pub(crate) fn resolved_edge_flange_group(
             .into_iter()
             .map(|edge_slot| {
                 ids::history_input_edge_id(
-                    &ids::history_input_prefix(feature_key, previous_state_id),
+                    &ids::history_input_prefix(&feature_key, previous_state_id),
                     edge_slot,
                 )
             })
@@ -476,10 +470,7 @@ fn resolved_edge_group_with_transition_chain(
         EdgeGroupProof::Treatment { radius } => (true, radius),
     };
 
-    let feature_key = feature_id
-        .as_str()
-        .split_once('#')
-        .map_or(feature_id.as_str(), |(_, key)| key);
+    let feature_key = feature_id.key();
     let unmatched_selection = |state_id: Option<i64>| {
         if group.lost_edge_references.is_empty() {
             EdgeSelection::Native(group.id.clone())
@@ -492,7 +483,7 @@ fn resolved_edge_group_with_transition_chain(
                             .iter()
                             .map(|identity| (identity.as_str(), None)),
                         state_id,
-                        feature_key,
+                        &feature_key,
                         feature_input_topology_id(feature_id, state_id),
                         &group.id,
                     )
@@ -579,7 +570,7 @@ fn resolved_edge_group_with_transition_chain(
                 .into_iter()
                 .map(|edge_slot| {
                     ids::history_input_edge_id(
-                        &ids::history_input_prefix(feature_key, state_id),
+                        &ids::history_input_prefix(&feature_key, state_id),
                         edge_slot,
                     )
                 })
@@ -779,7 +770,7 @@ fn resolved_edge_group_with_transition_chain(
                 .filter(|edge| seen.insert(*edge))
                 .map(|edge_slot| {
                     ids::history_input_edge_id(
-                        &ids::history_input_prefix(feature_key, previous_state_id),
+                        &ids::history_input_prefix(&feature_key, previous_state_id),
                         edge_slot,
                     )
                 })
@@ -794,7 +785,7 @@ fn resolved_edge_group_with_transition_chain(
                     .iter()
                     .map(|edge_slot| {
                         ids::history_input_edge_id(
-                            &ids::history_input_prefix(feature_key, previous_state_id),
+                            &ids::history_input_prefix(&feature_key, previous_state_id),
                             *edge_slot,
                         )
                     })
@@ -810,7 +801,7 @@ fn resolved_edge_group_with_transition_chain(
                     .iter()
                     .map(|edge_slot| {
                         ids::history_input_edge_id(
-                            &ids::history_input_prefix(feature_key, previous_state_id),
+                            &ids::history_input_prefix(&feature_key, previous_state_id),
                             *edge_slot,
                         )
                     })
@@ -827,7 +818,7 @@ fn resolved_edge_group_with_transition_chain(
                         .iter()
                         .map(|edge_slot| {
                             ids::history_input_edge_id(
-                                &ids::history_input_prefix(feature_key, previous_state_id),
+                                &ids::history_input_prefix(&feature_key, previous_state_id),
                                 edge_slot,
                             )
                         })
@@ -847,7 +838,7 @@ fn resolved_edge_group_with_transition_chain(
                 .filter_map(|(_, edge)| edge)
                 .map(|edge_slot| {
                     ids::history_input_edge_id(
-                        &ids::history_input_prefix(feature_key, previous_state_id),
+                        &ids::history_input_prefix(&feature_key, previous_state_id),
                         edge_slot,
                     )
                 })
@@ -858,7 +849,7 @@ fn resolved_edge_group_with_transition_chain(
         return partial_historical_edge_selection(
             members,
             previous_state_id,
-            feature_key,
+            &feature_key,
             state,
             &group.id,
         )
@@ -994,7 +985,7 @@ fn resolved_edge_group_with_transition_chain(
             let mut edges = Vec::new();
             for edge_slot in combined_edges.into_iter().flatten() {
                 let edge = ids::history_input_edge_id(
-                    &ids::history_input_prefix(feature_key, previous_state_id),
+                    &ids::history_input_prefix(&feature_key, previous_state_id),
                     edge_slot,
                 );
                 if !edges.contains(&edge) {
@@ -1018,7 +1009,7 @@ fn resolved_edge_group_with_transition_chain(
         return partial_historical_edge_selection(
             partial_members,
             previous_state_id,
-            feature_key,
+            &feature_key,
             state,
             &group.id,
         )
@@ -1027,7 +1018,7 @@ fn resolved_edge_group_with_transition_chain(
     let mut edges = Vec::new();
     for edge_slot in resolved_slots {
         let edge = ids::history_input_edge_id(
-            &ids::history_input_prefix(feature_key, previous_state_id),
+            &ids::history_input_prefix(&feature_key, previous_state_id),
             edge_slot,
         );
         if !edges.contains(&edge) {
@@ -1083,14 +1074,11 @@ pub(crate) fn resolved_hem_edge_group(
     let Some(edge) = hem_transition_edge_slot(operand) else {
         return selection;
     };
-    let feature_key = feature_id
-        .as_str()
-        .split_once('#')
-        .map_or(feature_id.as_str(), |(_, key)| key);
+    let feature_key = feature_id.key();
     EdgeSelection::historical(
         feature_input_topology_id(feature_id, previous_state_id),
         vec![ids::history_input_edge_id(
-            &ids::history_input_prefix(feature_key, previous_state_id),
+            &ids::history_input_prefix(&feature_key, previous_state_id),
             edge,
         )],
         group.id.clone(),
@@ -1242,7 +1230,7 @@ pub(crate) fn unique_hem_transition_edge_candidate<'a>(
 pub(crate) fn partial_historical_edge_selection<'a>(
     members: impl IntoIterator<Item = (&'a str, Option<i64>)>,
     previous_state_id: i64,
-    feature_key: &str,
+    feature_key: &cadmpeg_ir::ids::IdentityKey,
     state: cadmpeg_ir::ids::FeatureInputTopologyId,
     native: &str,
 ) -> Option<cadmpeg_ir::features::EdgeSelection> {
@@ -1303,11 +1291,8 @@ pub(crate) fn feature_input_topology_id(
     feature_id: &cadmpeg_ir::features::FeatureId,
     previous_state_id: i64,
 ) -> cadmpeg_ir::ids::FeatureInputTopologyId {
-    let feature_key = feature_id
-        .as_str()
-        .split_once('#')
-        .map_or(feature_id.as_str(), |(_, key)| key);
-    ids::history_input_state_id(&ids::history_input_prefix(feature_key, previous_state_id))
+    let feature_key = feature_id.key();
+    ids::history_input_state_id(&ids::history_input_prefix(&feature_key, previous_state_id))
 }
 
 fn unique_edge_group_assignment(operands: &[&DesignEdgeOperand]) -> Option<Vec<i64>> {

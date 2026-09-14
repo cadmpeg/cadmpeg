@@ -184,7 +184,7 @@ impl From<DesignSketchProfileOperand> for DesignSketchProfileOperandWire {
             class_tag: value.class_tag.into(),
             asset_id: value.asset_id.into(),
             asset_id_offset: value.asset_id_offset,
-            entity_id: value.entity_id.0,
+            entity_id: value.entity_id.text,
             entity_suffix,
             entity_reference_offset: value.entity_reference_offset,
             region_selection: value.region_selection,

@@ -628,26 +628,20 @@ pub fn decode_dimension_locus_pairs(
         .collect::<HashMap<_, _>>();
     let dimension_companions = owners
         .iter()
-        .filter(|owner| {
-            let Some(scope) = native_stream(owner.id()) else {
-                return false;
-            };
+        .filter_map(|owner| {
+            let scope = native_stream(owner.id())?;
             parameters
                 .get(&(scope, owner.parameter_record_index()))
                 .is_some_and(|parameter| parameter.kind() == DesignParameterKind::Dimension)
-        })
-        .filter_map(|owner| {
-            Some((
-                native_stream(owner.id())?.to_owned(),
-                owner.companion_record_index(),
-            ))
+                .then_some((scope.to_owned(), owner.companion_record_index()))
         })
         .collect::<HashSet<_>>();
     let mut out = Vec::new();
-    for companion in companions.iter().filter(|companion| {
-        native_stream(companion.id()).is_some_and(|scope| {
-            dimension_companions.contains(&(scope.to_owned(), companion.record_index()))
-        })
+    for (companion, scope) in companions.iter().filter_map(|companion| {
+        let scope = native_stream(companion.id())?;
+        dimension_companions
+            .contains(&(scope.to_owned(), companion.record_index()))
+            .then_some((companion, scope))
     }) {
         let entry = scan.entries.iter().find(|entry| {
             scan.is_design_stream(entry, ContainerRole::Bulkstream)
@@ -658,7 +652,6 @@ pub fn decode_dimension_locus_pairs(
         let Some(entry) = entry else {
             continue;
         };
-        let scope = native_stream(companion.id()).expect("entry matched companion stream");
         let geometry_indices = points
             .iter()
             .filter(|point| native_stream(&point.id) == Some(scope))
@@ -866,19 +859,12 @@ pub fn decode_dimension_null_locus_pairs(
         .collect::<HashMap<_, _>>();
     let dimension_companions = owners
         .iter()
-        .filter(|owner| {
-            let Some(scope) = native_stream(owner.id()) else {
-                return false;
-            };
+        .filter_map(|owner| {
+            let scope = native_stream(owner.id())?;
             parameters
                 .get(&(scope, owner.parameter_record_index()))
                 .is_some_and(|parameter| parameter.kind() == DesignParameterKind::Dimension)
-        })
-        .filter_map(|owner| {
-            Some((
-                native_stream(owner.id())?.to_owned(),
-                owner.companion_record_index(),
-            ))
+                .then_some((scope.to_owned(), owner.companion_record_index()))
         })
         .collect::<HashSet<_>>();
     let typed_companions = pairs
@@ -897,11 +883,11 @@ pub fn decode_dimension_null_locus_pairs(
         }))
         .collect::<HashSet<_>>();
     let mut out = Vec::new();
-    for companion in companions.iter().filter(|companion| {
-        native_stream(companion.id()).is_some_and(|scope| {
-            let key = (scope.to_owned(), companion.record_index());
-            dimension_companions.contains(&key) && !typed_companions.contains(&key)
-        })
+    for (companion, scope) in companions.iter().filter_map(|companion| {
+        let scope = native_stream(companion.id())?;
+        let key = (scope.to_owned(), companion.record_index());
+        (dimension_companions.contains(&key) && !typed_companions.contains(&key))
+            .then_some((companion, scope))
     }) {
         let entry = scan.entries.iter().find(|entry| {
             scan.is_design_stream(entry, ContainerRole::Bulkstream)
@@ -912,7 +898,6 @@ pub fn decode_dimension_null_locus_pairs(
         let Some(entry) = entry else {
             continue;
         };
-        let scope = native_stream(companion.id()).expect("entry matched companion stream");
         let geometry_indices = points
             .iter()
             .filter(|point| native_stream(&point.id) == Some(scope))
@@ -1646,26 +1631,20 @@ pub fn decode_dimension_locus_groups(
         .collect::<HashMap<_, _>>();
     let dimension_companions = owners
         .iter()
-        .filter(|owner| {
-            let Some(scope) = native_stream(owner.id()) else {
-                return false;
-            };
+        .filter_map(|owner| {
+            let scope = native_stream(owner.id())?;
             parameters
                 .get(&(scope, owner.parameter_record_index()))
                 .is_some_and(|parameter| parameter.kind() == DesignParameterKind::Dimension)
-        })
-        .filter_map(|owner| {
-            Some((
-                native_stream(owner.id())?.to_owned(),
-                owner.companion_record_index(),
-            ))
+                .then_some((scope.to_owned(), owner.companion_record_index()))
         })
         .collect::<HashSet<_>>();
     let mut out = Vec::new();
-    for companion in companions.iter().filter(|companion| {
-        native_stream(companion.id()).is_some_and(|scope| {
-            dimension_companions.contains(&(scope.to_owned(), companion.record_index()))
-        })
+    for (companion, scope) in companions.iter().filter_map(|companion| {
+        let scope = native_stream(companion.id())?;
+        dimension_companions
+            .contains(&(scope.to_owned(), companion.record_index()))
+            .then_some((companion, scope))
     }) {
         let entry = scan.entries.iter().find(|entry| {
             scan.is_design_stream(entry, ContainerRole::Bulkstream)
@@ -1676,7 +1655,6 @@ pub fn decode_dimension_locus_groups(
         let Some(entry) = entry else {
             continue;
         };
-        let scope = native_stream(companion.id()).expect("entry matched companion stream");
         let geometry_indices = points
             .iter()
             .filter(|point| native_stream(&point.id) == Some(scope))

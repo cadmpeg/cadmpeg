@@ -36,7 +36,9 @@ pub(super) fn merge_archive(
 
 /// Reassigns only repeated sibling ordinals after independent document graphs
 /// have been combined.
-pub(super) fn make_sibling_ordinals_unique(occurrences: &mut [cadmpeg_ir::products::Occurrence]) {
+pub(super) fn make_sibling_ordinals_unique(
+    occurrences: &mut [cadmpeg_ir::products::Occurrence],
+) -> Result<(), CodecError> {
     use std::collections::{HashMap, HashSet};
 
     let mut used = HashMap::<Option<String>, HashSet<u32>>::new();
@@ -51,9 +53,14 @@ pub(super) fn make_sibling_ordinals_unique(occurrences: &mut [cadmpeg_ir::produc
         if !siblings.insert(occurrence.ordinal) {
             occurrence.ordinal = (0..=u32::MAX)
                 .find(|ordinal| siblings.insert(*ordinal))
-                .expect("an in-memory occurrence population cannot exhaust u32 ordinals");
+                .ok_or_else(|| {
+                    CodecError::malformed(
+                        "F3Z sibling occurrence population exhausts the u32 ordinal space",
+                    )
+                })?;
         }
     }
+    Ok(())
 }
 
 fn xref_table_from_ir(ir: &cadmpeg_ir::CadIr) -> Result<XrefTable, CodecError> {

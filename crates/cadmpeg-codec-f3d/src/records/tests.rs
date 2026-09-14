@@ -1782,3 +1782,24 @@ mod annotation_frames;
 mod persistent_text;
 
 mod locus_frames;
+
+#[test]
+fn entity_identity_retains_suffix_without_changing_source_spelling() {
+    for (text, suffix) in [
+        ("_0", 0),
+        ("part_0007", 7),
+        ("part_+7", 7),
+        ("part_a_18446744073709551615", u64::MAX),
+        ("文😀_01", 1),
+    ] {
+        let identity = super::DesignEntityId::try_from(text.to_owned()).unwrap();
+        assert_eq!(identity.as_str(), text);
+        assert_eq!(identity.suffix(), suffix);
+    }
+    for text in ["part", "part_", "part_-1", "part_18446744073709551616"] {
+        assert!(super::DesignEntityId::try_from(text.to_owned()).is_err());
+    }
+    let identity = super::DesignEntityId::from_parts("part_", u64::MAX);
+    assert_eq!(identity.as_str(), "part__18446744073709551615");
+    assert_eq!(identity.suffix(), u64::MAX);
+}

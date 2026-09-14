@@ -730,17 +730,14 @@ fn historical_face_profile_selection(
     if selected_faces.is_empty() {
         return None;
     }
-    let feature_key = feature_id
-        .as_str()
-        .split_once('#')
-        .map_or(feature_id.as_str(), |(_, key)| key);
+    let feature_key = feature_id.key();
     PlanarProfileRef::historical_faces(
         feature_input_topology_id(feature_id, previous_state_id),
         selected_faces
             .into_iter()
             .map(|face| {
                 ids::history_input_face_id(
-                    &ids::history_input_prefix(feature_key, previous_state_id),
+                    &ids::history_input_prefix(&feature_key, previous_state_id),
                     face,
                 )
             })

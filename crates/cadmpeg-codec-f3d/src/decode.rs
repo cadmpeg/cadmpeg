@@ -3513,32 +3513,32 @@ fn mesh_attribute_channels(
             attribute.count(),
         ) {
             (MeshAttributeDomain::Vertex, Some(item_size), Some(_)) => {
-                channels.push(
-                    cadmpeg_ir::tessellation::TessellationChannel::new(
-                        cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
-                        item_size,
-                        attribute.role,
-                        attribute.element_code(),
-                        attribute.values().to_vec(),
-                    )
-                    .expect("vertex mesh attribute payload is well formed"),
-                );
+                match cadmpeg_ir::tessellation::TessellationChannel::new(
+                    cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
+                    item_size,
+                    attribute.role,
+                    attribute.element_code(),
+                    attribute.values().to_vec(),
+                ) {
+                    Ok(channel) => channels.push(channel),
+                    Err(_) => *unresolved.entry(MeshAttributeDomain::Vertex).or_default() += 1,
+                }
             }
             (MeshAttributeDomain::Corner, Some(item_size), Some(_)) => {
                 let Some(selectors) = attribute.corner_selectors(vertices, triangles) else {
                     *unresolved.entry(MeshAttributeDomain::Corner).or_default() += 1;
                     continue;
                 };
-                channels.push(
-                    cadmpeg_ir::tessellation::TessellationChannel::new(
-                        cadmpeg_ir::tessellation::ChannelAddressing::Corner { indices: selectors },
-                        item_size,
-                        attribute.role,
-                        attribute.element_code(),
-                        attribute.values().to_vec(),
-                    )
-                    .expect("corner mesh attribute payload is well formed"),
-                );
+                match cadmpeg_ir::tessellation::TessellationChannel::new(
+                    cadmpeg_ir::tessellation::ChannelAddressing::Corner { indices: selectors },
+                    item_size,
+                    attribute.role,
+                    attribute.element_code(),
+                    attribute.values().to_vec(),
+                ) {
+                    Ok(channel) => channels.push(channel),
+                    Err(_) => *unresolved.entry(MeshAttributeDomain::Corner).or_default() += 1,
+                }
             }
             (MeshAttributeDomain::Triangle, Some(item_size), Some(count))
                 if usize::try_from(count) == Ok(triangles.len()) && item_size == 4 =>
@@ -3550,16 +3550,16 @@ fn mesh_attribute_channels(
                     *unresolved.entry(MeshAttributeDomain::Triangle).or_default() += 1;
                     continue;
                 };
-                channels.push(
-                    cadmpeg_ir::tessellation::TessellationChannel::new(
-                        cadmpeg_ir::tessellation::ChannelAddressing::Triangle { indices },
-                        item_size,
-                        attribute.role,
-                        attribute.element_code(),
-                        attribute.values().to_vec(),
-                    )
-                    .expect("triangle mesh attribute payload is well formed"),
-                );
+                match cadmpeg_ir::tessellation::TessellationChannel::new(
+                    cadmpeg_ir::tessellation::ChannelAddressing::Triangle { indices },
+                    item_size,
+                    attribute.role,
+                    attribute.element_code(),
+                    attribute.values().to_vec(),
+                ) {
+                    Ok(channel) => channels.push(channel),
+                    Err(_) => *unresolved.entry(MeshAttributeDomain::Triangle).or_default() += 1,
+                }
             }
             (domain, _, _) => *unresolved.entry(domain).or_default() += 1,
         }
@@ -3836,9 +3836,8 @@ fn decode_result(
 }
 
 pub(crate) fn preserve_source_image(scan: &ContainerScan) -> UnknownRecord {
-    let id = crate::ids::FILE_SOURCE_IMAGE_ID;
     UnknownRecord::retained(
-        UnknownId::mint(id).expect("identity grammar"),
+        crate::ids::file_source_image_id(),
         0,
         scan.source_image.to_vec(),
         Vec::new(),
@@ -4030,12 +4029,8 @@ fn populate_annotations(
             note(&entity.id, "sketch_relation");
             if constraints_by_native.contains_key(entity.id.as_str()) {
                 note(
-                    match crate::ids::neutral_sketch_constraint_id(&entity.id, entity.record_index)
-                    {
-                        Some(id) => id,
-                        None => continue,
-                    }
-                    .as_str(),
+                    crate::ids::neutral_sketch_constraint_id(&entity.id, entity.record_index)
+                        .as_str(),
                     "sketch_constraint",
                 );
             }
@@ -4855,11 +4850,11 @@ fn build_geometry_ir(
         creation_timestamps,
     } = brep;
     let remainder = transfer_into_ir(ctx, &mut ir, "f3d", asm)?;
-    let mut native = F3dNative::load(
-        ir.native
-            .namespace("f3d")
-            .expect("ASM transfer creates the requested native namespace"),
-    )?;
+    let namespace = ir
+        .native
+        .namespace("f3d")
+        .ok_or_else(|| CodecError::malformed("ASM transfer did not create the f3d namespace"))?;
+    let mut native = F3dNative::load(namespace)?;
     native.sketch_curve_links = sketch_curve_links;
     native.persistent_design_links = persistent_design_links;
     native.persistent_subentity_tags = persistent_subentity_tags;
@@ -5081,9 +5076,18 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<MetadataIr, CodecError> {
             }
         }
 
+        let namespace = cadmpeg_ir::ids::IdentityNamespace::new(
+            "f3d",
+            crate::ids::identity_key_component(&brep.name),
+            "unknown",
+        )
+        .map_err(|error| {
+            CodecError::malformed(format_args!(
+                "F3D BREP name cannot form an unknown-record identity: {error}"
+            ))
+        })?;
         unknowns.push(UnknownRecord::unavailable(
-            UnknownId::mint(crate::ids::native_scoped_id(&brep.name, "unknown", 0))
-                .expect("identity grammar"),
+            UnknownId::compose(&namespace, 0_u64),
             0,
             brep.uncompressed_len,
             brep.sha256.clone(),
@@ -5374,13 +5378,16 @@ pub(crate) fn resolve_face_appearance_bindings(
                 // The face id completes the key: one appearance attribute GUID
                 // reaches every face carrying it, so the assignment pair alone
                 // repeats across those faces.
-                id: crate::ids::neutral_face_appearance_binding_id(
+                id: crate::ids::face_appearance_binding_id(
                     &assignment.face_guid,
-                    &assignment.visual_guid,
+                    assignment.visual_guid.identity_key(),
                     face,
                 )
-                .try_into()
-                .expect("valid identity"),
+                .map_err(|error| {
+                    CodecError::malformed(format_args!(
+                        "F3D face appearance binding identity is invalid: {error}"
+                    ))
+                })?,
                 target,
                 appearance: appearance.clone(),
                 source_entity_id: None,

@@ -5,7 +5,6 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::ids::SubdId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdGripDirection, SubdGripWedge, SubdPlaneFrame,
@@ -1502,7 +1501,8 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         .unwrap_or(name);
     Ok(ParsedCage {
         surface: SubdSurface {
-            id: SubdId::mint(format!("f3d:tspline:subd#{source_key}")).expect("identity grammar"),
+            id: crate::ids::subd_id(source_key)
+                .map_err(|error| malformed(name, format_args!("invalid subd identity: {error}")))?,
             scheme: SubdScheme::CatmullClark,
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::F3d,

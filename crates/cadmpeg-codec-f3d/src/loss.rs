@@ -513,12 +513,7 @@ impl F3dLossCode {
     #[must_use]
     pub(crate) fn kind(self) -> LossKind {
         LossKind::namespaced(
-            const {
-                match cadmpeg_ir::report::LossNamespace::new("f3d") {
-                    Ok(namespace) => namespace,
-                    Err(_) => panic!("reserved codec namespace"),
-                }
-            },
+            cadmpeg_ir::loss_namespace!("f3d"),
             self.code(),
             self.shared_taxonomy(),
         )

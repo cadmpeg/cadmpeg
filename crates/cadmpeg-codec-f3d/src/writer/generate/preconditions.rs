@@ -903,7 +903,13 @@ pub(crate) fn validate_source_less_design_links(
                 let coedge = coedge_by_id
                     .get(parameters.coedge.as_str())
                     .copied()
-                    .expect("validated tolerant-coedge target");
+                    .ok_or_else(|| {
+                        CodecError::InvalidInput(format!(
+                            "F3D tolerant-coedge metadata {} targets missing coedge {}",
+                            parameters.id(),
+                            parameters.coedge
+                        ))
+                    })?;
                 let use_curve = coedge.use_curve.as_ref().ok_or_else(|| {
                     CodecError::InvalidInput(format!(
                         "F3D tolerant-coedge extension {} has no use curve",
@@ -1058,7 +1064,12 @@ pub(crate) fn validate_source_less_design_links(
         let (ordinal, body) = body_by_id
             .get(visibility.body.as_str())
             .copied()
-            .expect("validated body-visibility target");
+            .ok_or_else(|| {
+                CodecError::InvalidInput(format!(
+                    "F3D body visibility {} targets missing body {}",
+                    visibility.id, visibility.body
+                ))
+            })?;
         if body.visible != Some(visibility.visible) {
             return Err(CodecError::InvalidInput(format!(
                 "F3D body visibility {} conflicts with body {} visibility",
@@ -1123,7 +1134,13 @@ pub(crate) fn validate_source_less_design_links(
         let shell = shell_by_id
             .get(wire.shell.as_str())
             .copied()
-            .expect("validated wire-topology target");
+            .ok_or_else(|| {
+                CodecError::InvalidInput(format!(
+                    "F3D wire-topology metadata {} targets missing shell {}",
+                    wire.id(),
+                    wire.shell
+                ))
+            })?;
         let member_form_is_valid = match &wire.members {
             cadmpeg_asm::brep::records::WireMembers::Edges(edges) => {
                 !edges.is_empty() && edges.iter().all(|edge| shell.wire_edges().contains(edge))

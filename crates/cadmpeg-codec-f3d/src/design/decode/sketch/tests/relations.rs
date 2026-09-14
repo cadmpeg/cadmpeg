@@ -396,10 +396,17 @@ fn genesis_entity_header_variant_resolves_suffix_and_id() {
     bytes.extend_from_slice(&[0u8; 10]);
     push_genesis_block(&mut bytes, 4);
     bytes.extend_from_slice(&5u32.to_le_bytes());
+    let payload_start = bytes.len();
     for unit in "0_201".encode_utf16() {
         bytes.extend_from_slice(&unit.to_le_bytes());
     }
-    let (entity_id, optional_slot_present, end) = parse_genesis_entity_header(&bytes, 0).unwrap();
+    let crate::design::decode::sketch::NamedEntityHeader {
+        entity_id,
+        entity_id_offset,
+        optional_slot_present,
+        end,
+    } = parse_genesis_entity_header(&bytes, 0).unwrap();
+    assert_eq!(entity_id_offset, payload_start);
     assert_eq!(entity_id.suffix(), 201);
     assert_eq!(entity_id.as_str(), "0_201");
     assert!(!optional_slot_present);

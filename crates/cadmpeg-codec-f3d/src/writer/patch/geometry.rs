@@ -270,12 +270,14 @@ fn patch_asm_geometry(
             }
             // Position in chunk space, because the index feeds `chunk()` below
             // and chunk indices skip payload identifiers.
-            let family = record
-                .chunks()
-                .position(
-                    |token| matches!(token, sab::Token::Str(value) if value == "Timestamp_attrib_def"),
-                )
-                .expect("timestamp family was checked");
+            let Some(family) = record.chunks().position(
+                |token| matches!(token, sab::Token::Str(value) if value == "Timestamp_attrib_def"),
+            ) else {
+                return Err(CodecError::malformed(format_args!(
+                    "F3D timestamp record {} has no timestamp attribute family",
+                    record.index
+                )));
+            };
             if !matches!(record.chunk(family + 1), Some(sab::Token::Long(1))) {
                 return Err(CodecError::malformed(format_args!(
                     "F3D timestamp record {} lacks marker 1 after its family",
@@ -616,8 +618,12 @@ fn patch_asm_geometry(
                     }
                 }
                 let ratio = minor_radius / major_radius;
-                let old_ratio = View::f64_le_at(bytes, fields[3] + 1)
-                    .expect("framed ellipse ratio has eight payload bytes");
+                let old_ratio = View::f64_le_at(bytes, fields[3] + 1).ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "ellipse record {} has a truncated ratio payload",
+                        record.index
+                    ))
+                })?;
                 let signed_ratio = if old_ratio.is_sign_negative() {
                     -ratio
                 } else {
@@ -752,10 +758,18 @@ fn patch_asm_geometry(
                     asm_edits.required_payload_field(bytes, record, field_indices[5], 0x06)?,
                     asm_edits.required_payload_field(bytes, record, field_indices[6], 0x06)?,
                 ];
-                let old_sine = View::f64_le_at(bytes, fields[4] + 1)
-                    .expect("framed cone sine has eight payload bytes");
-                let old_cosine = View::f64_le_at(bytes, fields[5] + 1)
-                    .expect("framed cone cosine has eight payload bytes");
+                let old_sine = View::f64_le_at(bytes, fields[4] + 1).ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "cone record {} has a truncated sine payload",
+                        record.index
+                    ))
+                })?;
+                let old_cosine = View::f64_le_at(bytes, fields[5] + 1).ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "cone record {} has a truncated cosine payload",
+                        record.index
+                    ))
+                })?;
                 let sine_sign = if old_sine < 0.0 { -1.0 } else { 1.0 };
                 let cosine_sign = if old_cosine < 0.0 { -1.0 } else { 1.0 };
                 let native_axis = if *half_angle > 0.0 && sine_sign * cosine_sign < 0.0 {

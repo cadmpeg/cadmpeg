@@ -48,8 +48,8 @@ pub(crate) fn project_local_components(
                     &mut components,
                     &mut occurrences,
                     &native_by_guid,
-                    root.component_guid.as_str(),
-                    root.occurrence_guid.as_str(),
+                    &root.component_guid,
+                    &root.occurrence_guid,
                     root.transform().map_or(
                         [
                             [1.0, 0.0, 0.0, 0.0],
@@ -67,16 +67,16 @@ pub(crate) fn project_local_components(
                 &mut components,
                 &mut occurrences,
                 &native_by_guid,
-                operation.component_guid.as_str(),
-                operation.source_occurrence_guid.as_str(),
+                &operation.component_guid,
+                &operation.source_occurrence_guid,
                 operation.source_transform,
             )?;
             project_occurrence(
                 &mut components,
                 &mut occurrences,
                 &native_by_guid,
-                operation.component_guid.as_str(),
-                operation.copied_occurrence_guid.as_str(),
+                &operation.component_guid,
+                &operation.copied_occurrence_guid,
                 operation.copied_transform,
             )?;
         }
@@ -85,8 +85,8 @@ pub(crate) fn project_local_components(
                 &mut components,
                 &mut occurrences,
                 &native_by_guid,
-                construction.component_guid.as_str(),
-                construction.occurrence_guid.as_str(),
+                &construction.component_guid,
+                &construction.occurrence_guid,
                 construction.transform,
             )?;
         }
@@ -105,8 +105,8 @@ pub(crate) fn project_local_components(
                 &mut components,
                 &mut occurrences,
                 &native_by_guid,
-                component_guid.as_str(),
-                occurrence.occurrence_guid.as_str(),
+                component_guid,
+                &occurrence.occurrence_guid,
                 occurrence.instance.transform.value,
             )?;
         }
@@ -147,7 +147,7 @@ pub(crate) fn project_derived_instance_features(
             .set_definition(FeatureDefinition::Operation(
                 FeatureOperation::InsertComponent {
                     occurrence: crate::ids::neutral_component_occurrence_id(
-                        construction.occurrence_guid.as_str(),
+                        &construction.occurrence_guid,
                     ),
                 },
             ));
@@ -220,8 +220,8 @@ fn project_occurrence(
     components: &mut BTreeMap<String, ProductDefinition>,
     occurrences: &mut BTreeMap<String, Occurrence>,
     native_by_guid: &BTreeMap<String, Option<&DesignComponentOccurrence>>,
-    component_guid: &str,
-    occurrence_guid: &str,
+    component_guid: &crate::records::DesignRelaxedGuidText,
+    occurrence_guid: &crate::records::DesignRelaxedGuidText,
     transform: impl Into<[[f64; 4]; 4]>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let component_id = crate::ids::neutral_component_id(component_guid);
@@ -244,7 +244,7 @@ fn project_occurrence(
             visible: None,
             link: None,
             native_ref: native_by_guid
-                .get(&occurrence_guid.to_ascii_lowercase())
+                .get(&occurrence_guid.as_str().to_ascii_lowercase())
                 .copied()
                 .flatten()
                 .map(|occurrence| occurrence.id.clone()),
@@ -252,7 +252,10 @@ fn project_occurrence(
     Ok(())
 }
 
-fn project_component(components: &mut BTreeMap<String, ProductDefinition>, component_guid: &str) {
+fn project_component(
+    components: &mut BTreeMap<String, ProductDefinition>,
+    component_guid: &crate::records::DesignRelaxedGuidText,
+) {
     let component_id = crate::ids::neutral_component_id(component_guid);
     components
         .entry(component_id.as_str().to_owned())
@@ -418,12 +421,12 @@ mod tests {
         assert_eq!(occurrences.len(), 1);
         assert_eq!(
             occurrences[0].id,
-            crate::ids::neutral_component_occurrence_id(OCCURRENCE)
+            crate::ids::neutral_component_occurrence_id(&OCCURRENCE.to_owned().try_into().unwrap())
         );
         assert!(matches!(
             &occurrences[0].prototype,
             PrototypeReference::Local { definition }
-                if definition == &crate::ids::neutral_component_id(COMPONENT)
+                if definition == &crate::ids::neutral_component_id(&COMPONENT.to_owned().try_into().unwrap())
         ));
 
         let mut feature = Feature::new(
@@ -439,7 +442,9 @@ mod tests {
         assert_eq!(
             *feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::InsertComponent {
-                occurrence: crate::ids::neutral_component_occurrence_id(OCCURRENCE),
+                occurrence: crate::ids::neutral_component_occurrence_id(
+                    &OCCURRENCE.to_owned().try_into().unwrap()
+                ),
             })
         );
     }

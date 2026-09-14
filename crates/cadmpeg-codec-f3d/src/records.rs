@@ -45,7 +45,10 @@ impl<Id> DesignSecondaryIdentity<Id> {
 
 /// Design entity identity with a decimal u64 suffix after its final underscore.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DesignEntityId(String);
+pub struct DesignEntityId {
+    text: String,
+    suffix: u64,
+}
 
 impl TryFrom<String> for DesignEntityId {
     type Error = String;
@@ -54,27 +57,30 @@ impl TryFrom<String> for DesignEntityId {
         let (_, suffix) = value
             .rsplit_once('_')
             .ok_or("entity_id requires a decimal suffix")?;
-        suffix
+        let suffix = suffix
             .parse::<u64>()
             .map_err(|_| "entity_id requires a decimal u64 suffix")?;
-        Ok(Self(value))
+        Ok(Self {
+            text: value,
+            suffix,
+        })
     }
 }
 
 impl DesignEntityId {
     pub fn from_parts(prefix: &str, suffix: u64) -> Self {
-        Self(format!("{prefix}_{suffix}"))
+        Self {
+            text: format!("{prefix}_{suffix}"),
+            suffix,
+        }
     }
 
     pub fn as_str(&self) -> &str {
-        &self.0
+        &self.text
     }
 
     pub fn suffix(&self) -> u64 {
-        self.0
-            .rsplit_once('_')
-            .and_then(|(_, suffix)| suffix.parse().ok())
-            .unwrap_or_default()
+        self.suffix
     }
 }
 
@@ -3179,7 +3185,7 @@ impl From<DesignSketchPlacement> for DesignSketchPlacementWire {
         Self {
             id: value.id,
             scope_record_index: value.scope_record_index,
-            entity_id: value.entity_id.0,
+            entity_id: value.entity_id.text,
             visibility: value.visibility,
             byte_offset,
             class_tag: value.class_tag.into(),
@@ -3394,25 +3400,27 @@ impl From<LostEdgeReference> for LostEdgeReferenceWire {
 /// A complete serialized visual-appearance identity.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
-pub struct DesignVisualToken(String);
+pub struct DesignVisualToken(cadmpeg_ir::ids::IdentityKey);
 
 impl TryFrom<String> for DesignVisualToken {
     type Error = &'static str;
     fn try_from(value: String) -> Result<Self, Self::Error> {
         crate::design::presentation::visual_token(&value)
             .ok_or("visual_guid must be a complete visual token")?;
-        Ok(Self(value))
+        cadmpeg_ir::ids::IdentityKey::try_new(value)
+            .map(Self)
+            .map_err(|_| "visual_guid must be a complete visual token")
     }
 }
 impl From<DesignVisualToken> for String {
     fn from(value: DesignVisualToken) -> Self {
-        value.0
+        value.0.into_string()
     }
 }
 impl std::ops::Deref for DesignVisualToken {
     type Target = str;
     fn deref(&self) -> &str {
-        &self.0
+        self.0.as_str()
     }
 }
 impl std::fmt::Display for DesignVisualToken {
@@ -3422,7 +3430,12 @@ impl std::fmt::Display for DesignVisualToken {
 }
 impl DesignVisualToken {
     pub(crate) fn matches(&self, other: &Self) -> bool {
-        self.0.eq_ignore_ascii_case(&other.0)
+        self.0.as_str().eq_ignore_ascii_case(other.0.as_str())
+    }
+
+    /// The admitted visual token as an identity key.
+    pub(crate) fn identity_key(&self) -> cadmpeg_ir::ids::IdentityKey {
+        self.0.clone()
     }
 }
 
@@ -3522,7 +3535,7 @@ impl From<DesignMaterialAssignment> for DesignMaterialAssignmentWire {
             asm_body_key: value.asm_body_key,
             asm_body_key_offset: value.asm_body_key_offset,
             entity_suffix_offset: value.entity_suffix_offset,
-            entity_id: value.entity_id.0,
+            entity_id: value.entity_id.text,
             entity_id_offset: value.entity_id_offset,
             visual_guid: value.visual_guid,
             visual_guid_offset: value.visual_guid_offset,
@@ -4330,7 +4343,7 @@ impl From<DesignEntityHeader> for DesignEntityHeaderWire {
             member_offsets,
             id: header.id,
             byte_offset: header.byte_offset,
-            entity_id: header.entity_id.0,
+            entity_id: header.entity_id.text,
             class_tag: header.class_tag.into(),
             optional_slot_present: header.optional_slot_present,
             module,
@@ -4491,12 +4504,17 @@ impl From<DesignGuidText> for String {
 /// A relaxed GUID with its original text.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
-pub struct DesignRelaxedGuidText(String);
+pub struct DesignRelaxedGuidText(cadmpeg_ir::ids::IdentityKey);
 
 impl DesignRelaxedGuidText {
     /// The original GUID text.
     pub fn as_str(&self) -> &str {
-        &self.0
+        self.0.as_str()
+    }
+
+    /// The admitted GUID with ASCII letters converted to lowercase.
+    pub(crate) fn identity_key(&self) -> cadmpeg_ir::ids::IdentityKey {
+        self.0.to_ascii_lowercase()
     }
 }
 impl TryFrom<String> for DesignRelaxedGuidText {
@@ -4507,12 +4525,14 @@ impl TryFrom<String> for DesignRelaxedGuidText {
                 "GUID must be 36 through 38 alphanumeric, hyphen, or underscore characters".into(),
             );
         }
-        Ok(Self(value))
+        cadmpeg_ir::ids::IdentityKey::try_new(value)
+            .map(Self)
+            .map_err(|error| error.to_string())
     }
 }
 impl From<DesignRelaxedGuidText> for String {
     fn from(value: DesignRelaxedGuidText) -> Self {
-        value.0
+        value.0.into_string()
     }
 }
 

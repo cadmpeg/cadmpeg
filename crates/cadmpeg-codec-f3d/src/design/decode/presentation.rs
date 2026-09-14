@@ -8,7 +8,9 @@ use cadmpeg_core::CodecError;
 
 use crate::bytes::{is_guid_prefix, lp_utf16_bounded, lp_utf16_bytes, take_reference};
 use crate::design::decode::meta::typed_primary_frames;
-use crate::design::decode::sketch::{parse_genesis_entity_header, parse_settled_entity_header};
+use crate::design::decode::sketch::{
+    parse_genesis_entity_header, parse_settled_entity_header, NamedEntityHeader,
+};
 use crate::design::presentation::{
     is_physical_material_token, APPEARANCE_LIBRARY_ID, BODY_PRESENTATION_BASE_TYPE_GUID,
     BODY_PRESENTATION_MATERIAL_ENVELOPE_ID, BODY_PRESENTATION_TYPE_GUID,
@@ -171,8 +173,12 @@ pub(crate) fn body_presentations(
         let framed_bytes = &bytes[..frame.end];
         let named_header = parse_settled_entity_header(framed_bytes, frame.start)
             .or_else(|| parse_genesis_entity_header(framed_bytes, frame.start));
-        let (entity_suffix, owner, material) = if let Some((entity_id, _, header_end)) =
-            named_header
+        let (entity_suffix, owner, material) = if let Some(NamedEntityHeader {
+            entity_id,
+            entity_id_offset,
+            end: header_end,
+            ..
+        }) = named_header
         {
             let entity_suffix = entity_id.suffix();
             if entity_suffix != frame.entity_id {
@@ -181,9 +187,6 @@ pub(crate) fn body_presentations(
                     frame.entity_id
                 )));
             }
-            let entity_id_offset = header_end
-                .checked_sub(entity_id.as_str().encode_utf16().count() * 2)
-                .expect("entity header end follows its UTF-16 payload");
             (
                 entity_suffix,
                 BodyPresentationOwner::Named {

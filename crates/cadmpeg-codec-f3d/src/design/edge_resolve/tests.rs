@@ -631,7 +631,7 @@ fn grouped_surface_patch_recipe_projects_historical_edges() {
         Some(7),
         &feature_id,
     );
-    let prefix = crate::ids::history_input_prefix("surface-patch", 7);
+    let prefix = crate::ids::history_input_prefix(&cadmpeg_ir::identity_key!("surface-patch"), 7);
     assert!(matches!(
         selection,
         cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
@@ -1162,7 +1162,7 @@ fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
             ("operand-c", Some(17)),
         ],
         41,
-        "feature",
+        &cadmpeg_ir::identity_key!("feature"),
         state.clone(),
         "group",
     )
@@ -1183,7 +1183,7 @@ fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
     assert!(partial_historical_edge_selection(
         [("operand-a", Some(17)), ("operand-b", Some(18))],
         41,
-        "feature",
+        &cadmpeg_ir::identity_key!("feature"),
         FeatureInputTopologyId::mint("test:model:feature-input#state").expect("identity grammar"),
         "group",
     )
@@ -1192,7 +1192,7 @@ fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
         partial_historical_edge_selection(
             [("operand-a", None), ("operand-b", None)],
             41,
-            "feature",
+            &cadmpeg_ir::identity_key!("feature"),
             FeatureInputTopologyId::mint("test:model:feature-input#state")
                 .expect("identity grammar"),
             "group",

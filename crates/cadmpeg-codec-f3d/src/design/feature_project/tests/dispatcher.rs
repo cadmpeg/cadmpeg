@@ -447,12 +447,8 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
     else {
         panic!("historical vertex construction")
     };
-    let feature_key = point
-        .id
-        .as_str()
-        .split_once('#')
-        .map_or(point.id.as_str(), |(_, key)| key);
-    let prefix = crate::ids::history_input_prefix(feature_key, 4);
+    let feature_key = point.id.key();
+    let prefix = crate::ids::history_input_prefix(&feature_key, 4);
     assert_eq!(
         state,
         &crate::design::edge_resolve::feature_input_topology_id(&point.id, 4)
@@ -823,7 +819,10 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         definition("CopyPaste"),
         FeatureDefinition::Operation(FeatureOperation::InsertComponent {
             occurrence: crate::ids::neutral_component_occurrence_id(
-                "33333333-3333-4333-8333-333333333333"
+                &"33333333-3333-4333-8333-333333333333"
+                    .to_owned()
+                    .try_into()
+                    .unwrap()
             ),
         })
     );

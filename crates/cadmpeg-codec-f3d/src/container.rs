@@ -569,23 +569,23 @@ pub(crate) fn summary_notes(scan: &ContainerScan<'_>, scope: SummaryScope) -> Ve
             scan.breps.len() - design_brep_count
         ));
     }
-    let history_count = history_breps(scan).count();
-    match history_count {
-        0 if design_brep_count != 0 => {
-            notes.push("no BREP header declares a history partition".to_string());
+    let history_breps = history_breps(scan).collect::<Vec<_>>();
+    match history_breps.as_slice() {
+        [] => {
+            if design_brep_count != 0 {
+                notes.push("no BREP header declares a history partition".to_string());
+            }
         }
-        1 => {
-            let history = select_history_brep(scan)
-                .expect("invariant: exactly one history-bearing BREP was counted");
+        [history] => {
             notes.push(format!(
                 "history-bearing BREP: {} ({} bytes uncompressed)",
                 history.name, history.uncompressed_len
             ));
         }
-        count if count > 1 => notes.push(format!(
-            "{count} history-bearing BREPs; each history graph is decoded independently"
+        history_breps => notes.push(format!(
+            "{} history-bearing BREPs; each history graph is decoded independently",
+            history_breps.len()
         )),
-        _ => {}
     }
     if scope == SummaryScope::ContainerOnly {
         notes.push(
