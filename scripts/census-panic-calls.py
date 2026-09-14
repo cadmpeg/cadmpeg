@@ -43,6 +43,7 @@ PANIC_CALL = re.compile(r"\.\s*(?:expect|unwrap)\s*\(")
 EXPECT_CALL = re.compile(r"\.\s*expect\s*\(")
 BARE_UNWRAP = re.compile(r"\.\s*unwrap\s*\(\s*\)")
 INCLUDE = re.compile(r'include!\s*\(\s*"([^"]+)"\s*\)')
+SEED_GENERATOR = "crates/cadmpeg-fuzz/src/bin/generate_all_seeds.rs"
 
 
 def scope() -> list[Path]:
@@ -191,7 +192,7 @@ def census_pattern(pattern: re.Pattern[str], label: str, listing: bool = False) 
     return 0
 
 
-def census_panic_calls(listing: bool = False) -> int:
+def census_panic_calls(listing: bool = False, check: bool = False) -> int:
     """Print the ``.expect(`` and ``.unwrap(`` census."""
     kept, gated = production_files()
     raw_lines = 0
@@ -200,6 +201,7 @@ def census_panic_calls(listing: bool = False) -> int:
     unreached = 0
     unwrap_buckets: dict[str, int] = {}
     files_in_scope = 0
+    remaining_calls = 0
     for path in scope():
         files_in_scope += 1
         source = path.read_text(encoding="utf-8")
@@ -219,6 +221,8 @@ def census_panic_calls(listing: bool = False) -> int:
             unwrap_buckets[relative] = bare
         if listing:
             list_sites(relative, source, code, PANIC_CALL)
+        if relative != SEED_GENERATOR:
+            remaining_calls += len(PANIC_CALL.findall(code))
     print("census: .expect( and .unwrap( in crate source")
     print(f"scope: crates/*/src/**/*.rs, {files_in_scope} files")
     print(f"files the module walk keeps as non-test: {len(kept)}")
@@ -230,7 +234,10 @@ def census_panic_calls(listing: bool = False) -> int:
     print(f"non-test bare .unwrap() calls: {sum(unwrap_buckets.values())}")
     for relative, count in sorted(unwrap_buckets.items()):
         print(f"  {relative} {count}")
-    return 0
+    if check:
+        print(f"check excludes the seed-generation tool: {SEED_GENERATOR}")
+        print(f"remaining production panic calls: {remaining_calls}")
+    return int(check and remaining_calls != 0)
 
 
 def main() -> int:
@@ -248,9 +255,15 @@ def main() -> int:
         "--list", action="store_true",
         help="print every counted file:line and call, including its message expression",
     )
+    parser.add_argument(
+        "--check", action="store_true",
+        help="fail on production expect/unwrap calls, except the declared seed-generation tool",
+    )
     arguments = parser.parse_args()
+    if arguments.check and arguments.pattern is not None:
+        parser.error("--check applies to expect/unwrap calls, not an arbitrary pattern")
     if arguments.pattern is None:
-        return census_panic_calls(arguments.list)
+        return census_panic_calls(arguments.list, arguments.check)
     return census_pattern(
         re.compile(arguments.pattern), arguments.label or arguments.pattern, arguments.list
     )

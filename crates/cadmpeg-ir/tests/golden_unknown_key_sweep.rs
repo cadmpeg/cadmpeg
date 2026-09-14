@@ -3,9 +3,8 @@
 //! key.
 //!
 //! The sweep walks every `*.json` under `crates/*/tests/golden`, locates each
-//! `CadIr` document by structure rather than by a fixed path, dedupes the
-//! object shapes it finds by normalised path and key set, inserts one unknown
-//! key into each, and asserts that the whole `CadIr` then fails to deserialise.
+//! `CadIr` document by structure rather than by a fixed path, inserts one
+//! unknown key into every object, and checks each through its document route.
 //! The codec-private `/native` subtree is free-form by design and is skipped.
 //!
 //! A document root is any object node carrying `ir_version`. `CadIr` serializes

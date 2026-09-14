@@ -460,6 +460,7 @@ version = "0.6.0"
 dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
+ "serde",
  "serde_json",
  "toml",
 ]
