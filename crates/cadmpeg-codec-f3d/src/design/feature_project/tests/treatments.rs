@@ -1948,7 +1948,9 @@ fn fillet_projection_rejects_mistyped_assignment_records_without_panicking() {
                 &parameters,
                 "f3d:native"
             ),
-            Ok(FeatureDefinition::Operation(FeatureOperation::Native { .. }))
+            Ok(FeatureDefinition::Operation(
+                FeatureOperation::Native { .. }
+            ))
         ));
     }
 }

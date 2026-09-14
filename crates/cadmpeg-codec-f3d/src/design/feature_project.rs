@@ -2061,7 +2061,11 @@ fn project_fillet_arm(
             .and_then(|groups| groups.try_into().ok());
         return groups.map_or_else(
             || native_scope_definition(scope, parameters),
-            |groups| Ok(FeatureDefinition::Operation(FeatureOperation::Fillet { groups })),
+            |groups| {
+                Ok(FeatureDefinition::Operation(FeatureOperation::Fillet {
+                    groups,
+                }))
+            },
         );
     }
     if let Some(definition) = project_variable_fillet(
