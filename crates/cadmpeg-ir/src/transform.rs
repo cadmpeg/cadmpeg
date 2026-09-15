@@ -111,6 +111,215 @@ pub enum TransformError {
     Singular,
 }
 
+// A product of two finite f64 values has an integer significand with at most
+// 106 bits. The smallest product exponent is -2148 and the largest is 1942;
+// this range leaves 66 words for three exact signed products and their sum.
+const EXACT_PRODUCT_EXPONENT: i32 = -2148;
+const EXACT_SUM_WORDS: usize = 66;
+
+#[derive(Clone, Copy)]
+struct ExactSignedSum {
+    positive: [u64; EXACT_SUM_WORDS],
+    negative: [u64; EXACT_SUM_WORDS],
+}
+
+impl Default for ExactSignedSum {
+    fn default() -> Self {
+        Self {
+            positive: [0; EXACT_SUM_WORDS],
+            negative: [0; EXACT_SUM_WORDS],
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct ScaledValue {
+    sign: f64,
+    mantissa: f64,
+    exponent: i32,
+}
+
+fn finite_significand(value: f64) -> Option<(bool, u64, i32)> {
+    if !value.is_finite() {
+        return None;
+    }
+    let bits = value.to_bits();
+    let negative = bits >> 63 != 0;
+    let exponent = (bits >> 52) & 0x7ff;
+    let fraction = bits & ((1_u64 << 52) - 1);
+    if exponent == 0 {
+        (fraction != 0).then_some((negative, fraction, -1074))
+    } else {
+        Some((
+            negative,
+            (1_u64 << 52) | fraction,
+            i32::try_from(exponent).expect("f64 exponent fits i32") - 1075,
+        ))
+    }
+}
+
+fn add_word(words: &mut [u64; EXACT_SUM_WORDS], index: usize, value: u64) {
+    let (sum, mut carry) = words[index].overflowing_add(value);
+    words[index] = sum;
+    let mut index = index + 1;
+    while carry {
+        let (sum, next) = words[index].overflowing_add(1);
+        words[index] = sum;
+        carry = next;
+        index += 1;
+    }
+}
+
+fn add_shifted(words: &mut [u64; EXACT_SUM_WORDS], value: u128, shift: i32) {
+    let shift = usize::try_from(shift).expect("product exponent is in range");
+    for (limb_index, limb) in [value as u64, (value >> 64) as u64].into_iter().enumerate() {
+        if limb == 0 {
+            continue;
+        }
+        let bit = shift + limb_index * 64;
+        let word = bit / 64;
+        let remainder = bit % 64;
+        if remainder == 0 {
+            add_word(words, word, limb);
+        } else {
+            add_word(words, word, limb << remainder);
+            add_word(words, word + 1, limb >> (64 - remainder));
+        }
+    }
+}
+
+impl ExactSignedSum {
+    fn add_product(&mut self, left: f64, right: f64) {
+        let Some((left_negative, left_significand, left_exponent)) = finite_significand(left)
+        else {
+            return;
+        };
+        let Some((right_negative, right_significand, right_exponent)) = finite_significand(right)
+        else {
+            return;
+        };
+        let product = u128::from(left_significand) * u128::from(right_significand);
+        let exponent = left_exponent + right_exponent;
+        let target = if left_negative != right_negative {
+            &mut self.negative
+        } else {
+            &mut self.positive
+        };
+        add_shifted(target, product, exponent - EXACT_PRODUCT_EXPONENT);
+    }
+
+    fn finish(self) -> Option<ScaledValue> {
+        let (negative, magnitude) = match compare_words(&self.positive, &self.negative) {
+            std::cmp::Ordering::Greater => (false, subtract_words(&self.positive, &self.negative)),
+            std::cmp::Ordering::Less => (true, subtract_words(&self.negative, &self.positive)),
+            std::cmp::Ordering::Equal => return None,
+        };
+        let word = magnitude.iter().rposition(|value| *value != 0)?;
+        let highest_bit = word * 64
+            + usize::try_from(63 - magnitude[word].leading_zeros())
+                .expect("u32 bit index fits usize");
+        let keep = (highest_bit + 1).min(53);
+        let mut significand = 0_u64;
+        for bit in (highest_bit + 1 - keep..=highest_bit).rev() {
+            significand = (significand << 1) | u64::from(bit_is_set(&magnitude, bit));
+        }
+        if keep == 53 {
+            let guard_bit = highest_bit
+                .checked_sub(keep)
+                .is_some_and(|bit| bit_is_set(&magnitude, bit));
+            let sticky = highest_bit
+                .checked_sub(keep)
+                .is_some_and(|bit| (0..bit).any(|candidate| bit_is_set(&magnitude, candidate)));
+            if guard_bit && (sticky || significand & 1 != 0) {
+                significand += 1;
+                if significand == 1_u64 << 53 {
+                    return Some(ScaledValue {
+                        sign: if negative { -1.0 } else { 1.0 },
+                        mantissa: 0.5,
+                        exponent: EXACT_PRODUCT_EXPONENT
+                            + i32::try_from(highest_bit).expect("bit index fits i32")
+                            + 2,
+                    });
+                }
+            }
+        }
+        Some(ScaledValue {
+            sign: if negative { -1.0 } else { 1.0 },
+            mantissa: significand as f64
+                * 2.0_f64.powi(-(i32::try_from(keep).expect("bit count fits i32"))),
+            exponent: EXACT_PRODUCT_EXPONENT
+                + i32::try_from(highest_bit).expect("bit index fits i32")
+                + 1,
+        })
+    }
+}
+
+fn compare_words(
+    left: &[u64; EXACT_SUM_WORDS],
+    right: &[u64; EXACT_SUM_WORDS],
+) -> std::cmp::Ordering {
+    left.iter()
+        .zip(right)
+        .rev()
+        .find_map(|(left, right)| (left != right).then(|| left.cmp(right)))
+        .unwrap_or(std::cmp::Ordering::Equal)
+}
+
+fn subtract_words(
+    left: &[u64; EXACT_SUM_WORDS],
+    right: &[u64; EXACT_SUM_WORDS],
+) -> [u64; EXACT_SUM_WORDS] {
+    let mut result = [0; EXACT_SUM_WORDS];
+    let mut borrow = false;
+    for index in 0..EXACT_SUM_WORDS {
+        let (difference, first_borrow) = left[index].overflowing_sub(right[index]);
+        let (difference, second_borrow) = difference.overflowing_sub(u64::from(borrow));
+        result[index] = difference;
+        borrow = first_borrow || second_borrow;
+    }
+    debug_assert!(!borrow);
+    result
+}
+
+fn bit_is_set(words: &[u64; EXACT_SUM_WORDS], bit: usize) -> bool {
+    words[bit / 64] & (1_u64 << (bit % 64)) != 0
+}
+
+fn scaled_finite(value: f64) -> Option<ScaledValue> {
+    let (negative, significand, exponent) = finite_significand(value)?;
+    let highest_bit = 63 - significand.leading_zeros();
+    let bits = i32::try_from(highest_bit + 1).expect("f64 significand fits i32");
+    Some(ScaledValue {
+        sign: if negative { -1.0 } else { 1.0 },
+        mantissa: significand as f64 * 2.0_f64.powi(-bits),
+        exponent: exponent + bits,
+    })
+}
+
+fn fast_dot(coefficients: [f64; 3], components: [f64; 3], products: [f64; 3]) -> Option<f64> {
+    if products.iter().any(|product| !product.is_finite()) {
+        return None;
+    }
+    if coefficients.into_iter().zip(components).zip(products).any(
+        |((coefficient, component), product)| {
+            coefficient != 0.0 && component != 0.0 && product == 0.0
+        },
+    ) {
+        return None;
+    }
+    let scale = products
+        .iter()
+        .fold(0.0_f64, |scale, product| scale.max(product.abs()));
+    if scale == 0.0 {
+        return Some(0.0);
+    }
+    let sum = products.into_iter().sum::<f64>();
+    if !sum.is_finite() || sum.abs() / scale < f64::EPSILON {
+        return None;
+    }
+    Some(sum)
+}
+
 /// A row-major affine transform applied to a body's geometry.
 ///
 /// The three stored rows preserve the source coefficients. The bottom row
@@ -239,23 +448,46 @@ impl Transform {
 
     /// Applies the inverse-transpose linear transform and normalizes the result.
     pub fn apply_normal(self, normal: Vector3) -> Option<Vector3> {
+        if ![normal.x, normal.y, normal.z]
+            .into_iter()
+            .all(f64::is_finite)
+        {
+            return None;
+        }
         let inverse = self.inverse_linear().ok()?;
-        let transformed = [
-            inverse[0][0] * normal.x + inverse[1][0] * normal.y + inverse[2][0] * normal.z,
-            inverse[0][1] * normal.x + inverse[1][1] * normal.y + inverse[2][1] * normal.z,
-            inverse[0][2] * normal.x + inverse[1][2] * normal.y + inverse[2][2] * normal.z,
-        ];
-        if !transformed.iter().all(|value| value.is_finite()) {
-            return None;
-        }
-        let scale = transformed
+        let components = [normal.x, normal.y, normal.z];
+        let values: [Option<ScaledValue>; 3] = std::array::from_fn(|column| {
+            let coefficients = [inverse[0][column], inverse[1][column], inverse[2][column]];
+            let products = [
+                coefficients[0] * components[0],
+                coefficients[1] * components[1],
+                coefficients[2] * components[2],
+            ];
+            fast_dot(coefficients, components, products)
+                .and_then(scaled_finite)
+                .or_else(|| {
+                    let mut sum = ExactSignedSum::default();
+                    for (coefficient, component) in coefficients.into_iter().zip(components) {
+                        sum.add_product(coefficient, component);
+                    }
+                    sum.finish()
+                })
+        });
+        let scale_exponent = values
             .iter()
-            .fold(0.0_f64, |scale, value| scale.max(value.abs()));
-        if scale == 0.0 {
+            .filter_map(|value| value.map(|value| value.exponent))
+            .max()?;
+        let scaled = values.map(|value| {
+            value.map_or(0.0, |value| {
+                value.sign
+                    * value.mantissa
+                    * 2.0_f64.powi(value.exponent.saturating_sub(scale_exponent))
+            })
+        });
+        let length = scaled.iter().map(|value| value * value).sum::<f64>().sqrt();
+        if !length.is_finite() || length == 0.0 {
             return None;
         }
-        let scaled = transformed.map(|value| value / scale);
-        let length = scaled.iter().map(|value| value * value).sum::<f64>().sqrt();
         Some(Vector3::new(
             scaled[0] / length,
             scaled[1] / length,

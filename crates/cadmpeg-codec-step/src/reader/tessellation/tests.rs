@@ -8,8 +8,10 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::transform::Transform;
 
 use crate::loss::StepLossCode;
+use crate::parse::Value;
 use crate::test_support::decode_inline;
 use crate::StepCodec;
 
@@ -25,6 +27,75 @@ fn assert_vector3_close(actual: Vector3, expected: Vector3) {
     assert!((actual.x - expected.x).abs() < EPS_SAME_POINT);
     assert!((actual.y - expected.y).abs() < EPS_SAME_POINT);
     assert!((actual.z - expected.z).abs() < EPS_SAME_POINT);
+}
+
+#[test]
+fn tessellation_normal_rows_preserve_extreme_finite_directions() {
+    let rows = Value::List(vec![
+        Value::List(vec![
+            Value::Real(f64::MAX),
+            Value::Real(0.0),
+            Value::Real(0.0),
+        ]),
+        Value::List(vec![
+            Value::Real(2.0_f64.powi(-800)),
+            Value::Real(0.0),
+            Value::Real(0.0),
+        ]),
+        Value::List(vec![
+            Value::Real(f64::from_bits(1)),
+            Value::Real(0.0),
+            Value::Real(0.0),
+        ]),
+    ]);
+    assert_eq!(
+        super::normal_rows(Some(&rows)),
+        Some(vec![
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        ])
+    );
+}
+
+#[test]
+fn tessellation_normal_placement_failure_does_not_retain_source_normals() {
+    let singular = Transform::affine([
+        [0.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .unwrap();
+    assert!(super::transform_normals(singular, vec![Vector3::new(1.0, 0.0, 0.0)]).is_none());
+}
+
+#[test]
+fn tessellation_invalid_normal_rows_are_reported_and_omitted() {
+    let source = String::from_utf8(
+        include_bytes!("../../../tests/fixtures/ap242_tessellation.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "((1.,0.,0.),(0.,1.,0.),(0.,0.,1.),(0.,0.,-1.))",
+        "((0.,0.,0.),(0.,1.,0.),(0.,0.,1.),(0.,0.,-1.))",
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode invalid normal-row tessellation");
+    let mesh = decoded
+        .ir()
+        .model
+        .tessellations
+        .iter()
+        .find(|mesh| mesh.id.as_str() == "step:tessellation:mesh#7")
+        .expect("invalid-normal tessellation");
+    assert!(mesh.vertex_normals().is_empty());
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::DecodeWarning.kind()
+            && loss
+                .message
+                .contains("COMPLEX_TRIANGULATED_FACE #7 has invalid normal rows; normals omitted")
+    }));
 }
 
 #[test]
@@ -386,6 +457,40 @@ fn repositioned_annotation_mesh_transfers_one_placement() {
         .expect("STEP native namespace")
         .iter()
         .any(|record| record.id.as_str().ends_with("#84")));
+}
+
+#[test]
+fn repositioned_annotation_mesh_preserves_extreme_source_normals() {
+    let source = String::from_utf8(
+        include_bytes!("../../../tests/fixtures/ap242_tessellation.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "((1.,0.,0.),(0.,1.,0.),(0.,0.,1.),(0.,0.,-1.))",
+        "((1.E308,0.,0.),(0.,1.,0.),(0.,0.,1.),(0.,0.,-1.))",
+    )
+    .replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#80=CARTESIAN_POINT('',(100.,200.,300.));\n#81=DIRECTION('',(0.,0.,1.));\n#82=DIRECTION('',(1.,0.,0.));\n#83=AXIS2_PLACEMENT_3D('annotation placement',#80,#81,#82);\n#84=(GEOMETRIC_REPRESENTATION_ITEM() REPOSITIONED_TESSELLATED_ITEM(#83) REPRESENTATION_ITEM('repositioned mesh') TESSELLATED_GEOMETRIC_SET((#7)) TESSELLATED_ITEM());\n#85=TESSELLATED_ANNOTATION_OCCURRENCE('repositioned mesh',(),#84);\nENDSEC;\nEND-ISO-10303-21;",
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode repositioned extreme-normal tessellation");
+    let mesh = decoded
+        .ir()
+        .model
+        .tessellations
+        .iter()
+        .find(|mesh| mesh.id.as_str() == "step:tessellation:mesh#7")
+        .expect("repositioned extreme-normal mesh");
+    assert_point3_close(mesh.vertices()[0], Point3::new(110.0, 210.0, 300.0));
+    assert_vector3_close(mesh.vertex_normals()[0], Vector3::new(1.0, 0.0, 0.0));
+    assert!(!decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::DecodeWarning.kind()
+            && loss
+                .message
+                .contains("normal placement could not produce finite unit normals")
+    }));
 }
 
 #[test]

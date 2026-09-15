@@ -317,8 +317,18 @@ pub(super) fn decode(
                 CoordinateAddressing::PnIndex,
             )
         };
-        let source_normals =
-            normal_rows(inherited_parameter(record, base_kind, 2)).unwrap_or_default();
+        let source_normals = match inherited_parameter(record, base_kind, 2) {
+            None | Some(Value::Omitted) => Vec::new(),
+            Some(value) => match normal_rows(Some(value)) {
+                Some(normals) if !normals.is_empty() => normals,
+                Some(_) | None => {
+                    losses.push(StepLossCode::DecodeWarning.note(format!(
+                        "{kind} #{id} has invalid normal rows; normals omitted"
+                    )));
+                    Vec::new()
+                }
+            },
+        };
         // An unshaded mesh is stated by absence, not by an empty lane.
         let mut normals = match source_normals.len() {
             0 => None,
@@ -363,12 +373,16 @@ pub(super) fn decode(
                     .into_iter()
                     .map(|vertex| placement.apply_point(vertex))
                     .collect();
-                normals = normals.map(|normals| {
-                    normals
-                        .into_iter()
-                        .map(|normal| placement.apply_normal(normal).unwrap_or(normal))
-                        .collect()
-                });
+                if let Some(source_normals) = normals.take() {
+                    match transform_normals(*placement, source_normals) {
+                        Some(transformed) => normals = Some(transformed),
+                        None => {
+                            losses.push(StepLossCode::DecodeWarning.note(format!(
+                                "{kind} #{id} normal placement could not produce finite unit normals; normals omitted"
+                            )));
+                        }
+                    }
+                }
             }
         }
         if let Some(surface_step) = complex_triangulated_face_surface(record) {
@@ -603,6 +617,13 @@ fn distinct_placements(placements: &[Transform]) -> Vec<Transform> {
         }
     }
     distinct
+}
+
+fn transform_normals(placement: Transform, normals: Vec<Vector3>) -> Option<Vec<Vector3>> {
+    normals
+        .into_iter()
+        .map(|normal| placement.apply_normal(normal))
+        .collect()
 }
 
 fn repositioned_placement(record: &RawRecord, geometry: &GeometryData) -> Option<Transform> {
@@ -898,11 +919,25 @@ fn normal_rows(value: Option<&Value>) -> Option<Vec<Vector3>> {
                 values[1].number()?,
                 values[2].number()?,
             );
-            let length = normal.norm();
-            (length.is_finite() && length > 0.0)
-                .then(|| Vector3::new(normal.x / length, normal.y / length, normal.z / length))
+            normalize_normal(normal)
         })
         .collect()
+}
+
+fn normalize_normal(normal: Vector3) -> Option<Vector3> {
+    if ![normal.x, normal.y, normal.z]
+        .into_iter()
+        .all(f64::is_finite)
+    {
+        return None;
+    }
+    let scale = normal.x.abs().max(normal.y.abs()).max(normal.z.abs());
+    if scale == 0.0 {
+        return None;
+    }
+    let scaled = Vector3::new(normal.x / scale, normal.y / scale, normal.z / scale);
+    let length = scaled.norm();
+    Some(scaled.scale(1.0 / length))
 }
 trait RecordExt {
     fn parameter(&self, index: usize) -> Option<&Value>;
