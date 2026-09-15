@@ -8,6 +8,7 @@ use std::ops::Range;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 
 use crate::chunks::{
@@ -1881,11 +1882,32 @@ fn class_data_with_userdata(
     Ok((class.class_data_range, userdata))
 }
 
+fn append_file_reference_diagnostics(
+    losses: &mut Vec<LossNote>,
+    diagnostics: Diagnostics,
+    source_offset: usize,
+) {
+    for diagnostic in diagnostics {
+        let code = diagnostic.code.unwrap_or(RhinoLossCode::IntegrityFailure);
+        losses.push(
+            code.note(format!(
+                "texture file reference at offset {}: {}",
+                source_offset, diagnostic.message
+            ))
+            .with_provenance(
+                SourceProvenance::root("rhino", source_offset as u64)
+                    .with_tag("PRESENTATION/TEXTURE/FILE_REFERENCE"),
+            ),
+        );
+    }
+}
+
 fn parse_texture(
     data: &[u8],
     range: Range<usize>,
     archive: ArchiveVersion,
     source_offset: usize,
+    losses: &mut Vec<LossNote>,
 ) -> Result<TextureRecord, FramingError> {
     let (mut reader, version) = anonymous(data, range, archive)?;
     if version.0 != 1 || version.1 < 0 {
@@ -1927,8 +1949,16 @@ fn parse_texture(
     ];
     let blend_order = reader.i32()?;
     let file_reference = if version.1 >= 1 {
+        let mut diagnostics = Diagnostics::new();
         let value =
-            crate::instances::file_reference(data, &mut reader, archive, &mut Diagnostics::new())?;
+            match crate::instances::file_reference(data, &mut reader, archive, &mut diagnostics) {
+                Ok(value) => value,
+                Err(error) => {
+                    append_file_reference_diagnostics(losses, diagnostics, source_offset);
+                    return Err(error);
+                }
+            };
+        append_file_reference_diagnostics(losses, diagnostics, source_offset);
         Some(TextureFileReference {
             full_path: value.full_path,
             relative_path: value.relative_path,
@@ -1974,6 +2004,7 @@ fn texture_array(
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
+    losses: &mut Vec<LossNote>,
 ) -> Result<Vec<TextureRecord>, FramingError> {
     let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
     if chunk.typecode != ANONYMOUS || chunk.short() {
@@ -2025,6 +2056,7 @@ fn texture_array(
             class.class_data_range,
             archive,
             object.header_start,
+            losses,
         )?);
         values.skip(object.next_offset() - values.position())?;
     }
@@ -2264,7 +2296,7 @@ fn parse_material(
     let reflectivity = read_finite(&mut reader, "reflectivity")?;
     let shine = read_finite(&mut reader, "shine")?;
     let transparency = read_finite(&mut reader, "transparency")?;
-    let textures = texture_array(data, &mut reader, archive)?;
+    let textures = texture_array(data, &mut reader, archive, losses)?;
     if !modern && minor >= 1 {
         let _obsolete_library = utf16(&mut reader)?;
     }

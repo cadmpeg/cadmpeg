@@ -108,6 +108,69 @@ fn named_views_record_with_userdata(archive: ArchiveVersion, userdata: Vec<u8>) 
     )
 }
 
+fn named_views_record_with_trace(archive: ArchiveVersion, corrupt_reference: bool) -> Vec<u8> {
+    let mut trace_body = vec![0x14];
+    trace_body.extend(support::test_dump::utf16_bytes("trace-witness.png"));
+    trace_body.extend(42.0_f64.to_le_bytes());
+    trace_body.extend(24.0_f64.to_le_bytes());
+    for point in [
+        [0.0_f64, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+    ] {
+        for coordinate in point {
+            trace_body.extend(coordinate.to_le_bytes());
+        }
+    }
+    trace_body.extend(
+        [0.0_f64, 0.0, 1.0, 0.0]
+            .into_iter()
+            .flat_map(f64::to_le_bytes),
+    );
+    trace_body.extend([0, 1, 1]);
+    let reference = support::test_dump::file_reference(archive, "/trace/source.png", "source.png");
+    let reference_start = trace_body.len();
+    trace_body.extend(&reference);
+    let trace_reference_range = reference_start..trace_body.len();
+    let mut trace = support::test_dump::crc_chunk_excluding(
+        archive,
+        0x2000_863b,
+        &trace_body,
+        std::slice::from_ref(&trace_reference_range),
+    );
+    if corrupt_reference {
+        let trace_body_header_len = if archive.uses_eight_byte_values() {
+            12
+        } else {
+            8
+        };
+        trace[trace_body_header_len + reference_start + reference.len() - 1] ^= 1;
+    }
+
+    let end_marker = support::test_dump::short_chunk(archive, 0xffff_ffff, 0);
+    let mut view_body = trace;
+    let trace_range = 0..view_body.len();
+    let end_start = view_body.len();
+    view_body.extend(end_marker);
+    let end_range = end_start..view_body.len();
+    let view = support::test_dump::crc_chunk_excluding(
+        archive,
+        0x2000_803b,
+        &view_body,
+        &[trace_range, end_range],
+    );
+    let mut list_body = 1_i32.to_le_bytes().to_vec();
+    let view_range = list_body.len()..list_body.len() + view.len();
+    list_body.extend(view);
+    support::test_dump::crc_chunk_excluding(
+        archive,
+        0x2000_8036,
+        &list_body,
+        std::slice::from_ref(&view_range),
+    )
+}
+
 #[test]
 fn viewport_userdata_future_payload_retains_typed_view_list_record() {
     let archive = ArchiveVersion::V8;
@@ -240,4 +303,75 @@ fn view_list_with_native_or_unavailable_units_is_retained_without_scale_one() {
         }));
         assert_valid(&result);
     }
+}
+
+#[test]
+fn complete_decode_propagates_nested_view_file_reference_crc_loss() {
+    let archive = ArchiveVersion::V8;
+    let valid = named_views_record_with_trace(archive, false);
+    let invalid = named_views_record_with_trace(archive, true);
+    let document = |named_views: Vec<u8>| {
+        support::test_dump::minimal_document(
+            "80",
+            &[
+                support::test_dump::table(archive, 0x1000_0014, &[]),
+                support::test_dump::table(
+                    archive,
+                    0x1000_0015,
+                    &[support::test_dump::units_record(archive, 2), named_views],
+                ),
+                support::test_dump::table(archive, 0x1000_0013, &[]),
+            ],
+        )
+    };
+
+    let valid_result = decode(document(valid));
+    let valid_views = &valid_result
+        .ir()
+        .native
+        .namespace("rhino")
+        .unwrap()
+        .arenas()["views"];
+    assert_eq!(valid_views.len(), 1);
+    assert!(!valid_result.report().losses.iter().any(|loss| {
+        loss.provenance
+            .as_ref()
+            .and_then(|provenance| provenance.tag.as_deref())
+            == Some("VIEW/TRACE_IMAGE/FILE_REFERENCE")
+    }));
+    assert_valid(&valid_result);
+
+    let invalid_result = decode(document(invalid.clone()));
+    let invalid_views = &invalid_result
+        .ir()
+        .native
+        .namespace("rhino")
+        .unwrap()
+        .arenas()["views"];
+    assert_eq!(invalid_views.len(), 1);
+    let loss = invalid_result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.code == crate::loss::RhinoLossCode::IntegrityFailure.kind()
+                && loss
+                    .provenance
+                    .as_ref()
+                    .and_then(|provenance| provenance.tag.as_deref())
+                    == Some("VIEW/TRACE_IMAGE/FILE_REFERENCE")
+        })
+        .expect("nested view checksum loss reaches the complete decode report");
+    assert!(loss.message.contains("file reference"));
+    assert!(loss
+        .provenance
+        .as_ref()
+        .is_some_and(|provenance| provenance.offset > 0));
+    let retained = invalid_result
+        .source_fidelity()
+        .retained_records()
+        .iter()
+        .any(|(_, record)| record.data() == Some(invalid.as_slice()));
+    assert!(retained, "invalid view list source was not retained");
+    assert_valid(&invalid_result);
 }
