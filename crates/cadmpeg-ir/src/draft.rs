@@ -191,6 +191,14 @@ pub enum DraftError {
         /// Missing target identity.
         target: String,
     },
+    /// Model-owned feature parents do not form an admitted combined graph.
+    #[error("staged feature {owner} has invalid parent relations: {message}")]
+    FeatureParents {
+        /// Feature whose ownership or predecessor relation is invalid.
+        owner: crate::features::FeatureId,
+        /// The violated graph invariant and affected identities.
+        message: String,
+    },
     /// A staged entity cannot state its own typed references.
     #[error("staged entity {owner} cannot state its typed references: {source}")]
     ReferenceWalk {
@@ -342,7 +350,7 @@ impl ModelDraft {
         {
             identities.insert(record.id());
         }
-        self.validate_with_contains(|identity| identities.contains(identity))
+        self.validate_with_contains(&base.model, |identity| identities.contains(identity))
     }
 
     fn take_identity_index(&mut self) -> Result<IdentityIndex, DraftError> {
@@ -360,6 +368,7 @@ impl ModelDraft {
     /// that index and causes one complete rebuild before validation.
     fn validate_with_contains(
         &mut self,
+        base: &Model,
         contains: impl Fn(&str) -> bool,
     ) -> Result<(), DraftError> {
         let identity_index = self.take_identity_index()?;
@@ -400,6 +409,14 @@ impl ModelDraft {
             };
         }
         crate::document::arena_registry!(validate_arenas);
+        if !self.model.features.is_empty() || self.model.has_feature_regeneration_parents() {
+            crate::document::validate_feature_parents(&[base, &self.model]).map_err(|error| {
+                DraftError::FeatureParents {
+                    owner: error.owner,
+                    message: error.message,
+                }
+            })?;
+        }
         self.identity_index = Some(identity_index);
         Ok(())
     }
@@ -424,14 +441,9 @@ impl ModelDraft {
         annotations: &mut Annotations,
         notes: &mut Vec<LossNote>,
         ledger: &mut TransferLedger,
-        mut keep: impl FnMut(EntityKind, &str) -> bool,
+        keep: impl FnMut(EntityKind, &str) -> bool,
     ) -> Result<(), DraftError> {
-        macro_rules! retain_arenas {
-            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
-                $(self.model.$field.retain(|entity| keep(<$ty>::KIND, entity.identity()));)*
-            };
-        }
-        crate::document::arena_registry!(retain_arenas);
+        self.model.retain_entities(keep);
         let identity_index = index_model_identities(&self.model)?;
         self.exactness
             .retain(|identity, _| identity_index_contains(&self.model, &identity_index, identity));
@@ -575,7 +587,7 @@ impl<'a> CommitSession<'a> {
         let identities = self
             .identities
             .get_or_insert_with(|| index_committed_identities(self.base));
-        draft.validate_with_contains(|identity| {
+        draft.validate_with_contains(&self.base.model, |identity| {
             committed_identity_contains(self.base, identities, identity)
         })?;
         // Validation has succeeded. Register the admitted draft's append slots
@@ -606,6 +618,8 @@ impl<'a> CommitSession<'a> {
 
 #[cfg(test)]
 mod tests {
+    mod feature_parents;
+
     use super::{CommitSession, DraftError, ModelCheckpoint, ModelDraft};
     use crate::annotations::Annotations;
     use crate::document::CadIr;
