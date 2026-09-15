@@ -187,7 +187,8 @@ def collect_items(path):
 class DeserializeImpl:
     """One handwritten ``Deserialize`` impl and its source body."""
 
-    def __init__(self, path, line, name, body, scope, start, body_start, end):
+    def __init__(self, path, line, name, body, scope, start, body_start, end,
+                 input_bindings):
         self.path = path
         self.line = line
         self.name = name
@@ -196,26 +197,30 @@ class DeserializeImpl:
         self.start = start
         self.body_start = body_start
         self.end = end
+        self.input_bindings = input_bindings
 
 
 class DeserializeFunction:
     """One helper function that owns a custom field deserializer."""
 
-    def __init__(self, path, line, name, body, start, end):
+    def __init__(self, path, line, name, body, scope, start, end,
+                 input_bindings):
         self.path = path
         self.line = line
         self.name = name
         self.body = body
+        self.scope = scope
         self.start = start
         self.end = end
+        self.input_bindings = input_bindings
 
 
-IMPL_TRAIT_RE = re.compile(
-    r"(?:\b(?:[A-Za-z_$]\w*\s*::\s*)*)Deserialize"
-    r"\s*(?:<[^{}]*>)?\s+for\s+"
-    r"(?P<target>(?:::)?(?:[A-Za-z_$]\w*\s*::\s*)*"
-    r"[A-Za-z_$]\w*(?:\s*<[^{}]*>)?)",
-    re.S,
+DESERIALIZE_CALL_RE = re.compile(
+    r"(?P<path>(?:::)?(?:[A-Za-z_$]\w*\s*::\s*)*[A-Za-z_$]\w*)"
+    r"(?P<generic>\s*::\s*<(?P<args>[^{}]*)>)?\s*::\s*deserialize\b"
+)
+ARRAY_DESERIALIZE_CALL_RE = re.compile(
+    r"<\s*\[[^{}]*\]\s*>\s*::\s*deserialize\b"
 )
 
 
@@ -255,6 +260,159 @@ def body_open(code, start):
     return None
 
 
+def parameter_open(code, start):
+    """Find a function's parameter group after its name and generics."""
+    angle = bracket = 0
+    for index in range(start, len(code)):
+        char = code[index]
+        if char == "<":
+            angle += 1
+        elif char == ">" and angle:
+            angle -= 1
+        elif char == "[":
+            bracket += 1
+        elif char == "]" and bracket:
+            bracket -= 1
+        elif char == "(" and not angle and not bracket:
+            return index
+    return None
+
+
+def parameter_bindings(text):
+    """Return simple identifier bindings from a function parameter list."""
+    bindings = set()
+    code = SOURCE_POLICY.mask_rust_non_code(text)
+    for parameter in split_metadata(code):
+        colon = parameter.find(":")
+        if colon < 0:
+            continue
+        pattern = parameter[:colon].strip()
+        pattern = re.sub(r"^&\s*(?:'[_A-Za-z]\w*\s*)?", "", pattern)
+        pattern = re.sub(r"^mut\s+", "", pattern)
+        if re.fullmatch(r"[A-Za-z_]\w*", pattern) and pattern != "self":
+            bindings.add(pattern)
+    return bindings
+
+
+def function_input_bindings(code, name="deserialize"):
+    """Return simple input bindings for one function in ``code``."""
+    match = re.search(rf"\bfn\s+{re.escape(name)}\b", code)
+    if match is None:
+        return set()
+    opening = parameter_open(code, match.end())
+    if opening is None:
+        return set()
+    end = delimited_end(code, opening, "(", ")")
+    if end is None:
+        return set()
+    return parameter_bindings(code[opening + 1:end - 1])
+
+
+def call_arguments(code, call):
+    """Return a call's argument source, or ``None`` for a path-only mention."""
+    opening = call.end()
+    while opening < len(code) and code[opening].isspace():
+        opening += 1
+    if opening >= len(code) or code[opening] != "(":
+        return None
+    end = delimited_end(code, opening, "(", ")")
+    if end is None:
+        return None
+    return code[opening + 1:end - 1]
+
+
+def direct_input_argument(arguments, bindings):
+    """Whether one call argument is exactly the reader's input binding."""
+    for argument in split_metadata(arguments):
+        value = argument.strip()
+        value = re.sub(r"^&\s*(?:'[_A-Za-z]\w*\s*)?", "", value)
+        value = re.sub(r"^mut\s+", "", value)
+        if re.fullmatch(r"[A-Za-z_]\w*", value) and value in bindings:
+            return True
+    return False
+
+
+def call_uses_input(code, call, bindings):
+    arguments = call_arguments(code, call)
+    return arguments is not None and direct_input_argument(arguments, bindings)
+
+
+def source_module_scope(path):
+    """Return the module path represented by a Rust source file path."""
+    source_index = path.parts.index("src")
+    parts = list(path.parts[source_index + 1:])
+    file_name = parts.pop()
+    stem = Path(file_name).stem
+    if stem not in {"lib", "main", "mod"}:
+        parts.append(stem)
+    return tuple(parts)
+
+
+def macro_reader_contract(code, expected_path):
+    """Prove one direct deserializer route in a declaration macro.
+
+    Only the body of the generated ``deserialize`` method can certify the
+    expansion. A helper function elsewhere in the macro may use the expected
+    reader and must not become evidence for the method's input route.
+    """
+    code = SOURCE_POLICY.mask_rust_non_code(code)
+    methods = []
+    for method in re.finditer(r"\bfn\s+deserialize\b", code):
+        opening = parameter_open(code, method.end())
+        if opening is None:
+            continue
+        brace = body_open(code, method.end())
+        if brace is None:
+            continue
+        end = delimited_end(code, brace)
+        if end is None:
+            continue
+        methods.append(code[method.start():end])
+    if len(methods) != 1:
+        return False
+    method = methods[0]
+    bindings = function_input_bindings(method)
+    calls = [
+        call for call in DESERIALIZE_CALL_RE.finditer(method)
+        if call_uses_input(method, call, bindings)
+    ]
+    if len(calls) != 1:
+        return False
+    return canonical_path(calls[0].group("path")) == expected_path
+
+
+def deserialize_impl_target(header):
+    """Return the target only when the impl trait itself is Deserialize."""
+    code = SOURCE_POLICY.mask_rust_non_code(header)
+    implementation = re.match(r"\s*impl\b", code)
+    if implementation is None:
+        return None
+    trait_start = implementation.end()
+    while trait_start < len(code) and code[trait_start].isspace():
+        trait_start += 1
+    if trait_start < len(code) and code[trait_start] == "<":
+        trait_start = generic_end(code, trait_start)
+        if trait_start is None:
+            return None
+    for_match = re.search(r"\bfor\b", code[trait_start:])
+    if for_match is None:
+        return None
+    trait_end = trait_start + for_match.start()
+    trait = code[trait_start:trait_end].strip()
+    if re.fullmatch(
+        r"(?:::)?(?:[A-Za-z_$]\w*\s*::\s*)*Deserialize"
+        r"\s*(?:<[^{}]*>)?",
+        trait,
+    ) is None:
+        return None
+    target = re.match(
+        r"(?P<target>(?:::)?(?:[A-Za-z_$]\w*\s*::\s*)*"
+        r"[A-Za-z_$]\w*(?:\s*<[^{}]*>)?)",
+        code[trait_start + for_match.end():].lstrip(),
+    )
+    return target.group("target").strip() if target else None
+
+
 def collect_deserialize_impls(path):
     """Collect handwritten readers without accepting comments or literals."""
     source = path.read_text(encoding="utf-8")
@@ -266,10 +424,9 @@ def collect_deserialize_impls(path):
         if brace is None:
             continue
         header = code[opening.start():brace]
-        match = IMPL_TRAIT_RE.search(header)
-        if match is None:
+        target = deserialize_impl_target(header)
+        if target is None:
             continue
-        target = match.group("target").strip()
         name_match = re.search(r"([A-Za-z_$]\w*)\s*(?:<|$)", target.rsplit("::", 1)[-1])
         if name_match is None:
             continue
@@ -279,15 +436,28 @@ def collect_deserialize_impls(path):
         end = delimited_end(code, brace)
         if end is None:
             raise ValueError(f"{path}: incomplete Deserialize impl at byte {opening.start()}")
+        implementation = code[brace + 1:end - 1]
+        method_match = re.search(r"\bfn\s+deserialize\b", implementation)
+        if method_match is None:
+            raise ValueError(f"{path}: Deserialize impl for {name} has no method body")
+        method_start = brace + 1 + method_match.start()
+        method_brace = body_open(code, brace + 1 + method_match.end())
+        if method_brace is None:
+            raise ValueError(f"{path}: incomplete deserialize method for {name}")
+        method_end = delimited_end(code, method_brace)
+        if method_end is None:
+            raise ValueError(f"{path}: incomplete deserialize method for {name}")
+        method_code = code[method_start:method_end]
         readers.append(DeserializeImpl(
             path,
-            source.count("\n", 0, opening.start()) + 1,
+            source.count("\n", 0, method_start) + 1,
             name,
-            source[brace + 1:end - 1],
+            source[method_start:method_end],
             scopes[bisect_right(offsets, opening.start()) - 1],
-            opening.start(),
-            brace + 1,
-            end,
+            method_start,
+            method_brace + 1,
+            method_end,
+            function_input_bindings(method_code),
         ))
     return readers
 
@@ -296,6 +466,8 @@ def collect_deserialize_functions(path):
     """Collect named helper functions used by custom field readers."""
     source = path.read_text(encoding="utf-8")
     code, _ = SOURCE_POLICY.production_source(source)
+    offsets, scopes = lexical_scopes(code)
+    module_scope = source_module_scope(path)
     functions = []
     for opening in re.finditer(r"\bfn\s+(?P<name>[A-Za-z_]\w*)\s*", code):
         brace = body_open(code, opening.end())
@@ -304,13 +476,16 @@ def collect_deserialize_functions(path):
         end = delimited_end(code, brace)
         if end is None:
             raise ValueError(f"{path}: incomplete helper function at byte {opening.start()}")
+        function_code = code[opening.start():end]
         functions.append(DeserializeFunction(
             path,
             source.count("\n", 0, opening.start()) + 1,
             opening.group("name"),
             source[brace + 1:end - 1],
+            module_scope + scopes[bisect_right(offsets, opening.start()) - 1],
             opening.start(),
             end,
+            function_input_bindings(function_code, opening.group("name")),
         ))
     return functions
 
@@ -348,7 +523,7 @@ def macro_templates(path, items):
                     r"[^{}]*for\s+\$name\b",
                     macro_body,
                 )
-                and re.search(r"\bf64\s*::\s*deserialize\b", macro_body)
+                and macro_reader_contract(macro_body, "f64")
             ),
             "checked_feature_geometry": bool(
                 re.search(
@@ -357,7 +532,7 @@ def macro_templates(path, items):
                     r"[^{}]*for\s+\$name\b",
                     macro_body,
                 )
-                and re.search(r"\$raw\s*::\s*deserialize\b", macro_body)
+                and macro_reader_contract(macro_body, "$raw")
             ),
         }
         if (
@@ -814,6 +989,34 @@ SEQUENCE_TYPES = {
     "ByteBuf",
 }
 MAP_TYPES = {"HashMap", "BTreeMap", "IndexMap"}
+QUALIFIED_SCALAR_TYPES = {
+    *{f"core::primitive::{name}" for name in SCALAR_TYPES if name not in {"String"}},
+    *{f"std::primitive::{name}" for name in SCALAR_TYPES if name not in {"String"}},
+    "alloc::string::String",
+    "std::string::String",
+}
+QUALIFIED_SEQUENCE_TYPES = {
+    "alloc::vec::Vec",
+    "std::vec::Vec",
+    "alloc::collections::VecDeque",
+    "std::collections::VecDeque",
+    "alloc::collections::LinkedList",
+    "std::collections::LinkedList",
+    "alloc::collections::BinaryHeap",
+    "std::collections::BinaryHeap",
+    "std::collections::HashSet",
+    "std::collections::BTreeSet",
+    "serde_bytes::ByteBuf",
+}
+QUALIFIED_MAP_TYPES = {
+    "std::collections::HashMap",
+    "std::collections::BTreeMap",
+    "indexmap::IndexMap",
+}
+QUALIFIED_KEYLESS_ADAPTERS = {
+    "crate::bytes",
+    "cadmpeg_ir::bytes",
+}
 OPTIONAL_TYPES = {"Option"}
 DELEGATING_TYPES = {"Box", "Rc", "Arc", "Pin", "RefCell", "Cell", "Mutex", "RwLock"}
 ABSENT_KEY_HELPERS = {
@@ -842,13 +1045,37 @@ OPEN_READER_ROUTE = re.compile(
 
 def is_free_form_map(path):
     """Whether a fully qualified map path intentionally admits arbitrary keys."""
-    return path in {
+    return path.lstrip(":") in {
         "serde_json::Value",
         "serde_json::Map",
         "std::collections::HashMap",
         "std::collections::BTreeMap",
         "indexmap::IndexMap",
     }
+
+
+def is_builtin_path(path, names, index):
+    """Whether ``path`` names a known standard reader without a suffix guess."""
+    path = path.lstrip(":")
+    if "::" not in path:
+        # A declaration in the census index can shadow a prelude name. The
+        # caller resolves that declaration before invoking this shortcut.
+        return path in names and path not in index
+    if names is SCALAR_TYPES:
+        return path in QUALIFIED_SCALAR_TYPES
+    if names is SEQUENCE_TYPES:
+        return path in QUALIFIED_SEQUENCE_TYPES
+    if names is MAP_TYPES:
+        return path in QUALIFIED_MAP_TYPES
+    return False
+
+
+def is_keyless_path(path, index):
+    return (
+        is_builtin_path(path, SCALAR_TYPES, index)
+        or is_builtin_path(path, SEQUENCE_TYPES, index)
+        or path.lstrip(":") in QUALIFIED_KEYLESS_ADAPTERS
+    )
 
 
 def untagged_arms(item):
@@ -1056,20 +1283,80 @@ def main():
     def helper_target_applies(name, owner):
         return helper_source_applies(helper_target_sources.get(name, set()), owner)
 
-    deserialize_call_re = re.compile(
-        r"(?P<path>(?:::)?(?:[A-Za-z_$]\w*\s*::\s*)*[A-Za-z_$]\w*)"
-        r"(?P<generic>\s*::\s*<(?P<args>[^{}]*)>)?\s*::\s*deserialize\b"
-    )
+    def resolve_helper_functions(name, owner):
+        """Resolve a custom helper by its complete Rust module path."""
+        path = canonical_path(name).lstrip(":")
+        parts = path.split("::")
+        helper_name = parts[-1]
+        candidates = helper_functions.get(helper_name, ())
+        if not candidates:
+            return []
+
+        if len(parts) == 1:
+            local = [
+                function for function in candidates
+                if function.path == owner.path and function.scope == owner.scope
+            ]
+            if local:
+                return local
+            same_file = [function for function in candidates if function.path == owner.path]
+            if len(same_file) == 1:
+                return same_file
+            if len(candidates) == 1:
+                return list(candidates)
+            return []
+
+        owner_scope = tuple(part for part in owner.scope if not part.startswith("@"))
+        crate = owner.crate
+        prefix = parts[:-1]
+        if prefix[0] == "crate":
+            scope = ()
+            prefix = prefix[1:]
+        elif prefix[0] == "self":
+            scope = owner_scope
+            prefix = prefix[1:]
+        elif prefix[0] == "super":
+            scope = owner_scope
+            while prefix and prefix[0] == "super":
+                scope = scope[:-1]
+                prefix = prefix[1:]
+        else:
+            external = [
+                function for function in candidates
+                if function.path.parts[function.path.parts.index("src") - 1]
+                == prefix[0].replace("-", "_")
+            ]
+            if external:
+                source_index = external[0].path.parts.index("src")
+                crate = Path(*external[0].path.parts[:source_index])
+                prefix = prefix[1:]
+                scope = ()
+            else:
+                scope = owner_scope
+
+        wanted = tuple(prefix)
+        if scope:
+            wanted = scope + wanted
+        return [
+            function for function in candidates
+            if function.path.parts[:function.path.parts.index("src")] == crate.parts
+            and function.scope == wanted
+        ]
 
     def helper_function_passes(function, owner, allow_free_form=False):
         """Prove a custom helper from the direct reader it invokes."""
         code = SOURCE_POLICY.mask_rust_non_code(function.body)
         if OPEN_READER_ROUTE.search(code):
             return False
-        array_route = bool(
-            re.search(r"<\s*\[[^{}]*\]\s*>\s*::\s*deserialize\b", code)
+        bindings = function.input_bindings
+        array_route = any(
+            call_uses_input(code, call, bindings)
+            for call in ARRAY_DESERIALIZE_CALL_RE.finditer(code)
         )
-        calls = list(deserialize_call_re.finditer(code))
+        calls = [
+            call for call in DESERIALIZE_CALL_RE.finditer(code)
+            if call_uses_input(code, call, bindings)
+        ]
         if not calls and not array_route:
             return False
         for call in calls:
@@ -1090,15 +1377,15 @@ def main():
             # A handwritten map/JSON reader is object-open. It must be
             # carried by an explicit free-form payload type, not hidden in a
             # custom wrapper behind a denying enum.
-            if base in SCALAR_TYPES or base in SEQUENCE_TYPES:
+            if is_keyless_path(path, index):
                 continue
-            if is_free_form_map(path) or base in MAP_TYPES:
+            if is_free_form_map(path) or is_builtin_path(path, MAP_TYPES, index):
                 if allow_free_form:
                     continue
                 return False
             generic = call.group("args")
             if generic is not None:
-                if base in SEQUENCE_TYPES:
+                if is_builtin_path(path, SEQUENCE_TYPES, index):
                     continue
                 ok, _ = payload_proof(
                     f"{path}<{generic}>", owner
@@ -1118,11 +1405,14 @@ def main():
             return False
         # This spelling is an array reader whose leading ``<`` is not a type
         # path token accepted by the call regex below.
-        if re.search(r"<\s*\[[^{}]*\]\s*>\s*::\s*deserialize\b", code):
-            array_route = True
-        else:
-            array_route = False
-        calls = list(deserialize_call_re.finditer(code))
+        array_route = any(
+            call_uses_input(code, call, reader.input_bindings)
+            for call in ARRAY_DESERIALIZE_CALL_RE.finditer(code)
+        )
+        calls = [
+            call for call in DESERIALIZE_CALL_RE.finditer(code)
+            if call_uses_input(code, call, reader.input_bindings)
+        ]
         if not calls and not array_route:
             return False
         for call in calls:
@@ -1136,15 +1426,15 @@ def main():
                 if target is None or not passes(target):
                     return False
                 continue
-            if is_free_form_map(path) or base in MAP_TYPES:
+            if is_free_form_map(path) or is_builtin_path(path, MAP_TYPES, index):
                 return False
-            if base in SCALAR_TYPES or base in SEQUENCE_TYPES:
+            if is_keyless_path(path, index):
                 continue
             generic = call.group("args")
             if generic is not None:
-                ok, _ = payload_proof(
-                    f"{path}<{generic}>", item
-                )
+                if is_builtin_path(path, SEQUENCE_TYPES, index):
+                    continue
+                ok, _ = payload_proof(f"{path}<{generic}>", item)
                 if not ok:
                     return False
                 continue
@@ -1205,22 +1495,17 @@ def main():
                 # These helpers forward the field's own type to Deserialize.
                 pass
             elif helper in LOCAL_ID_HELPERS:
-                if path.rsplit("::", 1)[-1] not in SCALAR_TYPES:
+                if not is_builtin_path(path, SCALAR_TYPES, index):
                     return False, f"helper {helper} has no scalar reader proof"
-            elif helper in DISTINCT_MAP_HELPERS and path.rsplit("::", 1)[-1] in MAP_TYPES:
+            elif helper in DISTINCT_MAP_HELPERS and is_builtin_path(path, MAP_TYPES, index):
                 return True, "distinct-key map is intentionally free-form"
             else:
-                candidates = [
-                    function for function in helper_functions.get(helper_name, ())
-                    if function.path == owner.path
-                ]
-                if not candidates:
-                    candidates = helper_functions.get(helper_name, ())
+                candidates = resolve_helper_functions(helper, owner)
                 if len(candidates) != 1 or not helper_function_passes(
                     candidates[0], owner,
                     allow_free_form=(
                         is_free_form_map(path)
-                        or path.rsplit("::", 1)[-1] in MAP_TYPES
+                        or is_builtin_path(path, MAP_TYPES, index)
                     ),
                 ):
                     return False, f"custom deserializer {helper} has no forwarding proof"
@@ -1241,7 +1526,7 @@ def main():
             return True, "explicit free-form map/value"
         if path in {"[", "("}:
             return True, "array or tuple reader rejects object input"
-        if base in SCALAR_TYPES or base in SEQUENCE_TYPES or base in MAP_TYPES:
+        if is_keyless_path(path, index) or is_builtin_path(path, MAP_TYPES, index):
             return True, "scalar, sequence, or map outer reader"
         if base == "PhantomData":
             return True, "phantom reader has no object payload"

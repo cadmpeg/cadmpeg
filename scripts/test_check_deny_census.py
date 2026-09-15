@@ -822,6 +822,229 @@ class DenyCensusTests(unittest.TestCase):
                 self.assertEqual(status, 1, output)
                 self.assertIn("Reader::A", output)
 
+    def test_compiled_route_counterexamples_fail_closed(self) -> None:
+        preamble = '''
+            use serde::{Deserialize, Deserializer};
+            fn discard_json<'de, D: Deserializer<'de>>(d: D) -> Result<(), D::Error> {
+                let _ = serde_json::Value::deserialize(d)?;
+                Ok(())
+            }
+        '''
+        cases = {
+            "qualified scalar": {
+                "lib.rs": preamble + '''
+                    mod hostile;
+                    #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+                    enum Reader { A(hostile::String) }
+                ''',
+                "hostile.rs": '''
+                    use serde::{Deserialize, Deserializer};
+                    pub struct String;
+                    impl<'de> Deserialize<'de> for String {
+                        fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                            let _ = serde_json::Value::deserialize(d)?;
+                            Ok(Self)
+                        }
+                    }
+                ''',
+            },
+            "nonconsuming scalar": {
+                "lib.rs": preamble + '''
+                    struct Open;
+                    impl<'de> Deserialize<'de> for Open {
+                        fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                            let _unused = String::deserialize::<
+                                serde::de::value::StrDeserializer<serde::de::value::Error>
+                            >;
+                            discard_json(d)?;
+                            Ok(Self)
+                        }
+                    }
+                    #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+                    enum Reader { A(Open) }
+                ''',
+            },
+            "macro decoy": {
+                "lib.rs": preamble + '''
+                    macro_rules! checked_scalar {
+                        ($name:ident) => {
+                            #[derive(serde::Serialize)] #[serde(transparent)]
+                            struct $name(f64);
+                            impl<'de> Deserialize<'de> for $name {
+                                fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                                    let _unused = f64::deserialize::<
+                                        serde::de::value::F64Deserializer<serde::de::value::Error>
+                                    >;
+                                    Ok(Self(0.0))
+                                }
+                            }
+                        }
+                    }
+                    checked_scalar!(Open);
+                    #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+                    enum Reader { A(Open) }
+                ''',
+            },
+            "macro helper decoy": {
+                "lib.rs": '''
+                    macro_rules! checked_scalar {
+                        ($name:ident) => {
+                            #[derive(serde::Serialize)] #[serde(transparent)]
+                            struct $name(f64);
+                            impl<'de> serde::Deserialize<'de> for $name {
+                                fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                                    Ok(Self(0.0))
+                                }
+                                fn helper<D: serde::Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
+                                    f64::deserialize(d)
+                                }
+                            }
+                        }
+                    }
+                    checked_scalar!(Open);
+                    #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+                    enum Reader { A(Open) }
+                ''',
+            },
+            "qualified helper": {
+                "lib.rs": preamble + '''
+                    mod hostile;
+                    fn read<'de, D: Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+                        String::deserialize(d)
+                    }
+                    #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+                    enum Reader {
+                        A(#[serde(deserialize_with = "hostile::read")] String),
+                    }
+                ''',
+                "hostile.rs": '''
+                    use serde::{Deserialize, Deserializer};
+                    pub fn read<'de, D: Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+                        let _ = serde_json::Value::deserialize(d)?;
+                        Ok(String::new())
+                    }
+                ''',
+            },
+        }
+        for name, files in cases.items():
+            with self.subTest(name=name):
+                status, output = self.run_census(files)
+                self.assertEqual(status, 1, output)
+                self.assertIn("Reader", output)
+
+    def test_route_counterexample_mutations_are_load_bearing(self) -> None:
+        qualified_scalar = {
+            "lib.rs": '''
+                mod hostile;
+                #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+                enum Reader { A(hostile::String) }
+            ''',
+            "hostile.rs": '''
+                use serde::{Deserialize, Deserializer};
+                pub struct String;
+                impl<'de> Deserialize<'de> for String {
+                    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                        let _ = serde_json::Value::deserialize(d)?;
+                        Ok(Self)
+                    }
+                }
+            ''',
+        }
+        scalar_old = '''if is_keyless_path(path, index) or is_builtin_path(path, MAP_TYPES, index):
+            return True, "scalar, sequence, or map outer reader"'''
+        scalar_mutated, scalar_output = self.run_mutated_census(
+            qualified_scalar,
+            scalar_old,
+            '''if is_keyless_path(path, index) or base in SCALAR_TYPES or base in SEQUENCE_TYPES or base in MAP_TYPES:
+            return True, "scalar, sequence, or map outer reader"''',
+        )
+        self.assertEqual(scalar_mutated, 0, scalar_output)
+
+        nonconsuming = {"lib.rs": '''
+            struct Open;
+            impl<'de> serde::Deserialize<'de> for Open {
+                fn deserialize<D: serde::Deserializer<'de>>(_d: D) -> Result<Self, D::Error> {
+                    let _unused = String::deserialize::<
+                        serde::de::value::StrDeserializer<serde::de::value::Error>
+                    >;
+                    Ok(Self)
+                }
+            }
+            #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+            enum Reader { A(Open) }
+        '''}
+        binding_old = '''calls = [
+            call for call in DESERIALIZE_CALL_RE.finditer(code)
+            if call_uses_input(code, call, reader.input_bindings)
+        ]'''
+        binding_mutated, binding_output = self.run_mutated_census(
+            nonconsuming,
+            binding_old,
+            '''calls = list(DESERIALIZE_CALL_RE.finditer(code))''',
+        )
+        self.assertEqual(binding_mutated, 0, binding_output)
+
+        macro_decoy = {"lib.rs": '''
+            macro_rules! checked_scalar {
+                ($name:ident) => {
+                    #[derive(serde::Serialize)] #[serde(transparent)]
+                    struct $name(f64);
+                    impl<'de> serde::Deserialize<'de> for $name {
+                        fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                            let _unused = f64::deserialize::<
+                                serde::de::value::F64Deserializer<serde::de::value::Error>
+                            >;
+                            Ok(Self(0.0))
+                        }
+                    }
+                }
+            }
+            checked_scalar!(Open);
+            #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+            enum Reader { A(Open) }
+        '''}
+        macro_old = 'and macro_reader_contract(macro_body, "f64")'
+        macro_mutated, macro_output = self.run_mutated_census(
+            macro_decoy,
+            macro_old,
+            'and bool(re.search(r"\\bf64\\s*::\\s*deserialize\\b", macro_body))',
+        )
+        self.assertEqual(macro_mutated, 0, macro_output)
+
+        qualified_helper = {
+            "lib.rs": '''
+                mod hostile;
+                fn read<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+                    String::deserialize(d)
+                }
+                #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+                enum Reader {
+                    A(#[serde(deserialize_with = "hostile::read")] String),
+                }
+            ''',
+            "hostile.rs": '''
+                use serde::{Deserialize, Deserializer};
+                pub fn read<'de, D: Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+                    let _ = serde_json::Value::deserialize(d)?;
+                    Ok(String::new())
+                }
+            ''',
+        }
+        helper_old = '''path = canonical_path(name).lstrip(":")
+        parts = path.split("::")'''
+        helper_mutated, helper_output = self.run_mutated_census(
+            qualified_helper,
+            helper_old,
+            '''path = canonical_path(name).lstrip(":")
+        parts = path.split("::")
+        if len(parts) > 1:
+            return [
+                function for function in helper_functions.get(parts[-1], ())
+                if function.path == owner.path
+            ]''',
+        )
+        self.assertEqual(helper_mutated, 0, helper_output)
+
     def run_mutated_census(
         self, files: dict[str, str], old: str, new: str
     ) -> tuple[int, str]:
