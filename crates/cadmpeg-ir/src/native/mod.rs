@@ -3,6 +3,7 @@
 #![deny(clippy::disallowed_methods)]
 
 use std::collections::BTreeMap;
+use std::num::NonZeroUsize;
 
 #[cfg(feature = "schema")]
 use schemars::{JsonSchema, Schema, SchemaGenerator};
@@ -23,7 +24,7 @@ pub struct LossCount {
     /// Arena name within that namespace.
     pub kind: String,
     /// Number of records in the arena.
-    pub count: usize,
+    pub count: NonZeroUsize,
 }
 
 /// Conversion failure between codec-owned typed records and generic records.
@@ -65,7 +66,7 @@ impl From<NativeConvertError> for cadmpeg_core::CodecError {
 #[serde(rename = "NativeRecord")]
 struct RecordShape<'a> {
     /// Globally unique record identity.
-    id: &'a str,
+    id: crate::ids::Identity,
     /// Codec-owned record fields.
     #[serde(flatten)]
     fields: &'a Map<String, Value>,
@@ -232,7 +233,7 @@ impl Serialize for NativeRecord {
 
 impl<'de> Deserialize<'de> for NativeRecord {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let mut fields = Map::<String, Value>::deserialize(deserializer)?;
+        let mut fields = cadmpeg_core::distinct_keys::json_object(deserializer)?;
         let Some(Value::String(id)) = fields.remove("id") else {
             return Err(<D::Error as serde::de::Error>::custom(
                 NativeConvertError::MissingId,
@@ -369,7 +370,10 @@ impl NativeNamespace {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
-pub struct Native(pub BTreeMap<String, NativeNamespace>);
+pub struct Native(
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+    pub  BTreeMap<String, NativeNamespace>,
+);
 
 impl Native {
     /// Return a source-format namespace.
@@ -396,15 +400,14 @@ impl Native {
         self.0
             .iter()
             .flat_map(|(format, namespace)| {
-                namespace
-                    .arenas
-                    .iter()
-                    .filter(|(_, records)| !records.is_empty())
-                    .map(move |(kind, records)| LossCount {
+                namespace.arenas.iter().filter_map(move |(kind, records)| {
+                    let count = NonZeroUsize::new(records.len())?;
+                    Some(LossCount {
                         format: format.clone(),
                         kind: kind.clone(),
-                        count: records.len(),
+                        count,
                     })
+                })
             })
             .collect()
     }

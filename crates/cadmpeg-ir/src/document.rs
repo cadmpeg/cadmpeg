@@ -1503,7 +1503,10 @@ pub fn entity_census(ir: &CadIr) -> BTreeMap<CensusKey, usize> {
             .count(),
     );
     for loss in ir.native.loss_counts() {
-        counts.insert(CensusKey::native(&loss.format, &loss.kind), loss.count);
+        counts.insert(
+            CensusKey::native(&loss.format, &loss.kind),
+            loss.count.get(),
+        );
     }
     counts
 }

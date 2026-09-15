@@ -15,7 +15,7 @@ use std::fmt::{self, Display};
 use std::hash::Hash;
 use std::marker::PhantomData;
 
-use serde::de::{Deserialize, Deserializer, Error, MapAccess, Visitor};
+use serde::de::{Deserialize, Deserializer, Error, MapAccess, SeqAccess, Visitor};
 
 /// Reads a `BTreeMap`, refusing a key the document states twice.
 ///
@@ -43,6 +43,104 @@ where
     V: Deserialize<'de>,
 {
     deserializer.deserialize_map(DistinctHashMap(PhantomData))
+}
+
+/// Reads an open JSON object, refusing duplicate keys at every nested depth.
+pub fn json_object<'de, D>(
+    deserializer: D,
+) -> Result<serde_json::Map<String, serde_json::Value>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserializer.deserialize_map(JsonObject)
+}
+
+struct JsonObject;
+
+impl<'de> Visitor<'de> for JsonObject {
+    type Value = serde_json::Map<String, serde_json::Value>;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("a JSON object whose keys are distinct")
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut access: A) -> Result<Self::Value, A::Error> {
+        let mut fields = serde_json::Map::new();
+        while let Some(key) = access.next_key::<String>()? {
+            if fields.contains_key(&key) {
+                return Err(A::Error::custom(format!("duplicate key {key}")));
+            }
+            let JsonValue(value) = access
+                .next_value::<JsonValue>()
+                .map_err(|error| A::Error::custom(format!("key {key}: {error}")))?;
+            fields.insert(key, value);
+        }
+        Ok(fields)
+    }
+}
+
+struct JsonValue(serde_json::Value);
+
+impl<'de> Deserialize<'de> for JsonValue {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_any(JsonValueVisitor).map(Self)
+    }
+}
+
+struct JsonValueVisitor;
+
+impl<'de> Visitor<'de> for JsonValueVisitor {
+    type Value = serde_json::Value;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("a JSON value with distinct object keys")
+    }
+
+    fn visit_bool<E: Error>(self, value: bool) -> Result<Self::Value, E> {
+        Ok(value.into())
+    }
+
+    fn visit_i64<E: Error>(self, value: i64) -> Result<Self::Value, E> {
+        Ok(value.into())
+    }
+
+    fn visit_u64<E: Error>(self, value: u64) -> Result<Self::Value, E> {
+        Ok(value.into())
+    }
+
+    fn visit_f64<E: Error>(self, value: f64) -> Result<Self::Value, E> {
+        serde_json::Number::from_f64(value)
+            .map(serde_json::Value::Number)
+            .ok_or_else(|| E::custom("JSON number is not finite"))
+    }
+
+    fn visit_str<E: Error>(self, value: &str) -> Result<Self::Value, E> {
+        Ok(value.into())
+    }
+
+    fn visit_string<E: Error>(self, value: String) -> Result<Self::Value, E> {
+        Ok(value.into())
+    }
+
+    fn visit_unit<E: Error>(self) -> Result<Self::Value, E> {
+        Ok(serde_json::Value::Null)
+    }
+
+    fn visit_none<E: Error>(self) -> Result<Self::Value, E> {
+        self.visit_unit()
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, mut access: A) -> Result<Self::Value, A::Error> {
+        let mut values = Vec::new();
+        while let Some(JsonValue(value)) = access.next_element::<JsonValue>()? {
+            values.push(value);
+        }
+        Ok(serde_json::Value::Array(values))
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, access: A) -> Result<Self::Value, A::Error> {
+        JsonObject.visit_map(access).map(serde_json::Value::Object)
+    }
 }
 
 struct DistinctBTreeMap<K, V>(PhantomData<fn() -> (K, V)>);
@@ -109,6 +207,33 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn open_json_objects_preserve_values_and_refuse_nested_duplicate_keys() {
+        #[derive(Debug, serde::Deserialize)]
+        struct Object(
+            #[serde(deserialize_with = "json_object")] serde_json::Map<String, serde_json::Value>,
+        );
+
+        let control = r#"{"name":"text","signed":-9223372036854775808,"unsigned":18446744073709551615,"float":1.25,"true":true,"false":false,"null":null,"array":[{},[],{"name":"other"}],"object":{"name":"nested"}}"#;
+        let parsed: Object = serde_json::from_str(control).unwrap();
+        assert_eq!(
+            serde_json::Value::Object(parsed.0),
+            serde_json::from_str::<serde_json::Value>(control).unwrap(),
+        );
+        for (wire, key) in [
+            (r#"{"name":1,"name":2}"#, "name"),
+            (r#"{"name":1,"na\u006de":2}"#, "name"),
+            (r#"{"outer":{"nested":1,"nested":2}}"#, "nested"),
+            (r#"{"outer":[{"nested":1,"nested":2}]}"#, "nested"),
+        ] {
+            let error = serde_json::from_str::<Object>(wire).unwrap_err();
+            assert!(
+                error.to_string().contains(&format!("duplicate key {key}")),
+                "{error}"
+            );
+        }
+    }
 
     #[derive(Debug, serde::Deserialize)]
     struct Maps {
