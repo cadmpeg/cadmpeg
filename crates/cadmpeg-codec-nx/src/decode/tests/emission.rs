@@ -827,7 +827,7 @@ fn decode_transfers_point_plane_cylinder_line() {
         64
     );
     assert_eq!(
-        unknowns[0].links,
+        unknowns[0].links.iter().map(|link| link.as_str()).collect::<Vec<_>>(),
         ["nx:s0:surf#0", "nx:s0:surf#1", "nx:s0:crv#0",]
     );
     assert_eq!(

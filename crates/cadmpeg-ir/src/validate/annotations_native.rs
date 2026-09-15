@@ -296,10 +296,30 @@ pub(super) fn check_native_links(
     for namespace in ir.native.0.values() {
         for records in namespace.arenas().values() {
             for record in records {
-                let Some(serde_json::Value::Array(links)) = record.field("links") else {
+                let Some(value) = record.field("links") else {
                     continue;
                 };
-                for target in links.iter().filter_map(serde_json::Value::as_str) {
+                let serde_json::Value::Array(links) = value else {
+                    findings.push(Finding {
+                        check: Check::NativeLinks,
+                        severity: Severity::Error,
+                        message: "native-record links must be an array of identities".into(),
+                        entity: Some(record.id().to_owned()),
+                    });
+                    continue;
+                };
+                for (index, link) in links.iter().enumerate() {
+                    let Some(target) = link.as_str() else {
+                        findings.push(Finding {
+                            check: Check::NativeLinks,
+                            severity: Severity::Error,
+                            message: format!(
+                                "native-record link {index} must be an identity string"
+                            ),
+                            entity: Some(record.id().to_owned()),
+                        });
+                        continue;
+                    };
                     if !all_ids.contains(target) {
                         findings.push(Finding {
                             check: Check::NativeLinks,

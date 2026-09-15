@@ -14,6 +14,65 @@ fn sidecar_wire() -> serde_json::Value {
 }
 
 #[test]
+fn invalid_product_link_cannot_partially_attach_but_source_retention_accepts_evidence() {
+    let invalid =
+        UnknownRecord::retained(id("bad-link"), 0, vec![1], vec!["raw target text".into()]);
+    let mut fidelity = SourceFidelity::default();
+    let mut ir = CadIr::empty();
+    let incoming = [
+        UnknownRecord::retained(id("good"), 0, vec![2], vec![]),
+        invalid.clone(),
+    ];
+    let error = fidelity
+        .attach_native_unknown_records(&mut ir, "synthetic", incoming)
+        .unwrap_err();
+    assert!(error.to_string().contains(invalid.id().as_str()), "{error}");
+    assert_eq!(fidelity, SourceFidelity::default());
+    assert_eq!(ir, CadIr::empty());
+    fidelity
+        .retain_unknown_records(SourceOwner::Root, [invalid.clone()])
+        .unwrap();
+    assert_eq!(
+        fidelity
+            .retained_record(invalid.id().as_str())
+            .unwrap()
+            .data(),
+        Some(&[1][..])
+    );
+}
+
+#[test]
+fn attachment_refuses_an_identity_already_owned_by_another_native_namespace() {
+    let mut ir = CadIr::empty();
+    ir.set_native_unknowns(
+        "other",
+        &[crate::NativeUnknownRecord {
+            id: id("occupied"),
+            links: vec![],
+        }],
+    )
+    .unwrap();
+    let before = ir.clone();
+    let mut fidelity = SourceFidelity::default();
+    let error = fidelity
+        .attach_native_unknown_records(
+            &mut ir,
+            "synthetic",
+            [
+                UnknownRecord::retained(id("first"), 0, vec![1], vec![]),
+                UnknownRecord::retained(id("occupied"), 0, vec![2], vec![]),
+            ],
+        )
+        .unwrap_err();
+    assert!(
+        error.to_string().contains(id("occupied").as_str()),
+        "{error}"
+    );
+    assert_eq!(ir, before);
+    assert_eq!(fidelity, SourceFidelity::default());
+}
+
+#[test]
 fn complete_sidecar_requires_the_current_ir_version_on_both_read_routes() {
     let valid = sidecar_wire();
     assert_eq!(valid["ir_version"], crate::IR_VERSION);

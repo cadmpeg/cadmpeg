@@ -143,7 +143,7 @@ fn decode_standard_transfers_vertices_and_cylinder() {
     assert_eq!(unknowns[0].id.as_str(), "catia:payload:unknown#brep-stream");
     assert!(unknowns[0]
         .links
-        .contains(&"catia:standard:circle#0".to_string()));
+        .iter().any(|link| link.as_str() == "catia:standard:circle#0"));
     match &result.ir().model.surfaces[0].geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             let axis = cylinder_surface.axis();

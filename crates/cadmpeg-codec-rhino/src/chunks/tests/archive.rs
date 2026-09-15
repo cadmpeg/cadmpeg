@@ -98,13 +98,13 @@ fn complete_point_and_bounded_line_archive_decodes_semantics_and_links() {
         .native_unknowns("rhino")
         .expect("required invariant")[0]
         .links
-        .contains(&result.ir().model.bodies[0].id.to_string()));
+        .iter().any(|link| link.as_str() == result.ir().model.bodies[0].id.as_str()));
     assert!(result
         .ir()
         .native_unknowns("rhino")
         .expect("required invariant")[1]
         .links
-        .contains(&result.ir().model.curves[0].id.to_string()));
+        .iter().any(|link| link.as_str() == result.ir().model.curves[0].id.as_str()));
     assert!(result.report().geometry_transferred());
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone()).is_ok()
@@ -714,7 +714,7 @@ fn serialized_brep_l3_commits_connected_topology_pcurves_and_scaled_tolerances()
         .native_unknowns("rhino")
         .expect("required invariant")[0]
         .links
-        .contains(&body.id.to_string()));
+        .iter().any(|link| link.as_str() == body.id.as_str()));
     assert!(result.report().geometry_transferred());
     assert!(result.report().losses.iter().any(|loss| loss.code
         == crate::loss::RhinoLossCode::ObjectRecordCensus.kind()

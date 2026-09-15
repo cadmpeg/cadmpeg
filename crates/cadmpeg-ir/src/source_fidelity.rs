@@ -302,8 +302,8 @@ impl RetainedSourceRecord {
     fn from_unknown(
         stream: SourceOwner,
         record: UnknownRecord,
-    ) -> Result<(UnknownId, Self, Vec<String>), NativeConvertError> {
-        let (id, offset, raw, links) = record.into_parts();
+    ) -> Result<(UnknownId, Self), NativeConvertError> {
+        let (id, offset, raw, _) = record.into_parts();
         let bytes = match raw {
             crate::unknown::RawRetainedBytes::Inline { data } => RetainedBytes::Inline { data },
             crate::unknown::RawRetainedBytes::Digest { byte_len, sha256 } => {
@@ -320,7 +320,7 @@ impl RetainedSourceRecord {
         let retained = Self::from_bytes(stream, offset, bytes).map_err(|error| {
             NativeConvertError::InvalidCollection(format!("retained record {id}: {error}"))
         })?;
-        Ok((id, retained, links))
+        Ok((id, retained))
     }
 }
 
@@ -420,7 +420,7 @@ impl SourceFidelity {
             {
                 return Err(duplicate_record(record.id()));
             }
-            let (id, record, _) = RetainedSourceRecord::from_unknown(stream.clone(), record)?;
+            let (id, record) = RetainedSourceRecord::from_unknown(stream.clone(), record)?;
             incoming.insert(id, record);
         }
         self.retained_records.extend(incoming);
@@ -443,17 +443,23 @@ impl SourceFidelity {
             return Ok(());
         }
         let mut products = ir.native_unknowns(format)?;
-        let mut ids = BTreeSet::new();
-        for record in &products {
-            if !ids.insert(record.id.clone()) {
-                return Err(duplicate_record(&record.id));
-            }
-        }
+        let existing_ids: BTreeSet<&str> = ir
+            .native
+            .0
+            .values()
+            .flat_map(|namespace| namespace.arenas().get("unknowns"))
+            .flatten()
+            .map(|record| record.id())
+            .collect();
         let mut retained = BTreeMap::new();
         for record in incoming {
-            if self.retained_records.contains_key(record.id()) || !ids.insert(record.id().clone()) {
+            if self.retained_records.contains_key(record.id())
+                || existing_ids.contains(record.id().as_str())
+                || retained.contains_key(record.id())
+            {
                 return Err(duplicate_record(record.id()));
             }
+            let product = crate::NativeUnknownRecord::try_from(&record)?;
             let stream = self
                 .annotations
                 .provenance
@@ -461,11 +467,8 @@ impl SourceFidelity {
                 .map_or(SourceOwner::Root, |provenance| {
                     SourceOwner::from(provenance.stream())
                 });
-            let (id, record, links) = RetainedSourceRecord::from_unknown(stream, record)?;
-            products.push(crate::NativeUnknownRecord {
-                id: id.clone(),
-                links,
-            });
+            let (id, record) = RetainedSourceRecord::from_unknown(stream, record)?;
+            products.push(product);
             retained.insert(id, record);
         }
         ir.set_native_unknowns_from(format, products)?;
