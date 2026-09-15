@@ -1253,22 +1253,16 @@ fn find_annotation_text(
 ) -> Option<String> {
     let mut candidates = BTreeMap::new();
     collect_annotation_text(id, exchange, visited, &mut candidates, losses, depth);
-    match candidates.len() {
-        0 => None,
-        1 => {
-            let (text_id, text) = candidates
-                .into_iter()
-                .next()
-                .expect("one annotation text candidate");
-            used.insert(text_id);
-            Some(text)
-        }
-        count => {
-            losses.push(StepLossCode::PresentationAnnotationTextUnordered.note(format!(
+    let (text_id, text) = candidates.pop_first()?;
+    if candidates.is_empty() {
+        used.insert(text_id);
+        Some(text)
+    } else {
+        let count = candidates.len() + 1;
+        losses.push(StepLossCode::PresentationAnnotationTextUnordered.note(format!(
                     "presentation annotation #{id} has {count} reachable text carriers with no ordered composition"
                 )));
-            None
-        }
+        None
     }
 }
 

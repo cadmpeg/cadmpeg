@@ -123,14 +123,13 @@ pub fn string(s: &str) -> String {
 
 /// Join instance references into a Part 21 aggregate such as `(#1,#2,#3)`.
 pub fn refs(items: &[Ref]) -> String {
-    use std::fmt::Write as _;
-
     let mut out = String::from("(");
     for (i, r) in items.iter().enumerate() {
         if i > 0 {
             out.push(',');
         }
-        write!(out, "{r}").expect("writing to a String cannot fail");
+        out.push('#');
+        out.push_str(&r.0.to_string());
     }
     out.push(')');
     out

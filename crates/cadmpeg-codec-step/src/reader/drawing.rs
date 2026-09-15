@@ -4,11 +4,10 @@
 use crate::ids::kind;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
-use std::fmt::Write as _;
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind};
-use cadmpeg_ir::ids::ProductDefinitionId;
+use cadmpeg_ir::ids::{Identity, ProductDefinitionId};
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::NativeRecord;
 use cadmpeg_ir::{ReferenceSelection, ReferenceTarget};
@@ -32,27 +31,29 @@ struct TargetContext<'a> {
     external_documents: &'a BTreeMap<u64, &'a str>,
 }
 
+struct DrawingCandidate<'a> {
+    id: u64,
+    name: &'static str,
+    identity: Identity,
+    offset: usize,
+    parameters: Cow<'a, [Value]>,
+}
+
+enum TargetResolution {
+    Resolved(ReferenceSelection),
+    Ambiguous(BTreeSet<String>),
+    Unresolved,
+}
+
 impl TargetContext<'_> {
-    fn target(&self, id: u64) -> Option<ReferenceSelection> {
-        target_for(
+    fn resolve(&self, id: u64) -> TargetResolution {
+        target_resolution(
             id,
             self.target_identities,
             self.known_typed,
             self.exchange,
             self.external_documents,
         )
-    }
-
-    fn ambiguous(&self, id: u64) -> Option<BTreeSet<String>> {
-        if let Some(identities) = self
-            .target_identities
-            .get(&id)
-            .filter(|identities| identities.len() > 1)
-        {
-            return Some(identities.clone());
-        }
-        wrapper_target_identities(id, self.target_identities, self.exchange)
-            .filter(|identities| identities.len() > 1)
     }
 }
 
@@ -88,19 +89,25 @@ pub(super) fn decode(
     let mut candidates = exchange
         .records
         .iter()
-        .filter_map(|(&id, record)| drawing_type(record).map(|(name, kind)| (id, name, kind)))
-        .filter(|(id, name, _)| {
-            let valid = required_parameter_count(name)
-                .is_none_or(|count| source_parameters(&exchange.records[id], name).len() >= count);
-            if !valid {
+        .filter_map(|(&id, record)| {
+            let (name, kind) = drawing_type(record)?;
+            let parameters = source_parameters(record, name);
+            if required_parameter_count(name).is_some_and(|count| parameters.len() < count) {
                 losses.push(StepLossCode::DrawingRecordTooFewParameters.note(format!(
                         "STEP drawing record #{id} has too few {name} parameters and was retained opaque"
                     )));
+                return None;
             }
-            valid
+            Some(DrawingCandidate {
+                id,
+                name,
+                identity: ids::drawing(kind, id),
+                offset: record.span.start,
+                parameters,
+            })
         })
         .collect::<Vec<_>>();
-    candidates.sort_by_key(|(id, ..)| exchange.records[id].span.start);
+    candidates.sort_by_key(|candidate| candidate.offset);
 
     if candidates.is_empty() {
         return StageOutcome {
@@ -113,17 +120,11 @@ pub(super) fn decode(
 
     let drawing_ids = candidates
         .iter()
-        .map(|(id, ..)| *id)
+        .map(|candidate| candidate.id)
         .collect::<BTreeSet<_>>();
     let hidden_drawing_ids = exchange
         .records
         .values()
-        .filter(|record| {
-            record
-                .partials
-                .iter()
-                .any(|partial| partial.name == "INVISIBILITY")
-        })
         .filter_map(|record| {
             record
                 .partials
@@ -139,16 +140,12 @@ pub(super) fn decode(
         .filter(|id| drawing_ids.contains(id))
         .collect::<BTreeSet<_>>();
 
-    let drawing_identities = candidates
-        .iter()
-        .map(|&(id, _, kind)| (id, ids::drawing(kind, id)))
-        .collect::<BTreeMap<_, _>>();
     let mut target_identities = record_targets(ir, |record_id| known_typed.contains(&record_id));
-    for (&id, identity) in &drawing_identities {
+    for candidate in &candidates {
         target_identities
-            .entry(id)
+            .entry(candidate.id)
             .or_default()
-            .insert(identity.as_str().to_owned());
+            .insert(candidate.identity.as_str().to_owned());
     }
     // DR-01: a drawing association scoped by PRODUCT_DEFINITION_SHAPE targets
     // that shape's one owning product-definition view, not a product-wide
@@ -183,13 +180,14 @@ pub(super) fn decode(
     };
 
     let mut drawings = BTreeMap::<u64, Drawing>::new();
-    for (order, &(id, name, _)) in candidates.iter().enumerate() {
-        let record = &exchange.records[&id];
-        let identity = drawing_identities
-            .get(&id)
-            .expect("drawing candidates have identities")
-            .clone();
-        let parameters = source_parameters(record, name);
+    for (order, candidate) in candidates.into_iter().enumerate() {
+        let DrawingCandidate {
+            id,
+            name,
+            identity,
+            parameters,
+            ..
+        } = candidate;
         let mut stored_parameters = BTreeMap::new();
         stored_parameters.insert("source_id".into(), format!("#{id}"));
         stored_parameters.insert("source_type".into(), name.into());
@@ -267,13 +265,12 @@ pub(super) fn is_supported_invisibility_target(record: &RawRecord) -> bool {
 
 fn referenced_target_ids(
     exchange: &Exchange,
-    candidates: &[(u64, &'static str, &'static crate::ids::IdentityKind)],
+    candidates: &[DrawingCandidate<'_>],
 ) -> BTreeSet<u64> {
     let mut ids = BTreeSet::new();
-    for &(source_id, name, _) in candidates {
-        let parameters = source_parameters(&exchange.records[&source_id], name);
-        for &(index, _) in relationship_fields(name) {
-            if let Some(value) = parameters.get(index) {
+    for candidate in candidates {
+        for &(index, _) in relationship_fields(candidate.name) {
+            if let Some(value) = candidate.parameters.get(index) {
                 collect_reference_ids(value, &mut ids);
             }
         }
@@ -333,7 +330,7 @@ fn add_source_typed_targets(
             continue;
         };
         if is_wrapper_record(record, exchange)
-            && wrapper_target_identities(id, target_identities, exchange).is_some()
+            && wrapper_target_resolution(id, target_identities, exchange).is_some()
         {
             continue;
         }
@@ -506,22 +503,21 @@ fn add_reference_fields(
         let mut references = Vec::new();
         collect_references(value, &mut references);
         for target_id in references {
-            match target_context.target(target_id) {
-                Some(target) => relationships.entry(role.into()).or_default().push(target),
-                None => {
-                    if let Some(identities) = target_context.ambiguous(target_id) {
-                        note_ambiguous_target(
-                            losses,
-                            &format!("drawing #{source_id} {name}"),
-                            role,
-                            target_id,
-                            &identities,
-                        );
-                    } else {
-                        losses.push(StepLossCode::DrawingRelationshipUntypedTarget.note(format!(
-                                "STEP drawing #{source_id} {name} relationship {role} references source-typed record #{target_id} without a neutral identity; the raw source parameter is retained"
-                            )));
-                    }
+            match target_context.resolve(target_id) {
+                TargetResolution::Resolved(target) => {
+                    relationships.entry(role.into()).or_default().push(target);
+                }
+                TargetResolution::Ambiguous(identities) => note_ambiguous_target(
+                    losses,
+                    &format!("drawing #{source_id} {name}"),
+                    role,
+                    target_id,
+                    &identities,
+                ),
+                TargetResolution::Unresolved => {
+                    losses.push(StepLossCode::DrawingRelationshipUntypedTarget.note(format!(
+                        "STEP drawing #{source_id} {name} relationship {role} references source-typed record #{target_id} without a neutral identity; the raw source parameter is retained"
+                    )));
                 }
             }
         }
@@ -560,27 +556,27 @@ fn add_sheet_revision_usages(
         })
         .collect::<Vec<_>>();
     for (usage_id, sheet_id, revision_id, sequence) in usages {
-        let sheet_target = target_context.target(revision_id);
-        let revision_target = target_context.target(sheet_id);
+        let sheet_target = target_context.resolve(revision_id);
+        let revision_target = target_context.resolve(sheet_id);
         if let Some(sheet) = drawings.get_mut(&sheet_id) {
-            if let Some(target) = sheet_target {
-                sheet
+            match sheet_target {
+                TargetResolution::Resolved(target) => sheet
                     .relationships
                     .entry(cadmpeg_core::nonblank_literal!("drawing_revision"))
                     .or_default()
-                    .push(target);
-            } else if let Some(identities) = target_context.ambiguous(revision_id) {
-                note_ambiguous_target(
+                    .push(target),
+                TargetResolution::Ambiguous(identities) => note_ambiguous_target(
                     losses,
                     &format!("drawing sheet #{sheet_id} usage #{usage_id}"),
                     "drawing_revision",
                     revision_id,
                     &identities,
-                );
-            } else {
-                losses.push(StepLossCode::DrawingSheetRevisionUnresolved.note(format!(
+                ),
+                TargetResolution::Unresolved => {
+                    losses.push(StepLossCode::DrawingSheetRevisionUnresolved.note(format!(
                         "STEP drawing sheet #{sheet_id} usage #{usage_id} has no resolvable drawing revision #{revision_id}"
                     )));
+                }
             }
             if let Some(sequence) = sequence.and_then(|value| {
                 value_text(
@@ -598,24 +594,24 @@ fn add_sheet_revision_usages(
             }
         }
         if let Some(revision) = drawings.get_mut(&revision_id) {
-            if let Some(target) = revision_target {
-                revision
+            match revision_target {
+                TargetResolution::Resolved(target) => revision
                     .relationships
                     .entry(cadmpeg_core::nonblank_literal!("sheet_revision"))
                     .or_default()
-                    .push(target);
-            } else if let Some(identities) = target_context.ambiguous(sheet_id) {
-                note_ambiguous_target(
+                    .push(target),
+                TargetResolution::Ambiguous(identities) => note_ambiguous_target(
                     losses,
                     &format!("drawing revision #{revision_id} usage #{usage_id}"),
                     "sheet_revision",
                     sheet_id,
                     &identities,
-                );
-            } else {
-                losses.push(StepLossCode::DrawingRevisionSheetUnresolved.note(format!(
+                ),
+                TargetResolution::Unresolved => {
+                    losses.push(StepLossCode::DrawingRevisionSheetUnresolved.note(format!(
                         "STEP drawing revision #{revision_id} usage #{usage_id} has no resolvable sheet revision #{sheet_id}"
                     )));
+                }
             }
         }
     }
@@ -647,22 +643,20 @@ fn add_draughting_model_associations(
         let mut complete = true;
         let definition_id = parameters.get(2).and_then(value_reference);
         let definition_target = definition_id.and_then(|definition_id| {
-            match target_context.target(definition_id) {
-                Some(definition) => Some(definition),
-                None if target_context.ambiguous(definition_id).is_some() => {
+            match target_context.resolve(definition_id) {
+                TargetResolution::Resolved(definition) => Some(definition),
+                TargetResolution::Ambiguous(identities) => {
                     note_ambiguous_target(
                         losses,
                         &format!("draughting model #{model_id} association #{association_id}"),
                         "semantic_definition",
                         definition_id,
-                        &target_context
-                            .ambiguous(definition_id)
-                            .expect("ambiguity checked above"),
+                        &identities,
                     );
                     complete = false;
                     None
                 }
-                None => {
+                TargetResolution::Unresolved => {
                     losses.push(StepLossCode::DraughtingSemanticDefinitionUntyped.note(
                         format!(
                             "STEP draughting model #{model_id} association #{association_id} references a typed semantic definition without a neutral identity; the raw source parameter is retained"
@@ -691,22 +685,20 @@ fn add_draughting_model_associations(
         }
         let item_targets = item_ids
             .into_iter()
-            .filter_map(|item_id| match target_context.target(item_id) {
-                Some(item) => Some(item),
-                None if target_context.ambiguous(item_id).is_some() => {
+            .filter_map(|item_id| match target_context.resolve(item_id) {
+                TargetResolution::Resolved(item) => Some(item),
+                TargetResolution::Ambiguous(identities) => {
                     note_ambiguous_target(
                         losses,
                         &format!("draughting model #{model_id} association #{association_id}"),
                         "associated_items",
                         item_id,
-                        &target_context
-                            .ambiguous(item_id)
-                            .expect("ambiguity checked above"),
+                        &identities,
                     );
                     complete = false;
                     None
                 }
-                None => {
+                TargetResolution::Unresolved => {
                     losses.push(StepLossCode::DraughtingAssociatedItemUntyped.note(
                         format!(
                             "STEP draughting model #{model_id} association #{association_id} references source-typed item #{item_id} without a neutral identity; the raw source parameter is retained"
@@ -724,22 +716,20 @@ fn add_draughting_model_associations(
             .any(|partial| partial.name == "DRAUGHTING_MODEL_ITEM_ASSOCIATION_WITH_PLACEHOLDER")
         {
             match association_placeholder_reference(record, parameters) {
-                Some(placeholder_id) => match target_context.target(placeholder_id) {
-                    Some(placeholder) => Some(placeholder),
-                    None if target_context.ambiguous(placeholder_id).is_some() => {
+                Some(placeholder_id) => match target_context.resolve(placeholder_id) {
+                    TargetResolution::Resolved(placeholder) => Some(placeholder),
+                    TargetResolution::Ambiguous(identities) => {
                         note_ambiguous_target(
                             losses,
                             &format!("draughting model #{model_id} association #{association_id}"),
                             "annotation_placeholder",
                             placeholder_id,
-                            &target_context
-                                .ambiguous(placeholder_id)
-                                .expect("ambiguity checked above"),
+                            &identities,
                         );
                         complete = false;
                         None
                     }
-                    None => {
+                    TargetResolution::Unresolved => {
                         losses.push(StepLossCode::DrawingRelationshipUntypedTarget.note(format!(
                             "STEP draughting model #{model_id} association #{association_id} relationship annotation_placeholder references source-typed record #{placeholder_id} without a neutral identity"
                         )));
@@ -811,25 +801,25 @@ fn association_placeholder_reference(record: &RawRecord, parameters: &[Value]) -
     })
 }
 
-fn target_for(
+fn target_resolution(
     id: u64,
     target_identities: &BTreeMap<u64, BTreeSet<String>>,
     known_typed: &HashSet<u64>,
     exchange: &Exchange,
     external_documents: &BTreeMap<u64, &str>,
-) -> Option<ReferenceSelection> {
+) -> TargetResolution {
     if let Some(identity) = target_identities
         .get(&id)
         .filter(|identities| identities.len() == 1)
-        .and_then(|identities| identities.iter().next())
+        .and_then(|identities| identities.first())
     {
-        return Some(ReferenceSelection::new(
+        return TargetResolution::Resolved(ReferenceSelection::new(
             ReferenceTarget::Local(identity.clone()),
             Vec::new(),
         ));
     }
     if let Some(uri) = external_documents.get(&id) {
-        return Some(ReferenceSelection::new(
+        return TargetResolution::Resolved(ReferenceSelection::new(
             ReferenceTarget::External {
                 document: (*uri).into(),
                 object: format!("#{id}"),
@@ -837,35 +827,42 @@ fn target_for(
             Vec::new(),
         ));
     }
-    if let Some(identities) = wrapper_target_identities(id, target_identities, exchange) {
-        if identities.len() == 1 {
-            return Some(ReferenceSelection::new(
-                ReferenceTarget::Local(
-                    identities
-                        .into_iter()
-                        .next()
-                        .expect("one wrapper target identity"),
-                ),
+    let wrapper_ambiguity = match wrapper_target_resolution(id, target_identities, exchange) {
+        Some(WrapperTargetResolution::Singleton(identity)) => {
+            return TargetResolution::Resolved(ReferenceSelection::new(
+                ReferenceTarget::Local(identity),
+                Vec::new(),
+            ));
+        }
+        Some(WrapperTargetResolution::Ambiguous(identities)) => Some(identities),
+        None => None,
+    };
+    if !known_typed.contains(&id) {
+        if let Some(record) = exchange.records.get(&id) {
+            return TargetResolution::Resolved(ReferenceSelection::new(
+                ReferenceTarget::Local(opaque_record_id(id, record).into_string()),
                 Vec::new(),
             ));
         }
     }
-    if known_typed.contains(&id) {
-        return None;
-    }
-    exchange.records.get(&id).map(|record| {
-        ReferenceSelection::new(
-            ReferenceTarget::Local(opaque_record_id(id, record).into_string()),
-            Vec::new(),
-        )
-    })
+    target_identities
+        .get(&id)
+        .filter(|identities| identities.len() > 1)
+        .cloned()
+        .or(wrapper_ambiguity)
+        .map_or(TargetResolution::Unresolved, TargetResolution::Ambiguous)
 }
 
-fn wrapper_target_identities(
+enum WrapperTargetResolution {
+    Singleton(String),
+    Ambiguous(BTreeSet<String>),
+}
+
+fn wrapper_target_resolution(
     id: u64,
     target_identities: &BTreeMap<u64, BTreeSet<String>>,
     exchange: &Exchange,
-) -> Option<BTreeSet<String>> {
+) -> Option<WrapperTargetResolution> {
     if target_identities.contains_key(&id) {
         return None;
     }
@@ -878,7 +875,15 @@ fn wrapper_target_identities(
         &mut active,
         &mut identities,
     );
-    (!cyclic && !identities.is_empty()).then_some(identities)
+    if cyclic {
+        return None;
+    }
+    let identity = identities.pop_first()?;
+    if identities.is_empty() {
+        return Some(WrapperTargetResolution::Singleton(identity));
+    }
+    identities.insert(identity);
+    Some(WrapperTargetResolution::Ambiguous(identities))
 }
 
 fn collect_wrapper_targets(
@@ -999,7 +1004,9 @@ fn value_text(
             "binary:{}:{}",
             value.bit_len(),
             value.data().iter().fold(String::new(), |mut output, byte| {
-                write!(&mut output, "{byte:02X}").expect("writing binary value to String");
+                const HEX: &[u8; 16] = b"0123456789ABCDEF";
+                output.push(char::from(HEX[(byte >> 4) as usize]));
+                output.push(char::from(HEX[(byte & 0x0F) as usize]));
                 output
             })
         )),

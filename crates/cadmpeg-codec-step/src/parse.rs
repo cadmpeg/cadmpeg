@@ -84,9 +84,14 @@ mod partials {
             Self(vec![first])
         }
 
-        /// Builds the population of one complex entity instance, or `None` when empty.
-        pub fn try_many(parts: Vec<PartialRecord>) -> Option<Self> {
-            (!parts.is_empty()).then_some(Self(parts))
+        /// Append a partial without changing the nonempty population invariant.
+        pub(super) fn push(&mut self, partial: PartialRecord) {
+            self.0.push(partial);
+        }
+
+        /// Compact retained storage and report its allocation charge.
+        pub(super) fn compact_storage(&mut self) -> u64 {
+            super::compact_vec(&mut self.0)
         }
 
         /// The first partial record, which always exists.
@@ -353,10 +358,13 @@ impl Exchange {
                 .collect::<Vec<_>>();
             key.sort_unstable();
             key.dedup();
-            let mut unions = self
-                .entity_unions()
-                .lock()
-                .expect("entity index lock poisoned");
+            // This map is a derived index. A panic while populating it can poison
+            // the lock. Entries are inserted only after their sorted union is
+            // complete, so every retained entry is safe to reuse.
+            let mut unions = match self.entity_unions().lock() {
+                Ok(unions) => unions,
+                Err(poisoned) => poisoned.into_inner(),
+            };
             let ids = unions
                 .entry(key.clone())
                 .or_insert_with(|| {
@@ -1049,14 +1057,13 @@ impl Parser<'_, '_, '_> {
         };
         self.punct(&TokenKind::Equals)?;
         self.charge_entities(1, "step_parse_record")?;
-        let partials = if self.peek(&TokenKind::LParen) {
+        let mut partials = if self.peek(&TokenKind::LParen) {
             self.next_kind()?;
-            let mut parts = vec![self.partial()?];
+            let mut parts = RecordPartials::single(self.partial()?);
             while !self.peek(&TokenKind::RParen) {
                 parts.push(self.partial()?);
             }
             self.next_kind()?;
-            parts.shrink_to_fit();
             let mut canonical_names = parts
                 .iter()
                 .map(|part| part.name.clone())
@@ -1088,12 +1095,9 @@ impl Parser<'_, '_, '_> {
             }
             parts
         } else {
-            vec![self.partial()?]
+            RecordPartials::single(self.partial()?)
         };
-        self.charge_vec_storage(&partials, "step_parse_record_storage")?;
-        let Some(partials) = RecordPartials::try_many(partials) else {
-            return Self::err_at(start, "entity instance has no partial record");
-        };
+        self.charge_retained(partials.compact_storage(), "step_parse_record_storage")?;
         self.punct(&TokenKind::Semicolon)?;
         Ok((
             id,
@@ -1195,18 +1199,10 @@ impl Parser<'_, '_, '_> {
     fn typed_parameter(&mut self, mut name: String) -> Result<Value, ParseError> {
         name.shrink_to_fit();
         let parameters = self.parameters()?;
-        if parameters.len() != 1 {
+        let Ok([value]) = <[Value; 1]>::try_from(parameters) else {
             return self.err("typed parameter requires one value");
-        }
-        Ok(Value::Typed(
-            name,
-            Box::new(
-                parameters
-                    .into_iter()
-                    .next()
-                    .expect("parameter count was checked"),
-            ),
-        ))
+        };
+        Ok(Value::Typed(name, Box::new(value)))
     }
 
     fn take_name(&mut self) -> Result<String, ParseError> {
@@ -1385,11 +1381,13 @@ fn validate_header(
     header: &[HeaderRecord],
 ) -> Result<(HeaderAdmission, Option<ParseDiagnostic>), &'static str> {
     const REQUIRED: [&str; 3] = ["FILE_DESCRIPTION", "FILE_NAME", "FILE_SCHEMA"];
-    if header.len() < REQUIRED.len()
-        || header
-            .iter()
-            .zip(REQUIRED)
-            .any(|(record, expected)| record.name != expected)
+    let [description_record, file_name_record, schema_record, ..] = header else {
+        return Err("HEADER must begin with FILE_DESCRIPTION, FILE_NAME, and FILE_SCHEMA");
+    };
+    if [description_record, file_name_record, schema_record]
+        .iter()
+        .zip(REQUIRED)
+        .any(|(record, expected)| record.name != expected)
     {
         return Err("HEADER must begin with FILE_DESCRIPTION, FILE_NAME, and FILE_SCHEMA");
     }
@@ -1400,24 +1398,20 @@ fn validate_header(
         return Err("HEADER contains a duplicate required entity");
     }
 
-    let description = &header[0].parameters;
-    if description.len() != 2
-        || !is_string_list(description.first())
-        || !matches!(description.get(1), Some(Value::String(_)))
-    {
+    let [description_strings, implementation_level_value @ Value::String(implementation_level_bytes)] =
+        description_record.parameters.as_slice()
+    else {
+        return Err("FILE_DESCRIPTION has invalid parameters");
+    };
+    if !is_string_list(Some(description_strings)) {
         return Err("FILE_DESCRIPTION has invalid parameters");
     }
-    let declaration = match description.get(1) {
-        Some(Value::String(value)) => {
-            let Ok(text) = crate::strings::decode(value) else {
-                return Err("FILE_DESCRIPTION has an unsupported implementation level");
-            };
-            DeclaredImplementationLevel::new(text)
-        }
-        _ => return Err("FILE_DESCRIPTION has invalid parameters"),
+    let Ok(implementation_level_text) = crate::strings::decode(implementation_level_bytes) else {
+        return Err("FILE_DESCRIPTION has an unsupported implementation level");
     };
+    let declaration = DeclaredImplementationLevel::new(implementation_level_text);
     let implementation_diagnostic = declaration.is_unverified().then(|| ParseDiagnostic {
-        offset: header[0].offset,
+        offset: description_record.offset,
         kind: ParseDiagnosticKind::ImplementationLevelUnverified,
         message: format!(
             "FILE_DESCRIPTION implementation level {:?} has no implemented grammar; parsed with the 4;3 grammar",
@@ -1425,98 +1419,60 @@ fn validate_header(
         ),
     });
     let implementation_level = declaration.level();
-    if !is_decodable_string_list(description.first(), implementation_level)
-        || !is_decodable_string(
-            description.get(1).expect("FILE_DESCRIPTION has two values"),
-            implementation_level,
-        )
+    if !is_decodable_string_list(Some(description_strings), implementation_level)
+        || !is_decodable_string(implementation_level_value, implementation_level)
     {
         return Err("FILE_DESCRIPTION has invalid string encoding");
     }
-    if !string_list_within_limit(description.first(), implementation_level, 256)
-        || !string_within_limit(
-            description.get(1).expect("FILE_DESCRIPTION has two values"),
-            implementation_level,
-            256,
-        )
+    if !string_list_within_limit(Some(description_strings), implementation_level, 256)
+        || !string_within_limit(implementation_level_value, implementation_level, 256)
     {
         return Err("FILE_DESCRIPTION contains a string longer than 256 characters");
     }
 
-    let file_name = &header[1].parameters;
     // Producer metadata after the author and organization lists may be unset.
-    if file_name.len() != 7
-        || !matches!(file_name.first(), Some(Value::String(_)))
-        || !matches!(file_name.get(1), Some(Value::String(_)))
-        || !is_string_list(file_name.get(2))
-        || !is_string_list(file_name.get(3))
-        || !is_string_or_omitted(file_name.get(4))
-        || !is_string_or_omitted(file_name.get(5))
-        || !is_string_or_omitted(file_name.get(6))
+    let [file_name_value, file_name_timestamp, authors, organizations, preprocessor, originating_system, authorization] =
+        file_name_record.parameters.as_slice()
+    else {
+        return Err("FILE_NAME has invalid parameters");
+    };
+    if !matches!(file_name_value, Value::String(_))
+        || !matches!(file_name_timestamp, Value::String(_))
+        || !is_string_list(Some(authors))
+        || !is_string_list(Some(organizations))
+        || !is_string_or_omitted(Some(preprocessor))
+        || !is_string_or_omitted(Some(originating_system))
+        || !is_string_or_omitted(Some(authorization))
     {
         return Err("FILE_NAME has invalid parameters");
     }
-    if !is_decodable_string(
-        file_name.first().expect("FILE_NAME has seven values"),
-        implementation_level,
-    ) || !is_decodable_string(
-        file_name.get(1).expect("FILE_NAME has seven values"),
-        implementation_level,
-    ) || !is_decodable_string_list(file_name.get(2), implementation_level)
-        || !is_decodable_string_list(file_name.get(3), implementation_level)
-        || !is_decodable_string_or_omitted(
-            file_name.get(4).expect("FILE_NAME has seven values"),
-            implementation_level,
-        )
-        || !is_decodable_string_or_omitted(
-            file_name.get(5).expect("FILE_NAME has seven values"),
-            implementation_level,
-        )
-        || !is_decodable_string_or_omitted(
-            file_name.get(6).expect("FILE_NAME has seven values"),
-            implementation_level,
-        )
+    let Some(time_stamp) = decoded_string(file_name_timestamp, implementation_level) else {
+        return Err("FILE_NAME has invalid string encoding");
+    };
+    if !is_decodable_string(file_name_value, implementation_level)
+        || !is_decodable_string_list(Some(authors), implementation_level)
+        || !is_decodable_string_list(Some(organizations), implementation_level)
+        || !is_decodable_string_or_omitted(preprocessor, implementation_level)
+        || !is_decodable_string_or_omitted(originating_system, implementation_level)
+        || !is_decodable_string_or_omitted(authorization, implementation_level)
     {
         return Err("FILE_NAME has invalid string encoding");
     }
-    if !string_within_limit(
-        file_name.first().expect("FILE_NAME has seven values"),
-        implementation_level,
-        256,
-    ) || !string_within_limit(
-        file_name.get(1).expect("FILE_NAME has seven values"),
-        implementation_level,
-        256,
-    ) || !string_list_within_limit(file_name.get(2), implementation_level, 256)
-        || !string_list_within_limit(file_name.get(3), implementation_level, 256)
-        || !string_or_omitted_within_limit(
-            file_name.get(4).expect("FILE_NAME has seven values"),
-            implementation_level,
-            256,
-        )
-        || !string_or_omitted_within_limit(
-            file_name.get(5).expect("FILE_NAME has seven values"),
-            implementation_level,
-            256,
-        )
-        || !string_or_omitted_within_limit(
-            file_name.get(6).expect("FILE_NAME has seven values"),
-            implementation_level,
-            256,
-        )
+    if !string_within_limit(file_name_value, implementation_level, 256)
+        || !string_within_limit(file_name_timestamp, implementation_level, 256)
+        || !string_list_within_limit(Some(authors), implementation_level, 256)
+        || !string_list_within_limit(Some(organizations), implementation_level, 256)
+        || !string_or_omitted_within_limit(preprocessor, implementation_level, 256)
+        || !string_or_omitted_within_limit(originating_system, implementation_level, 256)
+        || !string_or_omitted_within_limit(authorization, implementation_level, 256)
     {
         return Err("FILE_NAME contains a string longer than 256 characters");
     }
-    let time_stamp = decoded_string(
-        file_name.get(1).expect("FILE_NAME has seven values"),
-        implementation_level,
-    )
-    .expect("FILE_NAME timestamp was checked as decodable");
     if !time_stamp.is_empty() && !valid_timestamp_text(&time_stamp) {
         return Err("FILE_NAME has an invalid timestamp");
     }
 
-    let schema = &header[2].parameters;
+    let schema = &schema_record.parameters;
     let Some(Value::List(identifiers)) = schema.first() else {
         return Err("FILE_SCHEMA must contain one schema identifier list");
     };

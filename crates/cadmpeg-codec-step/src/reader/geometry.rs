@@ -1262,11 +1262,11 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
     for (id, record) in
         exchange.entities_any(&["SURFACE_OF_LINEAR_EXTRUSION", "SURFACE_OF_REVOLUTION"])
     {
-        let definition = match entity_type(
+        let (surface_type, definition) = match entity_type(
             record,
             &["SURFACE_OF_LINEAR_EXTRUSION", "SURFACE_OF_REVOLUTION"],
         ) {
-            Some("SURFACE_OF_LINEAR_EXTRUSION") => {
+            Some(surface_type @ "SURFACE_OF_LINEAR_EXTRUSION") => (surface_type,
                 named_parameter(record, "SURFACE_OF_LINEAR_EXTRUSION", 1)
                     .and_then(Value::reference)
                     .filter(|curve| carrier_index.curves.contains_key(curve))
@@ -1282,8 +1282,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                         )
                         .map(ProceduralSurfaceDefinition::LinearSweep)
                     })
-            }
-            Some("SURFACE_OF_REVOLUTION") => named_parameter(record, "SURFACE_OF_REVOLUTION", 1)
+            ),
+            Some(surface_type @ "SURFACE_OF_REVOLUTION") => (surface_type, named_parameter(record, "SURFACE_OF_REVOLUTION", 1)
                 .and_then(Value::reference)
                 .filter(|curve| carrier_index.curves.contains_key(curve))
                 .map(|curve| CurveId::from(ids::data(kind!("curve"), curve)))
@@ -1299,17 +1299,12 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                         axis_direction,
                     )
                     .map(ProceduralSurfaceDefinition::AxisRevolution)
-                }),
+                })),
             _ => continue,
         };
         let Some(definition) = definition else {
             losses.push(StepLossCode::DecodeWarning.note(format!(
-                "{} #{id} has an unresolved directrix, vector, or axis",
-                entity_type(
-                    record,
-                    &["SURFACE_OF_LINEAR_EXTRUSION", "SURFACE_OF_REVOLUTION"],
-                )
-                .expect("matched swept surface")
+                "{surface_type} #{id} has an unresolved directrix, vector, or axis"
             )));
             continue;
         };
@@ -4199,15 +4194,15 @@ fn nurbs_curve_definition(
     let (base, offset) = if record.partials.len() > 1 {
         (record.partial("B_SPLINE_CURVE")?, 0)
     } else {
-        let base_name = [
+        let base = [
             "B_SPLINE_CURVE_WITH_KNOTS",
             "UNIFORM_CURVE",
             "QUASI_UNIFORM_CURVE",
             "BEZIER_CURVE",
         ]
         .into_iter()
-        .find(|name| record.partial(name).is_some())?;
-        (record.partial(base_name)?, 1)
+        .find_map(|name| record.partial(name))?;
+        (base, 1)
     };
     let degree = u32::try_from(base.parameters.get(offset)?.integer()?).ok()?;
     let control_points = references(base.parameters.get(offset + 1)?)?;
@@ -5050,36 +5045,41 @@ fn nurbs_surface(
     let (base, offset) = if record.partials.len() > 1 {
         (record.partial("B_SPLINE_SURFACE")?, 0)
     } else {
-        let base_name = [
+        let base = [
             "B_SPLINE_SURFACE_WITH_KNOTS",
             "UNIFORM_SURFACE",
             "QUASI_UNIFORM_SURFACE",
             "BEZIER_SURFACE",
         ]
         .into_iter()
-        .find(|name| record.partial(name).is_some())?;
-        (record.partial(base_name)?, 1)
+        .find_map(|name| record.partial(name))?;
+        (base, 1)
     };
     let u_degree = u32::try_from(base.parameters.get(offset)?.integer()?).ok()?;
     let v_degree = u32::try_from(base.parameters.get(offset + 1)?.integer()?).ok()?;
-    let rows = base.parameters.get(offset + 2)?.list()?;
+    let rows = base
+        .parameters
+        .get(offset + 2)?
+        .list()?
+        .iter()
+        .map(Value::list)
+        .collect::<Option<Vec<_>>>()?;
     let u_count = u32::try_from(rows.len()).ok()?;
-    let v_count = u32::try_from(rows.first()?.list()?.len()).ok()?;
-    if u_count == 0
-        || v_count == 0
+    let v_count = u32::try_from(rows.first()?.len()).ok()?;
+    if v_count == 0
         || u_degree >= u_count
         || v_degree >= v_count
-        || rows.iter().any(|row| {
-            row.list()
-                .is_none_or(|values| values.len() != v_count as usize)
-        })
+        || rows.iter().any(|row| row.len() != v_count as usize)
     {
         return None;
     }
     let control_points = rows
-        .iter()
-        .flat_map(|row| row.list().expect("row shape was validated"))
-        .map(|value| value.reference().and_then(|id| points.get(&id).copied()))
+        .into_iter()
+        .map(|row| {
+            row.iter()
+                .map(|value| value.reference().and_then(|id| points.get(&id).copied()))
+                .collect::<Option<Vec<_>>>()
+        })
         .collect::<Option<Vec<_>>>()?;
     let surface_name = [
         "B_SPLINE_SURFACE_WITH_KNOTS",
@@ -5161,13 +5161,7 @@ fn nurbs_surface(
     match NurbsSurface::from_lanes(
         NurbsSurfaceAxis::new(u_degree, u_knots, u_periodic),
         NurbsSurfaceAxis::new(v_degree, v_knots, v_periodic),
-        NurbsSurfaceLanes::new(
-            control_points
-                .chunks(v_count as usize)
-                .map(<[_]>::to_vec)
-                .collect(),
-            weights,
-        ),
+        NurbsSurfaceLanes::new(control_points, weights),
         false,
     ) {
         Ok(surface) => Some(surface),

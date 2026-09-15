@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! ISO 10303-21 string escape decoding and canonical encoding.
 
-use std::fmt::Write;
-
 use crate::parse::implementation_level::ImplementationLevel;
 
 /// A malformed or unsupported string escape.
@@ -107,10 +105,7 @@ pub(crate) fn decode_with_level(
 fn decode_page_byte(page: u8, byte: u8, offset: usize) -> Result<char, StringError> {
     let part = page - b'A' + 1;
     if byte < 0xa0 || part == 1 {
-        return char::from_u32(u32::from(byte)).ok_or_else(|| StringError {
-            offset,
-            message: "invalid ISO 8859 scalar".into(),
-        });
+        return Ok(char::from(byte));
     }
     if part == 9 {
         return Ok(match byte {
@@ -152,16 +147,26 @@ pub fn encode(input: &str) -> String {
             '\\' => output.push_str("\\\\"),
             '\u{20}'..='\u{7e}' => output.push(character),
             character if u32::from(character) <= 0xffff => {
-                write!(output, "\\X2\\{:04X}\\X0\\", u32::from(character))
-                    .expect("writing to a String cannot fail");
+                output.push_str("\\X2\\");
+                push_hex_digits(&mut output, &u32::from(character).to_be_bytes()[2..]);
+                output.push_str("\\X0\\");
             }
             character => {
-                write!(output, "\\X4\\{:08X}\\X0\\", u32::from(character))
-                    .expect("writing to a String cannot fail");
+                output.push_str("\\X4\\");
+                push_hex_digits(&mut output, &u32::from(character).to_be_bytes());
+                output.push_str("\\X0\\");
             }
         }
     }
     output
+}
+
+fn push_hex_digits(output: &mut String, bytes: &[u8]) {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    for byte in bytes {
+        output.push(char::from(HEX[usize::from(byte >> 4)]));
+        output.push(char::from(HEX[usize::from(byte & 0xF)]));
+    }
 }
 
 fn decode_wide(input: &[u8], start: usize, width: usize) -> Result<(String, usize), StringError> {
