@@ -205,25 +205,15 @@ fn string_table_header_count(bytes: &[u8]) -> Result<usize, CodecError> {
 /// Connect kernel indexed-map positions to every neutral placed occurrence.
 pub(crate) fn bind_topology(maps: &mut [ElementMapRecord], occurrences: &[TopologyOccurrence]) {
     for map in maps {
-        let root = map.maps.root_mut();
-        for group in &mut root.groups {
-            let indexed_name = group.indexed_name.clone();
-            for occurrence in occurrences.iter().filter(|occurrence| {
-                occurrence.property == map.property && occurrence.indexed_name == indexed_name
-            }) {
-                bind_group_occurrence(group, occurrence.source_index, &occurrence.topology_id);
-            }
-        }
-    }
-}
-
-fn bind_group_occurrence(group: &mut ElementMapGroup, source_index: usize, id: &str) {
-    let Some(names) = group.names.get_mut(source_index) else {
-        return;
-    };
-    for name in names {
-        if !name.topology_ids.iter().any(|existing| existing == id) {
-            name.topology_ids.push(id.to_owned());
+        for occurrence in occurrences
+            .iter()
+            .filter(|occurrence| occurrence.property == map.property)
+        {
+            map.maps.bind_root_topology(
+                &occurrence.indexed_name,
+                occurrence.source_index,
+                &occurrence.topology_id,
+            );
         }
     }
 }
@@ -664,18 +654,7 @@ fn legacy_map_payload(
     let parsed = ParsedMap {
         map_id: 0,
         postfixes: Vec::new(),
-        maps: ElementMapNode {
-            map_id: 0,
-            groups: groups
-                .into_iter()
-                .map(|(indexed_name, names)| ElementMapGroup {
-                    indexed_name,
-                    children: Vec::new(),
-                    names,
-                })
-                .collect(),
-        }
-        .into(),
+        maps: ElementMapNodes::from_root_names(0, groups),
     };
     Ok(MapPayload {
         source_entry,
@@ -1020,10 +999,7 @@ pub(crate) fn parse_element_map(bytes: &[u8], side_entry: bool) -> Result<Parsed
                 let fields = (0..7)
                     .map(|_| next_token(&mut tokens, "child descriptor"))
                     .collect::<Result<Vec<_>, _>>()?;
-                let descriptor = fields.join(" ");
-                crate::native::validate_element_map_child_descriptor(&descriptor, expected_index)
-                    .map_err(CodecError::Malformed)?;
-                children.push(descriptor);
+                children.push(fields.join(" "));
             }
             expect(&mut tokens, "NameCount")?;
             let name_count = next_count(&mut tokens, "name count", MAX_NAMES)?;
@@ -1490,14 +1466,20 @@ EndMap\n";
             string_ids: Vec::new(),
             topology_ids: Vec::new(),
         };
-        let mut group = ElementMapGroup {
+        let group = ElementMapGroup {
             indexed_name: "Edge".into(),
             children: Vec::new(),
             names: vec![Vec::new(), vec![mapped_name()], Vec::new()],
         };
-        bind_group_occurrence(&mut group, 1, "edge-first-placement");
-        bind_group_occurrence(&mut group, 2, "unmapped-edge");
-        bind_group_occurrence(&mut group, 1, "edge-second-placement");
+        let mut nodes = ElementMapNodes::try_from(vec![ElementMapNode {
+            map_id: 0,
+            groups: vec![group],
+        }])
+        .expect("valid name group");
+        nodes.bind_root_topology("Edge", 1, "edge-first-placement");
+        nodes.bind_root_topology("Edge", 2, "unmapped-edge");
+        nodes.bind_root_topology("Edge", 1, "edge-second-placement");
+        let group = &nodes.root().groups[0];
 
         assert_eq!(
             group.names[1][0].topology_ids,
