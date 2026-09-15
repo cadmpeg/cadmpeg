@@ -256,6 +256,13 @@ impl RetainedSourceRecord {
         self.stream.as_str()
     }
 
+    /// Assign a containing source owner without changing the admitted byte extent.
+    #[must_use]
+    pub fn with_owner(mut self, stream: impl Into<SourceOwner>) -> Self {
+        self.stream = stream.into();
+        self
+    }
+
     /// Returns the first byte offset in the source stream.
     #[must_use]
     pub const fn offset(&self) -> u64 {
@@ -339,6 +346,26 @@ impl SourceFidelity {
             annotations,
             retained_records: std::collections::BTreeMap::new(),
         }
+    }
+
+    /// Consume the source metadata without copying its retained bytes.
+    pub fn into_parts(self) -> (Annotations, BTreeMap<UnknownId, RetainedSourceRecord>) {
+        (self.annotations, self.retained_records)
+    }
+
+    /// Append source metadata after checking both tables for identity collisions.
+    /// Failure leaves this source metadata unchanged.
+    pub fn append(&mut self, other: Self) -> Result<(), NativeConvertError> {
+        for id in other.retained_records.keys() {
+            if self.retained_records.contains_key(id) {
+                return Err(duplicate_record(id));
+            }
+        }
+        self.annotations
+            .append(other.annotations)
+            .map_err(|error| NativeConvertError::InvalidCollection(error.to_string()))?;
+        self.retained_records.extend(other.retained_records);
+        Ok(())
     }
 
     /// Finds a retained source record by identifier.

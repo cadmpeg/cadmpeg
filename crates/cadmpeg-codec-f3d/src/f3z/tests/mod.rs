@@ -30,5 +30,6 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::{Native, NativeRecord};
 
 mod archive;
+mod fidelity;
 mod layers;
 mod merge;

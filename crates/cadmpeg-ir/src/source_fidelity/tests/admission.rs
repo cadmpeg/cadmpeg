@@ -248,3 +248,49 @@ fn failed_existing_native_admission_leaves_both_destinations_unchanged() {
     assert_eq!(ir, before);
     assert_eq!(fidelity, SourceFidelity::default());
 }
+
+#[test]
+fn appending_source_metadata_is_atomic_across_annotations_and_bytes() {
+    use crate::annotations::{AnnotationBuilder, StreamHandle};
+    for record_collision in [false, true] {
+        let mut target = SourceFidelity::default();
+        target
+            .insert_retained_record(id("existing"), record(b"original"))
+            .unwrap();
+        let mut existing = AnnotationBuilder::new();
+        existing.note(
+            id("annotated"),
+            &StreamHandle::new(crate::stream_name!("original")),
+            7,
+        );
+        target.annotations = existing.build();
+        let before = target.clone();
+        let mut incoming = SourceFidelity::default();
+        incoming
+            .insert_retained_record(
+                id(if record_collision { "existing" } else { "new" }),
+                record(b"incoming"),
+            )
+            .unwrap();
+        let mut annotations = AnnotationBuilder::new();
+        let annotation_id = id(if record_collision {
+            "new-annotation"
+        } else {
+            "annotated"
+        });
+        annotations.note(
+            annotation_id,
+            &StreamHandle::new(crate::stream_name!("incoming")),
+            9,
+        );
+        incoming.annotations = annotations.build();
+        let error = target.append(incoming).unwrap_err();
+        let conflicting = id(if record_collision {
+            "existing"
+        } else {
+            "annotated"
+        });
+        assert!(error.to_string().contains(conflicting.as_str()), "{error}");
+        assert_eq!(target, before);
+    }
+}
