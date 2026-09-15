@@ -141,7 +141,7 @@ fn bind_entity_reference(
     let reference = root
         .references
         .iter()
-        .find(|reference| reference.name == "#10")
+        .find(|reference| reference.name == crate::parse::ReferenceName::Entity(10))
         .ok_or("missing root reference")?;
     let (resource_uri, anchor_name) = reference
         .uri
