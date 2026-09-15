@@ -1518,16 +1518,35 @@ fn contradictory_standard_unit_detail_preserves_scale_and_name() {
     let data = anonymous_chunk(archive, 0, &body);
     let mut reader = BoundedReader::new(&data, 0, data.len()).expect("bounded units");
     let mut warnings = Diagnostics::new();
-    let mut losses = Vec::new();
-    let units = super::unit_detail(&data, &mut reader, archive, &mut warnings, &mut losses)
-        .expect("unit evidence");
+    let units =
+        super::unit_detail(&data, &mut reader, archive, &mut warnings).expect("unit evidence");
     assert_eq!(units.unit, 2);
     assert_eq!(units.meters_per_unit, 0.5);
     assert_eq!(units.custom_name, "retained name");
-    assert!(warnings.is_empty());
-    assert_eq!(losses.len(), 1);
+    assert_eq!(warnings.len(), 1);
     assert_eq!(
-        losses[0].code,
-        crate::loss::RhinoLossCode::RedundantFieldRepaired.kind()
+        warnings[0].code,
+        Some(crate::loss::RhinoLossCode::RedundantFieldRepaired)
     );
+}
+
+#[test]
+fn file_reference_fixtures_have_valid_nested_checksums() {
+    for archive in [
+        ArchiveVersion::V5,
+        ArchiveVersion::V6,
+        ArchiveVersion::V7,
+        ArchiveVersion::V8,
+    ] {
+        let bytes = file_reference(archive, "/full/source.3dm", "source.3dm");
+        let mut reader =
+            BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded file reference");
+        let mut warnings = Diagnostics::new();
+        let reference = parse_file_reference(&bytes, &mut reader, archive, &mut warnings)
+            .expect("valid file reference");
+        assert_eq!(reference.full_path, "/full/source.3dm");
+        assert_eq!(reference.relative_path, "source.3dm");
+        assert_eq!(reader.remaining(), 0);
+        assert!(warnings.is_empty(), "archive={archive:?}: {warnings:?}");
+    }
 }

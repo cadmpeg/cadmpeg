@@ -1358,7 +1358,6 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> Decoded {
                 .note(diagnostic.message.clone())
         })
         .collect();
-    losses.extend(scan.definitions.losses.iter().cloned());
     losses.extend(
         scan.definitions
             .diagnostics
