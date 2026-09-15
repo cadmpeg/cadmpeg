@@ -12,6 +12,88 @@ use crate::native::NativeRecord;
 use crate::validate::validate_neutral;
 
 #[test]
+fn typed_native_read_errors_identify_the_arena_and_stored_record() {
+    use crate::native::NativeConvertError;
+    use std::error::Error;
+
+    #[derive(Debug, serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Record {
+        id: crate::ids::Identity,
+        value: u32,
+    }
+
+    let first = "test:native:record#first";
+    let refused = "test:native:record#refused";
+    let mut document = crate::CadIr::empty();
+    document
+        .native
+        .namespace_mut("future")
+        .set_arena(
+            "records",
+            &[
+                serde_json::json!({"id": first, "value": 7}),
+                serde_json::json!({"id": refused, "value": "not an integer"}),
+            ],
+        )
+        .unwrap();
+    let document: crate::CadIr =
+        serde_json::from_value(serde_json::to_value(document).unwrap()).unwrap();
+    let namespace = document.native.namespace("future").unwrap();
+    // The iterator borrows the stored arena key, so a temporary lookup name
+    // does not have to survive the iterator.
+    let mut records = namespace.arena_iter_as::<Record>(&String::from("records"));
+    let record = records.next().unwrap().unwrap();
+    assert_eq!(record.id.as_str(), first);
+    assert_eq!(record.value, 7);
+    let error = records.next().unwrap().unwrap_err();
+    assert!(error.to_string().contains("records"));
+    assert!(error.to_string().contains(refused));
+    assert!(error.source().unwrap().source().is_some());
+    let NativeConvertError::Arena { arena, source } = error else {
+        panic!("arena context")
+    };
+    assert_eq!(arena, "records");
+    let NativeConvertError::ReadRecord { id, source } = *source else {
+        panic!("record context")
+    };
+    assert_eq!(id.as_str(), refused);
+    assert!(source.is_data());
+    assert!(records.next().is_none());
+    assert!(namespace.arena_iter_as::<Record>("absent").next().is_none());
+}
+
+#[test]
+fn typed_native_write_errors_identify_input_ordinal_without_replacing_the_arena() {
+    use crate::native::{NativeConvertError, NativeNamespace};
+    let good = serde_json::json!({"id": "test:native:record#first", "value": 7});
+    let mut namespace = NativeNamespace::default();
+    namespace.set_arena("records", &[good.clone()]).unwrap();
+    let before = namespace.clone();
+    let error = namespace
+        .set_arena("records", &[good, serde_json::json!({"value": 8})])
+        .unwrap_err();
+    assert!(error.to_string().contains("records"));
+    assert!(error.to_string().contains("ordinal 1"));
+    let NativeConvertError::Arena { arena, source } = error else {
+        panic!("arena context")
+    };
+    assert_eq!(arena, "records");
+    let NativeConvertError::WriteRecord { ordinal, source } = *source else {
+        panic!("input ordinal")
+    };
+    assert_eq!(ordinal, 1);
+    assert!(matches!(*source, NativeConvertError::MissingId));
+    assert_eq!(namespace, before);
+
+    let source_error = NativeConvertError::InvalidOwner("producer record at offset 42".into());
+    let result = crate::native::arena_from([Err::<serde_json::Value, _>(source_error)]);
+    assert!(
+        matches!(result, Err(NativeConvertError::InvalidOwner(message)) if message == "producer record at offset 42")
+    );
+}
+
+#[test]
 fn native_loss_counts_carry_a_nonempty_arena_population() {
     let mut native = crate::native::Native::default();
     native

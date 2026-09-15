@@ -42,6 +42,33 @@ pub enum NativeConvertError {
     /// JSON conversion failed.
     #[error("native record conversion failed: {0}")]
     Serde(#[from] serde_json::Error),
+    /// A stored record does not satisfy its codec-owned reader.
+    #[error("native record {id}: {source}")]
+    ReadRecord {
+        /// Identity of the refused stored record.
+        id: crate::ids::Identity,
+        /// Codec-owned field admission error.
+        #[source]
+        source: serde_json::Error,
+    },
+    /// A producer's record cannot enter a native arena.
+    #[error("native input record at ordinal {ordinal}: {source}")]
+    WriteRecord {
+        /// Zero-based position in the producer's input iterator.
+        ordinal: usize,
+        /// Record conversion error before an identity is necessarily available.
+        #[source]
+        source: Box<NativeConvertError>,
+    },
+    /// A named arena contains a refused record.
+    #[error("native arena {arena}: {source}")]
+    Arena {
+        /// Owning arena name.
+        arena: String,
+        /// Located record conversion error.
+        #[source]
+        source: Box<NativeConvertError>,
+    },
     /// A typed child record references no record in its owning arena.
     #[error("native record has an invalid owner: {0}")]
     InvalidOwner(String),
@@ -59,7 +86,7 @@ impl From<NativeConvertError> for cadmpeg_core::CodecError {
     }
 }
 
-/// One source-native record with a stable identity and codec-owned fields.
+/// Schema descriptor for a native record's identity and open field map.
 #[derive(Serialize)]
 #[cfg(feature = "schema")]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -84,8 +111,8 @@ struct RecordShape<'a> {
 #[derive(Debug, Clone)]
 pub struct NativeRecord {
     /// Globally unique record identity, also the leading `id` member of `json`.
-    id: String,
-    /// Canonical JSON object text, as produced by [`RecordShape`].
+    id: crate::ids::Identity,
+    /// Canonical JSON object text with `id` first and the other keys sorted.
     json: Box<str>,
 }
 
@@ -106,20 +133,10 @@ impl NativeRecord {
         id: impl Into<crate::ids::Identity>,
         mut fields: Map<String, Value>,
     ) -> Self {
-        let id = id.into().into_string();
+        let id = id.into();
         fields.remove("id");
-        let json = Self::canonical_json(&id, &fields);
+        let json = Self::canonical_json(id.as_str(), &fields);
         Self { id, json }
-    }
-
-    fn require_identity(id: &str) -> Result<(), NativeConvertError> {
-        if !crate::ids::is_valid_identity(id) {
-            return Err(crate::ids::IdentityError::InvalidId {
-                value: id.to_owned(),
-            }
-            .into());
-        }
-        Ok(())
     }
 
     /// Build a record by serializing one codec-owned typed record.
@@ -137,8 +154,7 @@ impl NativeRecord {
         if !id_json.starts_with('"') {
             return Err(NativeConvertError::MissingId);
         }
-        let id: String = serde_json::from_str(&id_json)?;
-        Self::require_identity(&id)?;
+        let id = crate::ids::Identity::new(serde_json::from_str::<String>(&id_json)?)?;
         let mut json = String::with_capacity(
             8 + id_json.len()
                 + fields
@@ -164,7 +180,7 @@ impl NativeRecord {
     /// Globally unique record identity.
     #[must_use]
     pub fn id(&self) -> &str {
-        &self.id
+        self.id.as_str()
     }
 
     /// Parse the codec-owned fields, excluding `id`.
@@ -200,7 +216,10 @@ impl NativeRecord {
 
     /// Deserialize the record into a codec-owned typed record.
     fn to_typed<T: DeserializeOwned>(&self) -> Result<T, NativeConvertError> {
-        Ok(replay::parse(&self.json)?)
+        replay::parse(&self.json).map_err(|source| NativeConvertError::ReadRecord {
+            id: self.id.clone(),
+            source,
+        })
     }
 
     /// Render `id` and `fields` as canonical record text.
@@ -228,8 +247,7 @@ impl Serialize for NativeRecord {
     /// Replays the stored text member for member through `serializer` rather
     /// than splicing it, so the record honours the caller's formatting:
     /// `to_string_pretty` must indent a native record the same way it indents
-    /// every other document entity. The text was written by [`RecordShape`] and
-    /// is replayed in the order it holds, which is the order that shape emits:
+    /// every other document entity. It preserves the constructors' order:
     /// `id` first, then the codec-owned fields by key.
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         replay::emit(&self.json, serializer)
@@ -277,7 +295,16 @@ where
 {
     let mut converted = records
         .into_iter()
-        .map(|record| Ok(NativeRecord::from_typed(&record?)?))
+        .enumerate()
+        .map(|(ordinal, record)| {
+            let record = record?;
+            NativeRecord::from_typed(&record).map_err(|source| {
+                E::from(NativeConvertError::WriteRecord {
+                    ordinal,
+                    source: Box::new(source),
+                })
+            })
+        })
         .collect::<Result<Vec<_>, E>>()?;
     converted.sort_by(|left, right| left.id().cmp(right.id()));
     Ok(converted)
@@ -332,10 +359,15 @@ impl NativeNamespace {
         name: impl Into<String>,
         records: I,
     ) -> Result<(), NativeConvertError> {
-        self.arenas.insert(
-            name.into(),
-            arena_from(records.into_iter().map(Ok::<T, NativeConvertError>))?,
-        );
+        let name = name.into();
+        let converted =
+            arena_from(records.into_iter().map(Ok::<T, NativeConvertError>)).map_err(|source| {
+                NativeConvertError::Arena {
+                    arena: name.clone(),
+                    source: Box::new(source),
+                }
+            })?;
+        self.arenas.insert(name, converted);
         Ok(())
     }
 
@@ -364,10 +396,18 @@ impl NativeNamespace {
         name: &str,
     ) -> impl Iterator<Item = Result<T, NativeConvertError>> + 'a {
         self.arenas
-            .get(name)
+            .get_key_value(name)
             .into_iter()
-            .flatten()
-            .map(NativeRecord::to_typed)
+            .flat_map(|(arena, records)| {
+                records.iter().map(move |record| {
+                    record
+                        .to_typed()
+                        .map_err(|source| NativeConvertError::Arena {
+                            arena: arena.clone(),
+                            source: Box::new(source),
+                        })
+                })
+            })
     }
 }
 
