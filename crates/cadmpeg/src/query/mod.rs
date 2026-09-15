@@ -197,7 +197,7 @@ impl Artifact {
 struct KindProbe {
     command: Option<String>,
     status: Option<String>,
-    ir_version: Option<String>,
+    ir_version: Option<Value>,
     ir_sha256: Option<String>,
 }
 
@@ -523,7 +523,7 @@ pub(crate) enum ArtifactKind {
     Sidecar,
 }
 
-/// Decides the artifact kind from top-level keys and gates a CADIR document
+/// Decides the artifact kind from top-level keys and gates every artifact
 /// on this build's `IR_VERSION`.
 ///
 /// The sniff skips every value it does not name, so a view that goes on to
@@ -536,28 +536,30 @@ pub(crate) fn sniff_kind(bytes: &[u8], path: &Path) -> Result<ArtifactKind> {
             path.display()
         )
     })?;
-    if sniff.command.is_some() && sniff.status.is_some() {
-        return Ok(ArtifactKind::Report);
+    let kind = if sniff.command.is_some() && sniff.status.is_some() {
+        ArtifactKind::Report
+    } else if sniff.ir_sha256.is_some() {
+        ArtifactKind::Sidecar
+    } else if sniff.ir_version.is_some() {
+        ArtifactKind::Cadir
+    } else {
+        bail!(
+            "{} is JSON but not a recognized artifact; query reads a command report \
+             (top-level `command` and `status`), a decoded CADIR document \
+             (`ir_version` and `model`), or a .fidelity.json decode sidecar (`ir_sha256`)",
+            path.display()
+        )
+    };
+    let found = sniff.ir_version.as_ref().and_then(Value::as_str);
+    if found != Some(cadmpeg_ir::IR_VERSION) {
+        bail!(
+            "{} has ir_version {}; this build reads ir_version {}",
+            path.display(),
+            found.unwrap_or("<absent or non-string>"),
+            cadmpeg_ir::IR_VERSION
+        );
     }
-    if let Some(found) = &sniff.ir_version {
-        if found != cadmpeg_ir::IR_VERSION {
-            bail!(
-                "{} has ir_version {found}; this build reads ir_version {}",
-                path.display(),
-                cadmpeg_ir::IR_VERSION
-            );
-        }
-        return Ok(ArtifactKind::Cadir);
-    }
-    if sniff.ir_sha256.is_some() {
-        return Ok(ArtifactKind::Sidecar);
-    }
-    bail!(
-        "{} is JSON but not a recognized artifact; query reads a command report \
-         (top-level `command` and `status`), a decoded CADIR document \
-         (`ir_version` and `model`), or a .fidelity.json decode sidecar (`ir_sha256`)",
-        path.display()
-    )
+    Ok(kind)
 }
 
 fn detect(bytes: &[u8], path: &Path) -> Result<Artifact> {

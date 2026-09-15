@@ -20,12 +20,14 @@ fn write(dir: &std::path::Path, name: &str, content: &str) -> std::path::PathBuf
 }
 
 const CHECK_REPORT: &str = r#"{
+  "ir_version": "6",
   "command": "check",
   "status": "ok",
   "refusal": null
 }"#;
 
 const SIDECAR: &str = r#"{
+  "ir_version": "6",
   "ir_sha256": "abc123"
 }"#;
 

@@ -8,7 +8,7 @@ use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use crate::annotations::Annotations;
-use crate::document::CadIr;
+use crate::document::{CadIr, IrVersion};
 use crate::hash::digest::Sha256Digest;
 use crate::ids::UnknownId;
 use crate::native::NativeConvertError;
@@ -21,6 +21,8 @@ use crate::unknown::UnknownRecord;
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct DecodeSidecar {
+    /// Exact IR wire version shared with the CADIR document.
+    ir_version: IrVersion,
     /// SHA-256 of the exact CADIR bytes this sidecar describes.
     pub ir_sha256: Sha256Digest,
     /// Native decode transfer report.
@@ -42,6 +44,7 @@ impl DecodeSidecar {
         fidelity: SourceFidelity,
     ) -> Self {
         Self {
+            ir_version: IrVersion,
             ir_sha256,
             report,
             fidelity,

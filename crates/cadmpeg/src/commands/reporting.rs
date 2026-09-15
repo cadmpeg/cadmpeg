@@ -332,6 +332,7 @@ impl<P: ReportBody> Serialize for Payload<'_, P> {
 
 #[derive(Serialize)]
 struct CommandReport<'a, P: ReportBody> {
+    ir_version: cadmpeg_ir::document::IrVersion,
     command: &'static str,
     generator: String,
     #[serde(flatten)]
@@ -341,6 +342,7 @@ struct CommandReport<'a, P: ReportBody> {
 impl<'a, P: ReportBody> CommandReport<'a, P> {
     fn new(command: &'static str, payload: Payload<'a, P>) -> Self {
         Self {
+            ir_version: cadmpeg_ir::document::IrVersion,
             command,
             generator: generator(),
             payload,

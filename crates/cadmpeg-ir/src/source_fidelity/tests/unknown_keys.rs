@@ -23,6 +23,7 @@ const MAP_PATHS: &[&str] = &[
 
 fn fixture() -> Value {
     json!({
+        "ir_version": crate::IR_VERSION,
         "ir_sha256": DIGEST,
         "report": {
             "identity": {"classification": "unclassified", "format": "synthetic"},
@@ -89,14 +90,14 @@ fn complete_sidecar_refuses_unknown_fields_at_every_owned_object() {
         json!("admitted"),
         json!("residual"),
         json!("refused"),
-        json!({"unverified": {"using": "ap242e1"}}),
+        json!({"unverified": {"using": "ap242-e1"}}),
     ] {
         let mut classified = fixture();
         classified["report"]["identity"] = json!({
             "classification": "classified",
             "dialects": {
-                "primary": {"dialect": "step:ap242e1", "declared": {"schema": "AP242"}, "admission": admission},
-                "extra": [{"dialect": "acis:binary-700", "instance": "body", "admission": "admitted"}]
+                "primary": {"dialect": "step:ap242-e1", "declared": {"schema": "AP242"}, "admission": admission},
+                "extra": [{"dialect": "acis:asm-binaryfile-4", "instance": "body", "admission": "admitted"}]
             }
         });
         classified["report"]["transfer"] = json!({"transfer": "container_only"});
