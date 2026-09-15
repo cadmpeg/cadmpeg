@@ -4020,7 +4020,7 @@ pub(crate) fn emit_vertices(
                                         Some(Token::Double(_)) => {
                                             EvaluatedToleranceSlot::Evaluated { trailing }
                                         }
-                                        _ => EvaluatedToleranceSlot::Absent,
+                                        _ => EvaluatedToleranceSlot::Absent {},
                                     }
                                 },
                             });
@@ -4255,7 +4255,7 @@ pub(crate) fn emit_coedges(
                                 }
                                 _ => None,
                             },
-                            Some(_) => Some(TolerantCoedgeExtension::None),
+                            Some(_) => Some(TolerantCoedgeExtension::None {}),
                             None => None,
                         };
                         extension.map(|extension| ([*start, *end], extension))

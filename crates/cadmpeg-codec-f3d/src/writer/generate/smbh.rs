@@ -1685,9 +1685,10 @@ fn native_tolerant_vertex_tail(
         (None, Some(EvaluatedToleranceSlot::Unset { .. })) => Some(-1.0),
         // The source record ended before the evaluated slot; only the
         // leading slots are written back.
-        (None, Some(EvaluatedToleranceSlot::Absent | EvaluatedToleranceSlot::Evaluated { .. })) => {
-            None
-        }
+        (
+            None,
+            Some(EvaluatedToleranceSlot::Absent {} | EvaluatedToleranceSlot::Evaluated { .. }),
+        ) => None,
         (None, None) => return,
     };
     // The record stores three f64 tolerance slots: the two leading slots

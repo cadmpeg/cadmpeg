@@ -98,7 +98,7 @@ fn face_sidedness_retains_the_decode_time_carrier_flip() {
 #[test]
 fn tolerant_coedge_extension_retains_the_release_band() {
     for (major, suffix, expected) in [
-        (214, vec![], TolerantCoedgeExtension::None),
+        (214, vec![], TolerantCoedgeExtension::None {}),
         (
             215,
             vec![Token::Ref(-1)],
@@ -398,7 +398,7 @@ fn evaluated_and_absent_vertex_slots_have_distinct_native_tail_wires() {
     assert_eq!(absent_tolerance, None);
     assert_ne!(evaluated_wire, absent_wire);
     assert_eq!(
-        serde_value::to_value(crate::brep::records::EvaluatedToleranceSlot::Absent).unwrap(),
+        serde_value::to_value(crate::brep::records::EvaluatedToleranceSlot::Absent {}).unwrap(),
         serde_value::to_value(std::collections::BTreeMap::from([("slot", "absent")])).unwrap()
     );
 }
