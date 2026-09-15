@@ -112,13 +112,11 @@ pub(crate) struct SketchCurveEdit {
 pub(crate) fn validate_creation_timestamp_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<usize, f64>, CodecError> {
-    let baseline_native = native.baseline;
-    let target_native = native.target;
-    let baseline = baseline_native
-        .as_ref()
+    let baseline = native
+        .baseline
         .map_or(&[][..], |native| native.creation_timestamps.as_slice());
-    let target = target_native
-        .as_ref()
+    let target = native
+        .target
         .map_or(&[][..], |native| native.creation_timestamps.as_slice());
     let by_id = baseline
         .iter()
@@ -134,8 +132,7 @@ pub(crate) fn validate_creation_timestamp_edits(
         ));
     }
     let mut edits = BTreeMap::new();
-    for timestamp in target {
-        let before = by_id[timestamp.id.as_str()];
+    for (before, timestamp) in by_id.into_values().zip(target) {
         let mut normalized = timestamp.clone();
         normalized.unix_microseconds = before.unix_microseconds;
         if &normalized != before {
@@ -3844,6 +3841,8 @@ fn spring_patch_shape_agrees(
 
 #[cfg(test)]
 mod tests {
+    mod timestamps;
+
     use super::{validate_material_assignment_edits, PatchNatives};
     use crate::native::F3dNative;
     use crate::records::DesignMaterialAssignment;
