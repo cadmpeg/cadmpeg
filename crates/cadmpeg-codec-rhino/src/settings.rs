@@ -1529,9 +1529,6 @@ pub(crate) fn parse_rendering_attributes(
                 "rendering material reference must be anonymous",
             ));
         }
-        if let Some(warning) = checksum_warning(data, &material)? {
-            warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, warning);
-        }
         let mut material_payload =
             BoundedReader::new(data, material.body().start, material.body().end)?;
         let material_major = material_payload.i32()?;
@@ -1550,6 +1547,7 @@ pub(crate) fn parse_rendering_attributes(
             MAX_ARRAY_ITEMS,
             material_payload.position(),
         )?;
+        let mut obsolete_mappings = Vec::with_capacity(obsolete_mapping_count);
         for _ in 0..obsolete_mapping_count {
             let mapping = crate::chunks::chunk_at(
                 data,
@@ -1584,11 +1582,15 @@ pub(crate) fn parse_rendering_attributes(
             }
             mapping_payload.skip_remaining()?;
             material_payload.skip(mapping.next_offset() - material_payload.position())?;
+            obsolete_mappings.push(mapping.range());
         }
         if material_minor >= 1 {
             material_payload.skip(16 + 4)?;
         }
         material_payload.skip_remaining()?;
+        if let Some(warning) = checksum_warning_excluding(data, &material, &obsolete_mappings)? {
+            warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, warning);
+        }
         children.push(material.range());
         payload.skip(material.next_offset() - payload.position())?;
     }
@@ -1641,6 +1643,9 @@ pub(crate) fn parse_rendering_attributes(
                         mapping_payload.position(),
                         "rendering mapping channel must be anonymous",
                     ));
+                }
+                if let Some(warning) = checksum_warning(data, &channel)? {
+                    warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, warning);
                 }
                 let mut channel_payload =
                     BoundedReader::new(data, channel.body().start, channel.body().end)?;
