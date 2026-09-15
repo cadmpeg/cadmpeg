@@ -20,9 +20,10 @@ use cadmpeg_ir::SourceProvenance;
 
 use crate::brep::ShapePayloadRecord;
 use crate::loss::FreecadLossCode;
+use crate::native::element_map::{ElementMapGroup, ElementMapRecord};
 use crate::native::{
-    ElementMapGroup, ElementMapRecord, GuiDocumentRecord, GuiPropertyRecord, GuiStateRecord,
-    GuiViewProviderRecord, ObjectRecord, PropertyRecord, ValueRecord,
+    GuiDocumentRecord, GuiPropertyRecord, GuiStateRecord, GuiViewProviderRecord, ObjectRecord,
+    PropertyRecord, ValueRecord,
 };
 
 use schema::Admission as GuiSchemaAdmission;
@@ -4303,9 +4304,8 @@ mod color_tests {
 mod shape_association_tests {
     use super::displayed_shape_group;
     use crate::brep::{ShapePayload, ShapePayloadRecord};
-    use crate::native::{
-        ElementMapGroup, ElementMapNode, ElementMapRecord, PropertyFamily, PropertyRecord,
-    };
+    use crate::native::element_map::{ElementMapGroup, ElementMapNode, ElementMapRecord};
+    use crate::native::{PropertyFamily, PropertyRecord};
 
     fn shape_property(id: &str) -> PropertyRecord {
         PropertyRecord {
