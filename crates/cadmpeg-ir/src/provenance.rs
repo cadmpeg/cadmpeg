@@ -247,7 +247,7 @@ crate::units::named_field!(
 
 /// Provenance for bytes identified by a typed location.
 ///
-/// The location type distinguishes report provenance from an interned
+/// The location type distinguishes report provenance from a shared
 /// annotation stream. Both forms share byte-offset and source-tag semantics
 /// without admitting one form where the other is required.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -263,7 +263,7 @@ pub struct Provenance<Location> {
 ///
 /// The empty string is not a stream name; the root stream is the absence of
 /// one. Build a compile-time name with [`stream_name!`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "String", into = "String")]
 pub struct StreamName(std::borrow::Cow<'static, str>);
@@ -304,6 +304,15 @@ impl StreamName {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// Append a value to an admitted stream-name prefix.
+    ///
+    /// The receiver already proves that the resulting name is non-empty, so
+    /// composing a generated suffix has no fallible construction path.
+    #[must_use]
+    pub fn with_suffix(self, suffix: impl fmt::Display) -> Self {
+        Self(std::borrow::Cow::Owned(format!("{}{}", self.0, suffix)))
+    }
 }
 
 /// Build a checked stream name from a literal.
@@ -342,6 +351,60 @@ impl From<StreamName> for String {
     }
 }
 
+/// Owner of retained source bytes. An empty wire spelling names the root stream.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SourceOwner {
+    /// Bytes in the root source stream.
+    Root,
+    /// Bytes in a named container stream.
+    Named(StreamName),
+}
+
+impl SourceOwner {
+    /// Return the retained-record wire spelling.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Root => "",
+            Self::Named(stream) => stream.as_str(),
+        }
+    }
+}
+
+impl From<String> for SourceOwner {
+    fn from(stream: String) -> Self {
+        if stream.is_empty() {
+            Self::Root
+        } else {
+            Self::Named(StreamName(std::borrow::Cow::Owned(stream)))
+        }
+    }
+}
+
+impl From<&str> for SourceOwner {
+    fn from(stream: &str) -> Self {
+        Self::from(stream.to_owned())
+    }
+}
+
+impl From<StreamName> for SourceOwner {
+    fn from(stream: StreamName) -> Self {
+        Self::Named(stream)
+    }
+}
+
+impl Serialize for SourceOwner {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for SourceOwner {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Ok(Self::from(String::deserialize(deserializer)?))
+    }
+}
+
 /// Source format and optional named stream used by a report loss.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceLocation {
@@ -354,19 +417,18 @@ pub type SourceProvenance = Provenance<SourceLocation>;
 
 /// Opaque owned reference to an annotation stream.
 ///
-/// The referenced name travels with the provenance. A stream-table index is
-/// created only by the annotation wire adapter, so an in-memory provenance
-/// cannot dangle after annotations are moved or merged.
+/// The admitted name travels with the provenance in memory and on the wire.
+/// Moving or merging annotations cannot invalidate the stream reference.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AnnotationLocation {
-    stream: Arc<str>,
+    stream: Arc<StreamName>,
 }
 
 /// Provenance attached to an entity in [`crate::Annotations`].
 pub type AnnotationProvenance = Provenance<AnnotationLocation>;
 
 impl Provenance<AnnotationLocation> {
-    pub(crate) fn annotation(stream: Arc<str>, offset: u64, tag: Option<String>) -> Self {
+    pub(crate) fn annotation(stream: Arc<StreamName>, offset: u64, tag: Option<String>) -> Self {
         Self {
             location: AnnotationLocation { stream },
             offset,
@@ -377,7 +439,7 @@ impl Provenance<AnnotationLocation> {
     /// Return the owned source stream name.
     #[must_use]
     pub fn stream(&self) -> &str {
-        &self.location.stream
+        self.location.stream.as_str()
     }
 }
 
@@ -453,7 +515,7 @@ impl Serialize for Provenance<AnnotationLocation> {
         S: serde::Serializer,
     {
         AnnotationProvenanceWire {
-            stream: StreamName(std::borrow::Cow::Owned(self.location.stream.to_string())),
+            stream: (*self.location.stream).clone(),
             offset: self.offset,
             tag: self.tag.clone(),
         }
@@ -469,7 +531,7 @@ impl<'de> Deserialize<'de> for Provenance<AnnotationLocation> {
         let wire = AnnotationProvenanceWire::deserialize(deserializer)?;
         Ok(Self {
             location: AnnotationLocation {
-                stream: Arc::<str>::from(wire.stream.as_str()),
+                stream: Arc::new(wire.stream),
             },
             offset: wire.offset,
             tag: wire.tag,
@@ -618,6 +680,13 @@ mod tests {
         .expect_err("the empty string does not name a stream")
         .to_string();
         assert!(error.contains("stream name cannot be empty"), "{error}");
+    }
+
+    #[test]
+    fn stream_name_composition_keeps_the_admitted_prefix() {
+        let prefix = crate::stream_name!("codec:");
+        assert_eq!(prefix.clone().with_suffix("").as_str(), "codec:");
+        assert_eq!(prefix.with_suffix(7).as_str(), "codec:7");
     }
 
     #[test]

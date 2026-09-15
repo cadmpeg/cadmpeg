@@ -1272,7 +1272,7 @@ fn schema_sidecar_and_json_envelope() {
 }
 
 const FIDELITY_SIDECAR: &str = r#"{
-  "ir_sha256": "abc",
+  "ir_sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
   "report": {"identity": {"classification": "unclassified", "format": "f3d"},
              "transfer": {"transfer": "full", "geometry_transferred": true},
              "coverage": {}, "losses": [], "notes": []},
@@ -1280,12 +1280,12 @@ const FIDELITY_SIDECAR: &str = r#"{
     "annotations": {"provenance": {"a:b:c#1": {"stream": "Contents/Config-0", "offset": 0}},
                     "exactness": {}},
     "retained_records": {
-      "r1": {"stream": "Contents/Config-0", "offset": 0,
+      "f3d:source:record#r1": {"stream": "Contents/Config-0", "offset": 0,
              "bytes": {"retention": "inline", "data": "QUJDRA=="}},
-      "r2": {"stream": "Contents/Config-0", "offset": 4,
+      "f3d:source:record#r2": {"stream": "Contents/Config-0", "offset": 4,
              "bytes": {"retention": "inline", "data": "RUY="}},
-      "r3": {"stream": "Other", "offset": 0,
-             "bytes": {"retention": "digest", "byte_len": 3, "sha256": "z"}}
+      "f3d:source:record#r3": {"stream": "Other", "offset": 0,
+             "bytes": {"retention": "digest", "byte_len": 3, "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}}
     }
   }
 }"#;
@@ -1300,9 +1300,9 @@ fn fidelity_lists_retained_records_with_annotation_counts() {
         .success()
         .stdout(
             "stream\toffset\tbytes\tdata\tid\n\
-             Contents/Config-0\t0\t4\tyes\tr1\n\
-             Contents/Config-0\t4\t2\tyes\tr2\n\
-             Other\t0\t3\tno\tr3\n",
+             Contents/Config-0\t0\t4\tyes\tf3d:source:record#r1\n\
+             Contents/Config-0\t4\t2\tyes\tf3d:source:record#r2\n\
+             Other\t0\t3\tno\tf3d:source:record#r3\n",
         )
         .stderr(predicate::str::contains(
             "annotations: 1 streams, 1 provenance entries, 0 exactness notes",

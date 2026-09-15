@@ -818,7 +818,7 @@ fn decode_transfers_point_plane_cylinder_line() {
     assert_eq!(
         result
             .source_fidelity()
-            .retained_records
+            .retained_records()
             .values()
             .next()
             .expect("retained record")

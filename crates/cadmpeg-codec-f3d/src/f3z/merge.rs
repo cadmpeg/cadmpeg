@@ -4,7 +4,7 @@
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{EntityRewrite, Model};
-use cadmpeg_ir::{AnnotationBuilder, Native, NativeRecord};
+use cadmpeg_ir::{Native, NativeRecord};
 use serde::{de::DeserializeOwned, Serialize};
 use serde_value::Value;
 
@@ -179,7 +179,7 @@ impl MergeSession<'_, '_> {
                 &mut parent_fidelity.annotations,
                 component_fidelity.annotations,
                 &occurrence,
-            );
+            )?;
             merged += descendants + 1;
             if component_report.transfer.geometry_transferred() {
                 parent_report.transfer = cadmpeg_ir::report::DecodeTransfer::full(true);
@@ -243,16 +243,10 @@ fn merge_annotations(
     target: &mut cadmpeg_ir::annotations::Annotations,
     mut source: cadmpeg_ir::annotations::Annotations,
     occurrence: &str,
-) {
-    source.provenance = source
-        .provenance
-        .into_iter()
-        .map(|(id, provenance)| (remap_id_text(&id, occurrence), provenance))
-        .collect();
-    let mut annotations = AnnotationBuilder::resume(source);
-    annotations.map_exactness_ids(|id| remap_id_text(id, occurrence));
-    source = annotations.build();
-    target.append(source);
+) -> Result<(), CodecError> {
+    source.map_ids(|id| remap_id_text(id, occurrence))?;
+    target.append(source)?;
+    Ok(())
 }
 
 fn remap_id_text(text: &str, occurrence: &str) -> String {

@@ -136,7 +136,10 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
             crate::native::SegmentBulkFrame::Unavailable { .. }
         )
     }));
-    assert!(container_only.source_fidelity().retained_records.is_empty());
+    assert!(container_only
+        .source_fidelity()
+        .retained_records()
+        .is_empty());
 }
 
 #[test]

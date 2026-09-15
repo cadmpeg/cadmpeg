@@ -37,6 +37,7 @@ use crate::topology::{Graph, Node};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
@@ -262,7 +263,7 @@ pub(crate) fn try_decode_geometry(
         {
             let unknown_index = unknowns.len();
             let unknown = unknown_stream_metadata(si, stream);
-            let container_stream = annotations.stream("nx:container");
+            let container_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
             annotations
                 .note(unknown.id(), &container_stream, stream.file_offset as u64)
                 .tag(stream.kind().label());
@@ -286,7 +287,8 @@ pub(crate) fn try_decode_geometry(
         let view = parsed.stream(si).view_for_geometry();
         let semantic = parsed.semantic_bytes(si);
         let stream_name = format!("parasolid#{si}:{}", stream.kind().label());
-        let source_stream = annotations.stream(format!("nx:{stream_name}"));
+        let source_stream =
+            StreamHandle::new(cadmpeg_ir::stream_name!("nx:").with_suffix(stream_name));
         completion_streams.push((si, source_stream.clone()));
         let graph = &view.graph;
         let mut points_by_xmt = BTreeMap::new();
@@ -1122,7 +1124,7 @@ pub(crate) fn try_decode_geometry(
                 .iter()
                 .map(|curve| curve.id.as_str().to_owned()),
         );
-        let container_stream = annotations.stream("nx:container");
+        let container_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
         annotations
             .note(unknown.id(), &container_stream, stream.file_offset as u64)
             .tag(stream.kind().label());
@@ -1849,7 +1851,7 @@ pub(crate) fn finalize_point_topology(ir: &mut CadIr, annotations: &mut Annotati
     let body_id: BodyId = derived.id("point-body", 0);
     let region_id: RegionId = derived.id("point-region", 0);
     let shell_id: ShellId = derived.id("point-shell", 0);
-    let stream = annotations.stream("nx:container");
+    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     for id in [body_id.as_str(), region_id.as_str(), shell_id.as_str()] {
         annotations
             .note(id, &stream, 0)

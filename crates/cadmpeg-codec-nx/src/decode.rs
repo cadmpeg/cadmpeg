@@ -13,6 +13,7 @@ use cadmpeg_core::bytes::assemble_u32_be;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::LossNote;
@@ -238,7 +239,7 @@ fn build_metadata_ir(
     for (si, stream) in scan.streams.iter().enumerate() {
         if stream.kind().is_parasolid() {
             let unknown = unknown_stream(ctx, si, stream)?;
-            let source_stream = annotations.stream("nx:container");
+            let source_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
             annotations
                 .note(unknown.id(), &source_stream, stream.file_offset as u64)
                 .tag(stream.kind().label());

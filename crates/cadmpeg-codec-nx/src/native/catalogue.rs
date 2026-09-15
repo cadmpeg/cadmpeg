@@ -16,6 +16,7 @@ use crate::native::om::object_uuid::ObjectUuidValue;
 use crate::native::om::roll_forward::{OmRollForwardStateGroup, OmRollForwardStateTable};
 use crate::native::om::state_slot_lane::OmOperationStateSlotLane;
 use crate::native::om::state_status::OmOperationStateStatus;
+use cadmpeg_ir::annotations::StreamHandle;
 
 use std::borrow::Cow;
 
@@ -78,7 +79,7 @@ fn note_container<T: ContainerNoted>(
     tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
 ) {
-    let stream = a.stream("nx:container");
+    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     for record in records {
         let (id, offset) = record.container_note();
         let note = a.note(&id, &stream, offset);
@@ -100,7 +101,8 @@ fn note_per_stream<T: StreamNoted>(
 ) {
     for record in records {
         let (id, stream_ordinal, offset) = record.stream_note();
-        let stream = a.stream(format!("nx:s{stream_ordinal}"));
+        let stream =
+            StreamHandle::new(cadmpeg_ir::stream_name!("nx:s").with_suffix(stream_ordinal));
         let note = a.note(id, &stream, offset);
         if let Some(tag) = tag {
             note.tag(tag);
@@ -705,7 +707,7 @@ fn note_display_jt_display_jt_indices(
     _tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
 ) {
-    let annotation_stream = a.stream("nx:container");
+    let annotation_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     for index in &m.display_jt.display_jt_indices {
         a.note(&index.id, &annotation_stream, index.source_offset)
             .tag("DISPLAY_JT_INDEX");
@@ -724,7 +726,7 @@ fn note_display_jt_display_jt_documents(
     _tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
 ) {
-    let annotation_stream = a.stream("nx:container");
+    let annotation_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     for document in m.display_jt.graph.documents() {
         a.note(&document.id, &annotation_stream, document.source_offset)
             .tag("DISPLAY_JT_DOCUMENT");
@@ -744,7 +746,8 @@ fn note_parasolid_parasolid_intersection_records(
     a: &mut AnnotationBuilder,
 ) {
     for record in &m.parasolid.parasolid_intersection_records {
-        let source_stream = a.stream(format!("nx:s{}", record.stream_ordinal));
+        let source_stream =
+            StreamHandle::new(cadmpeg_ir::stream_name!("nx:s").with_suffix(record.stream_ordinal));
         a.note(&record.id, &source_stream, record.inflated_offset)
             .tag(if record.delta_twin {
                 "INTERSECTION_DATA"
@@ -762,7 +765,9 @@ fn note_parasolid_parasolid_attribute_class_uses(
     a: &mut AnnotationBuilder,
 ) {
     for class_use in &m.parasolid.parasolid_attribute_class_uses {
-        let source_stream = a.stream(format!("nx:s{}", class_use.stream_ordinal));
+        let source_stream = StreamHandle::new(
+            cadmpeg_ir::stream_name!("nx:s").with_suffix(class_use.stream_ordinal),
+        );
         a.note(&class_use.id, &source_stream, class_use.inflated_offset)
             .tag("ATTRIBUTE_CLASS_USE");
         a.exactness(&class_use.id, Exactness::Derived);
@@ -776,7 +781,9 @@ fn note_parasolid_parasolid_topology_attribute_class_uses(
     a: &mut AnnotationBuilder,
 ) {
     for class_use in &m.parasolid.parasolid_topology_attribute_class_uses {
-        let source_stream = a.stream(format!("nx:s{}", class_use.stream_ordinal));
+        let source_stream = StreamHandle::new(
+            cadmpeg_ir::stream_name!("nx:s").with_suffix(class_use.stream_ordinal),
+        );
         a.note(&class_use.id, &source_stream, class_use.inflated_offset)
             .tag("TOPOLOGY_ATTRIBUTE_CLASS_USE");
         a.exactness(&class_use.id, Exactness::Derived);
@@ -789,7 +796,7 @@ fn note_features_feature_sketch_point_uses(
     _tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
 ) {
-    let annotation_stream = a.stream("nx:container");
+    let annotation_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     for point_use in &m.features.feature_sketch_point_uses {
         a.note(
             &point_use.id,
@@ -807,7 +814,7 @@ fn note_features_feature_input_block_identity_groups(
     _tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
 ) {
-    let annotation_stream = a.stream("nx:container");
+    let annotation_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     for group in &m.features.feature_input_block_identity_groups {
         a.note(
             &group.id,
@@ -825,7 +832,7 @@ fn note_features_feature_parameter_uses(
     _tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
 ) {
-    let annotation_stream = a.stream("nx:container");
+    let annotation_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     for parameter_use in &m.features.feature_parameter_uses {
         a.note(
             &parameter_use.id,

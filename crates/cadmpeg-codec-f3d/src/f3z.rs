@@ -61,10 +61,8 @@ pub fn decode<'a>(
         body: mut report,
         source_fidelity: mut fidelity,
     } = crate::decode::decode_archive_member(ctx, root_scan, &outer.layers)?;
-    fidelity
-        .retained_records
-        .remove(crate::ids::FILE_SOURCE_IMAGE_ID);
-    fidelity.retain_unknown_records("f3d", [crate::decode::preserve_source_image(scan)]);
+    fidelity.remove_retained_record(crate::ids::FILE_SOURCE_IMAGE_ID);
+    fidelity.retain_unknown_records("f3d", [crate::decode::preserve_source_image(scan)])?;
     if let Some(drawing_root) = omitted_drawing_root {
         report
             .losses
@@ -95,9 +93,7 @@ pub fn decode<'a>(
         &mut fidelity,
     )?;
     if merged > 0 {
-        fidelity
-            .retained_records
-            .remove(crate::ids::FILE_SOURCE_IMAGE_ID);
+        fidelity.remove_retained_record(crate::ids::FILE_SOURCE_IMAGE_ID);
         report.notes.push(format!(
             "{merged} merged component(s) retain occurrence-scoped model entities and native records; member source streams remain archive-local"
         ));

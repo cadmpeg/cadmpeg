@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! IR-writing attachment of the native object model.
 
+use cadmpeg_ir::annotations::StreamHandle;
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::{alloc_filled, DecodeContext};
@@ -108,7 +109,7 @@ fn attach_container_payloads(
     unknowns: &mut Vec<UnknownRecord>,
     typed_native: TypedNative,
 ) -> Result<(), CodecError> {
-    let annotation_stream = annotations.stream("nx:container");
+    let annotation_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     for (ordinal, entry) in scan.container.entries.iter().enumerate() {
         let content = entry.content();
         if !content.retains_opaque_payload()
@@ -153,7 +154,7 @@ fn attach_indexed_om_unknowns(
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
 ) -> Result<(), CodecError> {
-    let annotation_stream = annotations.stream("nx:container");
+    let annotation_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     let object_sections = scan.container.indexed_om_sections();
     for (section_index, (entry, section)) in object_sections.iter().enumerate() {
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
@@ -211,7 +212,7 @@ pub(crate) fn attach(
 ) -> Result<(), CodecError> {
     attach_container_payloads(ctx, ir, scan, annotations, unknowns, TypedNative::Available)?;
     let has_object_sections = !scan.container.indexed_om_sections().is_empty();
-    let annotation_stream = annotations.stream("nx:container");
+    let annotation_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     if model.is_empty() && !has_object_sections {
         return Ok(());
     }
@@ -496,7 +497,7 @@ fn attach_rm_appearances(
         .iter()
         .map(|definition| (definition.id.as_str(), definition))
         .collect::<BTreeMap<_, _>>();
-    let annotation_stream = annotations.stream("nx:container");
+    let annotation_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     let mut appearances = BTreeMap::<String, AppearanceId>::new();
     for binding in source_bindings {
         let Some(definition) = definitions.get(binding.color_definition.as_str()) else {
@@ -834,7 +835,7 @@ fn attach_jpeg_preview_assets(
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
 ) -> Result<(), CodecError> {
-    let stream = annotations.stream("nx:container");
+    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     for (ordinal, entry) in scan
         .container
         .entries
@@ -957,7 +958,7 @@ fn attach_material_texture_assets(
             .map_err(CodecError::Malformed)?,
         );
     }
-    let stream = annotations.stream("nx:container");
+    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     for (texture, asset) in model.om.material_texture_assets.iter().zip(&assets) {
         annotations
             .note(asset.id.as_str(), &stream, texture.source_offset)
@@ -1356,7 +1357,7 @@ fn attach_feature_operations(
         input_blocks,
         data_blocks,
     );
-    let stream = annotations.stream("nx:container");
+    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     let initial_body_id = attach_initial_segment_bodies(ir, body_bindings, annotations, &stream);
     let base_ordinal = ir.model.features.len() as u64;
     let booleans = booleans
@@ -4438,7 +4439,9 @@ fn attach_parasolid_topology_string_attributes(
                 string_use.position.reference_ordinal(),
                 context.id_suffix,
             );
-            let source_stream = annotations.stream(format!("nx:s{}", reference.stream_ordinal));
+            let source_stream = StreamHandle::new(
+                cadmpeg_ir::stream_name!("nx:s").with_suffix(reference.stream_ordinal),
+            );
             annotations
                 .note(id.as_str(), &source_stream, string.inflated_offset)
                 .tag("ENTITY_54_STRING_ATTRIBUTE");
@@ -4862,7 +4865,9 @@ fn attach_parasolid_topology_numeric_attributes(
                 numeric_use.position.reference_ordinal(),
                 context.id_suffix,
             );
-            let source_stream = annotations.stream(format!("nx:s{}", reference.stream_ordinal));
+            let source_stream = StreamHandle::new(
+                cadmpeg_ir::stream_name!("nx:s").with_suffix(reference.stream_ordinal),
+            );
             annotations
                 .note(id.as_str(), &source_stream, source_offset)
                 .tag(tag);
@@ -5032,7 +5037,9 @@ fn attach_parasolid_topology_structured_attributes(
                 structured_use.position.reference_ordinal(),
                 context.id_suffix,
             );
-            let source_stream = annotations.stream(format!("nx:s{}", reference.stream_ordinal));
+            let source_stream = StreamHandle::new(
+                cadmpeg_ir::stream_name!("nx:s").with_suffix(reference.stream_ordinal),
+            );
             annotations
                 .note(id.as_str(), &source_stream, source_offset)
                 .tag(tag);
@@ -8966,7 +8973,7 @@ pub(crate) fn attach_expression_parameters(
             .or_default()
             .push(expression);
     }
-    let stream = annotations.stream("nx:container");
+    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     let mut uses_by_expression =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureParameterUse>>::new();
     for parameter_use in parameter_uses {

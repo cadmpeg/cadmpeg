@@ -157,9 +157,9 @@ pub fn validate_neutral_with_source_fidelity(
         .collect::<HashSet<_>>();
     all_ids.extend(
         source_fidelity
-            .retained_records
+            .retained_records()
             .keys()
-            .map(ToOwned::to_owned),
+            .map(|id| id.as_str().to_owned()),
     );
     check_annotations(
         ir,

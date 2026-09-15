@@ -11,6 +11,7 @@ use crate::document::{CadIr, SortedModel, SourceMeta};
 use crate::native::{arena_from, Native, NativeConvertError, NativeRecord};
 use crate::units::{CanonicalUnitsWire, Tolerances};
 
+pub mod digest;
 pub mod finite_json;
 
 use finite_json::{write_canonical_json, CanonicalJsonError};

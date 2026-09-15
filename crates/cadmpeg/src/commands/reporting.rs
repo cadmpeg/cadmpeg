@@ -77,7 +77,7 @@ impl FidelityDiff {
     fn between(left: &SourceFidelity, right: &SourceFidelity) -> Self {
         Self {
             annotations_changed: left.annotations != right.annotations,
-            retained_records_changed: left.retained_records != right.retained_records,
+            retained_records_changed: left.retained_records() != right.retained_records(),
         }
     }
 

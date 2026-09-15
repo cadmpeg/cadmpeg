@@ -6,8 +6,8 @@
 use std::io::Cursor;
 
 use cadmpeg_codec_iges::{IgesCodec, IgesVersion};
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::WritePath;
 use cadmpeg_ir::{CadIr, SourceFidelity, UnknownRecord};
@@ -37,7 +37,7 @@ fuzz_target!(|data: &[u8]| {
 
     if control & 0x80 != 0 {
         let mut source_fidelity = SourceFidelity::default();
-        source_fidelity
+        if source_fidelity
             .attach_native_unknown_records(
                 &mut ir,
                 "iges",
@@ -48,7 +48,12 @@ fuzz_target!(|data: &[u8]| {
                     Vec::new(),
                 )],
             )
-            .expect("fuzz retained record converts to native identity");
+            .is_err()
+        {
+            // Arbitrary native input can have an unreadable unknown arena or
+            // already own the fixture identity. Neither reaches this export probe.
+            return;
+        }
         assert!(encoder
             .plan(
                 EncodeInput::new(&ir, Some(&source_fidelity)),
@@ -95,10 +100,10 @@ fuzz_target!(|data: &[u8]| {
     }
 
     let replay = encoder
-            .plan(
-                EncodeInput::new(&decoded_ir, Some(&source_fidelity)),
-                TargetRequest::Explicit(version.descriptor().id.as_str()),
-            )
+        .plan(
+            EncodeInput::new(&decoded_ir, Some(&source_fidelity)),
+            TargetRequest::Explicit(version.descriptor().id.as_str()),
+        )
         .expect("writer output must plan after the optional source edit");
     if control & 0x40 == 0 {
         assert!(matches!(
@@ -122,8 +127,6 @@ fuzz_target!(|data: &[u8]| {
         let edited = codec
             .decode(&mut edited_decode, &DecodeOptions::default())
             .expect("edited writer output must decode");
-        assert!(
-            cadmpeg_ir::validate_neutral(edited.ir(), edited.report().losses.clone()).is_ok()
-        );
+        assert!(cadmpeg_ir::validate_neutral(edited.ir(), edited.report().losses.clone()).is_ok());
     }
 });
