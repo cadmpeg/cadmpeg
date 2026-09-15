@@ -1958,7 +1958,7 @@ fn parse_texture(
                     return Err(error);
                 }
             };
-        append_file_reference_diagnostics(losses, diagnostics, source_offset);
+        append_file_reference_diagnostics(losses, diagnostics, value.source_range.start);
         Some(TextureFileReference {
             full_path: value.full_path,
             relative_path: value.relative_path,

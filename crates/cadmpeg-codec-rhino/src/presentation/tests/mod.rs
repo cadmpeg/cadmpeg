@@ -1625,7 +1625,7 @@ fn texture_file_reference_checksum_warning_is_located() {
         .provenance
         .as_ref()
         .expect("texture checksum loss is located");
-    assert_eq!(provenance.offset, 42);
+    assert_eq!(provenance.offset, reference_start as u64);
     assert_eq!(
         provenance.tag.as_deref(),
         Some("PRESENTATION/TEXTURE/FILE_REFERENCE")
