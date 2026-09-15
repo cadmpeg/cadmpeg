@@ -284,3 +284,85 @@ fn bounded_definition_members_do_not_become_ordinary_geometry_after_metadata_fai
         }
     }
 }
+
+#[test]
+fn nil_definition_identity_is_not_admitted_and_keeps_source_membership() {
+    for (archive, version) in [(ArchiveVersion::V5, "50"), (ArchiveVersion::V8, "80")] {
+        let member = [0x61; 16];
+        let ordinary = [0x62; 16];
+        let record = if archive == ArchiveVersion::V5 {
+            bytes::definition_record(
+                archive,
+                &bytes::v5_definition_payload(archive, 6, [0; 16], &[member], false),
+            )
+        } else {
+            definition([0; 16], member, Metadata::Valid)
+        };
+        let source = bytes::minimal_document(
+            version,
+            &[
+                bytes::table(archive, 0x1000_0014, &[]),
+                bytes::table(archive, 0x1000_0015, &[bytes::units_record(archive, 2)]),
+                bytes::table(archive, 0x1000_0021, std::slice::from_ref(&record)),
+                bytes::table(
+                    archive,
+                    0x1000_0013,
+                    &[point(member, 3.0), point(ordinary, 9.0)],
+                ),
+            ],
+        );
+        let scan = crate::container::scan_owned(source.clone()).unwrap();
+        let offset = scan
+            .tables
+            .iter()
+            .find(|table| table.typecode == 0x1000_0021)
+            .unwrap()
+            .records[0]
+            .range
+            .start as u64;
+        for container_only in [false, true] {
+            let decoded = crate::RhinoCodec
+                .decode(
+                    &mut Cursor::new(&source),
+                    &DecodeOptions {
+                        container_only,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .unwrap();
+            assert!(scan.definitions.definitions().is_empty());
+            assert!(scan.definitions.contains_member(Uuid::from_wire(member)));
+            assert!(!scan.definitions.contains_member(Uuid::from_wire(ordinary)));
+            let losses: Vec<_> = decoded
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| {
+                    loss.code == RhinoLossCode::ContainerInstanceDefinitionDegraded.kind()
+                })
+                .collect();
+            assert_eq!(losses.len(), 1);
+            assert!(losses[0].message.contains("definition UUID is nil"));
+            assert_eq!(losses[0].provenance.as_ref().unwrap().offset, offset);
+            assert!(!decoded
+                .report()
+                .losses
+                .iter()
+                .any(|loss| { loss.code == RhinoLossCode::IntegrityFailure.kind() }));
+            let reread = CadIr::from_json(&serde_json::to_string(decoded.ir()).unwrap()).unwrap();
+            for ir in [decoded.ir(), &reread] {
+                assert_eq!(ir.model.points.len(), usize::from(!container_only));
+                if !container_only {
+                    assert_eq!(ir.model.points[0].position.x, 9.0);
+                }
+            }
+            if !container_only {
+                assert!(decoded
+                    .source_fidelity()
+                    .retained_records()
+                    .values()
+                    .any(|retained| retained.data() == Some(record.as_slice())));
+            }
+        }
+    }
+}
