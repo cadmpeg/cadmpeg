@@ -4386,7 +4386,7 @@ impl<'a> Builder<'a> {
             .loss_counts()
             .into_iter()
             .filter(|count| count.kind == "unknowns")
-            .map(|count| count.count)
+            .map(|count| count.count.get())
             .sum::<usize>();
         if unknown_count > 0 {
             self.loss(
@@ -4531,7 +4531,7 @@ impl<'a> Builder<'a> {
             .loss_counts()
             .iter()
             .filter(|loss| loss.kind != "unknowns")
-            .map(|loss| loss.count)
+            .map(|loss| loss.count.get())
             .sum();
         if source_native_records > 0 {
             self.loss(

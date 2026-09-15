@@ -12,6 +12,77 @@ use crate::native::NativeRecord;
 use crate::validate::validate_neutral;
 
 #[test]
+fn native_loss_counts_carry_a_nonempty_arena_population() {
+    let mut native = crate::native::Native::default();
+    native
+        .namespace_mut("future")
+        .arenas_mut()
+        .insert("empty".into(), Vec::new());
+    native.namespace_mut("future").arenas_mut().insert(
+        "records".into(),
+        vec![NativeRecord::new("test:native:record#counted", serde_json::Map::new()).unwrap()],
+    );
+    let counts = native.loss_counts();
+    assert_eq!(counts.len(), 1);
+    assert_eq!(counts[0].format, "future");
+    assert_eq!(counts[0].kind, "records");
+    assert_eq!(counts[0].count.get(), 1);
+    let wire = serde_json::to_value(&counts[0]).unwrap();
+    assert_eq!(
+        serde_json::from_value::<crate::native::LossCount>(wire.clone()).unwrap(),
+        counts[0]
+    );
+    let mut empty = wire;
+    empty["count"] = serde_json::json!(0);
+    assert!(serde_json::from_value::<crate::native::LossCount>(empty).is_err());
+}
+
+#[test]
+fn complete_document_refuses_duplicate_native_keys_at_every_depth() {
+    let empty = serde_json::to_string(&crate::CadIr::empty()).unwrap();
+    assert_eq!(empty.matches("\"native\":{}").count(), 1);
+    let document = |native: &str| empty.replace("\"native\":{}", &format!("\"native\":{native}"));
+    let control = r#"{"future":{"records":[{"id":"test:native:record#first","fields":{"name":"value"}}]},"another_future":{"different_records":[]}}"#;
+    let wire = document(control);
+    let admitted = crate::CadIr::from_json(&wire).unwrap();
+    assert_eq!(
+        serde_json::to_value(&admitted).unwrap(),
+        serde_json::from_str::<serde_json::Value>(&wire).unwrap(),
+    );
+    for (native, duplicate) in [
+        (
+            r#"{"future":{"records":[]},"future":{"other":[]}}"#,
+            "future",
+        ),
+        (r#"{"future":{"records":[],"records":[]}}"#, "records"),
+        (
+            r#"{"future":{"records":[{"id":"test:native:record#first","id":"test:native:record#second"}]}}"#,
+            "id",
+        ),
+        (
+            r#"{"future":{"records":[{"id":"test:native:record#first","name":1,"name":2}]}}"#,
+            "name",
+        ),
+        (
+            r#"{"future":{"records":[{"id":"test:native:record#first","fields":{"name":1,"name":2}}]}}"#,
+            "name",
+        ),
+        (
+            r#"{"future":{"records":[{"id":"test:native:record#first","fields":[{"name":1,"name":2}]}]}}"#,
+            "name",
+        ),
+    ] {
+        let error = crate::CadIr::from_json(&document(native)).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains(&format!("duplicate key {duplicate}")),
+            "{error}"
+        );
+    }
+}
+
+#[test]
 fn native_identity_admission_is_shared_by_all_construction_paths() {
     #[derive(Serialize)]
     struct Record<'a> {

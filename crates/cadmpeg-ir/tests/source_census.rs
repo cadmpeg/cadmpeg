@@ -19,8 +19,8 @@ use std::path::{Path, PathBuf};
 ///   `deny_unknown_fields`, so the key set is refused by that type;
 /// * `keyless` - the impl reads a scalar, a string, a byte string, a fixed
 ///   array or a list, so it has no object key set at all;
-/// * `free-form` - the impl reads an open map by design; `FIXTURES` below
-///   states what refuses instead.
+/// * `free-form` - the impl admits open maps. The separate golden sweep and
+///   owning admission tests state their value and duplicate-key constraints.
 const HAND_IMPLS: &[(&str, &str, &str)] = &[
     ("crates/cadmpeg-asm/src/brep/mod.rs", "AsmBrep", "wire"),
     ("crates/cadmpeg-asm/src/brep/records.rs", "$name", "wire"),
@@ -31,6 +31,11 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
     ),
     ("crates/cadmpeg-asm/src/brep/stats.rs", "Stats", "wire"),
     ("crates/cadmpeg-core/src/dialect.rs", "DialectId", "keyless"),
+    (
+        "crates/cadmpeg-core/src/distinct_keys.rs",
+        "JsonValue",
+        "free-form",
+    ),
     (
         "crates/cadmpeg-core/src/dialect.rs",
         "DialectLayers",
@@ -290,16 +295,22 @@ fn every_hand_written_deserialize_states_its_coverage() {
         stale.join("\n")
     );
 
-    // The one free-form impl reads codec-owned fields by design and declares no
-    // key set. Both levels above it do refuse, which is what keeps an unknown
-    // key out of the document.
+    // Namespace and arena names are open. Their values still have fixed shapes:
+    // a namespace is an arena map, and an arena is a list of native records.
+    for wire in [
+        serde_json::json!({"rhino": {"objects": []}, "zz_bogus": {}}),
+        serde_json::json!({"rhino": {"objects": [], "zz_bogus": []}}),
+    ] {
+        let read: cadmpeg_ir::native::Native = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(read).unwrap(), wire);
+    }
     for wire in [
         serde_json::json!({"rhino": {"objects": []}, "zz_bogus": true}),
         serde_json::json!({"rhino": {"objects": [], "zz_bogus": true}}),
     ] {
         assert!(
             serde_json::from_value::<cadmpeg_ir::native::Native>(wire).is_err(),
-            "the native namespace levels refuse an unknown key"
+            "native namespace and arena maps refuse invalid value shapes"
         );
     }
 }
