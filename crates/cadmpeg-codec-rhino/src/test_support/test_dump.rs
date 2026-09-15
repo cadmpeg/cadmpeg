@@ -227,6 +227,23 @@ fn versioned_anonymous_chunk(
     crc_chunk(archive, 0x4000_8000, &payload)
 }
 
+fn anonymous_chunk_excluding(
+    archive: ArchiveVersion,
+    minor: i32,
+    body: &[u8],
+    children: &[std::ops::Range<usize>],
+) -> Vec<u8> {
+    let mut payload = 1_i32.to_le_bytes().to_vec();
+    payload.extend(minor.to_le_bytes());
+    let version_len = payload.len();
+    payload.extend(body);
+    let children: Vec<_> = children
+        .iter()
+        .map(|range| range.start + version_len..range.end + version_len)
+        .collect();
+    crc_chunk_excluding(archive, 0x4000_8000, &payload, &children)
+}
+
 pub(crate) fn unit_detail(archive: ArchiveVersion, unit: u32, meters_per_unit: f64) -> Vec<u8> {
     let mut body = unit.to_le_bytes().to_vec();
     body.extend(meters_per_unit.to_le_bytes());
@@ -248,18 +265,22 @@ pub(crate) fn content_hash(archive: ArchiveVersion) -> Vec<u8> {
     let mut body = 123_u64.to_le_bytes().to_vec();
     body.extend(456_u64.to_le_bytes());
     body.extend(789_u64.to_le_bytes());
+    let children_start = body.len();
     body.extend(anonymous_chunk(archive, 0, &[0x11; 20]));
     body.extend(anonymous_chunk(archive, 0, &[0x22; 20]));
-    anonymous_chunk(archive, 0, &body)
+    let children = children_start..body.len();
+    anonymous_chunk_excluding(archive, 0, &body, std::slice::from_ref(&children))
 }
 
 pub(crate) fn file_reference(archive: ArchiveVersion, full: &str, relative: &str) -> Vec<u8> {
     let mut body = utf16_bytes(full);
     body.extend(utf16_bytes(relative));
+    let child_start = body.len();
     body.extend(content_hash(archive));
+    let child = child_start..body.len();
     body.extend(7_u32.to_le_bytes());
     body.extend([0x44; 16]);
-    anonymous_chunk(archive, 1, &body)
+    anonymous_chunk_excluding(archive, 1, &body, std::slice::from_ref(&child))
 }
 
 pub(crate) fn model_component_attributes(
@@ -291,30 +312,67 @@ pub(crate) fn reference_settings(archive: ArchiveVersion) -> Vec<u8> {
     implementation_body.push(0);
     let implementation = anonymous_chunk(archive, 0, &implementation_body);
     let mut body = vec![1];
+    let child_start = body.len();
     body.extend(implementation);
-    anonymous_chunk(archive, 0, &body)
+    let child = child_start..body.len();
+    anonymous_chunk_excluding(archive, 0, &body, std::slice::from_ref(&child))
 }
 
-pub(crate) fn definition_record(archive: ArchiveVersion, payload: &[u8]) -> Vec<u8> {
+/// Fixture class bytes and their nested checksum boundaries. DerefMut permits
+/// the owner tests to make deliberate wire mutations before record framing.
+#[derive(Clone)]
+pub(crate) struct DefinitionPayload {
+    bytes: Vec<u8>,
+    form: DefinitionPayloadForm,
+}
+
+#[derive(Clone)]
+enum DefinitionPayloadForm {
+    Legacy {
+        children: Vec<std::ops::Range<usize>>,
+    },
+    Anonymous,
+}
+
+impl std::ops::Deref for DefinitionPayload {
+    type Target = Vec<u8>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.bytes
+    }
+}
+
+impl std::ops::DerefMut for DefinitionPayload {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.bytes
+    }
+}
+
+pub(crate) fn definition_record(archive: ArchiveVersion, payload: &DefinitionPayload) -> Vec<u8> {
     definition_record_with_userdata(archive, payload, &[])
 }
 
 pub(crate) fn definition_record_with_userdata(
     archive: ArchiveVersion,
-    payload: &[u8],
+    payload: &DefinitionPayload,
     userdata: &[u8],
 ) -> Vec<u8> {
     let mut uuid_body = INSTANCE_DEFINITION_CLASS.to_vec();
     uuid_body.extend(crc32fast::hash(&INSTANCE_DEFINITION_CLASS).to_le_bytes());
     let uuid = long_chunk(archive, 0x0002_fffb, &uuid_body);
-    let class_data = crc_chunk(archive, 0x0002_fffc, payload);
+    let anonymous = 0..payload.len();
+    let children = match &payload.form {
+        DefinitionPayloadForm::Legacy { children } => children.as_slice(),
+        DefinitionPayloadForm::Anonymous => std::slice::from_ref(&anonymous),
+    };
+    let class_data = crc_chunk_excluding(archive, 0x0002_fffc, payload, children);
     let class_end = short_chunk(archive, 0x8002_7fff, 0);
     let class = long_chunk(
         archive,
         0x0002_7ffa,
         &[uuid, class_data, userdata.to_vec(), class_end].concat(),
     );
-    crc_chunk(archive, 0x2000_8076, &class)
+    nested_crc_chunk(archive, 0x2000_8076, &class)
 }
 
 pub(crate) fn v5_definition_payload(
@@ -323,7 +381,7 @@ pub(crate) fn v5_definition_payload(
     id: [u8; 16],
     members: &[[u8; 16]],
     linked: bool,
-) -> Vec<u8> {
+) -> DefinitionPayload {
     v5_definition_payload_with_paths(
         archive,
         minor,
@@ -343,7 +401,7 @@ pub(crate) fn v5_definition_payload_with_paths(
     linked: bool,
     linked_path: &str,
     relative_path: bool,
-) -> Vec<u8> {
+) -> DefinitionPayload {
     let mut payload = vec![0x10 | minor];
     payload.extend(id);
     payload.extend((members.len() as i32).to_le_bytes());
@@ -367,17 +425,24 @@ pub(crate) fn v5_definition_payload_with_paths(
     payload.extend(2_u32.to_le_bytes());
     payload.extend(0.001_f64.to_le_bytes());
     payload.push(u8::from(relative_path));
+    let child_start = payload.len();
     payload.extend(unit_detail(archive, 2, 0.001));
+    let mut children = vec![child_start..payload.len()];
     payload.extend(1_i32.to_le_bytes());
     payload.extend(0_u32.to_le_bytes());
     if minor >= 7 {
         payload.push(u8::from(linked));
         if linked {
+            let child_start = payload.len();
             payload.extend(file_reference(archive, "/full/source.3dm", "source.3dm"));
+            children.push(child_start..payload.len());
         }
         payload.push(0);
     }
-    payload
+    DefinitionPayload {
+        bytes: payload,
+        form: DefinitionPayloadForm::Legacy { children },
+    }
 }
 
 pub(crate) fn v6_definition_payload(
@@ -387,10 +452,13 @@ pub(crate) fn v6_definition_payload(
     kind: u32,
     linked: bool,
     settings: bool,
-) -> Vec<u8> {
+) -> DefinitionPayload {
     let mut body = model_component_attributes(archive, id, 17, "modern definition");
+    let mut children = vec![0..body.len()];
     body.extend(kind.to_le_bytes());
+    let child_start = body.len();
     body.extend(unit_detail(archive, 8, 0.0254));
+    children.push(child_start..body.len());
     body.extend(utf16_bytes("description"));
     body.extend(utf16_bytes("https://example.test"));
     body.extend(utf16_bytes("tag"));
@@ -408,15 +476,28 @@ pub(crate) fn v6_definition_payload(
     body.push(u8::from(linked));
     if linked {
         let mut linked_body = file_reference(archive, "/full/source.3dm", "source.3dm");
+        let mut linked_children = vec![0..linked_body.len()];
         linked_body.extend(2_i32.to_le_bytes());
         linked_body.extend(2_u32.to_le_bytes());
         linked_body.push(u8::from(settings));
         if settings {
+            let child_start = linked_body.len();
             linked_body.extend(reference_settings(archive));
+            linked_children.push(child_start..linked_body.len());
         }
-        body.extend(anonymous_chunk(archive, 0, &linked_body));
+        let child_start = body.len();
+        body.extend(anonymous_chunk_excluding(
+            archive,
+            0,
+            &linked_body,
+            &linked_children,
+        ));
+        children.push(child_start..body.len());
     }
-    anonymous_chunk(archive, 0, &body)
+    DefinitionPayload {
+        bytes: anonymous_chunk_excluding(archive, 0, &body, &children),
+        form: DefinitionPayloadForm::Anonymous,
+    }
 }
 
 pub(crate) fn document_with_definitions(

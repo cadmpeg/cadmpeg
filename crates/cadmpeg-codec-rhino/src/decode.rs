@@ -2210,7 +2210,6 @@ impl<'a> DecodeContext<'a> {
             }
         }
         self.report.typed_losses.extend(omissions);
-        losses.extend(self.scan.definitions.losses.iter().cloned());
         losses.extend(
             self.scan
                 .definitions

@@ -202,8 +202,6 @@ pub(crate) struct DefinitionScan {
     pub(crate) ambiguous_ids: HashSet<Uuid>,
     /// Union of member UUIDs from every safely parseable definition prefix.
     pub(crate) member_object_ids: HashSet<Uuid>,
-    /// Typed losses from retained contradictory fields.
-    pub(crate) losses: Vec<cadmpeg_ir::report::LossNote>,
     /// Recoverable per-record diagnostics.
     pub(crate) diagnostics: Vec<DefinitionDiagnostic>,
 }
@@ -362,7 +360,6 @@ fn unit_detail<'a>(
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
     warnings: &mut Diagnostics,
-    losses: &mut Vec<cadmpeg_ir::LossNote>,
 ) -> Result<UnitDetail, FramingError> {
     let (_chunk, mut payload) = anonymous(data, reader, archive, "unit detail", warnings)?;
     let unit = i32::try_from(payload.u32()?)
@@ -380,9 +377,9 @@ fn unit_detail<'a>(
             || crate::settings::standard_scale(unit)
                 .is_some_and(|scale| scale / 1000.0 != meters_per_unit))
     {
-        losses.push(crate::loss::RhinoLossCode::RedundantFieldRepaired.note(format!(
+        warnings.push_coded(RhinoLossCode::RedundantFieldRepaired, format!(
             "redundant instance unit detail contradicts unit {unit}; meters-per-unit {meters_per_unit} and custom name {custom_name:?} retained"
-        )));
+        ));
     }
     payload.skip_remaining()?;
     Ok(UnitDetail {
@@ -565,12 +562,6 @@ pub(crate) fn file_reference<'a>(
     })
 }
 
-fn legacy_checksum(reader: &mut BoundedReader<'_>) -> Result<Range<usize>, FramingError> {
-    let start = reader.position();
-    reader.skip(48)?;
-    Ok(start..reader.position())
-}
-
 fn skip_object_array(
     data: &[u8],
     reader: &mut BoundedReader<'_>,
@@ -682,7 +673,6 @@ fn parse_v5(
     range: Range<usize>,
     archive: ArchiveVersion,
     warnings: &mut Diagnostics,
-    losses: &mut Vec<cadmpeg_ir::LossNote>,
 ) -> Result<InstanceDefinition, FramingError> {
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let packed = reader.u8()?;
@@ -721,7 +711,7 @@ fn parse_v5(
     ) {
         legacy_linked_path.clear();
     }
-    let _ = legacy_checksum(&mut reader)?;
+    reader.skip(48)?;
     let unit = i32::try_from(reader.u32()?)
         .map_err(|_| FramingError::structural(reader.position(), "unit value overflow"))?;
     let meters_per_unit = reader.f64()?;
@@ -737,7 +727,7 @@ fn parse_v5(
     } else {
         String::new()
     };
-    let units = unit_detail(data, &mut reader, archive, warnings, losses)?;
+    let units = unit_detail(data, &mut reader, archive, warnings)?;
     let _ = (unit, meters_per_unit);
     let linked_depth = reader.i32()?;
     let mut linked_appearance = reader.u32()?;
@@ -750,9 +740,6 @@ fn parse_v5(
         None
     };
     // Version 1.7 has an abandoned V6-WIP tail. Its fields have no stable grammar.
-    if version.1 >= 7 {
-        reader.skip(reader.remaining())?;
-    }
     reader.skip_remaining()?;
     Ok(InstanceDefinition {
         source_range,
@@ -780,7 +767,6 @@ fn parse_v6(
     range: Range<usize>,
     archive: ArchiveVersion,
     warnings: &mut Diagnostics,
-    losses: &mut Vec<cadmpeg_ir::LossNote>,
 ) -> Result<InstanceDefinition, FramingError> {
     let mut outer = BoundedReader::new(data, range.start, range.end)?;
     let (outer_chunk, mut reader, outer_version) = anonymous_versioned(
@@ -810,7 +796,7 @@ fn parse_v6(
     }
     let kind = v6_definition_kind(reader.u32()?);
     let units_start = reader.position();
-    let units = unit_detail(data, &mut reader, archive, warnings, losses)?;
+    let units = unit_detail(data, &mut reader, archive, warnings)?;
     outer_children.push(units_start..reader.position());
     let description = utf16(&mut reader)?;
     let url = utf16(&mut reader)?;
@@ -912,13 +898,7 @@ fn extract_member_ids(
     outer.skip_remaining()?;
     let _component = model_component(data, &mut reader, archive, &mut Diagnostics::new())?;
     let _kind = reader.u32()?;
-    let _units = unit_detail(
-        data,
-        &mut reader,
-        archive,
-        &mut Diagnostics::new(),
-        &mut Vec::new(),
-    )?;
+    let _units = unit_detail(data, &mut reader, archive, &mut Diagnostics::new())?;
     let _description = utf16(&mut reader)?;
     let _url = utf16(&mut reader)?;
     let _url_tag = utf16(&mut reader)?;
@@ -1077,7 +1057,6 @@ pub(crate) fn parse_definitions(
                     class.class_data_range,
                     archive,
                     &mut warnings,
-                    &mut result.scan.losses,
                 )
             } else {
                 parse_v6(
@@ -1086,7 +1065,6 @@ pub(crate) fn parse_definitions(
                     class.class_data_range,
                     archive,
                     &mut warnings,
-                    &mut result.scan.losses,
                 )
             }?;
             let userdata_degraded = apply_idef_alternative_path(

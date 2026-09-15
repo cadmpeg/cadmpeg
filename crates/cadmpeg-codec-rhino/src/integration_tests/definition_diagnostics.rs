@@ -2,6 +2,71 @@
 use super::*;
 use crate::test_support::test_dump as bytes;
 
+#[test]
+fn definition_fixture_families_have_valid_nested_checksums() {
+    for (version, archive) in [
+        ("50", ArchiveVersion::V5),
+        ("60", ArchiveVersion::V6),
+        ("70", ArchiveVersion::V7),
+        ("80", ArchiveVersion::V8),
+    ] {
+        let mut payloads = Vec::new();
+        if archive.value() <= 60 {
+            for minor in [6, 7] {
+                payloads.push(bytes::v5_definition_payload(
+                    archive,
+                    minor,
+                    [0x51; 16],
+                    &[],
+                    true,
+                ));
+            }
+        }
+        if archive.value() >= 60 {
+            for (kind, linked, settings) in [
+                (1, false, false),
+                (2, true, false),
+                (3, true, true),
+                (0, false, false),
+            ] {
+                payloads.push(bytes::v6_definition_payload(
+                    archive,
+                    [0x51; 16],
+                    &[],
+                    kind,
+                    linked,
+                    settings,
+                ));
+            }
+        }
+        for (index, payload) in payloads.iter().enumerate() {
+            let record = bytes::definition_record(archive, payload);
+            let document = bytes::document_with_definitions(version, archive, &[record], &[]);
+            for container_only in [false, true] {
+                let result = RhinoCodec
+                    .decode(
+                        &mut Cursor::new(&document),
+                        &DecodeOptions {
+                            container_only,
+                            ..DecodeOptions::default()
+                        },
+                    )
+                    .expect("complete definition fixture");
+                let integrity = result
+                    .report()
+                    .losses
+                    .iter()
+                    .filter(|loss| loss.code == crate::loss::RhinoLossCode::IntegrityFailure.kind())
+                    .collect::<Vec<_>>();
+                assert!(integrity.is_empty(), "archive={archive:?} fixture={index} container_only={container_only}: {integrity:?}");
+                let _: cadmpeg_ir::document::CadIr =
+                    serde_json::from_slice(&serde_json::to_vec(result.ir()).unwrap())
+                        .expect("complete CADIR admission");
+            }
+        }
+    }
+}
+
 fn definition_record(
     corrupt_units_crc: bool,
     malformed_tail: bool,
@@ -200,6 +265,61 @@ fn container_only_keeps_recorded_definition_field_losses() {
             .losses
             .iter()
             .any(|loss| loss.code == crate::loss::RhinoLossCode::RedundantFieldRepaired.kind()));
+    }
+}
+
+#[test]
+fn definition_field_losses_keep_each_record_location_before_later_failure() {
+    for malformed_tail in [false, true] {
+        let record = definition_record(false, malformed_tail, 0.002);
+        let document = bytes::document_with_definitions(
+            "80",
+            ArchiveVersion::V8,
+            &[record.clone(), record],
+            &[],
+        );
+        let scan = crate::container::scan_owned(document.clone()).expect("bounded definitions");
+        let offsets = scan
+            .tables
+            .iter()
+            .find(|table| table.typecode == 0x1000_0021)
+            .unwrap()
+            .records
+            .iter()
+            .map(|record| record.range.start as u64)
+            .collect::<Vec<_>>();
+        assert_eq!(offsets.len(), 2);
+        for container_only in [false, true] {
+            let result = RhinoCodec
+                .decode(
+                    &mut Cursor::new(&document),
+                    &DecodeOptions {
+                        container_only,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .expect("field losses survive a later parse failure or duplicate definition");
+            let actual = result
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| {
+                    loss.code == crate::loss::RhinoLossCode::RedundantFieldRepaired.kind()
+                })
+                .map(|loss| {
+                    let provenance = loss.provenance.as_ref().expect("located field loss");
+                    assert_eq!(provenance.tag.as_deref(), Some("INSTANCE_DEFINITION_TABLE"));
+                    provenance.offset
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                actual, offsets,
+                "malformed={malformed_tail} container_only={container_only}"
+            );
+            let _: cadmpeg_ir::document::CadIr =
+                serde_json::from_slice(&serde_json::to_vec(result.ir()).unwrap())
+                    .expect("complete CADIR admission");
+        }
     }
 }
 
