@@ -8,13 +8,15 @@
 
 pub(crate) mod target;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io::{Seek, SeekFrom, Write};
 
 use cadmpeg_core::CodecError;
 use zip::write::SimpleFileOptions;
 
-use crate::native::{EntryRecord, ExtensionRecord, ObjectRecord, PropertyRecord, ValueRecord};
+use crate::native::{
+    EntryRecord, ExtensionRecord, ObjectRecord, PropertyBody, PropertyRecord, ValueRecord,
+};
 use target::Resolution;
 
 pub(crate) trait WriteSeek: Write + Seek {}
@@ -66,6 +68,7 @@ pub(crate) fn write_seekable(
         &written_graph.objects,
         &written_graph.extensions,
     )?;
+    validate_properties(&properties, &written_graph.properties)?;
     for property in &written_graph.properties {
         for entry in property.side_entries() {
             if !entries.iter().any(|candidate| candidate.name == *entry) {
@@ -190,6 +193,98 @@ fn validate_declarations(
         ));
     }
     Ok(())
+}
+
+fn validate_properties(
+    expected: &[PropertyRecord],
+    written: &[PropertyRecord],
+) -> Result<(), CodecError> {
+    let mut expected_by_id = HashMap::with_capacity(expected.len());
+    for property in expected {
+        if expected_by_id
+            .insert(property.id.as_str(), property)
+            .is_some()
+        {
+            return Err(CodecError::NotImplemented(format!(
+                "edited FCStd property graph has duplicate property {}",
+                property.id
+            )));
+        }
+    }
+    let mut written_by_id = HashMap::with_capacity(written.len());
+    for property in written {
+        if written_by_id
+            .insert(property.id.as_str(), property)
+            .is_some()
+        {
+            return Err(CodecError::NotImplemented(format!(
+                "written FCStd property graph has duplicate property {}",
+                property.id
+            )));
+        }
+    }
+    if expected_by_id.len() != written_by_id.len() {
+        return Err(CodecError::NotImplemented(
+            "edited FCStd property graph changes its record count".into(),
+        ));
+    }
+    for (id, property) in expected_by_id {
+        let Some(candidate) = written_by_id.get(id).copied() else {
+            return Err(CodecError::NotImplemented(format!(
+                "edited FCStd property {} is missing from the written graph",
+                property.id
+            )));
+        };
+        if !same_property_semantics(property, candidate) {
+            return Err(CodecError::NotImplemented(format!(
+                "edited FCStd property {} changes its admitted value or link graph",
+                property.id
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn same_property_semantics(left: &PropertyRecord, right: &PropertyRecord) -> bool {
+    if left.owner != right.owner
+        || left.name != right.name
+        || left.type_name != right.type_name
+        || left.family != right.family
+        || left.status != right.status
+        || left.order != right.order
+        || left.is_transient() != right.is_transient()
+    {
+        return false;
+    }
+    match (&left.body, &right.body) {
+        (PropertyBody::Transient, PropertyBody::Transient) => true,
+        (
+            PropertyBody::Persisted {
+                values: left_values,
+                links: left_links,
+                side_entries: left_side_entries,
+                dynamic: left_dynamic,
+            },
+            PropertyBody::Persisted {
+                values: right_values,
+                links: right_links,
+                side_entries: right_side_entries,
+                dynamic: right_dynamic,
+            },
+        ) => {
+            left_values.len() == right_values.len()
+                && left_values.iter().zip(right_values).all(|(left, right)| {
+                    left.tag == right.tag
+                        && left.order == right.order
+                        && left.attributes == right.attributes
+                        && left.text == right.text
+                })
+                && left_links == right_links
+                && left_side_entries == right_side_entries
+                && left_dynamic == right_dynamic
+        }
+        _ => false,
+    }
 }
 
 fn patch_document(source: &[u8], properties: &[PropertyRecord]) -> Result<Vec<u8>, CodecError> {

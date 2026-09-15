@@ -973,18 +973,24 @@ fn retains_spreadsheet_expression_cycles_only_in_native_properties() {
 }
 
 #[test]
-fn rejects_feature_names_that_break_neutral_identity_grammar() {
+fn encodes_feature_names_into_neutral_identity_keys() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Part::Feature" name="Source#part" id="1"/></Objects>
 <ObjectData Count="1"><Object name="Source#part"><Properties Count="0"/></Object></ObjectData>
 </Document>"#;
-    let error = FcstdCodec
+    let result = FcstdCodec
         .decode(
             &mut Cursor::new(archive(document)),
             &DecodeOptions::default(),
         )
-        .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("fcstd:design:feature#Source#part"));
+        .expect("source names are encoded into neutral identities");
+    let feature = result.ir().model.features.first().expect("feature");
+    assert_eq!(feature.name.as_deref(), Some("Source#part"));
+    assert_eq!(feature.id.as_str(), "fcstd:design:feature#Source%23part");
+    assert_eq!(
+        feature.native_ref.as_deref(),
+        Some("fcstd:native:object#Source%23part")
+    );
+    assert_valid_document(result.ir());
+    assert!(crate::validate_native(result.ir()).is_empty());
 }

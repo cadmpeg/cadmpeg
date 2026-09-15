@@ -134,12 +134,11 @@ pub(crate) fn transfer_neutral(
             })
             .collect::<Result<BTreeMap<_, _>, CodecError>>()?;
         model.semantic_annotations.push(SemanticAnnotation {
-            id: SemanticAnnotationId::mint(crate::native::model_id(
-                "semantic-annotation",
-                &record.object,
-                "content",
-            ))
-            .expect("identity grammar"),
+            id: SemanticAnnotationId::compose(
+                &cadmpeg_ir::identity_namespace!("fcstd", "model", "semantic-annotation"),
+                crate::native::model_key(&record.object, "content")
+                    .map_err(CodecError::malformed)?,
+            ),
             object: record.object.clone(),
             kind: schema.kind.clone(),
             runtime_type: record.kind.as_str().to_owned(),

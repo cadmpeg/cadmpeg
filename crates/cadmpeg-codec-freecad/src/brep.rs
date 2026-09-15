@@ -131,8 +131,6 @@ pub enum ShapePayload {
         version: TextTopologyVersion,
         /// Shared table contents.
         facts: ShapeSet,
-        /// Shape-type token census.
-        shape_types: BTreeMap<String, usize>,
     },
     /// Binary shape-set grammar.
     Binary {
@@ -213,6 +211,341 @@ impl ShapeSet {
         .map(|(name, count)| (name.to_owned(), count))
         .collect()
     }
+
+    fn shape_type_counts(&self) -> BTreeMap<String, usize> {
+        self.tshapes
+            .iter()
+            .fold(BTreeMap::new(), |mut counts, shape| {
+                let name = match shape.kind() {
+                    TextShapeKind::Vertex => "vertex",
+                    TextShapeKind::Edge => "edge",
+                    TextShapeKind::Wire => "wire",
+                    TextShapeKind::Face => "face",
+                    TextShapeKind::Shell => "shell",
+                    TextShapeKind::Solid => "solid",
+                    TextShapeKind::CompSolid => "compsolid",
+                    TextShapeKind::Compound => "compound",
+                };
+                *counts.entry(name.to_owned()).or_default() += 1;
+                counts
+            })
+    }
+
+    /// Validate all cross-table references before a shape set enters CADIR.
+    ///
+    /// The binary and text readers perform these checks while parsing source
+    /// bytes. CADIR can also deserialize a retained shape payload directly,
+    /// so the same table bounds and subshape-first relation must be checked at
+    /// that admission boundary.
+    fn validate(&self) -> Result<(), String> {
+        for (position, location) in self.locations.iter().enumerate() {
+            for factor in &location.factors {
+                validate_one_based(factor.location, position, "location factor reference")?;
+            }
+        }
+        for (position, polygon) in self.polygons3d.iter().enumerate() {
+            if polygon
+                .parameters
+                .as_ref()
+                .is_some_and(|parameters| parameters.len() != polygon.nodes.len())
+            {
+                return Err(format!(
+                    "Polygon3D[{position}] parameters length must equal nodes length"
+                ));
+            }
+        }
+        for (position, polygon) in self.polygons_on_triangulations.iter().enumerate() {
+            if polygon.nodes.iter().any(|node| *node == 0) {
+                return Err(format!(
+                    "PolygonOnTriangulations[{position}] node indices must be one-based"
+                ));
+            }
+            if polygon
+                .parameters
+                .as_ref()
+                .is_some_and(|parameters| parameters.len() != polygon.nodes.len())
+            {
+                return Err(format!(
+                    "PolygonOnTriangulations[{position}] parameters length must equal nodes length"
+                ));
+            }
+        }
+        for (position, shape) in self.tshapes.iter().enumerate() {
+            let shape_index = position + 1;
+            for child in &shape.children {
+                validate_one_based(child.shape, self.tshapes.len(), "TShape child")?;
+                if child.shape >= shape_index {
+                    return Err(format!(
+                        "TShape {shape_index} references non-prior child {}",
+                        child.shape
+                    ));
+                }
+                validate_location_ref(child.location, self.locations.len(), "TShape child")?;
+            }
+            match &shape.geometry {
+                TextTShapeGeometry::Vertex {
+                    representations, ..
+                } => {
+                    for representation in representations {
+                        match representation {
+                            TextPointRepresentation::Curve3d {
+                                curve, location, ..
+                            } => {
+                                validate_one_based(*curve, self.curves.len(), "vertex curve")?;
+                                validate_optional_index(
+                                    *location,
+                                    self.locations.len(),
+                                    "vertex location",
+                                )?;
+                            }
+                            TextPointRepresentation::Pcurve {
+                                curve,
+                                surface,
+                                location,
+                                ..
+                            } => {
+                                validate_one_based(
+                                    *curve,
+                                    self.curve2ds.len(),
+                                    "vertex parameter curve",
+                                )?;
+                                validate_one_based(
+                                    *surface,
+                                    self.surfaces.len(),
+                                    "vertex surface",
+                                )?;
+                                validate_optional_index(
+                                    *location,
+                                    self.locations.len(),
+                                    "vertex location",
+                                )?;
+                            }
+                            TextPointRepresentation::Surface {
+                                surface, location, ..
+                            } => {
+                                validate_one_based(
+                                    *surface,
+                                    self.surfaces.len(),
+                                    "vertex surface",
+                                )?;
+                                validate_optional_index(
+                                    *location,
+                                    self.locations.len(),
+                                    "vertex location",
+                                )?;
+                            }
+                        }
+                    }
+                }
+                TextTShapeGeometry::Edge {
+                    representations, ..
+                } => {
+                    for representation in representations {
+                        match representation {
+                            TextEdgeRepresentation::Curve3d {
+                                curve, location, ..
+                            } => {
+                                validate_one_based(*curve, self.curves.len(), "edge curve")?;
+                                validate_optional_index(
+                                    *location,
+                                    self.locations.len(),
+                                    "edge curve location",
+                                )?;
+                            }
+                            TextEdgeRepresentation::Pcurve {
+                                curve,
+                                surface,
+                                location,
+                                ..
+                            } => {
+                                validate_one_based(
+                                    *curve,
+                                    self.curve2ds.len(),
+                                    "edge parameter curve",
+                                )?;
+                                validate_one_based(*surface, self.surfaces.len(), "edge surface")?;
+                                validate_optional_index(
+                                    *location,
+                                    self.locations.len(),
+                                    "edge surface location",
+                                )?;
+                            }
+                            TextEdgeRepresentation::PcurvePair {
+                                curves,
+                                surface,
+                                location,
+                                ..
+                            } => {
+                                for curve in curves {
+                                    validate_one_based(
+                                        *curve,
+                                        self.curve2ds.len(),
+                                        "edge parameter curve",
+                                    )?;
+                                }
+                                validate_one_based(*surface, self.surfaces.len(), "edge surface")?;
+                                validate_optional_index(
+                                    *location,
+                                    self.locations.len(),
+                                    "edge surface location",
+                                )?;
+                            }
+                            TextEdgeRepresentation::Regularity {
+                                surfaces,
+                                locations,
+                                ..
+                            } => {
+                                for surface in surfaces {
+                                    validate_one_based(
+                                        *surface,
+                                        self.surfaces.len(),
+                                        "edge regularity surface",
+                                    )?;
+                                }
+                                for location in locations {
+                                    validate_optional_index(
+                                        *location,
+                                        self.locations.len(),
+                                        "edge regularity location",
+                                    )?;
+                                }
+                            }
+                            TextEdgeRepresentation::Polygon3d { polygon, location } => {
+                                validate_one_based(
+                                    *polygon,
+                                    self.polygons3d.len(),
+                                    "edge 3D polygon",
+                                )?;
+                                validate_optional_index(
+                                    *location,
+                                    self.locations.len(),
+                                    "edge polygon location",
+                                )?;
+                            }
+                            TextEdgeRepresentation::PolygonOnTriangulation {
+                                polygon,
+                                triangulation,
+                                location,
+                            } => {
+                                self.validate_indexed_polygon(
+                                    *polygon,
+                                    *triangulation,
+                                    "edge indexed polygon",
+                                )?;
+                                validate_optional_index(
+                                    *location,
+                                    self.locations.len(),
+                                    "edge indexed polygon location",
+                                )?;
+                            }
+                            TextEdgeRepresentation::PolygonPair {
+                                polygons,
+                                triangulation,
+                                location,
+                            } => {
+                                for polygon in polygons {
+                                    self.validate_indexed_polygon(
+                                        *polygon,
+                                        *triangulation,
+                                        "edge indexed polygon",
+                                    )?;
+                                }
+                                validate_optional_index(
+                                    *location,
+                                    self.locations.len(),
+                                    "edge indexed polygon location",
+                                )?;
+                            }
+                        }
+                    }
+                }
+                TextTShapeGeometry::Face {
+                    surface,
+                    location,
+                    triangulation,
+                    ..
+                } => {
+                    if let Some(surface) = surface {
+                        validate_one_based(surface.index(), self.surfaces.len(), "face surface")?;
+                    }
+                    validate_location_ref(*location, self.locations.len(), "face location")?;
+                    if let Some(triangulation) = triangulation {
+                        validate_one_based(
+                            triangulation.index(),
+                            self.triangulations.len(),
+                            "face triangulation",
+                        )?;
+                    }
+                }
+                TextTShapeGeometry::Wire
+                | TextTShapeGeometry::Shell
+                | TextTShapeGeometry::Solid
+                | TextTShapeGeometry::CompSolid
+                | TextTShapeGeometry::Compound => {}
+            }
+        }
+        for root in &self.roots {
+            validate_one_based(root.shape, self.tshapes.len(), "root TShape")?;
+            validate_location_ref(root.location, self.locations.len(), "root shape")?;
+        }
+        Ok(())
+    }
+
+    fn validate_indexed_polygon(
+        &self,
+        polygon: usize,
+        triangulation: usize,
+        label: &str,
+    ) -> Result<(), String> {
+        validate_one_based(polygon, self.polygons_on_triangulations.len(), label)?;
+        validate_one_based(triangulation, self.triangulations.len(), label)?;
+        let polygon_record = self
+            .polygons_on_triangulations
+            .get(
+                polygon
+                    .checked_sub(1)
+                    .ok_or_else(|| format!("{label} index is zero"))?,
+            )
+            .ok_or_else(|| format!("{label} index {polygon} is unavailable"))?;
+        let node_count = self
+            .triangulations
+            .get(
+                triangulation
+                    .checked_sub(1)
+                    .ok_or_else(|| format!("{label} index is zero"))?,
+            )
+            .ok_or_else(|| format!("{label} index {triangulation} is unavailable"))?
+            .nodes()
+            .len();
+        for node in &polygon_record.nodes {
+            let node = usize::try_from(*node)
+                .map_err(|_| format!("{label} node index does not fit usize"))?;
+            validate_one_based(node, node_count, label)?;
+        }
+        Ok(())
+    }
+}
+
+fn validate_one_based(index: usize, length: usize, label: &str) -> Result<(), String> {
+    if index == 0 || index > length {
+        return Err(format!(
+            "{label} index {index} is out of range 1..={length}"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_optional_index(index: usize, length: usize, label: &str) -> Result<(), String> {
+    if index > length {
+        return Err(format!(
+            "{label} index {index} is out of range 0..={length}"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_location_ref(location: LocationRef, length: usize, label: &str) -> Result<(), String> {
+    validate_optional_index(location.index(), length, label)
 }
 
 #[derive(Serialize, Deserialize)]
@@ -276,7 +609,7 @@ impl TryFrom<BinaryFactsWire> for ShapeSet {
     type Error = String;
 
     fn try_from(value: BinaryFactsWire) -> Result<Self, Self::Error> {
-        Ok(Self {
+        let facts = Self {
             locations: value.locations,
             curve2ds: value.curve2ds,
             curves: value.curves,
@@ -286,7 +619,9 @@ impl TryFrom<BinaryFactsWire> for ShapeSet {
             triangulations: value.triangulations,
             tshapes: value.tshapes,
             roots: value.roots,
-        })
+        };
+        facts.validate()?;
+        Ok(facts)
     }
 }
 
@@ -295,17 +630,13 @@ impl From<ShapePayloadRecord> for ShapePayloadRecordWire {
         let form = value.payload.form();
         let (text, binary) = match value.payload {
             ShapePayload::Empty => (None, None),
-            ShapePayload::Text {
-                facts,
-                shape_types,
-                version,
-            } => {
+            ShapePayload::Text { facts, version } => {
                 let section_counts = facts.section_counts();
                 (
                     Some(TextFactsWire {
                         topology_version: version.number(),
                         section_counts,
-                        shape_types,
+                        shape_types: facts.shape_type_counts(),
                         locations: facts.locations,
                         curve2ds: facts.curve2ds,
                         curves: facts.curves,
@@ -351,16 +682,16 @@ impl TryFrom<ShapePayloadRecordWire> for ShapePayloadRecord {
                     tshapes: text.tshapes,
                     roots: text.roots,
                 };
+                facts.validate()?;
                 if text.section_counts != facts.section_counts() {
                     return Err(
                         "text shape-set section_counts disagrees with table lengths".to_owned()
                     );
                 }
-                ShapePayload::Text {
-                    version,
-                    facts,
-                    shape_types: text.shape_types,
+                if text.shape_types != facts.shape_type_counts() {
+                    return Err("text shape-set shape_types disagrees with TShape kinds".to_owned());
                 }
+                ShapePayload::Text { version, facts }
             }
             (ShapePayloadForm::Binary, None, Some(binary)) => {
                 let version = BinaryTopologyVersion::try_from(binary.topology_version)?;
@@ -1619,12 +1950,8 @@ pub fn parse_payloads(
             let (facts, version) = parse_binary_prefix(&entry.data)?;
             ShapePayload::Binary { facts, version }
         } else {
-            let (facts, shape_types, version) = parse_text(&entry.data)?;
-            ShapePayload::Text {
-                facts,
-                shape_types,
-                version,
-            }
+            let (facts, version) = parse_text(&entry.data)?;
+            ShapePayload::Text { facts, version }
         };
         payloads.push(ShapePayloadRecord {
             id: crate::native::native_child_id("shape-payload", &property.id, &name),
@@ -1816,9 +2143,7 @@ fn census_surface(
     increment(counts, family);
 }
 
-pub(crate) fn parse_text(
-    bytes: &[u8],
-) -> Result<(ShapeSet, BTreeMap<String, usize>, TextTopologyVersion), CodecError> {
+pub(crate) fn parse_text(bytes: &[u8]) -> Result<(ShapeSet, TextTopologyVersion), CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("text B-rep is not UTF-8".into()))?;
     let headers = [
@@ -1890,19 +2215,25 @@ pub(crate) fn parse_text(
     let polygons_on_triangulations = parse_polygons_on_triangulations(&tokens, &section_counts)?;
     let triangulations = parse_triangulations(&tokens, &section_counts, topology_version)?;
     let (tshapes, roots) = parse_tshapes(&tokens, &section_counts, topology_version)?;
+    let facts = ShapeSet {
+        locations,
+        curve2ds,
+        curves,
+        polygons3d,
+        polygons_on_triangulations,
+        surfaces,
+        triangulations,
+        tshapes: tshapes.into(),
+        roots,
+    };
+    if shape_types != facts.shape_type_counts() {
+        return Err(CodecError::Malformed(
+            "TShapes shape-type census disagrees with parsed records".into(),
+        ));
+    }
+    facts.validate().map_err(CodecError::Malformed)?;
     Ok((
-        ShapeSet {
-            locations,
-            curve2ds,
-            curves,
-            polygons3d,
-            polygons_on_triangulations,
-            surfaces,
-            triangulations,
-            tshapes: tshapes.into(),
-            roots,
-        },
-        shape_types,
+        facts,
         TextTopologyVersion::try_from(topology_version).map_err(CodecError::Malformed)?,
     ))
 }
@@ -2196,18 +2527,20 @@ pub(crate) fn parse_binary_prefix(
             }]
         }
     };
+    let facts = ShapeSet {
+        locations,
+        curve2ds,
+        curves,
+        polygons3d,
+        polygons_on_triangulations,
+        surfaces,
+        triangulations,
+        tshapes: tshapes.into(),
+        roots,
+    };
+    facts.validate().map_err(CodecError::Malformed)?;
     Ok((
-        ShapeSet {
-            locations,
-            curve2ds,
-            curves,
-            polygons3d,
-            polygons_on_triangulations,
-            surfaces,
-            triangulations,
-            tshapes: tshapes.into(),
-            roots,
-        },
+        facts,
         BinaryTopologyVersion::try_from(version).map_err(CodecError::Malformed)?,
     ))
 }
@@ -3140,7 +3473,9 @@ impl<'a> BinaryCursor<'a> {
     }
 
     fn unread(&self) -> &'a [u8] {
-        let rel = self.view.position().saturating_sub(self.view.start());
+        let Some(rel) = self.view.position().checked_sub(self.view.start()) else {
+            return &[];
+        };
         self.view.window().get(rel..).unwrap_or_default()
     }
 
@@ -4488,7 +4823,11 @@ fn normalize_periodic_knots(
             "periodic B-spline has no knots".into(),
         ));
     };
-    let last = *knots.last().expect("nonempty periodic knot vector");
+    let Some(&last) = knots.last() else {
+        return Err(CodecError::Malformed(
+            "periodic B-spline has no knots".into(),
+        ));
+    };
     let first_multiplicity = knots.iter().take_while(|knot| **knot == first).count();
     let last_multiplicity = knots.iter().rev().take_while(|knot| **knot == last).count();
     if first_multiplicity == 0
@@ -4820,11 +5159,11 @@ impl<'a> TokenCursor<'a> {
     }
 
     fn is_empty(&self) -> bool {
-        self.index == self.tokens.len()
+        self.index >= self.tokens.len()
     }
 
     fn remaining(&self) -> usize {
-        self.tokens.len().saturating_sub(self.index)
+        self.tokens.get(self.index..).map_or(0, <[_]>::len)
     }
 
     /// Clamps a declared element count to the unread token count.
@@ -4941,12 +5280,11 @@ pub(crate) fn transfer_text_curves(
             instance_path: Vec::new(),
         };
         for (index, curve) in curves.iter().enumerate() {
-            let id = CurveId::mint(native::model_id(
-                "curve",
-                &payload.id,
-                (index + 1).to_string(),
-            ))
-            .expect("identity grammar");
+            let id = CurveId::compose(
+                &cadmpeg_ir::identity_namespace!("fcstd", "model", "curve"),
+                native::model_key(&payload.id, (index + 1).to_string())
+                    .map_err(CodecError::malformed)?,
+            );
             append_text_curve(curve, id, &association, &mut transfer)?;
         }
     }
@@ -5033,7 +5371,10 @@ pub(crate) fn append_text_curve(
             parameter_range,
             basis,
         } => {
-            let basis_id = CurveId::mint(format!("{id}:basis")).expect("identity grammar");
+            let basis_id = CurveId::compose(
+                &cadmpeg_ir::identity_namespace!("fcstd", "model", "curve"),
+                id.key().colon(cadmpeg_ir::identity_key!("basis")),
+            );
             let basis_geometry = append_text_curve(basis, basis_id.clone(), association, transfer)?;
             let parameter_range = crate::topology_transfer::normalize_occt_curve_range(
                 basis_geometry.solved().ok_or_else(|| {
@@ -5054,8 +5395,10 @@ pub(crate) fn append_text_curve(
                 )
                 .map(|admitted_payload| {
                     ProceduralCurve::new(
-                        ProceduralCurveId::mint(format!("{id}:construction"))
-                            .expect("identity grammar"),
+                        ProceduralCurveId::compose(
+                            &cadmpeg_ir::identity_namespace!("fcstd", "model", "curve"),
+                            id.key().colon(cadmpeg_ir::identity_key!("construction")),
+                        ),
                         ProceduralCurveDefinition::Subset(admitted_payload),
                     )
                 })
@@ -5068,7 +5411,10 @@ pub(crate) fn append_text_curve(
             direction,
             basis,
         } => {
-            let basis_id = CurveId::mint(format!("{id}:basis")).expect("identity grammar");
+            let basis_id = CurveId::compose(
+                &cadmpeg_ir::identity_namespace!("fcstd", "model", "curve"),
+                id.key().colon(cadmpeg_ir::identity_key!("basis")),
+            );
             append_text_curve(basis, basis_id.clone(), association, transfer)?;
             transfer.procedural.push((
                 id.clone(),
@@ -5083,8 +5429,10 @@ pub(crate) fn append_text_curve(
                 )
                 .map(|admitted_payload| {
                     ProceduralCurve::new(
-                        ProceduralCurveId::mint(format!("{id}:construction"))
-                            .expect("identity grammar"),
+                        ProceduralCurveId::compose(
+                            &cadmpeg_ir::identity_namespace!("fcstd", "model", "curve"),
+                            id.key().colon(cadmpeg_ir::identity_key!("construction")),
+                        ),
                         ProceduralCurveDefinition::Offset(admitted_payload),
                     )
                 })
@@ -5137,12 +5485,11 @@ pub(crate) fn transfer_text_surfaces(
         for (index, surface) in surfaces.iter().enumerate() {
             append_text_surface(
                 surface,
-                SurfaceId::mint(native::model_id(
-                    "surface",
-                    &payload.id,
-                    (index + 1).to_string(),
-                ))
-                .expect("identity grammar"),
+                SurfaceId::compose(
+                    &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
+                    native::model_key(&payload.id, (index + 1).to_string())
+                        .map_err(CodecError::malformed)?,
+                ),
                 &association,
                 curve_transfer,
                 &mut transfer,
@@ -5231,7 +5578,10 @@ pub(crate) fn append_text_surface(
             direction,
             directrix,
         } => {
-            let directrix_id = CurveId::mint(format!("{id}:directrix")).expect("identity grammar");
+            let directrix_id = CurveId::compose(
+                &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
+                id.key().colon(cadmpeg_ir::identity_key!("directrix")),
+            );
             append_text_curve(directrix, directrix_id.clone(), association, curve_transfer)?;
             transfer.procedural.push((
                 id.clone(),
@@ -5244,8 +5594,10 @@ pub(crate) fn append_text_surface(
                 )
                 .map(|admitted_payload| {
                     ProceduralSurface::new(
-                        ProceduralSurfaceId::mint(format!("{id}:construction"))
-                            .expect("identity grammar"),
+                        ProceduralSurfaceId::compose(
+                            &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
+                            id.key().colon(cadmpeg_ir::identity_key!("construction")),
+                        ),
                         ProceduralSurfaceDefinition::Extrusion(admitted_payload),
                         None,
                     )
@@ -5259,7 +5611,10 @@ pub(crate) fn append_text_surface(
             axis_direction,
             directrix,
         } => {
-            let directrix_id = CurveId::mint(format!("{id}:directrix")).expect("identity grammar");
+            let directrix_id = CurveId::compose(
+                &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
+                id.key().colon(cadmpeg_ir::identity_key!("directrix")),
+            );
             append_text_curve(directrix, directrix_id.clone(), association, curve_transfer)?;
             transfer.procedural.push((
                 id.clone(),
@@ -5274,8 +5629,10 @@ pub(crate) fn append_text_surface(
                 )
                 .map(|admitted_payload| {
                     ProceduralSurface::new(
-                        ProceduralSurfaceId::mint(format!("{id}:construction"))
-                            .expect("identity grammar"),
+                        ProceduralSurfaceId::compose(
+                            &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
+                            id.key().colon(cadmpeg_ir::identity_key!("construction")),
+                        ),
                         ProceduralSurfaceDefinition::Revolution(admitted_payload),
                         None,
                     )
@@ -5297,7 +5654,10 @@ pub(crate) fn append_text_surface(
                     value.mul_add(basis_parameters.v_scale, basis_parameters.v_offset)
                 }),
             ];
-            let basis_id = SurfaceId::mint(format!("{id}:basis")).expect("identity grammar");
+            let basis_id = SurfaceId::compose(
+                &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
+                id.key().colon(cadmpeg_ir::identity_key!("basis")),
+            );
             let basis_geometry = append_text_surface(
                 basis,
                 basis_id.clone(),
@@ -5316,8 +5676,10 @@ pub(crate) fn append_text_surface(
                 )
                 .map(|admitted_payload| {
                     ProceduralSurface::new(
-                        ProceduralSurfaceId::mint(format!("{id}:construction"))
-                            .expect("identity grammar"),
+                        ProceduralSurfaceId::compose(
+                            &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
+                            id.key().colon(cadmpeg_ir::identity_key!("construction")),
+                        ),
                         ProceduralSurfaceDefinition::Subset(admitted_payload),
                         None,
                     )
@@ -5327,7 +5689,10 @@ pub(crate) fn append_text_surface(
             basis_geometry
         }
         TextSurface::Offset { distance, basis } => {
-            let basis_id = SurfaceId::mint(format!("{id}:basis")).expect("identity grammar");
+            let basis_id = SurfaceId::compose(
+                &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
+                id.key().colon(cadmpeg_ir::identity_key!("basis")),
+            );
             append_text_surface(
                 basis,
                 basis_id.clone(),
@@ -5350,8 +5715,10 @@ pub(crate) fn append_text_surface(
                 )
                 .map(|admitted_payload| {
                     ProceduralSurface::new(
-                        ProceduralSurfaceId::mint(format!("{id}:construction"))
-                            .expect("identity grammar"),
+                        ProceduralSurfaceId::compose(
+                            &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
+                            id.key().colon(cadmpeg_ir::identity_key!("construction")),
+                        ),
                         ProceduralSurfaceDefinition::Offset(admitted_payload),
                         None,
                     )
@@ -5443,6 +5810,49 @@ pub(crate) mod tests {
             wire[form]["tshapes"][1]["index"] = serde_json::json!(1);
             let error = serde_json::from_value::<ShapePayloadRecord>(wire).unwrap_err();
             assert!(error.to_string().contains("tshapes[1].index must equal 2"));
+        }
+    }
+
+    #[test]
+    fn shape_payload_direct_wire_checks_cross_table_references() {
+        for form in ["text", "binary"] {
+            let mut facts = serde_json::json!({
+                "topology_version": 1,
+                "locations": [], "curve2ds": [], "curves": [],
+                "polygons3d": [], "polygons_on_triangulations": [],
+                "surfaces": [], "triangulations": [], "roots": [],
+                "tshapes": [
+                    {"index": 1, "kind": "wire", "geometry": {"kind": "empty"},
+                     "flags": [false, false, false, false, false, false, false], "children": []},
+                    {"index": 2, "kind": "compound", "geometry": {"kind": "empty"},
+                     "flags": [false, false, false, false, false, false, false], "children": []}
+                ]
+            });
+            if form == "text" {
+                facts["shape_types"] = serde_json::json!({"wire": 1, "compound": 1});
+                facts["section_counts"] = serde_json::json!({
+                    "Locations": 0, "Curve2ds": 0, "Curves": 0, "Polygon3D": 0,
+                    "PolygonOnTriangulations": 0, "Surfaces": 0, "Triangulations": 0, "TShapes": 2
+                });
+            }
+            let mut wire = serde_json::json!({
+                "id": "shape", "property": "property", "entry": "Shape.brp",
+                "form": form, "text": null, "binary": null
+            });
+            wire[form] = facts;
+
+            wire[form]["tshapes"][1]["children"] = serde_json::json!([
+                {"shape": 2, "orientation": "forward", "location": 0}
+            ]);
+            let error = serde_json::from_value::<ShapePayloadRecord>(wire.clone()).unwrap_err();
+            assert!(error.to_string().contains("non-prior"), "{form}: {error}");
+
+            wire[form]["tshapes"][1]["children"] = serde_json::json!([]);
+            wire[form]["roots"] = serde_json::json!([
+                {"shape": 3, "orientation": "forward", "location": 0}
+            ]);
+            let error = serde_json::from_value::<ShapePayloadRecord>(wire).unwrap_err();
+            assert!(error.to_string().contains("root TShape"), "{form}: {error}");
         }
     }
 

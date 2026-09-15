@@ -9,42 +9,63 @@ use frame::{FiniteFrame, FiniteVec3};
 
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::hash::sha256_hex;
+use cadmpeg_ir::ids::{IdentityError, IdentityKey};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::num::NonZeroU64;
 
 pub(crate) fn native_id(kind: &str, key: impl AsRef<str>) -> String {
-    format!("fcstd:native:{kind}#{}", encode_id_key(key.as_ref()))
+    format!(
+        "fcstd:native:{kind}#{}",
+        IdentityKey::encode_segment(key.as_ref())
+    )
+}
+
+pub(crate) fn native_id_from_key(kind: &str, key: &IdentityKey) -> String {
+    format!("fcstd:native:{kind}#{key}")
 }
 
 pub(crate) fn native_child_id(kind: &str, parent: &str, child: &str) -> String {
     let parent_key = id_key(parent);
-    format!("fcstd:native:{kind}#{parent_key}:{}", encode_id_key(child))
+    format!(
+        "fcstd:native:{kind}#{parent_key}:{}",
+        IdentityKey::encode_segment(child)
+    )
 }
 
 pub(crate) fn model_id(kind: &str, parent: &str, child: impl AsRef<str>) -> String {
-    format!(
-        "fcstd:model:{kind}#{}:{}",
-        id_key(parent),
-        encode_id_key(child.as_ref())
-    )
+    let child = child.as_ref();
+    let child_key = if child.is_empty() {
+        String::new()
+    } else {
+        IdentityKey::encode_segment(child).into_string()
+    };
+    format!("fcstd:model:{kind}#{}:{}", id_key(parent), child_key)
 }
 
 pub(crate) fn id_key(id: &str) -> &str {
     id.split_once('#').map_or(id, |(_, key)| key)
 }
 
-fn encode_id_key(value: &str) -> String {
-    let mut output = String::with_capacity(value.len());
-    for byte in value.bytes() {
-        if byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'/') {
-            output.push(char::from(byte));
-        } else {
-            use std::fmt::Write;
-            write!(output, "%{byte:02X}").expect("writing to a String cannot fail");
-        }
+pub(crate) fn encoded_key(value: &str) -> IdentityKey {
+    IdentityKey::encode_segment(value)
+}
+
+pub(crate) fn id_key_identity(id: &str) -> Result<IdentityKey, IdentityError> {
+    IdentityKey::try_new(id_key(id).to_owned())
+}
+
+pub(crate) fn model_key(
+    parent: &str,
+    child: impl AsRef<str>,
+) -> Result<IdentityKey, IdentityError> {
+    let parent = id_key_identity(parent)?;
+    let child = child.as_ref();
+    if child.is_empty() {
+        IdentityKey::try_new(format!("{}:", parent.as_str()))
+    } else {
+        Ok(parent.colon(IdentityKey::encode_segment(child)))
     }
-    output
 }
 
 #[cfg(test)]
@@ -371,8 +392,14 @@ mod tests {
     #[test]
     fn copy_on_change_payload_requires_policy_on_wire() {
         for (field, value) in [
-            ("copy_on_change_source", serde_json::json!("source")),
-            ("copy_on_change_group", serde_json::json!("group")),
+            (
+                "copy_on_change_source",
+                serde_json::json!({"document":null,"document_attribute":null,"object":"source","subelements":[]}),
+            ),
+            (
+                "copy_on_change_group",
+                serde_json::json!({"document":null,"document_attribute":null,"object":"group","subelements":[]}),
+            ),
             ("copy_on_change_touched", serde_json::json!(false)),
         ] {
             let mut wire = serde_json::json!({
@@ -423,11 +450,16 @@ mod tests {
         );
         assert_eq!(native_id("object", "A%20B"), "fcstd:native:object#A%2520B");
         assert_eq!(native_id("object", "A:B"), "fcstd:native:object#A%3AB");
+        assert_eq!(native_id("object", ""), "fcstd:native:object#%EMPTY");
         let property = native_child_id("property", &native_id("object", "A B"), "Shape Value");
         assert_eq!(property, "fcstd:native:property#A%20B:Shape%20Value");
         assert_eq!(
             model_id("body", &property, "root#1"),
             "fcstd:model:body#A%20B:Shape%20Value:root%231"
+        );
+        assert_eq!(
+            model_id("body", &property, ""),
+            "fcstd:model:body#A%20B:Shape%20Value:"
         );
     }
 }
@@ -1217,9 +1249,9 @@ pub struct CopyOnChange {
     /// Persisted policy name or numeric code.
     pub policy: String,
     /// Original tracked object.
-    pub source: Option<String>,
+    pub source: Option<LinkTarget>,
     /// Internal ownership group.
-    pub group: Option<String>,
+    pub group: Option<LinkTarget>,
     /// Whether the tracked source changed.
     pub touched: Option<bool>,
 }
@@ -1227,8 +1259,8 @@ pub struct CopyOnChange {
 impl CopyOnChange {
     pub(crate) fn from_wire(
         policy: Option<String>,
-        source: Option<String>,
-        group: Option<String>,
+        source: Option<LinkTarget>,
+        group: Option<LinkTarget>,
         touched: Option<bool>,
     ) -> Result<Option<Self>, String> {
         match policy {
@@ -1356,17 +1388,17 @@ impl ProductNodeRecord {
     }
 
     /// Original object tracked by copy-on-change.
-    pub fn copy_on_change_source(&self) -> Option<&str> {
+    pub fn copy_on_change_source(&self) -> Option<&LinkTarget> {
         self.occurrence()
             .and_then(|node| node.copy_on_change.as_ref())
-            .and_then(|copy| copy.source.as_deref())
+            .and_then(|copy| copy.source.as_ref())
     }
 
     /// Internal ownership group for copy-on-change copies.
-    pub fn copy_on_change_group(&self) -> Option<&str> {
+    pub fn copy_on_change_group(&self) -> Option<&LinkTarget> {
         self.occurrence()
             .and_then(|node| node.copy_on_change.as_ref())
-            .and_then(|copy| copy.group.as_deref())
+            .and_then(|copy| copy.group.as_ref())
     }
 
     /// Whether the tracked source has changed.
@@ -1413,8 +1445,8 @@ struct ProductNodeRecordWire {
     linked_subelements: Vec<String>,
     claim_child: Option<bool>,
     copy_on_change: Option<String>,
-    copy_on_change_source: Option<String>,
-    copy_on_change_group: Option<String>,
+    copy_on_change_source: Option<LinkTarget>,
+    copy_on_change_group: Option<LinkTarget>,
     copy_on_change_touched: Option<bool>,
     scale: Option<[f64; 3]>,
     element_visibility: Vec<bool>,
@@ -1454,8 +1486,8 @@ impl From<ProductNodeRecord> for ProductNodeRecordWire {
             linked_subelements: value.linked_subelements().to_vec(),
             claim_child: value.claim_child(),
             copy_on_change: value.copy_on_change().map(str::to_owned),
-            copy_on_change_source: value.copy_on_change_source().map(str::to_owned),
-            copy_on_change_group: value.copy_on_change_group().map(str::to_owned),
+            copy_on_change_source: value.copy_on_change_source().cloned(),
+            copy_on_change_group: value.copy_on_change_group().cloned(),
             copy_on_change_touched: value.copy_on_change_touched(),
             scale: value.scale(),
             element_visibility: Vec::new(),

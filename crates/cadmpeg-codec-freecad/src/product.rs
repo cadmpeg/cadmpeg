@@ -14,7 +14,7 @@ use crate::native::{
 };
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
+use cadmpeg_ir::ids::{IdentityKey, OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{
     CopyOnChange, CopyOnChangePolicy, ExternalDocument, LinkState, Occurrence, OccurrenceParent,
     ProductDefinition, ProductDefinitionKind, PrototypeReference,
@@ -69,14 +69,14 @@ pub(crate) fn transfer(
             .map_err(|_| malformed("negative ElementCount"))?;
         let claim_child = bool_property(&owned, "LinkClaimChild")?;
         let copy_on_change = copy_on_change_property(&owned)?;
-        let copy_on_change_source = linked_object(
+        let copy_on_change_source = linked_target(
             &owned,
             "LinkCopyOnChangeSource",
             "App::PropertyXLink",
             "XLink",
         )?;
         let copy_on_change_group =
-            linked_object(&owned, "LinkCopyOnChangeGroup", "App::PropertyLink", "Link")?;
+            linked_target(&owned, "LinkCopyOnChangeGroup", "App::PropertyLink", "Link")?;
         let copy_on_change_touched = bool_property(&owned, "LinkCopyOnChangeTouched")?;
         let scale = scale_property(&owned)?
             .map(crate::native::frame::FiniteVec3::try_from)
@@ -218,8 +218,20 @@ pub(crate) fn transfer_neutral(
         if record.external_document().is_none() {
             component_objects.extend(record.prototype().map(str::to_owned));
         }
-        component_objects.extend(record.copy_on_change_source().map(str::to_owned));
-        component_objects.extend(record.copy_on_change_group().map(str::to_owned));
+        component_objects.extend(
+            record
+                .copy_on_change_source()
+                .into_iter()
+                .filter(|target| target.document().is_none())
+                .filter_map(|target| target.object().map(str::to_owned)),
+        );
+        component_objects.extend(
+            record
+                .copy_on_change_group()
+                .into_iter()
+                .filter(|target| target.document().is_none())
+                .filter_map(|target| target.object().map(str::to_owned)),
+        );
         component_objects.extend(record.element_objects().iter().cloned());
     }
     component_objects.extend(
@@ -251,17 +263,21 @@ pub(crate) fn transfer_neutral(
         }
     }
 
-    let definition_id = |object: &str| {
-        ProductDefinitionId::mint(crate::native::model_id(
-            "product_definition",
-            object,
-            "definition",
+    let definition_id = |object: &str| -> Result<ProductDefinitionId, CodecError> {
+        Ok(ProductDefinitionId::compose(
+            &cadmpeg_ir::identity_namespace!("fcstd", "model", "product_definition"),
+            crate::native::id_key_identity(object)
+                .map_err(CodecError::malformed)?
+                .colon(cadmpeg_ir::identity_key!("definition")),
         ))
-        .expect("identity grammar")
     };
-    let container_occurrence_id = |object: &str| {
-        OccurrenceId::mint(crate::native::model_id("occurrence", object, "container"))
-            .expect("identity grammar")
+    let container_occurrence_id = |object: &str| -> Result<OccurrenceId, CodecError> {
+        Ok(OccurrenceId::compose(
+            &cadmpeg_ir::identity_namespace!("fcstd", "model", "occurrence"),
+            crate::native::id_key_identity(object)
+                .map_err(CodecError::malformed)?
+                .colon(cadmpeg_ir::identity_key!("container")),
+        ))
     };
     let mut parent_by_object = HashMap::<&str, &str>::new();
     for record in records
@@ -294,7 +310,8 @@ pub(crate) fn transfer_neutral(
         let count = occurrence_count(record)?.get();
         let parent = parent_by_object
             .get(record.object.as_str())
-            .map(|object| container_occurrence_id(object));
+            .map(|object| container_occurrence_id(object))
+            .transpose()?;
         for index in 0..count {
             let element = count > 1;
             let element_transform = record.element_transforms().get(index).copied();
@@ -328,23 +345,36 @@ pub(crate) fn transfer_neutral(
                     .ok_or_else(|| CodecError::Malformed("occurrence scale must be finite".into()))
             });
             let scale = [x?, y?, z?];
-            let copy_on_change = record.copy_on_change().map(|policy| CopyOnChange {
-                policy: copy_on_change_policy(policy),
-                source: record.copy_on_change_source().map(definition_id),
-                group: record.copy_on_change_group().map(definition_id),
-                touched: record.copy_on_change_touched(),
-            });
+            let copy_on_change = record
+                .copy_on_change()
+                .map(|policy| {
+                    Ok::<_, CodecError>(CopyOnChange {
+                        policy: copy_on_change_policy(policy),
+                        source: record
+                            .copy_on_change_source()
+                            .map(neutral_link_target)
+                            .transpose()?
+                            .flatten(),
+                        group: record
+                            .copy_on_change_group()
+                            .map(neutral_link_target)
+                            .transpose()?
+                            .flatten(),
+                        touched: record.copy_on_change_touched(),
+                    })
+                })
+                .transpose()?;
             occurrences.push(Occurrence {
-                id: OccurrenceId::mint(crate::native::model_id(
-                    "occurrence",
-                    &record.object,
-                    if element {
-                        index.to_string()
-                    } else {
-                        "instance".into()
-                    },
-                ))
-                .expect("identity grammar"),
+                id: OccurrenceId::compose(
+                    &cadmpeg_ir::identity_namespace!("fcstd", "model", "occurrence"),
+                    crate::native::id_key_identity(&record.object)
+                        .map_err(CodecError::malformed)?
+                        .colon(if element {
+                            IdentityKey::from(index)
+                        } else {
+                            cadmpeg_ir::identity_key!("instance")
+                        }),
+                ),
                 prototype: if let Some(document) = record.external_document() {
                     PrototypeReference::External {
                         document: match document {
@@ -359,7 +389,7 @@ pub(crate) fn transfer_neutral(
                     }
                 } else if let Some(prototype) = record.prototype() {
                     PrototypeReference::Local {
-                        definition: definition_id(prototype),
+                        definition: definition_id(prototype)?,
                     }
                 } else {
                     PrototypeReference::Unresolved {}
@@ -369,7 +399,12 @@ pub(crate) fn transfer_neutral(
                     .map_or(OccurrenceParent::Root {}, |occurrence| {
                         OccurrenceParent::Occurrence { occurrence }
                     }),
-                ordinal: u32::try_from(index).unwrap_or(u32::MAX),
+                ordinal: u32::try_from(index).map_err(|_| {
+                    CodecError::malformed(format_args!(
+                        "product occurrence {} element index exceeds u32",
+                        record.id
+                    ))
+                })?,
                 transform: local_transform,
                 linked_prototype: (record.link_transform() == Some(true))
                     .then_some(prototype_transform),
@@ -381,7 +416,8 @@ pub(crate) fn transfer_neutral(
                     record
                         .element_objects()
                         .get(index)
-                        .map(|object| definition_id(object)),
+                        .map(|object| definition_id(object))
+                        .transpose()?,
                     record.claim_child(),
                     copy_on_change,
                 ),
@@ -439,8 +475,8 @@ pub(crate) fn transfer_neutral(
                 .flatten()
                 .filter(|value| !value.is_empty())
             });
-            ProductDefinition {
-                id: definition_id(object),
+            Ok(ProductDefinition {
+                id: definition_id(object)?,
                 kind,
                 source_name: source_object.map(|object| object.name.clone()),
                 label: metadata_string(owned, "Label"),
@@ -459,9 +495,9 @@ pub(crate) fn transfer_neutral(
                     .map(|body| body.id.clone())
                     .collect(),
                 native_ref: Some(object.clone()),
-            }
+            })
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, CodecError>>()?;
 
     for object in &component_objects {
         let record = record_by_object.get(object.as_str()).copied();
@@ -471,16 +507,18 @@ pub(crate) fn transfer_neutral(
             .or_else(|| placements_by_object.get(object.as_str()).copied())
             .unwrap_or_default();
         let parent = parent_by_object.get(object.as_str()).copied();
-        occurrences.push(Occurrence {
-            id: container_occurrence_id(object),
-            prototype: PrototypeReference::Local {
-                definition: definition_id(object),
+        let parent = match parent {
+            Some(parent) => OccurrenceParent::Occurrence {
+                occurrence: container_occurrence_id(parent)?,
             },
-            parent: parent.map_or(OccurrenceParent::Root {}, |parent| {
-                OccurrenceParent::Occurrence {
-                    occurrence: container_occurrence_id(parent),
-                }
-            }),
+            None => OccurrenceParent::Root {},
+        };
+        occurrences.push(Occurrence {
+            id: container_occurrence_id(object)?,
+            prototype: PrototypeReference::Local {
+                definition: definition_id(object)?,
+            },
+            parent,
             ordinal: 0,
             transform: local_transform,
             linked_prototype: None,
@@ -499,7 +537,9 @@ pub(crate) fn transfer_neutral(
         };
         let ordinal = next_ordinal.entry(parent).or_default();
         occurrence.ordinal = *ordinal;
-        *ordinal = ordinal.saturating_add(1);
+        *ordinal = ordinal
+            .checked_add(1)
+            .ok_or_else(|| CodecError::malformed("product occurrence ordinal exceeds u32"))?;
     }
     Ok((definitions, occurrences))
 }
@@ -972,19 +1012,50 @@ fn copy_on_change_property(properties: &[&PropertyRecord]) -> Result<Option<Stri
     ))
 }
 
-fn linked_object(
+fn linked_target(
     properties: &[&PropertyRecord],
     name: &str,
     expected_type: &str,
     root: &str,
-) -> Result<Option<String>, CodecError> {
+) -> Result<Option<crate::native::LinkTarget>, CodecError> {
     let Some(property) = unique_property(properties, name)? else {
         return Ok(None);
     };
     let link = single_link(property, expected_type, root, name)?;
-    Ok(link
-        .and_then(crate::native::LinkTarget::object)
-        .map(str::to_owned))
+    Ok(link.cloned())
+}
+
+fn neutral_link_target(
+    target: &crate::native::LinkTarget,
+) -> Result<Option<cadmpeg_ir::products::PrototypeReference>, CodecError> {
+    if let Some(document) = target.document() {
+        return Ok(Some(cadmpeg_ir::products::PrototypeReference::External {
+            document: match document {
+                crate::native::ExternalDocument::File(path) => {
+                    cadmpeg_ir::products::ExternalDocument::path(path.as_str())
+                }
+                crate::native::ExternalDocument::Name(name) => {
+                    cadmpeg_ir::products::ExternalDocument::document_id(name.as_str())
+                }
+            },
+            object: target.object().map(str::to_owned),
+        }));
+    }
+    let Some(object) = target.object() else {
+        return Ok(target
+            .subelements()
+            .iter()
+            .any(|subelement| !subelement.is_empty())
+            .then_some(PrototypeReference::Unresolved {}));
+    };
+    Ok(Some(cadmpeg_ir::products::PrototypeReference::Local {
+        definition: ProductDefinitionId::compose(
+            &cadmpeg_ir::identity_namespace!("fcstd", "model", "product_definition"),
+            crate::native::id_key_identity(object)
+                .map_err(CodecError::malformed)?
+                .colon(cadmpeg_ir::identity_key!("definition")),
+        ),
+    }))
 }
 
 fn scale_property(properties: &[&PropertyRecord]) -> Result<Option<[f64; 3]>, CodecError> {

@@ -69,14 +69,21 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
         };
         let ordinal_unique = sibling_ordinals.insert((parent_key, occurrence.ordinal));
         let auxiliary_definitions = occurrence.link.as_ref().is_none_or(|link| {
-            [
-                link.element_component(),
-                link.copy_on_change().and_then(|copy| copy.source.as_ref()),
-                link.copy_on_change().and_then(|copy| copy.group.as_ref()),
-            ]
-            .into_iter()
-            .flatten()
-            .all(|definition| definitions.contains_key(definition.as_str()))
+            let element_valid = link
+                .element_component()
+                .is_none_or(|definition| definitions.contains_key(definition.as_str()));
+            let copy_targets_valid = link
+                .copy_on_change()
+                .into_iter()
+                .flat_map(|copy| [copy.source.as_ref(), copy.group.as_ref()])
+                .flatten()
+                .all(|reference| match reference {
+                    PrototypeReference::Local { definition } => {
+                        definitions.contains_key(definition.as_str())
+                    }
+                    PrototypeReference::External { .. } | PrototypeReference::Unresolved {} => true,
+                });
+            element_valid && copy_targets_valid
         });
         if !valid_prototype || !valid_parent || !ordinal_unique || !auxiliary_definitions {
             invalid(

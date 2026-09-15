@@ -3,7 +3,7 @@
 
 #[cfg(test)]
 use crate::native::EntryRecord;
-use crate::native::{native_id, PropertyRecord};
+use crate::native::{native_id, PropertyFamily, PropertyRecord};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 
@@ -27,6 +27,29 @@ pub(crate) fn set_value_attribute(
     valid_xml_name(attribute, "attribute")?;
     mutate_property(ir, owner, property_name, |property| {
         let property_id = property.id.clone();
+        if !matches!(
+            property.family,
+            PropertyFamily::Scalar
+                | PropertyFamily::Quantity
+                | PropertyFamily::Enumeration
+                | PropertyFamily::Vector
+                | PropertyFamily::Matrix
+                | PropertyFamily::Placement
+                | PropertyFamily::String
+        ) {
+            return Err(CodecError::NotImplemented(format!(
+                "editing FCStd {} property {} requires a graph-aware serializer",
+                format_args!("{:?}", property.family)
+                    .to_string()
+                    .to_lowercase(),
+                property_id
+            )));
+        }
+        if matches!(attribute, "file" | "File") {
+            return Err(CodecError::NotImplemented(format!(
+                "editing FCStd property {property_id} changes its link or side-entry graph"
+            )));
+        }
         let value_record = property
             .values_mut()
             .into_iter()
@@ -37,6 +60,11 @@ pub(crate) fn set_value_attribute(
                     "FCStd property {property_id} has no value at order {value_order}"
                 ))
             })?;
+        if !value_record.attributes.contains_key(attribute) {
+            return Err(CodecError::NotImplemented(format!(
+                "adding FCStd value attribute {attribute} requires a typed serializer"
+            )));
+        }
         value_record.attributes.insert(attribute.to_owned(), value);
         Ok(())
     })

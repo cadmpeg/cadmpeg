@@ -6,6 +6,28 @@ use super::{
     IdentityNamespace,
 };
 
+#[test]
+fn source_key_encoding_preserves_reserved_and_separator_distinctions() {
+    let mut seen = std::collections::BTreeSet::new();
+    for (source, expected) in [
+        ("", "%EMPTY"),
+        ("%EMPTY", "%25EMPTY"),
+        ("a:b", "a%3Ab"),
+        ("a%3Ab", "a%253Ab"),
+        ("a#b", "a%23b"),
+        ("a/b", "a/b"),
+        ("\0", "%00"),
+        ("\u{b}", "%0B"),
+        ("é", "%C3%A9"),
+        ("部", "%E9%83%A8"),
+    ] {
+        let key = IdentityKey::encode_segment(source);
+        assert_eq!(key.as_str(), expected);
+        assert_eq!(IdentityKey::try_new(key.as_str().to_owned()).unwrap(), key);
+        assert!(seen.insert(key));
+    }
+}
+
 #[cfg(feature = "schema")]
 #[test]
 fn identity_schemas_constrain_strings_and_map_keys() {

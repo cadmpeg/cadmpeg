@@ -35,8 +35,12 @@ pub(crate) fn has_document_markers(prefix: &[u8]) -> bool {
     let Some(extra_len) = View::u16_le_at(prefix, 28).map(usize::from) else {
         return false;
     };
-    let name_end = 30_usize.saturating_add(name_len);
-    let data_start = name_end.saturating_add(extra_len);
+    let Some(name_end) = 30_usize.checked_add(name_len) else {
+        return false;
+    };
+    let Some(data_start) = name_end.checked_add(extra_len) else {
+        return false;
+    };
     if name_end > prefix.len()
         || data_start > prefix.len()
         || &prefix[30..name_end] != b"Document.xml"

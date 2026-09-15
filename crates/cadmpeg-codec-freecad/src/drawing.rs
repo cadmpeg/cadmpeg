@@ -91,12 +91,16 @@ pub(crate) fn transfer_neutral(
     let neutral_ids = records
         .iter()
         .map(|record| {
-            (
+            Ok::<_, CodecError>((
                 record.object.as_str(),
-                crate::native::model_id("drawing", &record.object, "entity"),
-            )
+                DrawingId::compose(
+                    &cadmpeg_ir::identity_namespace!("fcstd", "model", "drawing"),
+                    crate::native::model_key(&record.object, "entity")
+                        .map_err(CodecError::malformed)?,
+                ),
+            ))
         })
-        .collect::<HashMap<_, _>>();
+        .collect::<Result<HashMap<_, _>, CodecError>>()?;
     for (order, record) in records.iter().enumerate() {
         let owned = properties
             .iter()
@@ -115,7 +119,7 @@ pub(crate) fn transfer_neutral(
                 (None, Some(object)) => ReferenceTarget::Local(
                     neutral_ids
                         .get(object)
-                        .cloned()
+                        .map(|id| id.as_str().to_owned())
                         .unwrap_or_else(|| object.to_owned()),
                 ),
                 _ => {
@@ -193,13 +197,17 @@ pub(crate) fn transfer_neutral(
                 })
         } else {
             None
-        }
-        .map(DrawingId::mint)
-        .transpose()
-        .map_err(|error| CodecError::Malformed(error.to_string()))?;
+        };
         model.drawings.push(Drawing {
-            id: DrawingId::mint(neutral_ids[record.object.as_str()].clone())
-                .expect("identity grammar"),
+            id: neutral_ids
+                .get(record.object.as_str())
+                .cloned()
+                .ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "drawing {} has no admitted neutral identity",
+                        record.id
+                    ))
+                })?,
             object: record.object.clone(),
             kind: classify(record.kind.as_str()),
             runtime_type: record.kind.as_str().to_owned(),

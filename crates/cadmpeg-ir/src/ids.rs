@@ -341,6 +341,31 @@ impl StaticIdentityKey {
 pub struct IdentityKey(std::borrow::Cow<'static, str>);
 
 impl IdentityKey {
+    /// Encode one source component for use as an identity key.
+    ///
+    /// ASCII letters, digits, `.`, `_`, `-`, and `/` remain literal. Every other
+    /// UTF-8 byte becomes `%HH` with uppercase hexadecimal digits. Empty input
+    /// becomes `%EMPTY`; a literal percent sign is escaped, so that spelling
+    /// cannot alias a nonempty source value.
+    #[must_use]
+    pub fn encode_segment(value: &str) -> Self {
+        const HEX: &[u8; 16] = b"0123456789ABCDEF";
+        if value.is_empty() {
+            return Self(std::borrow::Cow::Owned("%EMPTY".to_owned()));
+        }
+        let mut encoded = String::with_capacity(value.len());
+        for byte in value.bytes() {
+            if byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'/') {
+                encoded.push(char::from(byte));
+            } else {
+                encoded.push('%');
+                encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+                encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+            }
+        }
+        Self(std::borrow::Cow::Owned(encoded))
+    }
+
     /// Copy this key with ASCII letters converted to lowercase.
     #[must_use]
     pub fn to_ascii_lowercase(&self) -> Self {
