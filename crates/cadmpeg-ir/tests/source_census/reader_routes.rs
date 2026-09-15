@@ -1012,74 +1012,58 @@ fn collect_input_routes(nodes: &[Node], bindings: &BTreeSet<String>, routes: &mu
     }
 }
 
-fn assigned_binding(nodes: &[Node], call_index: usize) -> Option<String> {
-    let mut statement_start = call_index;
-    while statement_start > 0 && !is_atom(nodes, statement_start - 1, ";") {
-        statement_start -= 1;
-    }
-    let equals = (statement_start..call_index)
-        .rev()
-        .find(|index| is_atom(nodes, *index, "="))?;
-    let mut name_index = equals.checked_sub(1)?;
-    if is_atom(nodes, name_index, "mut") {
-        name_index = name_index.checked_sub(1)?;
-    }
-    if !is_atom(nodes, name_index.checked_sub(1)?, "let") {
-        return None;
-    }
-    let name = atom_opt(nodes.get(name_index))?;
-    is_path_atom(name).then(|| name.to_owned())
+/// Count uses in the complete method body, including local binding patterns.
+fn atom_count(nodes: &[Node], wanted: &str) -> usize {
+    nodes
+        .iter()
+        .map(|node| match node {
+            Node::Atom(value) => usize::from(value == wanted),
+            Node::Group(_, children) => atom_count(children, wanted),
+        })
+        .sum()
 }
 
-fn value_bindings(nodes: &[Node], bindings: &BTreeSet<String>) -> BTreeSet<String> {
-    let mut found = BTreeSet::new();
+/// Admit only the direct value/check sequence used by the version-field reader.
+/// A name mentioned in a later expression does not establish binding identity.
+fn has_direct_version_gate(nodes: &[Node], bindings: &BTreeSet<String>) -> bool {
     for index in 0..nodes.len() {
-        if let Some(receiver) = deserialize_receiver_at(nodes, index, bindings) {
-            if receiver_is_value(&receiver) {
-                if let Some(name) = assigned_binding(nodes, index) {
-                    if name != "_" {
-                        found.insert(name);
-                    }
-                }
-            }
+        let Some(receiver) = deserialize_receiver_at(nodes, index, bindings) else {
+            continue;
+        };
+        if !receiver_is_value(&receiver) || index < 9 {
+            continue;
         }
-        if let Some(Node::Group(_, children)) = nodes.get(index) {
-            found.extend(value_bindings(children, bindings));
+        // `let name = serde_json::Value::deserialize(input)?;`
+        let start = index - 9;
+        if (start != 0 && !is_atom(nodes, start - 1, ";"))
+            || !is_atom(nodes, start, "let")
+            || !is_atom(nodes, start + 2, "=")
+            || !is_atom(nodes, index + 2, "?")
+            || !is_atom(nodes, index + 3, ";")
+        {
+            continue;
         }
-    }
-    found
-}
-
-fn contains_any_atom(nodes: &[Node], wanted: &BTreeSet<String>) -> bool {
-    nodes.iter().any(|node| match node {
-        Node::Atom(value) => wanted.contains(value),
-        Node::Group(_, children) => contains_any_atom(children, wanted),
-    })
-}
-
-fn propagated_version_check(
-    nodes: &[Node],
-    deserializer_bindings: &BTreeSet<String>,
-) -> (bool, bool) {
-    let values = value_bindings(nodes, deserializer_bindings);
-    let mut called = false;
-    let mut propagated = false;
-    for index in 0..nodes.len() {
-        if is_atom(nodes, index, "check_ir_version") {
-            if let Some(Node::Group(Delimiter::Parenthesis, arguments)) = nodes.get(index + 1) {
-                called = true;
-                propagated |=
-                    is_atom(nodes, index + 2, "?") && contains_any_atom(arguments, &values);
-            }
+        let Some(name) = atom_opt(nodes.get(start + 1)) else {
+            continue;
+        };
+        if name == "_"
+            || !is_atom(nodes, index + 4, "check_ir_version")
+            || !is_atom(nodes, index + 6, "?")
+        {
+            continue;
         }
-        if let Some(Node::Group(_, children)) = nodes.get(index) {
-            let (nested_called, nested_propagated) =
-                propagated_version_check(children, deserializer_bindings);
-            called |= nested_called;
-            propagated |= nested_propagated;
+        let Some(Node::Group(Delimiter::Parenthesis, arguments)) = nodes.get(index + 5) else {
+            continue;
+        };
+        let [Node::Atom(some), Node::Group(Delimiter::Parenthesis, value)] = arguments.as_slice()
+        else {
+            continue;
+        };
+        if some == "Some" && value.len() == 2 && is_atom(value, 0, "&") && is_atom(value, 1, name) {
+            return true;
         }
     }
-    (called, propagated)
+    false
 }
 
 fn receiver_description(receiver: &Receiver) -> String {
@@ -1271,11 +1255,15 @@ fn classify_route_body(
     active: &mut BTreeSet<(String, Vec<String>, String)>,
 ) -> Result<HandReaderClass, String> {
     let mut routes = Vec::new();
-    collect_input_routes(
-        &route.method_nodes,
-        &route.deserializer_bindings,
-        &mut routes,
-    );
+    // A direct input proof has one use of its parameter in the method body.
+    // Aliases, shadowing and branch-specific bindings require deeper analysis.
+    let bindings = route
+        .deserializer_bindings
+        .iter()
+        .filter(|binding| atom_count(&route.method_nodes, binding) == 1)
+        .cloned()
+        .collect();
+    collect_input_routes(&route.method_nodes, &bindings, &mut routes);
     if routes.is_empty() {
         return Err(format!(
             "{} {} has no deserializer-consuming call: {}",
@@ -1303,13 +1291,10 @@ fn classify_route_body(
         .iter()
         .any(|route| matches!(route, InputRoute::Value))
     {
-        let (called, propagated) =
-            propagated_version_check(&route.method_nodes, &route.deserializer_bindings);
         if routes
             .iter()
             .all(|route| matches!(route, InputRoute::Value))
-            && called
-            && propagated
+            && has_direct_version_gate(&route.method_nodes, &bindings)
         {
             return Ok(HandReaderClass::ValidatedValue);
         }
@@ -1682,6 +1667,42 @@ mod tests {
             .is_err(),
             "a check over unrelated data does not validate the consumed value",
         );
+    }
+
+    #[test]
+    fn reused_input_names_do_not_prove_which_value_was_read() {
+        let denied = BTreeSet::new();
+        let no_local_wire = BTreeSet::new();
+        for body in [
+            "let saved = deserializer; let deserializer = replacement(); String::deserialize(deserializer)?; read_open(saved)?;",
+            "let saved = deserializer; let (deserializer,) = (replacement(),); String::deserialize(deserializer)?; read_open(saved)?;",
+            "let saved = deserializer; let read = |deserializer| String::deserialize(deserializer); read(replacement())?; read_open(saved)?;",
+        ] {
+            assert!(
+                classify_hand_reader("fixture.rs", "Reader", body, &denied, &no_local_wire)
+                    .is_err(),
+                "a reused parameter name does not identify the consumed input: {body}",
+            );
+        }
+    }
+
+    #[test]
+    fn version_gate_must_directly_check_the_consumed_value() {
+        let denied = BTreeSet::new();
+        let no_local_wire = BTreeSet::new();
+        for body in [
+            "let value = serde_json::Value::deserialize(deserializer)?; let _old = value; let value = replacement(); check_ir_version(Some(&value))?;",
+            "let value = serde_json::Value::deserialize(deserializer)?; check_ir_version((Some(&value), Some(&replacement())).1)?;",
+            "let value = serde_json::Value::deserialize(deserializer)?; check_ir_version(Some(&{ drop(value); replacement() }))?;",
+            "let value = serde_json::Value::deserialize(deserializer)?; let unchecked = || check_ir_version(Some(&value));",
+            "let value = serde_json::Value::deserialize(deserializer)?; if false { check_ir_version(Some(&value))?; }",
+        ] {
+            assert!(
+                classify_hand_reader("fixture.rs", "Reader", body, &denied, &no_local_wire)
+                    .is_err(),
+                "a later mention does not prove validation of the consumed value: {body}",
+            );
+        }
     }
 
     #[test]
