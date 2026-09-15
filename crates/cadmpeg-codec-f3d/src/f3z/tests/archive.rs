@@ -449,6 +449,99 @@ fn f3z_archive_composes_nonidentity_nested_occurrence_placements() {
 }
 
 #[test]
+fn f3z_archive_preserves_noncommuting_parent_and_child_placements() {
+    const CHILD_ROLE: &str = "11112222-3333-4444-5555-666677778888";
+    // The outer quarter-turn maps the inner +X translation to +Y. Reversing
+    // composition instead leaves that translation on +X.
+    let inner = [
+        [1.0, 0.0, 0.0, 2.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let outer = [
+        [0.0, -1.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let expected = [
+        [0.0, -1.0, 0.0, 10.0],
+        [1.0, 0.0, 0.0, 20.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let component = f3d_with_smbh(&synthetic_geometry_smbh());
+    let middle = f3d_without_brep_with_xref_placement(
+        "assembly-design",
+        "middle.f3d",
+        "component.f3d",
+        CHILD_ROLE,
+        inner,
+    );
+    let root = f3d_without_brep_with_xref_placement(
+        "assembly-design",
+        "root.f3d",
+        "middle.f3d",
+        XREF_ROLE,
+        outer,
+    );
+    let archive = f3z_archive(
+        "root.f3d",
+        &[
+            ("root.f3d", root.as_slice()),
+            ("middle.f3d", middle.as_slice()),
+            ("component.f3d", component.as_slice()),
+        ],
+    );
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&archive), &DecodeOptions::default())
+        .expect("noncommuting nested placements");
+    assert!(
+        decoded.report().losses.iter().all(|loss| loss.code
+            != F3dLossCode::XrefPlacementUndecoded.kind()
+            && loss.code != F3dLossCode::XrefTableUndecoded.kind()),
+        "{:?}",
+        decoded.report().losses
+    );
+    let admitted: cadmpeg_ir::CadIr =
+        serde_json::from_slice(&serde_json::to_vec(decoded.ir()).unwrap())
+            .expect("complete merged CADIR admission");
+    for ir in [decoded.ir(), &admitted] {
+        assert_eq!(ir.model.occurrences.len(), 2);
+        let outer_id =
+            cadmpeg_ir::ids::OccurrenceId::mint("f3d:model:occurrence#xref-0-0").unwrap();
+        let child = ir
+            .model
+            .occurrences
+            .iter()
+            .find(|occurrence| {
+                matches!(&occurrence.parent,
+                cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence: parent }
+                if parent == &outer_id)
+            })
+            .expect("child remains relative to its containing occurrence");
+        assert_eq!(
+            child.transform.rows(),
+            [
+                [1.0, 0.0, 0.0, 20.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ]
+        );
+        let graph = cadmpeg_ir::products::AssemblyGraph::new(&ir.model.occurrences)
+            .expect("nested occurrence graph");
+        assert_eq!(
+            graph.resolved_transform(&child.id).unwrap().rows(),
+            expected
+        );
+        assert_eq!(ir.model.bodies.len(), 1);
+        assert_eq!(ir.model.bodies[0].transform.unwrap().rows(), expected);
+    }
+}
+
+#[test]
 fn f3z_archive_reports_reference_cycles_without_recursing() {
     const CHILD_ROLE: &str = "11112222-3333-4444-5555-666677778888";
     let root = f3d_without_brep("assembly-design", "root.f3d", &[("middle.f3d", XREF_ROLE)]);

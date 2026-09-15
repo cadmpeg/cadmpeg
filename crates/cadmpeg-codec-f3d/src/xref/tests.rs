@@ -23,6 +23,8 @@ use crate::F3dCodec;
 
 use super::OccurrencePlacement;
 
+const EPS_PLACEMENT_TRANSLATION: f64 = 1.0e-12;
+
 #[test]
 fn redirections_keep_neutron_role_and_data_independent() {
     let table = super::parse(
@@ -71,6 +73,62 @@ fn malformed_redirections_are_reported_by_complete_and_container_routes() {
             .expect("malformed Redirections loss");
         assert!(loss.message.contains("RedirectionsStream.dat"), "{loss:?}");
         assert!(loss.message.contains("properties"), "{loss:?}");
+    }
+}
+
+#[test]
+fn redirections_property_keys_are_not_collapsed_before_admission() {
+    const ROLE: &str = "aaaabbbb-cccc-dddd-eeee-ffff00001111";
+    let envelope = redirections_json("root.f3d", &[("part.f3d", ROLE)]);
+    let (prefix, _) = envelope.split_once(",\"references\":").unwrap();
+    let role = format!(r#""neutronRole":{{"value":"{ROLE}","dataType":"STRING"}}"#);
+    let data = r#""neutronData":{"value":"independent","dataType":"STRING"}"#;
+    let empty_data = r#""neutronData":{"value":"","dataType":"STRING"}"#;
+    for (label, properties, valid) in [
+        ("role then data", format!("[{{{role}}},{{{data}}}]"), true),
+        ("data then role", format!("[{{{data}}},{{{role}}}]"), true),
+        ("empty independent data", format!("[{{{role}}},{{{empty_data}}}]"), true),
+        ("repeated role key", format!("[{{{role},{role}}},{{{data}}}]"), false),
+        ("repeated data key", format!("[{{{role}}},{{{data},{data}}}]"), false),
+        ("two different keys", format!("[{{{role},{data}}}]"), false),
+        ("repeated role item", format!("[{{{role}}},{{{role}}},{{{data}}}]"), false),
+        ("empty property object", format!("[{{}},{{{role}}},{{{data}}}]"), false),
+        ("missing role", format!("[{{{data}}}]"), false),
+        ("unknown property", format!("[{{\"extension\":{{\"value\":\"x\",\"dataType\":\"STRING\"}}}},{{{role}}},{{{data}}}]"), false),
+        ("duplicate type", format!("[{{{role}}},{{\"neutronData\":{{\"value\":\"independent\",\"dataType\":\"STRING\",\"dataType\":\"STRING\"}}}}]"), false),
+        ("wrong type", format!("[{{{role}}},{{\"neutronData\":{{\"value\":\"independent\",\"dataType\":\"NUMBER\"}}}}]"), false),
+    ] {
+        let json = format!(r#"{prefix},"references":[{{"from":"root.f3d","relativePath":"part.f3d","type":"XREF","properties":{properties}}}]}}"#);
+        assert_eq!(super::parse(json.as_bytes()).is_ok(), valid, "{label}");
+        let document = f3d_with_redirections_json("assembly-design", json.as_bytes());
+        for container_only in [false, true] {
+            let decoded = F3dCodec.decode(
+                &mut Cursor::new(&document),
+                &DecodeOptions { container_only, ..DecodeOptions::default() },
+            ).expect("property refusal preserves the source document");
+            let losses = decoded.report().losses.iter()
+                .filter(|loss| loss.code == F3dLossCode::XrefTableUndecoded.kind())
+                .collect::<Vec<_>>();
+            assert_eq!(losses.len(), usize::from(!valid), "{label}, container_only={container_only}: {losses:?}");
+            for loss in losses {
+                assert!(loss.message.contains("RedirectionsStream.dat"), "{loss:?}");
+            }
+            if !container_only {
+                let native = f3d_native(decoded.ir());
+                assert_eq!(native.xref_references.len(), usize::from(valid), "{label}");
+                if valid {
+                    assert_eq!(native.xref_references[0].neutron_role, ROLE);
+                    assert_eq!(native.xref_references[0].neutron_data,
+                        if label == "empty independent data" { "" } else { "independent" });
+                }
+            }
+            assert_eq!(decoded.source_fidelity()
+                .retained_record(crate::ids::FILE_SOURCE_IMAGE_ID)
+                .and_then(|record| record.data()), Some(document.as_slice()), "{label}");
+            let _: cadmpeg_ir::CadIr = serde_json::from_slice(
+                &serde_json::to_vec(decoded.ir()).unwrap()
+            ).expect("complete CADIR admission");
+        }
     }
 }
 
@@ -754,7 +812,7 @@ fn paired_design_metastream_selects_the_tagged_placement_form() {
     let transform = native.xref_references[0]
         .transform
         .expect("tagged placement transform");
-    assert!((transform.rows()[0][3] - 7.0).abs() < 1.0e-12);
+    assert!((transform.rows()[0][3] - 7.0).abs() < EPS_PLACEMENT_TRANSLATION);
     assert!(decoded
         .report()
         .losses
@@ -815,7 +873,7 @@ fn paired_design_metastream_selects_the_legacy_typed_placement_form() {
     let transform = native.xref_references[0]
         .transform
         .expect("legacy placement transform");
-    assert!((transform.rows()[0][3] - 7.0).abs() < 1.0e-12);
+    assert!((transform.rows()[0][3] - 7.0).abs() < EPS_PLACEMENT_TRANSLATION);
     assert!(decoded
         .report()
         .losses

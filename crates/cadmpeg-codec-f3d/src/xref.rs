@@ -10,7 +10,6 @@
 
 use cadmpeg_core::container::ContainerRole;
 
-use std::collections::BTreeMap;
 use std::collections::HashSet;
 
 use serde::Deserialize;
@@ -82,11 +81,11 @@ struct RedirectionsJson {
 }
 
 #[derive(Deserialize)]
-#[serde(untagged)]
+#[serde(untagged, deny_unknown_fields)]
 enum ReferencesJson {
     List(Vec<ReferenceJson>),
     /// The only legal non-array form is the empty leaf object `{}`.
-    Object(BTreeMap<String, serde_json::Value>),
+    Leaf {},
 }
 
 #[derive(Deserialize)]
@@ -104,36 +103,39 @@ struct DesignJson {
 }
 
 #[derive(Deserialize)]
-struct ReferenceJson {
-    from: String,
-    #[serde(rename = "relativePath")]
-    relative_path: String,
-    #[serde(rename = "type")]
-    reference_type: String,
-    properties: Vec<BTreeMap<String, PropertyJson>>,
+#[serde(tag = "type")]
+enum ReferenceJson {
+    #[serde(rename = "XREF")]
+    Xref {
+        from: String,
+        #[serde(rename = "relativePath")]
+        relative_path: String,
+        properties: Vec<PropertyJson>,
+    },
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct PropertyJson {
-    value: String,
-    #[serde(rename = "dataType")]
-    data_type: String,
+enum PropertyJson {
+    #[serde(rename = "neutronRole")]
+    Role(StringProperty),
+    #[serde(rename = "neutronData")]
+    Data(StringProperty),
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "dataType", deny_unknown_fields)]
+enum StringProperty {
+    #[serde(rename = "STRING")]
+    String { value: String },
 }
 
 impl ReferenceJson {
-    fn into_fields(self, ordinal: usize) -> Result<(String, String, String, String), CodecError> {
-        let Self {
+    fn into_record(self, ordinal: usize) -> Result<XrefReference, CodecError> {
+        let Self::Xref {
             from,
             relative_path,
-            reference_type,
             properties,
         } = self;
-        if reference_type != "XREF" {
-            return Err(redirections_error(format_args!(
-                "references[{ordinal}].type must be XREF"
-            )));
-        }
         require_text(&from, format_args!("references[{ordinal}].from"))?;
         require_text(
             &relative_path,
@@ -141,52 +143,45 @@ impl ReferenceJson {
         )?;
         let mut role = None;
         let mut data = None;
-        for (property_index, property) in properties.into_iter().enumerate() {
-            if property.len() != 1 {
-                return Err(redirections_error(format_args!(
-                    "references[{ordinal}].properties[{property_index}] must contain one member"
-                )));
-            }
-            let Some((name, value)) = property.into_iter().next() else {
-                return Err(redirections_error(format_args!(
-                    "references[{ordinal}].properties[{property_index}] must contain one member"
-                )));
-            };
-            if value.data_type != "STRING" {
-                return Err(redirections_error(format_args!(
-                    "references[{ordinal}].properties[{property_index}].{name}.dataType must be STRING"
-                )));
-            }
-            let slot = match name.as_str() {
-                "neutronRole" => &mut role,
-                "neutronData" => &mut data,
-                _ => {
-                    return Err(redirections_error(format_args!(
-                    "references[{ordinal}].properties[{property_index}] has unknown member {name}"
-                )))
+        for property in properties {
+            let (name, value, slot) = match property {
+                PropertyJson::Role(StringProperty::String { value }) => {
+                    ("neutronRole", value, &mut role)
+                }
+                PropertyJson::Data(StringProperty::String { value }) => {
+                    ("neutronData", value, &mut data)
                 }
             };
-            if slot.replace(value.value).is_some() {
+            if slot.replace(value).is_some() {
                 return Err(redirections_error(format_args!(
                     "references[{ordinal}].properties repeats {name}"
                 )));
             }
         }
-        let role = role.ok_or_else(|| {
+        let neutron_role = role.ok_or_else(|| {
             redirections_error(format_args!(
                 "references[{ordinal}].properties is missing neutronRole"
             ))
         })?;
         require_text(
-            &role,
+            &neutron_role,
             format_args!("references[{ordinal}].properties.neutronRole.value"),
         )?;
-        let data = data.ok_or_else(|| {
+        let neutron_data = data.ok_or_else(|| {
             redirections_error(format_args!(
                 "references[{ordinal}].properties is missing neutronData"
             ))
         })?;
-        Ok((from, relative_path, role, data))
+        Ok(XrefReference {
+            id: format!("f3d:xref:reference#{ordinal}"),
+            ordinal: ordinal_at(ordinal)?,
+            occurrence_ordinal: 0,
+            from,
+            relative_path,
+            neutron_role,
+            neutron_data,
+            transform: None,
+        })
     }
 }
 
@@ -317,30 +312,12 @@ pub fn parse(bytes: &[u8]) -> Result<XrefTable, CodecError> {
                 "references must be {} when the document has no outgoing XREF",
             ));
         }
-        ReferencesJson::Object(fields) if fields.is_empty() => Vec::new(),
-        ReferencesJson::Object(_) => {
-            return Err(redirections_error(
-                "references object must be empty for a leaf document",
-            ));
-        }
+        ReferencesJson::Leaf {} => Vec::new(),
     };
     let references = references
         .into_iter()
         .enumerate()
-        .map(|(ordinal, reference)| {
-            let (from, relative_path, neutron_role, neutron_data) =
-                reference.into_fields(ordinal)?;
-            Ok(XrefReference {
-                id: format!("f3d:xref:reference#{ordinal}"),
-                ordinal: ordinal_at(ordinal)?,
-                occurrence_ordinal: 0,
-                neutron_role,
-                neutron_data,
-                from,
-                relative_path,
-                transform: None,
-            })
-        })
+        .map(|(ordinal, reference)| reference.into_record(ordinal))
         .collect::<Result<Vec<_>, CodecError>>()?;
     Ok(XrefTable {
         designs,
