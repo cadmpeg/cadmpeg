@@ -172,7 +172,7 @@ fn bind_entity_reference(
         return Err("target anchor is not an entity instance");
     };
     let target_record = target
-        .records
+        .records()
         .get(&target_id)
         .ok_or("target entity instance is missing")?;
     if !target_record
@@ -192,7 +192,7 @@ fn bind_entity_reference(
 
 fn unit_signatures(exchange: &crate::parse::Exchange) -> Vec<Vec<crate::parse::PartialRecord>> {
     exchange
-        .records
+        .records()
         .values()
         .filter(|record| {
             record
@@ -208,7 +208,7 @@ fn context_signature(
     exchange: &crate::parse::Exchange,
 ) -> Option<Vec<crate::parse::PartialRecord>> {
     exchange
-        .records
+        .records()
         .values()
         .find(|record| {
             record
@@ -240,12 +240,12 @@ fn caller_composition_binds_annex_j_style_target_after_resource_checks() {
         }
     );
     assert_eq!(
-        root.records[&5].partials[0].parameters,
+        root.records()[&5].partials[0].parameters,
         vec![crate::parse::Value::Reference(10)]
     );
     assert_eq!(target.anchors[0].value, crate::parse::Value::Reference(12));
     assert_eq!(
-        target.records[&11].partials[0].parameters,
+        target.records()[&11].partials[0].parameters,
         vec![crate::parse::Value::Reference(20)]
     );
 
@@ -432,7 +432,7 @@ fn decode_part26_composition_source() -> Part26CompositionSource {
 
 fn part21_unit_signature(exchange: &crate::parse::Exchange) -> String {
     let mut units = exchange
-        .records
+        .records()
         .values()
         .flat_map(|record| record.partials.iter())
         .filter(|partial| partial.name == "SI_UNIT")
@@ -454,7 +454,7 @@ fn part21_unit_signature(exchange: &crate::parse::Exchange) -> String {
 }
 
 fn part21_context_signature(exchange: &crate::parse::Exchange) -> Option<String> {
-    let context = exchange.records.values().find(|record| {
+    let context = exchange.records().values().find(|record| {
         record
             .partials
             .iter()
@@ -476,7 +476,7 @@ fn part21_context_signature(exchange: &crate::parse::Exchange) -> Option<String>
 }
 
 fn part21_point_coordinates(exchange: &crate::parse::Exchange, id: u64) -> Option<[f64; 3]> {
-    let record = exchange.records.get(&id)?;
+    let record = exchange.records().get(&id)?;
     let point = record
         .partials
         .iter()
@@ -542,7 +542,7 @@ fn compose_part26_point(
     let crate::parse::Value::Reference(target_id) = anchor.value else {
         return Part26Composition::Unbound("target anchor is not an entity instance");
     };
-    let Some(target_record) = target.records.get(&target_id) else {
+    let Some(target_record) = target.records().get(&target_id) else {
         return Part26Composition::Unbound("target entity instance is missing");
     };
     if !target_record

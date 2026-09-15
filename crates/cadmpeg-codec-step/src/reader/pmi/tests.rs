@@ -1213,7 +1213,7 @@ pub(crate) fn ap242_dimension_kinds_emit_concrete_schema_entities() {
     let (exchange, diagnostics) = crate::parse::parse(&output).unwrap();
     assert!(diagnostics.is_empty());
     let location = exchange
-        .records
+        .records()
         .values()
         .find(|record| record.partials.first().name == "DIMENSIONAL_LOCATION")
         .expect("dimensional location");

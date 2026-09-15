@@ -614,7 +614,7 @@ pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
     let (exchange, diagnostics) = crate::parse::parse(output.as_bytes()).unwrap();
     assert!(diagnostics.is_empty());
     let (face_step, outer_bound, inner_bound, outer_loop) = exchange
-        .records
+        .records()
         .iter()
         .find_map(|(&face_step, record)| {
             let partial = record.partials.first();
@@ -633,8 +633,8 @@ pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
             let crate::parse::Value::Reference(second) = bounds[1] else {
                 return None;
             };
-            let first_record = exchange.records.get(&first)?.partials.first();
-            let second_record = exchange.records.get(&second)?.partials.first();
+            let first_record = exchange.records().get(&first)?.partials.first();
+            let second_record = exchange.records().get(&second)?.partials.first();
             let (outer, inner) = if first_record.name == "FACE_OUTER_BOUND" {
                 (first, second)
             } else if second_record.name == "FACE_OUTER_BOUND" {
@@ -642,10 +642,10 @@ pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
             } else {
                 return None;
             };
-            let crate::parse::Value::Reference(outer_loop) = exchange.records.get(&outer)?.partials
-                [0]
-            .parameters
-            .get(1)?
+            let crate::parse::Value::Reference(outer_loop) =
+                exchange.records().get(&outer)?.partials[0]
+                    .parameters
+                    .get(1)?
             else {
                 return None;
             };

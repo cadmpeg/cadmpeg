@@ -20,7 +20,7 @@ pub fn parse(data: &[u8]) {
 pub fn parse_entity_count(data: &[u8]) -> Option<usize> {
     crate::parse::parse(data)
         .ok()
-        .map(|(exchange, _)| exchange.records.len())
+        .map(|(exchange, _)| exchange.records().len())
 }
 
 #[cfg(test)]

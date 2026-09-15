@@ -95,12 +95,12 @@ pub(super) fn representation_bodies(
     }
     let mut body_ids = BTreeSet::new();
     if let Some(items) = exchange
-        .records
+        .records()
         .get(&representation)
         .and_then(representation_items)
     {
         for item in items {
-            let Some(record) = exchange.records.get(&item) else {
+            let Some(record) = exchange.records().get(&item) else {
                 continue;
             };
             if let Some(bodies) = topology.body_by_root.get(&item) {
@@ -153,7 +153,7 @@ pub(super) fn representation_bodies(
 /// in one indexed graph so resolution does not rescan the exchange per call.
 fn shape_representation_relationships(exchange: &Exchange) -> BTreeMap<u64, Vec<u64>> {
     let mut related = BTreeMap::<u64, Vec<u64>>::new();
-    for record in exchange.records.values() {
+    for record in exchange.records().values() {
         let Some(relationship) = record.partial("SHAPE_REPRESENTATION_RELATIONSHIP") else {
             continue;
         };
@@ -198,7 +198,7 @@ fn representation_items(record: &RawRecord) -> Option<Vec<u64>> {
 fn mapped_representation(record: &RawRecord, exchange: &Exchange) -> Option<u64> {
     let map = named_reference(record, "MAPPED_ITEM", 1, 0)?;
     exchange
-        .records
+        .records()
         .get(&map)
         .and_then(|map| named_reference(map, "REPRESENTATION_MAP", 1, 1))
 }
@@ -224,7 +224,7 @@ pub(super) fn decode(
         notes: Vec::new(),
     };
     let mut losses: Vec<LossNote> = Vec::new();
-    for (&id, record) in &exchange.records {
+    for (&id, record) in exchange.records() {
         let Some(name) = most_specific(record, &["ORIENTED_OPEN_SHELL", "ORIENTED_CLOSED_SHELL"])
         else {
             continue;
@@ -266,7 +266,7 @@ pub(super) fn decode(
         }
     }
     let wire_models = exchange
-        .records
+        .records()
         .iter()
         .filter_map(|(&id, record)| {
             representation_items(record).map(|items| {
@@ -274,7 +274,7 @@ pub(super) fn decode(
                     .into_iter()
                     .filter(|model| {
                         exchange
-                            .records
+                            .records()
                             .get(model)
                             .is_some_and(|record| has_type(record, "EDGE_BASED_WIREFRAME_MODEL"))
                     })
@@ -657,7 +657,7 @@ fn geometric_set_omissions(
     };
     set_ids
         .into_iter()
-        .filter_map(|set_id| exchange.records.get(&set_id))
+        .filter_map(|set_id| exchange.records().get(&set_id))
         .filter_map(|set| {
             let set_type = most_specific(set, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"])?;
             Some(named_refs(set, set_type, 1).unwrap_or_default())
@@ -843,7 +843,7 @@ fn build_wire(
     point_positions: &CarrierIndex,
     losses: &mut Vec<LossNote>,
 ) -> BuildOutcome {
-    let Some(model) = exchange.records.get(&id) else {
+    let Some(model) = exchange.records().get(&id) else {
         return BuildOutcome::Partial {
             built: Vec::new(),
             failures: BuildFailures {
@@ -892,7 +892,7 @@ fn build_wire_set(
     scoped: bool,
     losses: &mut Vec<LossNote>,
 ) -> Option<Built> {
-    let set = exchange.records.get(&set_id)?;
+    let set = exchange.records().get(&set_id)?;
     let set_type = most_specific(set, &["CONNECTED_EDGE_SUB_SET", "CONNECTED_EDGE_SET"])?;
     let used_edges = connected_set_members(set, set_type)?;
     let suffix = if scoped {
@@ -1037,7 +1037,7 @@ fn build_shell_wire(
     scope_root: bool,
     losses: &mut Vec<LossNote>,
 ) -> BuildOutcome {
-    let Some(model) = exchange.records.get(&id) else {
+    let Some(model) = exchange.records().get(&id) else {
         return BuildOutcome::Partial {
             built: Vec::new(),
             failures: BuildFailures {
@@ -1088,17 +1088,17 @@ fn build_shell_wire_set(
     scope_root: bool,
     losses: &mut Vec<LossNote>,
 ) -> Option<Built> {
-    let shell_record = exchange.records.get(&shell_id)?;
+    let shell_record = exchange.records().get(&shell_id)?;
     let mut typed = HashSet::from([id, shell_id]);
     let mut edge_uses = Vec::new();
     let mut used_vertices = BTreeSet::new();
     let mut free_vertices = BTreeSet::new();
     if has_type(shell_record, "WIRE_SHELL") {
         for loop_id in named_refs(shell_record, "WIRE_SHELL", 1)? {
-            let loop_record = exchange.records.get(&loop_id)?;
+            let loop_record = exchange.records().get(&loop_id)?;
             if has_type(loop_record, "EDGE_LOOP") {
                 for oriented_id in named_refs(loop_record, "EDGE_LOOP", 1)? {
-                    let oriented = exchange.records.get(&oriented_id)?;
+                    let oriented = exchange.records().get(&oriented_id)?;
                     let edge_id = oriented_edge_reference(oriented)?;
                     let edge = edefs.get(&edge_id)?;
                     let forward = oriented_edge_forward(oriented)?;
@@ -1120,7 +1120,7 @@ fn build_shell_wire_set(
         }
     } else if has_type(shell_record, "VERTEX_SHELL") {
         let loop_id = named_reference(shell_record, "VERTEX_SHELL", 1, 0)?;
-        let loop_record = exchange.records.get(&loop_id)?;
+        let loop_record = exchange.records().get(&loop_id)?;
         if !has_type(loop_record, "VERTEX_LOOP") {
             return None;
         }
@@ -1270,7 +1270,7 @@ fn mark_standalone_geometric_set(
     };
     let mut decoded = false;
     for set_id in set_ids {
-        let Some(set) = exchange.records.get(&set_id) else {
+        let Some(set) = exchange.records().get(&set_id) else {
             continue;
         };
         let Some(set_type) = most_specific(set, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"]) else {
@@ -1318,7 +1318,7 @@ fn build_geometric_set(
     let mut shell: Option<Shell> = None;
     let mut faces = Vec::new();
     for set_id in set_ids {
-        let Some(set) = exchange.records.get(&set_id) else {
+        let Some(set) = exchange.records().get(&set_id) else {
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} skipped missing set #{set_id}"
             )));
@@ -1551,7 +1551,7 @@ fn edge_def_for(
         return None;
     }
     let result = (|| match most_specific(
-        exchange.records.get(&id)?,
+        exchange.records().get(&id)?,
         &[
             "EDGE_CURVE",
             "SEAM_EDGE",
@@ -1561,7 +1561,7 @@ fn edge_def_for(
         ],
     )? {
         "EDGE_CURVE" => {
-            let record = exchange.records.get(&id)?;
+            let record = exchange.records().get(&id)?;
             let (start, end) = edge_vertices(record)?;
             Some(EdgeDef::Curve {
                 start,
@@ -1571,11 +1571,11 @@ fn edge_def_for(
             })
         }
         "EDGE" => {
-            let (start, end) = edge_vertices(exchange.records.get(&id)?)?;
+            let (start, end) = edge_vertices(exchange.records().get(&id)?)?;
             Some(EdgeDef::Bare { start, end })
         }
         "SUBEDGE" => {
-            let record = exchange.records.get(&id)?;
+            let record = exchange.records().get(&id)?;
             let (start, end) = edge_vertices(record)?;
             let parent = subedge_parent(record)?;
             let basis = edge_def_for(parent, exchange, active, cache)?;
@@ -1587,7 +1587,7 @@ fn edge_def_for(
             })
         }
         "ORIENTED_EDGE" | "SEAM_EDGE" => {
-            let record = exchange.records.get(&id)?;
+            let record = exchange.records().get(&id)?;
             let element = oriented_edge_reference(record)?;
             let basis = edge_def_for(element, exchange, active, cache)?;
             let forward = oriented_edge_forward(record)?;
@@ -1617,7 +1617,7 @@ fn edge_curve_id_reported(
         )));
         return None;
     };
-    let curve = exchange.records.get(&curve_step);
+    let curve = exchange.records().get(&curve_step);
     let carrier = curve_carrier_step(curve_step, exchange);
     if carrier.is_none()
         && curve.is_some_and(|record| {
@@ -1918,7 +1918,7 @@ fn root_shell_steps(
     if has_type(root, "FACE_BASED_SURFACE_MODEL") {
         let mut sets = Vec::new();
         for set_step in named_refs(root, "FACE_BASED_SURFACE_MODEL", 1)? {
-            let set = exchange.records.get(&set_step)?;
+            let set = exchange.records().get(&set_step)?;
             connected_face_set_type(set)?;
             sets.push(set_step);
         }
@@ -2195,7 +2195,7 @@ fn build_one(
             continue;
         }
         let sr = require_carrier(
-            exchange.records.get(&shell_step),
+            exchange.records().get(&shell_step),
             failure,
             shell_step,
             CarrierKind::ShellRecord,
@@ -2245,7 +2245,7 @@ fn build_one(
                 continue;
             }
             let fr = require_carrier(
-                exchange.records.get(&face_step),
+                exchange.records().get(&face_step),
                 failure,
                 face_step,
                 CarrierKind::FaceRecord,
@@ -2265,7 +2265,7 @@ fn build_one(
                 .iter()
                 .filter(|bound_step| {
                     exchange
-                        .records
+                        .records()
                         .get(bound_step)
                         .is_some_and(|bound| has_type(bound, "FACE_OUTER_BOUND"))
                 })
@@ -2350,7 +2350,7 @@ fn build_one(
             let mut loop_ids = vec![];
             for bound_step in face_info.bounds {
                 let br = require_carrier(
-                    exchange.records.get(&bound_step),
+                    exchange.records().get(&bound_step),
                     failure,
                     bound_step,
                     CarrierKind::FaceBound,
@@ -2371,7 +2371,7 @@ fn build_one(
                     CarrierKind::BoundLoopReference,
                 )?;
                 let lr = require_carrier(
-                    exchange.records.get(&loop_step),
+                    exchange.records().get(&loop_step),
                     failure,
                     loop_step,
                     CarrierKind::LoopRecord,
@@ -2562,7 +2562,7 @@ fn build_one(
                     {
                         let explicit_pcurve = surface_step.and_then(|surface_step| {
                             let pcurve_step = pcurve?;
-                            let pcurve = exchange.records.get(&pcurve_step)?;
+                            let pcurve = exchange.records().get(&pcurve_step)?;
                             let pcurve_id = PcurveId::from(ids::data(kind!("pcurve"), pcurve_step));
                             let edge_curve = edge.curve()?;
                             let associated = associated_pcurves(
@@ -3234,10 +3234,10 @@ fn implicit_face_points(
 ) -> Option<Vec<Vec<Point3>>> {
     let mut loops = Vec::with_capacity(bounds.len());
     for &bound_step in bounds {
-        let bound = exchange.records.get(&bound_step)?;
+        let bound = exchange.records().get(&bound_step)?;
         let bound_type = face_bound_attribute_type(bound)?;
         let loop_step = named_reference(bound, bound_type, 1, 0)?;
-        let loop_record = exchange.records.get(&loop_step)?;
+        let loop_record = exchange.records().get(&loop_step)?;
         if !has_type(loop_record, "POLY_LOOP") {
             return None;
         }
@@ -3384,7 +3384,7 @@ fn implicit_face_plane(
 }
 
 fn curve_carrier_step(curve_step: u64, exchange: &Exchange) -> Option<u64> {
-    let curve = exchange.records.get(&curve_step)?;
+    let curve = exchange.records().get(&curve_step)?;
     if curve.partials.iter().any(|partial| {
         matches!(
             partial.name.as_str(),
@@ -3403,7 +3403,7 @@ fn associated_pcurves(
     exchange: &Exchange,
     decoded_pcurves: &BTreeSet<PcurveId>,
 ) -> Vec<PcurveId> {
-    let Some(curve) = exchange.records.get(&curve_step) else {
+    let Some(curve) = exchange.records().get(&curve_step) else {
         return Vec::new();
     };
     if !curve.partials.iter().any(|partial| {
@@ -3420,7 +3420,7 @@ fn associated_pcurves(
     pcurves
         .into_iter()
         .filter_map(|pcurve_step| {
-            let pcurve = exchange.records.get(&pcurve_step)?;
+            let pcurve = exchange.records().get(&pcurve_step)?;
             let pcurve_id = PcurveId::from(ids::data(kind!("pcurve"), pcurve_step));
             (has_type(pcurve, "PCURVE")
                 && entity_parameter(pcurve, "PCURVE", 1)?.reference()? == surface_step
@@ -4271,7 +4271,7 @@ fn shell_def_cached(
         return None;
     }
     let result = (|| {
-        let record = exchange.records.get(&reference)?;
+        let record = exchange.records().get(&reference)?;
         match most_specific(
             record,
             &[
@@ -4372,7 +4372,7 @@ fn face_attributes(
             let face_element = oriented_face_element(record)?;
             let mut base = face_attributes(
                 face_element,
-                exchange.records.get(&face_element)?,
+                exchange.records().get(&face_element)?,
                 exchange,
                 active,
             )?;
@@ -4390,7 +4390,7 @@ fn face_attributes(
         "SUBFACE" => {
             let parent = subface_parent(record)?;
             let mut parent_info =
-                face_attributes(parent, exchange.records.get(&parent)?, exchange, active)?;
+                face_attributes(parent, exchange.records().get(&parent)?, exchange, active)?;
             let bounds = direct_face_bounds(record, exchange)?;
             parent_info.typed.insert(parent);
             if let Some(name) = face_name_value(record) {
@@ -4477,7 +4477,7 @@ fn direct_face_bounds(record: &RawRecord, exchange: &Exchange) -> Option<Vec<u64
     values.into_iter().filter_map(refs).find(|ids| {
         !ids.is_empty()
             && ids.iter().all(|id| {
-                exchange.records.get(id).is_some_and(|bound| {
+                exchange.records().get(id).is_some_and(|bound| {
                     has_type(bound, "FACE_BOUND") || has_type(bound, "FACE_OUTER_BOUND")
                 })
             })
@@ -4641,7 +4641,7 @@ fn validate_subset_parent(
         return false;
     };
     if exchange
-        .records
+        .records()
         .get(&parent)
         .is_some_and(|parent_record| most_specific(parent_record, &[base_type]) == Some(base_type))
     {

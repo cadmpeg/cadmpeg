@@ -14,7 +14,7 @@ use super::StageOutcome;
 pub(super) fn decode(exchange: &Exchange) -> StageOutcome<()> {
     let mut losses = Vec::new();
     let documents = exchange
-        .records
+        .records()
         .iter()
         .filter_map(|(&id, record)| {
             let parameters = document_parameters(record)?;
@@ -53,7 +53,7 @@ pub(super) fn decode(exchange: &Exchange) -> StageOutcome<()> {
         })
         .collect::<BTreeMap<_, _>>();
     let sources = exchange
-        .records
+        .records()
         .iter()
         .filter_map(|(&id, record)| {
             let parameters = record.partial("EXTERNAL_SOURCE")?.parameters.as_slice();
@@ -69,7 +69,7 @@ pub(super) fn decode(exchange: &Exchange) -> StageOutcome<()> {
     let mut typed = HashSet::new();
     let mut notes = BTreeSet::new();
 
-    for (&id, record) in &exchange.records {
+    for (&id, record) in exchange.records() {
         if let Some(parameters) = document_reference_parameters(record) {
             let Some(document_id) = parameters.first().and_then(ValueExt::reference) else {
                 continue;
