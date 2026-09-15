@@ -1017,6 +1017,9 @@ class DenyCensusTests(unittest.TestCase):
     def test_conditional_and_never_invoked_reader_calls_fail_closed(self) -> None:
         bodies = {
             "false branch": "if false { let _ = u8::deserialize(d)?; } Ok(Self)",
+            "assigned if": "let _ = if false { Some(u8::deserialize(d)?) } else { None }; Ok(Self)",
+            "assigned match": "let _ = match false { true => Some(u8::deserialize(d)?), false => None }; Ok(Self)",
+            "early return": "return Ok(Self); let _ = u8::deserialize(d)?; Ok(Self)",
             "closure": "let _reader = || u8::deserialize(d); Ok(Self)",
             "closure block": "let _reader = || { u8::deserialize(d) }; Ok(Self)",
             "async block": "let _reader = async { u8::deserialize(d) }; Ok(Self)",
@@ -1037,6 +1040,67 @@ class DenyCensusTests(unittest.TestCase):
                 '''})
                 self.assertEqual(status, 1, output)
                 self.assertIn("Reader::A", output)
+
+    def test_wildcards_and_module_bindings_cannot_impersonate_external_readers(self) -> None:
+        open_reader = '''
+            use serde::{Deserialize, Deserializer};
+            pub struct Open;
+            impl<'de> Deserialize<'de> for Open {
+                fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                    let _ = serde_json::Value::deserialize(d)?;
+                    Ok(Self)
+                }
+            }
+        '''
+        cases = [
+            ('mod hostile { pub use super::Open as String; } use hostile::*;', 'String'),
+            ('mod hostile { pub use super::Open as String; } use hostile::{*};', 'String'),
+            ('''mod hostile { pub mod string { pub use crate::Open as String; } }
+                use hostile as std;''', 'std::string::String'),
+            ('''mod hostile { pub mod string { pub use crate::Open as String; } }
+                use hostile as std; use std::string::String as Scalar;''', 'Scalar'),
+            ('''mod std { pub mod string { pub use crate::Open as String; } }''',
+             'std::string::String'),
+            ('''pub mod hostile { pub mod string { pub use crate::Open as String; } }
+                mod imported { pub use crate::hostile as std; } use imported::*;''',
+             'std::string::String'),
+        ]
+        for bindings, payload in cases:
+            with self.subTest(bindings=bindings):
+                status, output = self.run_census({"lib.rs": open_reader + f'''
+                    {bindings}
+                    #[derive(Deserialize)] #[serde(untagged, deny_unknown_fields)]
+                    enum Reader {{ A({payload}) }}
+                    #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                    struct Document {{ reader: Reader }}
+                '''})
+                self.assertEqual(status, 1, output)
+                self.assertIn("Reader::A", output)
+
+    def test_explicit_external_bindings_and_consumed_input_remain_proved(self) -> None:
+        for bindings, payload in [
+            ('use std::string::String as Scalar;', 'Scalar'),
+            ('use std as standard;', 'standard::string::String'),
+            ('use std as standard; use standard::string::String as Scalar;', 'Scalar'),
+            ('mod std {}', '::std::string::String'),
+        ]:
+            with self.subTest(bindings=bindings):
+                status, output = self.run_census({"lib.rs": f'''
+                    use serde::{{Deserialize, Deserializer}};
+                    {bindings}
+                    struct Payload;
+                    impl<'de> Deserialize<'de> for Payload {{
+                        fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {{
+                            let _ = {payload}::deserialize(d)?;
+                            Ok(Self)
+                        }}
+                    }}
+                    #[derive(Deserialize)] #[serde(untagged, deny_unknown_fields)]
+                    enum Reader {{ A(Payload) }}
+                    #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                    struct Document {{ reader: Reader }}
+                '''})
+                self.assertEqual(status, 0, output)
 
     def test_compiled_route_counterexamples_fail_closed(self) -> None:
         preamble = '''
@@ -1262,7 +1326,7 @@ class DenyCensusTests(unittest.TestCase):
         '''}
         binding_old = '''calls = [
             call for call in DESERIALIZE_CALL_RE.finditer(code)
-            if call_uses_input(code, call, reader.input_bindings)
+            if call_has_direct_input(code, call, reader.input_bindings)
         ]'''
         binding_mutated, binding_output = self.run_mutated_census(
             nonconsuming,
