@@ -23,11 +23,14 @@ of:
   refuse a key and fails. The same rule holds for a single arm that carries
   ``#[serde(untagged)]`` inside an otherwise tagged enum, where the container's
   deny does not reach the arm's own keys;
-* every variant is a unit variant - the read is a bare name with no key to deny;
+* every variant is a unit variant without an internal or adjacent tag - the
+  read is a bare name with no key to deny;
 * the enum has no variant at all - it is uninhabited, no document can name a
   variant of it, and serde refuses every input before a key is read.
 
 Anything else fails, unless it is one of the named exceptions below.
+Only actual unconditional metadata supplies refusal evidence. Conditional
+reader replacements require separate proof and fail this static check.
 
 Exit code 0 prints ``deny census: ok``; any failure prints one
 ``file:line type`` line per offending item and exits 1.
@@ -37,6 +40,7 @@ from __future__ import annotations
 
 import importlib.util
 from bisect import bisect_right
+import json
 import os
 import re
 import stat
@@ -172,27 +176,96 @@ def collect_items(path):
     return items
 
 
-def serde_attrs(attrs):
-    """Serde attribute text, including the ``cfg_attr``-wrapped forms."""
-    parts = []
-    for match in re.finditer(r"serde\s*\(", attrs):
-        start = match.end()
-        depth = 1
-        pos = start
-        while pos < len(attrs) and depth:
-            if attrs[pos] == "(":
-                depth += 1
-            elif attrs[pos] == ")":
-                depth -= 1
-            pos += 1
-        parts.append(attrs[start : pos - 1])
-    return ",".join(parts)
+def split_metadata(text):
+    """Split metadata at unquoted top-level commas, retaining original slices."""
+    code = SOURCE_POLICY.mask_rust_non_code(text)
+    depth = start = 0
+    for pos, char in enumerate(code):
+        if char in "([{":
+            depth += 1
+        elif char in ")]}":
+            depth -= 1
+        elif char == "," and depth == 0:
+            yield text[start:pos]
+            start = pos + 1
+    yield text[start:]
+
+
+def attribute_arguments(text, wanted):
+    """Yield actual leading attribute arguments and their conditional status.
+
+    Masked source supplies positions; strings and comments cannot name metadata.
+    A cfg_attr condition is not evaluated, so its children remain conditional.
+    """
+    def arguments(meta, conditional):
+        code = SOURCE_POLICY.mask_rust_non_code(meta)
+        match = re.fullmatch(r"\s*(\w+)\s*\((.*)\)\s*", code, re.S)
+        if match is None:
+            return
+        inner = meta[match.start(2):match.end(2)]
+        if match.group(1) == wanted:
+            yield inner, conditional
+        elif match.group(1) == "cfg_attr":
+            for child in list(split_metadata(inner))[1:]:
+                yield from arguments(child, True)
+
+    code = SOURCE_POLICY.mask_rust_non_code(text)
+    cursor = 0
+    while True:
+        while cursor < len(code) and code[cursor].isspace():
+            cursor += 1
+        opening = SOURCE_POLICY.OUTER_ATTRIBUTE.match(code, cursor)
+        if opening is None:
+            return
+        end = SOURCE_POLICY.attribute_end(code, cursor)
+        if end is None:
+            raise ValueError("incomplete attribute metadata")
+        yield from arguments(text[opening.end():end - 1], False)
+        cursor = end
+
+
+def serde_options(attrs):
+    """Yield option names, original value tokens and conditional status."""
+    for arguments, conditional in attribute_arguments(attrs, "serde"):
+        for option in split_metadata(arguments):
+            code = SOURCE_POLICY.mask_rust_non_code(option)
+            match = re.match(r"\s*(\w+)", code)
+            if match:
+                yield match.group(1), option[match.end():].strip(), conditional
+
+
+def has_serde_flag(attrs, name, include_conditional=False):
+    return any(key == name and not SOURCE_POLICY.mask_rust_non_code(value).strip()
+               and (include_conditional or not conditional)
+               for key, value, conditional in serde_options(attrs))
+
+
+def reader_type(value):
+    """Read a type-name string; unsupported literal forms have no static proof."""
+    code = SOURCE_POLICY.mask_rust_non_code(value)
+    match = re.fullmatch(r"\s*=\s+", code)
+    if match is None:
+        return None
+    literals = [value[start:end] for start, end in SOURCE_POLICY.rust_non_code_spans(value)
+                if not value[start:end].startswith(("//", "/*"))]
+    if len(literals) != 1:
+        return None
+    literal = literals[0]
+    raw = re.fullmatch(r'r(#{0,})"(.*)"\1', literal, re.S)
+    if raw:
+        return raw.group(2)
+    try:
+        return json.loads(literal)
+    except (ValueError, TypeError):
+        return None
 
 
 def derives_deserialize(attrs):
-    for match in re.finditer(r"derive\s*\(([^)]*)\)", attrs):
-        if re.search(r"\bDeserialize\b", match.group(1)):
-            return True
+    for arguments, _ in attribute_arguments(attrs, "derive"):
+        for name in split_metadata(arguments):
+            code = SOURCE_POLICY.mask_rust_non_code(name).strip()
+            if re.fullmatch(r"(?:::\s*)?(?:\w+\s*::\s*)*Deserialize", code):
+                return True
     return False
 
 
@@ -216,31 +289,22 @@ def strip_macro_repetition(body):
 
 def split_variants(body):
     """Split an enum body into its top-level variant texts, attributes kept."""
-    depth = 0
-    variants = []
-    current = ""
-    for char in body:
-        if char in "({[":
-            depth += 1
-        elif char in ")}]":
-            depth -= 1
-        if char == "," and depth == 0:
-            variants.append(current)
-            current = ""
-        else:
-            current += char
-    variants.append(current)
-    out = []
-    for raw in variants:
-        if strip_variant_attributes(raw):
-            out.append(raw)
-    return out
+    return [raw for raw in split_metadata(body) if strip_variant_attributes(raw)]
 
 
 def strip_variant_attributes(raw):
     """The variant text with its attributes and comments removed."""
-    text = re.sub(r"#\[[^\]]*\]", " ", raw)
-    return re.sub(r"//[^\n]*", " ", text).strip()
+    code = SOURCE_POLICY.mask_rust_non_code(raw)
+    cursor = 0
+    while True:
+        while cursor < len(code) and code[cursor].isspace():
+            cursor += 1
+        if SOURCE_POLICY.OUTER_ATTRIBUTE.match(code, cursor) is None:
+            return code[cursor:].strip()
+        end = SOURCE_POLICY.attribute_end(code, cursor)
+        if end is None:
+            raise ValueError("incomplete variant attribute")
+        cursor = end
 
 
 def enum_variants(item):
@@ -300,7 +364,9 @@ def untagged_arms(item):
     """
     arms = []
     for raw in split_variants(strip_macro_repetition(enum_body(item))):
-        untagged = bool(re.search(r"\buntagged\b", serde_attrs(raw)))
+        if has_serde_flag(raw, "skip") or has_serde_flag(raw, "skip_deserializing"):
+            continue
+        untagged = has_serde_flag(raw, "untagged", include_conditional=True)
         text = strip_variant_attributes(raw)
         match = re.match(r"(\$?\w+)\s*(.*)", text, re.S)
         if match is None:
@@ -320,6 +386,8 @@ def untagged_arms(item):
 def named_types(text):
     # Retain the whole path: other::Wire cannot inherit a local Wire's deny.
     # Rust permits lower-case type aliases and declarations too.
+    text = SOURCE_POLICY.mask_rust_non_code(text)
+    text = re.sub(r"\s*::\s*", "::", text)
     return re.findall(r"(?<![\w:'])(?:::)?(?:[A-Za-z_]\w*::)*[A-Za-z_]\w*", text)
 
 
@@ -452,27 +520,48 @@ def main():
                     elif target_item is None and (name in index or "::" in name):
                         admitted = False
                 return admitted
-            attrs = serde_attrs(item.attrs)
-            if re.search(r"\bdeny_unknown_fields\b", attrs):
-                return True
-            if re.search(r"\btransparent\b", attrs):
-                return True
-            target = re.search(r"\b(?:try_from|from)\s*=\s*\"([^\"]+)\"", attrs)
-            if target:
+            options = list(serde_options(item.attrs))
+            if any(conditional and key in {
+                "from", "try_from", "transparent", "untagged", "tag", "content"
+            } for key, _, conditional in options):
+                return False
+            target = next((value for key, value, conditional in options
+                           if key in {"from", "try_from"} and not conditional), None)
+            if target is not None:
+                target = reader_type(target)
+                if not isinstance(target, str) or not target.strip():
+                    return False
                 admitted = True
-                for name in named_types(target.group(1)):
+                for name in named_types(target):
                     target_item = resolve_item(index, name, item, ambiguities)
                     if target_item is not None and not passes(target_item):
                         admitted = False
                     elif target_item is None and (name in index or "::" in name):
                         admitted = False
                 return admitted
-            if re.search(r"\buntagged\b", attrs):
+            if has_serde_flag(item.attrs, "transparent"):
+                return True
+            if any(key == "tag" for key, _, _ in options) and not any(
+                key == "content" for key, _, _ in options
+            ):
+                units = [arm for arm in untagged_arms(item) if arm.kind == "unit"]
+                for arm in units:
+                    arm_failures.append((
+                        item.path, item.line,
+                        f"{item.name}::{arm.name}: an internally tagged unit arm "
+                        "ignores unknown keys even with deny_unknown_fields; "
+                        "use an empty struct arm",
+                    ))
+                if units:
+                    return False
+            if has_serde_flag(item.attrs, "deny_unknown_fields"):
+                return True
+            if has_serde_flag(item.attrs, "untagged"):
                 return check_untagged_arms(item, untagged_arms(item))
             if is_uninhabited_enum(item):
                 return True
             if all_unit_variants(item):
-                return True
+                return not any(key in {"tag", "content"} for key, _, _ in options)
             return False
         finally:
             checking.discard(identity)
@@ -482,9 +571,7 @@ def main():
             continue
         if not passes(item):
             failures.append((item.path, item.line, item.name))
-        if item.kind == "enum" and not re.search(
-            r"\buntagged\b", serde_attrs(item.attrs)
-        ):
+        if item.kind == "enum" and not has_serde_flag(item.attrs, "untagged"):
             arms = [arm for arm in untagged_arms(item) if arm.untagged]
             if arms and not check_untagged_arms(item, arms):
                 failures.append((item.path, item.line, item.name))

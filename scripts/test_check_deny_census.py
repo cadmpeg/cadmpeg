@@ -260,6 +260,193 @@ class DenyCensusTests(unittest.TestCase):
         '''})
         self.assertEqual(status, 0, output)
 
+    def test_literal_and_comment_text_cannot_supply_serde_proof(self) -> None:
+        attributes = [
+            '#[doc = "serde(deny_unknown_fields)"]',
+            '#[doc = r#"serde(deny_unknown_fields)"#]',
+            '#[allow(dead_code)] /* serde(deny_unknown_fields) */',
+            '#[serde(rename = "deny_unknown_fields")]',
+            '#[serde(rename = "transparent")]',
+            '#[serde(rename = "untagged")]',
+        ]
+        for attrs in attributes:
+            with self.subTest(attrs=attrs):
+                status, output = self.run_census({"lib.rs": f'''
+                    #[derive(Deserialize)] {attrs}
+                    struct Reader {{ value: u8 }}
+                '''})
+                self.assertEqual(status, 1, output)
+                self.assertIn("Reader", output)
+
+    def test_inactive_conditional_deny_is_not_unconditional_proof(self) -> None:
+        for attrs in [
+            '#[cfg_attr(feature = "strict", serde(deny_unknown_fields))]',
+            '#[cfg_attr(all(), cfg_attr(feature = "strict", serde(deny_unknown_fields)))]',
+        ]:
+            with self.subTest(attrs=attrs):
+                status, output = self.run_census({"lib.rs": f'''
+                    #[derive(Deserialize)] {attrs}
+                    struct Reader {{ value: u8 }}
+                '''})
+                self.assertEqual(status, 1, output)
+                self.assertIn("Reader", output)
+
+    def test_from_reader_takes_precedence_over_local_deny(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            struct Open;
+            #[derive(Deserialize)] #[serde(deny_unknown_fields, from = "Open")]
+            struct Reader;
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Reader", output)
+
+    def test_from_reader_can_supply_its_own_deny(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            struct Closed { value: u8 }
+            #[derive(Deserialize)] #[serde(deny_unknown_fields, from = "Closed")]
+            struct Reader;
+        '''})
+        self.assertEqual(status, 0, output)
+
+    def test_conditional_reader_replacement_cannot_inherit_local_deny(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            struct Open;
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            #[cfg_attr(feature = "open", serde(from = "Open"))]
+            struct Reader { value: u8 }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Reader", output)
+
+    def test_conditional_serialization_metadata_does_not_hide_actual_deny(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            #[cfg_attr(feature = "named", serde(rename = "a,b)"))]
+            struct Reader { value: u8 }
+        '''})
+        self.assertEqual(status, 0, output)
+
+    def test_documentation_cannot_create_a_deserialize_derive(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            #[doc = "derive(Deserialize)"]
+            struct Reader { value: u8 }
+        '''})
+        self.assertEqual(status, 0, output)
+
+    def test_conditional_deserialize_derives_are_inventoried(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            #[cfg_attr(all(), cfg_attr(feature = "wire", derive(serde::Deserialize)))]
+            struct Reader { value: u8 }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Reader", output)
+
+    def test_spaces_and_comments_in_derive_paths_do_not_hide_readers(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            #[derive(serde /* qualification */ :: Deserialize)]
+            struct Reader { value: u8 }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Reader", output)
+
+    def test_raw_type_literals_follow_the_actual_reader(self) -> None:
+        for target, status in [("Closed", 0), ("Open", 1)]:
+            with self.subTest(target=target):
+                result, output = self.run_census({"lib.rs": f'''
+                    struct Open;
+                    #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                    struct Closed {{ value: u8 }}
+                    #[derive(Deserialize)] #[serde(from = r##"{target}"##)]
+                    struct Reader;
+                '''})
+                self.assertEqual(result, status, output)
+
+    def test_comments_around_the_reader_literal_preserve_its_route(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            struct Closed { value: u8 }
+            #[derive(Deserialize)]
+            #[serde(from /* before */ = /* after */ "Closed" /* trailing */)]
+            struct Reader;
+        '''})
+        self.assertEqual(status, 0, output)
+
+    def test_path_spacing_cannot_turn_a_foreign_reader_into_a_local_one(self) -> None:
+        for path in ['other :: Wire', 'other /* qualification */ :: Wire']:
+            with self.subTest(path=path):
+                status, output = self.run_census({"lib.rs": f'''
+                    #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                    struct Wire {{ value: u8 }}
+                    mod other {{ pub struct Wire; }}
+                    #[derive(Deserialize)] #[serde(from = "{path}")]
+                    struct Reader;
+                '''})
+                self.assertEqual(status, 1, output)
+                self.assertIn("Reader", output)
+
+    def test_tagged_unit_enum_has_an_object_key_set(self) -> None:
+        for metadata in ['tag = "kind"', 'tag = "kind", content = "value"']:
+            with self.subTest(metadata=metadata):
+                status, output = self.run_census({"lib.rs": f'''
+                    #[derive(Deserialize)] #[serde({metadata})]
+                    enum Reader {{ A, B }}
+                '''})
+                self.assertEqual(status, 1, output)
+                self.assertIn("Reader", output)
+
+    def test_adjacent_tagged_unit_enum_can_deny_unknown_keys(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            #[derive(Deserialize)]
+            #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+            enum Reader { A, B }
+        '''})
+        self.assertEqual(status, 0, output)
+
+    def test_internal_tagged_unit_arm_ignores_local_deny(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+            enum Reader { A, B { value: u8 } }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Reader::A", output)
+
+    def test_internal_tagged_empty_struct_and_skipped_unit_arms(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+            enum Reader {
+                /// Empty, but still checks the object keys.
+                A {},
+                #[doc = "Comment commas, and delimiters [ ( { stay text"]
+                B { value: u8 },
+                #[serde(skip_deserializing)]
+                C,
+            }
+        '''})
+        self.assertEqual(status, 0, output)
+
+    def test_documentation_cannot_make_a_variant_untagged(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            enum Reader {
+                #[doc = "serde(untagged)"]
+                A { value: u8 },
+            }
+        '''})
+        self.assertEqual(status, 0, output)
+
+    def test_conditional_untagged_variant_requires_refusal_proof(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            enum Reader {
+                A,
+                #[cfg_attr(feature = "open", serde(untagged))]
+                B { value: u8 },
+            }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Reader::B", output)
+
 
 if __name__ == "__main__":
     unittest.main()
