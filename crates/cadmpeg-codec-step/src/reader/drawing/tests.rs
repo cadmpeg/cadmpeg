@@ -453,3 +453,48 @@ fn drawing_relationships_resolve_mapped_brep_carriers() {
             && loss.message.contains("multiple neutral identities")
     }));
 }
+
+#[test]
+fn deep_drawing_wrapper_graph_resolves_without_call_stack_recursion() {
+    use std::fmt::Write as _;
+
+    let mut source = String::from(
+        "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;\n\
+         #1=PLANE('leaf',#4);\n\
+         #2=CARTESIAN_POINT('',(0.,0.,0.));\n\
+         #3=DIRECTION('',(0.,0.,1.));\n\
+         #4=AXIS2_PLACEMENT_3D('',#2,#3,$);\n\
+         #5=REPRESENTATION_CONTEXT('','');\n",
+    );
+    let mut target = 1;
+    for level in 0..8192 {
+        let representation = 10 + level * 3;
+        let map = representation + 1;
+        let item = map + 1;
+        write!(
+            source,
+            "#{representation}=SHAPE_REPRESENTATION('',(#{target}),#5);\n\
+             #{map}=REPRESENTATION_MAP(#4,#{representation});\n\
+             #{item}=MAPPED_ITEM('',#{map},#4);\n"
+        )
+        .expect("write mapped records");
+        target = item;
+    }
+    source.push_str("ENDSEC;END-ISO-10303-21;");
+    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("deep mapped graph");
+    let identities = std::collections::BTreeMap::from([(
+        1,
+        std::collections::BTreeSet::from(["step:data:surface#1".into()]),
+    )]);
+    let resolved = super::target_resolution(
+        target,
+        &identities,
+        &std::collections::HashSet::new(),
+        &exchange,
+        &std::collections::BTreeMap::new(),
+    );
+    let super::TargetResolution::Resolved(resolved) = resolved else {
+        panic!("deep mapped graph lost its unique surface target");
+    };
+    assert_eq!(resolved.local_target(), Some("step:data:surface#1"));
+}
