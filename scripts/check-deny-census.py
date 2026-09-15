@@ -4,8 +4,10 @@
 
 A document read must not silently accept a key no type declares. The golden
 sweeps test shapes the goldens carry; this checker follows declared
-read routes in the three wire crates. Imported bare names use
-a unique-declaration fallback; this is not a Rust name-resolution proof.
+read routes in the three wire crates. Explicit lexical imports are resolved
+before applying the unique-declaration fallback for bare names; this is not a
+complete Rust name-resolution proof. Wildcard imports, module aliases and
+unrecognized re-exports remain unresolved static limits.
 Declarations without attributes are included when following a read route.
 Nongeneric type aliases are followed to their targets; other alias shapes
 fail the static check when used as a read route.
@@ -110,6 +112,30 @@ class Item:
         parts = path.parts[src + 1:]
         module = parts[:-1] + (() if path.name in {"lib.rs", "main.rs", "mod.rs"} else (path.stem,))
         self.scope = module if scope is None else module + scope
+
+
+class ImportBinding:
+    """One source-level ``use`` binding in a module scope."""
+
+    def __init__(self, path, scope, alias, target, offsets=(), scopes=(),
+                 module_scope=()):
+        self.path = path
+        self.scope = scope
+        self.alias = alias
+        self.target = target
+        self.offsets = offsets
+        self.scopes = scopes
+        self.module_scope = module_scope
+
+
+class SourceContext:
+    """Path and lexical scope used to resolve names inside a helper body."""
+
+    def __init__(self, path, scope):
+        self.path = path
+        self.scope = scope
+        source_index = path.parts.index("src")
+        self.crate = Path(*path.parts[:source_index])
 
 
 def source_files():
@@ -332,6 +358,31 @@ def direct_input_argument(arguments, bindings):
     return False
 
 
+def call_has_direct_input(code, call, bindings):
+    """Whether a deserializer call directly receives a reader parameter."""
+    single_use = {
+        binding for binding in bindings
+        if len(re.findall(rf"\b{re.escape(binding)}\b", code)) == 2
+    }
+    arguments = call_arguments(code, call)
+    return arguments is not None and direct_input_argument(arguments, single_use)
+
+
+def direct_input_calls(code, bindings):
+    """Return every recognized deserializer call bound to the input parameter."""
+    calls = list(ARRAY_DESERIALIZE_CALL_RE.finditer(code))
+    calls.extend(DESERIALIZE_CALL_RE.finditer(code))
+    return [call for call in calls if call_has_direct_input(code, call, bindings)]
+
+
+def has_conditional_input_route(code, bindings):
+    """Reject direct input calls whose execution is conditional or deferred."""
+    return any(
+        not call_is_unconditional(code, call)
+        for call in direct_input_calls(code, bindings)
+    )
+
+
 def call_uses_input(code, call, bindings):
     """Prove direct consumption only for an unaliased, unrebound parameter.
 
@@ -339,12 +390,7 @@ def call_uses_input(code, call, bindings):
     Additional uses require binding analysis this lexical checker does not
     provide; a spelling reused by a local, closure or pattern is not proof.
     """
-    single_use = {
-        binding for binding in bindings
-        if len(re.findall(rf"\b{re.escape(binding)}\b", code)) == 2
-    }
-    arguments = call_arguments(code, call)
-    return arguments is not None and direct_input_argument(arguments, single_use)
+    return call_has_direct_input(code, call, bindings)
 
 
 def source_module_scope(path):
@@ -356,6 +402,208 @@ def source_module_scope(path):
     if stem not in {"lib", "main", "mod"}:
         parts.append(stem)
     return tuple(parts)
+
+
+USE_RE = re.compile(
+    r"\b(?:pub(?:\s*\([^)]*\))?\s+)?use\b"
+)
+USE_PATH_RE = re.compile(
+    r"(?:::)?(?:[A-Za-z_$]\w*\s*::\s*)*[A-Za-z_$]\w*"
+)
+
+
+def statement_end(code, start):
+    """Find a semicolon at the top level of one Rust item statement."""
+    depths = {"(": 0, "[": 0, "{": 0, "<": 0}
+    closing = {
+        ")": "(",
+        "]": "[",
+        "}": "{",
+        ">": "<",
+    }
+    for index in range(start, len(code)):
+        char = code[index]
+        if char in depths:
+            depths[char] += 1
+        elif char in closing:
+            opener = closing[char]
+            if depths[opener]:
+                depths[opener] -= 1
+        elif char == ";" and not any(depths.values()):
+            return index + 1
+    return None
+
+
+def use_path(path, prefix):
+    """Join one use-tree child to its path prefix."""
+    path = canonical_path(path)
+    prefix = canonical_path(prefix).rstrip(":")
+    if not prefix:
+        return path
+    if path.startswith("::"):
+        return canonical_path(f"{prefix}{path}")
+    return canonical_path(f"{prefix}::{path}")
+
+
+def use_tree_bindings(text, prefix=""):
+    """Yield ``(alias, target)`` entries from a use tree.
+
+    This parser handles the path and grouped forms used by the wire crates.
+    Unsupported trees produce no binding; callers then fail closed when a
+    name cannot be resolved instead of treating its spelling as a prelude
+    type. Paths are taken from masked source, so comments and literals cannot
+    manufacture an import.
+    """
+    code = SOURCE_POLICY.mask_rust_non_code(text).strip()
+    if not code:
+        return
+
+    brace = None
+    depth = 0
+    for index, char in enumerate(code):
+        if char in "([<":
+            depth += 1
+        elif char in ")]>":
+            depth -= 1
+        elif char == "{" and depth == 0:
+            brace = index
+            break
+    if brace is not None:
+        end = delimited_end(code, brace)
+        if end is None or code[end:].strip():
+            return
+        parent = code[:brace].strip()
+        if parent.endswith("::"):
+            parent = parent[:-2].rstrip()
+        if not parent:
+            for child in split_metadata(code[brace + 1:end - 1]):
+                yield from use_tree_bindings(child, prefix)
+            return
+        for child in split_metadata(code[brace + 1:end - 1]):
+            yield from use_tree_bindings(child, use_path(parent, prefix))
+        return
+
+    alias_match = re.search(r"\s+as\s+([A-Za-z_]\w*)\s*$", code)
+    if alias_match is not None:
+        path = code[:alias_match.start()].strip()
+        alias = alias_match.group(1)
+        if alias == "_" or USE_PATH_RE.fullmatch(path) is None:
+            return
+        yield alias, use_path(path, prefix)
+        return
+
+    if code.endswith("::*"):
+        path = code[:-3].rstrip()
+        if USE_PATH_RE.fullmatch(path) is not None:
+            yield None, use_path(path, prefix)
+        return
+
+    if USE_PATH_RE.fullmatch(code) is None:
+        return
+    path = use_path(code, prefix)
+    parts = path.lstrip(":").split("::")
+    if not parts:
+        return
+    if parts[-1] == "self" and len(parts) > 1:
+        alias = parts[-2]
+    else:
+        alias = parts[-1]
+    if alias == "_":
+        return
+    yield alias, path
+
+
+def collect_imports(path):
+    """Collect source use bindings; wildcard bindings remain an open limit."""
+    source = path.read_text(encoding="utf-8")
+    code, _ = SOURCE_POLICY.production_source(source)
+    offsets, scopes = lexical_scopes(code)
+    module_scope = source_module_scope(path)
+    imports = []
+    cursor = 0
+    while match := USE_RE.search(code, cursor):
+        end = statement_end(code, match.end())
+        if end is None:
+            break
+        statement = code[match.end():end - 1]
+        scope = module_scope + scopes[bisect_right(offsets, match.start()) - 1]
+        for alias, target in use_tree_bindings(statement):
+            if alias is None:
+                continue
+            imports.append(
+                ImportBinding(
+                    path,
+                    scope,
+                    alias,
+                    target,
+                    tuple(offsets),
+                    tuple(scopes),
+                    module_scope,
+                )
+            )
+        cursor = end
+    return imports
+
+
+def control_block_kind(code, opening):
+    """Classify a brace that can make a reader call conditional."""
+    prefix = code[:opening].rstrip()
+    closure = re.search(
+        r"(?:^|[;{}(=,:])\s*(?:async\s+)?(?:move\s+)?"
+        r"\|[^|{};\n]*\|\s*(?:->\s*[^{};\n]+)?$",
+        prefix,
+    )
+    if closure is not None:
+        return "closure"
+    if re.search(r"(?:^|[;{}(=,:])\s*async(?:\s+move)?$", prefix):
+        return "closure"
+
+    segment = re.split(r"[;{}]", prefix)[-1].strip()
+    if re.match(r"^(?:else\s+)?if\b", segment):
+        return "conditional"
+    if re.match(r"^(?:match|while|for|loop)\b", segment):
+        return "conditional"
+    if re.match(r"^else\b", segment):
+        return "conditional"
+    return None
+
+
+def call_is_unconditional(code, call):
+    """Prove a reader call is reached on the direct route being inspected.
+
+    The census does not evaluate Rust. Calls in closures, branch or loop
+    bodies, and short-circuit expressions are therefore not consumption
+    evidence. A call in an unsupported control shape fails closed; this is a
+    static proof limit and does not reject the corresponding Rust value.
+    """
+    stack = []
+    for index, char in enumerate(code[:call.start()]):
+        if char == "{":
+            stack.append(control_block_kind(code, index))
+        elif char == "}" and stack:
+            stack.pop()
+    if any(kind is not None for kind in stack):
+        return False
+
+    statement_start = max(
+        code.rfind(";", 0, call.start()),
+        code.rfind("{", 0, call.start()),
+        code.rfind("}", 0, call.start()),
+    )
+    statement = code[statement_start + 1:call.start()]
+    if re.search(r"&&|\|\|", statement):
+        return False
+
+    # A closure with a single expression has no body brace to classify above.
+    # The statement boundary keeps ordinary logical-or expressions from being
+    # mistaken for a closure introducer.
+    if re.search(
+        r"(?:^|[=(:,]|\breturn\s+)(?:async\s+)?(?:move\s+)?"
+        r"\|[^|{};\n]*\|\s*(?:->\s*[^{};\n]+)?[^;{}]*$",
+        statement,
+    ):
+        return False
+    return True
 
 
 def macro_reader_contract(code, expected_path):
@@ -382,6 +630,8 @@ def macro_reader_contract(code, expected_path):
         return False
     method = methods[0]
     bindings = function_input_bindings(method)
+    if has_conditional_input_route(method, bindings):
+        return False
     calls = [
         call for call in DESERIALIZE_CALL_RE.finditer(method)
         if call_uses_input(method, call, bindings)
@@ -1234,6 +1484,7 @@ def main():
     order = []
     readers = {}
     helper_functions = {}
+    imports = {}
     helper_forwarders = set()
     helper_forwarder_sources = {}
     helper_targets = {}
@@ -1248,6 +1499,8 @@ def main():
             readers.setdefault((path, reader.name), []).append(reader)
         for function in collect_deserialize_functions(path):
             helper_functions.setdefault(function.name, []).append(function)
+        for binding in collect_imports(path):
+            imports.setdefault(binding.alias, []).append(binding)
         forwarders, named = deserializer_helpers(path, deserializer_contracts)
         helper_forwarders.update(forwarders)
         for name in forwarders:
@@ -1264,8 +1517,72 @@ def main():
     ambiguities = []
     checking = set()
 
-    def resolve_reader_target(name, owner, reader):
+    import_missing = object()
+    import_ambiguous = object()
+
+    def import_visible(binding, owner, position, source_path=None,
+                       source_scope=None):
+        source_path = owner.path if source_path is None else source_path
+        source_scope = owner.scope if source_scope is None else source_scope
+        if binding.path != source_path:
+            return binding.scope == source_scope
+        if position is None:
+            call_scope = source_scope
+        else:
+            scope_index = bisect_right(binding.offsets, position) - 1
+            if scope_index < 0:
+                return False
+            call_scope = binding.module_scope + binding.scopes[scope_index]
+        if call_scope == binding.scope:
+            return True
+        if not call_scope[:len(binding.scope)] == binding.scope:
+            return False
+        # A module import is visible inside functions and blocks in that
+        # module. Child named modules have their own lexical namespace and do
+        # not inherit the parent's bare imports.
+        return all(part.startswith("@") for part in call_scope[len(binding.scope):])
+
+    def imported_path(name, owner, position=None, source_path=None,
+                      source_scope=None):
+        """Resolve one bare name through its explicit lexical use binding."""
+        if "::" in name:
+            return import_missing
+        source_path = owner.path if source_path is None else source_path
+        source_scope = owner.scope if source_scope is None else source_scope
+        source_crate = Path(*source_path.parts[:source_path.parts.index("src")])
+        candidates = [
+            binding for binding in imports.get(name, ())
+            if binding.path.parts[:binding.path.parts.index("src")] == source_crate.parts
+            and import_visible(
+                binding,
+                owner,
+                position,
+                source_path,
+                source_scope,
+            )
+        ]
+        if candidates:
+            # A block-local use shadows an outer module binding. Same-scope
+            # duplicates remain ambiguous because Rust would reject them or
+            # require resolution information this source census does not have.
+            deepest = max(len(binding.scope) for binding in candidates)
+            candidates = [
+                binding for binding in candidates
+                if len(binding.scope) == deepest
+            ]
+        if len(candidates) == 1:
+            return candidates[0].target
+        if len(candidates) > 1:
+            return import_ambiguous
+        return import_missing
+
+    def resolve_reader_target(name, owner, reader, position=None):
         """Resolve a call, preferring a local wire declared in its body."""
+        imported = imported_path(name, owner, position)
+        if imported is import_ambiguous:
+            return None
+        if imported is not import_missing:
+            name = imported
         if "::" not in name:
             local = [
                 candidate for candidate in index.get(name, ())
@@ -1296,6 +1613,11 @@ def main():
     def resolve_helper_functions(name, owner):
         """Resolve a custom helper by its complete Rust module path."""
         path = canonical_path(name).lstrip(":")
+        imported = imported_path(path, owner)
+        if imported is import_ambiguous:
+            return []
+        if imported is not import_missing:
+            path = canonical_path(imported).lstrip(":")
         parts = path.split("::")
         helper_name = parts[-1]
         candidates = helper_functions.get(helper_name, ())
@@ -1355,10 +1677,13 @@ def main():
 
     def helper_function_passes(function, owner, allow_free_form=False):
         """Prove a custom helper from the direct reader it invokes."""
+        context = SourceContext(function.path, function.scope)
         code = SOURCE_POLICY.mask_rust_non_code(function.body)
         if OPEN_READER_ROUTE.search(code):
             return False
         bindings = function.input_bindings
+        if has_conditional_input_route(code, bindings):
+            return False
         array_route = any(
             call_uses_input(code, call, bindings)
             for call in ARRAY_DESERIALIZE_CALL_RE.finditer(code)
@@ -1372,6 +1697,17 @@ def main():
         for call in calls:
             path = re.sub(r"\s*::\s*", "::", call.group("path"))
             path = path.replace("$crate", "crate")
+            imported = imported_path(
+                path,
+                context,
+                function.start + call.start(),
+                function.path,
+                function.scope,
+            )
+            if imported is import_ambiguous:
+                return False
+            if imported is not import_missing:
+                path = imported
             base = path.rsplit("::", 1)[-1]
             if path in {"Self", "self"}:
                 return False
@@ -1380,7 +1716,7 @@ def main():
             # built-in reader contract; otherwise `struct Vec<T>` or a
             # custom `String` reader could be admitted by its spelling.
             if "::" not in path and base in index:
-                target = target_for_type(path, owner)
+                target = target_for_type(path, context)
                 if target is None or not passes(target):
                     return False
                 continue
@@ -1397,13 +1733,11 @@ def main():
             if generic is not None:
                 if is_builtin_path(path, SEQUENCE_TYPES, index):
                     continue
-                ok, _ = payload_proof(
-                    f"{path}<{generic}>", owner
-                )
+                ok, _ = payload_proof(f"{path}<{generic}>", context)
                 if not ok:
                     return False
                 continue
-            target = target_for_type(path, owner)
+            target = target_for_type(path, context)
             if target is None or not passes(target):
                 return False
         return True
@@ -1413,6 +1747,9 @@ def main():
         code = SOURCE_POLICY.mask_rust_non_code(reader.body)
         if OPEN_READER_ROUTE.search(code):
             return False
+        if has_conditional_input_route(code, reader.input_bindings):
+            return False
+
         # This spelling is an array reader whose leading ``<`` is not a type
         # path token accepted by the call regex below.
         array_route = any(
@@ -1428,11 +1765,18 @@ def main():
         for call in calls:
             path = re.sub(r"\s*::\s*", "::", call.group("path"))
             path = path.replace("$crate", "crate")
+            imported = imported_path(path, item, reader.start + call.start())
+            if imported is import_ambiguous:
+                return False
+            if imported is not import_missing:
+                path = imported
             base = path.rsplit("::", 1)[-1]
             if path in {"Self", "self"}:
                 return False
             if "::" not in path and base in index:
-                target = resolve_reader_target(path, item, reader)
+                target = resolve_reader_target(
+                    path, item, reader, reader.start + call.start()
+                )
                 if target is None or not passes(target):
                     return False
                 continue
@@ -1448,7 +1792,9 @@ def main():
                 if not ok:
                     return False
                 continue
-            target = resolve_reader_target(path, item, reader)
+            target = resolve_reader_target(
+                path, item, reader, reader.start + call.start()
+            )
             if target is None:
                 return False
             if not passes(target):
@@ -1457,6 +1803,11 @@ def main():
 
     def target_for_type(path, owner):
         path = path.replace("$crate", "crate")
+        imported = imported_path(path, owner)
+        if imported is import_ambiguous:
+            return None
+        if imported is not import_missing:
+            path = imported
         return resolve_item(index, path, owner, ambiguities)
 
     def payload_proof(field, owner):
@@ -1481,6 +1832,10 @@ def main():
         path, args = type_parts(field)
         if path is None:
             return False, "unsupported payload type syntax"
+        imported = imported_path(path, owner)
+        if imported is import_ambiguous:
+            return False, f"ambiguous imported payload reader {path}"
+        resolved_path = path if imported is import_missing else imported
 
         if custom:
             if len(custom) != 1 or custom[0] is None:
@@ -1505,17 +1860,19 @@ def main():
                 # These helpers forward the field's own type to Deserialize.
                 pass
             elif helper in LOCAL_ID_HELPERS:
-                if not is_builtin_path(path, SCALAR_TYPES, index):
+                if not is_builtin_path(resolved_path, SCALAR_TYPES, index):
                     return False, f"helper {helper} has no scalar reader proof"
-            elif helper in DISTINCT_MAP_HELPERS and is_builtin_path(path, MAP_TYPES, index):
+            elif helper in DISTINCT_MAP_HELPERS and is_builtin_path(
+                resolved_path, MAP_TYPES, index
+            ):
                 return True, "distinct-key map is intentionally free-form"
             else:
                 candidates = resolve_helper_functions(helper, owner)
                 if len(candidates) != 1 or not helper_function_passes(
                     candidates[0], owner,
                     allow_free_form=(
-                        is_free_form_map(path)
-                        or is_builtin_path(path, MAP_TYPES, index)
+                        is_free_form_map(resolved_path)
+                        or is_builtin_path(resolved_path, MAP_TYPES, index)
                     ),
                 ):
                     return False, f"custom deserializer {helper} has no forwarding proof"
@@ -1523,8 +1880,8 @@ def main():
         # Names in the Rust type namespace can shadow prelude and standard
         # container types. A local or uniquely imported declaration therefore
         # gets its own reader proof before any outer-type shortcut is used.
-        base = path.rsplit("::", 1)[-1]
-        if "::" not in path and base in index:
+        base = resolved_path.rsplit("::", 1)[-1]
+        if "::" not in resolved_path and base in index:
             target = target_for_type(path, owner)
             if target is None:
                 return False, f"cannot resolve shadowed payload reader {path}"
@@ -1532,11 +1889,13 @@ def main():
                 return False, f"payload reader {path} lacks checked unknown-key refusal"
             return True, f"payload reader {path} is checked"
 
-        if is_free_form_map(path):
+        if is_free_form_map(resolved_path):
             return True, "explicit free-form map/value"
         if path in {"[", "("}:
             return True, "array or tuple reader rejects object input"
-        if is_keyless_path(path, index) or is_builtin_path(path, MAP_TYPES, index):
+        if is_keyless_path(resolved_path, index) or is_builtin_path(
+            resolved_path, MAP_TYPES, index
+        ):
             return True, "scalar, sequence, or map outer reader"
         if base == "PhantomData":
             return True, "phantom reader has no object payload"
@@ -1558,6 +1917,11 @@ def main():
 
         target = target_for_type(path, owner)
         if target is None:
+            if imported is not import_missing:
+                return False, (
+                    f"cannot resolve imported payload reader {path} "
+                    f"({resolved_path})"
+                )
             if "::" in path or path in index:
                 return False, f"cannot resolve payload reader {path}"
             # A bare imported generic is outside this lexical census. It can

@@ -822,6 +822,222 @@ class DenyCensusTests(unittest.TestCase):
                 self.assertEqual(status, 1, output)
                 self.assertIn("Reader::A", output)
 
+    def test_imported_aliases_resolve_before_builtin_reader_shortcuts(self) -> None:
+        status, output = self.run_census({
+            "lib.rs": '''
+                use serde::Deserialize;
+                mod hostile;
+                use hostile::{Open as String};
+                #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+                enum Reader { A(String) }
+            ''',
+            "hostile.rs": '''
+                use serde::{Deserialize, Deserializer};
+                pub struct Open;
+                impl<'de> Deserialize<'de> for Open {
+                    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                        let _ = serde_json::Value::deserialize(d)?;
+                        Ok(Self)
+                    }
+                }
+            ''',
+        })
+        self.assertEqual(status, 1, output)
+        self.assertIn("Reader::A", output)
+
+        status, output = self.run_census({
+            "lib.rs": '''
+                use serde::Deserialize;
+                use std::string::String as Scalar;
+                #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+                enum Reader { A(Scalar) }
+            ''',
+        })
+        self.assertEqual(status, 0, output)
+
+        status, output = self.run_census({
+            "lib.rs": '''
+                use serde::Deserialize;
+                struct String;
+                use std::string::String as Scalar;
+                #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+                enum Reader { A(Scalar) }
+            '''
+        })
+        self.assertEqual(status, 0, output)
+
+    def test_root_group_import_resolves_an_open_reader_alias(self) -> None:
+        status, output = self.run_census({
+            "lib.rs": '''
+                use serde::Deserialize;
+                mod hostile;
+                use {hostile::Open as String};
+                #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+                enum Reader { A(String) }
+            ''',
+            "hostile.rs": '''
+                use serde::{Deserialize, Deserializer};
+                pub struct Open;
+                impl<'de> Deserialize<'de> for Open {
+                    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                        let _ = serde_json::Value::deserialize(d)?;
+                        Ok(Self)
+                    }
+                }
+            ''',
+        })
+        self.assertEqual(status, 1, output)
+        self.assertIn("Reader::A", output)
+
+    def test_deepest_block_import_shadows_an_outer_alias(self) -> None:
+        status, output = self.run_census({
+            "lib.rs": '''
+                use serde::Deserialize;
+                mod hostile;
+                use hostile::Open as Scalar;
+                fn local() {
+                    use std::string::String as Scalar;
+                    #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+                    enum Reader { A(Scalar) }
+                }
+            ''',
+            "hostile.rs": '''
+                use serde::{Deserialize, Deserializer};
+                pub struct Open;
+                impl<'de> Deserialize<'de> for Open {
+                    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                        let _ = serde_json::Value::deserialize(d)?;
+                        Ok(Self)
+                    }
+                }
+            ''',
+        })
+        self.assertEqual(status, 0, output)
+
+    def test_local_alias_chain_follows_an_imported_reader(self) -> None:
+        status, output = self.run_census({
+            "lib.rs": '''
+                use serde::Deserialize;
+                mod hostile;
+                use hostile::Open as Scalar;
+                type Wire = Scalar;
+                #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+                enum Reader { A(Wire) }
+            ''',
+            "hostile.rs": '''
+                use serde::{Deserialize, Deserializer};
+                pub struct Open;
+                impl<'de> Deserialize<'de> for Open {
+                    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                        let _ = serde_json::Value::deserialize(d)?;
+                        Ok(Self)
+                    }
+                }
+            ''',
+        })
+        self.assertEqual(status, 1, output)
+        self.assertIn("Reader::A", output)
+
+    def test_function_local_import_cannot_impersonate_a_scalar_reader(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            use serde::{Deserialize, Deserializer};
+            mod hostile {
+                pub struct Open;
+                impl<'de> Deserialize<'de> for Open {
+                    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                        let _ = serde_json::Value::deserialize(d)?;
+                        Ok(Self)
+                    }
+                }
+            }
+            struct ReaderPayload;
+            impl<'de> Deserialize<'de> for ReaderPayload {
+                fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                    use hostile::Open as String;
+                    let _ = String::deserialize(d)?;
+                    Ok(Self)
+                }
+            }
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            enum Reader { A(ReaderPayload) }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Reader::A", output)
+
+    def test_imported_custom_reader_alias_is_followed(self) -> None:
+        status, output = self.run_census({
+            "lib.rs": '''
+                use serde::{Deserialize, Deserializer};
+                mod hostile;
+                use hostile::read as read_open;
+                #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+                enum Reader {
+                    A(#[serde(deserialize_with = "read_open")] u8),
+                }
+            ''',
+            "hostile.rs": '''
+                use serde::{Deserialize, Deserializer};
+                pub fn read<'de, D: Deserializer<'de>>(d: D) -> Result<u8, D::Error> {
+                    let _ = serde_json::Value::deserialize(d)?;
+                    Ok(0)
+                }
+            ''',
+        })
+        self.assertEqual(status, 1, output)
+        self.assertIn("Reader::A", output)
+
+        status, output = self.run_census({
+            "lib.rs": '''
+                use serde::{Deserialize, Deserializer};
+                mod hostile;
+                #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+                enum Reader {
+                    A(#[serde(deserialize_with = "hostile::read")] u8),
+                }
+            ''',
+            "hostile.rs": '''
+                use serde::{Deserialize, Deserializer};
+                pub struct Open;
+                impl<'de> Deserialize<'de> for Open {
+                    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                        let _ = serde_json::Value::deserialize(d)?;
+                        Ok(Self)
+                    }
+                }
+                pub fn read<'de, D: Deserializer<'de>>(d: D) -> Result<u8, D::Error> {
+                    use self::Open as String;
+                    let _ = String::deserialize(d)?;
+                    Ok(0)
+                }
+            ''',
+        })
+        self.assertEqual(status, 1, output)
+        self.assertIn("Reader::A", output)
+
+    def test_conditional_and_never_invoked_reader_calls_fail_closed(self) -> None:
+        bodies = {
+            "false branch": "if false { let _ = u8::deserialize(d)?; } Ok(Self)",
+            "closure": "let _reader = || u8::deserialize(d); Ok(Self)",
+            "closure block": "let _reader = || { u8::deserialize(d) }; Ok(Self)",
+            "async block": "let _reader = async { u8::deserialize(d) }; Ok(Self)",
+            "short circuit": "let _ = true || u8::deserialize(d).is_ok(); Ok(Self)",
+        }
+        for name, body in bodies.items():
+            with self.subTest(name=name):
+                status, output = self.run_census({"lib.rs": f'''
+                    use serde::{{Deserialize, Deserializer}};
+                    struct Open;
+                    impl<'de> Deserialize<'de> for Open {{
+                        fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {{
+                            {body}
+                        }}
+                    }}
+                    #[derive(Deserialize)] #[serde(untagged, deny_unknown_fields)]
+                    enum Reader {{ A(Open) }}
+                '''})
+                self.assertEqual(status, 1, output)
+                self.assertIn("Reader::A", output)
+
     def test_compiled_route_counterexamples_fail_closed(self) -> None:
         preamble = '''
             use serde::{Deserialize, Deserializer};
@@ -998,7 +1214,8 @@ class DenyCensusTests(unittest.TestCase):
                         "direct_input_argument(arguments, single_use)",
                         "direct_input_argument(arguments, bindings)",
                     )
-                    self.assertEqual(mutated, 0, output)
+                    expected = 1 if "|d:" in body else 0
+                    self.assertEqual(mutated, expected, output)
 
     def test_route_counterexample_mutations_are_load_bearing(self) -> None:
         qualified_scalar = {
@@ -1018,12 +1235,14 @@ class DenyCensusTests(unittest.TestCase):
                 }
             ''',
         }
-        scalar_old = '''if is_keyless_path(path, index) or is_builtin_path(path, MAP_TYPES, index):
+        scalar_old = '''if is_keyless_path(resolved_path, index) or is_builtin_path(
+            resolved_path, MAP_TYPES, index
+        ):
             return True, "scalar, sequence, or map outer reader"'''
         scalar_mutated, scalar_output = self.run_mutated_census(
             qualified_scalar,
             scalar_old,
-            '''if is_keyless_path(path, index) or base in SCALAR_TYPES or base in SEQUENCE_TYPES or base in MAP_TYPES:
+            '''if is_keyless_path(resolved_path, index) or base in SCALAR_TYPES or base in SEQUENCE_TYPES or base in MAP_TYPES:
             return True, "scalar, sequence, or map outer reader"''',
         )
         self.assertEqual(scalar_mutated, 0, scalar_output)
@@ -1098,20 +1317,71 @@ class DenyCensusTests(unittest.TestCase):
                 }
             ''',
         }
-        helper_old = '''path = canonical_path(name).lstrip(":")
-        parts = path.split("::")'''
+        helper_old = '''parts = path.split("::")'''
         helper_mutated, helper_output = self.run_mutated_census(
             qualified_helper,
             helper_old,
-            '''path = canonical_path(name).lstrip(":")
-        parts = path.split("::")
-        if len(parts) > 1:
-            return [
-                function for function in helper_functions.get(parts[-1], ())
-                if function.path == owner.path
-            ]''',
+            "parts = path.rsplit(\"::\", 1)[-1:]",
         )
         self.assertEqual(helper_mutated, 0, helper_output)
+
+    def test_import_and_control_flow_checks_are_load_bearing(self) -> None:
+        imported_alias = {
+            "lib.rs": '''
+                use serde::Deserialize;
+                mod hostile;
+                use hostile::Open as String;
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                enum Reader { A(String) }
+            ''',
+            "hostile.rs": '''
+                use serde::{Deserialize, Deserializer};
+                pub struct Open;
+                impl<'de> Deserialize<'de> for Open {
+                    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                        let _ = serde_json::Value::deserialize(d)?;
+                        Ok(Self)
+                    }
+                }
+            ''',
+        }
+        fixed_status, fixed_output = self.run_census(imported_alias)
+        self.assertEqual(fixed_status, 1, fixed_output)
+        import_old = '''imported = imported_path(path, owner)
+        if imported is import_ambiguous:
+            return False, f"ambiguous imported payload reader {path}"
+        resolved_path = path if imported is import_missing else imported'''
+        import_mutated, import_output = self.run_mutated_census(
+            imported_alias,
+            import_old,
+            "imported = import_missing\n        resolved_path = path",
+        )
+        self.assertEqual(import_mutated, 0, import_output)
+
+        dead_route = {"lib.rs": '''
+            use serde::{Deserialize, Deserializer};
+            struct Open;
+            impl<'de> Deserialize<'de> for Open {
+                fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                    if false { let _ = u8::deserialize(d)?; }
+                    Ok(Self)
+                }
+            }
+            #[derive(Deserialize)] #[serde(untagged, deny_unknown_fields)]
+            enum Reader { A(Open) }
+        '''}
+        fixed_status, fixed_output = self.run_census(dead_route)
+        self.assertEqual(fixed_status, 1, fixed_output)
+        flow_old = '''return any(
+        not call_is_unconditional(code, call)
+        for call in direct_input_calls(code, bindings)
+    )'''
+        flow_mutated, flow_output = self.run_mutated_census(
+            dead_route,
+            flow_old,
+            "return False",
+        )
+        self.assertEqual(flow_mutated, 0, flow_output)
 
     def run_mutated_census(
         self, files: dict[str, str], old: str, new: str
