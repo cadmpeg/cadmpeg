@@ -360,8 +360,8 @@ fn expanded_knots(values: &[f64], multiplicities: &[u16], expected: usize) -> Op
     Some(out)
 }
 
-fn unique_knots(knots: &[f64]) -> (Vec<f64>, Vec<u16>) {
-    let mut runs = Vec::<(f64, u16)>::new();
+fn unique_knots(knots: &[f64]) -> (Vec<f64>, Vec<usize>) {
+    let mut runs = Vec::<(f64, usize)>::new();
     for &knot in knots {
         if let Some((last, multiplicity)) = runs.last_mut() {
             if *last == knot {
@@ -474,7 +474,7 @@ fn unique_surface_knot_span(
     multiplicity_attr: u16,
     declared_count: usize,
     old_values: &[f64],
-    old_multiplicities: &[u16],
+    old_multiplicities: &[usize],
 ) -> Option<ArraySpan> {
     if old_values.len() != declared_count || old_multiplicities.len() != declared_count {
         return None;
@@ -499,14 +499,23 @@ fn unique_surface_knot_span(
             else {
                 continue;
             };
-            if knots == old_values && multiplicities == old_multiplicities {
+            if knots == old_values
+                && multiplicities
+                    .iter()
+                    .copied()
+                    .map(usize::from)
+                    .eq(old_multiplicities.iter().copied())
+            {
                 pairs.push((knot_span, multiplicity_span));
             }
         }
     }
     pairs.sort_by_key(|(knots, multiplicities)| (knots.start, knots.count, multiplicities.start));
     pairs.dedup();
-    (pairs.len() == 1).then_some(pairs[0].0)
+    match pairs.as_slice() {
+        [(knots, _)] => Some(*knots),
+        _ => None,
+    }
 }
 
 fn patch_f64_span(bytes: &mut [u8], span: ArraySpan, values: &[f64]) -> Option<()> {
@@ -1015,4 +1024,28 @@ pub(crate) fn scan_surface_carriers(
         });
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{unique_knots, unique_surface_knot_span, Arrays};
+
+    #[test]
+    fn patch_shape_counts_do_not_narrow_to_the_native_multiplicity_width() {
+        let count = usize::from(u16::MAX) + 1;
+        let knots = std::iter::repeat_n(0.0, count)
+            .chain(std::iter::once(1.0))
+            .collect::<Vec<_>>();
+        let (values, multiplicities) = unique_knots(&knots);
+        assert_eq!(values, [0.0, 1.0]);
+        assert_eq!(multiplicities, [count, 1]);
+    }
+
+    #[test]
+    fn missing_surface_knot_arrays_decline_the_patch() {
+        assert_eq!(
+            unique_surface_knot_span(&[], &Arrays::default(), 2, 3, 1, &[0.0], &[1]),
+            None
+        );
+    }
 }

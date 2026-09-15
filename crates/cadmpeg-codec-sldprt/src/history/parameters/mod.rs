@@ -833,12 +833,12 @@ pub(crate) fn expression_identifier_tokens(
 ) -> Result<Vec<ExpressionIdentifier<'_>>, UnclosedQuote> {
     let mut identifiers = Vec::new();
     let mut at = 0;
-    while at < expression.len() {
+    while let Some(character) = expression[at..].chars().next() {
         let rest = &expression[at..];
         if rest.starts_with('"') {
             let mut cursor = at + 1;
             let mut closed = false;
-            while cursor < expression.len() {
+            while let Some(character) = expression[cursor..].chars().next() {
                 let quoted = &expression[cursor..];
                 if quoted.starts_with("\"\"") {
                     cursor += 2;
@@ -847,9 +847,6 @@ pub(crate) fn expression_identifier_tokens(
                     closed = true;
                     break;
                 } else {
-                    let Some(character) = quoted.chars().next() else {
-                        return Err(UnclosedQuote);
-                    };
                     cursor += character.len_utf8();
                 }
             }
@@ -863,9 +860,6 @@ pub(crate) fn expression_identifier_tokens(
             return Err(UnclosedQuote);
         }
 
-        let Some(character) = rest.chars().next() else {
-            break;
-        };
         if character.is_ascii_alphanumeric() || matches!(character, '_' | '@' | '$' | '.') {
             let end = rest
                 .find(|candidate: char| {

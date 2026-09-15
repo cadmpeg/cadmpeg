@@ -1741,10 +1741,8 @@ pub(super) fn bind_detached_relation_drivers(
             .filter(|scalar| scalar.role == FeatureInputScalarRole::Display)
             .filter_map(|scalar| names.get(scalar.name.as_str()).copied())
             .collect::<HashSet<_>>();
-        if relation_names.len() != 1 {
-            continue;
-        }
-        let Some(&name) = relation_names.iter().next() else {
+        let mut relation_names = relation_names.into_iter();
+        let (Some(name), None) = (relation_names.next(), relation_names.next()) else {
             continue;
         };
         candidates

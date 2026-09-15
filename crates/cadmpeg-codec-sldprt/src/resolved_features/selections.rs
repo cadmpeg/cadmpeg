@@ -193,7 +193,7 @@ pub(super) fn compact_body_retention_mode(
     const HEADER_LEN: usize = 83;
     let token = token.to_le_bytes();
     let state_end = (start..end.saturating_sub(HEADER_LEN - 1))
-        .filter(|offset| compact_body_state_header(payload, *offset, token).is_some())
+        .filter(|offset| compact_body_state_id(payload, *offset, token).is_some())
         .map(|offset| offset + HEADER_LEN)
         .max()?;
     let field = payload.get(state_end..state_end + 10)?;
@@ -207,16 +207,17 @@ pub(super) fn compact_body_retention_mode(
     }
 }
 
-fn compact_body_state_header(payload: &[u8], offset: usize, token: [u8; 2]) -> Option<&[u8]> {
+fn compact_body_state_id(payload: &[u8], offset: usize, token: [u8; 2]) -> Option<u32> {
     const HEADER_LEN: usize = 83;
     let header = payload.get(offset..offset + HEADER_LEN)?;
+    let body_id = View::u32_le_at(header, 11)?;
     (header[0..2] == token
         && header[2..11] == [0x2b, 0x80, 0x02, 0, 0, 0, 0, 0, 0]
         && header[11..15] == header[15..19]
         && header[19..47].iter().all(|byte| *byte == 0)
         && header[47..63].iter().all(|byte| *byte == 0xff)
         && header[63..83].iter().all(|byte| *byte == 0))
-    .then_some(header)
+    .then_some(body_id)
 }
 
 pub(super) fn compact_body_state_ids(
@@ -229,10 +230,7 @@ pub(super) fn compact_body_state_ids(
     let token = token.to_le_bytes();
     let mut result = Vec::new();
     for offset in start..end.saturating_sub(HEADER_LEN - 1) {
-        let Some(header) = compact_body_state_header(payload, offset, token) else {
-            continue;
-        };
-        let Some(body_id) = View::u32_le_at(header, 11) else {
+        let Some(body_id) = compact_body_state_id(payload, offset, token) else {
             continue;
         };
         result.push(body_id);
@@ -1028,10 +1026,8 @@ pub(crate) fn enrich_feature_object_sources(
             .iter()
             .filter_map(|lane| feature_object_name(feature, lane)?.object_id?.value())
             .collect::<HashSet<_>>();
-        if sources.len() == 1 {
-            let Some(&source) = sources.iter().next() else {
-                continue;
-            };
+        let mut sources = sources.into_iter();
+        if let (Some(source), None) = (sources.next(), sources.next()) {
             feature.source_id = FeatureSource::from_value(source);
         }
     }
@@ -1866,15 +1862,15 @@ fn inline_mirror_surface_paths(
         if signature_at(terminal).is_none() {
             continue;
         }
-        let Some(local_bytes) = payload.get(terminal + 12..terminal + 16) else {
+        let Some(instance) = View::u16_le_at(payload, terminal + 12) else {
+            continue;
+        };
+        let Some(local_tail) = payload.get(terminal + 14..terminal + 16) else {
             continue;
         };
         let next_is_component = {
-            let Some(instance) = View::u16_le_at(local_bytes, 0) else {
-                continue;
-            };
             is_class_token(instance)
-                && local_bytes[2..] == [0, 0]
+                && local_tail == [0, 0]
                 && signature_at(terminal + 16).is_some()
         };
         if next_is_component {
@@ -2619,17 +2615,18 @@ fn compact_component_separator(payload: &[u8], cursor: usize, gap: usize) -> boo
         6 => payload.get(cursor..cursor + 6).is_some_and(|bytes| {
             View::u16_le_at(bytes, 0).is_some_and(|token| token != u16::MAX) && bytes[2..] == [0; 4]
         }),
-        8 => payload.get(cursor..cursor + 8).is_some_and(|bytes| {
-            let (Some(first), Some(second)) =
-                (View::u32_le_at(bytes, 0), View::u32_le_at(bytes, 4))
-            else {
+        8 => {
+            let (Some(first), Some(second)) = (
+                View::u32_le_at(payload, cursor),
+                View::u32_le_at(payload, cursor + 4),
+            ) else {
                 return false;
             };
             (first == 0 && second == 0)
                 || (first == u32::MAX && second <= 1)
                 || (first == 0 && !matches!(second, 0 | u32::MAX))
                 || (second == 0 && !matches!(first, 0 | u32::MAX))
-        }),
+        }
         10 => payload.get(cursor..cursor + 10) == Some(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0, 0, 0]),
         12 => payload.get(cursor..cursor + 12) == Some(&[0; 12]),
         16 => {

@@ -1144,6 +1144,7 @@ pub(super) fn terminal_repeated_radial_circle_pairs<'a>(
 }
 
 pub(super) fn extended_radial_circle_index(payload: &[u8], offset: usize) -> Option<usize> {
+    let index = View::u16_le_at(payload, offset + 64)?;
     let supported = payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         == Some(LEGACY_EXTENDED_SKETCH_MARKER)
         && marker_native_code(payload, offset) == Some(2)
@@ -1159,10 +1160,7 @@ pub(super) fn extended_radial_circle_index(payload: &[u8], offset: usize) -> Opt
         && payload.get(offset + 68..offset + 72) == Some(&1u32.to_le_bytes())
         && payload.get(offset + 72..offset + 80) == Some(&(-1.0f64).to_le_bytes())
         && payload.get(offset + 80..offset + 84) == Some(&1u32.to_le_bytes());
-    supported
-        .then(|| View::u16_le_at(payload, offset + 64))
-        .flatten()
-        .map(usize::from)
+    supported.then_some(usize::from(index))
 }
 
 pub(super) fn radial_dimension_radius(
@@ -1362,7 +1360,11 @@ pub(crate) fn project_marker_dimensioned_circles(
             .iter()
             .flat_map(|lane| &lane.sketch_entities)
             .filter(|marker| marker.feature_ref.as_deref() == Some(native_ref))
-            .filter(|marker| marker.coordinates_m.is_some())
+            .filter_map(|marker| {
+                marker
+                    .coordinates_m
+                    .map(|coordinates| (marker, coordinates))
+            })
             .collect::<Vec<_>>();
         let native_carriers = entities
             .iter()
@@ -1408,28 +1410,28 @@ pub(crate) fn project_marker_dimensioned_circles(
             let mut roster = markers
                 .iter()
                 .copied()
-                .filter(|marker| {
+                .filter(|(marker, _)| {
                     matches!(
                         marker.kind(),
                         SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                     )
                 })
                 .collect::<Vec<_>>();
-            roster.sort_unstable_by_key(|marker| marker.offset());
+            roster.sort_unstable_by_key(|(marker, _)| marker.offset());
             let centers = roster
                 .iter()
+                .copied()
                 .enumerate()
-                .filter_map(|(center_index, center)| {
-                    let [cu, cv] = center.coordinates_m?;
+                .filter_map(|(center_index, (_, [cu, cv]))| {
                     let later = &roster[center_index + 1..];
                     let mut matched_radials = HashSet::new();
                     let one_to_one = later.len() == radial_dimensions.len()
                         && radial_dimensions.iter().all(|(_, radius)| {
                             let matches = later
                                 .iter()
+                                .copied()
                                 .enumerate()
-                                .filter_map(|(index, radial)| {
-                                    let [ru, rv] = radial.coordinates_m?;
+                                .filter_map(|(index, (_, [ru, rv]))| {
                                     same_dimension_length(
                                         (ru - cu).hypot(rv - cv) * NATIVE_TO_IR,
                                         *radius,
@@ -1442,22 +1444,18 @@ pub(crate) fn project_marker_dimensioned_circles(
                             };
                             matched_radials.insert(*index)
                         });
-                    (one_to_one && matched_radials.len() == later.len())
-                        .then_some((center_index, *center))
+                    (one_to_one && matched_radials.len() == later.len()).then_some([cu, cv])
                 })
                 .collect::<Vec<_>>();
-            if let [(_, center_marker)] = centers.as_slice() {
-                let Some([cu, cv]) = center_marker.coordinates_m else {
-                    continue;
-                };
+            if let [center] = centers.as_slice() {
+                let [cu, cv] = *center;
                 let radii = radial_dimensions
                     .iter()
                     .map(|(_, radius)| *radius)
                     .collect::<Vec<_>>();
                 let carrier_radius = roster
                     .get(radial_index)
-                    .and_then(|radial| radial.coordinates_m)
-                    .map(|[ru, rv]| (ru - cu).hypot(rv - cv) * NATIVE_TO_IR);
+                    .map(|(_, [ru, rv])| (ru - cu).hypot(rv - cv) * NATIVE_TO_IR);
                 let native_center =
                     quantize(Point2::new(cu * NATIVE_TO_IR, cv * NATIVE_TO_IR), QUANTUM);
                 let centers = transforms
@@ -1685,21 +1683,21 @@ pub(crate) fn project_marker_dimensioned_circles(
                     .sketch_entities
                     .iter()
                     .filter(|marker| marker.feature_ref.as_deref() == Some(native_ref))
-                    .filter(|marker| marker.coordinates_m.is_some())
+                    .filter_map(|marker| {
+                        marker
+                            .coordinates_m
+                            .map(|coordinates| (marker, coordinates))
+                    })
                     .collect::<Vec<_>>();
-                roster.sort_unstable_by_key(|marker| marker.offset());
-                let Some(radial) = roster.get(radial_index).copied() else {
-                    continue;
-                };
-                let Some([ru, rv]) = radial.coordinates_m else {
+                roster.sort_unstable_by_key(|(marker, _)| marker.offset());
+                let Some((radial, [ru, rv])) = roster.get(radial_index).copied() else {
                     continue;
                 };
                 let mut candidates = markers
                     .iter()
                     .copied()
-                    .filter(|marker| marker.id() != radial.id())
-                    .filter_map(|marker| {
-                        let [cu, cv] = marker.coordinates_m?;
+                    .filter(|(marker, _)| marker.id() != radial.id())
+                    .filter_map(|(marker, [cu, cv])| {
                         let radius = (ru - cu).hypot(rv - cv) * NATIVE_TO_IR;
                         let parameters = radial_dimensions
                             .iter()
@@ -1837,36 +1835,32 @@ pub(crate) fn project_marker_dimensioned_circles(
         let centers = markers
             .iter()
             .copied()
-            .filter(|marker| marker.kind() == SketchInputKind::LineOrCircle)
+            .filter(|(marker, _)| marker.kind() == SketchInputKind::LineOrCircle)
             .collect::<Vec<_>>();
         let radial = markers
             .iter()
             .copied()
-            .filter(|marker| {
+            .filter(|(marker, _)| {
                 matches!(
                     marker.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
             })
             .collect::<Vec<_>>();
-        let [center] = centers.as_slice() else {
+        let [(center_marker, coordinates)] = centers.as_slice() else {
             continue;
         };
-        let center_marker = *center;
         if radial.len() != radial_dimensions.len() {
             continue;
         }
-        let Some([cu, cv]) = center_marker.coordinates_m else {
-            continue;
-        };
+        let [cu, cv] = *coordinates;
         let matches = radial_dimensions
             .iter()
             .map(|(_, radius)| {
                 radial
                     .iter()
                     .enumerate()
-                    .filter_map(|(index, marker)| {
-                        let [u, v] = marker.coordinates_m?;
+                    .filter_map(|(index, (_, [u, v]))| {
                         same_dimension_length((u - cu).hypot(v - cv) * NATIVE_TO_IR, *radius)
                             .then_some(index)
                     })
