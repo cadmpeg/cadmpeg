@@ -236,6 +236,40 @@ fn occurrence_merge_remaps_and_retains_native_records() {
 }
 
 #[test]
+fn occurrence_configuration_survives_document_and_typed_native_admission() {
+    use crate::records::configuration::{DesignConfiguration, DesignConfigurationKind};
+    let configuration = DesignConfiguration::try_new(
+        "Design/table.dsgcfg".into(),
+        DesignConfigurationKind::Table,
+        Vec::new(),
+        serde_json::Map::new(),
+    )
+    .unwrap();
+    let mut component = Native::default();
+    component
+        .namespace_mut("f3d")
+        .set_arena("design_configurations", &[configuration])
+        .unwrap();
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    extend_native(&mut ir.native, component, "component-0").unwrap();
+    let wire = ir.to_canonical_json().unwrap();
+    let admitted = cadmpeg_ir::CadIr::from_json(&wire).unwrap();
+    let configurations = admitted
+        .native
+        .namespace("f3d")
+        .unwrap()
+        .arena_as::<DesignConfiguration>("design_configurations")
+        .unwrap();
+    assert_eq!(configurations.len(), 1);
+    assert_eq!(configurations[0].entry_name(), "Design/table.dsgcfg");
+    assert_eq!(
+        configurations[0].id(),
+        "f3d:xref/component-0/configuration:entry#Design/table.dsgcfg"
+    );
+    assert_eq!(configurations[0].payload(), serde_json::Map::new());
+}
+
+#[test]
 fn occurrence_merge_remaps_native_record_map_keys_and_nested_payloads() {
     let record = NativeRecord::new(
         "f3d:Design/Configurations.json:design-configuration#1",

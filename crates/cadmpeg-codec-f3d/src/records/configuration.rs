@@ -12,6 +12,7 @@ use std::collections::BTreeMap;
 #[serde(try_from = "DesignConfigurationWire", into = "DesignConfigurationWire")]
 pub(crate) struct DesignConfiguration {
     entry_name: String,
+    identity_scope: cadmpeg_ir::ids::IdentityComponent,
     payload: ConfigurationPayload,
 }
 
@@ -223,6 +224,7 @@ impl DesignConfiguration {
             }
             return Ok(Self {
                 entry_name,
+                identity_scope: cadmpeg_ir::identity_component!("configuration"),
                 payload: ConfigurationPayload::Rule(payload),
             });
         }
@@ -291,6 +293,7 @@ impl DesignConfiguration {
         };
         Ok(Self {
             entry_name,
+            identity_scope: cadmpeg_ir::identity_component!("configuration"),
             payload: ConfigurationPayload::Table {
                 active,
                 variants,
@@ -300,7 +303,7 @@ impl DesignConfiguration {
     }
 
     pub(crate) fn id(&self) -> String {
-        crate::ids::configuration_entry_id(&self.entry_name)
+        crate::ids::configuration_entry_id(&self.entry_name, &self.identity_scope)
     }
 
     pub(crate) fn entry_name(&self) -> &String {
@@ -405,14 +408,24 @@ impl DesignConfiguration {
 impl TryFrom<DesignConfigurationWire> for DesignConfiguration {
     type Error = String;
     fn try_from(wire: DesignConfigurationWire) -> Result<Self, String> {
-        if wire.id != crate::ids::configuration_entry_id(&wire.entry_name) {
-            return Err("configuration.id must identify entry_name".into());
-        }
+        let suffix = format!(
+            ":entry#{}",
+            crate::ids::identity_key_component(&wire.entry_name)
+        );
+        let scope = wire
+            .id
+            .strip_prefix("f3d:")
+            .and_then(|id| id.strip_suffix(&suffix))
+            .ok_or_else(|| format!("configuration.id {} must identify entry_name", wire.id))?;
+        let scope = cadmpeg_ir::ids::IdentityComponent::try_new(scope)
+            .map_err(|error| format!("configuration.id {}: {error}", wire.id))?;
         let Value::Object(payload) = wire.payload else {
             return Err("payload must be an object".into());
         };
-        Self::try_new(wire.entry_name, wire.kind, wire.variant_order, payload)
-            .map_err(|error| error.to_string())
+        let mut record = Self::try_new(wire.entry_name, wire.kind, wire.variant_order, payload)
+            .map_err(|error| error.to_string())?;
+        record.identity_scope = scope;
+        Ok(record)
     }
 }
 
