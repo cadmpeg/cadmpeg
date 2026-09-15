@@ -4345,11 +4345,7 @@ mod shape_association_tests {
             map_id: 1,
             declared_count: 0,
             postfixes: Vec::new(),
-            maps: ElementMapNode {
-                map_id: 1,
-                groups,
-            }
-            .into(),
+            maps: ElementMapNode { map_id: 1, groups }.into(),
         }
     }
 
