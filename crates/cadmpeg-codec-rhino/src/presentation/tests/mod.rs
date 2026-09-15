@@ -1528,6 +1528,67 @@ fn rendering_attributes_transfer_mapping_channels_and_flags() {
     assert_eq!(value.advanced_texture_preview, Some(true));
 }
 
+fn object_rendering_with_negative_minor(
+    outer_minor: i32,
+    material_minor: i32,
+    mapping_minor: Option<i32>,
+    channel_minor: Option<i32>,
+) -> Vec<u8> {
+    let mut material_body = vec![0; 32];
+    material_body.extend(0_i32.to_le_bytes());
+    let material = anonymous(material_minor, &material_body);
+
+    let mut mapping_body = vec![0; 16];
+    mapping_body.extend(i32::from(channel_minor.is_some()).to_le_bytes());
+    if let Some(channel_minor) = channel_minor {
+        let mut channel_body = 7_i32.to_le_bytes().to_vec();
+        channel_body.extend([0; 16]);
+        if channel_minor >= 1 {
+            channel_body.extend((0..16).flat_map(|value| (value as f64).to_le_bytes()));
+        }
+        mapping_body.extend(anonymous(channel_minor, &channel_body));
+    }
+    let mapping = mapping_minor.map(|minor| anonymous(minor, &mapping_body));
+
+    let mut body = 1_i32.to_le_bytes().to_vec();
+    body.extend(material);
+    body.extend(i32::from(mapping.is_some()).to_le_bytes());
+    if let Some(mapping) = mapping {
+        body.extend(mapping);
+    }
+    anonymous(outer_minor, &body)
+}
+
+#[test]
+fn rendering_attributes_reject_negative_nested_version_minors() {
+    for (label, bytes) in [
+        (
+            "outer",
+            object_rendering_with_negative_minor(-1, 0, None, None),
+        ),
+        (
+            "material",
+            object_rendering_with_negative_minor(1, -1, None, None),
+        ),
+        (
+            "mapping",
+            object_rendering_with_negative_minor(1, 0, Some(-1), None),
+        ),
+        (
+            "channel",
+            object_rendering_with_negative_minor(1, 0, Some(0), Some(-1)),
+        ),
+    ] {
+        let result = rendering_attributes(
+            &bytes,
+            Some(0..bytes.len()),
+            ArchiveVersion::V8,
+            settings::RenderingAttributesKind::Object,
+        );
+        assert!(result.is_err(), "negative {label} minor was admitted");
+    }
+}
+
 #[test]
 fn rendering_material_reference_consumes_obsolete_mapping_channels() {
     let mut obsolete_channel_body = 7_i32.to_le_bytes().to_vec();

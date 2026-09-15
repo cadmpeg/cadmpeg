@@ -108,7 +108,7 @@ fn named_views_record_with_userdata(archive: ArchiveVersion, userdata: Vec<u8>) 
     )
 }
 
-fn named_views_record_with_trace(archive: ArchiveVersion, corrupt_reference: bool) -> Vec<u8> {
+fn trace_view(archive: ArchiveVersion, reference: Vec<u8>) -> Vec<u8> {
     let mut trace_body = vec![0x14];
     trace_body.extend(support::test_dump::utf16_bytes("trace-witness.png"));
     trace_body.extend(42.0_f64.to_le_bytes());
@@ -129,25 +129,15 @@ fn named_views_record_with_trace(archive: ArchiveVersion, corrupt_reference: boo
             .flat_map(f64::to_le_bytes),
     );
     trace_body.extend([0, 1, 1]);
-    let reference = support::test_dump::file_reference(archive, "/trace/source.png", "source.png");
     let reference_start = trace_body.len();
     trace_body.extend(&reference);
     let trace_reference_range = reference_start..trace_body.len();
-    let mut trace = support::test_dump::crc_chunk_excluding(
+    let trace = support::test_dump::crc_chunk_excluding(
         archive,
         0x2000_863b,
         &trace_body,
         std::slice::from_ref(&trace_reference_range),
     );
-    if corrupt_reference {
-        let trace_body_header_len = if archive.uses_eight_byte_values() {
-            12
-        } else {
-            8
-        };
-        trace[trace_body_header_len + reference_start + reference.len() - 1] ^= 1;
-    }
-
     let end_marker = support::test_dump::short_chunk(archive, 0xffff_ffff, 0);
     let mut view_body = trace;
     let trace_range = 0..view_body.len();
@@ -160,15 +150,28 @@ fn named_views_record_with_trace(archive: ArchiveVersion, corrupt_reference: boo
         &view_body,
         &[trace_range, end_range],
     );
-    let mut list_body = 1_i32.to_le_bytes().to_vec();
-    let view_range = list_body.len()..list_body.len() + view.len();
-    list_body.extend(view);
-    support::test_dump::crc_chunk_excluding(
-        archive,
-        0x2000_8036,
-        &list_body,
-        std::slice::from_ref(&view_range),
-    )
+    view
+}
+
+fn named_views_record_with_views(archive: ArchiveVersion, views: &[Vec<u8>]) -> Vec<u8> {
+    let mut list_body = (views.len() as i32).to_le_bytes().to_vec();
+    let mut view_ranges = Vec::with_capacity(views.len());
+    for view in views {
+        let start = list_body.len();
+        list_body.extend(view);
+        view_ranges.push(start..list_body.len());
+    }
+    support::test_dump::crc_chunk_excluding(archive, 0x2000_8036, &list_body, &view_ranges)
+}
+
+fn named_views_record_with_trace(archive: ArchiveVersion, corrupt_reference: bool) -> Vec<u8> {
+    let mut reference =
+        support::test_dump::file_reference(archive, "/trace/source.png", "source.png");
+    if corrupt_reference {
+        let last = reference.len() - 1;
+        reference[last] ^= 1;
+    }
+    named_views_record_with_views(archive, &[trace_view(archive, reference)])
 }
 
 #[test]
@@ -374,4 +377,76 @@ fn complete_decode_propagates_nested_view_file_reference_crc_loss() {
         .any(|(_, record)| record.data() == Some(invalid.as_slice()));
     assert!(retained, "invalid view list source was not retained");
     assert_valid(&invalid_result);
+}
+
+#[test]
+fn malformed_trace_reference_preserves_prior_diagnostic_and_recovers_later_view() {
+    let archive = ArchiveVersion::V8;
+    let malformed = trace_view(
+        archive,
+        support::test_dump::file_reference_with_digest_warning_and_missing_second_digest(
+            archive,
+            "/trace/malformed.png",
+            "malformed.png",
+        ),
+    );
+    let valid = trace_view(
+        archive,
+        support::test_dump::file_reference(archive, "/trace/valid.png", "valid.png"),
+    );
+    let named_views = named_views_record_with_views(archive, &[malformed, valid]);
+    let bytes = support::test_dump::minimal_document(
+        "80",
+        &[
+            support::test_dump::table(archive, 0x1000_0014, &[]),
+            support::test_dump::table(
+                archive,
+                0x1000_0015,
+                &[
+                    support::test_dump::units_record(archive, 2),
+                    named_views.clone(),
+                ],
+            ),
+            support::test_dump::table(archive, 0x1000_0013, &[]),
+        ],
+    );
+
+    let result = decode(bytes);
+    let views = &result.ir().native.namespace("rhino").unwrap().arenas()["views"];
+    assert_eq!(views.len(), 1);
+    assert_eq!(
+        views[0]
+            .field("list_index")
+            .and_then(|value| value.as_u64()),
+        Some(1)
+    );
+    let reference_loss = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.code == crate::loss::RhinoLossCode::IntegrityFailure.kind()
+                && loss
+                    .provenance
+                    .as_ref()
+                    .and_then(|provenance| provenance.tag.as_deref())
+                    == Some("VIEW/TRACE_IMAGE/FILE_REFERENCE")
+        })
+        .expect("digest diagnostic survives the later file-reference parse failure");
+    assert!(reference_loss.message.contains("file reference"));
+    assert!(reference_loss.message.contains("SHA-1 hash CRC mismatch"));
+    assert!(reference_loss
+        .provenance
+        .as_ref()
+        .is_some_and(|provenance| provenance.offset > 0));
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::RhinoLossCode::PresentationRecordDropped.kind()
+            && loss.message.contains("named view record")
+    }));
+    assert!(result
+        .source_fidelity()
+        .retained_records()
+        .iter()
+        .any(|(_, record)| record.data() == Some(named_views.as_slice())));
+    assert_valid(&result);
 }

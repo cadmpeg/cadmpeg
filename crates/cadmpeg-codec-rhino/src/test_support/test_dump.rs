@@ -283,6 +283,56 @@ pub(crate) fn file_reference(archive: ArchiveVersion, full: &str, relative: &str
     anonymous_chunk_excluding(archive, 1, &body, std::slice::from_ref(&child))
 }
 
+/// Builds a file reference whose first digest emits a checksum warning before
+/// the second required digest is absent. Parent checksums exclude the nested
+/// digest and hash chunks, so the later parse failure remains independently
+/// attributable to the missing second digest.
+pub(crate) fn file_reference_with_digest_warning_and_missing_second_digest(
+    archive: ArchiveVersion,
+    full: &str,
+    relative: &str,
+) -> Vec<u8> {
+    let mut hash_body = 123_u64.to_le_bytes().to_vec();
+    hash_body.extend(456_u64.to_le_bytes());
+    hash_body.extend(789_u64.to_le_bytes());
+    let first_digest_start = hash_body.len();
+    let first_digest = anonymous_chunk(archive, 0, &[0x11; 20]);
+    hash_body.extend(&first_digest);
+    let first_digest_range = first_digest_start..hash_body.len();
+    let hash = anonymous_chunk_excluding(
+        archive,
+        0,
+        &hash_body,
+        std::slice::from_ref(&first_digest_range),
+    );
+
+    let mut body = utf16_bytes(full);
+    body.extend(utf16_bytes(relative));
+    let hash_start = body.len();
+    body.extend(&hash);
+    let hash_range = hash_start..body.len();
+    body.extend(7_u32.to_le_bytes());
+    body.extend([0x44; 16]);
+    let mut reference =
+        anonymous_chunk_excluding(archive, 1, &body, std::slice::from_ref(&hash_range));
+
+    let chunk_header_len = if archive.uses_eight_byte_values() {
+        12
+    } else {
+        8
+    };
+    let digest_crc = chunk_header_len
+        + 8
+        + hash_start
+        + chunk_header_len
+        + 8
+        + first_digest_start
+        + first_digest.len()
+        - 1;
+    reference[digest_crc] ^= 1;
+    reference
+}
+
 pub(crate) fn model_component_attributes(
     archive: ArchiveVersion,
     id: [u8; 16],
