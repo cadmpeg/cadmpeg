@@ -93,6 +93,15 @@ impl LaneRefusals {
         self.notes.len()
     }
 
+    /// Retain the identity that prevented a carrier population from merging.
+    pub(crate) fn push_annotation_collision(
+        &mut self,
+        error: &cadmpeg_ir::annotations::AnnotationIdentityCollision,
+    ) {
+        self.notes
+            .push(crate::loss::CatiaLossCode::SourceAnnotationCollision.note(error.to_string()));
+    }
+
     /// Record one refusal against the record that stated it.
     fn push(&mut self, record: impl std::fmt::Display, error: &cadmpeg_ir::geometry::NurbsError) {
         self.notes.push(

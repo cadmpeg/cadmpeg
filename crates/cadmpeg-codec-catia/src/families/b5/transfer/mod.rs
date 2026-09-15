@@ -7,6 +7,7 @@
 //! neutral records in a fixed order. Each pass owns exactly one model layer and
 //! reads only the plan fields its layer needs.
 
+use cadmpeg_ir::annotations::StreamHandle;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
@@ -1157,7 +1158,7 @@ fn annotate(
     exactness: Exactness,
 ) {
     let id = id.to_string();
-    let stream = annotations.stream(format!("catia:{stream}"));
+    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("catia:").with_suffix(stream));
     annotations.note(&id, &stream, 0).tag(tag);
     annotations.exactness(id, exactness);
 }

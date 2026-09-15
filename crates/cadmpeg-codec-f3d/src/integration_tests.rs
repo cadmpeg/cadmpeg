@@ -43,7 +43,7 @@ fn f3d_pipeline_aligns_detection_inspection_container_roles_and_decode() {
     let result = decode(bytes);
     assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.bodies.len(), 1);
-    assert!(!result.source_fidelity().retained_records.is_empty());
+    assert!(!result.source_fidelity().retained_records().is_empty());
     assert_valid(&result);
 }
 
@@ -235,7 +235,7 @@ fn container_only_pipeline_retains_native_sections_without_semantic_projection()
     assert!(result.report().container_only());
     assert!(!result.report().geometry_transferred());
     assert!(result.ir().model.bodies.is_empty());
-    assert!(!result.source_fidelity().retained_records.is_empty());
+    assert!(!result.source_fidelity().retained_records().is_empty());
     assert!(result.ir().native.namespace("f3d").is_some());
 }
 

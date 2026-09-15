@@ -2,6 +2,7 @@
 //! Native-arena emission layer for the `creo` namespace.
 
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
@@ -112,7 +113,7 @@ pub(super) fn annotate(
     tag: &str,
     exactness: Exactness,
 ) {
-    let stream = annotations.stream(format!("creo:{source_stream}"));
+    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("creo:").with_suffix(source_stream));
     annotations.note(id.to_string(), &stream, offset).tag(tag);
     annotations.exactness(id, exactness);
 }

@@ -14,6 +14,7 @@
 //! A framing failure or a stream without decoded geometry produces a
 //! metadata-only document. The report marks geometry and topology as blocking,
 //! and retained source data remains available for native replay.
+use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
 
 use cadmpeg_core::container::ContainerRole;
@@ -25,7 +26,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::hash::sha256_hex;
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::{LossCategory, LossNote, LossTaxonomy, Severity};
 use cadmpeg_ir::units::Tolerances;
@@ -2056,7 +2057,7 @@ fn try_decode_text_model(
                     header,
                     terminator: stream.terminator,
                 }),
-                sha256: sha256_hex(bytes),
+                sha256: Sha256Digest::digest(bytes),
             },
             decoded,
         ));
@@ -3832,7 +3833,7 @@ fn decode_result(
     )?;
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(retained.annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", retained.unknowns)?;
-    source_fidelity.retain_unknown_records("f3d", [retained.source_image]);
+    source_fidelity.retain_unknown_records("f3d", [retained.source_image])?;
     let mut source = crate::report::classify_document(
         scan,
         report_scope,
@@ -3901,7 +3902,10 @@ fn populate_annotations(
 
     let mut annotations = AnnotationBuilder::new();
     if let Some((stream_name, records)) = brep {
-        let stream = annotations.stream(crate::ids::native_scope(stream_name));
+        let stream = StreamHandle::new(
+            cadmpeg_ir::stream_name!("f3d:")
+                .with_suffix(crate::ids::identity_key_component(stream_name)),
+        );
         for record in records {
             annotations
                 .note(&record.id, &stream, record.offset)
@@ -3943,7 +3947,7 @@ fn populate_annotations(
         .map(|sketch| sketch.id.as_str())
         .collect::<HashSet<_>>();
 
-    let native_stream = annotations.stream("f3d:native");
+    let native_stream = StreamHandle::new(cadmpeg_ir::stream_name!("f3d:native"));
     let mut note = |id: &str, tag: &str| {
         let offset = trailing_offset(id);
         annotations.note(id, &native_stream, offset).tag(tag);
@@ -4115,7 +4119,12 @@ fn populate_annotations(
         .entries
         .iter()
         .find(|entry| scan.is_design_asset_entry(entry, ContainerRole::ProteinAssets))
-        .map(|entry| annotations.stream(crate::ids::native_scope(&entry.name)));
+        .map(|entry| {
+            StreamHandle::new(
+                cadmpeg_ir::stream_name!("f3d:")
+                    .with_suffix(crate::ids::identity_key_component(&entry.name)),
+            )
+        });
     if let Some(stream) = appearance_stream {
         for appearance in &ir.model.appearances {
             annotations
@@ -4130,7 +4139,10 @@ fn populate_annotations(
     }
     if brep.is_none() {
         if let Some(fallback) = container::select_fallback_brep(scan) {
-            let stream = annotations.stream(crate::ids::native_scope(&fallback.name));
+            let stream = StreamHandle::new(
+                cadmpeg_ir::stream_name!("f3d:")
+                    .with_suffix(crate::ids::identity_key_component(&fallback.name)),
+            );
             for unknown in unknowns {
                 annotations
                     .note(unknown.id().as_str(), &stream, unknown.offset())
@@ -4911,7 +4923,7 @@ fn source_attributes_and_tolerances(
     attributes.insert("active_brep".to_string(), primary_model_brep.name.clone());
     attributes.insert(
         "active_brep_sha256".to_string(),
-        primary_model_brep.sha256.clone(),
+        primary_model_brep.sha256.as_str().to_owned(),
     );
     if let Some(off) = primary_model_brep
         .kernel
@@ -5065,7 +5077,10 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<MetadataIr, CodecError> {
 
     if let Some(brep) = container::select_fallback_brep(scan) {
         attributes.insert("active_brep".to_string(), brep.name.clone());
-        attributes.insert("active_brep_sha256".to_string(), brep.sha256.clone());
+        attributes.insert(
+            "active_brep_sha256".to_string(),
+            brep.sha256.as_str().to_owned(),
+        );
         if let Some(off) = brep
             .kernel
             .as_ref()
@@ -5106,7 +5121,7 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<MetadataIr, CodecError> {
             UnknownId::compose(&namespace, 0_u64),
             0,
             brep.uncompressed_len,
-            brep.sha256.clone(),
+            brep.sha256.as_str(),
             Vec::new(),
         ));
     }

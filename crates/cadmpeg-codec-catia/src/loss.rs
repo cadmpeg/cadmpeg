@@ -31,6 +31,8 @@ pub enum CatiaLossCode {
     /// A decode route refused source records and then transferred no model, so
     /// the decode continued to the next route or to the metadata fallback.
     SourceRouteFellThrough,
+    /// Carrier populations assigned conflicting annotations to one identity.
+    SourceAnnotationCollision,
     /// Verbatim vertex points and analytic surface carriers were decoded.
     GeometryCarrierSummary,
     /// Transferred model retains unresolved curve or surface carriers.
@@ -96,6 +98,7 @@ impl CatiaLossCode {
     pub const ALL: &'static [CatiaLossCode] = &[
         Self::SourceDialectUnverified,
         Self::SourceRouteFellThrough,
+        Self::SourceAnnotationCollision,
         Self::GeometryCarrierSummary,
         Self::GeometryUnresolvedCarriers,
         Self::GeometryBrepNotTransferred,
@@ -133,6 +136,7 @@ impl CatiaLossCode {
         match self {
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::SourceRouteFellThrough => "source.route-fell-through",
+            Self::SourceAnnotationCollision => "source.annotation-identity-collision",
             Self::GeometryCarrierSummary => "geometry.carrier-summary",
             Self::GeometryUnresolvedCarriers => "geometry.unresolved-carriers",
             Self::GeometryBrepNotTransferred => "geometry.brep-not-transferred",
@@ -200,7 +204,9 @@ impl CatiaLossCode {
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
-            Self::SourceRouteFellThrough => LossTaxonomy::DecodeDiagnostic,
+            Self::SourceRouteFellThrough | Self::SourceAnnotationCollision => {
+                LossTaxonomy::DecodeDiagnostic
+            }
             Self::GeometryCarrierSummary => LossTaxonomy::CarrierSummary,
             Self::GeometryUnresolvedCarriers
             | Self::GeometryBrepNotTransferred

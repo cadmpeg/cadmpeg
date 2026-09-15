@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, bail, Context, Result};
 use cadmpeg_container::compound::read_detection_prefix;
 use cadmpeg_ir::codec::write::ExportPlan;
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::report::ExportReport;
 use cadmpeg_ir::{decode_sidecar_path, DecodeSidecar};
 use sha2::{Digest, Sha256};
@@ -263,7 +264,7 @@ pub fn write_bytes_atomic(output: &Path, bytes: &[u8]) -> Result<()> {
 }
 
 /// Stage an export plan and hash the emitted bytes.
-pub fn write_plan_atomic(output: &Path, plan: ExportPlan) -> Result<(ExportReport, String)> {
+pub fn write_plan_atomic(output: &Path, plan: ExportPlan) -> Result<(ExportReport, Sha256Digest)> {
     let parent = output
         .parent()
         .filter(|path| !path.as_os_str().is_empty())
@@ -297,7 +298,7 @@ pub fn write_plan_atomic(output: &Path, plan: ExportPlan) -> Result<(ExportRepor
 /// removes a stale sidecar.
 pub fn persist_decode_sidecar(
     cadir_path: &Path,
-    cadir_sha256: &str,
+    cadir_sha256: &Sha256Digest,
     origin: &LoadOrigin,
 ) -> Result<SidecarPersistOutcome> {
     let path = decode_sidecar_path(cadir_path);
@@ -307,7 +308,7 @@ pub fn persist_decode_sidecar(
         }
         | LoadOrigin::Restored { report, fidelity } => {
             let sidecar =
-                DecodeSidecar::bind_sha256(cadir_sha256, report.clone(), fidelity.clone());
+                DecodeSidecar::bind_sha256(cadir_sha256.clone(), report.clone(), fidelity.clone());
             let mut bytes = sidecar.to_canonical_json()?.into_bytes();
             bytes.push(b'\n');
             write_bytes_atomic(&path, &bytes)?;
@@ -339,14 +340,8 @@ struct TempFileWriter<'a> {
 }
 
 impl TempFileWriter<'_> {
-    // Per-byte formatting avoids a fallible write channel for the fixed digest.
-    #[allow(clippy::format_collect)]
-    fn finish(self) -> String {
-        self.hasher
-            .finalize()
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect()
+    fn finish(self) -> Sha256Digest {
+        Sha256Digest::from_bytes(self.hasher.finalize().into())
     }
 }
 

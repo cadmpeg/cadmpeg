@@ -105,7 +105,7 @@ pub fn run(file: &Path, mode: FidelityMode<'_>) -> Result<()> {
         FidelityMode::Extract { stream, sink } => extract(file, payload, stream, sink),
         FidelityMode::Json => {
             let records: Vec<serde_json::Value> = payload
-                .retained_records
+                .retained_records()
                 .iter()
                 .map(|(id, record)| {
                     serde_json::json!({
@@ -130,17 +130,17 @@ pub fn run(file: &Path, mode: FidelityMode<'_>) -> Result<()> {
         }
         FidelityMode::Table => {
             println!("stream\toffset\tbytes\tdata\tid");
-            for (id, record) in &payload.retained_records {
+            for (id, record) in payload.retained_records() {
                 println!(
                     "{}\t{}\t{}\t{}\t{}",
                     super::cell(record.stream()),
                     record.offset(),
                     record.byte_len(),
                     if record.data().is_some() { "yes" } else { "no" },
-                    super::cell(id),
+                    super::cell(id.as_str()),
                 );
             }
-            if payload.retained_records.is_empty() {
+            if payload.retained_records().is_empty() {
                 eprintln!("(this sidecar retains no source records)");
             }
             eprintln!(
@@ -164,17 +164,20 @@ fn extract(
     sink: Sink<'_>,
 ) -> Result<()> {
     const SHOWN: usize = 20;
-    let selected: Vec<(&String, &cadmpeg_ir::RetainedSourceRecord)> = payload
-        .retained_records
+    let selected: Vec<(
+        &cadmpeg_ir::ids::UnknownId,
+        &cadmpeg_ir::RetainedSourceRecord,
+    )> = payload
+        .retained_records()
         .iter()
         .filter(|(_, record)| record.stream() == stream)
         .collect();
     if selected.is_empty() {
-        if payload.retained_records.is_empty() {
+        if payload.retained_records().is_empty() {
             bail!("this sidecar retains no source records");
         }
         let mut streams: Vec<&str> = payload
-            .retained_records
+            .retained_records()
             .values()
             .map(cadmpeg_ir::RetainedSourceRecord::stream)
             .collect();
@@ -222,7 +225,7 @@ fn extract(
                 );
             }
         }
-        expected_offset = Some(record.offset() + record.byte_len());
+        expected_offset = Some(record.end_offset());
         assembled.extend_from_slice(data);
     }
 

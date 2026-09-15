@@ -1,4 +1,5 @@
 use super::*;
+use cadmpeg_ir::annotations::StreamHandle;
 
 #[test]
 fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
@@ -50,7 +51,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
     let graph = crate::topology::Graph::parse(&stream);
     let mut off_support_ir = ir.clone();
     let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
-    let stream = annotations.stream("nx:test");
+    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:test"));
 
     attach_tolerant_edge_intersections(
         &mut ir,
@@ -117,7 +118,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
     point.position.y += 0.5;
     point.position.z += 0.5;
     let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
-    let stream = annotations.stream("nx:test");
+    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:test"));
     attach_tolerant_edge_intersections(
         &mut off_support_ir,
         &graph,
@@ -146,7 +147,7 @@ fn tolerant_edge_does_not_replace_a_serialized_fin_curve() {
     put_ref(&mut stream, edge + 24, 1);
     let graph = crate::topology::Graph::parse(&stream);
     let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
-    let source_stream = annotations.stream("nx:test");
+    let source_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:test"));
 
     attach_tolerant_edge_intersections(
         &mut ir,

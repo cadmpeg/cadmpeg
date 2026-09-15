@@ -1410,16 +1410,17 @@ fn merge_standard_population_annotations(
     target: &mut Annotations,
     mut source: Annotations,
     scope: &str,
-) {
-    source.provenance = source
+) -> Result<(), cadmpeg_ir::annotations::AnnotationIdentityCollision> {
+    // Only standard-owned entities survive retain_standard_population_model.
+    // The first population retains the shared payload and other carriers.
+    source
         .provenance
-        .into_iter()
-        .map(|(id, provenance)| (rescope_standard_id(&id, scope), provenance))
-        .collect();
+        .retain(|id, _| id.starts_with("catia:standard:"));
     let mut annotations = AnnotationBuilder::resume(source);
-    annotations.map_exactness_ids(|id| rescope_standard_id(id, scope));
+    annotations.retain_exactness(|id| id.starts_with("catia:standard:"));
     source = annotations.build();
-    target.append(source);
+    source.map_ids(|id| rescope_standard_id(id, scope))?;
+    target.append(source)
 }
 
 fn try_decode_standard_populations(
@@ -1489,7 +1490,14 @@ fn try_decode_standard_populations(
             .model
             .extend_rewritten(model, &mut rewriter)
             .ok()?;
-        merge_standard_population_annotations(&mut merged.annotations, output.annotations, &scope);
+        if let Err(error) = merge_standard_population_annotations(
+            &mut merged.annotations,
+            output.annotations,
+            &scope,
+        ) {
+            refusal.push_annotation_collision(&error);
+            return None;
+        }
         if output.report.transfer.geometry_transferred() {
             merged.report.transfer = cadmpeg_ir::report::DecodeTransfer::full(true);
         }

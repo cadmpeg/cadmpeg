@@ -60,13 +60,16 @@ where
 
     fn visit_map<A: MapAccess<'de>>(self, mut access: A) -> Result<Self::Value, A::Error> {
         let mut map = BTreeMap::new();
-        while let Some((key, value)) = access.next_entry::<K, V>()? {
+        while let Some(key) = access.next_key::<K>()? {
             // The lookup precedes the insert so the refusal can name the key
             // the document restated. Rendering every key instead would cost
             // one allocation per entry on the reading path.
             if map.contains_key(&key) {
                 return Err(A::Error::custom(format!("duplicate key {key}")));
             }
+            let value = access
+                .next_value::<V>()
+                .map_err(|error| A::Error::custom(format!("key {key}: {error}")))?;
             map.insert(key, value);
         }
         Ok(map)
@@ -88,14 +91,63 @@ where
 
     fn visit_map<A: MapAccess<'de>>(self, mut access: A) -> Result<Self::Value, A::Error> {
         let mut map = HashMap::new();
-        while let Some((key, value)) = access.next_entry::<K, V>()? {
+        while let Some(key) = access.next_key::<K>()? {
             // As above: look up first so the refusal names the restated key
             // without rendering every key the document states.
             if map.contains_key(&key) {
                 return Err(A::Error::custom(format!("duplicate key {key}")));
             }
+            let value = access
+                .next_value::<V>()
+                .map_err(|error| A::Error::custom(format!("key {key}: {error}")))?;
             map.insert(key, value);
         }
         Ok(map)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Debug, serde::Deserialize)]
+    struct Maps {
+        #[serde(deserialize_with = "btree_map")]
+        ordered: BTreeMap<String, u64>,
+        #[serde(deserialize_with = "hash_map")]
+        hashed: HashMap<String, u64>,
+    }
+
+    #[test]
+    fn map_errors_name_the_source_key_and_refuse_duplicates_before_their_values() {
+        let admitted: Maps =
+            serde_json::from_str(r#"{"ordered":{"one":1},"hashed":{"two":2}}"#).unwrap();
+        assert_eq!(admitted.ordered["one"], 1);
+        assert_eq!(admitted.hashed["two"], 2);
+        for map in ["ordered", "hashed"] {
+            let other = if map == "ordered" {
+                "hashed"
+            } else {
+                "ordered"
+            };
+            for (entries, expected) in [
+                (
+                    r#""source-record":false"#,
+                    "key source-record: invalid type",
+                ),
+                (
+                    r#""source-record":1,"source-record":2"#,
+                    "duplicate key source-record",
+                ),
+                (
+                    r#""source-record":1,"source-record":false"#,
+                    "duplicate key source-record",
+                ),
+            ] {
+                let wire = format!(r#"{{"{map}":{{{entries}}},"{other}":{{}}}}"#);
+                let error = serde_json::from_str::<Maps>(&wire).unwrap_err();
+                assert!(error.to_string().contains(expected), "{error}");
+            }
+        }
     }
 }

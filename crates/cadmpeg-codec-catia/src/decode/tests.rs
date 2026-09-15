@@ -199,7 +199,7 @@ fn container_only_stops_before_geometry() {
     assert_eq!(unknowns.len(), 1);
     let retained = &result
         .source_fidelity()
-        .retained_records
+        .retained_records()
         .values()
         .next()
         .expect("retained record");

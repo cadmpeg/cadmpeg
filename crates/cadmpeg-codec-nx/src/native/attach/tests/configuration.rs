@@ -3,6 +3,7 @@
 use crate::decode::feature_completeness::{
     combine_definition_is_incomplete, incomplete_expression_parameters,
 };
+use cadmpeg_ir::annotations::StreamHandle;
 
 use cadmpeg_ir::math::Point2;
 
@@ -759,7 +760,7 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
     };
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
-    let stream = annotations.stream("nx:container");
+    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     let sketch = super::attach_sketch_graph(
         &mut ir,
         &label,
@@ -785,7 +786,7 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
 
     let mut rejected_ir = CadIr::empty();
     let mut rejected_annotations = AnnotationBuilder::new();
-    let rejected_stream = rejected_annotations.stream("nx:container");
+    let rejected_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     assert!(super::attach_sketch_graph(
         &mut rejected_ir,
         &label,
@@ -855,7 +856,7 @@ fn named_sketch_points_project_without_an_external_named_point() {
     ];
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
-    let stream = annotations.stream("nx:container");
+    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     let sketch = super::attach_sketch_graph(
         &mut ir,
         &label,

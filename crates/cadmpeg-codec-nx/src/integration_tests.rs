@@ -47,7 +47,7 @@ fn legacy_cfb_nx_detection_uses_ug_part_directory_evidence() {
 
     let result = decode(bytes);
     assert!(!result.report().geometry_transferred());
-    assert!(!result.source_fidelity().retained_records.is_empty());
+    assert!(!result.source_fidelity().retained_records().is_empty());
 }
 
 #[test]
@@ -64,7 +64,7 @@ fn legacy_cfb_nx_accepts_a_partial_final_stream_sector() {
 
     let result = decode(bytes);
     assert!(!result.report().geometry_transferred());
-    assert!(!result.source_fidelity().retained_records.is_empty());
+    assert!(!result.source_fidelity().retained_records().is_empty());
 }
 
 #[test]
@@ -108,7 +108,7 @@ fn legacy_cfb_catalogues_each_reachable_stream_in_a_disjoint_logical_span() {
     assert_eq!(extra.stored_size(), extra.expanded_size());
 
     let result = decode(bytes);
-    assert!(!result.source_fidelity().retained_records.is_empty());
+    assert!(!result.source_fidelity().retained_records().is_empty());
 }
 
 #[test]
@@ -143,7 +143,7 @@ fn splmsstr_pipeline_aligns_detection_inspection_and_parasolid_classification() 
 
     let result = decode(bytes);
     assert!(result.report().geometry_transferred());
-    assert!(!result.source_fidelity().retained_records.is_empty());
+    assert!(!result.source_fidelity().retained_records().is_empty());
     assert_valid(&result);
 }
 

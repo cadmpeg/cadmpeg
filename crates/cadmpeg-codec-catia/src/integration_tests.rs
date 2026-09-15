@@ -57,7 +57,7 @@ fn standard_nested_pipeline_aligns_detection_inspection_and_decode() {
     assert_eq!(result.ir().model.surfaces.len(), 2);
     assert!(result
         .source_fidelity()
-        .retained_records
+        .retained_records()
         .values()
         .any(|record| record.data().is_some()));
     assert_valid(&result);

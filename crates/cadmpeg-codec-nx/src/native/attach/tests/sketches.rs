@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use cadmpeg_ir::annotations::StreamHandle;
 
 #[test]
 fn sketch_coordinate_pairs_are_retained_as_native_entities_without_roles() {
@@ -38,7 +39,7 @@ fn sketch_coordinate_pairs_are_retained_as_native_entities_without_roles() {
     let coordinate_pairs = [&pair];
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
-    let stream = annotations.stream("nx:container");
+    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     let sketch = super::super::attach_sketch_graph(
         &mut ir,
         &label,
@@ -100,7 +101,7 @@ fn sketch_fixed_points_are_retained_as_native_entities_without_roles() {
     let fixed_points = [&point];
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
-    let stream = annotations.stream("nx:container");
+    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     let sketch = super::super::attach_sketch_graph(
         &mut ir,
         &label,

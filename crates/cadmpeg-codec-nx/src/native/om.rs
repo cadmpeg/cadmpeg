@@ -5531,9 +5531,9 @@ mod tests {
         );
         let om_records = result
             .source_fidelity()
-            .retained_records
+            .retained_records()
             .iter()
-            .filter(|(id, _)| id.starts_with("nx:om-section-"))
+            .filter(|(id, _)| id.as_str().starts_with("nx:om-section-"))
             .map(|(_, record)| record)
             .collect::<Vec<_>>();
         assert_eq!(om_records.len(), 2);

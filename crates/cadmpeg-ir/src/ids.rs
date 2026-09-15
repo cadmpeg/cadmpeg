@@ -1034,6 +1034,13 @@ id_type!(
     /// Identifies a passthrough [`crate::unknown::UnknownRecord`].
     UnknownId
 );
+
+impl std::borrow::Borrow<str> for UnknownId {
+    fn borrow(&self) -> &str {
+        self.as_str()
+    }
+}
+
 id_type!(
     /// Identifies a decoded [`crate::appearance::Appearance`] asset.
     AppearanceId

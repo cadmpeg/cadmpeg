@@ -19,7 +19,7 @@ use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::{CodecError, ContainerEntry};
-use cadmpeg_ir::hash::sha256_hex;
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ContainerSummary;
 
 use cadmpeg_asm::kernel_header::{BinaryHeader, KernelHeader};
@@ -205,7 +205,7 @@ pub struct BrepFacts {
     /// Parsed ASM or ACIS framing, when either header matched.
     pub kernel: Option<KernelFraming>,
     /// SHA-256 (lowercase hex) of the decompressed stream.
-    pub sha256: String,
+    pub sha256: Sha256Digest,
 }
 
 /// The manifest-level kind of a scanned Fusion archive.
@@ -405,7 +405,7 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
                 acis_header::parse(buf).map(KernelFraming::Acis)
             };
             let solved_record_limit = kernel.as_ref().and_then(KernelFraming::solved_record_limit);
-            let sha = sha256_hex(buf);
+            let sha = Sha256Digest::digest(buf);
 
             attributes.insert("asm_magic".to_string(), asm_magic_label(buf));
             if let Some(h) = kernel.as_ref().and_then(KernelFraming::asm_header) {
@@ -450,7 +450,7 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
                     attributes.insert("history_partition_offset".to_string(), "none".to_string());
                 }
             }
-            attributes.insert("sha256".to_string(), sha.clone());
+            attributes.insert("sha256".to_string(), sha.as_str().to_owned());
 
             breps.push(BrepFacts {
                 name: name.clone(),

@@ -6,6 +6,7 @@
 //! vector/range helpers, and the metadata/geometry/container report builders.
 
 use cadmpeg_core::dialect::DialectMatch;
+use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{
@@ -50,7 +51,7 @@ pub(crate) fn annotate(
     exactness: Exactness,
 ) {
     let id = id.to_string();
-    let stream = annotations.stream(format!("catia:{stream_name}"));
+    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("catia:").with_suffix(stream_name));
     annotations.note(&id, &stream, offset).tag(tag);
     annotations.exactness(id, exactness);
 }

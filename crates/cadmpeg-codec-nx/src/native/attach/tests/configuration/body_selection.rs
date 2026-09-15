@@ -1,4 +1,5 @@
 use super::*;
+use cadmpeg_ir::annotations::StreamHandle;
 
 #[test]
 fn feature_body_selection_retains_complete_input_local_identities_atomically() {
@@ -296,7 +297,7 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
         source_offset: 100,
     };
     let mut annotations = AnnotationBuilder::new();
-    let stream = annotations.stream("nx:container");
+    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
 
     let id = super::attach_initial_segment_bodies(&mut ir, &[binding], &mut annotations, &stream)
         .expect("one emitted body has an exact segment binding");
@@ -341,7 +342,7 @@ fn body_write_does_not_materialize_missing_neutral_geometry() {
         source_offset: 100,
     };
     let mut annotations = AnnotationBuilder::new();
-    let stream = annotations.stream("nx:container");
+    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
 
     assert!(
         super::attach_initial_segment_bodies(&mut ir, &[binding], &mut annotations, &stream,)

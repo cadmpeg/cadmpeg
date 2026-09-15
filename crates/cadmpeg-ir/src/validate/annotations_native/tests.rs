@@ -32,7 +32,7 @@ fn annotation_keys_and_field_paths_are_checked() {
     let ir = unit_cube().expect("valid unit cube fixture");
     let mut source_fidelity = crate::SourceFidelity::default();
     let mut annotations = crate::AnnotationBuilder::new();
-    let stream = annotations.stream("test:source");
+    let stream = crate::annotations::StreamHandle::new(crate::stream_name!("test:source"));
     annotations.note("missing", &stream, 0);
     annotations
         .derived(ir.model.edges[0].id.as_str(), "not_a_serialized_field")

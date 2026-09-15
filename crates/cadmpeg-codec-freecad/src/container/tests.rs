@@ -195,7 +195,7 @@ fn thumbnail_bytes_are_retained_with_digest() {
     );
     let retained = result
         .source_fidelity()
-        .retained_records
+        .retained_records()
         .values()
         .next()
         .expect("retained thumbnail");

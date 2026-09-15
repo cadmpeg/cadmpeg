@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! High-level Inventor structural decode.
 
+use cadmpeg_ir::annotations::StreamHandle;
 use std::collections::BTreeMap;
 
 use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
@@ -1519,7 +1520,8 @@ fn decode_container<'a>(
     let mut source_fidelity = SourceFidelity::default();
     let mut annotations = AnnotationBuilder::new();
     for record in kernel_annotations {
-        let stream = annotations.stream(format!("inventor:{}", record.stream));
+        let stream =
+            StreamHandle::new(cadmpeg_ir::stream_name!("inventor:").with_suffix(&record.stream));
         annotations
             .note(&record.id, &stream, record.offset)
             .tag(record.tag.as_str());
@@ -1540,7 +1542,7 @@ fn decode_container<'a>(
                 "retain Inventor kernel carrier that read no geometry",
             )?;
             source_fidelity.retain_unknown_records(
-                &format!("RSeStorage/B{}:expanded", carrier.segment_token),
+                format!("RSeStorage/B{}:expanded", carrier.segment_token),
                 [UnknownRecord::retained(
                     UnknownId::mint(format!(
                         "inventor:kernel:carrier#{}-{}",
@@ -1551,7 +1553,7 @@ fn decode_container<'a>(
                     data,
                     vec![active_carrier.id().to_owned()],
                 )],
-            );
+            )?;
         }
     }
     if !kernel_unknowns.is_empty() {

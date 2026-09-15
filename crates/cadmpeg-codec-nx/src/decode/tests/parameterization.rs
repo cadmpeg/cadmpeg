@@ -8,6 +8,7 @@ use crate::decode::support_uv::{
     complete_ext11_support_uv, complete_parameterization_equivalent_support_uv,
     invalidate_inconsistent_support_uv, parameterization_equivalent_surfaces, SerializedSupportUv,
 };
+use cadmpeg_ir::annotations::StreamHandle;
 
 use std::io::Cursor;
 
@@ -743,7 +744,7 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
         ),
     );
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-    let source_stream = annotations.stream("nx:test");
+    let source_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:test"));
     let graph = crate::topology::Graph::parse(&[]);
     let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(usize::MAX);
 
