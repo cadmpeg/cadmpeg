@@ -45,6 +45,7 @@ pub trait ArenaEntity: private::Sealed + EntitySchema + Sized {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelCheckpoint {
     lengths: [usize; EntityKind::ALL.len()],
+    feature_parents: crate::document::FeatureRegenerationParents,
 }
 
 impl ModelCheckpoint {
@@ -56,7 +57,10 @@ impl ModelCheckpoint {
             };
         }
         let lengths = crate::document::arena_registry!(capture_lengths);
-        Self { lengths }
+        Self {
+            lengths,
+            feature_parents: model.feature_regeneration_parents.clone(),
+        }
     }
 
     fn length<T: ArenaEntity>(&self) -> usize {
@@ -88,6 +92,21 @@ impl ModelCheckpoint {
             .try_fold(0_usize, |total, (after, before)| {
                 total.checked_add(after.checked_sub(before)?)
             })
+    }
+
+    /// Discards appended entities and restores captured feature-parent relations.
+    ///
+    /// This is an append-only checkpoint, not a snapshot of existing entities.
+    /// Between capture and discard, callers must not remove, reorder, or modify
+    /// entities that preceded the checkpoint.
+    pub fn discard_appended(&self, model: &mut Model) {
+        macro_rules! truncate_arenas {
+            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+                $(model.$field.truncate(self.length::<$ty>());)*
+            };
+        }
+        crate::document::arena_registry!(truncate_arenas);
+        model.feature_regeneration_parents = self.feature_parents.clone();
     }
 }
 
@@ -574,7 +593,7 @@ impl CommitSession {
 
 #[cfg(test)]
 mod tests {
-    use super::{CommitSession, DraftError, ModelDraft};
+    use super::{CommitSession, DraftError, ModelCheckpoint, ModelDraft};
     use crate::annotations::Annotations;
     use crate::document::CadIr;
     use crate::ids::PointId;
@@ -607,6 +626,42 @@ mod tests {
             })
             .expect("insert vertex into draft");
         draft
+    }
+
+    #[test]
+    fn checkpoint_discards_appends_outside_the_geometry_arenas() {
+        use crate::assets::{Asset, AssetContent, AssetData};
+        use crate::features::{Feature, FeatureDefinition, FeatureOperation};
+
+        let mut model = crate::document::Model::default();
+        model.points.push(point("test:checkpoint:point#existing"));
+        let original = model.clone();
+        let checkpoint = ModelCheckpoint::capture(&model);
+        model.assets.push(Asset {
+            id: "test:checkpoint:asset#new".try_into().unwrap(),
+            name: None,
+            media_type: None,
+            content: AssetContent::Embedded {
+                data: AssetData::new(vec![9]).unwrap(),
+            },
+            native_ref: None,
+        });
+        for (ordinal, key) in ["parent", "child"].into_iter().enumerate() {
+            model.features.push(Feature::new(
+                format!("test:checkpoint:feature#{key}").try_into().unwrap(),
+                ordinal as u64,
+                FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+            ));
+        }
+        model
+            .set_feature_regeneration_parent(
+                "test:checkpoint:feature#child".try_into().unwrap(),
+                "test:checkpoint:feature#parent".try_into().unwrap(),
+            )
+            .unwrap();
+        assert_eq!(checkpoint.added_count(&model), Some(3));
+        checkpoint.discard_appended(&mut model);
+        assert_eq!(model, original);
     }
 
     #[test]
