@@ -3,9 +3,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
+use proc_macro2::{Delimiter, TokenStream, TokenTree};
+use syn::spanned::Spanned;
+
 use super::{
-    collect_rust_sources, deserialize_impl_target, flatten_tokens, is_test_module, is_test_path,
-    macro_body_impl_targets, skip_meta_value, HAND_IMPLS,
+    collect_rust_sources, deserialize_impl_target, is_test_module, is_test_path, skip_meta_value,
+    HAND_IMPLS,
 };
 
 /// One route shape a hand-written reader is allowed to use.
@@ -33,13 +36,148 @@ impl HandReaderClass {
     }
 }
 
+/// A token tree with delimiter boundaries retained.
+///
+/// A flattened token list cannot distinguish `Box::<T>::deserialize` from an
+/// unrelated `Box::<T>` followed by a later `>::deserialize`. Keeping groups
+/// also makes calls and attributes belong to the syntax item that owns them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Node {
+    Atom(String),
+    Group(Delimiter, Vec<Node>),
+}
+
+fn nodes_from_stream(stream: &TokenStream) -> Vec<Node> {
+    stream
+        .clone()
+        .into_iter()
+        .map(|tree| match tree {
+            TokenTree::Group(group) => {
+                Node::Group(group.delimiter(), nodes_from_stream(&group.stream()))
+            }
+            other => Node::Atom(other.to_string()),
+        })
+        .collect()
+}
+
+fn atom(node: &Node) -> Option<&str> {
+    match node {
+        Node::Atom(value) => Some(value),
+        Node::Group(_, _) => None,
+    }
+}
+
+fn is_atom(nodes: &[Node], index: usize, value: &str) -> bool {
+    nodes.get(index).and_then(atom) == Some(value)
+}
+
+fn is_path_atom(value: &str) -> bool {
+    value == "Self"
+        || value == "self"
+        || value == "super"
+        || value == "crate"
+        || value.starts_with('$')
+        || value
+            .chars()
+            .all(|character| character == '_' || character.is_ascii_alphanumeric())
+}
+
+/// Render a token tree for a useful unresolved-route diagnostic.
+fn node_text(node: &Node) -> String {
+    match node {
+        Node::Atom(value) => value.clone(),
+        Node::Group(delimiter, children) => {
+            let (open, close) = match delimiter {
+                Delimiter::Parenthesis => ('(', ')'),
+                Delimiter::Brace => ('{', '}'),
+                Delimiter::Bracket => ('[', ']'),
+                Delimiter::None => (' ', ' '),
+            };
+            let mut text = String::new();
+            if open != ' ' {
+                text.push(open);
+            }
+            for child in children {
+                text.push_str(&node_text(child));
+            }
+            if close != ' ' {
+                text.push(close);
+            }
+            text
+        }
+    }
+}
+
+fn nodes_text(nodes: &[Node]) -> String {
+    nodes.iter().map(node_text).collect()
+}
+
+/// Return the byte range covered by a proc-macro span.
+///
+/// `Span::line` and `Span::column` are byte positions. Slicing by complete
+/// lines was previously used here; two adjacent items on one line then shared
+/// the same source text and could contaminate one another's route.
+fn source_span_range(source: &str, span: proc_macro2::Span) -> Option<(usize, usize)> {
+    let mut line_starts = vec![0];
+    for (index, byte) in source.bytes().enumerate() {
+        if byte == b'\n' {
+            line_starts.push(index + 1);
+        }
+    }
+    let start = span.start();
+    let end = span.end();
+    let start_line = line_starts.get(start.line.checked_sub(1)?)?;
+    let end_line = line_starts.get(end.line.checked_sub(1)?)?;
+    let start = start_line.checked_add(start.column)?;
+    let end = end_line.checked_add(end.column)?;
+    (start <= end && end <= source.len()).then_some((start, end))
+}
+
+/// Extract the exact source text covered by a syntax item.
+fn source_span_text(source: &str, span: proc_macro2::Span) -> String {
+    let (start, end) = source_span_range(source, span)
+        .unwrap_or_else(|| panic!("source span is outside its parsed source: {span:?}"));
+    source
+        .get(start..end)
+        .unwrap_or_else(|| panic!("source span is not on a UTF-8 boundary: {start}..{end}"))
+        .to_owned()
+}
+
+/// Tokenize a function block and return the statements inside its outer braces.
+fn tokenize_block_text(path: &str, name: &str, body: &str) -> Vec<Node> {
+    let token_stream = body
+        .parse::<TokenStream>()
+        .unwrap_or_else(|error| panic!("{path} {name} block does not tokenize: {error}"));
+    let nodes = nodes_from_stream(&token_stream);
+    let Some(Node::Group(Delimiter::Brace, children)) = nodes.first() else {
+        panic!("{path} {name} block has no brace group: {body}");
+    };
+    children.clone()
+}
+
+/// One source declaration whose serde wire shape refuses unknown fields.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct WireKey {
+    path: String,
+    scope: Vec<String>,
+    name: String,
+}
+
 /// One source span that emits a hand-written reader.
 #[derive(Debug)]
 struct HandImplSource {
     path: String,
+    scope: Vec<String>,
     name: String,
     body: String,
-    tokens: Vec<String>,
+    method_nodes: Vec<Node>,
+    local_denied: BTreeSet<String>,
+}
+
+#[derive(Debug, Default)]
+struct SourceIndex {
+    sources: Vec<HandImplSource>,
+    denied: BTreeSet<WireKey>,
 }
 
 /// Return the elements in `left` that do not have a matching occurrence in
@@ -85,175 +223,300 @@ fn serde_has_flag(attrs: &[syn::Attribute], name: &str) -> bool {
     stated
 }
 
-/// Collect names of object declarations that reject unknown keys.
+fn insert_wire(denied: &mut BTreeSet<WireKey>, path: &str, scope: &[String], name: String) {
+    denied.insert(WireKey {
+        path: path.to_owned(),
+        scope: scope.to_owned(),
+        name,
+    });
+}
+
+fn local_denied_types(block: &syn::Block) -> BTreeSet<String> {
+    let mut denied = BTreeSet::new();
+    for statement in &block.stmts {
+        let syn::Stmt::Item(item) = statement else {
+            continue;
+        };
+        match item {
+            syn::Item::Struct(declaration)
+                if serde_has_flag(&declaration.attrs, "deny_unknown_fields") =>
+            {
+                denied.insert(declaration.ident.to_string());
+            }
+            syn::Item::Enum(declaration)
+                if serde_has_flag(&declaration.attrs, "deny_unknown_fields") =>
+            {
+                denied.insert(declaration.ident.to_string());
+            }
+            _ => {}
+        }
+    }
+    denied
+}
+
+/// Whether a bracket group is exactly a serde attribute carrying the denial.
+fn macro_serde_deny_attribute(group: &[Node]) -> bool {
+    if !is_atom(group, 0, "serde") {
+        return false;
+    }
+    group.iter().skip(1).any(|node| {
+        let Node::Group(Delimiter::Parenthesis, children) = node else {
+            return false;
+        };
+        children
+            .iter()
+            .any(|child| atom(child) == Some("deny_unknown_fields"))
+    })
+}
+
+fn macro_item_name(nodes: &[Node], index: usize) -> Option<(String, usize)> {
+    if is_atom(nodes, index, "$") {
+        let name = atom(nodes.get(index + 1)?)?;
+        return is_path_atom(name).then(|| (format!("${name}"), index + 2));
+    }
+    let name = atom(nodes.get(index)?)?;
+    is_path_atom(name).then(|| (name.to_owned(), index + 1))
+}
+
+/// Find the declaration immediately following a serde deny attribute.
 ///
-/// Ordinary declarations are read as syntax. Macro bodies cannot be parsed as
-/// complete Rust items until expansion, so their flattened token stream is
-/// read only far enough to bind each `deny_unknown_fields` attribute to its
-/// following `struct` or `enum` declaration. This includes the generated
-/// `ModelReadWire` and native-record wire declarations.
-fn denied_wire_types(root: &Path) -> BTreeSet<String> {
-    fn collect(items: &[syn::Item], found: &mut BTreeSet<String>) {
-        for item in items {
-            match item {
-                syn::Item::Struct(declaration)
-                    if serde_has_flag(&declaration.attrs, "deny_unknown_fields") =>
-                {
-                    found.insert(declaration.ident.to_string());
+/// The scan skips only more attributes and visibility. It cannot bind an
+/// arbitrary identifier or a later declaration merely because a token with the
+/// right spelling appears somewhere in the enclosing macro.
+fn macro_denied_declaration(nodes: &[Node], after_attribute: usize) -> Option<String> {
+    let mut index = after_attribute;
+    loop {
+        if is_atom(nodes, index, "#")
+            && matches!(
+                nodes.get(index + 1),
+                Some(Node::Group(Delimiter::Bracket, _))
+            )
+        {
+            index += 2;
+            continue;
+        }
+        if is_atom(nodes, index, "pub") {
+            index += 1;
+            if matches!(
+                nodes.get(index),
+                Some(Node::Group(Delimiter::Parenthesis, _))
+            ) {
+                index += 1;
+            }
+            continue;
+        }
+        break;
+    }
+    if !is_atom(nodes, index, "struct") && !is_atom(nodes, index, "enum") {
+        return None;
+    }
+    macro_item_name(nodes, index + 1).map(|(name, _)| name)
+}
+
+/// Collect denied declarations from one macro token stream with module scope.
+fn collect_macro_denied(
+    nodes: &[Node],
+    path: &str,
+    scope: &[String],
+    denied: &mut BTreeSet<WireKey>,
+) {
+    let mut index = 0;
+    while index < nodes.len() {
+        if is_atom(nodes, index, "mod") {
+            if let Some((module, after_name)) = macro_item_name(nodes, index + 1) {
+                if let Some(Node::Group(Delimiter::Brace, children)) = nodes.get(after_name) {
+                    let mut nested_scope = scope.to_owned();
+                    nested_scope.push(module);
+                    collect_macro_denied(children, path, &nested_scope, denied);
+                    index = after_name + 1;
+                    continue;
                 }
-                syn::Item::Enum(declaration)
-                    if serde_has_flag(&declaration.attrs, "deny_unknown_fields") =>
-                {
-                    found.insert(declaration.ident.to_string());
-                }
-                syn::Item::Mod(module) => {
-                    if is_test_module(module) {
-                        continue;
-                    }
-                    if let Some((_, nested)) = &module.content {
-                        collect(nested, found);
-                    }
-                }
-                syn::Item::Macro(macro_item) => {
-                    let mut flat = Vec::new();
-                    flatten_tokens(&macro_item.mac.tokens, &mut flat);
-                    for (index, token) in flat.iter().enumerate() {
-                        if token != "deny_unknown_fields" {
-                            continue;
-                        }
-                        let Some(relative) = flat
-                            .iter()
-                            .skip(index + 1)
-                            .position(|candidate| candidate == "struct" || candidate == "enum")
-                        else {
-                            continue;
-                        };
-                        let declaration = index + 1 + relative;
-                        let Some(name) = flat.get(declaration + 1) else {
-                            continue;
-                        };
-                        if name == "$" {
-                            if let Some(metavariable) = flat.get(declaration + 2) {
-                                found.insert(format!("${metavariable}"));
-                            }
-                        } else {
-                            found.insert(name.clone());
-                        }
-                    }
-                }
-                _ => {}
             }
         }
-    }
 
-    let mut found = BTreeSet::new();
-    for source in [
-        "crates/cadmpeg-ir/src",
-        "crates/cadmpeg-core/src",
-        "crates/cadmpeg-asm/src",
-    ] {
-        let mut files = Vec::new();
-        collect_rust_sources(&root.join(source), &mut files)
-            .unwrap_or_else(|error| panic!("cannot collect {source}: {error}"));
-        files.sort();
-        for file in files {
-            let relative = file
-                .strip_prefix(root)
-                .expect("a collected source sits under the repository root")
-                .to_string_lossy()
-                .replace('\\', "/");
-            if is_test_path(&relative) {
-                continue;
+        if is_atom(nodes, index, "#") {
+            if let Some(Node::Group(Delimiter::Bracket, attribute)) = nodes.get(index + 1) {
+                if macro_serde_deny_attribute(attribute) {
+                    if let Some(name) = macro_denied_declaration(nodes, index + 2) {
+                        insert_wire(denied, path, scope, name);
+                    }
+                }
             }
-            let text = std::fs::read_to_string(&file).expect("read source");
-            let parsed = syn::parse_file(&text)
-                .map_err(|error| format!("{relative} does not parse: {error}"))
-                .expect("every source file in the wire crates parses");
-            collect(&parsed.items, &mut found);
         }
+
+        if let Some(Node::Group(_, children)) = nodes.get(index) {
+            collect_macro_denied(children, path, scope, denied);
+        }
+        index += 1;
     }
-    found
 }
 
-/// Extract the source lines covered by a syntax item.
-fn source_span_text(source: &str, span: proc_macro2::Span) -> String {
-    let lines: Vec<&str> = source.lines().collect();
-    let start = span.start().line.saturating_sub(1);
-    let end = span.end().line.min(lines.len());
-    lines
-        .get(start..end)
-        .map_or_else(String::new, |lines| lines.join("\n"))
+/// Parse one macro `impl` and isolate its `Deserialize::deserialize` method.
+fn macro_route_at(nodes: &[Node], start: usize) -> Option<(String, Vec<Node>)> {
+    if !is_atom(nodes, start, "impl") {
+        return None;
+    }
+    let body_index = (start + 1..nodes.len())
+        .find(|index| matches!(nodes.get(*index), Some(Node::Group(Delimiter::Brace, _))))?;
+    let header = &nodes[start + 1..body_index];
+    let deserialize_index = header
+        .iter()
+        .position(|node| atom(node) == Some("Deserialize"))?;
+    let for_index =
+        (deserialize_index + 1..header.len()).find(|index| atom(&header[*index]) == Some("for"))?;
+    let (name, _) = macro_item_name(header, for_index + 1)?;
+    let Node::Group(Delimiter::Brace, implementation) = nodes.get(body_index)? else {
+        return None;
+    };
+    let method_index = (0..implementation.len()).find(|index| {
+        is_atom(implementation, *index, "fn") && is_atom(implementation, index + 1, "deserialize")
+    })?;
+    let parameters = (method_index + 2..implementation.len()).find(|index| {
+        matches!(
+            implementation.get(*index),
+            Some(Node::Group(Delimiter::Parenthesis, _))
+        )
+    })?;
+    let body_index = (parameters + 1..implementation.len()).find(|index| {
+        matches!(
+            implementation.get(*index),
+            Some(Node::Group(Delimiter::Brace, _))
+        )
+    })?;
+    let Node::Group(Delimiter::Brace, body) = implementation.get(body_index)? else {
+        return None;
+    };
+    Some((name, body.clone()))
 }
 
-/// Tokenize one source span while retaining the original body for diagnostics.
-fn tokenize_source_body(path: &str, name: &str, body: &str) -> Vec<String> {
-    let token_stream = body
-        .parse::<proc_macro2::TokenStream>()
-        .unwrap_or_else(|error| panic!("{path} {name} implementation does not tokenize: {error}"));
-    let mut tokens = Vec::new();
-    flatten_tokens(&token_stream, &mut tokens);
-    tokens
-}
-
-/// Collect every implementation or macro expansion that emits a reader.
-fn collect_hand_impl_sources(
-    items: &[syn::Item],
-    relative: &str,
-    source: &str,
+fn collect_macro_routes(
+    nodes: &[Node],
+    path: &str,
+    scope: &[String],
     found: &mut Vec<HandImplSource>,
+) {
+    let mut index = 0;
+    while index < nodes.len() {
+        if let Some((name, method_nodes)) = macro_route_at(nodes, index) {
+            let body = nodes_text(&method_nodes);
+            found.push(HandImplSource {
+                path: path.to_owned(),
+                scope: scope.to_owned(),
+                name,
+                body,
+                method_nodes,
+                local_denied: BTreeSet::new(),
+            });
+        }
+        if let Some(Node::Group(_, children)) = nodes.get(index) {
+            collect_macro_routes(children, path, scope, found);
+        }
+        index += 1;
+    }
+}
+
+fn collect_source_items(
+    items: &[syn::Item],
+    path: &str,
+    source: &str,
+    scope: &[String],
+    index: &mut SourceIndex,
 ) {
     for item in items {
         match item {
+            syn::Item::Struct(declaration)
+                if serde_has_flag(&declaration.attrs, "deny_unknown_fields") =>
+            {
+                insert_wire(
+                    &mut index.denied,
+                    path,
+                    scope,
+                    declaration.ident.to_string(),
+                );
+            }
+            syn::Item::Enum(declaration)
+                if serde_has_flag(&declaration.attrs, "deny_unknown_fields") =>
+            {
+                insert_wire(
+                    &mut index.denied,
+                    path,
+                    scope,
+                    declaration.ident.to_string(),
+                );
+            }
             syn::Item::Impl(implementation) => {
-                if let Some(name) = deserialize_impl_target(implementation) {
-                    let body =
-                        source_span_text(source, syn::spanned::Spanned::span(implementation));
-                    let tokens = tokenize_source_body(relative, &name, &body);
-                    found.push(HandImplSource {
-                        path: relative.to_owned(),
-                        name,
-                        body,
-                        tokens,
-                    });
-                }
+                let Some(name) = deserialize_impl_target(implementation) else {
+                    continue;
+                };
+                let Some(method) = implementation.items.iter().find_map(|item| match item {
+                    syn::ImplItem::Fn(method) if method.sig.ident == "deserialize" => Some(method),
+                    _ => None,
+                }) else {
+                    panic!("{path} {name} has no parsed deserialize method");
+                };
+                let block_text = source_span_text(source, method.block.span());
+                let method_nodes = tokenize_block_text(path, &name, &block_text);
+                index.sources.push(HandImplSource {
+                    path: path.to_owned(),
+                    scope: scope.to_owned(),
+                    name,
+                    body: source_span_text(source, method.span()),
+                    method_nodes,
+                    local_denied: local_denied_types(&method.block),
+                });
             }
             syn::Item::Mod(module) => {
                 if is_test_module(module) {
                     continue;
                 }
                 if let Some((_, nested)) = &module.content {
-                    collect_hand_impl_sources(nested, relative, source, found);
+                    let mut nested_scope = scope.to_owned();
+                    nested_scope.push(module.ident.to_string());
+                    collect_source_items(nested, path, source, &nested_scope, index);
                 }
             }
             syn::Item::Macro(macro_item) => {
-                let body = source_span_text(source, syn::spanned::Spanned::span(macro_item));
-                let mut tokens = Vec::new();
-                flatten_tokens(&macro_item.mac.tokens, &mut tokens);
-                for name in macro_body_impl_targets(&macro_item.mac.tokens) {
-                    found.push(HandImplSource {
-                        path: relative.to_owned(),
-                        name,
-                        body: body.clone(),
-                        tokens: tokens.clone(),
-                    });
-                }
+                let tokens = nodes_from_stream(&macro_item.mac.tokens);
+                collect_macro_denied(&tokens, path, scope, &mut index.denied);
+                // Macro declarations are collected in the same source pass as
+                // their routes. The argument is read only to keep the ownership
+                // explicit at this call site; route resolution uses the index
+                // after the file walk completes.
+                collect_macro_routes(&tokens, path, scope, &mut index.sources);
             }
             _ => {}
         }
     }
 }
 
-/// Collects the source for every hand-written reader in the three wire crates.
-fn hand_written_impl_sources(root: &Path) -> Vec<HandImplSource> {
-    let mut found = Vec::new();
-    for source in [
+/// Collect every implementation and scoped wire declaration in the three
+/// source crates with one syntax traversal per file.
+fn source_module_scope(source_root: &Path, file: &Path) -> Vec<String> {
+    let relative = file
+        .strip_prefix(source_root)
+        .expect("a source file sits below its crate source root");
+    let mut components: Vec<String> = relative
+        .components()
+        .map(|component| component.as_os_str().to_string_lossy().into_owned())
+        .collect();
+    let file_name = components.pop().expect("a source path has a file name");
+    let stem = file_name.strip_suffix(".rs").unwrap_or(&file_name);
+    if stem != "lib" && stem != "main" && stem != "mod" {
+        components.push(stem.to_owned());
+    }
+    components
+}
+
+fn source_index(root: &Path) -> SourceIndex {
+    let mut index = SourceIndex::default();
+    for source_root in [
         "crates/cadmpeg-ir/src",
         "crates/cadmpeg-core/src",
         "crates/cadmpeg-asm/src",
     ] {
         let mut files = Vec::new();
-        collect_rust_sources(&root.join(source), &mut files)
-            .unwrap_or_else(|error| panic!("cannot collect {source}: {error}"));
+        collect_rust_sources(&root.join(source_root), &mut files)
+            .unwrap_or_else(|error| panic!("cannot collect {source_root}: {error}"));
         files.sort();
         for file in files {
             let relative = file
@@ -264,55 +527,367 @@ fn hand_written_impl_sources(root: &Path) -> Vec<HandImplSource> {
             if is_test_path(&relative) {
                 continue;
             }
-            let text = std::fs::read_to_string(&file).expect("read source");
-            let parsed = syn::parse_file(&text)
+            let source = std::fs::read_to_string(&file).expect("read source");
+            let parsed = syn::parse_file(&source)
                 .map_err(|error| format!("{relative} does not parse: {error}"))
                 .expect("every source file in the wire crates parses");
-            collect_hand_impl_sources(&parsed.items, &relative, &text, &mut found);
+            let scope = source_module_scope(&root.join(source_root), &file);
+            collect_source_items(&parsed.items, &relative, &source, &scope, &mut index);
         }
     }
-    found
+    index
 }
 
-/// Whether `tokens` contains `sequence` as an exact token sequence.
-fn contains_token_sequence(tokens: &[String], sequence: &[&str]) -> bool {
-    tokens.windows(sequence.len()).any(|window| {
-        window
-            .iter()
-            .zip(sequence)
-            .all(|(actual, expected)| actual == expected)
+/// The path immediately before an associated call's `::deserialize`.
+fn path_tail(nodes: &[Node], end: usize) -> Option<Vec<String>> {
+    let (mut start, segment) = path_segment_at_end(nodes, end)?;
+    let mut segments = vec![segment];
+    while start >= 2 && is_atom(nodes, start - 2, ":") && is_atom(nodes, start - 1, ":") {
+        let (previous_start, previous) = path_segment_at_end(nodes, start - 2)?;
+        segments.push(previous);
+        start = previous_start;
+    }
+    segments.reverse();
+    Some(segments)
+}
+
+fn path_segment_at_end(nodes: &[Node], end: usize) -> Option<(usize, String)> {
+    if end == 0 {
+        return None;
+    }
+    let name = atom(nodes.get(end - 1)?)?;
+    if is_path_atom(name) {
+        if end >= 2 && is_atom(nodes, end - 2, "$") {
+            return Some((end - 2, format!("${name}")));
+        }
+        return Some((end - 1, name.to_owned()));
+    }
+    None
+}
+
+fn matching_angle_open(nodes: &[Node], close: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    for index in (0..=close).rev() {
+        match atom(nodes.get(index)?) {
+            Some(">") => depth += 1,
+            Some("<") => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    return Some(index);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+#[derive(Debug, Clone)]
+enum Receiver {
+    Path(Vec<String>),
+    Generic(Vec<String>),
+    QSelf,
+}
+
+fn receiver_before(nodes: &[Node], end: usize) -> Option<Receiver> {
+    if end == 0 {
+        return None;
+    }
+    if is_atom(nodes, end - 1, ">") {
+        let open = matching_angle_open(nodes, end - 1)?;
+        if open >= 2 && is_atom(nodes, open - 1, ":") && is_atom(nodes, open - 2, ":") {
+            return Some(Receiver::Generic(path_tail(nodes, open - 2)?));
+        }
+        if open > 0 {
+            if let Some(path) = path_tail(nodes, open) {
+                return Some(Receiver::Generic(path));
+            }
+        }
+        return Some(Receiver::QSelf);
+    }
+    Some(Receiver::Path(path_tail(nodes, end)?))
+}
+
+#[derive(Debug)]
+enum InputRoute {
+    FreeForm,
+    Value,
+    Keyless,
+    Wire(Receiver),
+}
+
+fn contains_atom(nodes: &[Node], wanted: &str) -> bool {
+    nodes.iter().any(|node| match node {
+        Node::Atom(value) => value == wanted,
+        Node::Group(_, children) => contains_atom(children, wanted),
     })
 }
 
-/// Whether `tokens` contains one exact token.
-fn contains_token(tokens: &[String], wanted: &str) -> bool {
-    tokens.iter().any(|token| token == wanted)
+fn call_uses_deserializer(arguments: &[Node]) -> bool {
+    contains_atom(arguments, "deserializer")
 }
 
-/// Return whether a tokenized source body names one of the closed wire
-/// targets. Exact tokens prevent comments and string literals from becoming a
-/// false proof of a closed reader.
-fn closed_wire_target(
-    tokens: &[String],
-    denied_types: &BTreeSet<String>,
-    locally_closed: &BTreeSet<String>,
-) -> Option<String> {
-    denied_types
+fn receiver_is_keyless(receiver: &Receiver) -> bool {
+    match receiver {
+        Receiver::QSelf => true,
+        Receiver::Generic(path) | Receiver::Path(path) => path.last().is_some_and(|name| {
+            matches!(
+                name.as_str(),
+                "String" | "f64" | "i64" | "u32" | "Vec" | "Box" | "$raw"
+            ) || path.ends_with(&["crate".to_owned(), "bytes".to_owned()])
+        }),
+    }
+}
+
+fn receiver_is_value(receiver: &Receiver) -> bool {
+    matches!(receiver, Receiver::Path(path) if path.ends_with(&["serde_json".to_owned(), "Value".to_owned()]))
+}
+
+fn collect_input_routes(nodes: &[Node], routes: &mut Vec<InputRoute>) {
+    for index in 0..nodes.len() {
+        if is_atom(nodes, index, "deserialize")
+            && index >= 2
+            && is_atom(nodes, index - 2, ":")
+            && is_atom(nodes, index - 1, ":")
+        {
+            if let Some(Node::Group(Delimiter::Parenthesis, arguments)) = nodes.get(index + 1) {
+                if call_uses_deserializer(arguments) {
+                    let Some(receiver) = receiver_before(nodes, index - 2) else {
+                        continue;
+                    };
+                    if receiver_is_keyless(&receiver) {
+                        routes.push(InputRoute::Keyless);
+                    } else if receiver_is_value(&receiver) {
+                        routes.push(InputRoute::Value);
+                    } else {
+                        routes.push(InputRoute::Wire(receiver));
+                    }
+                }
+            }
+        }
+
+        if is_atom(nodes, index, "deserialize_any")
+            && index >= 2
+            && is_atom(nodes, index - 1, ".")
+            && is_atom(nodes, index - 2, "deserializer")
+            && matches!(
+                nodes.get(index + 1),
+                Some(Node::Group(Delimiter::Parenthesis, _))
+            )
+        {
+            routes.push(InputRoute::FreeForm);
+        }
+
+        if (is_atom(nodes, index, "json_object") || is_atom(nodes, index, "btree_map"))
+            && matches!(
+                nodes.get(index + 1),
+                Some(Node::Group(Delimiter::Parenthesis, _))
+            )
+            && index >= 2
+            && is_atom(nodes, index - 1, ":")
+            && path_tail(nodes, index - 2)
+                .is_some_and(|path| path.last().is_some_and(|name| name == "distinct_keys"))
+            && matches!(nodes.get(index + 1), Some(Node::Group(_, arguments)) if call_uses_deserializer(arguments))
+        {
+            routes.push(InputRoute::FreeForm);
+        }
+
+        if (is_atom(nodes, index, "deserialize_named")
+            || is_atom(nodes, index, "deserialize_named_optional"))
+            && matches!(nodes.get(index + 1), Some(Node::Group(Delimiter::Parenthesis, arguments)) if call_uses_deserializer(arguments))
+        {
+            routes.push(InputRoute::Keyless);
+        }
+
+        if let Some(Node::Group(_, children)) = nodes.get(index) {
+            collect_input_routes(children, routes);
+        }
+    }
+}
+
+fn propagated_version_check(nodes: &[Node]) -> (bool, bool) {
+    let mut called = false;
+    let mut propagated = false;
+    for index in 0..nodes.len() {
+        if is_atom(nodes, index, "check_ir_version") {
+            if let Some(Node::Group(Delimiter::Parenthesis, _)) = nodes.get(index + 1) {
+                called = true;
+                propagated |= is_atom(nodes, index + 2, "?");
+            }
+        }
+        if let Some(Node::Group(_, children)) = nodes.get(index) {
+            let (nested_called, nested_propagated) = propagated_version_check(children);
+            called |= nested_called;
+            propagated |= nested_propagated;
+        }
+    }
+    (called, propagated)
+}
+
+fn receiver_description(receiver: &Receiver) -> String {
+    match receiver {
+        Receiver::Path(path) | Receiver::Generic(path) => path.join("::"),
+        Receiver::QSelf => "<qself>".to_owned(),
+    }
+}
+
+fn same_crate(left: &str, right: &str) -> bool {
+    left.split('/').nth(1) == right.split('/').nth(1)
+}
+
+fn wire_key_matches_route_scope(route: &HandImplSource, key: &WireKey) -> bool {
+    same_crate(&route.path, &key.path) && key.scope == route.scope
+}
+
+/// Resolve an object receiver against its declaration or against a local
+/// manual reader whose own route is closed. Qualified `crate::` references are
+/// resolved by module scope; a basename in another crate or unrelated module
+/// never supplies a proof. A re-export from a parent module is accepted only
+/// when the qualified scope has one matching declaration/reader.
+fn receiver_is_closed(route: &HandImplSource, receiver: &Receiver, index: &SourceIndex) -> bool {
+    let (Receiver::Path(path) | Receiver::Generic(path)) = receiver else {
+        return false;
+    };
+    let Some(name) = path.last() else {
+        return false;
+    };
+
+    if path.len() == 1 && route.local_denied.contains(name) {
+        return true;
+    }
+
+    if path.len() == 1 {
+        return index.denied.iter().any(|key| {
+            key.name == *name && wire_key_matches_route_scope(route, key) && key.path == route.path
+        }) || index.sources.iter().any(|target| {
+            target.name == *name
+                && target.path == route.path
+                && target.scope == route.scope
+                && !target.local_denied.is_empty()
+        });
+    }
+
+    // Macro-generated `$wire::Wire` modules live below the macro's lexical
+    // module and have no Rust crate-qualified path.
+    if path.first().is_some_and(|segment| segment.starts_with('$')) {
+        let mut scope = route.scope.clone();
+        scope.extend(path.iter().take(path.len() - 1).cloned());
+        return index
+            .denied
+            .iter()
+            .any(|key| key.path == route.path && key.scope == scope && key.name == *name);
+    }
+
+    if path.first().is_some_and(|segment| segment == "crate") {
+        let module_scope = &path[1..path.len() - 1];
+        let declarations: Vec<&WireKey> = index
+            .denied
+            .iter()
+            .filter(|key| {
+                same_crate(&route.path, &key.path)
+                    && key.name == *name
+                    && key.scope.starts_with(module_scope)
+            })
+            .collect();
+        if declarations.len() == 1 {
+            return true;
+        }
+        let readers: Vec<&HandImplSource> = index
+            .sources
+            .iter()
+            .filter(|target| {
+                same_crate(&route.path, &target.path)
+                    && target.name == *name
+                    && target.scope.starts_with(module_scope)
+                    && !target.local_denied.is_empty()
+            })
+            .collect();
+        return readers.len() == 1;
+    }
+
+    false
+}
+
+fn classify_route(route: &HandImplSource, index: &SourceIndex) -> Result<HandReaderClass, String> {
+    let mut routes = Vec::new();
+    collect_input_routes(&route.method_nodes, &mut routes);
+    if routes.is_empty() {
+        return Err(format!(
+            "{} {} has no deserializer-consuming call: {}",
+            route.path, route.name, route.body
+        ));
+    }
+
+    if routes
         .iter()
-        .chain(locally_closed.iter())
-        // `Wire` is used for several function-local adapters. Its name alone
-        // cannot prove that this route's own declaration is closed; the local
-        // source marker is checked separately above.
-        .filter(|name| name.as_str() != "Wire" && name.as_str() != "$wire")
-        .find(|name| {
-            contains_token_sequence(tokens, &[name, ":", ":", "deserialize"])
-                || (contains_token_sequence(tokens, &[name, ":", ":", "<"])
-                    && contains_token_sequence(tokens, &[">", ":", ":", "deserialize"]))
-        })
-        .cloned()
+        .any(|route| matches!(route, InputRoute::FreeForm))
+    {
+        if routes
+            .iter()
+            .all(|route| matches!(route, InputRoute::FreeForm))
+        {
+            return Ok(HandReaderClass::FreeForm);
+        }
+        return Err(format!(
+            "{} {} mixes an open map call with another input route: {}",
+            route.path, route.name, route.body
+        ));
+    }
+
+    if routes
+        .iter()
+        .any(|route| matches!(route, InputRoute::Value))
+    {
+        let (called, propagated) = propagated_version_check(&route.method_nodes);
+        if routes
+            .iter()
+            .all(|route| matches!(route, InputRoute::Value))
+            && called
+            && propagated
+        {
+            return Ok(HandReaderClass::ValidatedValue);
+        }
+        return Err(format!(
+            "{} {} reads a general JSON value without one propagated check_ir_version call: {}",
+            route.path, route.name, route.body
+        ));
+    }
+
+    if routes
+        .iter()
+        .any(|route| matches!(route, InputRoute::Keyless))
+    {
+        if routes
+            .iter()
+            .all(|route| matches!(route, InputRoute::Keyless))
+        {
+            return Ok(HandReaderClass::Keyless);
+        }
+        return Err(format!(
+            "{} {} mixes a keyless input route with an object route: {}",
+            route.path, route.name, route.body
+        ));
+    }
+
+    for input_route in routes {
+        let InputRoute::Wire(receiver) = input_route else {
+            continue;
+        };
+        if !receiver_is_closed(route, &receiver, index) {
+            return Err(format!(
+                "{} {} reads unresolved or open object target {} in scope {:?}: {}",
+                route.path,
+                route.name,
+                receiver_description(&receiver),
+                route.scope,
+                route.body
+            ));
+        }
+    }
+    Ok(HandReaderClass::Wire)
 }
 
-/// Classify one reader body after tokenizing it, for focused fixture tests.
+/// Classify a fixture body through the same call parser as a source route.
 fn classify_hand_reader(
     path: &str,
     name: &str,
@@ -320,65 +895,24 @@ fn classify_hand_reader(
     denied_types: &BTreeSet<String>,
     locally_closed: &BTreeSet<String>,
 ) -> Result<HandReaderClass, String> {
-    let tokens = tokenize_source_body(path, name, body);
-    classify_hand_reader_tokens(path, name, body, &tokens, denied_types, locally_closed)
-}
-
-/// Classify one tokenized reader body and prove the object route is closed.
-fn classify_hand_reader_tokens(
-    path: &str,
-    name: &str,
-    body: &str,
-    tokens: &[String],
-    denied_types: &BTreeSet<String>,
-    locally_closed: &BTreeSet<String>,
-) -> Result<HandReaderClass, String> {
-    if contains_token_sequence(tokens, &["distinct_keys", ":", ":", "json_object"])
-        || contains_token_sequence(tokens, &["distinct_keys", ":", ":", "btree_map"])
-        || contains_token_sequence(tokens, &["deserialize_any", "JsonValueVisitor"])
-    {
-        return Ok(HandReaderClass::FreeForm);
+    let method_nodes = tokenize_block_text(path, name, &format!("{{{body}}}"));
+    let mut index = SourceIndex::default();
+    for denied in denied_types {
+        insert_wire(&mut index.denied, path, &[], denied.clone());
     }
-    if contains_token_sequence(
-        tokens,
-        &["serde_json", ":", ":", "Value", ":", ":", "deserialize"],
-    ) && contains_token(tokens, "check_ir_version")
-    {
-        return Ok(HandReaderClass::ValidatedValue);
-    }
-    if [
-        &["String", ":", ":", "deserialize"][..],
-        &["f64", ":", ":", "deserialize"][..],
-        &["i64", ":", ":", "deserialize"][..],
-        &["u32", ":", ":", "deserialize"][..],
-        &["Vec", ":", ":", "deserialize"][..],
-        &["Vec", ":", ":", "<"][..],
-        &["Box", ":", ":", "<"][..],
-        // `flatten_tokens` descends into the array delimiter group, so its
-        // opener is absent from the flattened sequence.
-        &["<", "f64", ";"][..],
-        &["$", "raw", ":", ":", "deserialize"][..],
-        &["crate", ":", ":", "bytes", ":", ":", "deserialize"][..],
-        &["deserialize_named"][..],
-    ]
-    .iter()
-    .any(|sequence| contains_token_sequence(tokens, sequence))
-    {
-        return Ok(HandReaderClass::Keyless);
-    }
-    if contains_token_sequence(tokens, &[":", ":", "deserialize"]) {
-        if contains_token(tokens, "deny_unknown_fields")
-            || closed_wire_target(tokens, denied_types, locally_closed).is_some()
-        {
-            return Ok(HandReaderClass::Wire);
-        }
-        return Err(format!(
-            "{path} {name} reads an object route without a denied wire target: {body}"
-        ));
-    }
-    Err(format!(
-        "{path} {name} has no recognized Deserialize route: {body}"
-    ))
+    let mut local_denied = locally_closed.clone();
+    let block: syn::Block = syn::parse_str(&format!("{{{body}}}"))
+        .map_err(|error| format!("fixture {path} {name} does not parse: {error}"))?;
+    local_denied.extend(local_denied_types(&block));
+    let route = HandImplSource {
+        path: path.to_owned(),
+        scope: Vec::new(),
+        name: name.to_owned(),
+        body: body.to_owned(),
+        method_nodes,
+        local_denied,
+    };
+    classify_route(&route, &index)
 }
 
 /// Compare each listed class to the route found in the implementation body.
@@ -392,33 +926,23 @@ pub(super) fn assert_hand_written_reader_routes() {
         .and_then(Path::parent)
         .expect("the repository root sits two levels above the crate manifest")
         .to_path_buf();
-    let sources = hand_written_impl_sources(&root);
+    let index = source_index(&root);
     assert!(
-        !sources.is_empty(),
+        !index.sources.is_empty(),
         "the route census found no reader bodies"
     );
-    let denied_types = denied_wire_types(&root);
     assert!(
-        !denied_types.is_empty(),
+        !index.denied.is_empty(),
         "the route census found no denied wire declarations"
     );
-    let locally_closed: BTreeSet<String> = sources
-        .iter()
-        .filter(|source| contains_token(&source.tokens, "deny_unknown_fields"))
-        .map(|source| source.name.clone())
-        .collect();
     let mut found = Vec::new();
-    for source in sources {
-        let class = classify_hand_reader_tokens(
-            &source.path,
-            &source.name,
-            &source.body,
-            &source.tokens,
-            &denied_types,
-            &locally_closed,
-        )
-        .unwrap_or_else(|reason| panic!("{reason}"));
-        found.push((source.path, source.name, class.as_str().to_owned()));
+    for source in &index.sources {
+        let class = classify_route(source, &index).unwrap_or_else(|reason| panic!("{reason}"));
+        found.push((
+            source.path.clone(),
+            source.name.clone(),
+            class.as_str().to_owned(),
+        ));
     }
     let mut listed: Vec<(String, String, String)> = HAND_IMPLS
         .iter()
@@ -494,16 +1018,14 @@ mod tests {
             &no_local_wire,
         )
         .is_err());
-        assert_eq!(
-            classify_hand_reader(
-                "fixture.rs",
-                "Open",
-                "OpenWire::deserialize(deserializer)?",
-                &denied,
-                &no_local_wire,
-            ),
-            Err("fixture.rs Open reads an object route without a denied wire target: OpenWire::deserialize(deserializer)?".to_owned())
-        );
+        assert!(classify_hand_reader(
+            "fixture.rs",
+            "Open",
+            "OpenWire::deserialize(deserializer)?",
+            &denied,
+            &no_local_wire,
+        )
+        .is_err());
         assert_eq!(
             classify_hand_reader(
                 "fixture.rs",
@@ -523,6 +1045,116 @@ mod tests {
                 &no_local_wire,
             ),
             Ok(HandReaderClass::ValidatedValue)
+        );
+    }
+
+    #[test]
+    fn lexical_markers_without_owned_calls_do_not_prove_a_route() {
+        let denied = BTreeSet::from(["Other".to_owned()]);
+        let no_local_wire = BTreeSet::new();
+        assert!(classify_hand_reader(
+            "fixture.rs",
+            "UnrelatedBox",
+            "let _box = Box::<Thing>; OpenWire::deserialize(deserializer)?",
+            &denied,
+            &no_local_wire,
+        )
+        .is_err());
+        assert!(classify_hand_reader(
+            "fixture.rs",
+            "UnattachedDeny",
+            "let deny_unknown_fields = true; OpenWire::deserialize(deserializer)?",
+            &denied,
+            &no_local_wire,
+        )
+        .is_err());
+        assert!(classify_hand_reader(
+            "fixture.rs",
+            "BareVersionCheck",
+            "serde_json::Value::deserialize(deserializer)?; let _ = check_ir_version;",
+            &denied,
+            &no_local_wire,
+        )
+        .is_err());
+        assert!(classify_hand_reader(
+            "fixture.rs",
+            "UnpropagatedVersionCheck",
+            "serde_json::Value::deserialize(deserializer)?; check_ir_version(None);",
+            &denied,
+            &no_local_wire,
+        )
+        .is_err());
+        assert!(classify_hand_reader(
+            "fixture.rs",
+            "DisconnectedGeneric",
+            "let _ = Other::<Thing>; OpenWire::deserialize(deserializer)?",
+            &denied,
+            &no_local_wire,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn scoped_wire_names_do_not_cross_module_boundaries() {
+        let route = HandImplSource {
+            path: "fixture.rs".to_owned(),
+            scope: vec!["module_b".to_owned()],
+            name: "Reader".to_owned(),
+            body: "Wire::deserialize(deserializer)?".to_owned(),
+            method_nodes: tokenize_block_text(
+                "fixture.rs",
+                "Reader",
+                "{Wire::deserialize(deserializer)?}",
+            ),
+            local_denied: BTreeSet::new(),
+        };
+        let mut index = SourceIndex::default();
+        insert_wire(
+            &mut index.denied,
+            "fixture.rs",
+            &["module_a".to_owned()],
+            "Wire".to_owned(),
+        );
+        assert!(classify_route(&route, &index).is_err());
+    }
+
+    #[test]
+    fn exact_spans_and_macro_routes_are_isolated() {
+        let source = "impl<'de> serde::Deserialize<'de> for First { fn deserialize<D>(d: D) -> Result<Self, D::Error> { todo!() } } impl<'de> serde::Deserialize<'de> for Second { fn deserialize<D>(d: D) -> Result<Self, D::Error> { todo!() } }";
+        let file: syn::File = syn::parse_str(source).expect("parse adjacent impls");
+        let first = match &file.items[0] {
+            syn::Item::Impl(item) => item,
+            _ => panic!("first item is not an impl"),
+        };
+        let first_text = source_span_text(source, first.span());
+        assert!(first_text.contains("First"));
+        assert!(!first_text.contains("Second"));
+
+        let macro_file: syn::File = syn::parse_str(
+            r#"macro_rules! readers {
+                ($name:ident) => {
+                    impl Serialize for $name { fn serialize<S>(&self, s: S) -> Result<S::Ok, S::Error> { todo!() } }
+                    impl<'de> serde::Deserialize<'de> for $name {
+                        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> {
+                            String::deserialize(deserializer)?
+                        }
+                    }
+                };
+            }"#,
+        )
+        .expect("parse macro route fixture");
+        let syn::Item::Macro(item) = &macro_file.items[0] else {
+            panic!("fixture item is not a macro");
+        };
+        let nodes = nodes_from_stream(&item.mac.tokens);
+        let mut routes = Vec::new();
+        collect_macro_routes(&nodes, "fixture.rs", &[], &mut routes);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].name, "$name");
+        assert!(!routes[0].body.contains("serialize<S>"));
+        assert_eq!(
+            classify_route(&routes[0], &SourceIndex::default()),
+            Ok(HandReaderClass::Keyless)
         );
     }
 }
