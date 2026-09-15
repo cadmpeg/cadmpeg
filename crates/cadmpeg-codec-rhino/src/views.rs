@@ -120,7 +120,6 @@ fn serialize_view_attributes<S: serde::Serializer>(
 struct ViewportUserdataScan {
     children: Vec<std::ops::Range<usize>>,
     has_untyped_content: bool,
-    checksum_warnings: Diagnostics,
 }
 
 #[derive(Debug, Serialize)]
@@ -908,11 +907,11 @@ fn scan_viewport_userdata(
     data: &[u8],
     body: std::ops::Range<usize>,
     archive: ArchiveVersion,
+    losses: &mut Vec<LossNote>,
 ) -> Result<ViewportUserdataScan, FramingError> {
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
     let mut children = Vec::new();
     let mut has_untyped_content = false;
-    let mut checksum_warnings = Diagnostics::new();
     loop {
         if reader.position() == reader.end() {
             return Err(FramingError::structural(
@@ -939,8 +938,23 @@ fn scan_viewport_userdata(
                     ));
                 }
                 let mut warnings = Diagnostics::new();
-                parse_userdata(data, &child, archive, &mut warnings)?;
-                checksum_warnings.extend(warnings);
+                let parsed = parse_userdata(data, &child, archive, &mut warnings);
+                for warning in warnings {
+                    let code = warning
+                        .code
+                        .unwrap_or(crate::loss::RhinoLossCode::IntegrityFailure);
+                    losses.push(
+                        code.note(format!(
+                            "viewport userdata at offset {}: {}",
+                            child.header_start, warning.message
+                        ))
+                        .with_provenance(
+                            SourceProvenance::root("rhino", child.header_start as u64)
+                                .with_tag("VIEW/VIEWPORT_USERDATA"),
+                        ),
+                    );
+                }
+                parsed?;
                 has_untyped_content = true;
             }
             TCODE_CLASS_END => {
@@ -953,7 +967,6 @@ fn scan_viewport_userdata(
                 return Ok(ViewportUserdataScan {
                     children,
                     has_untyped_content,
-                    checksum_warnings,
                 });
             }
             0 => {
@@ -1114,13 +1127,18 @@ fn parse_view(
             VIEW_VIEWPORT_USERDATA => {
                 if child.short() {
                     losses.push(
-                        crate::loss::RhinoLossCode::ViewportUserdataDropped.note(format!(
-                            "viewport userdata at offset {} must be a long chunk",
-                            child.header_start
-                        )),
+                        crate::loss::RhinoLossCode::ViewportUserdataDropped
+                            .note(format!(
+                                "viewport userdata at offset {} must be a long chunk",
+                                child.header_start
+                            ))
+                            .with_provenance(
+                                SourceProvenance::root("rhino", child.header_start as u64)
+                                    .with_tag("VIEW/VIEWPORT_USERDATA"),
+                            ),
                     );
                 } else {
-                    match scan_viewport_userdata(data, child.body().clone(), archive) {
+                    match scan_viewport_userdata(data, child.body().clone(), archive, losses) {
                         Ok(scan) => {
                             if let Some(warning) =
                                 view_child_checksum_warning_excluding(data, &child, &scan.children)?
@@ -1129,30 +1147,33 @@ fn parse_view(
                                     crate::loss::RhinoLossCode::IntegrityFailure.note(warning),
                                 );
                             }
-                            for warning in scan.checksum_warnings {
-                                losses.push(
-                                    warning
-                                        .code
-                                        .unwrap_or(crate::loss::RhinoLossCode::IntegrityFailure)
-                                        .note(warning.message),
-                                );
-                            }
                             if scan.has_untyped_content {
                                 losses.push(
-                                    crate::loss::RhinoLossCode::ViewportUserdataDropped.note(
-                                        format!(
-                                    "viewport userdata at offset {} has no typed CADIR owner",
-                                    child.header_start
-                                ),
-                                    ),
+                                    crate::loss::RhinoLossCode::ViewportUserdataDropped
+                                        .note(format!(
+                                            "viewport userdata at offset {} has no typed CADIR owner",
+                                            child.header_start
+                                        ))
+                                        .with_provenance(
+                                            SourceProvenance::root(
+                                                "rhino",
+                                                child.header_start as u64,
+                                            )
+                                            .with_tag("VIEW/VIEWPORT_USERDATA"),
+                                        ),
                                 );
                             }
                         }
                         Err(error) => losses.push(
-                            crate::loss::RhinoLossCode::ViewportUserdataDropped.note(format!(
-                                "viewport userdata at offset {} could not be framed: {error}",
-                                child.header_start
-                            )),
+                            crate::loss::RhinoLossCode::ViewportUserdataDropped
+                                .note(format!(
+                                    "viewport userdata at offset {} could not be framed: {error}",
+                                    child.header_start
+                                ))
+                                .with_provenance(
+                                    SourceProvenance::root("rhino", child.header_start as u64)
+                                        .with_tag("VIEW/VIEWPORT_USERDATA"),
+                                ),
                         ),
                     }
                 }
