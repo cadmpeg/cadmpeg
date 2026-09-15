@@ -1102,6 +1102,83 @@ class DenyCensusTests(unittest.TestCase):
                 '''})
                 self.assertEqual(status, 0, output)
 
+    def test_discarded_reader_errors_do_not_establish_refusal(self) -> None:
+        for result_use in [
+            "let _ = f64::deserialize(d); Ok(Self(0.0))",
+            "let _ = f64::deserialize(d).unwrap_or_default(); Ok(Self(0.0))",
+            "let _ = f64::deserialize(d).ok(); Ok(Self(0.0))",
+            "f64::deserialize(d).or_else(|_| Ok(0.0)).map(Self)",
+        ]:
+            method = f'''
+                fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {{
+                    {result_use}
+                }}
+            '''
+            readers = {
+                "manual": f'''
+                    struct Payload(f64);
+                    impl<'de> Deserialize<'de> for Payload {{ {method} }}
+                ''',
+                "macro": f'''
+                    macro_rules! checked_scalar {{
+                        ($name:ident) => {{
+                            #[derive(serde::Serialize)] #[serde(transparent)]
+                            struct $name(f64);
+                            impl<'de> Deserialize<'de> for $name {{ {method} }}
+                        }};
+                    }}
+                    checked_scalar!(Payload);
+                ''',
+                "helper": f'''
+                    fn read<'de, D: Deserializer<'de>>(d: D) -> Result<f64, D::Error> {{
+                        {result_use.replace('Self(0.0)', '0.0').replace('.map(Self)', '')}
+                    }}
+                    type Payload = f64;
+                ''',
+            }
+            for route, reader in readers.items():
+                with self.subTest(route=route, result_use=result_use):
+                    field = '#[serde(deserialize_with = "read")] ' if route == "helper" else ""
+                    files = {"lib.rs": f'''
+                        use serde::{{Deserialize, Deserializer}};
+                        {reader}
+                        #[derive(Deserialize)] #[serde(untagged, deny_unknown_fields)]
+                        enum Reader {{ A({field}Payload) }}
+                        #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                        struct Document {{ reader: Reader }}
+                    '''}
+                    status, output = self.run_census(files)
+                    self.assertEqual(status, 1, output)
+                    self.assertIn("Reader::A", output)
+                    status, output = self.run_mutated_census(
+                        files,
+                        "        or not call_propagates_error(code, call)\n",
+                        "",
+                    )
+                    self.assertEqual(status, 0, output)
+
+    def test_propagated_reader_errors_remain_proved(self) -> None:
+        for body in [
+            "Ok(Self(f64::deserialize(d)?))",
+            "f64::deserialize(d).map(Self)",
+            "f64::deserialize(d).and_then(|value| Ok(Self(value)))",
+            "let value = f64::deserialize(d).map_err(D::Error::custom)?; Ok(Self(value))",
+        ]:
+            with self.subTest(body=body):
+                status, output = self.run_census({"lib.rs": f'''
+                    use serde::{{Deserialize, Deserializer}};
+                    use serde::de::Error;
+                    struct Payload(f64);
+                    impl<'de> Deserialize<'de> for Payload {{
+                        fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {{
+                            {body}
+                        }}
+                    }}
+                    #[derive(Deserialize)] #[serde(untagged, deny_unknown_fields)]
+                    enum Reader {{ A(Payload) }}
+                '''})
+                self.assertEqual(status, 0, output)
+
     def test_compiled_route_counterexamples_fail_closed(self) -> None:
         preamble = '''
             use serde::{Deserialize, Deserializer};
@@ -1438,6 +1515,7 @@ class DenyCensusTests(unittest.TestCase):
         self.assertEqual(fixed_status, 1, fixed_output)
         flow_old = '''return any(
         not call_is_unconditional(code, call)
+        or not call_propagates_error(code, call)
         for call in direct_input_calls(code, bindings)
     )'''
         flow_mutated, flow_output = self.run_mutated_census(
