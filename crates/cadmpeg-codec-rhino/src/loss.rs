@@ -153,6 +153,8 @@ pub enum RhinoLossCode {
     IntegrityFailure,
     /// A framed presentation record could not be transferred.
     PresentationRecordDropped,
+    /// A framed annotation record could not be transferred.
+    AnnotationRecordDropped,
     /// A recognized annotation userdata payload could not be typed.
     AnnotationUserdataDropped,
     /// Viewport userdata has no typed CADIR owner.
@@ -255,6 +257,7 @@ impl RhinoLossCode {
         Self::ContainerScanDiagnostic,
         Self::IntegrityFailure,
         Self::PresentationRecordDropped,
+        Self::AnnotationRecordDropped,
         Self::AnnotationUserdataDropped,
         Self::ViewportUserdataDropped,
         Self::MeshNgonGroupingDropped,
@@ -301,6 +304,7 @@ impl RhinoLossCode {
             Self::ContainerScanDiagnostic => "container.scan-diagnostic",
             Self::IntegrityFailure => "container.integrity-failure",
             Self::PresentationRecordDropped => "presentation.record-dropped",
+            Self::AnnotationRecordDropped => "annotation.record-dropped",
             Self::AnnotationUserdataDropped => "annotation.userdata-dropped",
             Self::ViewportUserdataDropped => "viewport.userdata-dropped",
             Self::MeshNgonGroupingDropped => "mesh.ngon-grouping-dropped",
@@ -358,6 +362,7 @@ impl RhinoLossCode {
             | Self::ContainerInstanceDefinitionDegraded
             | Self::ObjectFramingUndecodable
             | Self::ObjectDecodeDiagnostic
+            | Self::AnnotationRecordDropped
             | Self::AnnotationUserdataDropped
             | Self::PolycurveJoinGap
             | Self::ReferenceMemberUnresolved
@@ -456,6 +461,7 @@ mod tests {
                 "container.scan-diagnostic",
                 "container.integrity-failure",
                 "presentation.record-dropped",
+                "annotation.record-dropped",
                 "annotation.userdata-dropped",
                 "viewport.userdata-dropped",
                 "mesh.ngon-grouping-dropped",

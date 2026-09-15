@@ -226,12 +226,16 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<(), CodecError>
         if !crate::instances::is_reference_class(object.class_uuid) {
             continue;
         }
-        let Ok(reference) =
-            crate::instances::parse_reference(scan.data, object.class_data_range.clone())
-        else {
-            continue;
-        };
         let identity = &object.identity;
+        let reference =
+            crate::instances::parse_reference(scan.data, object.class_data_range.clone()).map_err(
+                |error| {
+                    CodecError::malformed(format_args!(
+                "product occurrence {} at offset {} (class {}) could not be transferred: {error}",
+                identity.source_id, object.range.start, object.class_uuid
+            ))
+                },
+            )?;
         let (transform, transform_units) = scale
             .and_then(|scale| crate::instances::scale_translation(reference.transform, scale))
             .map_or(
@@ -277,4 +281,35 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<(), CodecError>
     namespace.set_arena("product_occurrences", &occurrences)?;
     namespace.set_arena("external_references", &external)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::install;
+    use crate::test_support::test_dump::{
+        object_record_with_payload, scan_with_objects, INSTANCE_REFERENCE_CLASS,
+    };
+    use cadmpeg_ir::document::CadIr;
+
+    #[test]
+    fn malformed_reference_is_reported_with_its_source_record() {
+        let scan = scan_with_objects(&[object_record_with_payload(
+            crate::chunks::ArchiveVersion::V5,
+            0x1000,
+            INSTANCE_REFERENCE_CLASS,
+            &[],
+        )]);
+        let source_offset = scan.objects[0].range().start;
+        let source_id = scan.objects[0]
+            .identity()
+            .expect("test object identity")
+            .source_id
+            .clone();
+        let mut ir = CadIr::empty();
+        let error = install(&scan, &mut ir).expect_err("malformed reference must be reported");
+        let message = error.to_string();
+        assert!(message.contains(&source_id));
+        assert!(message.contains(&format!("at offset {source_offset}")));
+        assert!(message.contains("could not be transferred"));
+    }
 }
