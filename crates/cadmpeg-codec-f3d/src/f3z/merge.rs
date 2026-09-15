@@ -276,15 +276,20 @@ fn rescope_fidelity(
 }
 
 pub(super) fn occurrence_key(reference: &XrefReference) -> String {
-    let role = if reference.neutron_role.is_empty() {
-        format!("ordinal-{}", reference.ordinal)
-    } else {
-        format!(
-            "role-{}",
-            crate::ids::identity_key_component(&reference.neutron_role).replace('/', "%2F")
-        )
-    };
-    format!("{role}/occurrence-{}", reference.occurrence_ordinal)
+    if reference.neutron_role.is_empty() {
+        return format!(
+            "ordinal-{}/occurrence-{}",
+            reference.ordinal, reference.occurrence_ordinal
+        );
+    }
+    let role = crate::ids::identity_key_component(&reference.neutron_role).replace('/', "%2F");
+    // `occurrence_ordinal` restarts for each Redirections reference. Keep the
+    // source reference ordinal in the scope so two admitted rows carrying the
+    // same role cannot merge their model or fidelity identities.
+    format!(
+        "role-{role}/reference-{}/occurrence-{}",
+        reference.ordinal, reference.occurrence_ordinal
+    )
 }
 
 fn apply_occurrence_transform(
