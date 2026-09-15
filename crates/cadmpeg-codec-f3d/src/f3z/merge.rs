@@ -3,7 +3,10 @@
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::annotations::{AnnotationBuilder, StreamHandle};
 use cadmpeg_ir::document::{EntityRewrite, Model};
+use cadmpeg_ir::ids::UnknownId;
+use cadmpeg_ir::SourceFidelity;
 use cadmpeg_ir::{Native, NativeRecord};
 use serde::{de::DeserializeOwned, Serialize};
 use serde_value::Value;
@@ -175,11 +178,7 @@ impl MergeSession<'_, '_> {
                 .model
                 .extend_rewritten(component_ir.model, &mut scope)?;
             extend_native(&mut parent_ir.native, component_ir.native, &occurrence)?;
-            merge_annotations(
-                &mut parent_fidelity.annotations,
-                component_fidelity.annotations,
-                &occurrence,
-            )?;
+            parent_fidelity.append(rescope_fidelity(component_fidelity, &occurrence)?)?;
             merged += descendants + 1;
             if component_report.transfer.geometry_transferred() {
                 parent_report.transfer = cadmpeg_ir::report::DecodeTransfer::full(true);
@@ -239,14 +238,38 @@ pub(super) fn append_feature_history(
     Ok(())
 }
 
-fn merge_annotations(
-    target: &mut cadmpeg_ir::annotations::Annotations,
-    mut source: cadmpeg_ir::annotations::Annotations,
+fn rescope_fidelity(
+    source: SourceFidelity,
     occurrence: &str,
-) -> Result<(), CodecError> {
-    source.map_ids(|id| remap_id_text(id, occurrence))?;
-    target.append(source)?;
-    Ok(())
+) -> Result<SourceFidelity, CodecError> {
+    let (mut annotations, records) = source.into_parts();
+    annotations.map_ids(|id| remap_id_text(id, occurrence))?;
+    // The occurrence is one owner component. Escape its separators so two
+    // different occurrences cannot share an owner by shifting a path boundary.
+    let owner = cadmpeg_ir::stream_name!("f3d:xref/")
+        .with_suffix(crate::ids::identity_key_component(occurrence).replace('/', "%2F"))
+        .with_suffix("/");
+    let provenance = std::mem::take(&mut annotations.provenance);
+    let mut builder = AnnotationBuilder::resume(annotations);
+    let mut streams = std::collections::BTreeMap::new();
+    for (id, provenance) in provenance {
+        let stream = streams
+            .entry(provenance.stream().to_owned())
+            .or_insert_with(|| StreamHandle::new(owner.clone().with_suffix(provenance.stream())));
+        let note = builder.note(id, stream, provenance.offset);
+        if let Some(tag) = provenance.tag {
+            note.tag(tag);
+        }
+    }
+    let mut rescoped = SourceFidelity::with_annotations(builder.build());
+    for (id, record) in records {
+        let id = UnknownId::mint(remap_id_text(id.as_str(), occurrence)).map_err(|error| {
+            CodecError::malformed(format_args!("F3Z retained record {id}: {error}"))
+        })?;
+        let stream = owner.clone().with_suffix(record.stream());
+        rescoped.insert_retained_record(id, record.with_owner(stream))?;
+    }
+    Ok(rescoped)
 }
 
 fn remap_id_text(text: &str, occurrence: &str) -> String {
@@ -434,6 +457,8 @@ fn rescope_json_fields(fields: &mut serde_json::Map<String, serde_json::Value>, 
 
 #[cfg(test)]
 mod tests {
+    mod fidelity;
+
     use super::*;
 
     #[test]
