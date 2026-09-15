@@ -6,6 +6,25 @@ use super::{
     IdentityNamespace,
 };
 
+#[cfg(feature = "schema")]
+#[test]
+fn identity_schemas_constrain_strings_and_map_keys() {
+    use std::collections::BTreeMap;
+    macro_rules! check {
+        ($identity:ty) => {{
+            let schema = serde_json::to_value(schemars::schema_for!($identity)).unwrap();
+            assert_eq!(schema["type"], "string");
+            let pattern = schema["pattern"].as_str().unwrap();
+            let map = serde_json::to_value(schemars::schema_for!(BTreeMap<$identity, u8>)).unwrap();
+            assert_eq!(map["additionalProperties"], false);
+            assert!(map["patternProperties"].get(pattern).is_some());
+        }};
+    }
+    check!(super::Identity);
+    check!(super::BodyId);
+    check!(super::HistoricalBodyId);
+}
+
 #[test]
 fn decimal_key_padding_preserves_the_complete_unsigned_value() {
     for (value, width, expected) in [
