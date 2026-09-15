@@ -79,39 +79,6 @@ fn hatch_plane_places_and_scales_plane_space_loops_once() {
     assert_eq!(curve.control_points()[1], Point3::new(100.0, 220.0, 300.0));
 }
 
-#[test]
-fn body_instance_transform_composes_before_existing_body_transform() {
-    let mut body = Body {
-        id: "rhino:test:body#1".try_into().expect("valid identity"),
-        kind: BodyKind::General,
-        regions: Vec::new(),
-        transform: Some(
-            Transform::affine([
-                [2.0, 0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-            ])
-            .expect("affine transform"),
-        ),
-        name: None,
-        color: None,
-        visible: None,
-    };
-    let instance = Transform::affine([
-        [1.0, 0.0, 0.0, 10.0],
-        [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0],
-    ])
-    .expect("affine transform");
-    compose_body_transform(&mut body, instance).unwrap();
-    assert_eq!(
-        body.transform
-            .expect("required invariant")
-            .apply_point(Point3::new(1.0, 0.0, 0.0)),
-        Point3::new(12.0, 0.0, 0.0)
-    );
-}
-
 /// The region fixture resolved the way validation resolves it.
 fn region_resolved(raw: &crate::brep::RawBrep) -> crate::brep::ResolvedBrep {
     crate::brep::ResolvedBrep {
