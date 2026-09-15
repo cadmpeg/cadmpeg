@@ -93,7 +93,6 @@ pub(crate) fn parse(
         let entries = parse_string_table(bytes, declared_count, source_entry.is_some())?;
         tables.push(
             StringTableRecord::try_new(
-                crate::native::native_id("string-table", index.to_string()),
                 index,
                 owner_property,
                 save_all,
@@ -666,7 +665,6 @@ fn legacy_map_payload(
         map_id: 0,
         postfixes: Vec::new(),
         maps: ElementMapNode {
-            index: 1,
             map_id: 0,
             groups: groups
                 .into_iter()
@@ -1050,7 +1048,6 @@ pub(crate) fn parse_element_map(bytes: &[u8], side_entry: bool) -> Result<Parsed
         }
         expect(&mut tokens, "EndMap")?;
         maps.push(ElementMapNode {
-            index,
             map_id: node_id,
             groups,
         });

@@ -4346,7 +4346,6 @@ mod shape_association_tests {
             declared_count: 0,
             postfixes: Vec::new(),
             maps: ElementMapNode {
-                index: 1,
                 map_id: 1,
                 groups,
             }
