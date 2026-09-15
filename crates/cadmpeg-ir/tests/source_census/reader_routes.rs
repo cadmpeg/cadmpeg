@@ -39,6 +39,7 @@ struct HandImplSource {
     path: String,
     name: String,
     body: String,
+    tokens: Vec<String>,
 }
 
 /// Return the elements in `left` that do not have a matching occurrence in
@@ -184,6 +185,16 @@ fn source_span_text(source: &str, span: proc_macro2::Span) -> String {
         .map_or_else(String::new, |lines| lines.join("\n"))
 }
 
+/// Tokenize one source span while retaining the original body for diagnostics.
+fn tokenize_source_body(path: &str, name: &str, body: &str) -> Vec<String> {
+    let token_stream = body
+        .parse::<proc_macro2::TokenStream>()
+        .unwrap_or_else(|error| panic!("{path} {name} implementation does not tokenize: {error}"));
+    let mut tokens = Vec::new();
+    flatten_tokens(&token_stream, &mut tokens);
+    tokens
+}
+
 /// Collect every implementation or macro expansion that emits a reader.
 fn collect_hand_impl_sources(
     items: &[syn::Item],
@@ -195,10 +206,14 @@ fn collect_hand_impl_sources(
         match item {
             syn::Item::Impl(implementation) => {
                 if let Some(name) = deserialize_impl_target(implementation) {
+                    let body =
+                        source_span_text(source, syn::spanned::Spanned::span(implementation));
+                    let tokens = tokenize_source_body(relative, &name, &body);
                     found.push(HandImplSource {
                         path: relative.to_owned(),
                         name,
-                        body: source_span_text(source, syn::spanned::Spanned::span(implementation)),
+                        body,
+                        tokens,
                     });
                 }
             }
@@ -212,11 +227,14 @@ fn collect_hand_impl_sources(
             }
             syn::Item::Macro(macro_item) => {
                 let body = source_span_text(source, syn::spanned::Spanned::span(macro_item));
+                let mut tokens = Vec::new();
+                flatten_tokens(&macro_item.mac.tokens, &mut tokens);
                 for name in macro_body_impl_targets(&macro_item.mac.tokens) {
                     found.push(HandImplSource {
                         path: relative.to_owned(),
                         name,
                         body: body.clone(),
+                        tokens: tokens.clone(),
                     });
                 }
             }
@@ -256,9 +274,26 @@ fn hand_written_impl_sources(root: &Path) -> Vec<HandImplSource> {
     found
 }
 
-/// Return whether a compact source body names one of the closed wire targets.
+/// Whether `tokens` contains `sequence` as an exact token sequence.
+fn contains_token_sequence(tokens: &[String], sequence: &[&str]) -> bool {
+    tokens.windows(sequence.len()).any(|window| {
+        window
+            .iter()
+            .zip(sequence)
+            .all(|(actual, expected)| actual == expected)
+    })
+}
+
+/// Whether `tokens` contains one exact token.
+fn contains_token(tokens: &[String], wanted: &str) -> bool {
+    tokens.iter().any(|token| token == wanted)
+}
+
+/// Return whether a tokenized source body names one of the closed wire
+/// targets. Exact tokens prevent comments and string literals from becoming a
+/// false proof of a closed reader.
 fn closed_wire_target(
-    compact: &str,
+    tokens: &[String],
     denied_types: &BTreeSet<String>,
     locally_closed: &BTreeSet<String>,
 ) -> Option<String> {
@@ -270,13 +305,14 @@ fn closed_wire_target(
         // source marker is checked separately above.
         .filter(|name| name.as_str() != "Wire" && name.as_str() != "$wire")
         .find(|name| {
-            compact.contains(&format!("{name}::deserialize"))
-                || (compact.contains(&format!("{name}::<")) && compact.contains(">::deserialize"))
+            contains_token_sequence(tokens, &[name, ":", ":", "deserialize"])
+                || (contains_token_sequence(tokens, &[name, ":", ":", "<"])
+                    && contains_token_sequence(tokens, &[">", ":", ":", "deserialize"]))
         })
         .cloned()
 }
 
-/// Classify one reader body and prove the object route is closed.
+/// Classify one reader body after tokenizing it, for focused fixture tests.
 fn classify_hand_reader(
     path: &str,
     name: &str,
@@ -284,41 +320,55 @@ fn classify_hand_reader(
     denied_types: &BTreeSet<String>,
     locally_closed: &BTreeSet<String>,
 ) -> Result<HandReaderClass, String> {
-    let compact: String = body
-        .chars()
-        .filter(|character| !character.is_whitespace())
-        .collect();
+    let tokens = tokenize_source_body(path, name, body);
+    classify_hand_reader_tokens(path, name, body, &tokens, denied_types, locally_closed)
+}
 
-    if compact.contains("distinct_keys::json_object")
-        || compact.contains("distinct_keys::btree_map")
-        || compact.contains("deserialize_any(JsonValueVisitor)")
+/// Classify one tokenized reader body and prove the object route is closed.
+fn classify_hand_reader_tokens(
+    path: &str,
+    name: &str,
+    body: &str,
+    tokens: &[String],
+    denied_types: &BTreeSet<String>,
+    locally_closed: &BTreeSet<String>,
+) -> Result<HandReaderClass, String> {
+    if contains_token_sequence(tokens, &["distinct_keys", ":", ":", "json_object"])
+        || contains_token_sequence(tokens, &["distinct_keys", ":", ":", "btree_map"])
+        || contains_token_sequence(tokens, &["deserialize_any", "JsonValueVisitor"])
     {
         return Ok(HandReaderClass::FreeForm);
     }
-    if compact.contains("serde_json::Value::deserialize") && compact.contains("check_ir_version") {
+    if contains_token_sequence(
+        tokens,
+        &["serde_json", ":", ":", "Value", ":", ":", "deserialize"],
+    ) && contains_token(tokens, "check_ir_version")
+    {
         return Ok(HandReaderClass::ValidatedValue);
     }
     if [
-        "String::deserialize",
-        "f64::deserialize",
-        "i64::deserialize",
-        "u32::deserialize",
-        "Vec::deserialize",
-        "Vec::<",
-        "Box::<",
-        "<[f64;",
-        "$raw::deserialize",
-        "crate::bytes::deserialize",
-        "deserialize_named(",
+        &["String", ":", ":", "deserialize"][..],
+        &["f64", ":", ":", "deserialize"][..],
+        &["i64", ":", ":", "deserialize"][..],
+        &["u32", ":", ":", "deserialize"][..],
+        &["Vec", ":", ":", "deserialize"][..],
+        &["Vec", ":", ":", "<"][..],
+        &["Box", ":", ":", "<"][..],
+        // `flatten_tokens` descends into the array delimiter group, so its
+        // opener is absent from the flattened sequence.
+        &["<", "f64", ";"][..],
+        &["$", "raw", ":", ":", "deserialize"][..],
+        &["crate", ":", ":", "bytes", ":", ":", "deserialize"][..],
+        &["deserialize_named"][..],
     ]
     .iter()
-    .any(|marker| compact.contains(marker))
+    .any(|sequence| contains_token_sequence(tokens, sequence))
     {
         return Ok(HandReaderClass::Keyless);
     }
-    if compact.contains("::deserialize") {
-        if body.contains("deny_unknown_fields")
-            || closed_wire_target(&compact, denied_types, locally_closed).is_some()
+    if contains_token_sequence(tokens, &[":", ":", "deserialize"]) {
+        if contains_token(tokens, "deny_unknown_fields")
+            || closed_wire_target(tokens, denied_types, locally_closed).is_some()
         {
             return Ok(HandReaderClass::Wire);
         }
@@ -354,15 +404,16 @@ pub(super) fn assert_hand_written_reader_routes() {
     );
     let locally_closed: BTreeSet<String> = sources
         .iter()
-        .filter(|source| source.body.contains("deny_unknown_fields"))
+        .filter(|source| contains_token(&source.tokens, "deny_unknown_fields"))
         .map(|source| source.name.clone())
         .collect();
     let mut found = Vec::new();
     for source in sources {
-        let class = classify_hand_reader(
+        let class = classify_hand_reader_tokens(
             &source.path,
             &source.name,
             &source.body,
+            &source.tokens,
             &denied_types,
             &locally_closed,
         )
@@ -423,6 +474,22 @@ mod tests {
             "fixture.rs",
             "LocalOpen",
             "struct Wire {} Wire::deserialize(deserializer)?",
+            &denied,
+            &no_local_wire,
+        )
+        .is_err());
+        assert!(classify_hand_reader(
+            "fixture.rs",
+            "CommentAndLiteral",
+            "// ClosedWire::deserialize\nlet marker = \"deny_unknown_fields\";",
+            &denied,
+            &no_local_wire,
+        )
+        .is_err());
+        assert!(classify_hand_reader(
+            "fixture.rs",
+            "LiteralRoute",
+            "let marker = \"ClosedWire::deserialize\";",
             &denied,
             &no_local_wire,
         )
