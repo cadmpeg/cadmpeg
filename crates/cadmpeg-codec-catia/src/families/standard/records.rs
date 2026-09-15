@@ -358,6 +358,14 @@ pub struct StandardSurfacePopulation {
     pub supports: Vec<StandardCurveSupport>,
 }
 
+type StandardPopulationPair = (FbbPopulationLayout, StandardSurfacePopulation);
+
+/// A nonempty source-ordered population relation.
+pub(crate) struct StandardPopulationPairs {
+    pub first: StandardPopulationPair,
+    pub rest: Vec<StandardPopulationPair>,
+}
+
 /// Return every source-closed surface/support population with valid local
 /// face references. No population is selected by row count or allocation
 /// order.
@@ -382,20 +390,25 @@ pub fn standard_surface_populations(brep: &[u8]) -> Vec<StandardSurfacePopulatio
 pub(crate) fn pair_standard_populations(
     layouts: &[FbbPopulationLayout],
     populations: &[StandardSurfacePopulation],
-) -> Option<Vec<(FbbPopulationLayout, StandardSurfacePopulation)>> {
-    if layouts.is_empty() || layouts.len() != populations.len() {
+) -> Option<StandardPopulationPairs> {
+    if layouts.len() != populations.len() {
         return None;
     }
-    layouts
+    let (first_layout, layouts) = layouts.split_first()?;
+    let (first_population, populations) = populations.split_first()?;
+    let pair = |layout: FbbPopulationLayout, population: StandardSurfacePopulation| {
+        (layout.face_run.face_count() == population.records.len()
+            && layout.edge_count == population.supports.len())
+        .then_some((layout, population))
+    };
+    let first = pair(*first_layout, first_population.clone())?;
+    let rest = layouts
         .iter()
         .copied()
         .zip(populations.iter().cloned())
-        .map(|(layout, population)| {
-            (layout.face_run.face_count() == population.records.len()
-                && layout.edge_count == population.supports.len())
-            .then_some((layout, population))
-        })
-        .collect()
+        .map(|(layout, population)| pair(layout, population))
+        .collect::<Option<Vec<_>>>()?;
+    Some(StandardPopulationPairs { first, rest })
 }
 
 /// Walk the complete face-local surface roster. Records are accepted only as a

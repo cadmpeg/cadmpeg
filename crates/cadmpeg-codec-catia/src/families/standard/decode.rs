@@ -1269,30 +1269,36 @@ struct StandardPopulationSelection {
 
 fn standard_population_selections(
     scan: &ContainerScan<'_>,
-) -> Option<Vec<StandardPopulationSelection>> {
+) -> Option<(
+    StandardPopulationSelection,
+    Vec<StandardPopulationSelection>,
+)> {
     let brep = scan.brep.as_ref()?;
     let standard_spine = scan.main_data_stream.as_deref().unwrap_or(brep);
     let layouts = fbb::fbb_population_layouts(standard_spine);
     let populations = crate::families::standard::records::standard_surface_populations(brep);
     let pairs =
         crate::families::standard::records::pair_standard_populations(&layouts, &populations)?;
-    pairs
-        .into_iter()
-        .map(|(layout, population)| {
-            Some(StandardPopulationSelection {
-                spine: fbb::population_spine(standard_spine, &layout)?.to_vec(),
-                records: population.records,
-                supports: population.supports,
-                edge_table_form: layout.edge_table_form,
-                vertex_roster_compatible:
-                    crate::families::standard::records::standard_vertex_roster(
-                        &scan.data,
-                        layout.vertex_count,
-                    )
-                    .is_some(),
-            })
+    let select = |(layout, population): (
+        fbb::FbbPopulationLayout,
+        crate::families::standard::records::StandardSurfacePopulation,
+    )| {
+        Some(StandardPopulationSelection {
+            spine: fbb::population_spine(standard_spine, &layout)?.to_vec(),
+            records: population.records,
+            supports: population.supports,
+            edge_table_form: layout.edge_table_form,
+            vertex_roster_compatible: crate::families::standard::records::standard_vertex_roster(
+                &scan.data,
+                layout.vertex_count,
+            )
+            .is_some(),
         })
-        .collect()
+    };
+    Some((
+        select(pairs.first)?,
+        pairs.rest.into_iter().map(select).collect::<Option<_>>()?,
+    ))
 }
 
 pub(crate) fn try_decode_standard(
@@ -1302,10 +1308,10 @@ pub(crate) fn try_decode_standard(
 ) -> Option<FamilyOutput> {
     match standard_population_selections(scan) {
         None => try_decode_standard_population(ctx, scan, None, refusal),
-        Some(selections) if selections.len() == 1 => {
-            try_decode_standard_population(ctx, scan, selections.first(), refusal)
+        Some((first, rest)) if rest.is_empty() => {
+            try_decode_standard_population(ctx, scan, Some(&first), refusal)
         }
-        Some(selections) => try_decode_standard_populations(ctx, scan, &selections, refusal),
+        Some((first, rest)) => try_decode_standard_populations(ctx, scan, &first, &rest, refusal),
     }
 }
 
@@ -1426,15 +1432,17 @@ fn merge_standard_population_annotations(
 fn try_decode_standard_populations(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
-    selections: &[StandardPopulationSelection],
+    first: &StandardPopulationSelection,
+    rest: &[StandardPopulationSelection],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<FamilyOutput> {
-    let mut outputs = selections
+    let mut merged = try_decode_standard_population(ctx, scan, Some(first), refusal)?;
+    let outputs = rest
         .iter()
         .map(|selection| try_decode_standard_population(ctx, scan, Some(selection), refusal))
         .collect::<Option<Vec<_>>>()?;
-    let attached_topology_count = outputs
-        .iter()
+    let attached_topology_count = std::iter::once(&merged)
+        .chain(outputs.iter())
         .map(|output| {
             output
                 .report
@@ -1457,8 +1465,8 @@ fn try_decode_standard_populations(
     .map(|key| {
         (
             key,
-            outputs
-                .iter()
+            std::iter::once(&merged)
+                .chain(outputs.iter())
                 .map(|output| {
                     output
                         .report
@@ -1471,16 +1479,16 @@ fn try_decode_standard_populations(
         )
     })
     .collect::<Vec<_>>();
-    let admitted_face_rows = selections
-        .iter()
+    let population_count = 1 + rest.len();
+    let admitted_face_rows = std::iter::once(first)
+        .chain(rest.iter())
         .map(|selection| selection.records.len())
         .sum::<usize>();
     let all_fbb_rows_admitted =
-        selections.len() == scan.census.fbb_runs && admitted_face_rows == scan.census.fbb_face_rows;
-    let all_topologies_attached = attached_topology_count == selections.len();
+        population_count == scan.census.fbb_runs && admitted_face_rows == scan.census.fbb_face_rows;
+    let all_topologies_attached = attached_topology_count == population_count;
 
-    let mut merged = outputs.remove(0);
-    for (index, (_population, output)) in selections.iter().skip(1).zip(outputs).enumerate() {
+    for (index, output) in outputs.into_iter().enumerate() {
         let scope = format!("population-{}", index + 1);
         let mut model = output.ir.model;
         retain_standard_population_model(&mut model);
@@ -1552,7 +1560,7 @@ fn try_decode_standard_populations(
             .push(CatiaLossCode::TopologyBoundaryGraphNotEmitted.note(format!(
             "The B-rep boundary graph was emitted for {} of {} source-closed standard populations.",
             attached_topology_count,
-            selections.len(),
+            population_count,
         )));
     }
     let mut typed = TypedCounts::default();

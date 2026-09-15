@@ -844,6 +844,9 @@ fn source_order_pairs_only_source_closed_populations_with_matching_cardinalities
     let pairs =
         crate::families::standard::records::pair_standard_populations(&layouts, &populations)
             .expect("source-ordered population relation");
+    let pairs = std::iter::once(pairs.first)
+        .chain(pairs.rest)
+        .collect::<Vec<_>>();
     assert_eq!(pairs.len(), 2);
     assert_eq!(pairs[0].0.face_run.face_start(), 10);
     assert!(matches!(
@@ -866,6 +869,14 @@ fn source_order_pairs_only_source_closed_populations_with_matching_cardinalities
         crate::families::standard::records::pair_standard_populations(&layouts[..1], &populations,)
             .is_none()
     );
+    assert!(crate::families::standard::records::pair_standard_populations(&[], &[]).is_none());
+    let one = crate::families::standard::records::pair_standard_populations(
+        &layouts[..1],
+        &populations[..1],
+    )
+    .expect("single source-closed population");
+    assert!(one.rest.is_empty());
+    assert_eq!(one.first.0.face_run.face_start(), 10);
 }
 
 #[test]
