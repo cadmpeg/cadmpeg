@@ -9,6 +9,7 @@ use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::SourceFidelity;
 use cadmpeg_ir::{Native, NativeRecord};
 use serde::{de::DeserializeOwned, Serialize};
+use serde_json::{Map, Value};
 
 use super::archive::{ArchiveSession, ClassifiedMember};
 use crate::container::ContainerScan;
@@ -242,7 +243,7 @@ fn rescope_fidelity(
     occurrence: &str,
 ) -> Result<SourceFidelity, CodecError> {
     let (mut annotations, records) = source.into_parts();
-    annotations.map_ids(|id| remap_id_text(id, occurrence))?;
+    annotations.map_ids(|id| rescope(id, occurrence).unwrap_or_else(|| id.to_owned()))?;
     // The occurrence is one owner component. Escape its separators so two
     // different occurrences cannot share an owner by shifting a path boundary.
     let owner = cadmpeg_ir::stream_name!("f3d:xref/")
@@ -262,7 +263,10 @@ fn rescope_fidelity(
     }
     let mut rescoped = SourceFidelity::with_annotations(builder.build());
     for (id, record) in records {
-        let id = UnknownId::mint(remap_id_text(id.as_str(), occurrence)).map_err(|error| {
+        let id = UnknownId::mint(
+            rescope(id.as_str(), occurrence).unwrap_or_else(|| id.as_str().to_owned()),
+        )
+        .map_err(|error| {
             CodecError::malformed(format_args!("F3Z retained record {id}: {error}"))
         })?;
         let stream = owner.clone().with_suffix(record.stream());
@@ -271,18 +275,14 @@ fn rescope_fidelity(
     Ok(rescoped)
 }
 
-fn remap_id_text(text: &str, occurrence: &str) -> String {
-    text.strip_prefix("f3d:").map_or_else(
-        || text.to_owned(),
-        |rest| format!("f3d:xref/{occurrence}/{rest}"),
-    )
-}
-
-fn occurrence_key(reference: &XrefReference) -> String {
+pub(super) fn occurrence_key(reference: &XrefReference) -> String {
     let role = if reference.neutron_role.is_empty() {
         format!("ordinal-{}", reference.ordinal)
     } else {
-        reference.neutron_role.clone()
+        format!(
+            "role-{}",
+            crate::ids::identity_key_component(&reference.neutron_role).replace('/', "%2F")
+        )
     };
     format!("{role}/occurrence-{}", reference.occurrence_ordinal)
 }
@@ -319,17 +319,9 @@ pub(super) fn compose_transforms(
     outer: cadmpeg_ir::transform::Transform,
     inner: cadmpeg_ir::transform::Transform,
 ) -> Result<cadmpeg_ir::transform::Transform, CodecError> {
-    let mut rows = [[0.0; 4]; 3];
-    for (row, values) in rows.iter_mut().enumerate() {
-        for (column, value) in values.iter_mut().enumerate() {
-            *value = (0..4)
-                .map(|index| outer.rows()[row][index] * inner.rows()[index][column])
-                .sum();
-        }
-    }
-    cadmpeg_ir::transform::Transform::affine(rows).ok_or_else(|| {
+    outer.compose(inner).map_err(|error| {
         CodecError::malformed(format_args!(
-            "F3Z occurrence composition is not a finite affine transform"
+            "F3Z occurrence composition is not a finite affine transform: {error}"
         ))
     })
 }
@@ -384,7 +376,7 @@ pub(super) fn extend_native(
         let arena = target.arenas_mut().entry(name.to_string()).or_default();
         arena.reserve(records.len());
         for record in records {
-            arena.push(rescope_record(&record, occurrence)?);
+            arena.push(rescope_record(&record, name, occurrence)?);
         }
     }
     Ok(())
@@ -393,41 +385,200 @@ pub(super) fn extend_native(
 /// Rescopes one native record's identity and every identity it references.
 pub(super) fn rescope_record(
     record: &NativeRecord,
+    arena: &str,
     occurrence: &str,
 ) -> Result<NativeRecord, cadmpeg_ir::native::NativeConvertError> {
-    let mut fields = record.fields();
-    rescope_json_fields(&mut fields, occurrence);
+    let mut fields = typed_fields(record, arena, occurrence)?;
+    rescope_native_reference_fields(arena, &mut fields, occurrence);
     let id = rescope(record.id(), occurrence).unwrap_or_else(|| record.id().to_owned());
     NativeRecord::new(id, fields)
 }
 
-fn rescope_json(value: &mut serde_json::Value, occurrence: &str) {
-    match value {
-        serde_json::Value::String(text) => {
-            if let Some(rescoped) = rescope(text, occurrence) {
-                *text = rescoped;
-            }
+/// Rewrite typed identity markers before JSON erases their ownership.
+///
+/// Most F3D native records carry source text and numeric stream facts. The
+/// records listed here also carry an IR identity marker inside a structured
+/// field. Going through the typed owner keeps that marker distinct from an
+/// ordinary `String` while the field-specific pass below handles native text
+/// references that have not yet gained a newtype.
+fn typed_fields(
+    record: &NativeRecord,
+    arena: &str,
+    occurrence: &str,
+) -> Result<Map<String, Value>, cadmpeg_ir::native::NativeConvertError> {
+    let typed_error = |error: serde_json::Error| {
+        cadmpeg_ir::native::NativeConvertError::InvalidCollection(
+            format_args!(
+                "F3D native arena `{arena}` record `{}` typed admission: {error}",
+                record.id()
+            )
+            .to_string(),
+        )
+    };
+    macro_rules! typed {
+        ($type:path) => {{
+            let mut value = Value::Object(record.fields());
+            let Value::Object(fields) = &mut value else {
+                return Err(cadmpeg_ir::native::NativeConvertError::NonObject);
+            };
+            fields.insert("id".into(), Value::String(record.id().into()));
+            let typed: $type = serde_json::from_value(value).map_err(typed_error)?;
+            let rewritten = cadmpeg_ir::schema::rewrite::identities(&typed, |id| {
+                rescope(id, occurrence).unwrap_or_else(|| id.to_owned())
+            });
+            let Value::Object(mut fields) = serde_json::to_value(rewritten).map_err(typed_error)?
+            else {
+                return Err(cadmpeg_ir::native::NativeConvertError::NonObject);
+            };
+            fields.remove("id");
+            fields
+        }};
+    }
+
+    Ok(match arena {
+        "body_visibilities" => typed!(crate::records::BodyVisibility),
+        "creation_timestamps" => typed!(crate::records::CreationTimestamp),
+        "design_body_bindings" => typed!(crate::records::DesignBodyBinding),
+        "design_body_recipe_operands" => typed!(crate::records::topology::DesignBodyRecipeOperand),
+        "design_dimension_recipe_records" => typed!(crate::records::DesignDimensionRecipeRecord),
+        "design_edge_operands" => typed!(crate::records::topology::DesignEdgeOperand),
+        "design_edge_treatment_vertex_operands" => {
+            typed!(crate::records::feature::DesignEdgeTreatmentVertexOperand)
         }
-        serde_json::Value::Array(items) => {
-            for item in items {
-                rescope_json(item, occurrence);
-            }
+        "design_face_operands" => typed!(crate::records::topology::DesignFaceOperand),
+        "design_mesh_features" => typed!(crate::records::DesignMeshFeature),
+        "design_parameter_scopes" => typed!(crate::records::feature::DesignParameterScope),
+        "persistent_design_links" => typed!(crate::records::PersistentDesignLink),
+        "persistent_subentity_tags" => typed!(crate::records::PersistentSubentityTag),
+        "sketch_curve_links" => typed!(crate::records::SketchCurveLink),
+        _ => record.fields(),
+    })
+}
+
+/// Rewrite only fields whose owners document an identity relationship.
+///
+/// Native records intentionally retain arbitrary source strings, including
+/// configuration extensions and names that can happen to begin with `f3d:`.
+/// Field names are therefore the admission boundary: this list is assembled
+/// from the native record definitions and their readers, and no map key or
+/// unowned string is traversed as an identity.
+fn rescope_native_reference_fields(arena: &str, fields: &mut Map<String, Value>, occurrence: &str) {
+    let direct_fields: &[&str] = match arena {
+        "asm_bulletin_boards"
+        | "asm_delta_states"
+        | "asm_entity_changes"
+        | "asm_history_records" => &["parent"],
+        "body_native_keys" => &["body"],
+        "edge_continuities" => &["edge"],
+        "edge_ownerships" => &["edge", "owner_coedge"],
+        "face_native_keys" | "face_sidedness" => &["face"],
+        "design_body_bounds" => &["body_binding_ids"],
+        "design_body_recipe_operands" | "design_edge_operands" | "design_face_operands" => {
+            &["recipe_id"]
         }
-        serde_json::Value::Object(fields) => rescope_json_fields(fields, occurrence),
+        "design_dimension_recipe_records" => &["recipe_id", "matching_edge_operand_ids"],
+        "design_construction_operand_groups" => &["lost_edge_references"],
+        "design_extrude_selection_members" => &["operand_identity_ids"],
+        "design_edge_identity_operands" => &["resolution_identity_id"],
+        "design_parameter_companions" => &["owned_recipe_ids"],
+        "mesh_surface_sentinels" => &["surface"],
+        "tolerant_coedge_parameters" => &["coedge"],
+        "tolerant_edge_tails" => &["edge"],
+        "tolerant_vertex_tails" => &["vertex"],
+        "transform_hints" => &["body"],
+        "unknowns" => &["links"],
+        "vertex_ownerships" => &["owning_edge", "vertex"],
+        "wire_topologies" => &["edges", "free_vertex", "shell"],
+        _ => &[],
+    };
+    for field in direct_fields {
+        if let Some(value) = fields.get_mut(*field) {
+            scope_identity_value(value, occurrence);
+        }
+    }
+
+    // These records carry history-qualified selection proofs as nested
+    // structs. Their `history_id` is a native record identity; the adjacent
+    // historical slots are numeric source facts and remain unchanged.
+    if matches!(
+        arena,
+        "design_entity_selection_operands"
+            | "design_edge_identity_operands"
+            | "design_extrude_selection_members"
+    ) {
+        scope_named_fields(fields, &["history_id"], occurrence);
+    }
+
+    // WorkPoint and mesh records contain native identities as ordinary strings
+    // inside their nested envelopes. Their surrounding payloads also carry
+    // source text, so the walker is restricted to the field names owned by the
+    // corresponding native relations.
+    match arena {
+        "design_edge_treatment_vertex_operands" => {
+            scope_named_fields(fields, &["recipe_id"], occurrence);
+        }
+        "design_mesh_features" => {
+            scope_named_fields(fields, &["tessellation_id"], occurrence);
+        }
+        "design_parameter_scopes" => {
+            scope_named_fields(
+                fields,
+                &["history_id", "operand_id", "point_native_id", "recipe_id"],
+                occurrence,
+            );
+        }
         _ => {}
     }
 }
 
-fn rescope_json_fields(fields: &mut serde_json::Map<String, serde_json::Value>, occurrence: &str) {
-    if fields.keys().any(|key| key.starts_with("f3d:")) {
-        for (key, mut value) in std::mem::take(fields) {
-            rescope_json(&mut value, occurrence);
-            fields.insert(rescope(&key, occurrence).unwrap_or(key), value);
+fn scope_identity_value(value: &mut Value, occurrence: &str) {
+    match value {
+        Value::String(text) => {
+            if let Some(rescoped) = rescope(text, occurrence) {
+                *text = rescoped;
+            }
         }
-        return;
+        Value::Array(items) => {
+            for item in items {
+                if let Value::String(text) = item {
+                    if let Some(rescoped) = rescope(text, occurrence) {
+                        *text = rescoped;
+                    }
+                }
+            }
+        }
+        // `AttributeTarget` is the only selected object field. Its `id` is a
+        // typed identity and all other members are its discriminator/value.
+        Value::Object(fields) => {
+            if let Some(Value::String(text)) = fields.get_mut("id") {
+                if let Some(rescoped) = rescope(text, occurrence) {
+                    *text = rescoped;
+                }
+            }
+        }
+        Value::Null | Value::Bool(_) | Value::Number(_) => {}
     }
-    for value in fields.values_mut() {
-        rescope_json(value, occurrence);
+}
+
+fn scope_named_fields(fields: &mut Map<String, Value>, names: &[&str], occurrence: &str) {
+    for (name, value) in fields {
+        if names.contains(&name.as_str()) {
+            scope_identity_value(value, occurrence);
+        } else {
+            scope_named_values(value, names, occurrence);
+        }
+    }
+}
+
+fn scope_named_values(value: &mut Value, names: &[&str], occurrence: &str) {
+    match value {
+        Value::Object(fields) => scope_named_fields(fields, names, occurrence),
+        Value::Array(items) => {
+            for item in items {
+                scope_named_values(item, names, occurrence);
+            }
+        }
+        Value::String(_) | Value::Null | Value::Bool(_) | Value::Number(_) => {}
     }
 }
 

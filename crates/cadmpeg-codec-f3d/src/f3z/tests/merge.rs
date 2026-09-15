@@ -2,8 +2,9 @@
 
 use super::*;
 use crate::f3z::merge::{
-    append_feature_history, compose_transforms, extend_native, rescope_record, OccurrenceScope,
+    append_feature_history, compose_transforms, extend_native, occurrence_key, OccurrenceScope,
 };
+use crate::records::XrefReference;
 use cadmpeg_ir::features::FeatureOperation;
 
 fn feature(id: &str, ordinal: u64) -> Feature {
@@ -270,39 +271,103 @@ fn occurrence_configuration_survives_document_and_typed_native_admission() {
 }
 
 #[test]
-fn occurrence_merge_remaps_native_record_map_keys_and_nested_payloads() {
-    let record = NativeRecord::new(
-        "f3d:Design/Configurations.json:design-configuration#1",
-        serde_json::json!({
-            "channels": {
-                "f3d:brep:entity#2": "kept",
-                "plain": "f3d:brep:entity#3",
-            },
-            "payload": [{"link": "f3d:brep:entity#4"}, "not-an-id"],
-        })
-        .as_object()
-        .expect("object payload")
-        .clone(),
+fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuration_text() {
+    use crate::records::configuration::{DesignConfiguration, DesignConfigurationKind};
+    use crate::records::BodyVisibility;
+
+    let configuration_payload = serde_json::json!({
+        "raw_text": "f3d:brep:entity#3",
+        "nested": {
+            "f3d:brep:entity#4": "f3d:brep:entity#5",
+        },
+    })
+    .as_object()
+    .expect("object configuration payload")
+    .clone();
+    let configuration = DesignConfiguration::try_new(
+        "Design/table.dsgcfg".into(),
+        DesignConfigurationKind::Table,
+        Vec::new(),
+        configuration_payload.clone(),
     )
-    .expect("valid native identity");
+    .expect("admitted configuration payload");
+    let visibility = BodyVisibility {
+        id: "f3d:Design/BulkStream.dat:body-visibility#1".into(),
+        body: BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
+        stream: "Design/BulkStream.dat".into(),
+        byte_offset: 10,
+        asm_body_key_offset: 20,
+        asm_body_key: 3,
+        entity_suffix: 1,
+        visible: true,
+    };
+    let mut component = Native::default();
+    component
+        .namespace_mut("f3d")
+        .set_arena("design_configurations", &[configuration])
+        .expect("store configuration");
+    component
+        .namespace_mut("f3d")
+        .set_arena("body_visibilities", &[visibility])
+        .expect("store typed native reference");
 
-    let rescoped = rescope_record(&record, "role/occurrence-0").unwrap();
+    let mut root = Native::default();
+    extend_native(&mut root, component, "role/occurrence-0").unwrap();
 
+    let merged_visibility: Vec<BodyVisibility> = root
+        .namespace("f3d")
+        .expect("merged f3d namespace")
+        .arena_as("body_visibilities")
+        .expect("read merged visibility arena");
     assert_eq!(
-        rescoped.id(),
-        "f3d:xref/role/occurrence-0/Design/Configurations.json:design-configuration#1"
+        merged_visibility[0].id,
+        "f3d:xref/role/occurrence-0/Design/BulkStream.dat:body-visibility#1"
     );
     assert_eq!(
-        serde_json::Value::Object(rescoped.fields()),
-        serde_json::json!({
-            "channels": {
-                "f3d:xref/role/occurrence-0/brep:entity#2": "kept",
-                "plain": "f3d:xref/role/occurrence-0/brep:entity#3",
-            },
-            "payload": [
-                {"link": "f3d:xref/role/occurrence-0/brep:entity#4"},
-                "not-an-id",
-            ],
-        })
+        merged_visibility[0].body.as_str(),
+        "f3d:xref/role/occurrence-0/brep:entity#1"
     );
+    assert_eq!(merged_visibility[0].stream, "Design/BulkStream.dat");
+
+    let merged_configurations: Vec<DesignConfiguration> = root
+        .namespace("f3d")
+        .expect("merged f3d namespace")
+        .arena_as("design_configurations")
+        .expect("read merged configuration arena");
+    assert_eq!(
+        merged_configurations[0].id(),
+        "f3d:xref/role/occurrence-0/configuration:entry#Design/table.dsgcfg"
+    );
+    assert_eq!(
+        merged_configurations[0].payload(),
+        configuration_payload,
+        "configuration text and extension map keys are source payload, not identities"
+    );
+}
+
+#[test]
+fn occurrence_key_separates_fallback_and_authored_roles() {
+    let reference = |role: &str, ordinal: u32| XrefReference {
+        id: "f3d:xref:reference#1".into(),
+        ordinal,
+        occurrence_ordinal: 0,
+        from: "root.f3d".into(),
+        relative_path: "part.f3d".into(),
+        neutron_role: role.into(),
+        neutron_data: String::new(),
+        transform: None,
+    };
+
+    assert_eq!(occurrence_key(&reference("", 7)), "ordinal-7/occurrence-0");
+    assert_eq!(
+        occurrence_key(&reference("ordinal-7", 7)),
+        "role-ordinal-7/occurrence-0"
+    );
+    assert_eq!(
+        occurrence_key(&reference("role /#: value", 7)),
+        "role-role%20%2F%23%3A%20value/occurrence-0"
+    );
+    let key = occurrence_key(&reference("role /#: value", 7));
+    cadmpeg_ir::ids::Identity::new(format!("f3d:xref/{key}/native:record#1"))
+        .expect("encoded occurrence key remains an admitted identity scope");
 }
