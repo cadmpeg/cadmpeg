@@ -143,8 +143,15 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
 #[test]
 fn schema_constrains_version_and_requires_subd_arena() {
     let schema = serde_json::to_value(crate::cadir_json_schema()).unwrap();
+    let version_property = schema.pointer("/properties/ir_version").unwrap();
+    let version_schema = match version_property["$ref"].as_str() {
+        Some(reference) => schema
+            .pointer(reference.strip_prefix('#').unwrap())
+            .unwrap(),
+        None => version_property,
+    };
     assert_eq!(
-        schema.pointer("/properties/ir_version/const"),
+        version_schema.get("const"),
         Some(&serde_json::json!(crate::IR_VERSION))
     );
     assert!(schema
