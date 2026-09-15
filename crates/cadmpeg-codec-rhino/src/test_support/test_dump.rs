@@ -1040,28 +1040,6 @@ pub(crate) fn transform(scale_x: f64, translation: [f64; 3]) -> [[f64; 4]; 4] {
     ]
 }
 
-pub(crate) fn static_definition(
-    id: [u8; 16],
-    members: &[[u8; 16]],
-) -> crate::instances::InstanceDefinition {
-    crate::instances::InstanceDefinition {
-        source_range: 0..0,
-        id: Uuid::from_wire(id),
-        members: members.iter().copied().map(Uuid::from_wire).collect(),
-        index: None,
-        name: String::new(),
-        description: String::new(),
-        url: String::new(),
-        url_tag: String::new(),
-        kind: crate::instances::DefinitionKind::Static,
-        units: crate::instances::UnitDetail::new(2, 0.001, String::new())
-            .expect("valid standard units"),
-        linked_depth: 0,
-        linked_appearance: 0,
-        link: crate::instances::LinkSource::None,
-    }
-}
-
 pub(crate) fn set_identity(
     scan: &mut crate::container::Scan<'_>,
     source_order: usize,
@@ -1103,19 +1081,6 @@ pub(crate) fn scan_with_objects(objects: &[Vec<u8>]) -> crate::container::Scan<'
     let mut scan = crate::container::scan_owned(bytes).expect("required invariant");
     set_test_units(&mut scan, 1.0);
     scan
-}
-
-pub(crate) fn install_definitions(
-    scan: &mut crate::container::Scan<'_>,
-    definitions: Vec<crate::instances::InstanceDefinition>,
-) {
-    scan.definitions.definitions = definitions;
-    scan.definitions.member_object_ids = scan
-        .definitions
-        .definitions
-        .iter()
-        .flat_map(|definition| definition.members.iter().copied())
-        .collect();
 }
 
 /// Wire form of the object UUID that `polyedge::tests::polyedge_payload`

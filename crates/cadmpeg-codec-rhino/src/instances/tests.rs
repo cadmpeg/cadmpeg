@@ -2,8 +2,11 @@
 #![allow(clippy::disallowed_methods)]
 
 mod recovery;
+mod support;
 mod transforms;
 mod units;
+
+use support::{install_definitions, static_definition};
 
 use super::{
     anonymous, file_reference as parse_file_reference, parse_reference, scale_translation,
