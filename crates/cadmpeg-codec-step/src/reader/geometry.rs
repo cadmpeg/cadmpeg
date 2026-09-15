@@ -5176,8 +5176,19 @@ fn numbers(value: &Value) -> Option<Vec<f64>> {
 }
 
 fn normalize(vector: Vector3) -> Option<Vector3> {
-    let norm = vector.norm();
-    (norm.is_finite() && norm > 0.0).then(|| vector.scale(1.0 / norm))
+    if ![vector.x, vector.y, vector.z]
+        .into_iter()
+        .all(f64::is_finite)
+    {
+        return None;
+    }
+    let scale = vector.x.abs().max(vector.y.abs()).max(vector.z.abs());
+    if scale == 0.0 {
+        return None;
+    }
+    let scaled = Vector3::new(vector.x / scale, vector.y / scale, vector.z / scale);
+    let length = scaled.norm();
+    Some(scaled.scale(1.0 / length))
 }
 
 fn project_axis(vector: Vector3, normal: Vector3) -> Option<Vector3> {

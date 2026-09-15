@@ -116,3 +116,56 @@ fn normal_direction_ignores_translation_and_avoids_squared_length_overflow() {
         Err(TransformError::NonFinite)
     );
 }
+
+#[test]
+fn normal_transform_preserves_product_range_and_cancellation() {
+    let overflow = Transform::affine([
+        [0.5, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .unwrap();
+    assert_eq!(
+        overflow.apply_normal(Vector3::new(f64::MAX, 0.0, 0.0)),
+        Some(Vector3::new(1.0, 0.0, 0.0))
+    );
+
+    let underflow = Transform::affine([
+        [2.0_f64.powi(800), 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .unwrap();
+    assert_eq!(
+        underflow.apply_normal(Vector3::new(2.0_f64.powi(-800), 0.0, 0.0)),
+        Some(Vector3::new(1.0, 0.0, 0.0))
+    );
+
+    let anisotropic = Transform::affine([
+        [2.0_f64.powi(800), 0.0, 0.0, 0.0],
+        [0.0, 2.0_f64.powi(-800), 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .unwrap();
+    assert_eq!(
+        anisotropic.apply_normal(Vector3::new(0.0, 1.0, 0.0)),
+        Some(Vector3::new(0.0, 1.0, 0.0))
+    );
+    let diagonal_component = 1.0 / 2.0_f64.sqrt();
+    assert_eq!(
+        anisotropic.apply_normal(Vector3::new(2.0_f64.powi(800), 2.0_f64.powi(-800), 0.0,)),
+        Some(Vector3::new(diagonal_component, diagonal_component, 0.0))
+    );
+
+    let cancellation = Transform::affine([
+        [1.0e100, 0.0, 0.0, 0.0],
+        [-1.0e300, 1.0e100, 0.0, 0.0],
+        [1.0e300, 0.0, 1.0e100, 0.0],
+    ])
+    .unwrap();
+    let component = 1.0 / 3.0_f64.sqrt();
+    assert_eq!(
+        cancellation.apply_normal(Vector3::new(1.0, 1.0, 1.0)),
+        Some(Vector3::new(component, component, component))
+    );
+}

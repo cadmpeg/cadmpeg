@@ -1905,7 +1905,9 @@ impl<'a> DecodeContext<'a> {
                 })
                 .map_err(|error| error.to_string())?;
                 if singular {
-                    return Err("mesh normal transform is singular".to_string());
+                    return Err(
+                        "mesh normal transform could not produce a finite unit normal".to_string(),
+                    );
                 }
             }
             links.push(mesh.id.to_string());
@@ -5381,9 +5383,9 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
             let normal = *plane_surface.normal();
             let u_axis = *plane_surface.u_axis();
             let origin = transform.apply_point(source_origin);
-            let normal = transform
-                .apply_normal(normal)
-                .ok_or_else(|| "instance plane normal transform is singular".to_string())?;
+            let normal = transform.apply_normal(normal).ok_or_else(|| {
+                "instance plane normal transform could not produce a finite unit normal".to_string()
+            })?;
             let endpoint = transform.apply_point(Point3::new(
                 source_origin.x + u_axis.x,
                 source_origin.y + u_axis.y,

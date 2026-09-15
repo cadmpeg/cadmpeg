@@ -36,6 +36,22 @@ fn rigid_transform_rejects_reflections() {
 }
 
 #[test]
+fn placement_axis_normalization_preserves_extreme_finite_directions() {
+    for vector in [
+        Vector3::new(f64::MAX, 0.0, 0.0),
+        Vector3::new(2.0_f64.powi(-800), 0.0, 0.0),
+        Vector3::new(f64::from_bits(1), 0.0, 0.0),
+    ] {
+        assert_eq!(
+            super::super::normalize(vector),
+            Some(Vector3::new(1.0, 0.0, 0.0))
+        );
+    }
+    assert!(super::super::normalize(Vector3::new(0.0, 0.0, 0.0)).is_none());
+    assert!(super::super::normalize(Vector3::new(f64::NAN, 1.0, 0.0)).is_none());
+}
+
+#[test]
 fn placement_reference_is_projected_and_angular_trims_use_context_units() {
     let result = decode_inline(
         "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
