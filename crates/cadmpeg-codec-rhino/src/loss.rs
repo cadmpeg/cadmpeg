@@ -155,6 +155,8 @@ pub enum RhinoLossCode {
     PresentationRecordDropped,
     /// A framed annotation record could not be transferred.
     AnnotationRecordDropped,
+    /// A framed product occurrence could not be transferred to the native graph.
+    ProductOccurrenceDropped,
     /// A recognized annotation userdata payload could not be typed.
     AnnotationUserdataDropped,
     /// Viewport userdata has no typed CADIR owner.
@@ -258,6 +260,7 @@ impl RhinoLossCode {
         Self::IntegrityFailure,
         Self::PresentationRecordDropped,
         Self::AnnotationRecordDropped,
+        Self::ProductOccurrenceDropped,
         Self::AnnotationUserdataDropped,
         Self::ViewportUserdataDropped,
         Self::MeshNgonGroupingDropped,
@@ -305,6 +308,7 @@ impl RhinoLossCode {
             Self::IntegrityFailure => "container.integrity-failure",
             Self::PresentationRecordDropped => "presentation.record-dropped",
             Self::AnnotationRecordDropped => "annotation.record-dropped",
+            Self::ProductOccurrenceDropped => "product.occurrence-dropped",
             Self::AnnotationUserdataDropped => "annotation.userdata-dropped",
             Self::ViewportUserdataDropped => "viewport.userdata-dropped",
             Self::MeshNgonGroupingDropped => "mesh.ngon-grouping-dropped",
@@ -370,7 +374,9 @@ impl RhinoLossCode {
             Self::TrimPcurveDropped => LossTaxonomy::PcurveOmitted,
             Self::IntegrityFailure => LossTaxonomy::IntegrityFailure,
             Self::PresentationRecordDropped => LossTaxonomy::AssetNotTransferred,
-            Self::ViewportUserdataDropped => LossTaxonomy::RecordNotTyped,
+            Self::ViewportUserdataDropped | Self::ProductOccurrenceDropped => {
+                LossTaxonomy::RecordNotTyped
+            }
             Self::MeshNgonGroupingDropped | Self::MeshQuadTopologyTriangulated => {
                 LossTaxonomy::RecordNotTyped
             }
@@ -462,6 +468,7 @@ mod tests {
                 "container.integrity-failure",
                 "presentation.record-dropped",
                 "annotation.record-dropped",
+                "product.occurrence-dropped",
                 "annotation.userdata-dropped",
                 "viewport.userdata-dropped",
                 "mesh.ngon-grouping-dropped",

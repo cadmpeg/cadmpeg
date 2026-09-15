@@ -5,10 +5,15 @@ use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 
 use crate::container::Scan;
 use crate::instances::{DefinitionKind, LinkSource};
+use crate::loss::RhinoLossCode;
+use crate::settings::UnitBinding;
 use crate::wire::Uuid;
 
 #[derive(Debug, Serialize)]
@@ -21,7 +26,7 @@ struct DefinitionRecord {
     description: String,
     url: String,
     url_tag: String,
-    kind: &'static str,
+    kind: DefinitionKind,
     member_object_ids: Vec<String>,
     unit_system: i32,
     meters_per_unit: f64,
@@ -39,12 +44,39 @@ struct OccurrenceRecord {
     source_offset: u64,
     source_uuid: String,
     definition_uuid: String,
-    transform: [[f64; 4]; 4],
-    transform_units: &'static str,
+    #[serde(flatten)]
+    transform: OccurrenceTransform,
     parent_definition_uuids: Vec<String>,
     name: String,
     visible: bool,
     links: Vec<String>,
+}
+
+/// A native placement retains source units when physical conversion is unavailable.
+#[derive(Debug, Serialize)]
+#[serde(tag = "transform_units", content = "transform")]
+enum OccurrenceTransform {
+    #[serde(rename = "millimeter")]
+    Millimeters(#[serde(serialize_with = "transform_rows")] Transform),
+    #[serde(rename = "source_length_unit")]
+    Source(#[serde(serialize_with = "transform_rows")] Transform),
+}
+
+fn transform_rows<S: serde::Serializer>(
+    transform: &Transform,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    transform.rows().serialize(serializer)
+}
+
+impl OccurrenceTransform {
+    fn from_source(source: Transform, binding: UnitBinding) -> Self {
+        match binding {
+            UnitBinding::Millimeters(scale) => crate::instances::scale_translation(source, scale)
+                .map_or(Self::Source(source), Self::Millimeters),
+            UnitBinding::Native | UnitBinding::Unavailable => Self::Source(source),
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -77,15 +109,6 @@ fn definition_id(id: Uuid) -> String {
 
 fn external_id(id: Uuid) -> String {
     format!("rhino:product:external#{id}")
-}
-
-fn kind(value: DefinitionKind) -> &'static str {
-    match value {
-        DefinitionKind::Static => "static",
-        DefinitionKind::LinkedAndEmbedded => "linked_and_embedded",
-        DefinitionKind::Linked => "linked",
-        DefinitionKind::Unset => "unset",
-    }
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -147,7 +170,8 @@ fn external_record(definition_uuid: Uuid, link: &LinkSource) -> Option<ExternalR
 }
 
 /// Installs the source product graph without requiring occurrence expansion.
-pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
+pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, CodecError> {
+    let mut losses = Vec::new();
     let mut object_records = BTreeMap::<Uuid, Vec<(usize, String)>>::new();
     for (source_order, object) in scan.objects.iter().enumerate() {
         if let Some(identity) = object.identity() {
@@ -185,7 +209,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<(), CodecError>
             description: definition.description.clone(),
             url: definition.url.clone(),
             url_tag: definition.url_tag.clone(),
-            kind: kind(definition.kind),
+            kind: definition.kind,
             member_object_ids: definition.members.iter().map(ToString::to_string).collect(),
             unit_system: definition.units.unit,
             meters_per_unit: definition.units.meters_per_unit,
@@ -197,12 +221,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<(), CodecError>
         });
     }
 
-    let scale = scan
-        .metadata
-        .settings
-        .units
-        .as_ref()
-        .and_then(crate::settings::UnitsAndTolerances::millimeters_per_unit);
+    let binding = UnitBinding::from_units(scan.metadata.settings.units.as_ref());
     let mut member_definitions = HashMap::<Uuid, Vec<String>>::new();
     let mut definition_ids = std::collections::HashSet::new();
     for definition in &scan.definitions.definitions {
@@ -227,21 +246,24 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<(), CodecError>
             continue;
         }
         let identity = &object.identity;
-        let reference =
-            crate::instances::parse_reference(scan.data, object.class_data_range.clone()).map_err(
-                |error| {
-                    CodecError::malformed(format_args!(
-                "product occurrence {} at offset {} (class {}) could not be transferred: {error}",
-                identity.source_id, object.range.start, object.class_uuid
-            ))
-                },
-            )?;
-        let (transform, transform_units) = scale
-            .and_then(|scale| crate::instances::scale_translation(reference.transform, scale))
-            .map_or(
-                (reference.transform.rows(), "source_length_unit"),
-                |value| (value.rows(), "millimeter"),
-            );
+        let reference = match crate::instances::parse_reference(
+            scan.data,
+            object.class_data_range.clone(),
+        ) {
+            Ok(reference) => reference,
+            Err(error) => {
+                losses.push(RhinoLossCode::ProductOccurrenceDropped.note(format!(
+                    "product occurrence {} at offset {} (class {}) could not be transferred: {error}",
+                    identity.source_id, object.range.start, object.class_uuid
+                )).with_provenance(
+                    SourceProvenance::root("rhino", object.range.start as u64).with_tag(format!(
+                        "PRODUCT_OCCURRENCE/source={}/class={}", identity.source_id, object.class_uuid
+                    ))
+                ));
+                continue;
+            }
+        };
+        let transform = OccurrenceTransform::from_source(reference.transform, binding);
         let definition = definition_id(reference.definition_id);
         let object_record = format!("rhino:object:record#{source_order:06}");
         let parents = member_definitions
@@ -268,7 +290,6 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<(), CodecError>
             source_uuid: identity.object_id.to_string(),
             definition_uuid: reference.definition_id.to_string(),
             transform,
-            transform_units,
             parent_definition_uuids: parents,
             name: identity.name.clone(),
             visible: identity.effective_visible,
@@ -280,7 +301,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<(), CodecError>
     namespace.set_arena("product_definitions", &definitions)?;
     namespace.set_arena("product_occurrences", &occurrences)?;
     namespace.set_arena("external_references", &external)?;
-    Ok(())
+    Ok(losses)
 }
 
 #[cfg(test)]
@@ -306,10 +327,213 @@ mod tests {
             .source_id
             .clone();
         let mut ir = CadIr::empty();
-        let error = install(&scan, &mut ir).expect_err("malformed reference must be reported");
-        let message = error.to_string();
+        let losses = install(&scan, &mut ir).expect("other product records remain transferable");
+        assert_eq!(losses.len(), 1);
+        let message = &losses[0].message;
         assert!(message.contains(&source_id));
         assert!(message.contains(&format!("at offset {source_offset}")));
         assert!(message.contains("could not be transferred"));
+        let provenance = losses[0]
+            .provenance
+            .as_ref()
+            .expect("located occurrence loss");
+        assert_eq!(provenance.offset, source_offset as u64);
+        assert!(ir.native.namespace("rhino").unwrap().arenas()["product_occurrences"].is_empty());
+    }
+
+    #[test]
+    fn complete_occurrences_keep_transform_units_and_finite_source_values_together() {
+        use crate::test_support::test_dump as support;
+        use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
+        let archive = crate::chunks::ArchiveVersion::V8;
+        for (unit, translation, expected_translation, expected_units) in [
+            (Some(2), [3.0, -4.0, 5.0], [3.0, -4.0, 5.0], "millimeter"),
+            (Some(3), [3.0, -4.0, 5.0], [30.0, -40.0, 50.0], "millimeter"),
+            (
+                Some(0),
+                [3.0, -4.0, 5.0],
+                [3.0, -4.0, 5.0],
+                "source_length_unit",
+            ),
+            (
+                Some(255),
+                [3.0, -4.0, 5.0],
+                [3.0, -4.0, 5.0],
+                "source_length_unit",
+            ),
+            (
+                None,
+                [3.0, -4.0, 5.0],
+                [3.0, -4.0, 5.0],
+                "source_length_unit",
+            ),
+            (
+                Some(3),
+                [f64::MAX, -4.0, 5.0],
+                [f64::MAX, -4.0, 5.0],
+                "source_length_unit",
+            ),
+        ] {
+            let source = [
+                [2.0, 1.0, 0.0, translation[0]],
+                [0.0, 1.0, 0.0, translation[1]],
+                [0.0, 0.0, 1.0, translation[2]],
+                [0.0, 0.0, 0.0, 1.0],
+            ];
+            let record = support::object_record_with_payload(
+                archive,
+                0x1000,
+                INSTANCE_REFERENCE_CLASS,
+                &support::instance_reference_payload([0x51; 16], source),
+            );
+            let settings = unit
+                .map(|unit| vec![support::units_record(archive, unit)])
+                .unwrap_or_default();
+            let bytes = support::minimal_document(
+                "80",
+                &[
+                    support::table(archive, 0x1000_0014, &[]),
+                    support::table(archive, 0x1000_0015, &settings),
+                    support::table(archive, 0x1000_0013, std::slice::from_ref(&record)),
+                ],
+            );
+            let decoded = crate::RhinoCodec
+                .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+                .expect("complete occurrence decode");
+            let ir: CadIr = serde_json::from_slice(
+                &serde_json::to_vec(decoded.ir()).expect("occurrence CADIR serialization"),
+            )
+            .expect("occurrence CADIR admission");
+            let namespace = ir
+                .native
+                .namespace("rhino")
+                .expect("Rhino native namespace");
+            let occurrences = &namespace.arenas()["product_occurrences"];
+            assert_eq!(occurrences.len(), 1, "unit={unit:?}");
+            let occurrence = serde_json::to_value(&occurrences[0]).expect("occurrence JSON");
+            assert_eq!(occurrence["transform_units"], expected_units);
+            assert_eq!(
+                occurrence["transform"],
+                serde_json::json!([
+                    [2.0, 1.0, 0.0, expected_translation[0]],
+                    [0.0, 1.0, 0.0, expected_translation[1]],
+                    [0.0, 0.0, 1.0, expected_translation[2]],
+                    [0.0, 0.0, 0.0, 1.0],
+                ])
+            );
+            assert_eq!(
+                occurrence["links"],
+                serde_json::json!(["rhino:object:record#000000"])
+            );
+            assert_eq!(
+                decoded
+                    .source_fidelity()
+                    .retained_record("rhino:object:record#000000")
+                    .expect("retained occurrence source")
+                    .data(),
+                Some(record.as_slice())
+            );
+            // An unresolved definition is legal in the retained native graph.
+            assert!(ir.model.bodies.is_empty());
+        }
+    }
+
+    #[test]
+    fn complete_product_recovers_after_malformed_occurrences_with_located_losses() {
+        use crate::test_support::test_dump as support;
+        use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
+        let archive = crate::chunks::ArchiveVersion::V8;
+        let definition = [0x51; 16];
+        let valid = cadmpeg_ir::transform::Transform::identity().rows();
+        let mut singular = valid;
+        singular[2][2] = 0.0;
+        let mut nonfinite = valid;
+        nonfinite[0][0] = f64::NAN;
+        let objects = [
+            support::object_record_with_payload(archive, 0x1000, INSTANCE_REFERENCE_CLASS, &[]),
+            support::object_record_with_payload(
+                archive,
+                0x1000,
+                INSTANCE_REFERENCE_CLASS,
+                &support::instance_reference_payload(definition, singular),
+            ),
+            support::object_record_with_payload(
+                archive,
+                0x1000,
+                INSTANCE_REFERENCE_CLASS,
+                &support::instance_reference_payload(definition, nonfinite),
+            ),
+            support::object_record_with_payload(
+                archive,
+                0x1000,
+                INSTANCE_REFERENCE_CLASS,
+                &support::instance_reference_payload(definition, valid),
+            ),
+            support::object_record_with_payload(
+                archive,
+                1,
+                support::POINT_CLASS,
+                &support::point_payload([1.0, 2.0, 3.0]),
+            ),
+        ];
+        let bytes = support::minimal_document(
+            "80",
+            &[
+                support::table(archive, 0x1000_0014, &[]),
+                support::table(archive, 0x1000_0015, &[support::units_record(archive, 2)]),
+                support::table(archive, 0x1000_0013, &objects),
+            ],
+        );
+        let scan = crate::container::scan_owned(bytes.clone()).expect("complete product framing");
+        let decoded = crate::RhinoCodec
+            .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+            .expect("later valid records recover");
+        let ir: CadIr = serde_json::from_slice(
+            &serde_json::to_vec(decoded.ir()).expect("product CADIR serialization"),
+        )
+        .expect("product CADIR admission");
+        assert_eq!(ir.model.points.len(), 1);
+        let records = &ir.native.namespace("rhino").unwrap().arenas()["product_occurrences"];
+        assert_eq!(records.len(), 1);
+        assert_eq!(
+            records[0].field("source_offset"),
+            Some(serde_json::json!(scan.objects[3].range().start))
+        );
+        let losses = decoded
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == super::RhinoLossCode::ProductOccurrenceDropped.kind())
+            .collect::<Vec<_>>();
+        assert_eq!(losses.len(), 3);
+        for (index, loss) in losses.iter().enumerate() {
+            let source = scan.objects[index]
+                .framed()
+                .expect("framed malformed occurrence");
+            let provenance = loss.provenance.as_ref().expect("located product loss");
+            assert_eq!(provenance.format(), "rhino");
+            assert_eq!(provenance.offset, source.range.start as u64);
+            assert!(loss.message.contains(&source.identity.source_id));
+            assert_eq!(
+                provenance.tag.as_deref(),
+                Some(
+                    format!(
+                        "PRODUCT_OCCURRENCE/source={}/class={}",
+                        source.identity.source_id, source.class_uuid
+                    )
+                    .as_str()
+                )
+            );
+            assert_eq!(
+                decoded
+                    .source_fidelity()
+                    .retained_record(&format!("rhino:object:record#{index:06}"))
+                    .expect("complete malformed source retained")
+                    .data(),
+                Some(objects[index].as_slice())
+            );
+        }
     }
 }
