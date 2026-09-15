@@ -82,21 +82,7 @@ pub(crate) fn transfer(
             .map(crate::native::frame::FiniteVec3::try_from)
             .transpose()
             .map_err(malformed)?;
-        let element_visibility_count = bool_list_count(&owned, "VisibilityList")?;
-        if let Some(count) = element_count {
-            let count = usize::try_from(count).map_err(|_| {
-                malformed(format!(
-                    "product object {} has a negative ElementCount",
-                    object.id
-                ))
-            })?;
-            if element_visibility_count != 0 && element_visibility_count != count {
-                return Err(malformed(format!(
-                    "product object {} has inconsistent link-array counts",
-                    object.id
-                )));
-            }
-        }
+        let element_visibility = bool_list(&owned, "VisibilityList")?;
         let element_objects = unique_property(&owned, "ElementList")?
             .map(|property| {
                 link_list(property, "App::PropertyLinkList", "ElementList").map(|links| {
@@ -120,6 +106,7 @@ pub(crate) fn transfer(
                     element_count,
                     parse_placement_list(&owned, entries)?,
                     parse_vector_list(&owned, entries)?,
+                    element_visibility,
                     element_objects,
                 )
                 .map_err(malformed)?,
@@ -998,18 +985,19 @@ fn copy_on_change_property(properties: &[&PropertyRecord]) -> Result<Option<Stri
         "LinkCopyOnChange",
         "Integer",
     )?;
-    Ok(Some(
-        value
-            .attributes
-            .get("value")
-            .ok_or_else(|| {
-                malformed(format!(
-                    "product property {} has no enumeration value",
-                    property.id
-                ))
-            })?
-            .to_owned(),
-    ))
+    let raw = value.attributes.get("value").ok_or_else(|| {
+        malformed(format!(
+            "product property {} has no enumeration value",
+            property.id
+        ))
+    })?;
+    raw.parse::<i64>().map_err(|_| {
+        malformed(format!(
+            "product property {} has an invalid enumeration Integer value",
+            property.id
+        ))
+    })?;
+    Ok(Some(raw.to_owned()))
 }
 
 fn linked_target(
@@ -1112,9 +1100,9 @@ fn parse_finite(value: &str, property: &PropertyRecord, name: &str) -> Result<f6
         })
 }
 
-fn bool_list_count(properties: &[&PropertyRecord], name: &str) -> Result<usize, CodecError> {
+fn bool_list(properties: &[&PropertyRecord], name: &str) -> Result<Vec<bool>, CodecError> {
     let Some(property) = unique_property(properties, name)? else {
-        return Ok(0);
+        return Ok(Vec::new());
     };
     let value = single_value(property, "App::PropertyBoolList", name, "BoolList")?;
     let encoded = value.attributes.get("value").ok_or_else(|| {
@@ -1129,7 +1117,10 @@ fn bool_list_count(properties: &[&PropertyRecord], name: &str) -> Result<usize, 
             property.id
         )));
     }
-    Ok(encoded.len())
+    // FreeCAD writes the most-significant bit first: the rightmost source bit
+    // belongs to element zero. The raw XML remains on the property record;
+    // this projection follows the element order used by the other carriers.
+    Ok(encoded.bytes().rev().map(|byte| byte == b'1').collect())
 }
 
 fn malformed(message: impl Into<String>) -> CodecError {
