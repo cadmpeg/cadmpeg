@@ -291,14 +291,22 @@ pub(super) fn check_native_links(
         }
     }
 
-    // The `unknowns` arena is one of the namespace arenas below, so the generic
-    // record loop already covers every unknown-record link.
+    // `unknowns` has a shared identity-link contract. Other arenas own their
+    // field shapes; only an array made entirely of strings follows the generic
+    // identity-link convention.
     for namespace in ir.native.0.values() {
-        for records in namespace.arenas().values() {
+        for (arena, records) in namespace.arenas() {
             for record in records {
                 let Some(value) = record.field("links") else {
                     continue;
                 };
+                if arena != "unknowns"
+                    && !value
+                        .as_array()
+                        .is_some_and(|links| links.iter().all(serde_json::Value::is_string))
+                {
+                    continue;
+                }
                 let serde_json::Value::Array(links) = value else {
                     findings.push(Finding {
                         check: Check::NativeLinks,
