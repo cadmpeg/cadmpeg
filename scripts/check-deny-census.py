@@ -13,16 +13,14 @@ fail the static check when used as a read route.
 An item that derives ``Deserialize`` passes when its serde attributes state one
 of:
 
-* ``deny_unknown_fields`` - it refuses the key itself;
+* ``deny_unknown_fields`` - it refuses the container's own keys. This census
+  does not yet follow tuple payload readers behind a container deny;
 * ``try_from = "T"`` or ``from = "T"`` - the read goes through ``T``, which is
   checked in turn;
 * ``transparent`` - the read is the inner type's read, with no key of its own;
-* ``untagged`` - every arm is a unit arm, or a newtype arm whose single type
-  is checked in turn. serde has no variant-level ``deny_unknown_fields``, so an
-  inline struct arm, or a tuple arm carrying more than one type, can never
-  refuse a key and fails. The same rule holds for a single arm that carries
-  ``#[serde(untagged)]`` inside an otherwise tagged enum, where the container's
-  deny does not reach the arm's own keys;
+* ``untagged`` - unit arms read null, tuple fields are checked in turn, and
+  inline struct arms require the container's ``deny_unknown_fields``. This
+  also holds for an arm carrying ``#[serde(untagged)]`` inside a tagged enum;
 * every variant is a unit variant without an internal or adjacent tag - the
   read is a bare name with no key to deny;
 * the enum has no variant at all - it is uninhabited, no document can name a
@@ -349,24 +347,27 @@ def split_tuple_types(text):
 
 
 class Arm:
-    def __init__(self, name, kind, types, untagged):
+    def __init__(self, name, kind, types, untagged, skipped_newtype=False):
         self.name = name
         self.kind = kind
         self.types = types
         self.untagged = untagged
+        self.skipped_newtype = skipped_newtype
 
 
 def untagged_arms(item):
     """The arms of an enum body, classified as unit, tuple or struct.
 
-    ``untagged`` records whether the arm itself carries ``#[serde(untagged)]``,
-    which makes it an untagged read inside an otherwise tagged enum.
+    ``untagged`` is ``always``, ``conditional`` or absent. A conditional arm
+    must be checked under both its tagged and its untagged read routes.
     """
     arms = []
     for raw in split_variants(strip_macro_repetition(enum_body(item))):
         if has_serde_flag(raw, "skip") or has_serde_flag(raw, "skip_deserializing"):
             continue
-        untagged = has_serde_flag(raw, "untagged", include_conditional=True)
+        untagged = ("always" if has_serde_flag(raw, "untagged") else
+                    "conditional" if has_serde_flag(raw, "untagged", include_conditional=True)
+                    else None)
         text = strip_variant_attributes(raw)
         match = re.match(r"(\$?\w+)\s*(.*)", text, re.S)
         if match is None:
@@ -377,7 +378,12 @@ def untagged_arms(item):
             arms.append(Arm(name, "struct", [], untagged))
         elif rest.startswith("("):
             inner = rest[1 : rest.rfind(")")]
-            arms.append(Arm(name, "tuple", split_tuple_types(inner), untagged))
+            fields = split_tuple_types(inner)
+            skipped_newtype = len(fields) == 1 and any(
+                has_serde_flag(fields[0], flag, include_conditional=True)
+                for flag in ("skip", "skip_deserializing")
+            )
+            arms.append(Arm(name, "tuple", fields, untagged, skipped_newtype))
         else:
             arms.append(Arm(name, "unit", [], untagged))
     return arms
@@ -467,37 +473,29 @@ def main():
     checking = set()
 
     def check_untagged_arms(item, arms):
-        """Every untagged arm is a unit arm or a newtype over a checked type."""
+        """Check each payload reader; container deny reaches inline structs."""
         admitted = True
         for arm in arms:
-            if arm.kind == "struct":
+            if arm.kind == "struct" and not has_serde_flag(item.attrs, "deny_unknown_fields"):
                 arm_failures.append(
                     (
                         item.path,
                         item.line,
                         f"{item.name}::{arm.name}: an inline struct arm read "
-                        "untagged has no way to refuse a key",
-                    )
-                )
-                admitted = False
-            elif arm.kind == "tuple" and len(arm.types) != 1:
-                arm_failures.append(
-                    (
-                        item.path,
-                        item.line,
-                        f"{item.name}::{arm.name}: a tuple arm read untagged "
-                        f"carries {len(arm.types)} types, so no single type "
-                        "states its keys",
+                        "untagged needs container deny_unknown_fields",
                     )
                 )
                 admitted = False
             elif arm.kind == "tuple":
-                for name in named_types(arm.types[0]):
-                    target = resolve_item(index, name, item, ambiguities)
-                    if target is not None and not passes(target):
-                        admitted = False
-                    elif target is None and (name in index or "::" in name):
-                        admitted = False
+                for field in arm.types:
+                    if any(has_serde_flag(field, flag) for flag in ("skip", "skip_deserializing")):
+                        continue
+                    for name in named_types(strip_variant_attributes(field)):
+                        target = resolve_item(index, name, item, ambiguities)
+                        if target is not None and not passes(target):
+                            admitted = False
+                        elif target is None and (name in index or "::" in name):
+                            admitted = False
         return admitted
 
     def passes(item):
@@ -544,7 +542,8 @@ def main():
             if any(key == "tag" for key, _, _ in options) and not any(
                 key == "content" for key, _, _ in options
             ):
-                units = [arm for arm in untagged_arms(item) if arm.kind == "unit"]
+                units = [arm for arm in untagged_arms(item)
+                         if arm.untagged != "always" and (arm.kind == "unit" or arm.skipped_newtype)]
                 for arm in units:
                     arm_failures.append((
                         item.path, item.line,
