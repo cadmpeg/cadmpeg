@@ -174,8 +174,10 @@ fn intcurve_selector_uses_the_serialized_direct_slot() {
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = curve_block(int_width);
         bytes.extend_from_slice(&pcurve_block(int_width));
-        let toks = crate::nurbs::toks::lex_test_span(&bytes, int_width);
-        let table = crate::nurbs::toks::test_table(&bytes, int_width);
+        let toks = crate::nurbs::toks::lex_test_span(&bytes, int_width)
+            .expect("valid single-record byte fixture");
+        let table = crate::nurbs::toks::test_table(&bytes, int_width)
+            .expect("valid single-record byte fixture");
 
         assert!(
             crate::nurbs::proc_curve::pcurve_for_selector_resolving_refs(&toks, 2, &table)
@@ -197,8 +199,10 @@ fn exact_curve_selector_uses_its_cache_first_support_slot() {
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let bytes = exact_cache_first_curve(int_width);
 
-        let toks = crate::nurbs::toks::lex_test_span(&bytes, int_width);
-        let table = crate::nurbs::toks::test_table(&bytes, int_width);
+        let toks = crate::nurbs::toks::lex_test_span(&bytes, int_width)
+            .expect("valid single-record byte fixture");
+        let table = crate::nurbs::toks::test_table(&bytes, int_width)
+            .expect("valid single-record byte fixture");
         let decoded = crate::nurbs::proc_curve::procedural_curve_resolving_refs(&toks, &table)
             .unwrap_or_else(|| panic!("exact curve at width {int_width}"));
         assert!(matches!(
@@ -233,8 +237,10 @@ fn exact_curve_selector_follows_subtype_reference() {
             }
             push_int(&mut wrapper, 0x04, 0, int_width);
             wrapper.push(0x10);
-            let toks = crate::nurbs::toks::lex_test_span(&wrapper, int_width);
-            let table = crate::nurbs::toks::test_table(&active, int_width);
+            let toks = crate::nurbs::toks::lex_test_span(&wrapper, int_width)
+                .expect("valid single-record byte fixture");
+            let table = crate::nurbs::toks::test_table(&active, int_width)
+                .expect("valid single-record byte fixture");
             assert!(
                 crate::nurbs::proc_curve::pcurve_for_selector_resolving_refs(&toks, -1, &table)
                     .is_some()

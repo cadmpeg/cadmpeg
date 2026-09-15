@@ -1678,8 +1678,10 @@ fn subtype_reference_resolves_surface_cache() {
         &cadmpeg_asm::nurbs::toks::lex_test_span(
             &source,
             cadmpeg_asm::kernel_header::RefWidth::Eight,
-        ),
-        &cadmpeg_asm::nurbs::toks::test_table(&active, cadmpeg_asm::kernel_header::RefWidth::Eight),
+        )
+        .expect("valid single-record byte fixture"),
+        &cadmpeg_asm::nurbs::toks::test_table(&active, cadmpeg_asm::kernel_header::RefWidth::Eight)
+            .expect("valid single-record byte fixture"),
     )
     .expect("subtype-table reference resolves to its surface cache");
     assert_eq!((decoded.u_count(), decoded.v_count()), (2, 2));

@@ -3542,8 +3542,10 @@ mod cache_form_tests {
             push_cache_first_remainder(&mut bytes, int_width);
 
             let solved = solved_curve();
-            let toks = crate::nurbs::toks::lex_test_span(&bytes, int_width);
-            let table = crate::nurbs::toks::test_table(&bytes, int_width);
+            let toks = crate::nurbs::toks::lex_test_span(&bytes, int_width)
+                .expect("valid single-record byte fixture");
+            let table = crate::nurbs::toks::test_table(&bytes, int_width)
+                .expect("valid single-record byte fixture");
             let mut cur = Cur::at(&toks, 0);
             let context = cache_first_curve_context(&mut cur, &table).unwrap_or_else(|| {
                 panic!("parameterized cache-first context at width {int_width}")
@@ -3580,8 +3582,10 @@ mod cache_form_tests {
             push_int(&mut bytes, 0x15, 1, int_width);
             push_cache_first_remainder(&mut bytes, int_width);
 
-            let toks = crate::nurbs::toks::lex_test_span(&bytes, int_width);
-            let table = crate::nurbs::toks::test_table(&bytes, int_width);
+            let toks = crate::nurbs::toks::lex_test_span(&bytes, int_width)
+                .expect("valid single-record byte fixture");
+            let table = crate::nurbs::toks::test_table(&bytes, int_width)
+                .expect("valid single-record byte fixture");
             let mut cur = Cur::at(&toks, 0);
             assert!(cache_first_curve_context(&mut cur, &table).is_none());
         }

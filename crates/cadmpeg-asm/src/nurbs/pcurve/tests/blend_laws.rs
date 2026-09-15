@@ -77,7 +77,7 @@ fn fixed_arity_law_operators_decode_at_both_integer_widths() {
         push_vector(&mut bytes, [7.0, 8.0, 9.0]);
         push_int(&mut bytes, 0x04, 1, int_width);
 
-        let toks = lex_test_span(&bytes, int_width);
+        let toks = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
         let mut cur = crate::nurbs::toks::Cur::at(&toks, 0);
         let set = crate::nurbs::proc_surface::law_expression(&mut cur, 0).unwrap();
         let rotate = crate::nurbs::proc_surface::law_expression(&mut cur, 0).unwrap();
@@ -134,8 +134,10 @@ fn law_surface_layout_decodes_at_both_integer_widths() {
         }
         bytes.push(0x10);
 
-        let decoded = crate::nurbs::proc_surface::law_spl_sur(&lex_test_span(&bytes, int_width))
-            .unwrap_or_else(|| panic!("law surface at width {int_width}"));
+        let decoded = crate::nurbs::proc_surface::law_spl_sur(
+            &lex_test_span(&bytes, int_width).expect("valid single-record byte fixture"),
+        )
+        .unwrap_or_else(|| panic!("law surface at width {int_width}"));
         let cache_fit_tolerance = decoded.legacy_cache_fit_tolerance();
         let (definition, _) = decoded.into_parts();
         let DecodedProceduralSurfaceDefinition::Law(construction) = definition else {
@@ -166,8 +168,10 @@ fn legacy_law_surface_uses_implicit_full_tail_at_both_integer_widths() {
         }
         bytes.push(0x10);
 
-        let decoded = crate::nurbs::proc_surface::law_spl_sur(&lex_test_span(&bytes, int_width))
-            .unwrap_or_else(|| panic!("legacy law surface at width {int_width}"));
+        let decoded = crate::nurbs::proc_surface::law_spl_sur(
+            &lex_test_span(&bytes, int_width).expect("valid single-record byte fixture"),
+        )
+        .unwrap_or_else(|| panic!("legacy law surface at width {int_width}"));
         let cache_fit_tolerance = decoded.legacy_cache_fit_tolerance();
         let (definition, _) = decoded.into_parts();
         let DecodedProceduralSurfaceDefinition::Law(construction) = definition else {
@@ -223,9 +227,10 @@ fn cacheless_law_surface_tails_decode_at_both_integer_widths() {
             }
             bytes.push(0x10);
 
-            let decoded =
-                crate::nurbs::proc_surface::law_spl_sur(&lex_test_span(&bytes, int_width))
-                    .unwrap_or_else(|| panic!("law tail {selector} at integer width {int_width}"));
+            let decoded = crate::nurbs::proc_surface::law_spl_sur(
+                &lex_test_span(&bytes, int_width).expect("valid single-record byte fixture"),
+            )
+            .unwrap_or_else(|| panic!("law tail {selector} at integer width {int_width}"));
             let cache_fit_tolerance = decoded.legacy_cache_fit_tolerance();
             let (definition, _) = decoded.into_parts();
             let DecodedProceduralSurfaceDefinition::Law(construction) = definition else {
@@ -259,9 +264,10 @@ fn sub_surface_layout_decodes_at_both_integer_widths() {
             bytes.push(0x0b);
             bytes.push(0x10);
 
-            let decoded =
-                crate::nurbs::proc_surface::sub_spl_sur(&lex_test_span(&bytes, int_width))
-                    .unwrap_or_else(|| panic!("{name} at integer width {int_width}"));
+            let decoded = crate::nurbs::proc_surface::sub_spl_sur(
+                &lex_test_span(&bytes, int_width).expect("valid single-record byte fixture"),
+            )
+            .unwrap_or_else(|| panic!("{name} at integer width {int_width}"));
             let cache_fit_tolerance = decoded.legacy_cache_fit_tolerance();
             let (definition, _) = decoded.into_parts();
             let DecodedProceduralSurfaceDefinition::SubSurface {

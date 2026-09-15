@@ -663,12 +663,14 @@ fn ref_pcurve_resolves_intcurve_uv_slot() {
         &cadmpeg_asm::nurbs::toks::lex_test_span(
             &intcurve,
             cadmpeg_asm::kernel_header::RefWidth::Eight,
-        ),
+        )
+        .expect("valid single-record byte fixture"),
         2,
         &cadmpeg_asm::nurbs::toks::test_table(
             &intcurve,
             cadmpeg_asm::kernel_header::RefWidth::Eight,
-        ),
+        )
+        .expect("valid single-record byte fixture"),
     )
     .expect("intcurve slot 2 carries the UV cache");
     assert_eq!(pcurve.control_points()[0].u, 0.25);
@@ -678,12 +680,14 @@ fn ref_pcurve_resolves_intcurve_uv_slot() {
             &cadmpeg_asm::nurbs::toks::lex_test_span(
                 &intcurve,
                 cadmpeg_asm::kernel_header::RefWidth::Eight
-            ),
+            )
+            .expect("valid single-record byte fixture"),
             1,
             &cadmpeg_asm::nurbs::toks::test_table(
                 &intcurve,
                 cadmpeg_asm::kernel_header::RefWidth::Eight
-            ),
+            )
+            .expect("valid single-record byte fixture"),
         )
         .is_none()
     );
@@ -706,12 +710,14 @@ fn ref_pcurve_rejects_orphan_typed_slot() {
             &cadmpeg_asm::nurbs::toks::lex_test_span(
                 &source,
                 cadmpeg_asm::kernel_header::RefWidth::Eight
-            ),
+            )
+            .expect("valid single-record byte fixture"),
             2,
             &cadmpeg_asm::nurbs::toks::test_table(
                 &active,
                 cadmpeg_asm::kernel_header::RefWidth::Eight
-            ),
+            )
+            .expect("valid single-record byte fixture"),
         )
         .is_none(),
         "a pcurve without its typed support surface is not a carrier"

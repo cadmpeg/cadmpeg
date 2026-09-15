@@ -59,8 +59,11 @@ fn extrusion_definition_decodes_without_a_solved_surface_cache() {
         bytes.extend_from_slice(&curve_block(int_width));
         bytes.push(0x10);
 
-        let decoded = crate::nurbs::blend::cyl_spl_sur(&lex_test_span(&bytes, int_width), None)
-            .unwrap_or_else(|| panic!("cache-less extrusion at width {int_width}"));
+        let decoded = crate::nurbs::blend::cyl_spl_sur(
+            &lex_test_span(&bytes, int_width).expect("valid single-record byte fixture"),
+            None,
+        )
+        .unwrap_or_else(|| panic!("cache-less extrusion at width {int_width}"));
         assert_eq!(decoded.legacy_cache_fit_tolerance(), None);
         let (definition, _) = decoded.into_parts();
         let DecodedProceduralSurfaceDefinition::Extrusion {
@@ -100,9 +103,10 @@ fn helix_layout_walks_optional_range_flags_at_both_widths() {
         bytes.extend_from_slice(&curve_block(int_width));
         bytes.push(0x10);
 
-        assert!(
-            crate::nurbs::proc_curve::helix_definition(&lex_test_span(&bytes, int_width)).is_some()
-        );
+        assert!(crate::nurbs::proc_curve::helix_definition(
+            &lex_test_span(&bytes, int_width).expect("valid single-record byte fixture")
+        )
+        .is_some());
         let layout = helix_patch_layout(&bytes, int_width)
             .unwrap_or_else(|| panic!("helix layout at width {int_width}"));
         let range = layout
@@ -141,9 +145,10 @@ fn decodes_current_cacheless_helix_record() {
         .map(|digits| u8::from_str_radix(std::str::from_utf8(digits).unwrap(), 16).unwrap())
         .collect::<Vec<_>>();
 
-    let definition =
-        crate::nurbs::proc_curve::helix_definition(&lex_test_span(&bytes, RefWidth::Four))
-            .expect("current cache-less helix definition");
+    let definition = crate::nurbs::proc_curve::helix_definition(
+        &lex_test_span(&bytes, RefWidth::Four).expect("valid single-record byte fixture"),
+    )
+    .expect("current cache-less helix definition");
     let crate::nurbs::proc_curve::HelixDefinition {
         angle_range,
         pitch,
@@ -179,8 +184,10 @@ fn decodes_current_cacheless_helix_surface_at_both_widths() {
         push_vector(&mut bytes, [5.0, 6.0, 7.0]);
         bytes.push(0x10);
 
-        let decoded = crate::nurbs::proc_surface::helix_spl_sur(&lex_test_span(&bytes, int_width))
-            .unwrap_or_else(|| panic!("current helix surface at width {int_width}"));
+        let decoded = crate::nurbs::proc_surface::helix_spl_sur(
+            &lex_test_span(&bytes, int_width).expect("valid single-record byte fixture"),
+        )
+        .unwrap_or_else(|| panic!("current helix surface at width {int_width}"));
         let (definition, _) = decoded.into_parts();
         let DecodedProceduralSurfaceDefinition::Helix(construction) = definition else {
             panic!("expected helix surface definition")
