@@ -44,8 +44,10 @@ use crate::units::{CanonicalUnitsWire, Tolerances};
 use crate::unknown::NativeUnknownRecord;
 use cadmpeg_core::text::NonBlankString;
 
-#[derive(Debug, Clone, Default, PartialEq)]
-struct FeatureRegenerationParents(BTreeMap<crate::features::FeatureId, crate::features::FeatureId>);
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct FeatureRegenerationParents(
+    BTreeMap<crate::features::FeatureId, crate::features::FeatureId>,
+);
 
 macro_rules! arena_registry {
     ($macro:ident) => {
@@ -320,7 +322,7 @@ macro_rules! declare_model {
                 pub $field: Vec<$ty>,
             )*
             #[cfg_attr(feature = "schema", schemars(skip))]
-            feature_regeneration_parents: FeatureRegenerationParents,
+            pub(crate) feature_regeneration_parents: FeatureRegenerationParents,
         }
 
         #[derive(Serialize)]
@@ -1193,6 +1195,79 @@ impl JsonSchema for CadIr {
 }
 
 impl CadIr {
+    /// Appends staged neutral and native records, then admits the combined document.
+    ///
+    /// The admission callback can only read the document. On `Err`, every arena
+    /// and feature-parent relation returns to its preceding state. Existing
+    /// geometry and native payloads are not cloned. Source metadata and document
+    /// tolerances are unchanged.
+    ///
+    /// ```compile_fail
+    /// use cadmpeg_ir::{CadIr, document::Model, native::Native};
+    /// let mut ir = CadIr::empty();
+    /// ir.try_append(Model::default(), Native::default(), |candidate| {
+    ///     candidate.model.points.clear();
+    ///     Ok::<(), ()>(())
+    /// });
+    /// ```
+    pub fn try_append<T, E>(
+        &mut self,
+        mut model: Model,
+        native: Native,
+        admit: impl FnOnce(&Self) -> Result<T, E>,
+    ) -> Result<T, E> {
+        let native_lengths = self
+            .native
+            .0
+            .iter()
+            .map(|(format, namespace)| {
+                (
+                    format.clone(),
+                    namespace
+                        .arenas()
+                        .iter()
+                        .map(|(arena, records)| (arena.clone(), records.len()))
+                        .collect::<BTreeMap<_, _>>(),
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        let parents = self.model.feature_regeneration_parents.clone();
+        macro_rules! append_and_admit {
+            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {{
+                $(let $field = self.model.$field.len();)*
+                $(self.model.$field.append(&mut model.$field);)*
+                self.model.feature_regeneration_parents.0
+                    .extend(model.feature_regeneration_parents.0);
+                for (format, mut namespace) in native.0 {
+                    let destination = self.native.namespace_mut(format).arenas_mut();
+                    for (arena, mut records) in std::mem::take(namespace.arenas_mut()) {
+                        destination.entry(arena).or_default().append(&mut records);
+                    }
+                }
+                let result = admit(self);
+                if result.is_err() {
+                    $(self.model.$field.truncate($field);)*
+                    self.model.feature_regeneration_parents = parents;
+                    self.native.0.retain(|format, namespace| {
+                        let Some(lengths) = native_lengths.get(format) else {
+                            return false;
+                        };
+                        namespace.arenas_mut().retain(|arena, records| {
+                            let Some(length) = lengths.get(arena) else {
+                                return false;
+                            };
+                            records.truncate(*length);
+                            true
+                        });
+                        true
+                    });
+                }
+                result
+            }};
+        }
+        arena_registry!(append_and_admit)
+    }
+
     /// Deserialize the reserved `unknowns` arena for `format`.
     pub fn native_unknowns(
         &self,

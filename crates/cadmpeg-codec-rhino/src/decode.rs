@@ -37,6 +37,45 @@ pub(crate) const RETAINED_RECORD_CAP: usize = 16 * 1024 * 1024;
 /// Maximum bytes retained across all Rhino object records in one document.
 pub(crate) const RETAINED_DOCUMENT_CAP: usize = 256 * 1024 * 1024;
 
+/// Makes the session's retained-record graph visible during one admission.
+/// The projection is removed or restored before returning, so final source
+/// attachment remains the sole owner of committed unknown product records.
+fn with_native_unknowns<T>(
+    ir: &mut CadIr,
+    unknowns: &[UnknownRecord],
+    apply: impl FnOnce(&mut CadIr) -> T,
+) -> Result<T, cadmpeg_ir::native::NativeConvertError> {
+    let products = unknowns
+        .iter()
+        .map(NativeUnknownRecord::try_from)
+        .collect::<Result<Vec<_>, _>>()?;
+    let namespace_existed = ir.native.namespace("rhino").is_some();
+    let previous = ir
+        .native
+        .namespace("rhino")
+        .and_then(|namespace| namespace.arenas().get("unknowns"))
+        .cloned();
+    ir.set_native_unknowns_from("rhino", products)?;
+    let value = apply(ir);
+    match previous {
+        Some(records) => {
+            ir.native
+                .namespace_mut("rhino")
+                .arenas_mut()
+                .insert("unknowns".into(), records);
+        }
+        None => {
+            if let Some(namespace) = ir.native.0.get_mut("rhino") {
+                namespace.arenas_mut().remove("unknowns");
+                if !namespace_existed && namespace.arenas().is_empty() {
+                    ir.native.0.remove("rhino");
+                }
+            }
+        }
+    }
+    Ok(value)
+}
+
 #[derive(Debug)]
 enum CandidateError {
     Admission(String),
@@ -79,29 +118,6 @@ enum GeometryOutcome {
     Failed,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct ArenaLengths {
-    bodies: usize,
-    regions: usize,
-    shells: usize,
-    faces: usize,
-    loops: usize,
-    coedges: usize,
-    edges: usize,
-    vertices: usize,
-    points: usize,
-    curves: usize,
-    pcurves: usize,
-    surfaces: usize,
-    subds: usize,
-    tessellations: usize,
-    procedural_curves: usize,
-    procedural_surfaces: usize,
-    features: usize,
-    parameters: usize,
-    semantic_annotations: usize,
-}
-
 #[derive(Clone, Debug, Default)]
 struct ReportBuckets {
     phase_warnings: Diagnostics,
@@ -129,248 +145,6 @@ impl ReportBuckets {
         self.phase_warnings.truncate(checkpoint.phase_warnings);
         self.phase_losses.truncate(checkpoint.phase_losses);
         self.typed_losses.truncate(checkpoint.typed_losses);
-    }
-}
-
-impl ArenaLengths {
-    fn capture(ir: &CadIr) -> Self {
-        Self {
-            bodies: ir.model.bodies.len(),
-            regions: ir.model.regions.len(),
-            shells: ir.model.shells.len(),
-            faces: ir.model.faces.len(),
-            loops: ir.model.loops.len(),
-            coedges: ir.model.coedges.len(),
-            edges: ir.model.edges.len(),
-            vertices: ir.model.vertices.len(),
-            points: ir.model.points.len(),
-            curves: ir.model.curves.len(),
-            pcurves: ir.model.pcurves.len(),
-            surfaces: ir.model.surfaces.len(),
-            subds: ir.model.subds.len(),
-            tessellations: ir.model.tessellations.len(),
-            procedural_curves: ir.model.procedural_curves.len(),
-            procedural_surfaces: ir.model.procedural_surfaces.len(),
-            features: ir.model.features.len(),
-            parameters: ir.model.parameters.len(),
-            semantic_annotations: ir.model.semantic_annotations.len(),
-        }
-    }
-
-    fn truncate(self, ir: &mut CadIr) {
-        ir.model.bodies.truncate(self.bodies);
-        ir.model.regions.truncate(self.regions);
-        ir.model.shells.truncate(self.shells);
-        ir.model.faces.truncate(self.faces);
-        ir.model.loops.truncate(self.loops);
-        ir.model.coedges.truncate(self.coedges);
-        ir.model.edges.truncate(self.edges);
-        ir.model.vertices.truncate(self.vertices);
-        ir.model.points.truncate(self.points);
-        ir.model.curves.truncate(self.curves);
-        ir.model.pcurves.truncate(self.pcurves);
-        ir.model.surfaces.truncate(self.surfaces);
-        ir.model.subds.truncate(self.subds);
-        ir.model.tessellations.truncate(self.tessellations);
-        ir.model.procedural_curves.truncate(self.procedural_curves);
-        ir.model
-            .procedural_surfaces
-            .truncate(self.procedural_surfaces);
-        ir.model.features.truncate(self.features);
-        ir.model.parameters.truncate(self.parameters);
-        ir.model
-            .semantic_annotations
-            .truncate(self.semantic_annotations);
-    }
-
-    fn added_since(self, before: Self) -> Option<usize> {
-        [
-            (self.bodies, before.bodies),
-            (self.regions, before.regions),
-            (self.shells, before.shells),
-            (self.faces, before.faces),
-            (self.loops, before.loops),
-            (self.coedges, before.coedges),
-            (self.edges, before.edges),
-            (self.vertices, before.vertices),
-            (self.points, before.points),
-            (self.curves, before.curves),
-            (self.pcurves, before.pcurves),
-            (self.surfaces, before.surfaces),
-            (self.subds, before.subds),
-            (self.tessellations, before.tessellations),
-            (self.procedural_curves, before.procedural_curves),
-            (self.procedural_surfaces, before.procedural_surfaces),
-            (self.features, before.features),
-            (self.parameters, before.parameters),
-            (self.semantic_annotations, before.semantic_annotations),
-        ]
-        .into_iter()
-        .try_fold(0_usize, |total, (after, before)| {
-            total.checked_add(after.checked_sub(before)?)
-        })
-    }
-
-    fn appended_ids(self, ir: &CadIr) -> Option<BTreeSet<String>> {
-        let after = Self::capture(ir);
-        after.added_since(self)?;
-        let mut ids = BTreeSet::new();
-        ids.extend(
-            ir.model.bodies[self.bodies..]
-                .iter()
-                .map(|entity| entity.id.as_str().to_owned()),
-        );
-        ids.extend(
-            ir.model.regions[self.regions..]
-                .iter()
-                .map(|entity| entity.id.to_string()),
-        );
-        ids.extend(
-            ir.model.shells[self.shells..]
-                .iter()
-                .map(|entity| entity.id.to_string()),
-        );
-        ids.extend(
-            ir.model.faces[self.faces..]
-                .iter()
-                .map(|entity| entity.id.to_string()),
-        );
-        ids.extend(
-            ir.model.loops[self.loops..]
-                .iter()
-                .map(|entity| entity.id.to_string()),
-        );
-        ids.extend(
-            ir.model.coedges[self.coedges..]
-                .iter()
-                .map(|entity| entity.id.to_string()),
-        );
-        ids.extend(
-            ir.model.edges[self.edges..]
-                .iter()
-                .map(|entity| entity.id.to_string()),
-        );
-        ids.extend(
-            ir.model.vertices[self.vertices..]
-                .iter()
-                .map(|entity| entity.id.to_string()),
-        );
-        ids.extend(
-            ir.model.points[self.points..]
-                .iter()
-                .map(|entity| entity.id.to_string()),
-        );
-        ids.extend(
-            ir.model.curves[self.curves..]
-                .iter()
-                .map(|entity| entity.id.to_string()),
-        );
-        ids.extend(
-            ir.model.pcurves[self.pcurves..]
-                .iter()
-                .map(|entity| entity.id.to_string()),
-        );
-        ids.extend(
-            ir.model.surfaces[self.surfaces..]
-                .iter()
-                .map(|entity| entity.id.to_string()),
-        );
-        ids.extend(
-            ir.model.subds[self.subds..]
-                .iter()
-                .map(|entity| entity.id.to_string()),
-        );
-        ids.extend(
-            ir.model.tessellations[self.tessellations..]
-                .iter()
-                .map(|entity| entity.id.to_string()),
-        );
-        ids.extend(
-            ir.model.procedural_curves[self.procedural_curves..]
-                .iter()
-                .map(|entity| entity.id.to_string()),
-        );
-        ids.extend(
-            ir.model.procedural_surfaces[self.procedural_surfaces..]
-                .iter()
-                .map(|entity| entity.id.to_string()),
-        );
-        ids.extend(
-            ir.model.features[self.features..]
-                .iter()
-                .map(|entity| entity.id.to_string()),
-        );
-        ids.extend(
-            ir.model.parameters[self.parameters..]
-                .iter()
-                .map(|entity| entity.id.as_str().to_owned()),
-        );
-        ids.extend(
-            ir.model.semantic_annotations[self.semantic_annotations..]
-                .iter()
-                .map(|entity| entity.id.as_str().to_owned()),
-        );
-        Some(ids)
-    }
-
-    fn remove_ids(ir: &mut CadIr, ids: &BTreeSet<String>) {
-        ir.model
-            .bodies
-            .retain(|entity| !ids.contains(entity.id.as_str()));
-        ir.model
-            .regions
-            .retain(|entity| !ids.contains(&entity.id.to_string()));
-        ir.model
-            .shells
-            .retain(|entity| !ids.contains(&entity.id.to_string()));
-        ir.model
-            .faces
-            .retain(|entity| !ids.contains(&entity.id.to_string()));
-        ir.model
-            .loops
-            .retain(|entity| !ids.contains(&entity.id.to_string()));
-        ir.model
-            .coedges
-            .retain(|entity| !ids.contains(&entity.id.to_string()));
-        ir.model
-            .edges
-            .retain(|entity| !ids.contains(&entity.id.to_string()));
-        ir.model
-            .vertices
-            .retain(|entity| !ids.contains(&entity.id.to_string()));
-        ir.model
-            .points
-            .retain(|entity| !ids.contains(&entity.id.to_string()));
-        ir.model
-            .curves
-            .retain(|entity| !ids.contains(&entity.id.to_string()));
-        ir.model
-            .pcurves
-            .retain(|entity| !ids.contains(&entity.id.to_string()));
-        ir.model
-            .surfaces
-            .retain(|entity| !ids.contains(&entity.id.to_string()));
-        ir.model
-            .subds
-            .retain(|entity| !ids.contains(&entity.id.to_string()));
-        ir.model
-            .tessellations
-            .retain(|entity| !ids.contains(entity.id.as_str()));
-        ir.model
-            .procedural_curves
-            .retain(|entity| !ids.contains(&entity.id.to_string()));
-        ir.model
-            .procedural_surfaces
-            .retain(|entity| !ids.contains(&entity.id.to_string()));
-        ir.model
-            .features
-            .retain(|entity| !ids.contains(&entity.id.to_string()));
-        ir.model
-            .parameters
-            .retain(|entity| !ids.contains(entity.id.as_str()));
-        ir.model
-            .semantic_annotations
-            .retain(|entity| !ids.contains(entity.id.as_str()));
     }
 }
 
@@ -598,15 +372,6 @@ impl<'a> DecodeContext<'a> {
         true
     }
 
-    fn sync_native_unknowns(&mut self) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
-        let products = self
-            .unknowns
-            .iter()
-            .map(NativeUnknownRecord::try_from)
-            .collect::<Result<Vec<_>, _>>()?;
-        self.ir.set_native_unknowns_from("rhino", products)
-    }
-
     fn validate_candidate<T>(
         &mut self,
         apply: impl FnOnce(&mut CadIr, &mut cadmpeg_ir::Annotations) -> T,
@@ -619,80 +384,39 @@ impl<'a> DecodeContext<'a> {
         &mut self,
         apply: impl FnOnce(&mut CadIr, &mut cadmpeg_ir::Annotations) -> Result<T, String>,
     ) -> Result<T, CandidateError> {
-        let before = ArenaLengths::capture(&self.ir);
-        let annotation_checkpoint = self.annotations.clone();
-        let value = match apply(&mut self.ir, &mut self.annotations) {
-            Ok(value) => value,
-            Err(error) => {
-                before.truncate(&mut self.ir);
-                self.annotations = annotation_checkpoint;
-                return Err(CandidateError::Admission(error));
-            }
-        };
-        if let Err(error) = self.sync_native_unknowns() {
-            before.truncate(&mut self.ir);
-            self.annotations = annotation_checkpoint;
-            return Err(CandidateError::Admission(error.to_string()));
-        }
-        let Some(appended) = before.appended_ids(&self.ir) else {
-            before.truncate(&mut self.ir);
-            self.annotations = annotation_checkpoint;
-            return Err(CandidateError::Admission(
-                "candidate builder removed an existing IR entity".to_string(),
-            ));
-        };
-        let validation = cadmpeg_ir::admit_with_annotations(
-            &self.ir,
-            &self.annotations,
-            cadmpeg_ir::RHINO_DRAFT_CHECKS,
-            Vec::new(),
-        );
-        if validation.is_ok() {
-            let unknowns = match self.ir.native_unknowns("rhino") {
-                Ok(unknowns) => unknowns,
-                Err(error) => {
-                    before.truncate(&mut self.ir);
-                    self.annotations = annotation_checkpoint;
-                    return Err(CandidateError::Admission(error.to_string()));
+        let mut candidate = CadIr::empty();
+        let mut annotations = self.annotations.clone();
+        let value = apply(&mut candidate, &mut annotations).map_err(CandidateError::Admission)?;
+        let entity_count = candidate.model.entity_count();
+        let mut budget = self.expansion_budget;
+        let session = self.expand.ctx();
+        let value = with_native_unknowns(&mut self.ir, &self.unknowns, |ir| {
+            ir.try_append(candidate.model, candidate.native, |combined| {
+                let validation = cadmpeg_ir::admit_with_annotations(
+                    combined,
+                    &annotations,
+                    cadmpeg_ir::RHINO_DRAFT_CHECKS,
+                    Vec::new(),
+                );
+                if !validation.is_ok() {
+                    return Err(CandidateError::Validation(validation_findings(&validation)));
                 }
-            };
-            let mut link_updates = Vec::with_capacity(unknowns.len());
-            for reference in unknowns {
-                let Some(index) = self
-                    .unknowns
-                    .iter()
-                    .position(|record| record.id() == &reference.id)
-                else {
-                    before.truncate(&mut self.ir);
-                    self.annotations = annotation_checkpoint;
-                    return Err(CandidateError::Admission(format!(
-                        "candidate introduced unknown {}",
-                        reference.id
-                    )));
-                };
-                link_updates.push((index, reference.links));
-            }
-            if let Err(error) = self.expansion_budget.entities(appended.len()) {
-                before.truncate(&mut self.ir);
-                self.annotations = annotation_checkpoint;
-                return Err(CandidateError::Admission(error));
-            }
-            if let Err(error) = self.charge_session_entities(appended.len()) {
-                before.truncate(&mut self.ir);
-                self.annotations = annotation_checkpoint;
-                return Err(CandidateError::Admission(error));
-            }
-            for (index, links) in link_updates {
-                *self.unknowns[index].links_mut() =
-                    links.into_iter().map(|link| link.into_string()).collect();
-            }
-            self.ir.model.finalize();
-            Ok(value)
-        } else {
-            before.truncate(&mut self.ir);
-            self.annotations = annotation_checkpoint;
-            Err(CandidateError::Validation(validation_findings(&validation)))
-        }
+                budget
+                    .entities(entity_count)
+                    .map_err(CandidateError::Admission)?;
+                session
+                    .charge_entities(
+                        u64::try_from(entity_count).unwrap_or(u64::MAX),
+                        "rhino_instance_entities",
+                    )
+                    .map_err(|error| CandidateError::Admission(error.to_string()))?;
+                Ok(value)
+            })
+        })
+        .map_err(|error| CandidateError::Admission(error.to_string()))??;
+        self.annotations = annotations;
+        self.expansion_budget = budget;
+        Ok(value)
     }
 
     /// Returns mutable IR for the current decode transaction.
@@ -1949,7 +1673,8 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn expand_reference(&mut self, source_order: usize) -> bool {
-        let original_lengths = ArenaLengths::capture(&self.ir);
+        let original_model = ModelCheckpoint::capture(&self.ir.model);
+        let original_native = self.ir.native.clone();
         let annotation_checkpoint = self.annotations.clone();
         let original_links = self
             .unknowns
@@ -1972,9 +1697,10 @@ impl<'a> DecodeContext<'a> {
         // Mesh buffers stay charged in the session arena even on rollback.
         let rejection_warning = match outcome {
             Ok(links) => {
-                let validation =
-                    cadmpeg_ir::admit(&self.ir, cadmpeg_ir::RHINO_INSTANCE_CHECKS, Vec::new());
-                if validation.is_ok() {
+                let validation = with_native_unknowns(&mut self.ir, &self.unknowns, |ir| {
+                    cadmpeg_ir::admit(ir, cadmpeg_ir::RHINO_INSTANCE_CHECKS, Vec::new())
+                });
+                if validation.as_ref().is_ok_and(|report| report.is_ok()) {
                     self.append_links(source_order, &links);
                     self.mark_decoded(source_order);
                     self.geometry_transferred = true;
@@ -1982,17 +1708,17 @@ impl<'a> DecodeContext<'a> {
                 }
                 format!(
                     "instance expansion rejected atomically by IR admission: {}",
-                    validation_findings(&validation)
+                    match validation {
+                        Ok(report) => validation_findings(&report),
+                        Err(error) => error.to_string(),
+                    }
                 )
             }
             Err(message) => format!("instance retained: {message}"),
         };
 
-        if let Some(added_ids) = original_lengths.appended_ids(&self.ir) {
-            ArenaLengths::remove_ids(&mut self.ir, &added_ids);
-        } else {
-            original_lengths.truncate(&mut self.ir);
-        }
+        original_model.discard_appended(&mut self.ir.model);
+        self.ir.native = original_native;
         self.annotations = annotation_checkpoint;
         for (record, links) in self.unknowns.iter_mut().zip(original_links) {
             *record.links_mut() = links;
@@ -2003,12 +1729,6 @@ impl<'a> DecodeContext<'a> {
         self.instance_selection = original_selection;
         self.instance_display = original_display;
         self.expansion_budget = original_expansion_budget;
-        if let Err(error) = self.sync_native_unknowns() {
-            self.scan_warning(
-                source_order,
-                &format!("Rhino unknown records could not be serialized after instance rollback: {error}"),
-            );
-        }
         self.scan_warning(source_order, &rejection_warning);
         false
     }
@@ -2691,13 +2411,15 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn charge_entities(&mut self, source_order: usize, amount: usize) -> bool {
-        if let Err(message) = self.expansion_budget.entities(amount) {
+        let mut budget = self.expansion_budget;
+        if let Err(message) = budget.entities(amount) {
             self.scan_warning(source_order, &message);
             false
         } else if let Err(message) = self.charge_session_entities(amount) {
             self.scan_warning(source_order, &message);
             false
         } else {
+            self.expansion_budget = budget;
             true
         }
     }
@@ -2910,28 +2632,23 @@ impl<'a> DecodeContext<'a> {
                 self.append_link(source_order, body_id.to_string());
             }
             crate::curves::DecodedGeometry::Curve { curve } => {
-                if !self.charge_entities(source_order, decoded_curve_entity_count(&curve)) {
-                    return false;
-                }
                 let warnings = curve_warnings(&curve);
                 self.report.phase_warnings.extend(
                     warnings.map_messages(|message| format!("{}: {message}", identity.source_id)),
                 );
-                let before = ArenaLengths::capture(&self.ir);
-                let annotation_checkpoint = self.annotations.clone();
-                let parent_id = match commit_curve_tree(
-                    &mut self.ir,
-                    &mut self.annotations,
-                    curve,
-                    key.as_str(),
-                    &association,
-                    Some(unknown),
-                    "root",
-                ) {
+                let parent_id = match self.validate_candidate_fallible(|candidate, annotations| {
+                    commit_curve_tree(
+                        candidate,
+                        annotations,
+                        curve,
+                        key.as_str(),
+                        &association,
+                        Some(unknown),
+                        "root",
+                    )
+                }) {
                     Ok(id) => id,
                     Err(error) => {
-                        before.truncate(&mut self.ir);
-                        self.annotations = annotation_checkpoint;
                         self.report
                             .phase_warnings
                             .push(format!("curve candidate rejected: {error}"));
@@ -3371,14 +3088,6 @@ impl<'a> DecodeContext<'a> {
             return;
         };
         let unknown = self.unknowns[source_order].id().clone();
-        if let Err(error) = self.sync_native_unknowns() {
-            self.scan_warning(
-                source_order,
-                &format!("Rhino unknown records could not be serialized: {error}"),
-            );
-            self.mark_failed(source_order);
-            return;
-        }
         let staged = match &parsed {
             crate::brep::BrepParse::Valid(brep) => stage_brep(BrepTransferInput {
                 expand: self.expand,
@@ -3420,16 +3129,20 @@ impl<'a> DecodeContext<'a> {
                     && !emitted_geometry
                     && !staged.draft.model().tessellations.is_empty();
                 let entity_count = staged.draft.entity_count();
-                let committed = self
-                    .expansion_budget
-                    .entities(entity_count)
-                    .and_then(|()| staged.apply(&mut self.ir, &mut self.annotations));
+                let mut budget = self.expansion_budget;
+                let committed = budget.entities(entity_count).and_then(|()| {
+                    with_native_unknowns(&mut self.ir, &self.unknowns, |ir| {
+                        staged.apply(ir, &mut self.annotations)
+                    })
+                    .map_err(|error| error.to_string())?
+                });
                 if let Err(error) = committed {
                     self.scan_warning(
                         source_order,
                         &format!("Brep draft rejected before commit: {error}"),
                     );
                 } else {
+                    self.expansion_budget = budget;
                     self.append_links(source_order, &links);
                     self.report.typed_losses.extend(typed_losses);
                     for warning in warnings {
@@ -5484,19 +5197,6 @@ fn commit_curve_tree(
             .map_err(|error| error.to_string())?;
     }
     Ok(id)
-}
-
-fn decoded_curve_entity_count(curve: &crate::curves::DecodedCurve) -> usize {
-    let child_count = match curve {
-        crate::curves::DecodedCurve::Compound { children, .. } => children
-            .iter()
-            .map(|(_, child)| decoded_curve_entity_count(child))
-            .fold(0_usize, usize::saturating_add),
-        crate::curves::DecodedCurve::Leaf { .. } => 0,
-    };
-    child_count
-        .saturating_add(1)
-        .saturating_add(usize::from(curve.is_compound()))
 }
 
 fn compose_body_transform(

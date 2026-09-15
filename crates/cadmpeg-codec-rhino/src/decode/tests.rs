@@ -459,7 +459,10 @@ fn fallback_candidate_links_free_carrier_before_full_ir_validation() {
         candidate
             .native_unknowns("rhino")
             .expect("required invariant")[0]
-            .links.iter().map(|link| link.as_str()).collect::<Vec<_>>(),
+            .links
+            .iter()
+            .map(|link| link.as_str())
+            .collect::<Vec<_>>(),
         vec![curve_id.to_string()]
     );
     let report = cadmpeg_ir::validate::validate_neutral(&candidate, Vec::new());
@@ -1049,6 +1052,105 @@ fn candidate_rejections_distinguish_admission_from_validation() {
         });
         assert!(matches!(validation, Err(CandidateError::Validation(_))));
         assert!(context.ir.model.points.is_empty());
+    });
+}
+
+#[test]
+fn candidate_rejection_restores_native_records_annotations_and_all_model_arenas() {
+    use cadmpeg_ir::assets::{Asset, AssetContent, AssetData};
+    use cadmpeg_ir::native::NativeRecord;
+
+    let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, [0; 16])]);
+    for admission_failure in [true, false] {
+        with_expand(&scan, |expand| {
+            let mut context = DecodeContext::new(&scan, expand);
+            let before_ir = context.ir.clone();
+            let before_annotations = context.annotations.clone();
+            let before_budget = context.expansion_budget.entities;
+            let result = context.validate_candidate_fallible(|candidate, annotations| {
+                candidate.model.assets.push(Asset {
+                    id: "rhino:test:asset#rejected".try_into().unwrap(),
+                    name: None,
+                    media_type: None,
+                    content: AssetContent::Embedded {
+                        data: AssetData::new(vec![1]).unwrap(),
+                    },
+                    native_ref: None,
+                });
+                candidate.native.namespace_mut("rhino").arenas_mut().insert(
+                    "history_records".into(),
+                    vec![NativeRecord::new(
+                        "rhino:history:record#rejected",
+                        serde_json::Map::new(),
+                    )
+                    .unwrap()],
+                );
+                set_exactness(annotations, "rhino:test:asset#rejected", Exactness::Derived);
+                if admission_failure {
+                    return Err("source admission refusal".into());
+                }
+                let point = Point {
+                    id: "rhino:test:point#duplicate".try_into().unwrap(),
+                    position: Point3::new(0.0, 0.0, 0.0),
+                    source_object: None,
+                };
+                candidate.model.points.extend([point.clone(), point]);
+                Ok(())
+            });
+            assert!(result.is_err());
+            assert_eq!(context.ir, before_ir);
+            assert_eq!(context.annotations, before_annotations);
+            assert_eq!(context.expansion_budget.entities, before_budget);
+            let decoded = context
+                .commit()
+                .expect("rejected candidate remains committable");
+            assert_eq!(decoded.ir.native_unknowns("rhino").unwrap().len(), 1);
+            assert_eq!(decoded.source_fidelity.retained_records().len(), 1);
+        });
+    }
+}
+
+#[test]
+fn successful_candidate_leaves_final_unknown_attachment_as_its_single_owner() {
+    let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, [0; 16])]);
+    with_expand(&scan, |expand| {
+        let mut context = DecodeContext::new(&scan, expand);
+        context
+            .validate_candidate(|_, _| ())
+            .expect("empty candidate admitted");
+        assert!(context.ir.native_unknowns("rhino").unwrap().is_empty());
+        let decoded = context.commit().expect("one final unknown attachment");
+        assert_eq!(decoded.ir.native_unknowns("rhino").unwrap().len(), 1);
+        assert_eq!(decoded.source_fidelity.retained_records().len(), 1);
+    });
+}
+
+#[test]
+fn successful_candidate_keeps_preceding_arena_order_for_instance_checkpoints() {
+    let scan = scan_with_objects(&[]);
+    with_expand(&scan, |expand| {
+        let mut context = DecodeContext::new(&scan, expand);
+        let point = |key| Point {
+            id: format!("rhino:test:point#{key}").try_into().unwrap(),
+            position: Point3::new(0.0, 0.0, 0.0),
+            source_object: None,
+        };
+        context.ir.model.points.push(point("z"));
+        let checkpoint = ModelCheckpoint::capture(&context.ir.model);
+        context
+            .validate_candidate(|candidate, _| {
+                candidate.model.points.push(point("a"));
+            })
+            .expect("distinct point admitted");
+        assert_eq!(
+            checkpoint.added::<Point>(&context.ir.model).unwrap()[0]
+                .id
+                .as_str(),
+            "rhino:test:point#a"
+        );
+        checkpoint.discard_appended(&mut context.ir.model);
+        assert_eq!(context.ir.model.points.len(), 1);
+        assert_eq!(context.ir.model.points[0].id.as_str(), "rhino:test:point#z");
     });
 }
 

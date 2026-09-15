@@ -139,10 +139,6 @@ impl DecodedCurve {
         }
     }
 
-    pub(crate) fn is_compound(&self) -> bool {
-        matches!(self, Self::Compound { .. })
-    }
-
     pub(crate) fn reported_geometry(&self) -> CurveGeometry {
         match self {
             Self::Leaf { geometry, .. } => geometry.clone(),
