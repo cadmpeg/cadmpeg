@@ -131,24 +131,21 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
             .iter()
             .map(|body| (body.id.clone(), body.transform.unwrap_or_default()))
             .collect::<HashMap<_, _>>();
+        let mut values = transforms.values();
+        let sole_transform = match (values.next(), values.next()) {
+            (Some(transform), None) => Some(*transform),
+            _ => None,
+        };
         for mesh in &mut ir.model.tessellations {
             let transform = match &mesh.body {
                 Some(body) => transforms.get(body).copied().ok_or_else(|| {
                     CodecError::Malformed("tessellation references missing body".into())
                 })?,
-                None if transforms.len() == 1 => {
-                    let Some(transform) = transforms.values().next().copied() else {
-                        return Err(CodecError::Malformed(
-                            "unowned tessellation has no body transform".into(),
-                        ));
-                    };
-                    transform
-                }
-                None => {
-                    return Err(CodecError::NotImplemented(
+                None => sole_transform.ok_or_else(|| {
+                    CodecError::NotImplemented(
                         "SLDPRT cannot assign an unowned tessellation to transformed bodies".into(),
-                    ))
-                }
+                    )
+                })?,
             };
             mesh.edit_vertices(|point| *point = transform.apply_point(*point))
                 .map_err(|error| {

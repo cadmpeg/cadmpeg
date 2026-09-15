@@ -551,10 +551,8 @@ pub(crate) fn type_display_relation_parameters(
         let Some(families) = families.get(&parameter.id) else {
             continue;
         };
-        if families.len() != 1 {
-            continue;
-        }
-        let Some(&family) = families.iter().next() else {
+        let mut families = families.iter();
+        let (Some(&family), None) = (families.next(), families.next()) else {
             continue;
         };
         match family {

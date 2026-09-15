@@ -44,10 +44,8 @@ pub(super) fn move_body_translation_record(
     };
     let mut candidates = Vec::new();
     for selection_offset in data_class_offset..end.saturating_sub(TRAILER_OFFSET + 20) {
-        let Some(bytes) = payload.get(selection_offset..selection_offset + 4) else {
-            continue;
-        };
-        let Some(count) = View::u32_le_at(bytes, 0).map(|value| value as usize) else {
+        let Some(count) = View::u32_le_at(payload, selection_offset).map(|value| value as usize)
+        else {
             continue;
         };
         if !(1..=4096).contains(&count) {

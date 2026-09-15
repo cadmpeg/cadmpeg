@@ -548,10 +548,8 @@ pub(crate) fn project_relation_point_geometry(
                     .map(|position| HashSet::from([position]))
                     .unwrap_or(positions)
             };
-            if positions.len() != 1 {
-                continue;
-            }
-            let Some(position) = positions.into_iter().next() else {
+            let mut positions = positions.into_iter();
+            let (Some(position), None) = (positions.next(), positions.next()) else {
                 continue;
             };
             let position = Point2::new(position.0 as f64 * QUANTUM, position.1 as f64 * QUANTUM);
@@ -1810,19 +1808,12 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
         .and_then(|reference| reference.class_ref.as_deref())
         .and_then(|class_ref| lane.classes.iter().find(|class| class.id == class_ref))
         .filter(|class| class.name == "sgEntHandle")?;
-    let mut slot_classes = lane
-        .classes
-        .iter()
-        .filter(|class| {
-            class.name == "sgSlotHandle"
-                && class.offset > entity_class.offset
-                && class.offset < marker.offset()
-        })
-        .collect::<Vec<_>>();
-    if slot_classes.len() != 1 {
-        return None;
-    }
-    let Some(slot_class) = slot_classes.pop() else {
+    let mut slot_classes = lane.classes.iter().filter(|class| {
+        class.name == "sgSlotHandle"
+            && class.offset > entity_class.offset
+            && class.offset < marker.offset()
+    });
+    let (Some(slot_class), None) = (slot_classes.next(), slot_classes.next()) else {
         return None;
     };
     let class_end = lane

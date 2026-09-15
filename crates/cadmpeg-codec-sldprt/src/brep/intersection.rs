@@ -31,7 +31,8 @@ const INLINE_UV_TAIL: &[u8] = b"\x00\x00\x00\x02\x01\x66\x01";
 
 /// One decoded chart: solved points in metres and parameter bookkeeping.
 struct Chart {
-    points: Vec<[f64; 3]>,
+    endpoints: [[f64; 3]; 2],
+    interior_points: Vec<[f64; 3]>,
     base_parameter: f64,
     base_scale: f64,
     chordal_error: f64,
@@ -197,17 +198,24 @@ fn chart_candidates(bytes: &[u8], body: usize) -> Option<(u16, Vec<Chart>)> {
         if extended && !(0..count).all(|index| finite_tangent(bytes, block + index * stride + 56)) {
             continue;
         }
-        let Some(points) = (0..count)
+        let (Some(first), Some(last)) = (
+            finite_point(bytes, block),
+            finite_point(bytes, block + (count - 1) * stride),
+        ) else {
+            continue;
+        };
+        let Some(interior_points) = (1..count - 1)
             .map(|index| finite_point(bytes, block + index * stride))
             .collect::<Option<Vec<_>>>()
         else {
             continue;
         };
-        if !extended && points.windows(2).all(|pair| pair[0] == pair[1]) {
+        if !extended && first == last && interior_points.iter().all(|point| *point == first) {
             continue;
         }
         candidates.push(Chart {
-            points,
+            endpoints: [first, last],
+            interior_points,
             base_parameter,
             base_scale,
             chordal_error,
@@ -310,27 +318,6 @@ fn distance(a: [f64; 3], b: [f64; 3]) -> f64 {
         .sqrt()
 }
 
-fn chart_parameters(chart: &Chart, points: &[[f64; 3]]) -> Option<Vec<f64>> {
-    points.first()?;
-    let mut parameters = Vec::with_capacity(points.len());
-    parameters.push(chart.base_parameter);
-    for pair in points.windows(2) {
-        let previous = *parameters.last()?;
-        parameters.push(previous + distance(pair[0], pair[1]) * chart.base_scale);
-    }
-    Some(parameters)
-}
-
-fn degree_one_knots(parameters: &[f64]) -> Option<Vec<f64>> {
-    let first = *parameters.first()?;
-    let last = *parameters.last()?;
-    let mut knots = Vec::with_capacity(parameters.len() + 2);
-    knots.push(first);
-    knots.extend_from_slice(parameters);
-    knots.push(last);
-    Some(knots)
-}
-
 /// Build the derived polyline curve for one validated composite.
 fn solved_curve(
     chart: &Chart,
@@ -338,12 +325,23 @@ fn solved_curve(
     end: [f64; 3],
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<(CurveGeometry, Vec<f64>, bool)> {
-    let mut parameters = chart_parameters(chart, &chart.points)?;
-    let mut points = chart.points.clone();
-    let first = points.first_mut()?;
-    *first = start;
-    let last = points.last_mut()?;
-    *last = end;
+    let mut parameter = chart.base_parameter;
+    let mut parameters = Vec::with_capacity(chart.interior_points.len() + 2);
+    parameters.push(parameter);
+    let mut previous = chart.endpoints[0];
+    for &point in chart
+        .interior_points
+        .iter()
+        .chain(std::iter::once(&chart.endpoints[1]))
+    {
+        parameter += distance(previous, point) * chart.base_scale;
+        parameters.push(parameter);
+        previous = point;
+    }
+    let mut points = std::iter::once(start)
+        .chain(chart.interior_points.iter().copied())
+        .chain(std::iter::once(end))
+        .collect::<Vec<_>>();
     let reversed = if parameters.windows(2).all(|pair| pair[0] < pair[1]) {
         false
     } else if parameters.windows(2).all(|pair| pair[0] > pair[1]) {
@@ -353,7 +351,15 @@ fn solved_curve(
     } else {
         return None;
     };
-    let knots = degree_one_knots(&parameters)?;
+    let (first, last) = if reversed {
+        (parameter, chart.base_parameter)
+    } else {
+        (chart.base_parameter, parameter)
+    };
+    let knots = std::iter::once(first)
+        .chain(parameters.iter().copied())
+        .chain(std::iter::once(last))
+        .collect();
     let nurbs = match NurbsCurve::from_lanes(
         1,
         knots,
@@ -463,8 +469,7 @@ pub(super) fn scan_intersection_carriers(
         let mut chart_refusal = crate::lane_refusal::LaneRefusals::new();
         let chart_refusal = &mut chart_refusal;
         let mut matches = candidates.iter().filter_map(|chart| {
-            let first = *chart.points.first()?;
-            let last = *chart.points.last()?;
+            let [first, last] = chart.endpoints;
             let (start, start_distance) = nearest_term(&terms, start_ref, first)?;
             let (end, end_distance) = nearest_term(&terms, end_ref, last)?;
             let endpoint_displacement = start_distance + end_distance;
@@ -657,9 +662,9 @@ mod tests {
         let records = uv_records(&bytes);
         let chart = &charts[&4][0];
         let uv = &records[&7][0];
-        assert_eq!(chart.points.len(), 9);
+        assert_eq!(chart.interior_points.len() + 2, 9);
         assert!(uv.width == UvWidth::Two);
-        assert_eq!(uv.values.len(), chart.points.len() * 2);
+        assert_eq!(uv.values.len(), (chart.interior_points.len() + 2) * 2);
         assert!(scan_intersection_carriers(&bytes, &mut Vec::new()).contains_key(&9));
     }
 
