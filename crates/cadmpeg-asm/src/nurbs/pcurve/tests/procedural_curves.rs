@@ -145,10 +145,12 @@ fn decodes_current_cacheless_helix_record() {
         .map(|digits| u8::from_str_radix(std::str::from_utf8(digits).unwrap(), 16).unwrap())
         .collect::<Vec<_>>();
 
-    let definition = crate::nurbs::proc_curve::helix_definition(
-        &lex_test_span(&bytes, RefWidth::Four).expect("valid single-record byte fixture"),
-    )
-    .expect("current cache-less helix definition");
+    let [record]: [_; 1] = crate::sab::frame(&bytes, 0, bytes.len(), RefWidth::Four)
+        .expect("valid complete helix record")
+        .try_into()
+        .expect("one helix record");
+    let definition = crate::nurbs::proc_curve::helix_definition(&record.tokens)
+        .expect("current cache-less helix definition");
     let crate::nurbs::proc_curve::HelixDefinition {
         angle_range,
         pitch,
