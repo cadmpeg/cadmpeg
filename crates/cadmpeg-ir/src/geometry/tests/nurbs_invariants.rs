@@ -409,3 +409,40 @@ fn a_nurbs_surface_states_its_pole_counts_in_its_control_grid() {
         .to_string();
     assert!(error.contains("control_points row"), "{error}");
 }
+
+#[test]
+fn surface_transposition_preserves_every_pole_and_weight() {
+    let points = vec![
+        vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
+        vec![Point3::new(7.0, 8.0, 9.0), Point3::new(10.0, 11.0, 12.0)],
+        vec![Point3::new(13.0, 14.0, 15.0), Point3::new(16.0, 17.0, 18.0)],
+    ];
+    for weights in [
+        None,
+        Some(vec![vec![-1.0, 2.0], vec![3.0, -4.0], vec![5.0, 6.0]]),
+    ] {
+        let mut surface = NurbsSurface::from_lanes(
+            crate::geometry::NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], true),
+            crate::geometry::NurbsSurfaceAxis::new(1, vec![2.0, 2.0, 5.0, 5.0], false),
+            crate::geometry::NurbsSurfaceLanes::new(points.clone(), weights),
+            true,
+        )
+        .unwrap();
+        let original = surface.clone();
+        surface.transpose_parameter_axes();
+        assert_eq!((surface.u_count(), surface.v_count()), (2, 3));
+        assert_eq!((surface.u_degree(), surface.v_degree()), (1, 2));
+        assert_eq!(surface.u_knots(), original.v_knots());
+        assert_eq!(surface.v_knots(), original.u_knots());
+        assert_eq!((surface.u_periodic(), surface.v_periodic()), (false, true));
+        assert!(surface.normal_reversed());
+        for u in 0..3 {
+            for v in 0..2 {
+                assert_eq!(surface.pole(v, u), original.pole(u, v));
+                assert_eq!(surface.weight(v, u), original.weight(u, v));
+            }
+        }
+        surface.transpose_parameter_axes();
+        assert_eq!(surface, original);
+    }
+}
