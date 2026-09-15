@@ -304,7 +304,7 @@ pub(super) fn decode(
         let (built, failures) = outcome.into_parts();
         let mut committed = 0;
         for mut built in built {
-            if let Err(error) = commit_session.commit_model(built.draft, ir) {
+            if let Err(error) = commit_session.commit_model(built.draft) {
                 losses.push(StepLossCode::DecodeWarning.note(topology_commit_error(
                     &format!("EDGE_BASED_WIREFRAME_MODEL #{model}"),
                     &error,
@@ -349,7 +349,7 @@ pub(super) fn decode(
         let (built, failures) = outcome.into_parts();
         let mut committed = 0;
         for mut built in built {
-            if let Err(error) = commit_session.commit_model(built.draft, ir) {
+            if let Err(error) = commit_session.commit_model(built.draft) {
                 losses.push(StepLossCode::DecodeWarning.note(topology_commit_error(
                     &format!("SHELL_BASED_WIREFRAME_MODEL #{model}"),
                     &error,
@@ -382,7 +382,8 @@ pub(super) fn decode(
             )));
         }
     }
-    let decoded_pcurves = ir
+    let decoded_pcurves = commit_session
+        .document()
         .model
         .pcurves
         .iter()
@@ -433,7 +434,7 @@ pub(super) fn decode(
             id,
             record,
             exchange,
-            ir,
+            commit_session.document(),
             &vertices,
             &edges,
             &oriented,
@@ -451,8 +452,8 @@ pub(super) fn decode(
         let mut body_ids = Vec::new();
         let mut body_by_shell = BTreeMap::<u64, BTreeSet<BodyId>>::new();
         for mut built in built {
-            drop_committed_surfaces(&mut built.draft, &commit_session, ir);
-            if let Err(error) = commit_session.commit_model(built.draft, ir) {
+            drop_committed_surfaces(&mut built.draft, &mut commit_session);
+            if let Err(error) = commit_session.commit_model(built.draft) {
                 losses.push(StepLossCode::DecodeWarning.note(topology_commit_error(
                     &format!("STEP topology root #{id}"),
                     &error,
@@ -538,7 +539,7 @@ pub(super) fn decode(
             )));
             continue;
         };
-        if let Err(error) = commit_session.commit_model(built.draft, ir) {
+        if let Err(error) = commit_session.commit_model(built.draft) {
             losses.push(StepLossCode::DecodeWarning.note(topology_commit_error(
                 &format!("GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id}"),
                 &error,
@@ -610,7 +611,7 @@ pub(super) fn decode(
             result.claims.insert(id);
         }
     }
-    for face in &ir.model.faces {
+    for face in &commit_session.document().model.faces {
         if let Some(source) = source_numeric_id(face.id.as_str(), "face") {
             result
                 .faces_by_source
@@ -619,7 +620,7 @@ pub(super) fn decode(
                 .push(face.id.clone());
         }
     }
-    for edge in &ir.model.edges {
+    for edge in &commit_session.document().model.edges {
         if let Some(source) = source_numeric_id(edge.id.as_str(), "edge") {
             result
                 .edges_by_source
@@ -628,7 +629,7 @@ pub(super) fn decode(
                 .push(edge.id.clone());
         }
     }
-    for vertex in &ir.model.vertices {
+    for vertex in &commit_session.document().model.vertices {
         if let Some(source) = source_numeric_id(vertex.id.as_str(), "vertex") {
             result
                 .vertices_by_source
@@ -1832,14 +1833,14 @@ struct Built {
     pcurve_admissions: Vec<PcurveAdmission>,
 }
 
-fn drop_committed_surfaces(draft: &mut ModelDraft, session: &CommitSession, ir: &CadIr) {
+fn drop_committed_surfaces(draft: &mut ModelDraft, session: &mut CommitSession<'_>) {
     // Implicit surfaces can be staged by multiple roots. The session is the
     // authority on which ones a prior root committed; a pre-loop snapshot is
     // wrong because commits add surfaces while the loop is running.
     draft
         .model_mut()
         .surfaces
-        .retain(|surface| !session.contains(ir, surface.id.as_str()));
+        .retain(|surface| !session.contains(surface.id.as_str()));
 }
 
 #[cfg(test)]
@@ -1997,7 +1998,7 @@ fn build(
     id: u64,
     root: &RawRecord,
     exchange: &Exchange,
-    ir: &mut CadIr,
+    ir: &CadIr,
     vdefs: &BTreeMap<u64, VertexDef>,
     edefs: &BTreeMap<u64, Rc<EdgeDef>>,
     odefs: &BTreeMap<u64, OrientedDef>,
@@ -2125,7 +2126,7 @@ fn build_one(
     id: u64,
     root: &RawRecord,
     exchange: &Exchange,
-    ir: &mut CadIr,
+    ir: &CadIr,
     vdefs: &BTreeMap<u64, VertexDef>,
     edefs: &BTreeMap<u64, Rc<EdgeDef>>,
     odefs: &BTreeMap<u64, OrientedDef>,
@@ -3461,7 +3462,7 @@ struct PcurveEndpointFit {
 
 #[allow(clippy::too_many_arguments)]
 fn select_associated_pcurve(
-    ir: &mut CadIr,
+    ir: &CadIr,
     exchange: &Exchange,
     surface_step: u64,
     edge: &EdgeDef,

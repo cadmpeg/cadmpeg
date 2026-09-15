@@ -2686,7 +2686,7 @@ pub(super) fn project(
 
     let mut commit_session = CommitSession::new(ir);
     for (entry, candidate) in legacy_face_candidates {
-        if commit_session.commit_model(candidate, ir).is_err() {
+        if commit_session.commit_model(candidate).is_err() {
             losses.push(entity_loss(
                 entry,
                 "legacy single-parent plane hole failed neutral topology validation",
