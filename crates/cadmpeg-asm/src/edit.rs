@@ -200,14 +200,13 @@ impl AsmEditSet {
         index: usize,
         tag: u8,
     ) -> Result<usize, CodecError> {
-        let offset =
-            sab::payload_token_offset(bytes, record, ref_width, index).ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "{} record {} lacks payload field {index}",
-                    record.head(),
-                    record.index
-                ))
-            })?;
+        let (offset, _) = sab::payload_token(bytes, record, ref_width, index).ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "{} record {} lacks payload field {index}",
+                record.head(),
+                record.index
+            ))
+        })?;
         if bytes.get(offset) != Some(&tag) {
             return Err(CodecError::malformed(format_args!(
                 "{} record {} payload field {index} is not tag {tag:#04x}",
@@ -216,6 +215,31 @@ impl AsmEditSet {
             )));
         }
         Ok(offset)
+    }
+
+    /// Locate one double payload and retain its decoded value.
+    pub fn required_payload_double(
+        &self,
+        bytes: &[u8],
+        record: &Record,
+        index: usize,
+    ) -> Result<(usize, f64), CodecError> {
+        let (offset, token) =
+            sab::payload_token(bytes, record, self.ref_width, index).ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "{} record {} lacks payload field {index}",
+                    record.head(),
+                    record.index
+                ))
+            })?;
+        let sab::Token::Double(value) = token else {
+            return Err(CodecError::malformed(format_args!(
+                "{} record {} payload field {index} is not tag 0x06",
+                record.head(),
+                record.index
+            )));
+        };
+        Ok((offset, value))
     }
 
     /// Replace one tagged integer payload without changing its encoded width.
@@ -239,8 +263,8 @@ impl AsmEditSet {
         index: usize,
         sense: Sense,
     ) -> Result<(), CodecError> {
-        let offset =
-            sab::payload_token_offset(bytes, record, self.ref_width, index).ok_or_else(|| {
+        let (offset, _) =
+            sab::payload_token(bytes, record, self.ref_width, index).ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "{} record {} lacks payload field {index}",
                     record.head(),
@@ -265,8 +289,8 @@ impl AsmEditSet {
         index: usize,
         value: bool,
     ) -> Result<(), CodecError> {
-        let offset =
-            sab::payload_token_offset(bytes, record, self.ref_width, index).ok_or_else(|| {
+        let (offset, _) =
+            sab::payload_token(bytes, record, self.ref_width, index).ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "{} record {} lacks boolean field {index}",
                     record.head(),
@@ -326,8 +350,8 @@ impl AsmEditSet {
         field: usize,
         packed: u32,
     ) -> Result<(), CodecError> {
-        let offset =
-            sab::payload_token_offset(bytes, record, self.ref_width, field).ok_or_else(|| {
+        let (offset, _) =
+            sab::payload_token(bytes, record, self.ref_width, field).ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "{} record {} lacks packed truecolor field {field}",
                     record.head(),
@@ -370,8 +394,8 @@ impl AsmEditSet {
                 record.index
             )));
         };
-        let offset =
-            sab::payload_token_offset(bytes, record, self.ref_width, field).ok_or_else(|| {
+        let (offset, _) =
+            sab::payload_token(bytes, record, self.ref_width, field).ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "{} record {} lacks decimal-color field {field}",
                     record.head(),
@@ -1788,8 +1812,8 @@ fn patch_nurbs_pcurve_record(
     }
     if let PcurvePatchCarrier::Pcurve(_) = &carrier {
         if let Some(reversed) = wrapper_reversed {
-            let offset =
-                sab::payload_token_offset(bytes, record, stream_width, 4).ok_or_else(|| {
+            let (offset, _) =
+                sab::payload_token(bytes, record, stream_width, 4).ok_or_else(|| {
                     CodecError::malformed(format_args!(
                         "pcurve record {} lacks wrapper-reversal carrier",
                         record.index
@@ -1809,7 +1833,7 @@ fn patch_nurbs_pcurve_record(
                 record.index
             )));
         }
-        // Chunk space, because `payload_token_offset` indexes value tokens.
+        // Chunk space, because `payload_token` indexes value tokens.
         let suffix_start = record.chunk_len().checked_sub(6).ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "pcurve record {} lacks its native metadata suffix",
@@ -1818,12 +1842,14 @@ fn patch_nurbs_pcurve_record(
         })?;
         let suffix_offsets = (suffix_start..record.chunk_len())
             .map(|index| {
-                sab::payload_token_offset(bytes, record, stream_width, index).ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "pcurve record {} has an incomplete native metadata suffix",
-                        record.index
-                    ))
-                })
+                sab::payload_token(bytes, record, stream_width, index)
+                    .map(|(offset, _)| offset)
+                    .ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "pcurve record {} has an incomplete native metadata suffix",
+                            record.index
+                        ))
+                    })
             })
             .collect::<Result<Vec<_>, _>>()?;
         if let Some(flags) = native_tail_flags {
@@ -1897,8 +1923,8 @@ fn patch_ref_pcurve_contract(
         return Ok(());
     };
     for (index, value) in [5usize, 6].into_iter().zip(range) {
-        let offset =
-            sab::payload_token_offset(bytes, record, stream_width, index).ok_or_else(|| {
+        let (offset, _) =
+            sab::payload_token(bytes, record, stream_width, index).ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "ref-form pcurve record {} lacks parameter-range field {index}",
                     record.index
@@ -1919,6 +1945,46 @@ fn patch_ref_pcurve_contract(
 mod tests {
     use super::AsmEditSet;
     use crate::kernel_header::RefWidth;
+
+    #[test]
+    fn double_field_retains_current_payload_bits_and_checks_its_actual_tag() {
+        for width in [RefWidth::Four, RefWidth::Eight] {
+            let mut bytes = vec![0x0d, 1, b'x', 0x06];
+            bytes.extend_from_slice(&1.0_f64.to_le_bytes());
+            bytes.push(0x11);
+            let records = crate::sab::frame(&bytes, 0, bytes.len(), width).unwrap();
+            let edits = AsmEditSet::from_framed(records.clone(), width, 1.0);
+            for expected in [
+                0.0_f64,
+                -0.0,
+                -2.5,
+                f64::INFINITY,
+                f64::from_bits(0x7ff8_0000_0000_0042),
+            ] {
+                bytes[4..12].copy_from_slice(&expected.to_le_bytes());
+                let (offset, actual) = edits
+                    .required_payload_double(&bytes, &records[0], 0)
+                    .unwrap();
+                assert_eq!(offset, 3);
+                assert_eq!(actual.to_bits(), expected.to_bits());
+            }
+            assert!(edits
+                .required_payload_double(&bytes, &records[0], 1)
+                .unwrap_err()
+                .to_string()
+                .contains("lacks payload field 1"));
+            bytes[3] = 0x17;
+            assert!(edits
+                .required_payload_double(&bytes, &records[0], 0)
+                .unwrap_err()
+                .to_string()
+                .contains("is not tag 0x06"));
+            bytes[3] = 0x06;
+            assert!(edits
+                .required_payload_double(&bytes[..11], &records[0], 0)
+                .is_err());
+        }
+    }
 
     fn projection_fixture(width: RefWidth, early_close: bool) -> (Vec<u8>, crate::sab::Record) {
         fn integer(bytes: &mut Vec<u8>, tag: u8, value: i64, width: RefWidth) {

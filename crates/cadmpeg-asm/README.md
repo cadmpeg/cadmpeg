@@ -14,16 +14,17 @@ cargo add cadmpeg-asm
 ## Parse kernel headers
 
 `asm_header::has_asm_magic` recognizes the 15-byte `ASM BinaryFile4` and
-`ASM BinaryFile8` prefixes. `asm_header::parse` returns a [`KernelHeader`][header]
-with `width`, `save_format_version`, `entity_count`, `flags`,
-product strings, and tolerance fields that the input provides. A missing magic
-returns `None`; a recognized but incomplete header returns a `KernelHeader` with
-unavailable fields set to `None`.
+`ASM BinaryFile8` prefixes. `asm_header::parse` returns a
+[`BinaryHeader`][binary-header] with a required `RefWidth` and
+[`KernelHeader`][header] metadata. The metadata stores `save_format_version`,
+`entity_count`, `flags`, product strings, and tolerance fields that the input
+provides. An unreadable width returns `None`; recognized but incomplete metadata
+retains unavailable fields as `None`.
 
 `acis_header::has_acis_magic` recognizes `ACIS BinaryFile`.
-`acis_header::parse` admits its 32-bit header and returns the same
-`KernelHeader` metadata. Every ACIS save format uses this parser. Majors 217
-and 218 are the bands the record decoders are verified against, which `dialect`
+`acis_header::parse` admits its 32-bit header and returns a `BinaryHeader`
+with `RefWidth::Four` and the same `KernelHeader` metadata. Every ACIS save
+format uses this parser. Majors 217 and 218 are the bands the record decoders are verified against, which `dialect`
 states: a stream outside them is framed and decoded the same way, and the host
 labels the result `Admission::Unverified` and charges its
 `source.dialect-unverified` loss.
@@ -50,24 +51,25 @@ three strings, and the three tolerance values. `asm_header::solved_record_limit`
 attempts to locate the history partition's first record when the header
 declares `HISTORY_PARTITION_FLAG`. It recognizes the
 `Begin-of-ASM-History-Data` preamble and the earlier `delta_state` boundary.
-`asm_header::stream_ref_width` returns the declared integer/reference width in
-bytes and uses `8` when the header is unreadable.
+`asm_header::stream_ref_width` returns the declared integer/reference
+`RefWidth` and uses `RefWidth::Eight` when the header is unreadable.
+`RefWidth::bytes()` returns the encoded payload size.
 
 ## Frame SAB records
 
 `sab::frame(bytes, start, limit, ref_width)` returns a `Vec<Record>` for the
-requested byte range. `ref_width` is the stream's integer and reference width,
-usually `4` or `8`. A `0x11` tag terminates a record at subtype depth zero.
-`frame` stops at the supplied limit, at the end of `bytes`, or at the
-`delta_state` history boundary. `sab::frame_history` accepts a final history
-record that ends at the supplied limit without a `0x11` terminator.
+requested byte range. `ref_width` is `RefWidth::Four` or `RefWidth::Eight`.
+A `0x11` tag terminates a record at subtype depth zero. `frame` stops at the
+supplied limit or at the `delta_state` history boundary. An inverted range, a
+limit beyond the available bytes, or an incomplete record at the limit fails.
+`sab::frame_history` accepts a final history record that ends at the supplied limit without a `0x11` terminator.
 
-An unknown tag or truncated payload returns [`FrameError`][frame-error], which
-stores the byte offset and a reason string. Framing preserves recognized
-payload tokens, record names, and record extents. A [`Record`][record] contains
-the zero-based `index`, the hyphen-joined `name`, its leading `head`, the
-retained `tokens` in an `Arc<[Token]>`, the starting `offset`, and the byte
-`len` including the record terminator when present.
+An unknown tag or truncated payload returns [`StreamError`][stream-error], which
+stores the stream format, byte offset, and reason string. Framing preserves
+recognized payload tokens, record names, and record extents. A [`Record`][record] contains
+the zero-based `index`, hyphen-joined `name`, retained `tokens` in an
+`Arc<[Token]>`, starting `offset`, and byte `len` including the record terminator
+when present. `Record::head()` returns the leading name component.
 
 Record names use `0x0e` sub-identifiers followed by a `0x0d` identifier. Those
 tags become `Token::SubIdent` and `Token::Ident` when they occur in a payload.
@@ -94,9 +96,9 @@ variant.
 
 ## Locate payload bytes
 
-`sab::payload_token_offset` returns the absolute byte offset for a value token
+`sab::payload_token` returns a decoded value token and its absolute byte offset
 at a record's chunk index. `sab::payload_token_offsets` returns all absolute
-offsets for a selected payload tag and reports a [`FrameError`][frame-error]
+offsets for a selected payload tag and reports a [`StreamError`][stream-error]
 when the record cannot be lexed. Both helpers use the same value-token indexing
 as `Record::chunk`.
 
@@ -108,6 +110,7 @@ range starts after that identifier and ends before the matching
 Frame a synthetic SAB record:
 
 ```rust,no_run
+use cadmpeg_asm::kernel_header::RefWidth;
 use cadmpeg_asm::sab::{frame, Token};
 
 fn main() {
@@ -117,7 +120,7 @@ fn main() {
     bytes.extend_from_slice(&1_i64.to_le_bytes());
     bytes.push(0x11);
 
-    let records = frame(&bytes, 0, bytes.len(), 8).expect("valid SAB record");
+    let records = frame(&bytes, 0, bytes.len(), RefWidth::Eight).expect("valid SAB record");
     let record = &records[0];
 
     assert_eq!(record.name, "body");
@@ -137,7 +140,8 @@ Requires Rust 1.88 or later. Licensed under Apache-2.0.
 
 [architecture]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/architecture.md
 [docs]: https://docs.rs/cadmpeg-asm
-[frame-error]: https://docs.rs/cadmpeg-asm/latest/cadmpeg_asm/sab/struct.FrameError.html
+[stream-error]: https://docs.rs/cadmpeg-asm/latest/cadmpeg_asm/stream_error/struct.StreamError.html
+[binary-header]: https://docs.rs/cadmpeg-asm/latest/cadmpeg_asm/kernel_header/struct.BinaryHeader.html
 [header]: https://docs.rs/cadmpeg-asm/latest/cadmpeg_asm/kernel_header/struct.KernelHeader.html
 [history]: https://docs.rs/cadmpeg-asm/latest/cadmpeg_asm/kernel_header/constant.HISTORY_PARTITION_FLAG.html
 [legal]: https://github.com/cadmpeg/cadmpeg/blob/main/LEGAL.md

@@ -4,7 +4,6 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_core::bytes::assemble_u32_be;
-use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{knots_nondecreasing, NurbsCurve};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -258,11 +257,7 @@ fn patch_asm_geometry(
     }
     for record in records {
         if let Some(timestamp) = creation_timestamps.get(&record.index) {
-            if !record.head().contains("ATTRIB_CUSTOM")
-                || !record.tokens.iter().any(
-                    |token| matches!(token, sab::Token::Str(value) if value == "Timestamp_attrib_def"),
-                )
-            {
+            if !record.head().contains("ATTRIB_CUSTOM") {
                 return Err(CodecError::malformed(format_args!(
                     "F3D timestamp record {} has the wrong attribute family",
                     record.index
@@ -274,7 +269,7 @@ fn patch_asm_geometry(
                 |token| matches!(token, sab::Token::Str(value) if value == "Timestamp_attrib_def"),
             ) else {
                 return Err(CodecError::malformed(format_args!(
-                    "F3D timestamp record {} has no timestamp attribute family",
+                    "F3D timestamp record {} has the wrong attribute family",
                     record.index
                 )));
             };
@@ -596,10 +591,11 @@ fn patch_asm_geometry(
                     asm_edits.required_payload_field(bytes, record, field_indices[0], 0x13)?,
                     asm_edits.required_payload_field(bytes, record, field_indices[1], 0x14)?,
                     asm_edits.required_payload_field(bytes, record, field_indices[2], 0x14)?,
-                    asm_edits.required_payload_field(bytes, record, field_indices[3], 0x06)?,
                 ];
+                let (ratio_offset, old_ratio) =
+                    asm_edits.required_payload_double(bytes, record, field_indices[3])?;
                 let major = major_radius / LEN_TO_MM;
-                for (offset, values) in fields[..3].iter().zip([
+                for (offset, values) in fields.iter().zip([
                     [
                         center.x / LEN_TO_MM,
                         center.y / LEN_TO_MM,
@@ -618,18 +614,12 @@ fn patch_asm_geometry(
                     }
                 }
                 let ratio = minor_radius / major_radius;
-                let old_ratio = View::f64_le_at(bytes, fields[3] + 1).ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "ellipse record {} has a truncated ratio payload",
-                        record.index
-                    ))
-                })?;
                 let signed_ratio = if old_ratio.is_sign_negative() {
                     -ratio
                 } else {
                     ratio
                 };
-                AsmEditSet::patch_f64_payload(bytes, fields[3] + 1, signed_ratio)?;
+                AsmEditSet::patch_f64_payload(bytes, ratio_offset + 1, signed_ratio)?;
             }
         } else if record.head() == "plane" {
             if let Some((origin, normal, u_axis)) = planes.get(&id) {
@@ -753,23 +743,15 @@ fn patch_asm_geometry(
                     asm_edits.required_payload_field(bytes, record, field_indices[0], 0x13)?,
                     asm_edits.required_payload_field(bytes, record, field_indices[1], 0x14)?,
                     asm_edits.required_payload_field(bytes, record, field_indices[2], 0x14)?,
-                    asm_edits.required_payload_field(bytes, record, field_indices[3], 0x06)?,
-                    asm_edits.required_payload_field(bytes, record, field_indices[4], 0x06)?,
-                    asm_edits.required_payload_field(bytes, record, field_indices[5], 0x06)?,
-                    asm_edits.required_payload_field(bytes, record, field_indices[6], 0x06)?,
                 ];
-                let old_sine = View::f64_le_at(bytes, fields[4] + 1).ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "cone record {} has a truncated sine payload",
-                        record.index
-                    ))
-                })?;
-                let old_cosine = View::f64_le_at(bytes, fields[5] + 1).ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "cone record {} has a truncated cosine payload",
-                        record.index
-                    ))
-                })?;
+                let ratio_offset =
+                    asm_edits.required_payload_field(bytes, record, field_indices[3], 0x06)?;
+                let (sine_offset, old_sine) =
+                    asm_edits.required_payload_double(bytes, record, field_indices[4])?;
+                let (cosine_offset, old_cosine) =
+                    asm_edits.required_payload_double(bytes, record, field_indices[5])?;
+                let radius_offset =
+                    asm_edits.required_payload_field(bytes, record, field_indices[6], 0x06)?;
                 let sine_sign = if old_sine < 0.0 { -1.0 } else { 1.0 };
                 let cosine_sign = if old_cosine < 0.0 { -1.0 } else { 1.0 };
                 let native_axis = if *half_angle > 0.0 && sine_sign * cosine_sign < 0.0 {
@@ -778,7 +760,7 @@ fn patch_asm_geometry(
                     *axis
                 };
                 let scaled_radius = radius / LEN_TO_MM;
-                for (offset, values) in fields[..3].iter().zip([
+                for (offset, values) in fields.iter().zip([
                     [
                         origin.x / LEN_TO_MM,
                         origin.y / LEN_TO_MM,
@@ -796,13 +778,13 @@ fn patch_asm_geometry(
                         AsmEditSet::patch_f64_payload(bytes, at, value)?;
                     }
                 }
-                for (offset, value) in fields[3..].iter().zip([
-                    *ratio,
-                    sine_sign * half_angle.sin(),
-                    cosine_sign * half_angle.cos(),
-                    scaled_radius,
-                ]) {
-                    AsmEditSet::patch_f64_payload(bytes, *offset + 1, value)?;
+                for (offset, value) in [
+                    (ratio_offset, *ratio),
+                    (sine_offset, sine_sign * half_angle.sin()),
+                    (cosine_offset, cosine_sign * half_angle.cos()),
+                    (radius_offset, scaled_radius),
+                ] {
+                    AsmEditSet::patch_f64_payload(bytes, offset + 1, value)?;
                 }
             }
         }
