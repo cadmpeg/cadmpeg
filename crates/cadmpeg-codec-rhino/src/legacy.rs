@@ -1426,6 +1426,8 @@ fn union(parents: &mut [usize], left: usize, right: usize) {
 }
 
 fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<(), CodecError> {
+    let mut draft = cadmpeg_ir::draft::ModelDraft::new();
+    let model = draft.model_mut();
     let suffix_key = legacy_identity_key(suffix.to_owned())?;
     let body_id = cadmpeg_ir::ids::BodyId::compose(
         &cadmpeg_ir::identity_namespace!("rhino", "object", "body"),
@@ -1651,12 +1653,12 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
             &cadmpeg_ir::identity_namespace!("rhino", "object", "vertex"),
             legacy_identity_key(format!("{suffix}.slot-{index}"))?,
         );
-        ir.model.points.push(Point {
+        model.points.push(Point {
             id: point_id.clone(),
             position,
             source_object: None,
         });
-        ir.model.vertices.push(Vertex {
+        model.vertices.push(Vertex {
             id: vertex_id.clone(),
             point: point_id,
             tolerance: (tolerance > 0.0)
@@ -1689,7 +1691,7 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
                 &cadmpeg_ir::identity_namespace!("rhino", "object", "curve"),
                 legacy_identity_key(format!("{suffix}.edge-{edge_index}"))?,
             );
-            ir.model.curves.push(Curve {
+            model.curves.push(Curve {
                 id: id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.clone())),
                 source_object: None,
@@ -1705,7 +1707,7 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
         let vertices = group_vertices
             .get(&root)
             .ok_or_else(|| CodecError::Malformed("V1 edge has no vertices".to_string()))?;
-        ir.model.edges.push(Edge {
+        model.edges.push(Edge {
             id: edge_id.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                 curve_id.as_ref().map(|value| value.0.clone()),
@@ -1738,7 +1740,7 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
             &cadmpeg_ir::identity_namespace!("rhino", "object", "face"),
             legacy_identity_key(format!("{suffix}.slot-{face_index}"))?,
         );
-        ir.model.surfaces.push(Surface {
+        model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(face_record.surface)),
             source_object: None,
@@ -1764,7 +1766,7 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
                     ))?,
                 );
                 let pcurve_domain = curve_domain(&trim.pcurve)?;
-                ir.model.pcurves.push(Pcurve {
+                model.pcurves.push(Pcurve {
                     id: pcurve_id.clone(),
                     geometry: PcurveGeometry::Nurbs {
                         nurbs: PcurveNurbs::from_lanes(
@@ -1798,7 +1800,7 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
                     .or_default()
                     .push(coedge_id.clone());
                 coedge_ids.push(coedge_id.clone());
-                ir.model.coedges.push(Coedge {
+                model.coedges.push(Coedge {
                     id: coedge_id.clone(),
                     owner_loop: loop_id.clone(),
                     edge: group_edges[&root].clone(),
@@ -1822,7 +1824,7 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
             }
             let ring = cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new())
                 .map_err(|error| CodecError::Malformed(error.to_string()))?;
-            ir.model.loops.push(Loop {
+            model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
@@ -1854,7 +1856,7 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
         } else {
             cadmpeg_ir::topology::FaceLoops::unspecified(face_loops)
         };
-        ir.model.faces.push(Face {
+        model.faces.push(Face {
             id: face_id.clone(),
             shell: shell_id.clone(),
             surface: surface_id,
@@ -1870,8 +1872,7 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
         });
         shell_faces.push(face_id);
     }
-    let coedge_positions = ir
-        .model
+    let coedge_positions = model
         .coedges
         .iter()
         .enumerate()
@@ -1879,11 +1880,11 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
         .collect::<BTreeMap<_, _>>();
     for ring in coedges_by_root.values() {
         for index in 0..ring.len() {
-            ir.model.coedges[coedge_positions[&ring[index]]].radial_next =
+            model.coedges[coedge_positions[&ring[index]]].radial_next =
                 ring[(index + 1) % ring.len()].clone();
         }
     }
-    ir.model.shells.push(
+    model.shells.push(
         Shell::new(
             shell_id.clone(),
             region_id.clone(),
@@ -1893,12 +1894,12 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
         )
         .map_err(|message| cadmpeg_core::CodecError::Malformed(message.to_string()))?,
     );
-    ir.model.regions.push(Region {
+    model.regions.push(Region {
         id: region_id.clone(),
         body: body_id.clone(),
         shells: vec![shell_id],
     });
-    ir.model.bodies.push(Body {
+    model.bodies.push(Body {
         id: body_id,
         kind: BodyKind::General,
         regions: vec![region_id],
@@ -1907,7 +1908,7 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
         color: None,
         visible: None,
     });
-    Ok(())
+    draft.commit_model(ir).map_err(CodecError::malformed)
 }
 
 fn legacy_trim(
@@ -3291,6 +3292,79 @@ mod tests {
         assert_eq!(result.report().coverage()["legacy_v1_breps"], 1);
         let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
         assert!(report.is_ok(), "{report:?}");
+    }
+
+    #[test]
+    fn v1_rejected_brep_retains_its_source_without_partial_model_entities() {
+        let mut source = legacy_face_archive();
+        let baseline = crate::decode::seal_for_test(
+            decode_v1(&source).expect("valid legacy face baseline"),
+            false,
+        );
+        assert_eq!(baseline.ir().model.bodies.len(), 1);
+        let offsets = source
+            .windows(4)
+            .enumerate()
+            .filter_map(|(offset, bytes)| {
+                (bytes == TCODE_LEGACY_BNDSTUFF.to_le_bytes()).then_some(offset)
+            })
+            .collect::<Vec<_>>();
+        let [offset] = offsets.as_slice() else {
+            panic!("fixture must contain exactly one boundary record");
+        };
+        let boundary = chunk_at(&source, *offset, source.len(), ArchiveVersion::V1, false)
+            .expect("framed boundary");
+        // The boundary starts with its trim count, then its role. An inner
+        // boundary with no outer boundary fails after topology was staged.
+        let role_offset = boundary.body().start + 4;
+        source[role_offset..role_offset + 4].copy_from_slice(&1_i32.to_le_bytes());
+        for typecode in [
+            TCODE_LEGACY_BNDSTUFF,
+            TCODE_LEGACY_BND,
+            TCODE_LEGACY_FACSTUFF,
+            TCODE_LEGACY_FAC,
+        ] {
+            let offsets = source
+                .windows(4)
+                .enumerate()
+                .filter_map(|(offset, bytes)| (bytes == typecode.to_le_bytes()).then_some(offset))
+                .collect::<Vec<_>>();
+            let [offset] = offsets.as_slice() else {
+                panic!("fixture must contain one ancestor of each type");
+            };
+            let chunk = chunk_at(&source, *offset, source.len(), ArchiveVersion::V1, false)
+                .expect("framed ancestor");
+            let body = chunk.body();
+            let checksum = crate::chunks::crc16(0, &source[body.clone()]);
+            source[body.end..chunk.next_offset()].copy_from_slice(&checksum.to_le_bytes());
+        }
+        let comment =
+            chunk_at(&source, 32, source.len(), ArchiveVersion::V1, false).expect("framed comment");
+        let face = chunk_at(
+            &source,
+            comment.next_offset(),
+            source.len(),
+            ArchiveVersion::V1,
+            false,
+        )
+        .expect("framed face");
+        let result = crate::decode::seal_for_test(
+            decode_v1(&source).expect("invalid BREP remains source-retained"),
+            false,
+        );
+        assert_eq!(result.ir().model.entity_count(), 0);
+        assert!(result
+            .source_fidelity()
+            .retained_records()
+            .values()
+            .any(|record| {
+                record.data() == Some(&source[comment.next_offset()..face.next_offset()])
+            }));
+        assert!(result
+            .report()
+            .notes
+            .iter()
+            .any(|note| { note.contains("states no outer boundary") }));
     }
 
     #[test]
