@@ -132,7 +132,22 @@ fn complete_sidecar_refuses_unknown_fields_at_every_owned_object() {
                 fields.insert("zz_bogus".into(), value);
                 let error = DecodeSidecar::from_json(&probe.to_string())
                     .expect_err(&format!("unknown field at {path}"));
-                assert!(error.to_string().contains("zz_bogus"), "{path}: {error}");
+                // An externally tagged enum rejects a second tag before it
+                // inspects that tag's name. Its payload is still swept below.
+                let tag_count_refusal = path == "/report/identity/dialects/primary/admission"
+                    && error.to_string().contains("expected map with a single key");
+                assert!(
+                    error.to_string().contains("zz_bogus") || tag_count_refusal,
+                    "{path}: {error}"
+                );
+
+                if path == "/report/identity/dialects/primary/admission" {
+                    let fields = probe.pointer_mut(&path).unwrap().as_object_mut().unwrap();
+                    fields.remove("unverified").expect("known enum tag");
+                    let error = DecodeSidecar::from_json(&probe.to_string())
+                        .expect_err("unknown sole enum tag");
+                    assert!(error.to_string().contains("zz_bogus"), "{path}: {error}");
+                }
             }
         }
     }

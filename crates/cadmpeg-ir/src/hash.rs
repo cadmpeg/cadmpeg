@@ -479,19 +479,15 @@ mod tests {
         );
     }
 
-    /// A record carrying the members the unknown reduction keeps (`id`,
-    /// `links`) alongside ones it drops.
+    /// An admitted product projection of a retained source record.
     fn pinned_unknown(id: &str, links: &[&str]) -> NativeRecord {
-        let serde_json::Value::Object(fields) = serde_json::json!({
-            "links": links,
-            "offset": 4096,
-            "byte_len": 12,
-            "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
-            "data": "AQID"
-        }) else {
-            panic!("the pinned unknown literal is a JSON object");
-        };
-        NativeRecord::new(id, fields).expect("valid native identity")
+        NativeRecord::from(&crate::NativeUnknownRecord {
+            id: UnknownId::mint(id).expect("valid fixture identity"),
+            links: links
+                .iter()
+                .map(|link| crate::ids::Identity::new(*link).expect("valid fixture link"))
+                .collect(),
+        })
     }
 
     fn pinned_document() -> CadIr {
@@ -552,6 +548,18 @@ mod tests {
             |_| { Ok(()) }
         )
         .is_err());
+
+        // Source retention fields belong to the sidecar. They cannot be
+        // silently reduced out of a reserved product unknown record.
+        let serde_json::Value::Object(source_fields) = serde_json::json!({
+            "links": [], "offset": 4096, "byte_len": 12,
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+            "data": "AQID"
+        }) else {
+            unreachable!("object fixture")
+        };
+        let raw_source = pinned_document_with_unknown(source_fields);
+        assert!(document_local_sha256(&raw_source, "pin", source_image).is_err());
     }
 
     /// Pins both digest entry points over one fixed, platform-independent
@@ -561,7 +569,7 @@ mod tests {
         let ir = pinned_document();
         assert_eq!(
             canonical_json_sha256(&ir).unwrap(),
-            "d1ba8ac967bf02f410e362b0ba5cdefaa410bbbab7c21d4180443b16906ff487"
+            "dfc5790d04d56453ec5d9bd2ce5f221522ea0bdc25acdcf97a9047705f30afc7"
         );
         assert_eq!(
             document_local_sha256(&ir, "pin", "pin:test:source-image#0").unwrap(),
@@ -722,7 +730,7 @@ mod tests {
         });
         let unknowns = ir
             .native_unknowns(format)
-            .unwrap_or_default()
+            .expect("the normalization fixture has admitted product unknowns")
             .into_iter()
             .filter(|record| record.id.as_str() != source_image_id)
             .collect::<Vec<_>>();
@@ -757,6 +765,7 @@ mod tests {
             .into_iter()
             .collect(),
         ));
+        let body_id = ir.model.bodies[0].id.as_str().to_owned();
         let mut source_fidelity = crate::SourceFidelity::default();
         source_fidelity
             .attach_native_unknown_records(
@@ -768,7 +777,7 @@ mod tests {
                         UnknownId::mint("synthetic:model:record#1").expect("valid identity"),
                         8,
                         vec![4, 5],
-                        vec!["cube:body#0".into()],
+                        vec![body_id],
                     ),
                 ],
             )
@@ -828,7 +837,7 @@ mod tests {
                 UnknownId::mint(source_image).expect("valid identity"),
                 4,
                 vec![9],
-                vec!["cube:body#0".into()],
+                vec![ir.model.bodies[0].id.as_str().to_owned()],
             ));
         assert_eq!(
             crate::hash::document_local_sha256(&repacked, "synthetic", source_image).unwrap(),

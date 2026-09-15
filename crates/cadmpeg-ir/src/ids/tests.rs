@@ -35,8 +35,12 @@ fn identity_schemas_constrain_strings_and_map_keys() {
     macro_rules! check {
         ($identity:ty) => {{
             let schema = serde_json::to_value(schemars::schema_for!($identity)).unwrap();
-            assert_eq!(schema["type"], "string");
-            let pattern = schema["pattern"].as_str().unwrap();
+            let string_schema = match schema["$ref"].as_str() {
+                Some(reference) => schema.pointer(reference.strip_prefix('#').unwrap()).unwrap(),
+                None => &schema,
+            };
+            assert_eq!(string_schema["type"], "string");
+            let pattern = string_schema["pattern"].as_str().unwrap();
             let map = serde_json::to_value(schemars::schema_for!(BTreeMap<$identity, u8>)).unwrap();
             assert_eq!(map["additionalProperties"], false);
             assert!(map["patternProperties"].get(pattern).is_some());
