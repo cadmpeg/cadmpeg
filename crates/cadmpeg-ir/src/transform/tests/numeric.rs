@@ -3,6 +3,7 @@ use crate::math::Vector3;
 use crate::transform::{Transform, TransformError};
 
 const EPS_INVERSE_CHECK: f64 = 1.0e-12;
+const EPS_NORMAL_DIRECTION: f64 = 1.0e-15;
 
 #[test]
 fn finite_inverses_survive_extreme_scales_and_axis_permutations() {
@@ -168,4 +169,22 @@ fn normal_transform_preserves_product_range_and_cancellation() {
         cancellation.apply_normal(Vector3::new(1.0, 1.0, 1.0)),
         Some(Vector3::new(component, component, component))
     );
+}
+
+#[test]
+fn normal_transform_preserves_nonzero_subnormal_products() {
+    let transform = Transform::affine([
+        [2.0_f64.powi(1000), 0.0, 0.0, 0.0],
+        [0.0, 2.0_f64.powi(1000), 0.0, 0.0],
+        [0.0, 0.0, 2.0_f64.powi(1000), 0.0],
+    ])
+    .expect("affine transform");
+    let normal = Vector3::new(3.0 * 2.0_f64.powi(-75), 5.0 * 2.0_f64.powi(-75), 0.0);
+    let expected = 34.0_f64.sqrt();
+    let actual = transform
+        .apply_normal(normal)
+        .expect("finite transformed normal");
+    assert!((actual.x - 3.0 / expected).abs() < EPS_NORMAL_DIRECTION);
+    assert!((actual.y - 5.0 / expected).abs() < EPS_NORMAL_DIRECTION);
+    assert_eq!(actual.z, 0.0);
 }

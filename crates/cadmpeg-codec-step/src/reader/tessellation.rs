@@ -320,8 +320,8 @@ pub(super) fn decode(
         let source_normals = match inherited_parameter(record, base_kind, 2) {
             None | Some(Value::Omitted) => Vec::new(),
             Some(value) => match normal_rows(Some(value)) {
-                Some(normals) if !normals.is_empty() => normals,
-                Some(_) | None => {
+                Some(normals) => normals,
+                None => {
                     losses.push(StepLossCode::DecodeWarning.note(format!(
                         "{kind} #{id} has invalid normal rows; normals omitted"
                     )));
@@ -329,7 +329,8 @@ pub(super) fn decode(
                 }
             },
         };
-        // An unshaded mesh is stated by absence, not by an empty lane.
+        // AP242 permits an empty normals aggregate; the IR represents both
+        // that spelling and an omitted lane as an absent normal lane.
         let mut normals = match source_normals.len() {
             0 => None,
             1 => match alloc_filled(
@@ -374,7 +375,11 @@ pub(super) fn decode(
                     .map(|vertex| placement.apply_point(vertex))
                     .collect();
                 if let Some(source_normals) = normals.take() {
-                    match transform_normals(*placement, source_normals) {
+                    match source_normals
+                        .into_iter()
+                        .map(|normal| placement.apply_normal(normal))
+                        .collect::<Option<Vec<_>>>()
+                    {
                         Some(transformed) => normals = Some(transformed),
                         None => {
                             losses.push(StepLossCode::DecodeWarning.note(format!(
@@ -617,13 +622,6 @@ fn distinct_placements(placements: &[Transform]) -> Vec<Transform> {
         }
     }
     distinct
-}
-
-fn transform_normals(placement: Transform, normals: Vec<Vector3>) -> Option<Vec<Vector3>> {
-    normals
-        .into_iter()
-        .map(|normal| placement.apply_normal(normal))
-        .collect()
 }
 
 fn repositioned_placement(record: &RawRecord, geometry: &GeometryData) -> Option<Transform> {
@@ -919,25 +917,9 @@ fn normal_rows(value: Option<&Value>) -> Option<Vec<Vector3>> {
                 values[1].number()?,
                 values[2].number()?,
             );
-            normalize_normal(normal)
+            super::geometry::normalize(normal)
         })
         .collect()
-}
-
-fn normalize_normal(normal: Vector3) -> Option<Vector3> {
-    if ![normal.x, normal.y, normal.z]
-        .into_iter()
-        .all(f64::is_finite)
-    {
-        return None;
-    }
-    let scale = normal.x.abs().max(normal.y.abs()).max(normal.z.abs());
-    if scale == 0.0 {
-        return None;
-    }
-    let scaled = Vector3::new(normal.x / scale, normal.y / scale, normal.z / scale);
-    let length = scaled.norm();
-    Some(scaled.scale(1.0 / length))
 }
 trait RecordExt {
     fn parameter(&self, index: usize) -> Option<&Value>;

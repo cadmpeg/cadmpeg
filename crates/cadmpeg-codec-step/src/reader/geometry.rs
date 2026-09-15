@@ -5175,7 +5175,7 @@ fn numbers(value: &Value) -> Option<Vec<f64>> {
     value.list()?.iter().map(Value::number).collect()
 }
 
-fn normalize(vector: Vector3) -> Option<Vector3> {
+pub(super) fn normalize(vector: Vector3) -> Option<Vector3> {
     if ![vector.x, vector.y, vector.z]
         .into_iter()
         .all(f64::is_finite)

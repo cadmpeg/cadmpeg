@@ -8,7 +8,6 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::transform::Transform;
 
 use crate::loss::StepLossCode;
 use crate::parse::Value;
@@ -59,17 +58,6 @@ fn tessellation_normal_rows_preserve_extreme_finite_directions() {
 }
 
 #[test]
-fn tessellation_normal_placement_failure_does_not_retain_source_normals() {
-    let singular = Transform::affine([
-        [0.0, 0.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0],
-    ])
-    .unwrap();
-    assert!(super::transform_normals(singular, vec![Vector3::new(1.0, 0.0, 0.0)]).is_none());
-}
-
-#[test]
 fn tessellation_invalid_normal_rows_are_reported_and_omitted() {
     let source = String::from_utf8(
         include_bytes!("../../../tests/fixtures/ap242_tessellation.p21").to_vec(),
@@ -95,6 +83,35 @@ fn tessellation_invalid_normal_rows_are_reported_and_omitted() {
             && loss
                 .message
                 .contains("COMPLEX_TRIANGULATED_FACE #7 has invalid normal rows; normals omitted")
+    }));
+}
+
+#[test]
+fn tessellation_empty_normal_rows_mean_unshaded_without_a_warning() {
+    let source = String::from_utf8(
+        include_bytes!("../../../tests/fixtures/ap242_tessellation.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#4=TRIANGULATED_FACE('triangle',#3,3,((0.,0.,1.)),$,(),((1,2,3)));",
+        "#4=TRIANGULATED_FACE('triangle',#3,3,(),$,(),((1,2,3)));",
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode empty-normal tessellation");
+    let mesh = decoded
+        .ir()
+        .model
+        .tessellations
+        .iter()
+        .find(|mesh| mesh.id.as_str() == "step:tessellation:mesh#4")
+        .expect("empty-normal tessellation");
+    assert!(mesh.vertex_normals().is_empty());
+    assert!(!decoded.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::DecodeWarning.kind()
+            && loss
+                .message
+                .contains("TRIANGULATED_FACE #4 has invalid normal rows")
     }));
 }
 
