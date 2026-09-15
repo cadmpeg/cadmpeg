@@ -617,7 +617,7 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
         settings::parse_metadata(&future_data, archive, &[future_table], &mut future_warnings);
     assert_eq!(future.layers.len(), 1, "{future_warnings:?}");
     assert_eq!(future.layers[0].extension_items, vec![33, 34, 35, 36, 37]);
-    assert!(future.opaque_records.is_empty());
+    assert_eq!(future.opaque_records.len(), 1);
 }
 
 /// Marker of the diagnostic raised for an unstamped layer record.
