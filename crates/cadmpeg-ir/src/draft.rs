@@ -447,18 +447,13 @@ impl ModelDraft {
         ledger: &mut TransferLedger,
     ) {
         let Self {
-            mut model,
+            model,
             identity_index: _,
             exactness,
             notes: staged_notes,
             ledger: staged_ledger,
         } = self;
-        macro_rules! extend_arenas {
-            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
-                $(base.model.$field.append(&mut model.$field);)*
-            };
-        }
-        crate::document::arena_registry!(extend_arenas);
+        base.model.append(model);
         let mut annotation_builder = AnnotationBuilder::resume(std::mem::take(annotations));
         for (identity, exactness) in exactness {
             annotation_builder.exactness(identity, exactness);
@@ -662,6 +657,39 @@ mod tests {
         assert_eq!(checkpoint.added_count(&model), Some(3));
         checkpoint.discard_appended(&mut model);
         assert_eq!(model, original);
+    }
+
+    #[test]
+    fn draft_commit_preserves_admitted_feature_regeneration_parents() {
+        use crate::features::{Feature, FeatureDefinition, FeatureOperation};
+
+        let mut draft = ModelDraft::new();
+        for (ordinal, key) in ["parent", "child"].into_iter().enumerate() {
+            draft
+                .insert(Feature::new(
+                    format!("test:draft:feature#{key}").try_into().unwrap(),
+                    ordinal as u64,
+                    FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+                ))
+                .unwrap();
+        }
+        let child = "test:draft:feature#child".try_into().unwrap();
+        let parent = "test:draft:feature#parent".try_into().unwrap();
+        draft
+            .model_mut()
+            .set_feature_regeneration_parent(child, parent)
+            .unwrap();
+        let expected = draft.model().clone();
+        let mut ir = CadIr::empty();
+        draft.commit_model(&mut ir).unwrap();
+        assert_eq!(ir.model, expected);
+        let round_trip = CadIr::from_json(&ir.to_canonical_json().unwrap()).unwrap();
+        assert_eq!(
+            round_trip
+                .model
+                .feature_regeneration_parent(&"test:draft:feature#child".try_into().unwrap()),
+            Some(&"test:draft:feature#parent".try_into().unwrap())
+        );
     }
 
     #[test]
