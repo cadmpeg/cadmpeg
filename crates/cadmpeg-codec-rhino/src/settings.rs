@@ -2103,7 +2103,7 @@ fn parse_layer(
         embedded_section_style: None,
         per_viewport_settings: Vec::new(),
     };
-    let mut userdata_degraded = false;
+    let mut source_requires_opaque = false;
     if let Some(descriptor) =
         userdata
             .iter()
@@ -2121,7 +2121,7 @@ fn parse_layer(
         ) {
             Ok(settings) => layer.per_viewport_settings = settings,
             Err(error) => {
-                userdata_degraded = true;
+                source_requires_opaque = true;
                 warnings.push(format!(
                     "layer per-viewport userdata at offset {} could not be transferred: {error}",
                     descriptor.range.start
@@ -2168,6 +2168,10 @@ fn parse_layer(
             layer.extension_items.push(item);
             layer.embedded_linetype =
                 Some(parse_direct_linetype(data, &mut reader, archive, warnings)?);
+            // The direct linetype has no neutral CADIR owner. Preserve the
+            // complete layer record so its segment tags and other fields
+            // remain available through source fidelity.
+            source_requires_opaque = true;
             item = reader.u8()?;
         }
         if version.1 > 13 && item == 34 {
@@ -2184,6 +2188,8 @@ fn parse_layer(
                     archive,
                     warnings,
                 )?);
+                // Section-style data likewise has no neutral CADIR owner.
+                source_requires_opaque = true;
                 item = reader.u8()?;
             }
             if item == 36 {
@@ -2215,7 +2221,7 @@ fn parse_layer(
         }
     }
     reader.skip_remaining()?;
-    Ok((layer, userdata_degraded))
+    Ok((layer, source_requires_opaque))
 }
 
 /// Decodes all metadata records while preserving scan framing.
@@ -2300,7 +2306,7 @@ pub(crate) fn parse_metadata(
                     warnings,
                     &mut metadata.losses,
                 ) {
-                    Ok((layer, userdata_degraded)) => {
+                    Ok((layer, source_requires_opaque)) => {
                         if let Some(id) = layer.id {
                             if !ids.insert(id) {
                                 warnings.push_coded(
@@ -2312,7 +2318,7 @@ pub(crate) fn parse_metadata(
                             }
                         }
                         metadata.layers.push(layer);
-                        if userdata_degraded {
+                        if source_requires_opaque {
                             opaque_records.push(OpaqueRecord {
                                 table_typecode: table.typecode,
                                 record: record.clone(),
