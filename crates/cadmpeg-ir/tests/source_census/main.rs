@@ -321,6 +321,33 @@ fn every_hand_written_deserialize_states_its_coverage() {
     }
 }
 
+/// Exercise the compiled readers that the source census classifies at the two
+/// boundaries most likely to be confused by lexical markers: the intentionally
+/// open native field map and a closed hand-written object adapter.
+#[test]
+fn compiled_hand_readers_keep_their_admission_boundaries() {
+    let native = serde_json::from_value::<cadmpeg_ir::native::NativeRecord>(serde_json::json!({
+        "id": "test:source-census:record#0",
+        "codec_field": {"preserved": true},
+    }))
+    .expect("NativeRecord's open field reader admits codec-owned fields");
+    assert_eq!(
+        native.field("codec_field"),
+        Some(serde_json::json!({"preserved": true}))
+    );
+
+    let unknown_configuration = serde_json::from_value::<
+        cadmpeg_ir::features::ConfigurationEvaluation,
+    >(serde_json::json!({
+        "kind": "suppressed",
+        "unexpected": true,
+    }));
+    assert!(
+        unknown_configuration.is_err(),
+        "the compiled local wire adapter rejects an unknown object key"
+    );
+}
+
 /// Where every hand-written `Deserialize` refuses `null` for an optional
 /// field, as (file, type, field, guard site).
 ///
