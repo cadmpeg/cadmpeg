@@ -47,10 +47,6 @@ pub(crate) fn id_key(id: &str) -> &str {
     id.split_once('#').map_or(id, |(_, key)| key)
 }
 
-pub(crate) fn encoded_key(value: &str) -> IdentityKey {
-    IdentityKey::encode_segment(value)
-}
-
 pub(crate) fn id_key_identity(id: &str) -> Result<IdentityKey, IdentityError> {
     IdentityKey::try_new(id_key(id).to_owned())
 }
@@ -62,7 +58,7 @@ pub(crate) fn model_key(
     let parent = id_key_identity(parent)?;
     let child = child.as_ref();
     if child.is_empty() {
-        IdentityKey::try_new(format!("{}:", parent.as_str()))
+        Ok(parent.then(cadmpeg_ir::identity_key!(":")))
     } else {
         Ok(parent.colon(IdentityKey::encode_segment(child)))
     }
