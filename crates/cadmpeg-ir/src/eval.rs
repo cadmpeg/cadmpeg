@@ -322,8 +322,8 @@ fn rational_surface_patches_with_budget(
 ) -> Option<Vec<RationalBezierSurfacePatch>> {
     let u_degree = usize::try_from(surface.u_degree()).ok()?;
     let v_degree = usize::try_from(surface.v_degree()).ok()?;
-    let u_count = usize::try_from(surface.u_count()).ok()?;
-    let v_count = usize::try_from(surface.v_count()).ok()?;
+    let u_count = surface.u_count();
+    let v_count = surface.v_count();
     let control_count = u_count.checked_mul(v_count)?;
     let patch_control_count = (u_degree + 1).checked_mul(v_degree + 1)?;
     budget
@@ -990,17 +990,13 @@ fn complete_nurbs_surface_starts(
         *surface
             .u_knots()
             .get(usize::try_from(surface.u_degree()).ok()?)?,
-        *surface
-            .u_knots()
-            .get(usize::try_from(surface.u_count()).ok()?)?,
+        *surface.u_knots().get(surface.u_count())?,
     ];
     let surface_v_domain = [
         *surface
             .v_knots()
             .get(usize::try_from(surface.v_degree()).ok()?)?,
-        *surface
-            .v_knots()
-            .get(usize::try_from(surface.v_count()).ok()?)?,
+        *surface.v_knots().get(surface.v_count())?,
     ];
     let refined_upper = |start, u_domain, v_domain| {
         let parameters =
@@ -1177,8 +1173,8 @@ fn solve_nurbs_surface_parameter(
     let seed = seed.filter(|seed| seed.u.is_finite() && seed.v.is_finite());
     let u_degree = usize::try_from(surface.u_degree()).ok()?;
     let v_degree = usize::try_from(surface.v_degree()).ok()?;
-    let u_count = usize::try_from(surface.u_count()).ok()?;
-    let v_count = usize::try_from(surface.v_count()).ok()?;
+    let u_count = surface.u_count();
+    let v_count = surface.v_count();
     let u_domain = [
         *surface.u_knots().get(u_degree)?,
         *surface.u_knots().get(u_count)?,
@@ -1298,8 +1294,8 @@ pub fn nurbs_surface_parameter_near_point(
     }
     let u_degree = usize::try_from(surface.u_degree()).ok()?;
     let v_degree = usize::try_from(surface.v_degree()).ok()?;
-    let u_count = usize::try_from(surface.u_count()).ok()?;
-    let v_count = usize::try_from(surface.v_count()).ok()?;
+    let u_count = surface.u_count();
+    let v_count = surface.v_count();
     let u_domain = [
         *surface.u_knots().get(u_degree)?,
         *surface.u_knots().get(u_count)?,
@@ -2324,8 +2320,8 @@ pub fn nurbs_pcurve_contains_point(
 pub fn nurbs_surface_point(surface: &NurbsSurface, u_at: f64, v_at: f64) -> Option<Point3> {
     let u_degree = usize::try_from(surface.u_degree()).ok()?;
     let v_degree = usize::try_from(surface.v_degree()).ok()?;
-    let u_count = usize::try_from(surface.u_count()).ok()?;
-    let v_count = usize::try_from(surface.v_count()).ok()?;
+    let u_count = surface.u_count();
+    let v_count = surface.v_count();
     let u_at = periodic_parameter(
         surface.u_knots(),
         u_degree,
@@ -2414,8 +2410,8 @@ pub fn nurbs_surface_isocurve(
 ) -> Option<NurbsCurve> {
     let u_degree = usize::try_from(surface.u_degree()).ok()?;
     let v_degree = usize::try_from(surface.v_degree()).ok()?;
-    let u_count = usize::try_from(surface.u_count()).ok()?;
-    let v_count = usize::try_from(surface.v_count()).ok()?;
+    let u_count = surface.u_count();
+    let v_count = surface.v_count();
     let (fixed_degree, fixed_count, fixed_knots, fixed_periodic) = match fixed_axis {
         SurfaceParameterAxis::U => (u_degree, u_count, surface.u_knots(), surface.u_periodic()),
         SurfaceParameterAxis::V => (v_degree, v_count, surface.v_knots(), surface.v_periodic()),
@@ -2564,8 +2560,8 @@ pub fn nurbs_surface_second_partials(
 ) -> Option<SurfaceSecondPartials> {
     let u_degree = usize::try_from(surface.u_degree()).ok()?;
     let v_degree = usize::try_from(surface.v_degree()).ok()?;
-    let u_count = usize::try_from(surface.u_count()).ok()?;
-    let v_count = usize::try_from(surface.v_count()).ok()?;
+    let u_count = surface.u_count();
+    let v_count = surface.v_count();
     let u_at = periodic_parameter(
         surface.u_knots(),
         u_degree,
@@ -5066,7 +5062,7 @@ pub fn model_surface_point(
         .procedural_surfaces
         .iter()
         .find(|procedural| procedural.id == *construction)?;
-    let carrier_interval = record_u_interval(procedural.record_bounds);
+    let carrier_interval = record_u_interval(procedural.record_bounds());
     let index = crate::index::ModelIndex::new(ir);
     match procedural.definition() {
         ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
@@ -6605,8 +6601,8 @@ fn model_surface_point_by_id_inner(
         };
         let u_degree = usize::try_from(nurbs.u_degree()).ok()?;
         let v_degree = usize::try_from(nurbs.v_degree()).ok()?;
-        let u_count = usize::try_from(nurbs.u_count()).ok()?;
-        let v_count = usize::try_from(nurbs.v_count()).ok()?;
+        let u_count = nurbs.u_count();
+        let v_count = nurbs.v_count();
         let u_domain = [
             *nurbs.u_knots().get(u_degree)?,
             *nurbs.u_knots().get(u_count)?,
@@ -6666,7 +6662,7 @@ fn model_surface_point_by_id_inner(
         let surface = index.surfaces(surface_id.as_str())?;
         let procedural = index.procedural_surface_for_surface(surface_id.as_str());
         let carrier_interval =
-            procedural.and_then(|procedural| record_u_interval(procedural.record_bounds));
+            procedural.and_then(|procedural| record_u_interval(procedural.record_bounds()));
         let result = match procedural.map(crate::geometry::ProceduralSurface::definition) {
             Some(ProceduralSurfaceDefinition::AxisRevolution(definition_payload)) => {
                 model_axis_revolution_point(
@@ -7191,7 +7187,7 @@ fn model_surface_mapping(
     let carrier = index.surfaces(surface.as_str())?;
     let procedural = index.procedural_surface_for_surface(surface.as_str());
     let carrier_interval =
-        procedural.and_then(|procedural| record_u_interval(procedural.record_bounds));
+        procedural.and_then(|procedural| record_u_interval(procedural.record_bounds()));
     let result = match procedural.map(crate::geometry::ProceduralSurface::definition) {
         Some(ProceduralSurfaceDefinition::AxisRevolution(definition_payload)) => {
             Some(SurfaceMapping {

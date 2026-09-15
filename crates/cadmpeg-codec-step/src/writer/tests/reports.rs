@@ -1461,8 +1461,9 @@ fn procedural_surface_outside_the_writable_set_is_reported_not_panicked() {
         },
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(
-        cadmpeg_ir::geometry::ProceduralSurface::new(
+    ir.model
+        .procedural_surfaces
+        .push(cadmpeg_ir::geometry::ProceduralSurface::new(
             construction_id,
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Compound(
                 cadmpeg_ir::geometry::surface_payloads::CompoundSurfacePayload::try_new(
@@ -1472,9 +1473,7 @@ fn procedural_surface_outside_the_writable_set_is_reported_not_panicked() {
                 .unwrap(),
             ),
             None,
-        )
-        .unwrap(),
-    );
+        ));
 
     let report = write_step(
         &ir,
@@ -1504,13 +1503,12 @@ fn procedural_curve_outside_the_writable_set_is_reported_not_panicked() {
         },
         source_object: None,
     });
-    ir.model.procedural_curves.push(
-        cadmpeg_ir::geometry::ProceduralCurve::new(
+    ir.model
+        .procedural_curves
+        .push(cadmpeg_ir::geometry::ProceduralCurve::new(
             construction_id,
             cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact { cache: None },
-        )
-        .unwrap(),
-    );
+        ));
 
     let report = write_step(
         &ir,
@@ -1604,8 +1602,7 @@ fn procedural_construction_reduction_is_reported() {
             discontinuity_flag: false,
             cache: Some(cadmpeg_ir::geometry::LegacyCache::try_new(0.01).expect("fit tolerance")),
         },
-    )
-    .unwrap();
+    );
     ir.model.add_procedural_curve(owner, procedural).unwrap();
 
     let mut buf = Vec::new();

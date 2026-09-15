@@ -345,7 +345,6 @@ mod tests {
                 }))
                 .expect("valid procedural surface cache fixture");
             ProceduralSurface::new($id, definition, $record_bounds)
-                .expect("valid procedural surface fixture")
         }};
     }
 

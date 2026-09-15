@@ -311,8 +311,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
                 parameterization: None,
                 cache: None,
             },
-        )
-        .unwrap(),
+        ),
     );
     let point = PointId::mint("test:model:entity#nx:test:closed-point").expect("identity grammar");
     let vertex =
@@ -1092,8 +1091,7 @@ fn saved_offset_cache_retains_its_procedural_lineage() {
             .unwrap(),
         ),
         None,
-    )
-    .unwrap();
+    );
     ir.model
         .add_procedural_surface(cache.clone(), procedural)
         .unwrap();
@@ -1133,22 +1131,19 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         },
         source_object: None,
     });
-    ir.model.procedural_curves.push(
-        ProceduralCurve::new(
-            procedural,
-            ProceduralCurveDefinition::TolerantIntersection {
-                construction: cadmpeg_ir::geometry::TolerantIntersectionConstruction::try_new(
-                    surfaces.clone(),
-                    [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
-                    0.01,
-                )
-                .unwrap(),
-                parameterization: None,
-                cache: None,
-            },
-        )
-        .unwrap(),
-    );
+    ir.model.procedural_curves.push(ProceduralCurve::new(
+        procedural,
+        ProceduralCurveDefinition::TolerantIntersection {
+            construction: cadmpeg_ir::geometry::TolerantIntersectionConstruction::try_new(
+                surfaces.clone(),
+                [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
+                0.01,
+            )
+            .unwrap(),
+            parameterization: None,
+            cache: None,
+        },
+    ));
     let points = [
         PointId::mint("nx:test:point#0").expect("identity grammar"),
         PointId::mint("nx:test:point#1").expect("identity grammar"),
@@ -1566,8 +1561,7 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
             discontinuity_flag: false,
             cache: Some(cadmpeg_ir::geometry::LegacyCache::try_new(2.0).expect("fit tolerance")),
         },
-    )
-    .unwrap();
+    );
     ir.model
         .add_procedural_curve(curve_id.clone(), procedural)
         .unwrap();
@@ -1634,27 +1628,24 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
             source_object: None,
         },
     ]);
-    ir.model.procedural_surfaces.push(
-        ProceduralSurface::new(
-            construction,
-            ProceduralSurfaceDefinition::Offset(
-                cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
-                    support,
-                    1.0,
-                    Some(0),
-                    Some(0),
-                    false,
-                    cadmpeg_ir::geometry::OffsetExtension::Legacy {
-                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
-                        cache: None,
-                    },
-                )
-                .unwrap(),
-            ),
-            None,
-        )
-        .unwrap(),
-    );
+    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        construction,
+        ProceduralSurfaceDefinition::Offset(
+            cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                support,
+                1.0,
+                Some(0),
+                Some(0),
+                false,
+                cadmpeg_ir::geometry::OffsetExtension::Legacy {
+                    flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                    cache: None,
+                },
+            )
+            .unwrap(),
+        ),
+        None,
+    ));
     let pcurve = PcurveGeometry::Nurbs {
         nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
             1,

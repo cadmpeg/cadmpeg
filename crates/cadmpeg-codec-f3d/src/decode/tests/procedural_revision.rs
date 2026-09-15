@@ -688,9 +688,13 @@ fn record_level_surface_bounds_round_trip() {
         )
         .expect("exact revision decode");
     let (mut source_less, _, _) = decoded.into_parts();
-    assert_eq!(source_less.model.procedural_surfaces[0].record_bounds, None);
-    source_less.model.procedural_surfaces[0].record_bounds =
-        Some([Some(0.1), None, Some(0.2), None]);
+    assert_eq!(
+        source_less.model.procedural_surfaces[0].record_bounds(),
+        None
+    );
+    source_less.model.procedural_surfaces[0]
+        .set_record_bounds(Some([Some(0.1), None, Some(0.2), None]))
+        .expect("finite record bounds");
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
@@ -702,7 +706,7 @@ fn record_level_surface_bounds_round_trip() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("record-bounds round trip");
     assert_eq!(
-        round_trip.ir().model.procedural_surfaces[0].record_bounds,
+        round_trip.ir().model.procedural_surfaces[0].record_bounds(),
         Some([Some(0.1), None, Some(0.2), None])
     );
 }
@@ -1051,7 +1055,7 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
     let SolvedSurfaceGeometry::Nurbs(mut nurbs) = cache.clone() else {
         unreachable!()
     };
-    let target = nurbs.v_count() as usize;
+    let target = nurbs.v_count();
     let mut pole_index = 0usize;
     nurbs
         .edit_control_points(|pole| {

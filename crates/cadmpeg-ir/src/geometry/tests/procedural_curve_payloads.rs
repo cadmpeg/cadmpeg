@@ -30,7 +30,7 @@ fn curve_payload_admission_requires_finite_ordered_subset_ranges() {
     definition
         .set_legacy_cache(crate::geometry::LegacyCache::try_new(0.5).unwrap())
         .unwrap();
-    let curve = ProceduralCurve::new(id(), definition).unwrap();
+    let curve = ProceduralCurve::new(id(), definition);
     let wire = serde_json::to_value(&curve).unwrap();
     assert_eq!(
         wire["definition"]["parameter_range"],
@@ -112,7 +112,7 @@ fn offset_payload_preserves_direction_magnitude_and_requires_strict_ranges() {
         support: None,
     };
     let valid = definition(direction.clone(), None).unwrap();
-    assert!(ProceduralCurve::new(id(), valid.clone()).is_ok());
+    let _curve: ProceduralCurve = ProceduralCurve::new(id(), valid.clone());
     for range in [[1.0, 0.0], [0.0, 0.0]] {
         assert!(definition(
             direction.clone(),
@@ -132,17 +132,16 @@ fn offset_payload_preserves_direction_magnitude_and_requires_strict_ranges() {
         None
     )
     .is_err());
-    assert!(ProceduralCurve::new(
+    let _curve: ProceduralCurve = ProceduralCurve::new(
         id(),
         definition(
             OffsetSide::PlaneNormal {
-                normal: Vector3::new(0.0, 0.0, 1.0)
+                normal: Vector3::new(0.0, 0.0, 1.0),
             },
-            None
+            None,
         )
-        .unwrap()
-    )
-    .is_ok());
+        .unwrap(),
+    );
     assert!(definition(
         OffsetSide::Direction {
             direction: Vector3::new(0.0, 0.0, 0.0),
@@ -173,8 +172,7 @@ fn intersection_context_mutation_keeps_checked_ranges_and_cache_tolerance() {
             discontinuity_flag: false,
             cache: Some(crate::geometry::LegacyCache::try_new(0.5).unwrap()),
         },
-    )
-    .unwrap();
+    );
     let support = SurfaceId::mint("synthetic:test:surface#support").unwrap();
     let context = curve.intersection_context_mut().unwrap();
     context.set_surface(0, Some(support.clone()));
@@ -183,7 +181,6 @@ fn intersection_context_mutation_keeps_checked_ranges_and_cache_tolerance() {
     assert_eq!(context.sides()[0].surface.as_ref(), Some(&support));
     assert_eq!(curve.cache_fit_tolerance(), Some(0.5));
     assert!(ProceduralCurve::new(id(), subset([0.0, 1.0]))
-        .unwrap()
         .intersection_context_mut()
         .is_none());
 }
@@ -218,7 +215,7 @@ fn silhouette_admission_requires_a_nondegenerate_light_direction_and_finite_draf
         Vector3::new(0.0, 0.0, 2.0),
     )
     .unwrap();
-    let curve = ProceduralCurve::new(id(), valid).unwrap();
+    let curve = ProceduralCurve::new(id(), valid);
     let wire = serde_json::to_value(&curve).unwrap();
     assert_eq!(
         wire["definition"]["silhouette"]["draft_factor"],
@@ -257,7 +254,7 @@ fn rejected_curve_definition_replacements_preserve_serialized_owner() {
     definition
         .set_legacy_cache(crate::geometry::LegacyCache::try_new(0.5).unwrap())
         .unwrap();
-    let curve = ProceduralCurve::new(id(), definition).unwrap();
+    let curve = ProceduralCurve::new(id(), definition);
     let before = serde_json::to_vec(&curve).unwrap();
     for tolerance in [-1.0, f64::NAN, f64::INFINITY] {
         assert!(crate::geometry::LegacyCache::try_new(tolerance).is_err());

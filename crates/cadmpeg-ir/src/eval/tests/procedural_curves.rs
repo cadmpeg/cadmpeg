@@ -36,8 +36,7 @@ fn cached_subset_retains_local_parameters_for_points_derivatives_and_inversion()
                         )
                         .unwrap(),
                     ),
-                )
-                .unwrap(),
+                ),
             )
             .unwrap();
         let index = crate::index::ModelIndex::new(&ir);

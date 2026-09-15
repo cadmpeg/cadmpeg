@@ -552,8 +552,7 @@ pub(crate) fn transfer_curve_expression_features(
             });
             let _attached = ir.model.add_procedural_curve(
                 curve_id,
-                ProceduralCurve::new(procedural_id, procedural_definition)
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                ProceduralCurve::new(procedural_id, procedural_definition),
             );
         }
         let definition = neutral_helix

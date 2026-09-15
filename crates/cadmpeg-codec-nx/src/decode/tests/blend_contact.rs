@@ -431,27 +431,24 @@ fn periodic_surface_lookup_rejects_a_cyclic_offset_graph() {
             },
             source_object: None,
         });
-        ir.model.procedural_surfaces.push(
-            ProceduralSurface::new(
-                constructions[side].clone(),
-                ProceduralSurfaceDefinition::Offset(
-                    cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
-                        surfaces[1 - side].clone(),
-                        1.0,
-                        Some(0),
-                        Some(0),
-                        false,
-                        cadmpeg_ir::geometry::OffsetExtension::Legacy {
-                            flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
-                            cache: None,
-                        },
-                    )
-                    .unwrap(),
-                ),
-                None,
-            )
-            .unwrap(),
-        );
+        ir.model.procedural_surfaces.push(ProceduralSurface::new(
+            constructions[side].clone(),
+            ProceduralSurfaceDefinition::Offset(
+                cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                    surfaces[1 - side].clone(),
+                    1.0,
+                    Some(0),
+                    Some(0),
+                    false,
+                    cadmpeg_ir::geometry::OffsetExtension::Legacy {
+                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                        cache: None,
+                    },
+                )
+                .unwrap(),
+            ),
+            None,
+        ));
     }
 
     let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
@@ -840,30 +837,27 @@ fn blend_contact_matches_concentric_blend_carriers() {
             },
             source_object: None,
         });
-        ir.model.procedural_surfaces.push(
-            ProceduralSurface::new(
-                construction,
-                ProceduralSurfaceDefinition::Blend(
-                    cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
-                        supports.map(|surface| {
-                            Some(BlendSupport {
-                                surface,
-                                reversed: false,
-                            })
-                        }),
-                        Some(spine.clone()),
-                        BlendRadiusLaw::Constant {
-                            signed_radius: radius,
-                        },
-                        BlendCrossSection::Circular,
-                        cadmpeg_ir::geometry::CacheContract::from_form(None),
-                    )
-                    .unwrap(),
-                ),
-                None,
-            )
-            .unwrap(),
-        );
+        ir.model.procedural_surfaces.push(ProceduralSurface::new(
+            construction,
+            ProceduralSurfaceDefinition::Blend(
+                cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
+                    supports.map(|surface| {
+                        Some(BlendSupport {
+                            surface,
+                            reversed: false,
+                        })
+                    }),
+                    Some(spine.clone()),
+                    BlendRadiusLaw::Constant {
+                        signed_radius: radius,
+                    },
+                    BlendCrossSection::Circular,
+                    cadmpeg_ir::geometry::CacheContract::from_form(None),
+                )
+                .unwrap(),
+            ),
+            None,
+        ));
     }
 
     assert_eq!(
@@ -991,35 +985,31 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
                 .unwrap(),
             ),
             None,
-        )
-        .unwrap(),
+        ),
     );
-    ir.model.procedural_surfaces.push(
-        ProceduralSurface::new(
-            blend_construction,
-            ProceduralSurfaceDefinition::Blend(
-                cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
-                    [
-                        Some(BlendSupport {
-                            surface: support.clone(),
-                            reversed: false,
-                        }),
-                        Some(BlendSupport {
-                            surface: other.clone(),
-                            reversed: false,
-                        }),
-                    ],
-                    Some(spine.clone()),
-                    BlendRadiusLaw::Constant { signed_radius: 1.0 },
-                    BlendCrossSection::Circular,
-                    cadmpeg_ir::geometry::CacheContract::from_form(None),
-                )
-                .unwrap(),
-            ),
-            None,
-        )
-        .unwrap(),
-    );
+    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        blend_construction,
+        ProceduralSurfaceDefinition::Blend(
+            cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
+                [
+                    Some(BlendSupport {
+                        surface: support.clone(),
+                        reversed: false,
+                    }),
+                    Some(BlendSupport {
+                        surface: other.clone(),
+                        reversed: false,
+                    }),
+                ],
+                Some(spine.clone()),
+                BlendRadiusLaw::Constant { signed_radius: 1.0 },
+                BlendCrossSection::Circular,
+                cadmpeg_ir::geometry::CacheContract::from_form(None),
+            )
+            .unwrap(),
+        ),
+        None,
+    ));
     ir.model.curves.push(Curve {
         id: spine.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -1060,8 +1050,7 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
                 discontinuity_flag: false,
                 cache: None,
             },
-        )
-        .unwrap(),
+        ),
     );
 
     let source_pcurve = test_pcurve(
@@ -1252,32 +1241,29 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         },
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(
-        ProceduralSurface::new(
-            construction,
-            ProceduralSurfaceDefinition::Blend(
-                cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
-                    [
-                        Some(BlendSupport {
-                            surface: first.clone(),
-                            reversed: false,
-                        }),
-                        Some(BlendSupport {
-                            surface: second.clone(),
-                            reversed: false,
-                        }),
-                    ],
-                    Some(spine.clone()),
-                    BlendRadiusLaw::Constant { signed_radius: 2.0 },
-                    BlendCrossSection::Circular,
-                    cadmpeg_ir::geometry::CacheContract::from_form(None),
-                )
-                .unwrap(),
-            ),
-            None,
-        )
-        .unwrap(),
-    );
+    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        construction,
+        ProceduralSurfaceDefinition::Blend(
+            cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
+                [
+                    Some(BlendSupport {
+                        surface: first.clone(),
+                        reversed: false,
+                    }),
+                    Some(BlendSupport {
+                        surface: second.clone(),
+                        reversed: false,
+                    }),
+                ],
+                Some(spine.clone()),
+                BlendRadiusLaw::Constant { signed_radius: 2.0 },
+                BlendCrossSection::Circular,
+                cadmpeg_ir::geometry::CacheContract::from_form(None),
+            )
+            .unwrap(),
+        ),
+        None,
+    ));
     let expected = Point2::new(8.0, 0.35);
     let point = blend_surface_point(&ir, &surface, expected.u, expected.v).unwrap();
     let boundary_without_contact_chart = blend_surface_point(&ir, &surface, expected.u, 1.0)
@@ -1331,8 +1317,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             discontinuity_flag: false,
             cache: Some(cadmpeg_ir::geometry::LegacyCache::try_new(0.75).expect("fit tolerance")),
         },
-    )
-    .unwrap();
+    );
     ir.model
         .add_procedural_curve(spine.clone(), procedural)
         .unwrap();
@@ -1567,8 +1552,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                 discontinuity_flag: false,
                 cache: None,
             },
-        )
-        .unwrap(),
+        ),
     );
     ir.model.edges.push(Edge {
         id: EdgeId::mint("test:model:entity#synthetic:blend-boundary-edge")
@@ -1725,32 +1709,29 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         },
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(
-        ProceduralSurface::new(
-            outer_construction,
-            ProceduralSurfaceDefinition::Blend(
-                cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
-                    [
-                        Some(BlendSupport {
-                            surface,
-                            reversed: false,
-                        }),
-                        Some(BlendSupport {
-                            surface: third,
-                            reversed: false,
-                        }),
-                    ],
-                    Some(outer_spine),
-                    BlendRadiusLaw::Constant { signed_radius: 1.5 },
-                    BlendCrossSection::Circular,
-                    cadmpeg_ir::geometry::CacheContract::from_form(None),
-                )
-                .unwrap(),
-            ),
-            None,
-        )
-        .unwrap(),
-    );
+    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        outer_construction,
+        ProceduralSurfaceDefinition::Blend(
+            cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
+                [
+                    Some(BlendSupport {
+                        surface,
+                        reversed: false,
+                    }),
+                    Some(BlendSupport {
+                        surface: third,
+                        reversed: false,
+                    }),
+                ],
+                Some(outer_spine),
+                BlendRadiusLaw::Constant { signed_radius: 1.5 },
+                BlendCrossSection::Circular,
+                cadmpeg_ir::geometry::CacheContract::from_form(None),
+            )
+            .unwrap(),
+        ),
+        None,
+    ));
     let expected = Point2::new(4.0, 0.2);
     let point = blend_surface_point(&ir, &outer, expected.u, expected.v).unwrap();
     let outer_geometry = ir

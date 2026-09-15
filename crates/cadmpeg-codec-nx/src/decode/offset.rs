@@ -250,8 +250,8 @@ fn offset_candidate_sample_error(
     let active_domain = |surface: &NurbsSurface| {
         let u_degree = usize::try_from(surface.u_degree()).ok()?;
         let v_degree = usize::try_from(surface.v_degree()).ok()?;
-        let u_count = usize::try_from(surface.u_count()).ok()?;
-        let v_count = usize::try_from(surface.v_count()).ok()?;
+        let u_count = surface.u_count();
+        let v_count = surface.v_count();
         Some([
             [
                 *surface.u_knots().get(u_degree)?,
@@ -293,8 +293,8 @@ fn offset_candidate_sample_error(
 pub(crate) fn nurbs_active_domain(surface: &NurbsSurface) -> Option<[[u64; 2]; 2]> {
     let u_degree = usize::try_from(surface.u_degree()).ok()?;
     let v_degree = usize::try_from(surface.v_degree()).ok()?;
-    let u_count = usize::try_from(surface.u_count()).ok()?;
-    let v_count = usize::try_from(surface.v_count()).ok()?;
+    let u_count = surface.u_count();
+    let v_count = surface.v_count();
     Some([
         [
             surface.u_knots().get(u_degree)?.to_bits(),
@@ -353,8 +353,8 @@ impl HomogeneousSurfaceNet {
     ) -> Option<Self> {
         let u_degree = usize::try_from(surface.u_degree()).ok()?;
         let v_degree = usize::try_from(surface.v_degree()).ok()?;
-        let u_count = usize::try_from(surface.u_count()).ok()?;
-        let v_count = usize::try_from(surface.v_count()).ok()?;
+        let u_count = surface.u_count();
+        let v_count = surface.v_count();
         let poles = surface.poles();
         if surface
             .u_knots()
@@ -770,8 +770,8 @@ pub(crate) fn subdivide_offset_rectangle(
 }
 
 pub(crate) fn translation_net_normal(surface: &NurbsSurface) -> Option<Vector3> {
-    let u_count = usize::try_from(surface.u_count()).ok()?;
-    let v_count = usize::try_from(surface.v_count()).ok()?;
+    let u_count = surface.u_count();
+    let v_count = surface.v_count();
     let u_degree = usize::try_from(surface.u_degree()).ok()?;
     let v_degree = usize::try_from(surface.v_degree()).ok()?;
     let point = |u: usize, v: usize| surface.control_grid()[u][v];
@@ -1304,11 +1304,7 @@ fn coarse_surface_sample_counts(
     };
     match &carrier.geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
-            let sample_count = |count| {
-                usize::try_from(count)
-                    .ok()
-                    .map_or(9, |count| count.saturating_add(1).clamp(3, 9))
-            };
+            let sample_count = |count: usize| count.saturating_add(1).clamp(3, 9);
             [sample_count(nurbs.u_count()), sample_count(nurbs.v_count())]
         }
         SurfaceGeometry::Procedural { construction, .. } => {
@@ -1385,8 +1381,8 @@ pub(crate) fn surface_parameter_domain_with_index(
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
             let u_degree = usize::try_from(nurbs.u_degree()).ok()?;
             let v_degree = usize::try_from(nurbs.v_degree()).ok()?;
-            let u_count = usize::try_from(nurbs.u_count()).ok()?;
-            let v_count = usize::try_from(nurbs.v_count()).ok()?;
+            let u_count = nurbs.u_count();
+            let v_count = nurbs.v_count();
             Some((
                 [
                     *nurbs.u_knots().get(u_degree)?,
@@ -1808,10 +1804,9 @@ fn surface_parameter_periods_inner(
             [Some(std::f64::consts::TAU), Some(std::f64::consts::TAU)]
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
-            let period = |periodic: bool, knots: &[f64], degree: u32, count: u32| {
+            let period = |periodic: bool, knots: &[f64], degree: u32, count: usize| {
                 periodic.then(|| {
                     let degree = usize::try_from(degree).ok()?;
-                    let count = usize::try_from(count).ok()?;
                     let period = knots.get(count)? - knots.get(degree)?;
                     (period.is_finite() && period > 0.0).then_some(period)
                 })?
@@ -2458,8 +2453,9 @@ mod tests {
             },
             source_object: None,
         });
-        ir.model.procedural_surfaces.push(
-            cadmpeg_ir::geometry::ProceduralSurface::new(
+        ir.model
+            .procedural_surfaces
+            .push(cadmpeg_ir::geometry::ProceduralSurface::new(
                 construction,
                 ProceduralSurfaceDefinition::Offset(
                     cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
@@ -2476,9 +2472,7 @@ mod tests {
                     .unwrap(),
                 ),
                 None,
-            )
-            .unwrap(),
-        );
+            ));
 
         let fit_tolerance = f64::EPSILON.sqrt();
         let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);

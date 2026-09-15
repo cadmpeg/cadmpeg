@@ -1114,6 +1114,7 @@ mod procedural_surface_payloads;
 
 mod procedural_curve_payloads;
 
+mod record_bounds;
 mod revolution_payloads;
 
 #[test]

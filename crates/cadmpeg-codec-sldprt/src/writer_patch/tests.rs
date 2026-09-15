@@ -22,7 +22,7 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
         panic!("compact NURBS surface");
     };
     let mut new = old.clone();
-    let target = new.v_count() as usize + 1;
+    let target = new.v_count() + 1;
     let mut pole_index = 0usize;
     new.edit_control_points(|pole| {
         if pole_index == target {
@@ -124,7 +124,7 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
                 _ => None,
             })
             .unwrap();
-        let target = surface.v_count() as usize + 1;
+        let target = surface.v_count() + 1;
         let mut pole_index = 0usize;
         surface
             .edit_control_points(|pole| {

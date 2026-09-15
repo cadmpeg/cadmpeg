@@ -187,11 +187,11 @@ fn semantic_writer_round_trips_a_normalized_line_generatrix() {
             })
             .expect("source line revolution surface");
         let source_carrier_end = surface_construction(original.ir(), &source_surface.id)
-            .and_then(|candidate| candidate.record_bounds)
+            .and_then(cadmpeg_ir::geometry::ProceduralSurface::record_bounds)
             .and_then(|bounds| bounds[1])
             .expect("source line carrier interval");
         let round_carrier_end = procedural
-            .record_bounds
+            .record_bounds()
             .and_then(|bounds| bounds[1])
             .expect("round-trip line carrier interval");
         assert!((source_carrier_end - round_carrier_end).abs() < EPS_LINE_REVOLUTION_ROUND_TRIP);
@@ -261,7 +261,7 @@ fn semantic_writer_round_trips_a_normalized_line_directrix() {
         let source_procedural = surface_construction(original.ir(), &source_surface.id)
             .expect("source line extrusion construction");
         let source_carrier_end = source_procedural
-            .record_bounds
+            .record_bounds()
             .and_then(|bounds| bounds[1])
             .expect("source line carrier interval");
         let plan = Encoder::plan(
@@ -295,7 +295,7 @@ fn semantic_writer_round_trips_a_normalized_line_directrix() {
             })
             .expect("round-trip line extrusion construction");
         let round_carrier_end = round_procedural
-            .record_bounds
+            .record_bounds()
             .and_then(|bounds| bounds[1])
             .expect("round-trip line carrier interval");
         assert!((source_carrier_end - round_carrier_end).abs() < EPS_LINE_EXTRUSION_ROUND_TRIP);
@@ -372,7 +372,9 @@ fn semantic_writer_maps_a_normalized_line_generatrix_pcurve_to_source_domain() {
 
     let mut source_without_record_bounds = original.ir().clone();
     for procedural in &mut source_without_record_bounds.model.procedural_surfaces {
-        procedural.record_bounds = None;
+        procedural
+            .set_record_bounds(None)
+            .expect("clearing record bounds");
     }
     let pcurve = source_without_record_bounds
         .model
@@ -455,7 +457,7 @@ fn semantic_writer_round_trips_a_degree_zero_bspline_curve() {
     }
 }
 
-fn assert_degree_zero_surface_round_trip(input: Vec<u8>, expected_counts: (u32, u32)) {
+fn assert_degree_zero_surface_round_trip(input: Vec<u8>, expected_counts: (usize, usize)) {
     let original = IgesCodec
         .decode(&mut Cursor::new(input), &DecodeOptions::default())
         .expect("degree-zero B-spline surface fixture decodes");

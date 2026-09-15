@@ -555,13 +555,13 @@ mod tests {
         let u_basis = basis(
             surface.u_knots(),
             surface.u_degree() as usize,
-            surface.u_count() as usize,
+            surface.u_count(),
             u_parameter,
         );
         let v_basis = basis(
             surface.v_knots(),
             surface.v_degree() as usize,
-            surface.v_count() as usize,
+            surface.v_count(),
             v_parameter,
         );
         let mut acc = [0.0f64; 4];

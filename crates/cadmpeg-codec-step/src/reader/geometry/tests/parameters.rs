@@ -3,6 +3,32 @@ use super::super::*;
 use cadmpeg_ir::eval::nurbs_curve_point;
 
 #[test]
+fn periodic_nurbs_surface_parameter_periods_keep_usize_counts() {
+    let surface = NurbsSurface::from_lanes(
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 2.0, 2.0], true),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], true),
+        NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+                vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 1.0, 0.0)],
+            ],
+            None,
+        ),
+        false,
+    )
+    .expect("periodic NURBS surface");
+    assert_eq!(
+        nurbs_surface_parameter_period(1, surface.u_knots(), surface.u_count()),
+        Some(2.0)
+    );
+    assert_eq!(
+        surface_parameter_periods(&SolvedSurfaceGeometry::Nurbs(surface)),
+        [Some(2.0), Some(1.0)]
+    );
+}
+
+#[test]
 fn edge_parameter_range_rejects_reversed_nonperiodic_interval() {
     let line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
         cadmpeg_ir::geometry::LineCurve::try_new(
@@ -214,8 +240,7 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
                 .unwrap(),
             ),
             None,
-        )
-        .unwrap(),
+        ),
     );
     let _attached = ir.model.add_procedural_surface(
         revolution.clone(),
@@ -231,8 +256,7 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
                 .unwrap(),
             ),
             None,
-        )
-        .unwrap(),
+        ),
     );
     let length_scale = 0.001;
     let angle_scale = std::f64::consts::PI / 180.0;
@@ -365,8 +389,7 @@ fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
                 .unwrap(),
             ),
             None,
-        )
-        .unwrap(),
+        ),
     );
 
     assert_eq!(
@@ -417,8 +440,7 @@ fn axis_revolution_surface_parameter_units_use_plane_angle_for_u() {
                 .unwrap(),
             ),
             None,
-        )
-        .unwrap(),
+        ),
     );
 
     assert_eq!(

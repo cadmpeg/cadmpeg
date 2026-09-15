@@ -465,7 +465,7 @@ pub(crate) fn try_decode_geometry(
                             cadmpeg_ir::geometry::LegacyCache::try_new(tolerance)?,
                         ))?;
                     }
-                    ProceduralSurface::new(procedural_id, definition, None)
+                    Ok(ProceduralSurface::new(procedural_id, definition, None))
                 })
                 .map_err(cadmpeg_core::CodecError::malformed)?;
 
@@ -532,8 +532,7 @@ pub(crate) fn try_decode_geometry(
                         .map_err(cadmpeg_core::CodecError::malformed)?,
                     ),
                     None,
-                )
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+                ),
             );
             if attached.is_ok() {
                 pending_blend_supports.push((
@@ -848,8 +847,7 @@ pub(crate) fn try_decode_geometry(
                     )
                     .map_err(cadmpeg_core::CodecError::malformed)?;
             }
-            let procedural = ProceduralCurve::new(procedural_id, definition)
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            let procedural = ProceduralCurve::new(procedural_id, definition);
 
             let _attached = ir.model.add_procedural_curve(curve_id.clone(), procedural);
 

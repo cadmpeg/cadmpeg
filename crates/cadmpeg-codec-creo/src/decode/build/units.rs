@@ -2225,9 +2225,11 @@ mod tests {
             cadmpeg_ir::ids::ProceduralSurfaceId::mint("test:model:entity#surface-construction")
                 .expect("identity grammar"),
             surface_definition,
-            Some([Some(8.0), None, Some(9.0), None]),
-        )
-        .unwrap();
+            Some(
+                cadmpeg_ir::geometry::RecordBounds::try_new([Some(8.0), None, Some(9.0), None])
+                    .unwrap(),
+            ),
+        );
         ir.model
             .add_procedural_surface(surface_id, surface)
             .unwrap();
@@ -2262,8 +2264,7 @@ mod tests {
             cadmpeg_ir::ids::ProceduralCurveId::mint("test:model:entity#curve-construction")
                 .expect("identity grammar"),
             curve_definition,
-        )
-        .unwrap();
+        );
         ir.model.add_procedural_curve(curve_id, curve).unwrap();
 
         normalize_model_lengths(&mut ir, 25.4).expect("valid unit scaling");
@@ -2290,7 +2291,7 @@ mod tests {
             177.8,
         );
         assert_eq!(
-            surface.record_bounds,
+            surface.record_bounds(),
             Some([Some(8.0), None, Some(9.0), None])
         );
 

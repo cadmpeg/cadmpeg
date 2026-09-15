@@ -8,8 +8,8 @@ use cadmpeg_ir::document::{CadIr, EntityRewrite, Model};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide,
     NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition,
-    ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
-    SupportPcurve, Surface, SurfaceGeometry,
+    ProceduralSurface, ProceduralSurfaceDefinition, RecordBounds, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, SupportPcurve, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
@@ -562,8 +562,7 @@ mod consolidated_revolution_binding_tests {
                         discontinuity_flag: false,
                         cache: None,
                     },
-                )
-                .expect("valid ProceduralCurve fixture"),
+                ),
             )
             .expect("attach construction to its fixture carrier");
 
@@ -1005,8 +1004,7 @@ pub(crate) fn emit_standard_extrusion_definition(
                             .map_err(cadmpeg_core::CodecError::malformed)?,
                     ),
                 },
-            )
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+            );
 
             let _attached = ir
                 .model
@@ -1101,7 +1099,7 @@ pub(crate) fn emit_standard_extrusion_definition(
                         parameter_range: source_parameter_range,
                     }),
                 )
-                .and_then(|admitted_payload| {
+                .map(|admitted_payload| {
                     ProceduralCurve::new(
                         procedure_id,
                         ProceduralCurveDefinition::Offset(admitted_payload),
@@ -1125,13 +1123,14 @@ pub(crate) fn emit_standard_extrusion_definition(
     Ok(definition)
 }
 
-fn parameter_record_bounds(bounds: [[f64; 2]; 2]) -> [Option<f64>; 4] {
-    [
+fn parameter_record_bounds(bounds: [[f64; 2]; 2]) -> Option<RecordBounds> {
+    RecordBounds::try_new([
         Some(bounds[0][0]),
         Some(bounds[0][1]),
         Some(bounds[1][0]),
         Some(bounds[1][1]),
-    ]
+    ])
+    .ok()
 }
 
 fn standard_freeform_e5_carrier_ids(data: &[u8]) -> HashMap<u32, u32> {
@@ -1905,11 +1904,11 @@ fn try_decode_standard_population(
         );
         let record_bounds = match &procedure {
             StandardSurfaceProcedure::Extrusion(extrusion) => {
-                Some(parameter_record_bounds(extrusion.parameter_bounds))
+                Some(parameter_record_bounds(extrusion.parameter_bounds)?)
             }
             StandardSurfaceProcedure::Offset {
                 parameter_bounds, ..
-            } => Some(parameter_record_bounds(*parameter_bounds)),
+            } => Some(parameter_record_bounds(*parameter_bounds)?),
             StandardSurfaceProcedure::RollingBall { .. }
             | StandardSurfaceProcedure::Revolution(_) => None,
         };
@@ -1966,7 +1965,7 @@ fn try_decode_standard_population(
                             .clone()
                     }
                     crate::families::b5::transfer::ResolvedOffsetSupport::Extrusion(extrusion) => {
-                        let record_bounds = parameter_record_bounds(extrusion.parameter_bounds);
+                        let record_bounds = parameter_record_bounds(extrusion.parameter_bounds)?;
                         let support_id = SurfaceId::compose(
                             &cadmpeg_ir::identity_namespace!(
                                 "catia",
@@ -2033,14 +2032,11 @@ fn try_decode_standard_population(
                             false
                         };
                         if attached {
-                            ir.model.procedural_surfaces.push(
-                                ProceduralSurface::new(
-                                    construction,
-                                    definition,
-                                    Some(record_bounds),
-                                )
-                                .ok()?,
-                            );
+                            ir.model.procedural_surfaces.push(ProceduralSurface::new(
+                                construction,
+                                definition,
+                                Some(record_bounds),
+                            ));
                         }
                         procedural_supports.insert(support_object_id, support_id.clone());
                         support_id
@@ -2152,9 +2148,11 @@ fn try_decode_standard_population(
             exactness,
         );
         if attached {
-            ir.model
-                .procedural_surfaces
-                .push(ProceduralSurface::new(procedural_id, definition, record_bounds).ok()?);
+            ir.model.procedural_surfaces.push(ProceduralSurface::new(
+                procedural_id,
+                definition,
+                record_bounds,
+            ));
         }
     }
     ir.model.surfaces = surfaces;
@@ -6494,8 +6492,8 @@ fn nurbs_surface_control_bounds(surface: &NurbsSurface) -> Option<[[f64; 2]; 3]>
 fn nurbs_surface_parameter_domain(surface: &NurbsSurface) -> Option<[[f64; 2]; 2]> {
     let u_degree = usize::try_from(surface.u_degree()).ok()?;
     let v_degree = usize::try_from(surface.v_degree()).ok()?;
-    let u_count = usize::try_from(surface.u_count()).ok()?;
-    let v_count = usize::try_from(surface.v_count()).ok()?;
+    let u_count = surface.u_count();
+    let v_count = surface.v_count();
     let domains = [
         [
             *surface.u_knots().get(u_degree)?,
@@ -6818,8 +6816,8 @@ fn nurbs_surface_axis_samples(knots: &[f64], degree: usize, count: usize) -> Opt
 fn nurbs_surface_start_grid(surface: &NurbsSurface, domains: [[f64; 2]; 2]) -> Option<Vec<Point2>> {
     let u_degree = usize::try_from(surface.u_degree()).ok()?;
     let v_degree = usize::try_from(surface.v_degree()).ok()?;
-    let u_count = usize::try_from(surface.u_count()).ok()?;
-    let v_count = usize::try_from(surface.v_count()).ok()?;
+    let u_count = surface.u_count();
+    let v_count = surface.v_count();
     let u_samples = nurbs_surface_axis_samples(surface.u_knots(), u_degree, u_count)?;
     let v_samples = nurbs_surface_axis_samples(surface.v_knots(), v_degree, v_count)?;
     if u_samples.len().checked_mul(v_samples.len())? > NURBS_SURFACE_MAX_SEEDS {
@@ -8541,7 +8539,7 @@ pub(crate) fn build_standard_edge_curve(
                     annotations,
                     native.surface_object_ids[side],
                     &native.carriers[side],
-                )?);
+                ));
             }
             std::array::from_fn(|side| IntcurveSupportSide {
                 surface: Some(surfaces[side].clone()),
@@ -8586,7 +8584,7 @@ pub(crate) fn build_standard_edge_curve(
                     .map_err(cadmpeg_core::CodecError::malformed)?
                     .derived(&procedural_id, "definition")
                     .map_err(cadmpeg_core::CodecError::malformed)?;
-                let Ok(procedural) = ProceduralCurve::new(
+                let procedural = ProceduralCurve::new(
                     procedural_id,
                     ProceduralCurveDefinition::Intersection {
                         context: match IntcurveSupportContext::try_new(
@@ -8600,9 +8598,7 @@ pub(crate) fn build_standard_edge_curve(
                         discontinuity_flag: false,
                         cache: None,
                     },
-                ) else {
-                    return Ok((None, None));
-                };
+                );
                 let _attached = ir.model.add_procedural_curve(id.clone(), procedural);
                 param_range = Some(curve_parameter_range);
             }
@@ -8616,7 +8612,7 @@ fn ensure_native_edge_support_surface(
     annotations: &mut AnnotationBuilder,
     surface_object_id: u32,
     carrier: &crate::families::b5::transfer::ResolvedPcurveSurface,
-) -> Result<SurfaceId, cadmpeg_core::CodecError> {
+) -> SurfaceId {
     let source = cgm_source("surface", surface_object_id);
     let source_matches = ir
         .model
@@ -8627,7 +8623,7 @@ fn ensure_native_edge_support_surface(
         .collect::<HashSet<_>>();
     let source_matches_empty = source_matches.is_empty();
     if let [surface_id] = source_matches.into_iter().collect::<Vec<_>>().as_slice() {
-        return Ok(surface_id.clone());
+        return surface_id.clone();
     }
     if let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(geometry) = carrier {
         let geometry_matches = ir
@@ -8639,7 +8635,7 @@ fn ensure_native_edge_support_surface(
             .collect::<HashSet<_>>();
         if source_matches_empty {
             if let [surface_id] = geometry_matches.into_iter().collect::<Vec<_>>().as_slice() {
-                return Ok(surface_id.clone());
+                return surface_id.clone();
             }
         }
     }
@@ -8696,12 +8692,13 @@ fn ensure_native_edge_support_surface(
             ),
             Exactness::ByteExact,
         );
-        ir.model.procedural_surfaces.push(
-            ProceduralSurface::new(procedural_id, definition.as_ref().clone(), None)
-                .map_err(cadmpeg_core::CodecError::malformed)?,
-        );
+        ir.model.procedural_surfaces.push(ProceduralSurface::new(
+            procedural_id,
+            definition.as_ref().clone(),
+            None,
+        ));
     }
-    Ok(id)
+    id
 }
 
 pub(crate) fn standard_circle_pair_solution_is_simple(

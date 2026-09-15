@@ -418,7 +418,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
                 None,
                 cadmpeg_ir::geometry::CacheContract::from_form(None),
             )
-            .and_then(|admitted_payload| {
+            .map(|admitted_payload| {
                 ProceduralSurface::new(
                     procedural_id,
                     ProceduralSurfaceDefinition::Extrusion(admitted_payload),
@@ -635,7 +635,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
                 None,
                 cadmpeg_ir::geometry::CacheContract::from_form(None),
             )
-            .and_then(|admitted_payload| {
+            .map(|admitted_payload| {
                 ProceduralSurface::new(
                     procedural_id,
                     ProceduralSurfaceDefinition::Extrusion(admitted_payload),

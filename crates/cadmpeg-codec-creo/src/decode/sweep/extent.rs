@@ -373,8 +373,8 @@ pub(in super::super) fn nurbs_translation_candidate(
         && third == fourth
         && first < third)
         .then_some(())?;
-    let u_count = usize::try_from(nurbs.u_count()).ok()?;
-    let v_count = usize::try_from(nurbs.v_count()).ok()?;
+    let u_count = nurbs.u_count();
+    let v_count = nurbs.v_count();
     let pair_count = if along_v { u_count } else { v_count };
     let poles = nurbs.poles();
     let pole_weights = nurbs.pole_weights();

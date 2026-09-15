@@ -355,27 +355,24 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
             source_object: None,
         },
     ]);
-    ir.model.procedural_surfaces.push(
-        ProceduralSurface::new(
-            offset_construction,
-            ProceduralSurfaceDefinition::Offset(
-                cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
-                    support,
-                    0.75,
-                    None,
-                    None,
-                    false,
-                    cadmpeg_ir::geometry::OffsetExtension::Legacy {
-                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
-                        cache: None,
-                    },
-                )
-                .unwrap(),
-            ),
-            None,
-        )
-        .unwrap(),
-    );
+    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        offset_construction,
+        ProceduralSurfaceDefinition::Offset(
+            cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                support,
+                0.75,
+                None,
+                None,
+                false,
+                cadmpeg_ir::geometry::OffsetExtension::Legacy {
+                    flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                    cache: None,
+                },
+            )
+            .unwrap(),
+        ),
+        None,
+    ));
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
@@ -404,8 +401,7 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
                 discontinuity_flag: false,
                 cache: None,
             },
-        )
-        .unwrap(),
+        ),
     );
 
     let offset_parameters = [Point2::new(0.2, 0.45), Point2::new(0.4, 0.45)];

@@ -32,8 +32,8 @@ pub(in super::super) fn nurbs_surface_boundaries(
     surface_id: u32,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<[NurbsSurfaceBoundary; 4]> {
-    let u_count = usize::try_from(nurbs.u_count()).ok()?;
-    let v_count = usize::try_from(nurbs.v_count()).ok()?;
+    let u_count = nurbs.u_count();
+    let v_count = nurbs.v_count();
     let poles = nurbs.poles();
     let pole_weights = nurbs.pole_weights();
     (poles

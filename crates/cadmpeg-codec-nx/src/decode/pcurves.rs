@@ -3522,16 +3522,14 @@ pub(crate) fn attach_tolerant_edge_intersections_with_budget(
         };
         let curve_id: CurveId = scope.id("tolerant-curve", xmt);
         let procedural_id: ProceduralCurveId = scope.id("tolerant-intersection", xmt);
-        let Ok(procedural) = ProceduralCurve::new(
+        let procedural = ProceduralCurve::new(
             procedural_id.clone(),
             ProceduralCurveDefinition::TolerantIntersection {
                 construction: admitted_intersection,
                 parameterization: None,
                 cache: None,
             },
-        ) else {
-            continue;
-        };
+        );
         let Some(edge) = ir
             .model
             .edges
@@ -3840,8 +3838,7 @@ mod tests {
                         discontinuity_flag: false,
                         cache: None,
                     },
-                )
-                .unwrap(),
+                ),
             )
             .unwrap();
         ir.model.coedges.push(Coedge {

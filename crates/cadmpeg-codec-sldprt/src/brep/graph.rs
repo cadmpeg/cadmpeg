@@ -699,7 +699,7 @@ fn emit_offset_surface(
             cache: None,
         },
     )
-    .and_then(|admitted_payload| {
+    .map(|admitted_payload| {
         ProceduralSurface::new(
             construction.clone(),
             ProceduralSurfaceDefinition::Offset(admitted_payload),
@@ -1997,43 +1997,34 @@ fn decode_graph(
                         f.bridge_attr
                     ))
                     .expect("identity grammar");
-                    let geometry = match ProceduralSurface::new(
+                    let admitted_payload =
+                        cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
+                            [
+                                Some(BlendSupport {
+                                    surface: first,
+                                    reversed: blend.reversed[0],
+                                }),
+                                Some(BlendSupport {
+                                    surface: second,
+                                    reversed: blend.reversed[1],
+                                }),
+                            ],
+                            spine,
+                            BlendRadiusLaw::Constant {
+                                signed_radius: blend.signed_radius,
+                            },
+                            BlendCrossSection::Circular,
+                            cadmpeg_ir::geometry::CacheContract::from_form(None),
+                        )
+                        .map_err(cadmpeg_core::CodecError::malformed)?;
+                    out.procedural_surfaces.push(ProceduralSurface::new(
                         procedural_id.clone(),
-                        ProceduralSurfaceDefinition::Blend(
-                            cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
-                                [
-                                    Some(BlendSupport {
-                                        surface: first,
-                                        reversed: blend.reversed[0],
-                                    }),
-                                    Some(BlendSupport {
-                                        surface: second,
-                                        reversed: blend.reversed[1],
-                                    }),
-                                ],
-                                spine,
-                                BlendRadiusLaw::Constant {
-                                    signed_radius: blend.signed_radius,
-                                },
-                                BlendCrossSection::Circular,
-                                cadmpeg_ir::geometry::CacheContract::from_form(None),
-                            )
-                            .map_err(cadmpeg_core::CodecError::malformed)?,
-                        ),
+                        ProceduralSurfaceDefinition::Blend(admitted_payload),
                         None,
-                    ) {
-                        Ok(procedural) => {
-                            out.procedural_surfaces.push(procedural);
-                            SurfaceGeometry::Procedural {
-                                construction: procedural_id,
-                                cache: None,
-                            }
-                        }
-                        Err(_) => {
-                            out.stats.unknown_surface_faces += 1;
-                            annotations.exactness(id_surf(f.bridge_attr), Exactness::Unknown);
-                            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None })
-                        }
+                    ));
+                    let geometry = SurfaceGeometry::Procedural {
+                        construction: procedural_id,
+                        cache: None,
                     };
                     annotations
                         .note(id_surf(f.bridge_attr), &source_stream, blend.offset as u64)
@@ -4218,12 +4209,12 @@ fn nurbs_boundary_pcurve(
     let (fixed_degree, fixed_count, fixed_knots) = match fixed_axis {
         SurfaceParameterAxis::U => (
             surface.u_degree() as usize,
-            surface.u_count() as usize,
+            surface.u_count(),
             surface.u_knots(),
         ),
         SurfaceParameterAxis::V => (
             surface.v_degree() as usize,
-            surface.v_count() as usize,
+            surface.v_count(),
             surface.v_knots(),
         ),
     };
@@ -4317,7 +4308,7 @@ fn nurbs_strict_isocurve_pcurve(
     curve: &cadmpeg_ir::geometry::NurbsCurve,
 ) -> InverseResolution<PcurveGeometry> {
     let axis_candidate = |fixed_axis| {
-        let (uc, vc) = (surface.u_count() as usize, surface.v_count() as usize);
+        let (uc, vc) = (surface.u_count(), surface.v_count());
         let (fixed_degree, fixed_count, fixed_knots, fixed_periodic) = match fixed_axis {
             SurfaceParameterAxis::U => (
                 surface.u_degree(),
@@ -4490,9 +4481,8 @@ fn nurbs_strict_isocurve_pcurve(
     ])
 }
 
-fn nurbs_active_domain(knots: &[f64], degree: u32, count: u32) -> Option<[f64; 2]> {
+fn nurbs_active_domain(knots: &[f64], degree: u32, count: usize) -> Option<[f64; 2]> {
     let degree = usize::try_from(degree).ok()?;
-    let count = usize::try_from(count).ok()?;
     if count <= degree || knots.len() != count.checked_add(degree)?.checked_add(1)? {
         return None;
     }
@@ -5123,7 +5113,7 @@ fn ruled_surface_line_pcurve(
     line_origin: cadmpeg_ir::math::Point3,
     line_direction: cadmpeg_ir::math::Vector3,
 ) -> InverseResolution<PcurveGeometry> {
-    let (uc, vc) = (surface.u_count() as usize, surface.v_count() as usize);
+    let (uc, vc) = (surface.u_count(), surface.v_count());
     let (varying_degree, varying_count, varying_knots, varying_periodic) = match fixed_axis {
         SurfaceParameterAxis::U => (
             surface.v_degree(),
@@ -6684,8 +6674,7 @@ mod tests {
                     .unwrap(),
                 ),
                 None,
-            )
-            .unwrap()],
+            )],
             ..Default::default()
         };
 

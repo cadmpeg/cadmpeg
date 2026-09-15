@@ -521,9 +521,11 @@ fn emit_carrier_surface(
         let surface = ProceduralSurface::new(
             brep_id!(format, ProceduralSurfaceId, "procedural_surface", i),
             definition,
-            nurbs::proc_curve::record_trailing_surface_bounds(&r.tokens),
-        )
-        .map_err(cadmpeg_core::CodecError::malformed)?;
+            cadmpeg_ir::geometry::RecordBounds::try_option(
+                nurbs::proc_curve::record_trailing_surface_bounds(&r.tokens),
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
+        );
         out.procedural_surfaces
             .push((SurfaceId::from(id(format, i)), surface));
     } else if cached_unknown_procedural_surfaces.contains(&i) {
@@ -536,8 +538,7 @@ fn emit_carrier_surface(
                     cache: None,
                 },
                 None,
-            )
-            .map_err(cadmpeg_core::CodecError::malformed)?,
+            ),
         ));
     }
 
@@ -2946,15 +2947,6 @@ fn emit_carrier_curve(
     });
     let surface_start = out.surfaces.len();
     let curve_start = out.curves.len();
-    let admission_cause = |error| match error {
-        cadmpeg_ir::geometry::ProceduralGeometryError::Payload(message) => message,
-        cadmpeg_ir::geometry::ProceduralGeometryError::Cache(_) => {
-            "invalid procedural curve cache tolerance"
-        }
-        cadmpeg_ir::geometry::ProceduralGeometryError::Members(_) => {
-            "invalid procedural curve member list"
-        }
-    };
     let procedural = match procedural_curve_defs.remove(&i) {
         Some(super::ProceduralCurveSource::Cached {
             construction,
@@ -3323,18 +3315,16 @@ fn emit_carrier_curve(
                             .map_err(|_| "invalid procedural curve cache tolerance")?;
                     }
                 }
-                ProceduralCurve::new(
+                Ok(ProceduralCurve::new(
                     brep_id!(format, ProceduralCurveId, "procedural_curve", i),
                     definition,
-                )
-                .map_err(admission_cause)
+                ))
             })
         }
-        Some(super::ProceduralCurveSource::Cacheless(definition)) => ProceduralCurve::new(
+        Some(super::ProceduralCurveSource::Cacheless(definition)) => Ok(ProceduralCurve::new(
             brep_id!(format, ProceduralCurveId, "procedural_curve", i),
             *definition,
-        )
-        .map_err(admission_cause),
+        )),
         None => return,
     };
     match procedural {

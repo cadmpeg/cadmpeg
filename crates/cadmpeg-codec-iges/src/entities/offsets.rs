@@ -857,7 +857,7 @@ pub(super) fn project(
                     },
                 }),
             )
-            .and_then(|admitted_payload| {
+            .map(|admitted_payload| {
                 ProceduralCurve::new(
                     crate::ids::procedural_curve(&crate::ids::Stem::directory(entry.sequence)),
                     ProceduralCurveDefinition::Offset(admitted_payload),

@@ -4160,7 +4160,7 @@ fn surface_selection_parameter_domains_from_geometry(
 ) -> [Option<[f64; 2]>; 2] {
     match surface {
         SolvedSurfaceGeometry::Nurbs(surface) => {
-            let (u_count, v_count) = (surface.u_count() as usize, surface.v_count() as usize);
+            let (u_count, v_count) = (surface.u_count(), surface.v_count());
             [
                 selection_nurbs_parameter_domain(surface.u_degree(), surface.u_knots(), u_count),
                 selection_nurbs_parameter_domain(surface.v_degree(), surface.v_knots(), v_count),

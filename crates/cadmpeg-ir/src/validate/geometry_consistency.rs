@@ -861,8 +861,8 @@ fn surface_parameter_domains(context: &SurfacePcurveContext<'_, '_>) -> Option<[
 fn solved_surface_parameter_domains(geometry: &SolvedSurfaceGeometry) -> Option<[[f64; 2]; 2]> {
     match geometry {
         SolvedSurfaceGeometry::Nurbs(surface) => {
-            let u_count = usize::try_from(surface.u_count()).ok()?;
-            let v_count = usize::try_from(surface.v_count()).ok()?;
+            let u_count = surface.u_count();
+            let v_count = surface.v_count();
             Some([
                 nurbs_parameter_domain(surface.u_degree(), surface.u_knots(), u_count)?,
                 nurbs_parameter_domain(surface.v_degree(), surface.v_knots(), v_count)?,

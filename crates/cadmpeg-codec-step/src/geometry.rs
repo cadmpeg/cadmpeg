@@ -582,8 +582,8 @@ fn nurbs_surface(e: &mut Emitter, n: &NurbsSurface) -> Option<Ref> {
     }
     // IR control points are u-major: index i*v_count + j is pole (i, j). STEP's
     // control_points_list is LIST(u) OF LIST(v), so the outer list runs over u.
-    let u_count = n.u_count() as usize;
-    let v_count = n.v_count() as usize;
+    let u_count = n.u_count();
+    let v_count = n.v_count();
     let mut rows: Vec<String> = Vec::with_capacity(u_count);
     for grid_row in n.control_grid() {
         let mut row: Vec<Ref> = Vec::with_capacity(v_count);

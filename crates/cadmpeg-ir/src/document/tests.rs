@@ -271,8 +271,7 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
                     cache: None,
                 },
                 None,
-            )
-            .unwrap(),
+            ),
         )
         .unwrap();
 
@@ -293,8 +292,7 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
             ProceduralCurve::new(
                 curve_construction,
                 ProceduralCurveDefinition::Exact { cache: None },
-            )
-            .unwrap(),
+            ),
         )
         .unwrap();
 

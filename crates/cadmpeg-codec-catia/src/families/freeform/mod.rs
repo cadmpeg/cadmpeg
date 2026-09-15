@@ -6,8 +6,8 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, Pcurve,
     PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, RollingBallJetDerivative, RollingBallJetSite, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, Surface, SurfaceCurveFamily, SurfaceGeometry,
+    ProceduralSurfaceDefinition, RecordBounds, RollingBallJetDerivative, RollingBallJetSite,
+    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceCurveFamily, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CurveId, EdgeId, PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, RegionId,
@@ -195,7 +195,7 @@ pub(crate) fn append_consolidated_revolutions(
                 false,
                 cadmpeg_ir::geometry::CacheContract::from_form(None),
             )
-            .and_then(|admitted_payload| {
+            .map(|admitted_payload| {
                 ProceduralSurface::new(
                     ProceduralSurfaceId::compose(
                         &cadmpeg_ir::identity_namespace!(
@@ -579,7 +579,7 @@ pub(crate) fn try_decode_freeform_surfaces(
         &resolved_consolidated_revolutions,
     )
     .ok()?;
-    append_a8_rolling_ball_pools(&mut ir, &mut annotations, &scan.data).ok()?;
+    append_a8_rolling_ball_pools(&mut ir, &mut annotations, &scan.data);
     let mut standalone_wires = append_consolidated_line_profiles(
         &mut ir,
         &mut annotations,
@@ -1371,6 +1371,13 @@ pub(crate) fn append_freeform_surface_pools(
             format!("support_ref:{:08x}", offset.support_id),
             Exactness::ByteExact,
         );
+        let record_bounds = RecordBounds::try_new([
+            Some(offset.domain[0]),
+            Some(offset.domain[1]),
+            Some(offset.domain[2]),
+            Some(offset.domain[3]),
+        ])
+        .map_err(cadmpeg_core::CodecError::malformed)?;
         let _attached = ir.model.add_procedural_surface(
             surface_id,
             cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
@@ -1384,16 +1391,11 @@ pub(crate) fn append_freeform_surface_pools(
                     cache: None,
                 },
             )
-            .and_then(|admitted_payload| {
+            .map(|admitted_payload| {
                 ProceduralSurface::new(
                     procedural_id,
                     ProceduralSurfaceDefinition::Offset(admitted_payload),
-                    Some([
-                        Some(offset.domain[0]),
-                        Some(offset.domain[1]),
-                        Some(offset.domain[2]),
-                        Some(offset.domain[3]),
-                    ]),
+                    Some(record_bounds),
                 )
             })
             .map_err(cadmpeg_core::CodecError::malformed)?,
@@ -1552,23 +1554,20 @@ pub(crate) fn append_freeform_surface_pools(
             format!("header_token:{:08x}", jet.header_token),
             Exactness::ByteExact,
         );
-        ir.model.procedural_surfaces.push(
-            ProceduralSurface::new(
-                procedural_id,
-                ProceduralSurfaceDefinition::RollingBallJet(
-                    cadmpeg_ir::geometry::RollingBallJetStations::try_new(
-                        crate::families::a5a8::records::A5FreeformCurve::DEGREE,
-                        stations,
-                    )
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
-                ),
-                None,
-            )
-            .map_err(cadmpeg_core::CodecError::malformed)?,
-        );
+        ir.model.procedural_surfaces.push(ProceduralSurface::new(
+            procedural_id,
+            ProceduralSurfaceDefinition::RollingBallJet(
+                cadmpeg_ir::geometry::RollingBallJetStations::try_new(
+                    crate::families::a5a8::records::A5FreeformCurve::DEGREE,
+                    stations,
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
+            ),
+            None,
+        ));
     }
 
-    append_a8_rolling_ball_pools(ir, annotations, data)?;
+    append_a8_rolling_ball_pools(ir, annotations, data);
     let counts = append_resolved_consolidated_surface_curves(
         ir,
         annotations,
@@ -1998,7 +1997,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                         );
                         let _attached = ir.model.add_procedural_surface(
                             id.clone(),
-                            cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(support, *offset, None, None, false, cadmpeg_ir::geometry::OffsetExtension::Legacy { flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {}, cache: None }).and_then(|admitted_payload| ProceduralSurface::new(
+                            cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(support, *offset, None, None, false, cadmpeg_ir::geometry::OffsetExtension::Legacy { flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {}, cache: None }).map(|admitted_payload| ProceduralSurface::new(
                                 procedural_id,
                                 ProceduralSurfaceDefinition::Offset(admitted_payload),
                                 None,
@@ -2635,11 +2634,9 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                 .map_err(cadmpeg_core::CodecError::malformed)?
                 .derived(&procedural_id, "definition")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
-            let _attached = ir.model.add_procedural_curve(
-                curve_id,
-                ProceduralCurve::new(procedural_id, definition)
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
-            );
+            let _attached = ir
+                .model
+                .add_procedural_curve(curve_id, ProceduralCurve::new(procedural_id, definition));
         }
     }
     binding_counts.partner_supports = partner_support_blocks.len();
@@ -2970,7 +2967,7 @@ pub(crate) fn append_a8_rolling_ball_pools(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     data: &[u8],
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     for jet in crate::families::a5a8::records::a8_freeform_curves(data) {
         let Some(definition) = crate::families::a5a8::records::rolling_ball_jet_definition(&jet)
         else {
@@ -3013,12 +3010,10 @@ pub(crate) fn append_a8_rolling_ball_pools(
             ),
             Exactness::ByteExact,
         );
-        ir.model.procedural_surfaces.push(
-            ProceduralSurface::new(procedural_id, definition, None)
-                .map_err(cadmpeg_core::CodecError::malformed)?,
-        );
+        ir.model
+            .procedural_surfaces
+            .push(ProceduralSurface::new(procedural_id, definition, None));
     }
-    Ok(())
 }
 
 pub(crate) fn rolling_ball_derivative(values: [f64; 10]) -> RollingBallJetDerivative {
@@ -3596,8 +3591,7 @@ mod tests {
                     discontinuity_flag: false,
                     cache: None,
                 },
-            )
-            .expect("valid ProceduralCurve fixture"),
+            ),
         );
 
         let attached = append_resolved_consolidated_surface_curves(
@@ -3884,8 +3878,7 @@ mod tests {
                     discontinuity_flag: false,
                     cache: None,
                 },
-            )
-            .expect("valid ProceduralCurve fixture"),
+            ),
         );
 
         let attached = append_resolved_consolidated_surface_curves(

@@ -2195,8 +2195,7 @@ fn project_with_type_130_policy(
                     )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 ),
-            )
-            .map_err(cadmpeg_core::CodecError::malformed)?,
+            ),
         );
         wire_edges.push(edge);
         decoded.insert(entry.sequence);
