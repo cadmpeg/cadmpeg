@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rhino instance-definition and instance-reference records.
 
-use crate::loss::Diagnostics;
+use crate::loss::{Diagnostics, RhinoDiagnostic, RhinoLossCode};
 use std::collections::HashSet;
 use std::ops::Range;
 
@@ -220,19 +220,30 @@ pub(crate) struct DefinitionParse {
 /// Recoverable instance-definition parser diagnostic.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DefinitionDiagnostic {
-    /// Human-readable diagnostic.
-    pub(crate) message: String,
+    /// Diagnostic with the classification supplied by its producer.
+    pub(crate) diagnostic: RhinoDiagnostic,
     /// Complete table-record range.
     pub(crate) source_range: Range<usize>,
 }
 
-fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
-    Ok(Uuid::from_wire(reader.array()?))
+impl DefinitionDiagnostic {
+    pub(crate) fn to_loss(&self) -> cadmpeg_ir::LossNote {
+        self.diagnostic
+            .code
+            .unwrap_or(RhinoLossCode::ContainerInstanceDefinitionDegraded)
+            .note(format!(
+                "instance-definition record at offset {}: {}",
+                self.source_range.start, self.diagnostic.message
+            ))
+            .with_provenance(
+                cadmpeg_ir::SourceProvenance::root("rhino", self.source_range.start as u64)
+                    .with_tag("INSTANCE_DEFINITION_TABLE"),
+            )
+    }
 }
 
-fn finish(reader: &mut BoundedReader<'_>, _label: &str) -> Result<(), FramingError> {
-    reader.skip_remaining()?;
-    Ok(())
+fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
+    Ok(Uuid::from_wire(reader.array()?))
 }
 
 fn checksum_warning(
@@ -373,7 +384,7 @@ fn unit_detail<'a>(
             "redundant instance unit detail contradicts unit {unit}; meters-per-unit {meters_per_unit} and custom name {custom_name:?} retained"
         )));
     }
-    finish(&mut payload, "unit detail")?;
+    payload.skip_remaining()?;
     Ok(UnitDetail {
         unit,
         meters_per_unit,
@@ -455,7 +466,7 @@ fn model_component(
             ));
         }
     };
-    finish(&mut payload, "model-component attributes")?;
+    payload.skip_remaining()?;
     reader.skip(chunk.next_offset() - reader.position())?;
     Ok((index, id, name))
 }
@@ -527,7 +538,7 @@ pub(crate) fn file_reference<'a>(
         name_sha1: read_sha1(&mut hash_payload)?,
         content_sha1: read_sha1(&mut hash_payload)?,
     };
-    finish(&mut hash_payload, "content hash")?;
+    hash_payload.skip_remaining()?;
     checksum_warning_excluding(data, &hash, &digest_ranges, "content hash", warnings)?;
     payload.skip(hash.next_offset() - payload.position())?;
     let path_status = payload.u32()?;
@@ -536,7 +547,7 @@ pub(crate) fn file_reference<'a>(
     } else {
         None
     };
-    finish(&mut payload, "file reference")?;
+    payload.skip_remaining()?;
     checksum_warning_excluding(
         data,
         &chunk,
@@ -644,10 +655,7 @@ fn reference_settings<'a>(
             implementation_payload
                 .skip(parent.next_offset() - implementation_payload.position())?;
         }
-        finish(
-            &mut implementation_payload,
-            "reference settings implementation",
-        )?;
+        implementation_payload.skip_remaining()?;
         checksum_warning_excluding(
             data,
             &implementation,
@@ -657,11 +665,14 @@ fn reference_settings<'a>(
         )?;
         implementation_range = Some(implementation.range());
     }
-    finish(&mut payload, "reference settings")?;
-    let children = implementation_range
-        .as_ref()
-        .map_or_else(Vec::new, |range| vec![range.clone()]);
-    checksum_warning_excluding(data, &chunk, &children, "reference settings", warnings)?;
+    payload.skip_remaining()?;
+    checksum_warning_excluding(
+        data,
+        &chunk,
+        implementation_range.as_slice(),
+        "reference settings",
+        warnings,
+    )?;
     Ok(chunk.range())
 }
 
@@ -742,7 +753,7 @@ fn parse_v5(
     if version.1 >= 7 {
         reader.skip(reader.remaining())?;
     }
-    finish(&mut reader, "V5 instance definition")?;
+    reader.skip_remaining()?;
     Ok(InstanceDefinition {
         source_range,
         id,
@@ -786,7 +797,7 @@ fn parse_v6(
             "unsupported instance definition version",
         ));
     }
-    finish(&mut outer, "instance-definition wrapper")?;
+    outer.skip_remaining()?;
     let component_start = reader.position();
     let (index, id, name) = model_component(data, &mut reader, archive, warnings)?;
     #[allow(clippy::single_range_in_vec_init)] // The range is one checksum child, not its offsets.
@@ -828,7 +839,7 @@ fn parse_v6(
         if linked.bool()? {
             linked_children.push(reference_settings(data, &mut linked, archive, warnings)?);
         }
-        finish(&mut linked, "linked type")?;
+        linked.skip_remaining()?;
         checksum_warning_excluding(
             data,
             &linked_chunk,
@@ -841,7 +852,7 @@ fn parse_v6(
     } else {
         None
     };
-    finish(&mut reader, "instance definition")?;
+    reader.skip_remaining()?;
     checksum_warning_excluding(
         data,
         &outer_chunk,
@@ -898,7 +909,7 @@ fn extract_member_ids(
             "unsupported instance definition version",
         ));
     }
-    finish(&mut outer, "instance-definition wrapper")?;
+    outer.skip_remaining()?;
     let _component = model_component(data, &mut reader, archive, &mut Diagnostics::new())?;
     let _kind = reader.u32()?;
     let _units = unit_detail(
@@ -946,8 +957,8 @@ fn parse_idef_alternative_path(
     }
     let path = utf16(&mut payload)?;
     let relative = payload.bool()?;
-    finish(&mut payload, "instance-definition alternate path")?;
-    finish(&mut reader, "instance-definition alternate-path userdata")?;
+    payload.skip_remaining()?;
+    reader.skip_remaining()?;
     Ok((path, relative))
 }
 
@@ -1038,8 +1049,8 @@ pub(crate) fn parse_definitions(
     let mut result = DefinitionParse::default();
     let mut seen = HashSet::new();
     for record in records {
+        let mut warnings = Diagnostics::new();
         let parsed = (|| {
-            let mut warnings = Diagnostics::new();
             let (class, userdata) =
                 parse_class_wrapper_with_userdata(data, record.body(), archive, &mut warnings)?;
             if class.class_uuid != INSTANCE_DEFINITION_UUID {
@@ -1085,14 +1096,15 @@ pub(crate) fn parse_definitions(
                 &mut definition,
                 &mut warnings,
             );
-            for warning in warnings {
-                result.scan.diagnostics.push(DefinitionDiagnostic {
-                    message: warning.message,
-                    source_range: record.range.clone(),
-                });
-            }
             Ok((definition, userdata_degraded))
         })();
+        result
+            .scan
+            .diagnostics
+            .extend(warnings.into_iter().map(|diagnostic| DefinitionDiagnostic {
+                diagnostic,
+                source_range: record.range.clone(),
+            }));
         match parsed {
             Ok((definition, userdata_degraded)) => {
                 if userdata_degraded {
@@ -1118,14 +1130,23 @@ pub(crate) fn parse_definitions(
                         .definitions
                         .retain(|value| value.id != definition.id);
                     result.scan.diagnostics.push(DefinitionDiagnostic {
-                        message: format!("duplicate instance definition UUID {}", definition.id),
+                        diagnostic: RhinoDiagnostic {
+                            code: Some(RhinoLossCode::ContainerInstanceDefinitionDegraded),
+                            message: format!(
+                                "duplicate instance definition UUID {}",
+                                definition.id
+                            ),
+                        },
                         source_range: record.range.clone(),
                     });
                 }
             }
             Err(error) => {
                 result.scan.diagnostics.push(DefinitionDiagnostic {
-                    message: format!("instance definition retained: {error}"),
+                    diagnostic: RhinoDiagnostic {
+                        code: Some(RhinoLossCode::ContainerInstanceDefinitionDegraded),
+                        message: format!("instance definition retained: {error}"),
+                    },
                     source_range: record.range.clone(),
                 });
                 result.opaque_records.push(OpaqueRecord {
@@ -1171,7 +1192,7 @@ pub(crate) fn parse_reference(
         }
     }
     let _bounds = bbox(&mut reader)?;
-    finish(&mut reader, "instance reference")?;
+    reader.skip_remaining()?;
     if !rows.iter().flatten().all(|value| value.is_finite()) {
         return Err(FramingError::structural(
             reader.position(),
