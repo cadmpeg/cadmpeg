@@ -14,6 +14,36 @@ fn sidecar_wire() -> serde_json::Value {
 }
 
 #[test]
+fn complete_sidecar_requires_the_current_ir_version_on_both_read_routes() {
+    let valid = sidecar_wire();
+    assert_eq!(valid["ir_version"], crate::IR_VERSION);
+    assert!(DecodeSidecar::from_json(&valid.to_string()).is_ok());
+    assert!(serde_json::from_value::<DecodeSidecar>(valid.clone()).is_ok());
+    for version in [
+        None,
+        Some(serde_json::Value::Null),
+        Some(serde_json::json!(0)),
+        Some(serde_json::json!(false)),
+        Some(serde_json::json!("unsupported")),
+        Some(serde_json::json!({})),
+    ] {
+        let mut wire = valid.clone();
+        match version {
+            Some(version) => {
+                wire["ir_version"] = version;
+            }
+            None => {
+                wire.as_object_mut().unwrap().remove("ir_version");
+            }
+        }
+        let error = DecodeSidecar::from_json(&wire.to_string()).unwrap_err();
+        assert!(error.to_string().contains("ir_version"), "{error}");
+        let error = serde_json::from_value::<DecodeSidecar>(wire).unwrap_err();
+        assert!(error.to_string().contains("ir_version"), "{error}");
+    }
+}
+
+#[test]
 fn complete_sidecar_admission_rejects_malformed_digests_and_record_keys() {
     let valid = sidecar_wire();
     assert!(DecodeSidecar::from_json(&valid.to_string()).is_ok());

@@ -21,6 +21,7 @@ fn write(dir: &std::path::Path, name: &str, content: &str) -> std::path::PathBuf
 }
 
 const CHECK_REPORT: &str = r#"{
+  "ir_version": "6",
   "command": "check",
   "status": "ok",
   "refusal": null,
@@ -52,6 +53,7 @@ const CADIR_DOC: &str = r#"{
 }"#;
 
 const SIDECAR: &str = r#"{
+  "ir_version": "6",
   "ir_sha256": "abc123",
   "report": {
     "format": "f3d",
@@ -80,6 +82,52 @@ fn summary_detects_all_three_artifact_kinds() {
                 predicate::str::starts_with("field\tvalue\n")
                     .and(predicate::str::contains(format!("kind\t{kind}"))),
             );
+    }
+}
+
+#[test]
+fn query_requires_the_current_version_for_every_artifact_and_writes_it() {
+    let dir = tempdir().unwrap();
+    for content in [CHECK_REPORT, CADIR_DOC, SIDECAR] {
+        let mut valid: serde_json::Value = serde_json::from_str(content).unwrap();
+        valid["ir_version"] = serde_json::json!(cadmpeg_ir::IR_VERSION);
+        let path = write(dir.path(), "artifact.json", &valid.to_string());
+        let result = cadmpeg()
+            .args(["query", "summary", path.to_str().unwrap(), "--json"])
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+        assert_eq!(report["ir_version"], cadmpeg_ir::IR_VERSION);
+        assert_eq!(report["command"], "query");
+        for version in [
+            None,
+            Some(serde_json::Value::Null),
+            Some(serde_json::json!(0)),
+            Some(serde_json::json!(false)),
+            Some(serde_json::json!("unsupported")),
+            Some(serde_json::json!({})),
+        ] {
+            let mut wire = valid.clone();
+            match version {
+                Some(version) => {
+                    wire["ir_version"] = version;
+                }
+                None => {
+                    wire.as_object_mut().unwrap().remove("ir_version");
+                }
+            }
+            let path = write(dir.path(), "artifact.json", &wire.to_string());
+            cadmpeg()
+                .args(["query", "summary", path.to_str().unwrap()])
+                .assert()
+                .code(2)
+                .stderr(predicate::str::contains("ir_version"));
+        }
     }
 }
 
@@ -129,6 +177,7 @@ fn summary_exposes_document_and_decode_dialect_identity() {
         dir.path(),
         "classified.fidelity.json",
         r#"{
+          "ir_version": "6",
           "ir_sha256": "abc123",
           "report": {
             "format": "f3d",
@@ -174,6 +223,7 @@ fn summary_exposes_inspect_export_and_refusal_identity_without_positional_layers
         dir.path(),
         "identity.report.json",
         r#"{
+          "ir_version": "6",
           "command": "convert",
           "status": "refused",
           "refusal": {
@@ -267,6 +317,7 @@ fn summary_projects_structured_target_refusals() {
         dir.path(),
         "target-refusal.json",
         r#"{
+          "ir_version": "6",
           "command": "convert",
           "status": "refused",
           "refusal": {
@@ -1272,6 +1323,7 @@ fn schema_sidecar_and_json_envelope() {
 }
 
 const FIDELITY_SIDECAR: &str = r#"{
+  "ir_version": "6",
   "ir_sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
   "report": {"identity": {"classification": "unclassified", "format": "f3d"},
              "transfer": {"transfer": "full", "geometry_transferred": true},

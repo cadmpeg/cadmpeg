@@ -581,6 +581,11 @@ macro_rules! declare_arena_name {
 /// The IR schema version this build produces and accepts.
 pub const IR_VERSION: &str = "6";
 
+/// The current IR wire version. Every value writes [`IR_VERSION`].
+/// Deserialization refuses any other version.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct IrVersion;
+
 arena_registry!(declare_model);
 arena_registry!(assert_entity_schemas);
 arena_registry!(declare_model_view);
@@ -1052,6 +1057,31 @@ fn check_ir_version<E: serde::de::Error>(version: Option<&serde_json::Value>) ->
     Ok(())
 }
 
+impl Serialize for IrVersion {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(IR_VERSION)
+    }
+}
+
+impl<'de> Deserialize<'de> for IrVersion {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let version = serde_json::Value::deserialize(deserializer)?;
+        check_ir_version(Some(&version))?;
+        Ok(Self)
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for IrVersion {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "IrVersion".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        ir_version_schema(generator)
+    }
+}
+
 #[cfg(feature = "schema")]
 fn ir_version_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
     schemars::json_schema!({
@@ -1086,8 +1116,7 @@ pub struct CadIr {
 #[derive(Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct CadIrWriteWire<'a> {
-    #[cfg_attr(feature = "schema", schemars(schema_with = "ir_version_schema"))]
-    ir_version: &'static str,
+    ir_version: IrVersion,
     #[serde(skip_serializing_if = "Option::is_none")]
     source: Option<&'a SourceMeta>,
     units: CanonicalUnitsWire,
@@ -1118,7 +1147,7 @@ struct CadIrReadWire {
 impl Serialize for CadIr {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         CadIrWriteWire {
-            ir_version: IR_VERSION,
+            ir_version: IrVersion,
             source: self.source.as_ref(),
             units: CanonicalUnitsWire::default(),
             tolerances: &self.tolerances,
