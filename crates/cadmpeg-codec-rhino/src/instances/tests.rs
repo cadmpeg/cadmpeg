@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::disallowed_methods)]
 
+mod units;
+
 use super::{
     anonymous, file_reference as parse_file_reference, parse_reference, scale_translation,
 };
@@ -605,7 +607,7 @@ pub(crate) fn parses_source_shaped_v5_minor_6_and_7_definition_records() {
     assert_eq!(parsed.kind, crate::instances::DefinitionKind::Linked);
     assert_eq!(parsed.members, vec![Uuid::from_wire(member_id)]);
     assert_eq!(parsed.units.unit, 2);
-    assert_eq!(parsed.units.meters_per_unit, 0.001);
+    assert_eq!(f64::from_bits(parsed.units.meters_per_unit_bits), 0.001);
     assert_eq!(parsed.linked_appearance, 2);
     assert!(parsed.file_reference().is_none());
 
@@ -666,7 +668,10 @@ pub(crate) fn parses_source_shaped_v6_v7_v8_static_and_linked_definitions() {
         assert_eq!(static_definition.name, "modern definition");
         assert_eq!(static_definition.members, vec![Uuid::from_wire(member_id)]);
         assert_eq!(static_definition.units.unit, 8);
-        assert_eq!(static_definition.units.meters_per_unit, 0.0254);
+        assert_eq!(
+            f64::from_bits(static_definition.units.meters_per_unit_bits),
+            0.0254
+        );
         let linked = &scan.definitions.definitions[1];
         assert_eq!(linked.kind, crate::instances::DefinitionKind::Linked);
         assert!(linked.members.is_empty());
@@ -1521,7 +1526,7 @@ fn contradictory_standard_unit_detail_preserves_scale_and_name() {
     let units =
         super::unit_detail(&data, &mut reader, archive, &mut warnings).expect("unit evidence");
     assert_eq!(units.unit, 2);
-    assert_eq!(units.meters_per_unit, 0.5);
+    assert_eq!(f64::from_bits(units.meters_per_unit_bits), 0.5);
     assert_eq!(units.custom_name, "retained name");
     assert_eq!(warnings.len(), 1);
     assert_eq!(

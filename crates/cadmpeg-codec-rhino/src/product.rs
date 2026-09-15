@@ -11,13 +11,13 @@ use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 
 use crate::container::Scan;
-use crate::instances::{DefinitionKind, LinkSource};
+use crate::instances::{DefinitionKind, LinkSource, UnitDetail};
 use crate::loss::RhinoLossCode;
 use crate::settings::UnitBinding;
 use crate::wire::Uuid;
 
 #[derive(Debug, Serialize)]
-struct DefinitionRecord {
+struct DefinitionRecord<'a> {
     id: String,
     source_offset: u64,
     source_uuid: String,
@@ -28,9 +28,8 @@ struct DefinitionRecord {
     url_tag: String,
     kind: DefinitionKind,
     member_object_ids: Vec<String>,
-    unit_system: i32,
-    meters_per_unit: f64,
-    custom_unit_name: String,
+    #[serde(flatten)]
+    units: &'a UnitDetail,
     linked_depth: i32,
     linked_component_appearance: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -211,9 +210,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, 
             url_tag: definition.url_tag.clone(),
             kind: definition.kind,
             member_object_ids: definition.members.iter().map(ToString::to_string).collect(),
-            unit_system: definition.units.unit,
-            meters_per_unit: definition.units.meters_per_unit,
-            custom_unit_name: definition.units.custom_name.clone(),
+            units: &definition.units,
             linked_depth: definition.linked_depth,
             linked_component_appearance: definition.linked_appearance,
             external_reference: external_id,
