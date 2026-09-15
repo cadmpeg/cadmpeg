@@ -104,12 +104,8 @@ struct AnnotationRecord {
     legacy_justification: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     v2_default_text: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    v2_face_name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    v2_font_weight: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    v2_text_height: Option<f64>,
+    #[serde(flatten)]
+    v2_text: Option<V2Text>,
     #[serde(skip_serializing_if = "Option::is_none")]
     v5_text_extra: Option<V5TextExtraRecord>,
     leader_points: Vec<[f64; 2]>,
@@ -314,9 +310,17 @@ fn decode_legacy_annotation(
 
 struct V2AnnotationPayload {
     base: crate::dimensions::V2Annotation,
-    face_name: Option<String>,
-    font_weight: Option<i32>,
-    text_height: Option<f64>,
+    text: Option<V2Text>,
+}
+
+#[derive(Debug, Serialize)]
+struct V2Text {
+    #[serde(rename = "v2_face_name")]
+    face_name: String,
+    #[serde(rename = "v2_font_weight")]
+    font_weight: i32,
+    #[serde(rename = "v2_text_height")]
+    text_height: f64,
 }
 
 fn decode_v2_annotation(
@@ -327,7 +331,7 @@ fn decode_v2_annotation(
 ) -> Result<V2AnnotationPayload, FramingError> {
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let base = crate::dimensions::v2_annotation_direct(&mut reader, scale)?;
-    let (face_name, font_weight, text_height) = if class == crate::dimensions::V2_TEXT_OBJECT {
+    let text = if class == crate::dimensions::V2_TEXT_OBJECT {
         if base.kind != 7 {
             return Err(FramingError::structural(
                 range.start,
@@ -348,7 +352,11 @@ fn decode_v2_annotation(
         let text_height = scaled_coordinate(raw_text_height, scale).ok_or_else(|| {
             FramingError::structural(reader.position() - 8, "scaled V2 text height is invalid")
         })?;
-        (Some(face_name), Some(font_weight), Some(text_height))
+        Some(V2Text {
+            face_name,
+            font_weight,
+            text_height,
+        })
     } else {
         if class == crate::dimensions::V2_LEADER && base.kind != 6 {
             return Err(FramingError::structural(
@@ -356,15 +364,10 @@ fn decode_v2_annotation(
                 "V2 leader has a non-leader annotation type",
             ));
         }
-        (None, None, None)
+        None
     };
     reader.skip_remaining()?;
-    Ok(V2AnnotationPayload {
-        base,
-        face_name,
-        font_weight,
-        text_height,
-    })
+    Ok(V2AnnotationPayload { base, text })
 }
 
 fn decode_dot(
@@ -605,9 +608,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, 
                     legacy_text_height: None,
                     legacy_justification: None,
                     v2_default_text: None,
-                    v2_face_name: None,
-                    v2_font_weight: None,
-                    v2_text_height: None,
+                    v2_text: None,
                     v5_text_extra,
                     leader_points: points,
                     links: vec![link],
@@ -663,9 +664,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, 
                     legacy_text_height: Some(value.text_height),
                     legacy_justification: Some(value.justification),
                     v2_default_text: None,
-                    v2_face_name: None,
-                    v2_font_weight: None,
-                    v2_text_height: None,
+                    v2_text: None,
                     v5_text_extra,
                     leader_points: value.points,
                     links: vec![link],
@@ -739,9 +738,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, 
                     legacy_text_height: None,
                     legacy_justification: None,
                     v2_default_text: Some(value.base.default_text),
-                    v2_face_name: value.face_name,
-                    v2_font_weight: value.font_weight,
-                    v2_text_height: value.text_height,
+                    v2_text: value.text,
                     v5_text_extra: None,
                     leader_points,
                     links: vec![link],
@@ -1123,9 +1120,13 @@ mod tests {
         .expect("V2 text object");
         assert_eq!(value.base.user_text, "  text  ");
         assert_eq!(value.base.default_text, "default");
-        assert_eq!(value.face_name.as_deref(), Some("Witness Sans"));
-        assert_eq!(value.font_weight, Some(700));
-        assert_eq!(value.text_height, Some(125.0));
+        let text = value
+            .text
+            .as_ref()
+            .expect("V2 text fields are present together");
+        assert_eq!(text.face_name, "Witness Sans");
+        assert_eq!(text.font_weight, 700);
+        assert_eq!(text.text_height, 125.0);
         assert_eq!(value.base.plane.origin.0, [10.0, 20.0, 30.0]);
 
         let mut leader = v2_annotation_payload(
@@ -1141,7 +1142,7 @@ mod tests {
                 .expect("V2 leader");
         assert_eq!(value.base.points, [[2.0, 4.0], [6.0, 8.0], [10.0, 12.0]]);
         assert!(value.base.user_positioned_text);
-        assert!(value.face_name.is_none());
+        assert!(value.text.is_none());
     }
 
     #[test]

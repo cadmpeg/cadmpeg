@@ -1787,12 +1787,12 @@ impl<'a> DecodeContext<'a> {
             return Err(format!("definition cycle reaches {}", definition.id));
         }
         let binding = self.unit_binding();
-        let scale = binding.neutral_scale().ok_or_else(|| {
-            format!(
+        let crate::settings::UnitBinding::Millimeters(scale) = binding else {
+            return Err(format!(
                 "document has no physical millimetre binding ({})",
                 binding.label()
-            )
-        })?;
+            ));
+        };
         let local = crate::instances::scale_translation(reference.transform, scale)
             .ok_or_else(|| "scaled instance transform is invalid".to_string())?;
         let transform = parent.compose(local).map_err(|error| error.to_string())?;
@@ -2146,7 +2146,9 @@ impl<'a> DecodeContext<'a> {
         for source in presentation.opaque_records {
             self.retain_opaque_record(&source);
         }
-        crate::product::install(self.scan, &mut self.ir)?;
+        self.report
+            .typed_losses
+            .extend(crate::product::install(self.scan, &mut self.ir)?);
         let views = crate::views::install(self.scan, &mut self.ir)?;
         self.report.typed_losses.extend(views.losses);
         for source in views.opaque_records {

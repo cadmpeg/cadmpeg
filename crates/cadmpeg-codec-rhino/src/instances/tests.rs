@@ -49,7 +49,8 @@ fn translation_scales_once_without_scaling_linear_coefficients() {
         [0.0, 0.0, 1.0, 0.0],
     ])
     .expect("affine transform");
-    let scaled = scale_translation(source, 25.4).expect("finite translation");
+    let scaled = scale_translation(source, crate::settings::StandardUnit::Inches.into())
+        .expect("finite translation");
     assert_eq!(scaled.rows()[0][0], 2.0);
     assert_eq!(scaled.rows()[1][3], 76.199_999_999_999_99);
 }
@@ -62,7 +63,14 @@ fn translation_scaling_rejects_overflow() {
         [0.0, 0.0, 1.0, 0.0],
     ])
     .expect("affine transform");
-    assert!(scale_translation(source, 2.0).is_none());
+    let mut scan = scan_with_objects(&[]);
+    set_test_units(&mut scan, 2.0);
+    let crate::settings::UnitBinding::Millimeters(scale) =
+        crate::settings::UnitBinding::from_units(scan.metadata.settings.units.as_ref())
+    else {
+        panic!("physical test unit");
+    };
+    assert!(scale_translation(source, scale).is_none());
 }
 
 #[test]
@@ -835,7 +843,10 @@ pub(crate) fn static_instance_suppresses_member_and_two_references_expand_with_d
             .ir()
             .native_unknowns("rhino")
             .expect("required invariant")[0]
-            .links.iter().map(|link| link.as_str()).collect::<Vec<_>>(),
+            .links
+            .iter()
+            .map(|link| link.as_str())
+            .collect::<Vec<_>>(),
         body_ids
     );
     assert_eq!(

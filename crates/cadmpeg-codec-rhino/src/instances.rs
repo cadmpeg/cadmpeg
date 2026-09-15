@@ -7,6 +7,7 @@ use std::ops::Range;
 
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::transform::Transform;
+use serde::Serialize;
 
 use crate::chunks::{
     checked_count_bytes, chunk_at, direct_checksum_ranges, verify_checksum, verify_checksum_ranges,
@@ -14,7 +15,7 @@ use crate::chunks::{
 };
 use crate::container::{OpaqueRecord, Record};
 use crate::objects::{parse_class_wrapper_with_userdata, ClassUserdata, UserdataDescriptor};
-use crate::settings::{bbox, utf16};
+use crate::settings::{bbox, utf16, MillimeterScale};
 use crate::wire::Uuid;
 
 const INSTANCE_DEFINITION_UUID: Uuid = Uuid::from_canonical([
@@ -34,7 +35,8 @@ const MODEL_ATTRIBUTES: u32 = 0x4000_8002;
 const MAX_MEMBERS: usize = 1 << 20;
 
 /// Semantic kind of an instance definition.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum DefinitionKind {
     /// Definition whose members are stored in this archive.
     Static,
@@ -1202,10 +1204,10 @@ pub(crate) fn parse_reference(
 }
 
 /// Converts source-unit translation coefficients to canonical millimeters.
-pub(crate) fn scale_translation(transform: Transform, scale: f64) -> Option<Transform> {
+pub(crate) fn scale_translation(transform: Transform, scale: MillimeterScale) -> Option<Transform> {
     let mut rows = transform.affine_rows();
     for row in &mut rows {
-        row[3] = crate::wire::scaled_coordinate(row[3], scale)?;
+        row[3] = crate::wire::scaled_coordinate(row[3], scale.value())?;
     }
     Transform::affine(rows)
 }
