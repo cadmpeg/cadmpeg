@@ -67,6 +67,10 @@ fn atom(node: &Node) -> Option<&str> {
     }
 }
 
+fn atom_opt(node: Option<&Node>) -> Option<&str> {
+    node.and_then(atom)
+}
+
 fn is_atom(nodes: &[Node], index: usize, value: &str) -> bool {
     nodes.get(index).and_then(atom) == Some(value)
 }
@@ -171,6 +175,11 @@ struct HandImplSource {
     name: String,
     body: String,
     method_nodes: Vec<Node>,
+    /// Parameter bindings that receive the serde deserializer. A token named
+    /// `deserializer` elsewhere in the body is not evidence that a call reads
+    /// the method input: local bindings may shadow it, and a helper may merely
+    /// mention the spelling.
+    deserializer_bindings: BTreeSet<String>,
     local_denied: BTreeSet<String>,
 }
 
@@ -351,8 +360,41 @@ fn collect_macro_denied(
     }
 }
 
+/// Return the bindings in the first typed parameter of a macro method.
+///
+/// The recognized declaration macros all emit a conventional
+/// `deserialize: D` parameter. Keep the parser conservative: if the pattern
+/// is not a single identifier (optionally preceded by `mut`), no call can be
+/// certified as consuming the method input.
+fn macro_parameter_bindings(nodes: &[Node]) -> BTreeSet<String> {
+    let mut bindings = BTreeSet::new();
+    let Some(first) = split_node_arguments(nodes).into_iter().next() else {
+        return bindings;
+    };
+    let Some(colon) = first.iter().position(|node| atom(node) == Some(":")) else {
+        return bindings;
+    };
+    let pattern = &first[..colon];
+    let mut index = 0;
+    if is_atom(pattern, index, "mut") {
+        index += 1;
+    }
+    if is_atom(pattern, index, "$") {
+        if let Some(name) = atom_opt(pattern.get(index + 1)) {
+            if is_path_atom(name) {
+                bindings.insert(format!("${name}"));
+            }
+        }
+    } else if let Some(name) = atom_opt(pattern.get(index)) {
+        if is_path_atom(name) {
+            bindings.insert(name.to_owned());
+        }
+    }
+    bindings
+}
+
 /// Parse one macro `impl` and isolate its `Deserialize::deserialize` method.
-fn macro_route_at(nodes: &[Node], start: usize) -> Option<(String, Vec<Node>)> {
+fn macro_route_at(nodes: &[Node], start: usize) -> Option<(String, Vec<Node>, BTreeSet<String>)> {
     if !is_atom(nodes, start, "impl") {
         return None;
     }
@@ -383,10 +425,15 @@ fn macro_route_at(nodes: &[Node], start: usize) -> Option<(String, Vec<Node>)> {
             Some(Node::Group(Delimiter::Brace, _))
         )
     })?;
+    let Node::Group(Delimiter::Parenthesis, parameter_nodes) = implementation.get(parameters)?
+    else {
+        return None;
+    };
+    let deserializer_bindings = macro_parameter_bindings(parameter_nodes);
     let Node::Group(Delimiter::Brace, body) = implementation.get(body_index)? else {
         return None;
     };
-    Some((name, body.clone()))
+    Some((name, body.clone(), deserializer_bindings))
 }
 
 fn collect_macro_routes(
@@ -397,7 +444,7 @@ fn collect_macro_routes(
 ) {
     let mut index = 0;
     while index < nodes.len() {
-        if let Some((name, method_nodes)) = macro_route_at(nodes, index) {
+        if let Some((name, method_nodes, deserializer_bindings)) = macro_route_at(nodes, index) {
             let body = nodes_text(&method_nodes);
             found.push(HandImplSource {
                 path: path.to_owned(),
@@ -405,6 +452,7 @@ fn collect_macro_routes(
                 name,
                 body,
                 method_nodes,
+                deserializer_bindings,
                 local_denied: BTreeSet::new(),
             });
         }
@@ -413,6 +461,22 @@ fn collect_macro_routes(
         }
         index += 1;
     }
+}
+
+/// Return the binding names of the first typed argument in a parsed reader.
+///
+/// A hand-written serde implementation has one input parameter in this
+/// workspace. Requiring a simple identifier keeps the route proof tied to the
+/// actual parameter rather than to a conventional spelling found in the
+/// method body.
+fn signature_deserializer_bindings(signature: &syn::Signature) -> BTreeSet<String> {
+    let Some(syn::FnArg::Typed(argument)) = signature.inputs.first() else {
+        return BTreeSet::new();
+    };
+    let syn::Pat::Ident(pattern) = argument.pat.as_ref() else {
+        return BTreeSet::new();
+    };
+    BTreeSet::from([pattern.ident.to_string()])
 }
 
 fn collect_source_items(
@@ -462,6 +526,7 @@ fn collect_source_items(
                     name,
                     body: source_span_text(source, method.span()),
                     method_nodes,
+                    deserializer_bindings: signature_deserializer_bindings(&method.sig),
                     local_denied: local_denied_types(&method.block),
                 });
             }
@@ -568,9 +633,15 @@ fn path_segment_at_end(nodes: &[Node], end: usize) -> Option<(usize, String)> {
 fn matching_angle_open(nodes: &[Node], close: usize) -> Option<usize> {
     let mut depth = 0usize;
     for index in (0..=close).rev() {
-        match atom(nodes.get(index)?) {
-            Some(">") => depth += 1,
-            Some("<") => {
+        let Some(value) = atom_opt(nodes.get(index)) else {
+            // Bracketed, parenthesized, and braced generic arguments are
+            // opaque groups. They cannot contain the angle delimiter that
+            // pairs with this close token at the current level.
+            continue;
+        };
+        match value {
+            ">" => depth += 1,
+            "<" => {
                 depth = depth.checked_sub(1)?;
                 if depth == 0 {
                     return Some(index);
@@ -582,11 +653,194 @@ fn matching_angle_open(nodes: &[Node], close: usize) -> Option<usize> {
     None
 }
 
+/// Split a token sequence at top-level commas. Delimited groups are already
+/// represented as one node; angle brackets remain tokens and need a small
+/// depth counter for generic arguments.
+fn split_node_arguments(nodes: &[Node]) -> Vec<Vec<Node>> {
+    let mut arguments = Vec::new();
+    let mut current = Vec::new();
+    let mut angle_depth = 0usize;
+    for node in nodes {
+        match atom(node) {
+            Some("<") => angle_depth += 1,
+            Some(">") if angle_depth > 0 => angle_depth -= 1,
+            Some(",") if angle_depth == 0 => {
+                arguments.push(std::mem::take(&mut current));
+                continue;
+            }
+            _ => {}
+        }
+        current.push(node.clone());
+    }
+    arguments.push(current);
+    arguments
+}
+
+fn path_before_angle(nodes: &[Node], open: usize) -> Option<Vec<String>> {
+    let end = if open >= 2 && is_atom(nodes, open - 1, ":") && is_atom(nodes, open - 2, ":") {
+        open - 2
+    } else {
+        open
+    };
+    path_tail(nodes, end)
+}
+
+#[derive(Debug, Clone)]
+enum TypeShape {
+    Path(Vec<String>),
+    Generic(Vec<String>, Vec<Vec<Node>>),
+    KeylessAggregate,
+}
+
+/// Parse only the type shapes needed to classify a Deserialize receiver.
+/// Unsupported syntax is deliberately left unresolved and therefore cannot
+/// certify a keyless or closed route.
+fn type_shape(nodes: &[Node]) -> Option<TypeShape> {
+    if nodes.is_empty() {
+        return None;
+    }
+    let mut start = 0;
+    if is_atom(nodes, start, "&") {
+        start += 1;
+        if nodes
+            .get(start)
+            .and_then(atom)
+            .is_some_and(|value| value.starts_with('\''))
+        {
+            start += 1;
+        }
+        if is_atom(nodes, start, "mut") {
+            start += 1;
+        }
+    }
+    let nodes = nodes.get(start..)?;
+    if nodes.len() == 1
+        && matches!(
+            nodes.first(),
+            Some(Node::Group(Delimiter::Bracket | Delimiter::Parenthesis, _))
+        )
+    {
+        return Some(TypeShape::KeylessAggregate);
+    }
+    if is_atom(nodes, nodes.len().checked_sub(1)?, ">") {
+        let close = nodes.len() - 1;
+        let open = matching_angle_open(nodes, close)?;
+        let path = path_before_angle(nodes, open)?;
+        return Some(TypeShape::Generic(
+            path,
+            split_node_arguments(&nodes[open + 1..close]),
+        ));
+    }
+    Some(TypeShape::Path(path_tail(nodes, nodes.len())?))
+}
+
+fn path_is_keyless(path: &[String]) -> bool {
+    path.len() == 1
+        && matches!(
+            path[0].as_str(),
+            "bool"
+                | "char"
+                | "str"
+                | "String"
+                | "i8"
+                | "i16"
+                | "i32"
+                | "i64"
+                | "i128"
+                | "isize"
+                | "u8"
+                | "u16"
+                | "u32"
+                | "u64"
+                | "u128"
+                | "usize"
+                | "f32"
+                | "f64"
+                | "Vec"
+                | "VecDeque"
+                | "LinkedList"
+                | "BinaryHeap"
+                | "HashSet"
+                | "BTreeSet"
+                | "ByteBuf"
+                | "$raw"
+        )
+        || path == ["crate", "bytes"]
+}
+
+fn type_is_keyless(nodes: &[Node]) -> bool {
+    match type_shape(nodes) {
+        Some(TypeShape::KeylessAggregate) => true,
+        Some(TypeShape::Path(path)) => path_is_keyless(&path),
+        Some(TypeShape::Generic(path, arguments)) => {
+            let Some(name) = path.last() else {
+                return false;
+            };
+            if path.len() == 1 && name == "Vec" {
+                // A sequence reader consumes an array before it can inspect
+                // an element, so an object key cannot reach its element type.
+                return true;
+            }
+            if path.len() == 1
+                && matches!(
+                    name.as_str(),
+                    "Box"
+                        | "Option"
+                        | "Rc"
+                        | "Arc"
+                        | "Pin"
+                        | "RefCell"
+                        | "Cell"
+                        | "Mutex"
+                        | "RwLock"
+                )
+                && arguments.len() == 1
+            {
+                return type_is_keyless(&arguments[0]);
+            }
+            false
+        }
+        None => false,
+    }
+}
+
+fn type_receiver(nodes: &[Node]) -> Option<Receiver> {
+    match type_shape(nodes)? {
+        TypeShape::Path(path) => Some(Receiver::Path(path)),
+        TypeShape::Generic(path, arguments) => Some(Receiver::Generic { path, arguments }),
+        TypeShape::KeylessAggregate => None,
+    }
+}
+
 #[derive(Debug, Clone)]
 enum Receiver {
     Path(Vec<String>),
-    Generic(Vec<String>),
-    QSelf,
+    Generic {
+        path: Vec<String>,
+        arguments: Vec<Vec<Node>>,
+    },
+    QSelf {
+        type_nodes: Vec<Node>,
+    },
+}
+
+fn qself_type(nodes: &[Node], open: usize, close: usize) -> Option<Vec<Node>> {
+    let interior = &nodes[open + 1..close];
+    let mut angle_depth = 0usize;
+    let as_index = interior.iter().position(|node| match atom(node) {
+        Some("<") => {
+            angle_depth += 1;
+            false
+        }
+        Some(">") => {
+            angle_depth = angle_depth.saturating_sub(1);
+            false
+        }
+        Some("as") => angle_depth == 0,
+        _ => false,
+    });
+    let type_nodes = as_index.map_or(interior, |index| &interior[..index]);
+    (!type_nodes.is_empty()).then(|| type_nodes.to_vec())
 }
 
 fn receiver_before(nodes: &[Node], end: usize) -> Option<Receiver> {
@@ -594,16 +848,17 @@ fn receiver_before(nodes: &[Node], end: usize) -> Option<Receiver> {
         return None;
     }
     if is_atom(nodes, end - 1, ">") {
-        let open = matching_angle_open(nodes, end - 1)?;
-        if open >= 2 && is_atom(nodes, open - 1, ":") && is_atom(nodes, open - 2, ":") {
-            return Some(Receiver::Generic(path_tail(nodes, open - 2)?));
+        let close = end - 1;
+        let open = matching_angle_open(nodes, close)?;
+        if let Some(path) = path_before_angle(nodes, open) {
+            return Some(Receiver::Generic {
+                path,
+                arguments: split_node_arguments(&nodes[open + 1..close]),
+            });
         }
-        if open > 0 {
-            if let Some(path) = path_tail(nodes, open) {
-                return Some(Receiver::Generic(path));
-            }
-        }
-        return Some(Receiver::QSelf);
+        return Some(Receiver::QSelf {
+            type_nodes: qself_type(nodes, open, close)?,
+        });
     }
     Some(Receiver::Path(path_tail(nodes, end)?))
 }
@@ -616,60 +871,112 @@ enum InputRoute {
     Wire(Receiver),
 }
 
-fn contains_atom(nodes: &[Node], wanted: &str) -> bool {
-    nodes.iter().any(|node| match node {
-        Node::Atom(value) => value == wanted,
-        Node::Group(_, children) => contains_atom(children, wanted),
+fn direct_binding(argument: &[Node], bindings: &BTreeSet<String>) -> bool {
+    let mut start = 0;
+    if is_atom(argument, start, "&") {
+        start += 1;
+        if nodes_atom_starts_with_lifetime(argument.get(start)) {
+            start += 1;
+        }
+        if is_atom(argument, start, "mut") {
+            start += 1;
+        }
+    }
+    argument.get(start..).is_some_and(|tail| {
+        tail.len() == 1 && atom_opt(tail.first()).is_some_and(|name| bindings.contains(name))
     })
 }
 
-fn call_uses_deserializer(arguments: &[Node]) -> bool {
-    contains_atom(arguments, "deserializer")
+fn nodes_atom_starts_with_lifetime(node: Option<&Node>) -> bool {
+    node.and_then(atom)
+        .is_some_and(|value| value.starts_with('\''))
+}
+
+fn call_uses_deserializer(arguments: &[Node], bindings: &BTreeSet<String>) -> bool {
+    split_node_arguments(arguments)
+        .iter()
+        .any(|argument| direct_binding(argument, bindings))
 }
 
 fn receiver_is_keyless(receiver: &Receiver) -> bool {
     match receiver {
-        Receiver::QSelf => true,
-        Receiver::Generic(path) | Receiver::Path(path) => path.last().is_some_and(|name| {
-            matches!(
-                name.as_str(),
-                "String" | "f64" | "i64" | "u32" | "Vec" | "Box" | "$raw"
-            ) || path.ends_with(&["crate".to_owned(), "bytes".to_owned()])
-        }),
+        Receiver::Path(path) => path_is_keyless(path),
+        Receiver::Generic { path, arguments } => {
+            let Some(name) = path.last() else {
+                return false;
+            };
+            if path.len() == 1 && name == "Vec" {
+                return true;
+            }
+            path.len() == 1
+                && matches!(
+                    name.as_str(),
+                    "Box"
+                        | "Option"
+                        | "Rc"
+                        | "Arc"
+                        | "Pin"
+                        | "RefCell"
+                        | "Cell"
+                        | "Mutex"
+                        | "RwLock"
+                )
+                && arguments.len() == 1
+                && type_is_keyless(&arguments[0])
+        }
+        Receiver::QSelf { type_nodes } => type_is_keyless(type_nodes),
     }
 }
 
 fn receiver_is_value(receiver: &Receiver) -> bool {
-    matches!(receiver, Receiver::Path(path) if path.ends_with(&["serde_json".to_owned(), "Value".to_owned()]))
+    match receiver {
+        Receiver::Path(path) => path == &["serde_json".to_owned(), "Value".to_owned()],
+        Receiver::Generic { .. } => false,
+        Receiver::QSelf { type_nodes } => matches!(
+            type_shape(type_nodes),
+            Some(TypeShape::Path(path))
+                if path == ["serde_json".to_owned(), "Value".to_owned()]
+        ),
+    }
 }
 
-fn collect_input_routes(nodes: &[Node], routes: &mut Vec<InputRoute>) {
+fn deserialize_receiver_at(
+    nodes: &[Node],
+    index: usize,
+    bindings: &BTreeSet<String>,
+) -> Option<Receiver> {
+    if !is_atom(nodes, index, "deserialize")
+        || index < 2
+        || !is_atom(nodes, index - 2, ":")
+        || !is_atom(nodes, index - 1, ":")
+    {
+        return None;
+    }
+    let Some(Node::Group(Delimiter::Parenthesis, arguments)) = nodes.get(index + 1) else {
+        return None;
+    };
+    if !call_uses_deserializer(arguments, bindings) {
+        return None;
+    }
+    receiver_before(nodes, index - 2)
+}
+
+fn collect_input_routes(nodes: &[Node], bindings: &BTreeSet<String>, routes: &mut Vec<InputRoute>) {
     for index in 0..nodes.len() {
-        if is_atom(nodes, index, "deserialize")
-            && index >= 2
-            && is_atom(nodes, index - 2, ":")
-            && is_atom(nodes, index - 1, ":")
-        {
-            if let Some(Node::Group(Delimiter::Parenthesis, arguments)) = nodes.get(index + 1) {
-                if call_uses_deserializer(arguments) {
-                    let Some(receiver) = receiver_before(nodes, index - 2) else {
-                        continue;
-                    };
-                    if receiver_is_keyless(&receiver) {
-                        routes.push(InputRoute::Keyless);
-                    } else if receiver_is_value(&receiver) {
-                        routes.push(InputRoute::Value);
-                    } else {
-                        routes.push(InputRoute::Wire(receiver));
-                    }
-                }
+        if let Some(receiver) = deserialize_receiver_at(nodes, index, bindings) {
+            if receiver_is_keyless(&receiver) {
+                routes.push(InputRoute::Keyless);
+            } else if receiver_is_value(&receiver) {
+                routes.push(InputRoute::Value);
+            } else {
+                routes.push(InputRoute::Wire(receiver));
             }
         }
 
         if is_atom(nodes, index, "deserialize_any")
             && index >= 2
             && is_atom(nodes, index - 1, ".")
-            && is_atom(nodes, index - 2, "deserializer")
+            && bindings.contains(atom_opt(nodes.get(index - 2)).unwrap_or_default())
             && matches!(
                 nodes.get(index + 1),
                 Some(Node::Group(Delimiter::Parenthesis, _))
@@ -687,36 +994,87 @@ fn collect_input_routes(nodes: &[Node], routes: &mut Vec<InputRoute>) {
             && is_atom(nodes, index - 1, ":")
             && path_tail(nodes, index - 2)
                 .is_some_and(|path| path.last().is_some_and(|name| name == "distinct_keys"))
-            && matches!(nodes.get(index + 1), Some(Node::Group(_, arguments)) if call_uses_deserializer(arguments))
+            && matches!(nodes.get(index + 1), Some(Node::Group(_, arguments)) if call_uses_deserializer(arguments, bindings))
         {
             routes.push(InputRoute::FreeForm);
         }
 
         if (is_atom(nodes, index, "deserialize_named")
             || is_atom(nodes, index, "deserialize_named_optional"))
-            && matches!(nodes.get(index + 1), Some(Node::Group(Delimiter::Parenthesis, arguments)) if call_uses_deserializer(arguments))
+            && matches!(nodes.get(index + 1), Some(Node::Group(Delimiter::Parenthesis, arguments)) if call_uses_deserializer(arguments, bindings))
         {
             routes.push(InputRoute::Keyless);
         }
 
         if let Some(Node::Group(_, children)) = nodes.get(index) {
-            collect_input_routes(children, routes);
+            collect_input_routes(children, bindings, routes);
         }
     }
 }
 
-fn propagated_version_check(nodes: &[Node]) -> (bool, bool) {
+fn assigned_binding(nodes: &[Node], call_index: usize) -> Option<String> {
+    let mut statement_start = call_index;
+    while statement_start > 0 && !is_atom(nodes, statement_start - 1, ";") {
+        statement_start -= 1;
+    }
+    let equals = (statement_start..call_index)
+        .rev()
+        .find(|index| is_atom(nodes, *index, "="))?;
+    let mut name_index = equals.checked_sub(1)?;
+    if is_atom(nodes, name_index, "mut") {
+        name_index = name_index.checked_sub(1)?;
+    }
+    if !is_atom(nodes, name_index.checked_sub(1)?, "let") {
+        return None;
+    }
+    let name = atom_opt(nodes.get(name_index))?;
+    is_path_atom(name).then(|| name.to_owned())
+}
+
+fn value_bindings(nodes: &[Node], bindings: &BTreeSet<String>) -> BTreeSet<String> {
+    let mut found = BTreeSet::new();
+    for index in 0..nodes.len() {
+        if let Some(receiver) = deserialize_receiver_at(nodes, index, bindings) {
+            if receiver_is_value(&receiver) {
+                if let Some(name) = assigned_binding(nodes, index) {
+                    if name != "_" {
+                        found.insert(name);
+                    }
+                }
+            }
+        }
+        if let Some(Node::Group(_, children)) = nodes.get(index) {
+            found.extend(value_bindings(children, bindings));
+        }
+    }
+    found
+}
+
+fn contains_any_atom(nodes: &[Node], wanted: &BTreeSet<String>) -> bool {
+    nodes.iter().any(|node| match node {
+        Node::Atom(value) => wanted.contains(value),
+        Node::Group(_, children) => contains_any_atom(children, wanted),
+    })
+}
+
+fn propagated_version_check(
+    nodes: &[Node],
+    deserializer_bindings: &BTreeSet<String>,
+) -> (bool, bool) {
+    let values = value_bindings(nodes, deserializer_bindings);
     let mut called = false;
     let mut propagated = false;
     for index in 0..nodes.len() {
         if is_atom(nodes, index, "check_ir_version") {
-            if let Some(Node::Group(Delimiter::Parenthesis, _)) = nodes.get(index + 1) {
+            if let Some(Node::Group(Delimiter::Parenthesis, arguments)) = nodes.get(index + 1) {
                 called = true;
-                propagated |= is_atom(nodes, index + 2, "?");
+                propagated |=
+                    is_atom(nodes, index + 2, "?") && contains_any_atom(arguments, &values);
             }
         }
         if let Some(Node::Group(_, children)) = nodes.get(index) {
-            let (nested_called, nested_propagated) = propagated_version_check(children);
+            let (nested_called, nested_propagated) =
+                propagated_version_check(children, deserializer_bindings);
             called |= nested_called;
             propagated |= nested_propagated;
         }
@@ -726,8 +1084,17 @@ fn propagated_version_check(nodes: &[Node]) -> (bool, bool) {
 
 fn receiver_description(receiver: &Receiver) -> String {
     match receiver {
-        Receiver::Path(path) | Receiver::Generic(path) => path.join("::"),
-        Receiver::QSelf => "<qself>".to_owned(),
+        Receiver::Path(path) => path.join("::"),
+        Receiver::Generic { path, arguments } => format!(
+            "{}<{}>",
+            path.join("::"),
+            arguments
+                .iter()
+                .map(|argument| nodes_text(argument))
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+        Receiver::QSelf { type_nodes } => format!("<{} as ...>", nodes_text(type_nodes)),
     }
 }
 
@@ -739,14 +1106,59 @@ fn wire_key_matches_route_scope(route: &HandImplSource, key: &WireKey) -> bool {
     same_crate(&route.path, &key.path) && key.scope == route.scope
 }
 
-/// Resolve an object receiver against its declaration or against a local
-/// manual reader whose own route is closed. Qualified `crate::` references are
-/// resolved by module scope; a basename in another crate or unrelated module
-/// never supplies a proof. A re-export from a parent module is accepted only
-/// when the qualified scope has one matching declaration/reader.
-fn receiver_is_closed(route: &HandImplSource, receiver: &Receiver, index: &SourceIndex) -> bool {
-    let (Receiver::Path(path) | Receiver::Generic(path)) = receiver else {
-        return false;
+fn route_identity(route: &HandImplSource) -> (String, Vec<String>, String) {
+    (route.path.clone(), route.scope.clone(), route.name.clone())
+}
+
+/// Resolve an object receiver against its declaration or against a manual
+/// reader whose complete input route is closed. A target with a denied local
+/// declaration is not enough: its consumed reader must itself classify as a
+/// closed wire route.
+fn receiver_is_closed(
+    route: &HandImplSource,
+    receiver: &Receiver,
+    index: &SourceIndex,
+    active: &mut BTreeSet<(String, Vec<String>, String)>,
+) -> bool {
+    let path = match receiver {
+        Receiver::Generic { path, arguments } => {
+            let Some(name) = path.last() else {
+                return false;
+            };
+            if path.len() == 1
+                && matches!(
+                    name.as_str(),
+                    "Box"
+                        | "Option"
+                        | "Rc"
+                        | "Arc"
+                        | "Pin"
+                        | "RefCell"
+                        | "Cell"
+                        | "Mutex"
+                        | "RwLock"
+                )
+            {
+                if arguments.len() != 1 {
+                    return false;
+                }
+                let Some(inner) = type_receiver(&arguments[0]) else {
+                    return false;
+                };
+                return receiver_is_closed(route, &inner, index, active);
+            }
+            // Generic user types such as `PatternTransform<C>` still resolve
+            // through their declaration. Only the known delegating wrappers
+            // above inspect their argument instead of their own wire shape.
+            return receiver_is_closed(route, &Receiver::Path(path.clone()), index, active);
+        }
+        Receiver::QSelf { type_nodes } => {
+            let Some(inner) = type_receiver(type_nodes) else {
+                return false;
+            };
+            return receiver_is_closed(route, &inner, index, active);
+        }
+        Receiver::Path(path) => path,
     };
     let Some(name) = path.last() else {
         return false;
@@ -756,15 +1168,28 @@ fn receiver_is_closed(route: &HandImplSource, receiver: &Receiver, index: &Sourc
         return true;
     }
 
+    let classify_target =
+        |target: &HandImplSource, active: &mut BTreeSet<(String, Vec<String>, String)>| -> bool {
+            matches!(
+                classify_route_active(target, index, active),
+                Ok(HandReaderClass::Wire)
+            )
+        };
+
     if path.len() == 1 {
-        return index.denied.iter().any(|key| {
+        if index.denied.iter().any(|key| {
             key.name == *name && wire_key_matches_route_scope(route, key) && key.path == route.path
-        }) || index.sources.iter().any(|target| {
-            target.name == *name
-                && target.path == route.path
-                && target.scope == route.scope
-                && !target.local_denied.is_empty()
-        });
+        }) {
+            return true;
+        }
+        let targets: Vec<&HandImplSource> = index
+            .sources
+            .iter()
+            .filter(|target| {
+                target.name == *name && target.path == route.path && target.scope == route.scope
+            })
+            .collect();
+        return targets.len() == 1 && classify_target(targets[0], active);
     }
 
     // Macro-generated `$wire::Wire` modules live below the macro's lexical
@@ -772,10 +1197,21 @@ fn receiver_is_closed(route: &HandImplSource, receiver: &Receiver, index: &Sourc
     if path.first().is_some_and(|segment| segment.starts_with('$')) {
         let mut scope = route.scope.clone();
         scope.extend(path.iter().take(path.len() - 1).cloned());
-        return index
+        if index
             .denied
             .iter()
-            .any(|key| key.path == route.path && key.scope == scope && key.name == *name);
+            .any(|key| key.path == route.path && key.scope == scope && key.name == *name)
+        {
+            return true;
+        }
+        let targets: Vec<&HandImplSource> = index
+            .sources
+            .iter()
+            .filter(|target| {
+                target.path == route.path && target.scope == scope && target.name == *name
+            })
+            .collect();
+        return targets.len() == 1 && classify_target(targets[0], active);
     }
 
     if path.first().is_some_and(|segment| segment == "crate") {
@@ -792,25 +1228,54 @@ fn receiver_is_closed(route: &HandImplSource, receiver: &Receiver, index: &Sourc
         if declarations.len() == 1 {
             return true;
         }
-        let readers: Vec<&HandImplSource> = index
+        let targets: Vec<&HandImplSource> = index
             .sources
             .iter()
             .filter(|target| {
                 same_crate(&route.path, &target.path)
                     && target.name == *name
                     && target.scope.starts_with(module_scope)
-                    && !target.local_denied.is_empty()
             })
             .collect();
-        return readers.len() == 1;
+        return targets.len() == 1 && classify_target(targets[0], active);
     }
 
     false
 }
 
 fn classify_route(route: &HandImplSource, index: &SourceIndex) -> Result<HandReaderClass, String> {
+    let mut active = BTreeSet::new();
+    classify_route_active(route, index, &mut active)
+}
+
+fn classify_route_active(
+    route: &HandImplSource,
+    index: &SourceIndex,
+    active: &mut BTreeSet<(String, Vec<String>, String)>,
+) -> Result<HandReaderClass, String> {
+    if !active.insert(route_identity(route)) {
+        return Err(format!(
+            "{} {} has a recursive reader route",
+            route.path, route.name
+        ));
+    }
+
+    let result = classify_route_body(route, index, active);
+    active.remove(&route_identity(route));
+    result
+}
+
+fn classify_route_body(
+    route: &HandImplSource,
+    index: &SourceIndex,
+    active: &mut BTreeSet<(String, Vec<String>, String)>,
+) -> Result<HandReaderClass, String> {
     let mut routes = Vec::new();
-    collect_input_routes(&route.method_nodes, &mut routes);
+    collect_input_routes(
+        &route.method_nodes,
+        &route.deserializer_bindings,
+        &mut routes,
+    );
     if routes.is_empty() {
         return Err(format!(
             "{} {} has no deserializer-consuming call: {}",
@@ -838,7 +1303,8 @@ fn classify_route(route: &HandImplSource, index: &SourceIndex) -> Result<HandRea
         .iter()
         .any(|route| matches!(route, InputRoute::Value))
     {
-        let (called, propagated) = propagated_version_check(&route.method_nodes);
+        let (called, propagated) =
+            propagated_version_check(&route.method_nodes, &route.deserializer_bindings);
         if routes
             .iter()
             .all(|route| matches!(route, InputRoute::Value))
@@ -873,7 +1339,7 @@ fn classify_route(route: &HandImplSource, index: &SourceIndex) -> Result<HandRea
         let InputRoute::Wire(receiver) = input_route else {
             continue;
         };
-        if !receiver_is_closed(route, &receiver, index) {
+        if !receiver_is_closed(route, &receiver, index, active) {
             return Err(format!(
                 "{} {} reads unresolved or open object target {} in scope {:?}: {}",
                 route.path,
@@ -895,6 +1361,24 @@ fn classify_hand_reader(
     denied_types: &BTreeSet<String>,
     locally_closed: &BTreeSet<String>,
 ) -> Result<HandReaderClass, String> {
+    classify_hand_reader_with_bindings(
+        path,
+        name,
+        body,
+        &BTreeSet::from(["deserializer".to_owned()]),
+        denied_types,
+        locally_closed,
+    )
+}
+
+fn classify_hand_reader_with_bindings(
+    path: &str,
+    name: &str,
+    body: &str,
+    deserializer_bindings: &BTreeSet<String>,
+    denied_types: &BTreeSet<String>,
+    locally_closed: &BTreeSet<String>,
+) -> Result<HandReaderClass, String> {
     let method_nodes = tokenize_block_text(path, name, &format!("{{{body}}}"));
     let mut index = SourceIndex::default();
     for denied in denied_types {
@@ -910,6 +1394,7 @@ fn classify_hand_reader(
         name: name.to_owned(),
         body: body.to_owned(),
         method_nodes,
+        deserializer_bindings: deserializer_bindings.clone(),
         local_denied,
     };
     classify_route(&route, &index)
@@ -1095,6 +1580,149 @@ mod tests {
     }
 
     #[test]
+    fn receiver_shapes_and_input_bindings_are_load_bearing() {
+        let denied = BTreeSet::new();
+        let no_local_wire = BTreeSet::new();
+        for (name, body) in [
+            ("BoxObject", "Box::<Open>::deserialize(deserializer)?;"),
+            (
+                "QSelfObject",
+                "<Open as Deserialize>::deserialize(deserializer)?;",
+            ),
+            (
+                "QualifiedScalar",
+                "hostile::String::deserialize(deserializer)?;",
+            ),
+        ] {
+            assert!(
+                classify_hand_reader("fixture.rs", name, body, &denied, &no_local_wire,).is_err(),
+                "{name} must not inherit a keyless basename contract",
+            );
+        }
+
+        assert_eq!(
+            classify_hand_reader(
+                "fixture.rs",
+                "QSelfScalar",
+                "<String as Deserialize>::deserialize(deserializer)?;",
+                &denied,
+                &no_local_wire,
+            ),
+            Ok(HandReaderClass::Keyless)
+        );
+        assert_eq!(
+            classify_hand_reader(
+                "fixture.rs",
+                "QSelfArray",
+                "<[f64; 2]>::deserialize(deserializer)?;",
+                &denied,
+                &no_local_wire,
+            ),
+            Ok(HandReaderClass::Keyless)
+        );
+        assert_eq!(
+            classify_hand_reader(
+                "fixture.rs",
+                "BoxArray",
+                "Box::<[u8; 3]>::deserialize(deserializer)?;",
+                &denied,
+                &no_local_wire,
+            ),
+            Ok(HandReaderClass::Keyless)
+        );
+
+        let input = BTreeSet::from(["input".to_owned()]);
+        assert!(
+            classify_hand_reader_with_bindings(
+                "fixture.rs",
+                "ShadowedInput",
+                "let deserializer = make_input(); String::deserialize(deserializer)?;",
+                &input,
+                &denied,
+                &no_local_wire,
+            )
+            .is_err(),
+            "a local variable named deserializer is not the method input",
+        );
+        assert!(
+            classify_hand_reader(
+                "fixture.rs",
+                "NestedInputMention",
+                "String::deserialize(make_input(deserializer))?;",
+                &denied,
+                &no_local_wire,
+            )
+            .is_err(),
+            "a nested expression is not a direct deserializer binding",
+        );
+    }
+
+    #[test]
+    fn version_check_must_consume_a_deserialized_value() {
+        let denied = BTreeSet::new();
+        let no_local_wire = BTreeSet::new();
+        assert_eq!(
+            classify_hand_reader(
+                "fixture.rs",
+                "Version",
+                "let version = serde_json::Value::deserialize(deserializer)?; check_ir_version(Some(&version))?;",
+                &denied,
+                &no_local_wire,
+            ),
+            Ok(HandReaderClass::ValidatedValue)
+        );
+        assert!(
+            classify_hand_reader(
+                "fixture.rs",
+                "UnrelatedVersion",
+                "let _ = serde_json::Value::deserialize(deserializer)?; check_ir_version(Some(&serde_json::Value::from(6)))?;",
+                &denied,
+                &no_local_wire,
+            )
+            .is_err(),
+            "a check over unrelated data does not validate the consumed value",
+        );
+    }
+
+    #[test]
+    fn manual_target_must_have_a_closed_consumed_route() {
+        let source = r#"
+            struct Open;
+            impl<'de> serde::Deserialize<'de> for Open {
+                fn deserialize<D: serde::Deserializer<'de>>(deserializer: D)
+                    -> Result<Self, D::Error>
+                {
+                    #[serde(deny_unknown_fields)]
+                    struct UnrelatedClosed;
+                    let _ = serde_json::Value::deserialize(deserializer)?;
+                    Ok(Self)
+                }
+            }
+            struct Reader;
+            impl<'de> serde::Deserialize<'de> for Reader {
+                fn deserialize<D: serde::Deserializer<'de>>(deserializer: D)
+                    -> Result<Self, D::Error>
+                {
+                    Open::deserialize(deserializer)?;
+                    Ok(Self)
+                }
+            }
+        "#;
+        let parsed = syn::parse_file(source).expect("parse manual target fixture");
+        let mut index = SourceIndex::default();
+        collect_source_items(&parsed.items, "fixture.rs", source, &[], &mut index);
+        let reader = index
+            .sources
+            .iter()
+            .find(|route| route.name == "Reader")
+            .expect("collect outer manual reader");
+        assert!(
+            classify_route(reader, &index).is_err(),
+            "an unrelated local denied declaration cannot close an open target",
+        );
+    }
+
+    #[test]
     fn scoped_wire_names_do_not_cross_module_boundaries() {
         let route = HandImplSource {
             path: "fixture.rs".to_owned(),
@@ -1106,6 +1734,7 @@ mod tests {
                 "Reader",
                 "{Wire::deserialize(deserializer)?}",
             ),
+            deserializer_bindings: BTreeSet::from(["deserializer".to_owned()]),
             local_denied: BTreeSet::new(),
         };
         let mut index = SourceIndex::default();
