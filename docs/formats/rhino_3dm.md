@@ -5013,7 +5013,14 @@ detail, file-reference, content-hash, SHA-1, and referenced-component-settings
 children are each bounded anonymous major-1 chunks. Model-component attributes
 consume status bytes for model serials, UUID, component type, index, and name;
 the instance-definition writer selects only index, UUID, and name. Unit-system
-detail consumes a unit enum, meters-per-unit value, and custom-unit name.
+detail consumes a `u32` unit enum, an `f64` meters-per-unit value, and a custom-unit
+name. For custom units (enum 11), the scale must be greater than zero and less
+than the positive unset sentinel `1.23432101234321e308`. For all other unit
+enums, the stored scale and name are redundant; the unit enum
+determines the unit system. A redundant scale can have any binary64 bit pattern.
+Enum 255 denotes unset units. Unrecognized enum values also denote unset
+units. In the packed V5 layout, the minor-1.4 unit-system detail replaces the
+minor-1.2 enum and minor-1.3 scale.
 File-reference minor 1 adds the embedded-file UUID; content-hash and SHA-1
 writers use minor 0. Each reader closes its own chunk after its known prefix,
 so later-minor direct bytes remain at that child boundary.

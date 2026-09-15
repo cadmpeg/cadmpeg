@@ -1054,11 +1054,8 @@ pub(crate) fn static_definition(
         url: String::new(),
         url_tag: String::new(),
         kind: crate::instances::DefinitionKind::Static,
-        units: crate::instances::UnitDetail {
-            unit: 2,
-            meters_per_unit: 0.001,
-            custom_name: String::new(),
-        },
+        units: crate::instances::UnitDetail::new(2, 0.001, String::new())
+            .expect("valid standard units"),
         linked_depth: 0,
         linked_appearance: 0,
         link: crate::instances::LinkSource::None,

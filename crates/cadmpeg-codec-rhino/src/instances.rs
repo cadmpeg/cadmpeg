@@ -7,7 +7,7 @@ use std::ops::Range;
 
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::transform::Transform;
-use serde::Serialize;
+use serde::{ser::SerializeStruct, Serialize};
 
 use crate::chunks::{
     checked_count_bytes, chunk_at, direct_checksum_ranges, verify_checksum, verify_checksum_ranges,
@@ -33,6 +33,7 @@ const OPENNURBS5_APPLICATION: Uuid = Uuid::from_canonical([
 const ANONYMOUS: u32 = 0x4000_8000;
 const MODEL_ATTRIBUTES: u32 = 0x4000_8002;
 const MAX_MEMBERS: usize = 1 << 20;
+const UNSET_POSITIVE_VALUE: f64 = 1.234_321_012_343_21e308;
 
 /// Semantic kind of an instance definition.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -48,15 +49,44 @@ pub(crate) enum DefinitionKind {
     Unset,
 }
 
-/// Serialized units carried by an instance definition.
-#[derive(Debug, Clone, PartialEq)]
+/// Source unit metadata. The stored scale defines a physical unit only for custom units.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct UnitDetail {
-    /// Raw unit-system value.
-    pub(crate) unit: i32,
-    /// Meters per unit.
-    pub(crate) meters_per_unit: f64,
-    /// Custom-unit name, empty for standard units.
-    pub(crate) custom_name: String,
+    unit: u32,
+    meters_per_unit_bits: u64,
+    custom_name: String,
+}
+
+impl UnitDetail {
+    pub(crate) fn new(
+        unit: u32,
+        meters_per_unit: f64,
+        custom_name: String,
+    ) -> Result<Self, &'static str> {
+        if unit == 11 && !(meters_per_unit > 0.0 && meters_per_unit < UNSET_POSITIVE_VALUE) {
+            return Err("custom meters-per-unit is invalid");
+        }
+        Ok(Self {
+            unit,
+            meters_per_unit_bits: meters_per_unit.to_bits(),
+            custom_name,
+        })
+    }
+}
+
+impl Serialize for UnitDetail {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut record = serializer.serialize_struct("UnitDetail", 3)?;
+        record.serialize_field("unit_system", &self.unit)?;
+        let scale = f64::from_bits(self.meters_per_unit_bits);
+        if scale.is_finite() {
+            record.serialize_field("meters_per_unit", &scale)?;
+        } else {
+            record.serialize_field("meters_per_unit_bits", &self.meters_per_unit_bits)?;
+        }
+        record.serialize_field("custom_unit_name", &self.custom_name)?;
+        record.end()
+    }
 }
 
 /// Content identity carried by an external file reference.
@@ -362,31 +392,27 @@ fn unit_detail<'a>(
     warnings: &mut Diagnostics,
 ) -> Result<UnitDetail, FramingError> {
     let (_chunk, mut payload) = anonymous(data, reader, archive, "unit detail", warnings)?;
-    let unit = i32::try_from(payload.u32()?)
-        .map_err(|_| FramingError::structural(payload.position(), "unit value overflow"))?;
+    let unit = payload.u32()?;
     let meters_per_unit = payload.f64()?;
-    if !meters_per_unit.is_finite() || meters_per_unit <= 0.0 {
-        return Err(FramingError::structural(
-            payload.position(),
-            "meters-per-unit is invalid",
-        ));
-    }
     let custom_name = utf16(&mut payload)?;
+    let standard_scale = if unit == 0 {
+        Some(1.0)
+    } else {
+        i32::try_from(unit)
+            .ok()
+            .and_then(crate::settings::standard_scale)
+            .map(|scale| scale / 1000.0)
+    };
     if unit != 11
-        && (!custom_name.is_empty()
-            || crate::settings::standard_scale(unit)
-                .is_some_and(|scale| scale / 1000.0 != meters_per_unit))
+        && (!custom_name.is_empty() || standard_scale.is_some_and(|scale| scale != meters_per_unit))
     {
         warnings.push_coded(RhinoLossCode::RedundantFieldRepaired, format!(
             "redundant instance unit detail contradicts unit {unit}; meters-per-unit {meters_per_unit} and custom name {custom_name:?} retained"
         ));
     }
     payload.skip_remaining()?;
-    Ok(UnitDetail {
-        unit,
-        meters_per_unit,
-        custom_name,
-    })
+    UnitDetail::new(unit, meters_per_unit, custom_name)
+        .map_err(|message| FramingError::structural(payload.position(), message))
 }
 
 fn model_component(
@@ -712,15 +738,8 @@ fn parse_v5(
         legacy_linked_path.clear();
     }
     reader.skip(48)?;
-    let unit = i32::try_from(reader.u32()?)
-        .map_err(|_| FramingError::structural(reader.position(), "unit value overflow"))?;
-    let meters_per_unit = reader.f64()?;
-    if !meters_per_unit.is_finite() {
-        return Err(FramingError::structural(
-            reader.position(),
-            "meters-per-unit is not finite",
-        ));
-    }
+    // The complete unit-detail child replaces these legacy unit fields.
+    reader.skip(12)?;
     let legacy_relative_path = reader.bool()?;
     let legacy_relative_linked_path = if legacy_relative_path {
         std::mem::take(&mut legacy_linked_path)
@@ -728,7 +747,6 @@ fn parse_v5(
         String::new()
     };
     let units = unit_detail(data, &mut reader, archive, warnings)?;
-    let _ = (unit, meters_per_unit);
     let linked_depth = reader.i32()?;
     let mut linked_appearance = reader.u32()?;
     if matches!(kind, DefinitionKind::Linked) && !matches!(linked_appearance, 1 | 2) {
