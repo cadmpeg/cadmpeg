@@ -364,6 +364,91 @@ fn f3z_archive_recursively_merges_nested_occurrences() {
 }
 
 #[test]
+fn f3z_archive_composes_nonidentity_nested_occurrence_placements() {
+    const CHILD_ROLE: &str = "11112222-3333-4444-5555-666677778888";
+    let inner = [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 2.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let outer = [
+        [1.0, 0.0, 0.0, 1.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let component = f3d_with_smbh(&synthetic_geometry_smbh());
+    let middle = f3d_without_brep_with_xref_placement(
+        "assembly-design",
+        "middle.f3d",
+        "component.f3d",
+        CHILD_ROLE,
+        inner,
+    );
+    let root = f3d_without_brep_with_xref_placement(
+        "assembly-design",
+        "root.f3d",
+        "middle.f3d",
+        XREF_ROLE,
+        outer,
+    );
+    let archive = f3z_archive(
+        "root.f3d",
+        &[
+            ("root.f3d", root.as_slice()),
+            ("middle.f3d", middle.as_slice()),
+            ("component.f3d", component.as_slice()),
+        ],
+    );
+
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .expect("nonidentity nested placements decode");
+    let outer_id = cadmpeg_ir::ids::OccurrenceId::mint("f3d:model:occurrence#xref-0-0")
+        .expect("outer occurrence identity");
+    let child = decoded
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| {
+            matches!(
+                &occurrence.parent,
+                cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence: parent }
+                    if parent == &outer_id
+            )
+        })
+        .expect("merged component occurrence retains its outer parent");
+    let outer_occurrence = decoded
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.id == outer_id)
+        .expect("outer occurrence");
+    assert_eq!(outer_occurrence.transform.rows()[0][3], 10.0);
+    assert_eq!(child.transform.rows()[1][3], 20.0);
+
+    let graph = cadmpeg_ir::products::AssemblyGraph::new(&decoded.ir().model.occurrences)
+        .expect("merged occurrence graph");
+    let resolved = graph
+        .resolved_transform(&child.id)
+        .expect("resolved nested occurrence transform");
+    assert_eq!(resolved.rows()[0][3], 10.0);
+    assert_eq!(resolved.rows()[1][3], 20.0);
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(
+        decoded.ir().model.bodies[0].transform.unwrap().rows()[0][3],
+        10.0
+    );
+    assert_eq!(
+        decoded.ir().model.bodies[0].transform.unwrap().rows()[1][3],
+        20.0
+    );
+}
+
+#[test]
 fn f3z_archive_reports_reference_cycles_without_recursing() {
     const CHILD_ROLE: &str = "11112222-3333-4444-5555-666677778888";
     let root = f3d_without_brep("assembly-design", "root.f3d", &[("middle.f3d", XREF_ROLE)]);

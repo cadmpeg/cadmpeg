@@ -5324,6 +5324,71 @@ impl std::ops::Deref for DesignAffineTransform {
     }
 }
 
+const EPS_XREF_PLACEMENT_RIGID_E8: f64 = 1.0e-8;
+
+fn valid_xref_placement_transform(transform: &[[f64; 4]; 4]) -> bool {
+    if !transform.iter().flatten().all(|value| value.is_finite())
+        || transform[3] != [0.0, 0.0, 0.0, 1.0]
+    {
+        return false;
+    }
+    let columns = [
+        [transform[0][0], transform[1][0], transform[2][0]],
+        [transform[0][1], transform[1][1], transform[2][1]],
+        [transform[0][2], transform[1][2], transform[2][2]],
+    ];
+    for (ordinal, column) in columns.iter().enumerate() {
+        let norm = column.iter().map(|value| value * value).sum::<f64>();
+        if (norm - 1.0).abs() > EPS_XREF_PLACEMENT_RIGID_E8 {
+            return false;
+        }
+        for other in &columns[..ordinal] {
+            let dot = column
+                .iter()
+                .zip(other)
+                .map(|(left, right)| left * right)
+                .sum::<f64>();
+            if dot.abs() > EPS_XREF_PLACEMENT_RIGID_E8 {
+                return false;
+            }
+        }
+    }
+    let determinant = transform[0][0]
+        * (transform[1][1] * transform[2][2] - transform[1][2] * transform[2][1])
+        - transform[0][1] * (transform[1][0] * transform[2][2] - transform[1][2] * transform[2][0])
+        + transform[0][2] * (transform[1][0] * transform[2][1] - transform[1][1] * transform[2][0]);
+    (determinant - 1.0).abs() <= EPS_XREF_PLACEMENT_RIGID_E8
+}
+
+/// A finite proper rigid transform from an F3D XREF placement record.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "[[f64; 4]; 4]", into = "[[f64; 4]; 4]")]
+pub struct XrefPlacementTransform(DesignAffineTransform);
+
+impl XrefPlacementTransform {
+    /// Four row-major rows.
+    pub fn rows(self) -> [[f64; 4]; 4] {
+        self.0.rows()
+    }
+}
+
+impl TryFrom<[[f64; 4]; 4]> for XrefPlacementTransform {
+    type Error = String;
+    fn try_from(rows: [[f64; 4]; 4]) -> Result<Self, Self::Error> {
+        if valid_xref_placement_transform(&rows) {
+            Ok(Self(DesignAffineTransform::try_from(rows)?))
+        } else {
+            Err("transform must be a finite proper rigid affine matrix".into())
+        }
+    }
+}
+
+impl From<XrefPlacementTransform> for [[f64; 4]; 4] {
+    fn from(value: XrefPlacementTransform) -> Self {
+        value.rows()
+    }
+}
+
 /// A finite, nonsingular row-major affine map.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "[[f64; 4]; 4]", into = "[[f64; 4]; 4]")]
@@ -9773,7 +9838,7 @@ pub struct XrefReference {
     /// Source Design occurrence transform in centimetres. `None` is the
     /// serialized identity-placement form.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub transform: Option<DesignAffineTransform>,
+    pub transform: Option<XrefPlacementTransform>,
 }
 
 #[cfg(test)]

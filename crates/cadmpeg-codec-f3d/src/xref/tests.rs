@@ -26,12 +26,52 @@ use super::OccurrencePlacement;
 #[test]
 fn redirections_keep_neutron_role_and_data_independent() {
     let table = super::parse(
-        br#"{"designs":[],"references":[{"from":"root.f3d","relativePath":"part.f3d","type":"XREF","properties":[{"neutronRole":{"value":"role-guid","dataType":"STRING"}},{"neutronData":{"value":"data-guid","dataType":"STRING"}}]}]}"#,
+        br#"{"name":"RedirectionsStream","schema-version":0,"designs":[{"file-version":1,"targetFileName":"root.f3d","displayName":"root","lineageUrn":"urn:l","versionUrn":"urn:v"}],"references":[{"from":"root.f3d","relativePath":"part.f3d","type":"XREF","properties":[{"neutronRole":{"value":"role-guid","dataType":"STRING"}},{"neutronData":{"value":"data-guid","dataType":"STRING"}}]}]}"#,
     )
     .expect("redirections JSON");
     assert_eq!(table.references.len(), 1);
     assert_eq!(table.references[0].neutron_role, "role-guid");
     assert_eq!(table.references[0].neutron_data, "data-guid");
+}
+
+#[test]
+fn malformed_redirections_shapes_are_not_admitted_as_leaf_tables() {
+    for bytes in [
+        br#"{"name":"RedirectionsStream","schema-version":0,"designs":[{"file-version":1,"targetFileName":"root.f3d","displayName":"root","lineageUrn":"urn:l","versionUrn":"urn:v"}],"references":null}"# as &[u8],
+        br#"{"name":"RedirectionsStream","schema-version":0,"designs":[{"file-version":1,"targetFileName":"root.f3d","displayName":"root","lineageUrn":"urn:l","versionUrn":"urn:v"}],"references":{"unexpected":1}}"#,
+        br#"{"name":"RedirectionsStream","schema-version":0,"designs":[{"file-version":1,"targetFileName":"root.f3d","displayName":"root","lineageUrn":"urn:l","versionUrn":"urn:v"}],"references":[{}]}"#,
+        br#"{"name":"RedirectionsStream","schema-version":0,"designs":[{"file-version":1,"targetFileName":"root.f3d","displayName":"root","lineageUrn":"urn:l","versionUrn":"urn:v"}],"references":[{"from":"root.f3d","relativePath":"part.f3d","type":"XREF","properties":[]}]}"#,
+        br#"{"name":"RedirectionsStream","schema-version":0,"designs":[{"file-version":1,"targetFileName":"root.f3d","displayName":"root","lineageUrn":"urn:l","versionUrn":"urn:v"}],"references":[{"from":"root.f3d","relativePath":"part.f3d","type":"XREF","properties":[{"neutronRole":{"value":"role","dataType":"NUMBER"}},{"neutronData":{"value":"data","dataType":"STRING"}}]}]}"#,
+    ] {
+        assert!(super::parse(bytes).is_err(), "malformed table admitted: {bytes:?}");
+    }
+}
+
+#[test]
+fn malformed_redirections_are_reported_by_complete_and_container_routes() {
+    let redirections = br#"{"name":"RedirectionsStream","schema-version":0,"designs":[{"file-version":1,"targetFileName":"root.f3d","displayName":"root","lineageUrn":"urn:l","versionUrn":"urn:v"}],"references":[{"from":"root.f3d","relativePath":"part.f3d","type":"XREF","properties":[]}] }"#;
+    for options in [
+        DecodeOptions::default(),
+        DecodeOptions {
+            container_only: true,
+            ..DecodeOptions::default()
+        },
+    ] {
+        let decoded = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_redirections_json("assembly-design", redirections)),
+                &options,
+            )
+            .expect("malformed Redirections remains a reported decode");
+        let loss = decoded
+            .report()
+            .losses
+            .iter()
+            .find(|loss| loss.code == F3dLossCode::XrefTableUndecoded.kind())
+            .expect("malformed Redirections loss");
+        assert!(loss.message.contains("RedirectionsStream.dat"), "{loss:?}");
+        assert!(loss.message.contains("properties"), "{loss:?}");
+    }
 }
 
 #[test]
@@ -87,10 +127,10 @@ fn external_reference_placements_project_as_root_occurrences_in_millimetres() {
 #[test]
 fn external_reference_admission_and_projection_check_affine_transforms() {
     let mut table = super::parse(
-        br#"{"designs":[],"references":[{"from":"root.f3d","relativePath":"part.f3d","type":"XREF","properties":[{"neutronRole":{"value":"role","dataType":"STRING"}},{"neutronData":{"value":"data","dataType":"STRING"}}]}]}"#,
+        br#"{"name":"RedirectionsStream","schema-version":0,"designs":[{"file-version":1,"targetFileName":"root.f3d","displayName":"root","lineageUrn":"urn:l","versionUrn":"urn:v"}],"references":[{"from":"root.f3d","relativePath":"part.f3d","type":"XREF","properties":[{"neutronRole":{"value":"role","dataType":"STRING"}},{"neutronData":{"value":"data","dataType":"STRING"}}]}]}"#,
     ).unwrap();
     let mut rows = cadmpeg_ir::transform::Transform::identity().rows();
-    rows[0][0] = 2.0;
+    rows[0][3] = 1.0;
     table.references[0].transform = Some(rows.try_into().unwrap());
     let wire = serde_json::to_value(&table.references[0]).unwrap();
     assert_eq!(
@@ -100,6 +140,22 @@ fn external_reference_admission_and_projection_check_affine_transforms() {
     let mut invalid = wire;
     invalid["transform"][3][0] = serde_json::json!(1.0);
     assert!(serde_json::from_value::<crate::records::XrefReference>(invalid).is_err());
+    let reflected = serde_json::json!({
+        "id": "f3d:xref:reference#0",
+        "ordinal": 0,
+        "occurrence_ordinal": 0,
+        "from": "root.f3d",
+        "relative_path": "part.f3d",
+        "neutron_role": "role",
+        "neutron_data": "data",
+        "transform": [
+            [-1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0]
+        ]
+    });
+    assert!(serde_json::from_value::<crate::records::XrefReference>(reflected).is_err());
     rows[0][3] = f64::MAX;
     table.references[0].transform = Some(rows.try_into().unwrap());
     assert!(matches!(
@@ -107,6 +163,46 @@ fn external_reference_admission_and_projection_check_affine_transforms() {
         Err(cadmpeg_core::CodecError::NotImplemented(message))
             if message.contains("finite affine transform")
     ));
+}
+
+#[test]
+fn reflected_matrix_is_not_a_placement() {
+    let reflection = [
+        [-1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let bytes = occurrence_record("reflection-role", 10, &[1], Some(reflection));
+    let placements = super::occurrence_placements(&bytes, &super::indexed_records(&bytes), None);
+    assert!(placements.is_empty(), "reflected placement admitted");
+}
+
+#[test]
+fn reflected_matrix_is_reported_by_complete_document_admission() {
+    let role = "aaaabbbb-cccc-dddd-eeee-ffff00001111";
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(document_with_modern_placement(
+                role,
+                [
+                    [-1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ],
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("reflected placement is reported");
+    let native = f3d_native(decoded.ir());
+    assert_eq!(native.xref_references.len(), 1);
+    assert!(native.xref_references[0].transform.is_none());
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::XrefPlacementUndecoded.kind()));
 }
 
 #[test]
@@ -199,6 +295,46 @@ fn occurrence_record_with_serializer_magic(
     bytes.extend(local_reference(3));
     bytes.extend(local_reference(6));
     bytes
+}
+
+fn document_with_modern_placement(role: &str, matrix: [[f64; 4]; 4]) -> Vec<u8> {
+    let mut placement = occurrence_record_with_serializer_magic(
+        role,
+        10,
+        &[1],
+        Some(matrix),
+        Some(crate::metastream::MODERN_SERIALIZER_MAGIC),
+    );
+    placement[4..7].copy_from_slice(b"256");
+    let properties =
+        br#"{"docstruct":{"version":"1.0.0","type":"assembly-design","subtype":"synthetic","attributes":{}}}"#;
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    write_synthetic_manifests(&mut zip, stored);
+    zip.start_file("Properties.dat", stored).unwrap();
+    zip.write_all(&(properties.len() as u32).to_le_bytes())
+        .unwrap();
+    zip.write_all(properties).unwrap();
+    zip.start_file("RedirectionsStream.dat", stored).unwrap();
+    zip.write_all(redirections_json("root.f3d", &[("part.f3d", role)]).as_bytes())
+        .unwrap();
+    zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+        .unwrap();
+    zip.write_all(&design_metastream_with_records(
+        &[(
+            super::OCCURRENCE_PLACEMENT_TYPE_GUID,
+            "",
+            2,
+            "Component",
+            &[10],
+        )],
+        &[(10, 0)],
+    ))
+    .unwrap();
+    zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
+        .unwrap();
+    zip.write_all(&placement).unwrap();
+    zip.finish().unwrap().into_inner()
 }
 
 fn repeated_target_occurrence_record(
@@ -618,7 +754,7 @@ fn paired_design_metastream_selects_the_tagged_placement_form() {
     let transform = native.xref_references[0]
         .transform
         .expect("tagged placement transform");
-    assert!((transform[0][3] - 7.0).abs() < 1.0e-12);
+    assert!((transform.rows()[0][3] - 7.0).abs() < 1.0e-12);
     assert!(decoded
         .report()
         .losses
@@ -679,7 +815,7 @@ fn paired_design_metastream_selects_the_legacy_typed_placement_form() {
     let transform = native.xref_references[0]
         .transform
         .expect("legacy placement transform");
-    assert!((transform[0][3] - 7.0).abs() < 1.0e-12);
+    assert!((transform.rows()[0][3] - 7.0).abs() < 1.0e-12);
     assert!(decoded
         .report()
         .losses

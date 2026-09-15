@@ -2,7 +2,8 @@
 
 use super::*;
 use crate::f3z::merge::{
-    append_feature_history, compose_transforms, extend_native, occurrence_key, OccurrenceScope,
+    append_feature_history, compose_transforms, extend_native, occurrence_key,
+    reparent_component_roots, OccurrenceScope,
 };
 use crate::records::XrefReference;
 use cadmpeg_ir::features::FeatureOperation;
@@ -127,6 +128,57 @@ fn occurrence_transform_composes_outside_existing_body_transform() {
             [0.0, 0.0, 0.0, 1.0],
         ]
     );
+}
+
+#[test]
+fn merged_component_root_occurrences_become_children_of_the_outer_instance() {
+    use cadmpeg_ir::ids::OccurrenceId;
+    use cadmpeg_ir::products::{Occurrence, OccurrenceParent, PrototypeReference};
+
+    let outer = OccurrenceId::mint("f3d:model:occurrence#xref-0-0").unwrap();
+    let root_child = OccurrenceId::mint("f3d:xref/outer/model:occurrence#xref-0-0").unwrap();
+    let nested_child = OccurrenceId::mint("f3d:xref/outer/model:occurrence#xref-1-0").unwrap();
+    let mut occurrences = vec![
+        Occurrence {
+            id: root_child.clone(),
+            prototype: PrototypeReference::Unresolved {},
+            parent: OccurrenceParent::Root {},
+            ordinal: 0,
+            transform: Transform::identity(),
+            linked_prototype: None,
+            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
+            name: None,
+            visible: None,
+            link: None,
+            native_ref: None,
+        },
+        Occurrence {
+            id: nested_child.clone(),
+            prototype: PrototypeReference::Unresolved {},
+            parent: OccurrenceParent::Occurrence {
+                occurrence: root_child.clone(),
+            },
+            ordinal: 0,
+            transform: Transform::identity(),
+            linked_prototype: None,
+            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
+            name: None,
+            visible: None,
+            link: None,
+            native_ref: None,
+        },
+    ];
+
+    reparent_component_roots(&mut occurrences, &outer);
+
+    assert!(matches!(
+        occurrences[0].parent,
+        OccurrenceParent::Occurrence { ref occurrence } if occurrence == &outer
+    ));
+    assert!(matches!(
+        occurrences[1].parent,
+        OccurrenceParent::Occurrence { ref occurrence } if occurrence == &root_child
+    ));
 }
 
 #[test]
