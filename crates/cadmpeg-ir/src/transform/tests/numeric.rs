@@ -1,0 +1,118 @@
+// SPDX-License-Identifier: Apache-2.0
+use crate::math::Vector3;
+use crate::transform::{Transform, TransformError};
+
+const EPS_INVERSE_CHECK: f64 = 1.0e-12;
+
+#[test]
+fn finite_inverses_survive_extreme_scales_and_axis_permutations() {
+    for exponent in [-800, -600, 0, 600, 800] {
+        let scale = 2.0_f64.powi(exponent);
+        for scales in [[scale; 3], [scale, 1.0 / scale, -2.0]] {
+            for permutation in [
+                [0, 1, 2],
+                [0, 2, 1],
+                [1, 0, 2],
+                [1, 2, 0],
+                [2, 0, 1],
+                [2, 1, 0],
+            ] {
+                let mut source = [[0.0; 4]; 3];
+                let mut expected = [[0.0; 4]; 3];
+                for row in 0..3 {
+                    source[row][permutation[row]] = scales[row];
+                    source[row][3] = scales[row] * [2.0, -3.0, 4.0][row];
+                    expected[permutation[row]][row] = 1.0 / scales[row];
+                    expected[permutation[row]][3] = -[2.0, -3.0, 4.0][row];
+                }
+                let transform = Transform::affine(source).unwrap();
+                let inverse = transform.try_inverse_affine().unwrap();
+                assert_eq!(inverse.affine_rows(), expected);
+                assert_eq!(inverse.compose(transform), Ok(Transform::identity()));
+                assert_eq!(transform.compose(inverse), Ok(Transform::identity()));
+            }
+        }
+    }
+    let dense = Transform::affine([
+        [1.0, 2.0, 3.0, 0.0],
+        [0.0, 1.0, 4.0, 0.0],
+        [5.0, 6.0, 0.0, 0.0],
+    ])
+    .unwrap();
+    let expected = [
+        [-24.0, 18.0, 5.0, 0.0],
+        [20.0, -15.0, -4.0, 0.0],
+        [-5.0, 4.0, 1.0, 0.0],
+    ];
+    for (actual, expected) in dense
+        .try_inverse_affine()
+        .unwrap()
+        .affine_rows()
+        .iter()
+        .flatten()
+        .zip(expected.iter().flatten())
+    {
+        assert!((actual - expected).abs() <= EPS_INVERSE_CHECK);
+    }
+}
+
+#[test]
+fn normal_direction_ignores_translation_and_avoids_squared_length_overflow() {
+    let translation_overflow = Transform::affine([
+        [0.5, 0.0, 0.0, f64::MAX],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .unwrap();
+    assert_eq!(
+        translation_overflow.try_inverse_affine(),
+        Err(TransformError::NonFinite)
+    );
+    assert_eq!(
+        translation_overflow.apply_normal(Vector3::new(0.0, 1.0, 0.0)),
+        Some(Vector3::new(0.0, 1.0, 0.0))
+    );
+    for scale in [f64::from_bits(1), f64::MIN_POSITIVE, 1.0, f64::MAX] {
+        assert_eq!(
+            Transform::identity().apply_normal(Vector3::new(scale, 0.0, 0.0)),
+            Some(Vector3::new(1.0, 0.0, 0.0))
+        );
+        let actual = Transform::identity()
+            .apply_normal(Vector3::new(scale, scale, 0.0))
+            .unwrap();
+        let component = 1.0 / 2.0_f64.sqrt();
+        assert_eq!(actual, Vector3::new(component, component, 0.0));
+    }
+    for exponent in [-800, -600, 600, 800] {
+        let scale = 2.0_f64.powi(exponent);
+        let transform = Transform::affine([
+            [scale, 0.0, 0.0, 0.0],
+            [0.0, scale, 0.0, 0.0],
+            [0.0, 0.0, scale, 0.0],
+        ])
+        .unwrap();
+        assert_eq!(
+            transform.apply_normal(Vector3::new(0.0, 1.0, 0.0)),
+            Some(Vector3::new(0.0, 1.0, 0.0))
+        );
+    }
+    for normal in [
+        Vector3::new(0.0, 0.0, 0.0),
+        Vector3::new(f64::NAN, 1.0, 0.0),
+        Vector3::new(1.0, f64::INFINITY, 0.0),
+    ] {
+        assert!(Transform::identity().apply_normal(normal).is_none());
+    }
+    let singular = Transform::affine([[0.0; 4]; 3]).unwrap();
+    assert_eq!(singular.try_inverse_affine(), Err(TransformError::Singular));
+    let inverse_overflow = Transform::affine([
+        [f64::from_bits(1), 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .unwrap();
+    assert_eq!(
+        inverse_overflow.try_inverse_affine(),
+        Err(TransformError::NonFinite)
+    );
+}

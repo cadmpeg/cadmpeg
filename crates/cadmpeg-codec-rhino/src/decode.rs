@@ -1753,18 +1753,18 @@ impl<'a> DecodeContext<'a> {
             .scan
             .definitions
             .ambiguous_ids
-            .contains(&reference.definition_id)
+            .contains(&reference.definition_id())
         {
             return Err(format!(
                 "definition {} is duplicated",
-                reference.definition_id
+                reference.definition_id()
             ));
         }
         let definition = self
             .definition_candidates
-            .get(&reference.definition_id)
+            .get(&reference.definition_id())
             .and_then(|index| self.scan.definitions.definitions.get(*index))
-            .ok_or_else(|| format!("definition {} is missing", reference.definition_id))?;
+            .ok_or_else(|| format!("definition {} is missing", reference.definition_id()))?;
         if matches!(definition.kind, crate::instances::DefinitionKind::Linked)
             && definition.members.is_empty()
         {
@@ -1793,7 +1793,7 @@ impl<'a> DecodeContext<'a> {
                 binding.label()
             ));
         };
-        let local = crate::instances::scale_translation(reference.transform, scale)
+        let local = crate::instances::scale_translation(reference.transform(), scale)
             .ok_or_else(|| "scaled instance transform is invalid".to_string())?;
         let transform = parent.compose(local).map_err(|error| error.to_string())?;
         let definition_id = definition.id;
