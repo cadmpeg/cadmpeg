@@ -329,9 +329,7 @@ fn add_source_typed_targets(
         let Some(record) = exchange.records.get(&id) else {
             continue;
         };
-        if is_wrapper_record(record, exchange)
-            && wrapper_target_resolution(id, target_identities, exchange).is_some()
-        {
+        if wrapper_target_resolution(id, target_identities, exchange).is_some() {
             continue;
         }
         let identity = opaque_record_id(id, record);
@@ -359,14 +357,6 @@ fn add_source_typed_targets(
         .entry("drawing_targets".into())
         .or_default()
         .extend(native_targets);
-}
-
-fn is_wrapper_record(record: &RawRecord, exchange: &Exchange) -> bool {
-    record
-        .partials
-        .iter()
-        .any(|partial| partial.name == "ANNOTATION_PLANE")
-        || mapped_representation(record, exchange).is_some()
 }
 
 /// Each drawing entity name and the identity kind that name spells.
@@ -868,15 +858,42 @@ fn wrapper_target_resolution(
     }
     let mut identities = BTreeSet::new();
     let mut active = BTreeSet::new();
-    let cyclic = collect_wrapper_targets(
-        id,
-        target_identities,
-        exchange,
-        &mut active,
-        &mut identities,
-    );
-    if cyclic {
-        return None;
+    let mut complete = BTreeSet::new();
+    let mut pending = vec![(id, false)];
+    while let Some((id, leaving)) = pending.pop() {
+        if leaving {
+            active.remove(&id);
+            complete.insert(id);
+            continue;
+        }
+        if complete.contains(&id) {
+            continue;
+        }
+        if !active.insert(id) {
+            return None;
+        }
+        pending.push((id, true));
+        if let Some(targets) = target_identities.get(&id) {
+            identities.extend(targets.iter().cloned());
+            continue;
+        }
+        let Some(record) = exchange.records.get(&id) else {
+            continue;
+        };
+        if let Some(plane) = record
+            .partials
+            .iter()
+            .find(|partial| partial.name == "ANNOTATION_PLANE")
+            .and_then(|partial| partial.parameters.get(2))
+            .and_then(value_reference)
+        {
+            pending.push((plane, false));
+        } else if let Some(items) = mapped_representation(record, exchange)
+            .and_then(|representation| exchange.records.get(&representation))
+            .and_then(representation::items)
+        {
+            pending.extend(items.into_iter().rev().map(|item| (item, false)));
+        }
     }
     let identity = identities.pop_first()?;
     if identities.is_empty() {
@@ -884,60 +901,6 @@ fn wrapper_target_resolution(
     }
     identities.insert(identity);
     Some(WrapperTargetResolution::Ambiguous(identities))
-}
-
-fn collect_wrapper_targets(
-    id: u64,
-    target_identities: &BTreeMap<u64, BTreeSet<String>>,
-    exchange: &Exchange,
-    active: &mut BTreeSet<u64>,
-    identities: &mut BTreeSet<String>,
-) -> bool {
-    if !active.insert(id) {
-        return true;
-    }
-    if let Some(targets) = target_identities.get(&id) {
-        identities.extend(targets.iter().cloned());
-        active.remove(&id);
-        return false;
-    }
-    let Some(record) = exchange.records.get(&id) else {
-        active.remove(&id);
-        return false;
-    };
-    let cyclic = if let Some(plane) = record
-        .partials
-        .iter()
-        .find(|partial| partial.name == "ANNOTATION_PLANE")
-        .and_then(|partial| partial.parameters.get(2))
-        .and_then(value_reference)
-    {
-        collect_wrapper_targets(plane, target_identities, exchange, active, identities)
-    } else if let Some(representation) = mapped_representation(record, exchange) {
-        if let Some(record) = exchange.records.get(&representation) {
-            if let Some(items) = representation::items(record) {
-                let mut cyclic = false;
-                for item in items {
-                    cyclic |= collect_wrapper_targets(
-                        item,
-                        target_identities,
-                        exchange,
-                        active,
-                        identities,
-                    );
-                }
-                cyclic
-            } else {
-                false
-            }
-        } else {
-            false
-        }
-    } else {
-        false
-    };
-    active.remove(&id);
-    cyclic
 }
 
 fn mapped_representation(record: &RawRecord, exchange: &Exchange) -> Option<u64> {
