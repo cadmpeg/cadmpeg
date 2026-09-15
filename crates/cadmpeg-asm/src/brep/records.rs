@@ -55,6 +55,7 @@ macro_rules! native_record {
             #[serde(deny_unknown_fields)]
             pub(super) struct Wire {
                 /// Globally unique deterministic identifier for this native record.
+                #[cfg_attr(feature = "schema", schemars(with = "cadmpeg_ir::ids::Identity"))]
                 pub id: String,
                 $(#[doc = $entity_doc])*
                 pub $entity: $entity_ty,
@@ -259,6 +260,7 @@ impl FaceSidedness {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct FaceSidednessWire {
+    #[cfg_attr(feature = "schema", schemars(with = "cadmpeg_ir::ids::Identity"))]
     id: String,
     face: FaceId,
     record_index: u32,
