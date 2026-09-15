@@ -300,7 +300,7 @@ fn native_procedural_surface_definition(
                         native_i64(bytes, *value);
                     }
                     native_f64(bytes, *second_parameter);
-                    let curve = native_loft_curve_in_range(
+                    let curve = native_loft_curve(
                         target,
                         curve,
                         Some([*first_parameter, *second_parameter]),
@@ -345,7 +345,7 @@ fn native_procedural_surface_definition(
                     native_f64(bytes, *first_parameter);
                     native_i64(bytes, *selector);
                     native_f64(bytes, *second_parameter);
-                    let curve = native_loft_curve_in_range(
+                    let curve = native_loft_curve(
                         target,
                         curve,
                         Some([*first_parameter, *second_parameter]),
@@ -858,7 +858,7 @@ fn native_procedural_surface_definition(
                         [Some(lower), Some(upper)] => Some([*lower, *upper]),
                         _ => None,
                     };
-                    let curve = native_loft_curve_in_range(target, curve, range)?;
+                    let curve = native_loft_curve(target, curve, range)?;
                     native_nurbs_curve(bytes, &curve)?;
                     for endpoint in endpoints {
                         native_optional_f64(bytes, *endpoint);
@@ -969,7 +969,7 @@ fn native_procedural_surface_definition(
                         [Some(lower), Some(upper)] => Some([lower, upper]),
                         _ => None,
                     };
-                    let profile = native_loft_curve_in_range(target, directrix, range)?;
+                    let profile = native_loft_curve(target, directrix, range)?;
                     native_nurbs_curve(bytes, &profile)?;
                     for endpoint in &form.reference_endpoints {
                         native_optional_f64(bytes, *endpoint);
@@ -1391,7 +1391,7 @@ fn encode_native_g2_blend(
         ));
     };
     native_nurbs_surface(bytes, second_exact)?;
-    let center_curve = native_loft_curve_in_range(
+    let center_curve = native_loft_curve(
         target,
         &construction.center_curve,
         Some(construction.center_parameters),
@@ -1425,29 +1425,6 @@ fn encode_native_g2_blend(
     }
     bytes.push(0x10);
     Ok(())
-}
-
-fn native_loft_curve(
-    target: &CadIr,
-    id: &cadmpeg_ir::ids::CurveId,
-) -> Result<NurbsCurve, CodecError> {
-    let curve = target
-        .model
-        .curves
-        .iter()
-        .find(|curve| curve.id == *id)
-        .ok_or_else(|| CodecError::malformed(format_args!("loft references missing curve {id}")))?;
-    native_spline_field_curve(
-        curve.geometry.solved().ok_or_else(|| {
-            cadmpeg_core::CodecError::NotImplemented("carrier has no solved geometry".into())
-        })?,
-        None,
-    )
-    .map_err(|_| {
-        CodecError::NotImplemented(format!(
-            "source-less F3D loft requires a NURBS, circle, or ellipse curve {id}"
-        ))
-    })
 }
 
 fn native_loft_subdata(bytes: &mut Vec<u8>, subdata: &cadmpeg_ir::geometry::LoftSubdata) {
@@ -1528,7 +1505,7 @@ fn native_loft_section(
         );
         for member in &entry.profile {
             native_i64(bytes, member.form.type_code());
-            let curve = native_loft_curve_in_range(target, &member.profile.id, parameter_range)?;
+            let curve = native_loft_curve(target, &member.profile.id, parameter_range)?;
             native_nurbs_curve(bytes, &curve)?;
             if let Some(endpoints) = member.profile.endpoints {
                 for value in endpoints {
@@ -1581,7 +1558,7 @@ fn native_loft_section(
             native_loft_member_tail(bytes, &member.form);
         }
         if let Some(path_curve) = &entry.path.path {
-            let path = native_loft_curve_in_range(target, &path_curve.id, parameter_range)?;
+            let path = native_loft_curve(target, &path_curve.id, parameter_range)?;
             native_nurbs_curve(bytes, &path)?;
             if let Some(endpoints) = path_curve.endpoints {
                 for value in endpoints {
@@ -1598,7 +1575,7 @@ fn native_loft_section(
             })?,
         );
         for auxiliary in &entry.path.auxiliaries {
-            let auxiliary = native_loft_curve_in_range(target, auxiliary, parameter_range)?;
+            let auxiliary = native_loft_curve(target, auxiliary, parameter_range)?;
             native_nurbs_curve(bytes, &auxiliary)?;
         }
         native_i64(bytes, entry.path.flag);
@@ -1606,7 +1583,7 @@ fn native_loft_section(
     Ok(())
 }
 
-fn native_loft_curve_in_range(
+fn native_loft_curve(
     target: &CadIr,
     id: &cadmpeg_ir::ids::CurveId,
     parameter_range: Option<[f64; 2]>,
@@ -1623,11 +1600,6 @@ fn native_loft_curve_in_range(
         })?,
         parameter_range,
     )
-    .map_err(|_| {
-        CodecError::NotImplemented(format!(
-            "source-less F3D loft requires NURBS curve {id} without a section domain"
-        ))
-    })
 }
 
 fn native_compound_loft_scale(
@@ -1677,7 +1649,7 @@ fn native_compound_loft_scale(
         bytes.push(native_bool(member.data.first_flag));
         native_loft_profile_tail(bytes, &member.data);
     }
-    native_nurbs_curve(bytes, &native_loft_curve(target, &scale.path)?)?;
+    native_nurbs_curve(bytes, &native_loft_curve(target, &scale.path, None)?)?;
     native_i64(
         bytes,
         i64::try_from(scale.auxiliaries.len()).map_err(|_| {
@@ -1685,7 +1657,7 @@ fn native_compound_loft_scale(
         })?,
     );
     for auxiliary in &scale.auxiliaries {
-        native_nurbs_curve(bytes, &native_loft_curve(target, auxiliary)?)?;
+        native_nurbs_curve(bytes, &native_loft_curve(target, auxiliary, None)?)?;
     }
     for value in scale.tail {
         native_i64(bytes, value);
@@ -1736,7 +1708,7 @@ fn encode_native_compound_loft(
             for value in parameter_range {
                 native_f64(bytes, *value);
             }
-            let curve = native_loft_curve_in_range(target, curve, Some(*parameter_range))?;
+            let curve = native_loft_curve(target, curve, Some(*parameter_range))?;
             native_nurbs_curve(bytes, &curve)?;
         }
         CompoundLoftTail::Seven {
@@ -1776,7 +1748,7 @@ fn encode_native_compound_loft(
                     native_vector(bytes, [value.x, value.y, value.z]);
                 }
                 CompoundLoftDirection::Curve { curve, .. } => {
-                    native_nurbs_curve(bytes, &native_loft_curve(target, curve)?)?;
+                    native_nurbs_curve(bytes, &native_loft_curve(target, curve, None)?)?;
                 }
             }
             for flag in trailing_flags {
@@ -1890,7 +1862,7 @@ fn encode_native_scaled_compound_loft(
             bytes.push(native_bool(false));
             bytes.push(native_bool(*flag));
             native_enum(bytes, *singularity);
-            native_nurbs_curve(bytes, &native_loft_curve(target, curve)?)?;
+            native_nurbs_curve(bytes, &native_loft_curve(target, curve, None)?)?;
         }
         ScaledCompoundLoftBranch::Direct { flag, direction } => {
             bytes.push(native_bool(false));
@@ -1901,7 +1873,7 @@ fn encode_native_scaled_compound_loft(
                     native_vector(bytes, [value.x, value.y, value.z]);
                 }
                 CompoundLoftDirection::Curve { curve, .. } => {
-                    native_nurbs_curve(bytes, &native_loft_curve(target, curve)?)?;
+                    native_nurbs_curve(bytes, &native_loft_curve(target, curve, None)?)?;
                 }
             }
         }
@@ -1914,7 +1886,10 @@ fn encode_native_scaled_compound_loft(
         native_vector(bytes, [direction.x, direction.y, direction.z]);
     }
     native_enum(bytes, construction.tail_singularity);
-    native_nurbs_curve(bytes, &native_loft_curve(target, &construction.tail_curve)?)?;
+    native_nurbs_curve(
+        bytes,
+        &native_loft_curve(target, &construction.tail_curve, None)?,
+    )?;
     bytes.push(0x10);
     Ok(())
 }
@@ -2060,8 +2035,8 @@ fn native_cacheless_procedural_surface_definition(
         native_surface_base(bytes, "spline")?;
         bytes.push(0x0f);
         native_ident(bytes, "rule_sur")?;
-        native_nurbs_curve(bytes, &native_loft_curve(target, first)?)?;
-        native_nurbs_curve(bytes, &native_loft_curve(target, second)?)?;
+        native_nurbs_curve(bytes, &native_loft_curve(target, first, None)?)?;
+        native_nurbs_curve(bytes, &native_loft_curve(target, second, None)?)?;
         bytes.push(0x10);
         return Ok(true);
     }
@@ -2078,11 +2053,11 @@ fn native_cacheless_procedural_surface_definition(
             native_ident(bytes, "sum_spl_sur")?;
             native_nurbs_curve(
                 bytes,
-                &native_loft_curve(target, definition_payload.first())?,
+                &native_loft_curve(target, definition_payload.first(), None)?,
             )?;
             native_nurbs_curve(
                 bytes,
-                &native_loft_curve(target, definition_payload.second())?,
+                &native_loft_curve(target, definition_payload.second(), None)?,
             )?;
             native_point(
                 bytes,
@@ -2608,7 +2583,7 @@ fn encode_native_skin_surface(
                 native_nurbs_curve(bytes, &curve)?;
                 native_skin_profile_data(bytes, target, &profile.data)?;
             }
-            native_nurbs_curve(bytes, &native_loft_curve(target, path)?)?;
+            native_nurbs_curve(bytes, &native_loft_curve(target, path, None)?)?;
             for value in tail {
                 native_i64(bytes, *value);
             }
@@ -2621,10 +2596,10 @@ fn encode_native_skin_surface(
             second_tail,
             ..
         } => {
-            native_nurbs_curve(bytes, &native_loft_curve(target, curve)?)?;
+            native_nurbs_curve(bytes, &native_loft_curve(target, curve, None)?)?;
             native_loft_subdata(bytes, subdata);
             native_i64(bytes, *first_tail);
-            native_nurbs_curve(bytes, &native_loft_curve(target, secondary_curve)?)?;
+            native_nurbs_curve(bytes, &native_loft_curve(target, secondary_curve, None)?)?;
             native_i64(bytes, *second_tail);
         }
     }
@@ -2640,7 +2615,7 @@ fn encode_native_skin_surface(
     native_law_formula(bytes, target, &construction.formula)?;
     native_nurbs_curve(
         bytes,
-        &native_loft_curve(target, &construction.parameter_curve)?,
+        &native_loft_curve(target, &construction.parameter_curve, None)?,
     )?;
     native_nurbs_surface(bytes, solved_cache)?;
     native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
@@ -2733,7 +2708,7 @@ fn encode_native_sweep_surface(
             native_i64(bytes, form.revision);
             bytes.push(native_bool(form.primary_flag));
             native_i64(bytes, *mode);
-            let profile = native_loft_curve_in_range(target, profile, Some(*profile_range))?;
+            let profile = native_loft_curve(target, profile, Some(*profile_range))?;
             native_nurbs_curve(bytes, &profile)?;
             for value in form.profile_endpoints {
                 native_optional_f64(bytes, value);
@@ -2773,7 +2748,7 @@ fn encode_native_sweep_surface(
             native_i64(bytes, *path_mode);
             bytes.push(native_bool(*path_flag));
             let native_path_range = [path_range[0] / LEN_TO_MM, path_range[1] / LEN_TO_MM];
-            let spine = native_loft_curve_in_range(target, spine, Some(native_path_range))?;
+            let spine = native_loft_curve(target, spine, Some(native_path_range))?;
             native_nurbs_curve(bytes, &spine)?;
             for value in form.path_endpoints {
                 native_optional_f64(bytes, value);
@@ -2822,7 +2797,7 @@ fn encode_native_sweep_surface(
         native_i64(bytes, form.revision);
         bytes.push(native_bool(form.primary_flag));
         native_i64(bytes, *mode);
-        let profile = native_loft_curve_in_range(target, profile, Some(*profile_range))?;
+        let profile = native_loft_curve(target, profile, Some(*profile_range))?;
         native_nurbs_curve(bytes, &profile)?;
         for value in form.profile_endpoints {
             native_optional_f64(bytes, value);
@@ -2856,7 +2831,7 @@ fn encode_native_sweep_surface(
         native_i64(bytes, 1);
         bytes.push(native_bool(*trajectory_flag));
         let native_path_range = [path_range[0] / LEN_TO_MM, path_range[1] / LEN_TO_MM];
-        let spine = native_loft_curve_in_range(target, spine, Some(native_path_range))?;
+        let spine = native_loft_curve(target, spine, Some(native_path_range))?;
         native_nurbs_curve(bytes, &spine)?;
         for value in form.path_endpoints {
             native_optional_f64(bytes, value);
@@ -2886,8 +2861,8 @@ fn encode_native_sweep_surface(
             parameters,
             formulas,
         } => {
-            native_nurbs_curve(bytes, &native_loft_curve(target, profile)?)?;
-            native_nurbs_curve(bytes, &native_loft_curve(target, spine)?)?;
+            native_nurbs_curve(bytes, &native_loft_curve(target, profile, None)?)?;
+            native_nurbs_curve(bytes, &native_loft_curve(target, spine, None)?)?;
             native_enum(bytes, *secondary_kind);
             for direction in directions {
                 native_vector(bytes, [direction.x, direction.y, direction.z]);
@@ -2921,7 +2896,7 @@ fn encode_native_sweep_surface(
             trailing_flag,
         } => {
             native_i64(bytes, *mode);
-            let profile = native_loft_curve_in_range(target, profile, Some(*profile_range))?;
+            let profile = native_loft_curve(target, profile, Some(*profile_range))?;
             native_nurbs_curve(bytes, &profile)?;
             for value in profile_range {
                 native_f64(bytes, *value);
@@ -2952,7 +2927,7 @@ fn encode_native_sweep_surface(
             native_i64(bytes, 1);
             bytes.push(native_bool(*trajectory_flag));
             let native_path_range = [path_range[0] / LEN_TO_MM, path_range[1] / LEN_TO_MM];
-            let spine = native_loft_curve_in_range(target, spine, Some(native_path_range))?;
+            let spine = native_loft_curve(target, spine, Some(native_path_range))?;
             native_nurbs_curve(bytes, &spine)?;
             for value in path_range {
                 native_f64(bytes, *value / LEN_TO_MM);
@@ -2979,7 +2954,7 @@ fn encode_native_sweep_surface(
             trailing_flags,
         } => {
             native_i64(bytes, *mode);
-            let profile = native_loft_curve_in_range(target, profile, Some(*profile_range))?;
+            let profile = native_loft_curve(target, profile, Some(*profile_range))?;
             native_nurbs_curve(bytes, &profile)?;
             for value in profile_range {
                 native_f64(bytes, *value);
@@ -3010,7 +2985,7 @@ fn encode_native_sweep_surface(
             native_i64(bytes, 2);
             bytes.push(native_bool(*trajectory_flag));
             let native_path_range = [path_range[0] / LEN_TO_MM, path_range[1] / LEN_TO_MM];
-            let spine = native_loft_curve_in_range(target, spine, Some(native_path_range))?;
+            let spine = native_loft_curve(target, spine, Some(native_path_range))?;
             native_nurbs_curve(bytes, &spine)?;
             for value in path_range {
                 native_f64(bytes, *value / LEN_TO_MM);
@@ -3019,7 +2994,7 @@ fn encode_native_sweep_surface(
             for flag in guide_flags {
                 bytes.push(native_bool(*flag));
             }
-            let guide_curve = native_loft_curve_in_range(target, guide_curve, Some(*guide_range))?;
+            let guide_curve = native_loft_curve(target, guide_curve, Some(*guide_range))?;
             native_nurbs_curve(bytes, &guide_curve)?;
             for value in guide_range {
                 native_f64(bytes, *value);
@@ -3050,7 +3025,7 @@ fn encode_native_sweep_surface(
             legacy_flag,
         } => {
             native_i64(bytes, *mode);
-            let profile = native_loft_curve_in_range(target, profile, Some(*profile_range))?;
+            let profile = native_loft_curve(target, profile, Some(*profile_range))?;
             native_nurbs_curve(bytes, &profile)?;
             for value in profile_range {
                 native_f64(bytes, *value);
@@ -3081,7 +3056,7 @@ fn encode_native_sweep_surface(
             native_i64(bytes, 3);
             bytes.push(native_bool(*trajectory_flag));
             let native_path_range = [path_range[0] / LEN_TO_MM, path_range[1] / LEN_TO_MM];
-            let spine = native_loft_curve_in_range(target, spine, Some(native_path_range))?;
+            let spine = native_loft_curve(target, spine, Some(native_path_range))?;
             native_nurbs_curve(bytes, &spine)?;
             for value in path_range {
                 native_f64(bytes, *value / LEN_TO_MM);
@@ -3101,7 +3076,7 @@ fn encode_native_sweep_surface(
             native_embedded_surface(bytes, &support.geometry)?;
             bytes.push(native_bool(auxiliary_curve.is_some()));
             if let Some(curve) = auxiliary_curve {
-                native_nurbs_curve(bytes, &native_loft_curve(target, curve)?)?;
+                native_nurbs_curve(bytes, &native_loft_curve(target, curve, None)?)?;
             }
             bytes.push(native_bool(*support_flag));
             if let Some(flag) = legacy_flag {
@@ -3129,7 +3104,7 @@ fn encode_native_sweep_surface(
             trailing_flag,
         } => {
             native_i64(bytes, *mode);
-            let profile = native_loft_curve_in_range(target, profile, Some(*profile_range))?;
+            let profile = native_loft_curve(target, profile, Some(*profile_range))?;
             native_nurbs_curve(bytes, &profile)?;
             for value in profile_range {
                 native_f64(bytes, *value);
@@ -3165,7 +3140,7 @@ fn encode_native_sweep_surface(
             native_vector(bytes, [law_direction.x, law_direction.y, law_direction.z]);
             native_i64(bytes, *path_mode);
             bytes.push(native_bool(*path_flag));
-            let spine = native_loft_curve_in_range(target, spine, Some(*path_range))?;
+            let spine = native_loft_curve(target, spine, Some(*path_range))?;
             native_nurbs_curve(bytes, &spine)?;
             for value in path_range {
                 native_f64(bytes, *value);
@@ -3600,7 +3575,7 @@ fn native_vertex_blend_boundary(
             sense,
         } => {
             let range = if revision { None } else { Some(*parameters) };
-            let curve = native_loft_curve_in_range(target, curve, range)?;
+            let curve = native_loft_curve(target, curve, range)?;
             native_nurbs_curve(bytes, &curve)?;
             if revision {
                 for endpoint in curve_endpoints {
@@ -3680,7 +3655,7 @@ fn native_vertex_blend_boundary(
             native_f64(bytes, parameters[0]);
             native_f64(bytes, parameters[1]);
             let range = if revision { None } else { Some(*parameters) };
-            let curve = native_loft_curve_in_range(target, curve, range)?;
+            let curve = native_loft_curve(target, curve, range)?;
             native_nurbs_curve(bytes, &curve)?;
             if revision {
                 for endpoint in curve_endpoints {
@@ -3740,7 +3715,7 @@ fn native_revision_cl_scale(
     );
     for member in profile {
         native_i64(bytes, member.form.type_code());
-        let curve = native_loft_curve_in_range(target, &member.profile.id, None)?;
+        let curve = native_loft_curve(target, &member.profile.id, None)?;
         native_nurbs_curve(bytes, &curve)?;
         let endpoints = member.profile.endpoints.ok_or_else(|| {
             CodecError::Malformed(
@@ -3788,7 +3763,7 @@ fn native_revision_cl_scale(
         native_loft_member_tail(bytes, &member.form);
     }
     if let Some(path_curve) = &path.path {
-        let curve = native_loft_curve_in_range(target, &path_curve.id, None)?;
+        let curve = native_loft_curve(target, &path_curve.id, None)?;
         native_nurbs_curve(bytes, &curve)?;
         if let Some(endpoints) = path_curve.endpoints {
             for value in endpoints {
@@ -3805,7 +3780,7 @@ fn native_revision_cl_scale(
         })?,
     );
     for auxiliary in &path.auxiliaries {
-        let auxiliary = native_loft_curve_in_range(target, auxiliary, None)?;
+        let auxiliary = native_loft_curve(target, auxiliary, None)?;
         native_nurbs_curve(bytes, &auxiliary)?;
     }
     native_i64(bytes, path.flag);
@@ -3864,7 +3839,7 @@ fn encode_native_revision_compound_loft(
             native_vector(bytes, [value.x, value.y, value.z]);
         }
         cadmpeg_ir::geometry::CompoundLoftDirection::Curve { curve, .. } => {
-            let curve = native_loft_curve_in_range(target, curve, None)?;
+            let curve = native_loft_curve(target, curve, None)?;
             native_nurbs_curve(bytes, &curve)?;
         }
     }
@@ -3872,7 +3847,7 @@ fn encode_native_revision_compound_loft(
         native_optional_f64(bytes, value);
     }
     if let Some(curve) = construction.tail.curve() {
-        let curve = native_loft_curve_in_range(target, curve, None)?;
+        let curve = native_loft_curve(target, curve, None)?;
         native_nurbs_curve(bytes, &curve)?;
     }
     bytes.push(0x10);
@@ -3904,7 +3879,7 @@ fn encode_native_revision_g2_blend(
         [Some(lower), Some(upper)] => Some([lower, upper]),
         _ => None,
     };
-    let center = native_loft_curve_in_range(target, &construction.center, center_range)?;
+    let center = native_loft_curve(target, &construction.center, center_range)?;
     native_nurbs_curve(bytes, &center)?;
     for endpoint in construction.center_range {
         native_optional_f64(bytes, endpoint);
@@ -3969,7 +3944,7 @@ fn encode_native_variable_blend(
         [Some(lower), Some(upper)] => Some([lower, upper]),
         _ => Some(construction.u_range),
     };
-    let slice = native_loft_curve_in_range(target, &construction.slice, slice_range)?;
+    let slice = native_loft_curve(target, &construction.slice, slice_range)?;
     native_nurbs_curve(bytes, &slice)?;
     for endpoint in construction.slice_range {
         bytes.push(native_bool(endpoint.is_some()));
@@ -4042,7 +4017,7 @@ fn encode_native_variable_blend(
             [Some(lower), Some(upper)] => Some([lower, upper]),
             _ => None,
         };
-        let curve = native_loft_curve_in_range(target, &secondary.curve, secondary_range)?;
+        let curve = native_loft_curve(target, &secondary.curve, secondary_range)?;
         native_nurbs_curve(bytes, &curve)?;
         for endpoint in secondary.parameter_range {
             bytes.push(native_bool(endpoint.is_some()));
@@ -4072,7 +4047,7 @@ fn encode_native_variable_blend(
             [Some(lower), Some(upper)] => Some([lower, upper]),
             _ => None,
         };
-        let post_curve = native_loft_curve_in_range(target, post_curve, post_range)?;
+        let post_curve = native_loft_curve(target, post_curve, post_range)?;
         native_nurbs_curve(bytes, &post_curve)?;
     } else {
         native_ident(bytes, "nullbs")?;
@@ -4260,7 +4235,7 @@ fn encode_complete_native_rolling_ball(
             _ => None,
         },
     };
-    let slice = native_loft_curve_in_range(target, &construction.slice, slice_range)?;
+    let slice = native_loft_curve(target, &construction.slice, slice_range)?;
     native_nurbs_curve(bytes, &slice)?;
     for endpoint in construction.slice_range {
         bytes.push(native_bool(endpoint.is_some()));
@@ -4584,11 +4559,32 @@ fn native_conic_interval_curve(
     }
     let minor_direction = minor_direction.scale(1.0 / minor_norm);
     let delta = parameter_range[1] - parameter_range[0];
-    let spans = (delta / std::f64::consts::FRAC_PI_2).ceil().max(1.0) as usize;
+    let span_count = (delta / std::f64::consts::FRAC_PI_2).ceil().max(1.0);
+    let too_large = || {
+        CodecError::NotImplemented(
+            "source-less F3D conic interval exceeds addressable NURBS cardinality".into(),
+        )
+    };
+    if !span_count.is_finite() || span_count >= usize::MAX as f64 {
+        return Err(too_large());
+    }
+    let spans = span_count as usize;
+    let doubled = spans.checked_mul(2).ok_or_else(too_large)?;
+    let pole_count = doubled.checked_add(1).ok_or_else(too_large)?;
+    let knot_count = doubled.checked_add(4).ok_or_else(too_large)?;
     let step = delta / spans as f64;
-    let mut control_points = Vec::with_capacity(spans * 2 + 1);
-    let mut weights = Vec::with_capacity(spans * 2 + 1);
-    let mut knots = Vec::with_capacity(spans * 2 + 4);
+    let mut control_points = Vec::new();
+    let mut weights = Vec::new();
+    let mut knots = Vec::new();
+    control_points
+        .try_reserve_exact(pole_count)
+        .and_then(|()| weights.try_reserve_exact(pole_count))
+        .and_then(|()| knots.try_reserve_exact(knot_count))
+        .map_err(|error| {
+            CodecError::NotImplemented(format!(
+                "source-less F3D conic interval cannot allocate its NURBS payload: {error}"
+            ))
+        })?;
     let point = |angle: f64, scale: f64| {
         let major_scale = major_radius * angle.cos() * scale;
         let minor_scale = minor_radius * angle.sin() * scale;
@@ -4725,6 +4721,84 @@ mod native_interval_curve_tests {
             .unwrap(),
         );
         assert!(native_spline_field_curve(&geometry, None).is_err());
+    }
+
+    #[test]
+    fn source_less_sweep_refuses_unallocatable_conic_intervals_before_writing() {
+        use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+        use cadmpeg_ir::codec::{Codec, DecodeOptions};
+        use cadmpeg_ir::geometry::surface_payloads::SweepSurfacePayload;
+        use cadmpeg_ir::geometry::{CircleCurve, SweepSurfaceLayout};
+        use std::io::Cursor;
+
+        let decoded = crate::F3dCodec
+            .decode(
+                &mut Cursor::new(crate::test_support::f3d_with_smbh(
+                    &crate::test_support::synthetic_law_driven_sweep_smbh(),
+                )),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let (mut target, _, _) = decoded.into_parts();
+        target.source = None;
+        target.native = cadmpeg_ir::native::Native::default();
+
+        for (range, representable) in [
+            ([0.0, std::f64::consts::PI], true),
+            ([-f64::MAX, f64::MAX], false),
+            ([0.0, f64::MAX], false),
+            ([0.0, usize::MAX as f64], false),
+            ([0.0, (usize::MAX as f64) * 0.75], false),
+            ([0.0, (usize::MAX as f64) * 0.125], false),
+        ] {
+            let procedural = &mut target.model.procedural_surfaces[0];
+            let ProceduralSurfaceDefinition::Sweep(payload) = procedural.definition() else {
+                panic!("sweep construction")
+            };
+            let profile = payload.profile().clone();
+            let mut native = payload.native().clone().unwrap();
+            let SweepSurfaceLayout::LawDriven { profile_range, .. } = &mut native.layout else {
+                panic!("law-driven layout")
+            };
+            *profile_range = range;
+            let replacement = SweepSurfacePayload::try_new(
+                profile.clone(),
+                payload.spine().clone(),
+                Some(native),
+            )
+            .expect("finite interval endpoints are admitted by the construction");
+            procedural.replace_definition(ProceduralSurfaceDefinition::Sweep(replacement));
+            target
+                .model
+                .curves
+                .iter_mut()
+                .find(|curve| curve.id == profile)
+                .unwrap()
+                .geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                CircleCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    10.0,
+                )
+                .unwrap(),
+            ));
+            let mut output = vec![0x93, 0x2a];
+            let result = crate::F3dCodec
+                .plan(EncodeInput::new(&target, None), TargetRequest::Inherit)
+                .and_then(|plan| plan.write_to(&mut output));
+            if representable {
+                result.expect("ordinary circle interval writes");
+                let decoded = crate::F3dCodec
+                    .decode(&mut Cursor::new(&output[2..]), &DecodeOptions::default())
+                    .expect("ordinary circle interval decodes");
+                assert_eq!(decoded.ir().model.procedural_surfaces.len(), 1);
+            } else {
+                let error = result.expect_err("unallocatable conic interval must be refused");
+                assert!(error.to_string().contains("conic"), "{error}");
+                assert_eq!(output, [0x93, 0x2a]);
+            }
+        }
     }
 }
 
