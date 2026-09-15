@@ -73,12 +73,15 @@ impl DecodeSidecar {
 
 /// Returns the sidecar path for a CADIR path.
 pub fn decode_sidecar_path(path: &Path) -> PathBuf {
-    let file_name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("");
-    let stem = file_name.strip_suffix(".json").unwrap_or(file_name);
-    path.with_file_name(format!("{stem}.fidelity.json"))
+    let file_name = path.file_name().unwrap_or_default();
+    let stem = match (path.extension(), path.file_stem()) {
+        (Some(extension), Some(stem)) if extension == "json" => stem,
+        _ if file_name == ".json" => std::ffi::OsStr::new(""),
+        _ => file_name,
+    };
+    let mut sidecar_name = stem.to_os_string();
+    sidecar_name.push(".fidelity.json");
+    path.with_file_name(sidecar_name)
 }
 
 /// Failure parsing a decode sidecar.
@@ -771,5 +774,38 @@ mod tests {
             decode_sidecar_path(Path::new("part.cadir")),
             PathBuf::from("part.cadir.fidelity.json")
         );
+        for (source, sidecar) in [
+            ("dir/.json", "dir/.fidelity.json"),
+            ("dir/part.JSON", "dir/part.JSON.fidelity.json"),
+            ("dir/part.json.cadir", "dir/part.json.cadir.fidelity.json"),
+        ] {
+            assert_eq!(
+                decode_sidecar_path(Path::new(source)),
+                PathBuf::from(sidecar)
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn decode_sidecar_path_preserves_distinct_non_utf8_filenames() {
+        use std::os::unix::ffi::OsStringExt;
+
+        for byte in [0xfe, 0xff] {
+            for suffix in [b".json".as_slice(), b".cadir".as_slice()] {
+                let mut name = vec![byte];
+                name.extend_from_slice(suffix);
+                let path = Path::new("directory").join(std::ffi::OsString::from_vec(name));
+                let mut expected = vec![byte];
+                if suffix != b".json" {
+                    expected.extend_from_slice(suffix);
+                }
+                expected.extend_from_slice(b".fidelity.json");
+                assert_eq!(
+                    decode_sidecar_path(&path),
+                    Path::new("directory").join(std::ffi::OsString::from_vec(expected)),
+                );
+            }
+        }
     }
 }
