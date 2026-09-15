@@ -2252,13 +2252,9 @@ fn native_law_expression(
     match expression {
         LawExpression::Null {} => native_string(bytes, NULL_LAW_TOKEN)?,
         LawExpression::Text { value } => {
-            if value.as_str() == NULL_LAW_TOKEN {
-                return Err(CodecError::InvalidInput(format!(
-                    "law expression text {NULL_LAW_TOKEN} reads back as the native null law; \
-                     the null law is stated by the variant, not by a text value"
-                )));
-            }
-            native_string(bytes, value.as_str())?;
+            return Err(CodecError::NotImplemented(format!(
+                "law expression text {value:?} has no recursive native law spelling"
+            )));
         }
         LawExpression::Integer { value } => native_i64(bytes, *value),
         LawExpression::Double { value } => native_f64(bytes, *value),
@@ -2375,6 +2371,53 @@ fn native_law_expression(
             for operand in operands {
                 native_law_expression(bytes, target, operand, depth + 1)?;
             }
+        }
+    }
+    Ok(())
+}
+
+#[derive(Debug)]
+enum SweepLawSlot {
+    LegacyFirst,
+    RevisionFirst,
+    Second,
+}
+
+fn native_sweep_law(
+    bytes: &mut Vec<u8>,
+    expression: &cadmpeg_ir::geometry::LawExpression,
+    slot: SweepLawSlot,
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::geometry::LawExpression;
+    use SweepLawSlot::{LegacyFirst, RevisionFirst, Second};
+
+    // A string in a sweep slot is text, including recursive operator names.
+    // The first slot also selects the layout: legacy excludes integers,
+    // while the revision form requires a string.
+    match (slot, expression) {
+        (_, LawExpression::Text { value }) => native_string(bytes, value.as_str())?,
+        (Second, LawExpression::Integer { value }) => native_i64(bytes, *value),
+        (LegacyFirst | Second, LawExpression::Double { value }) => native_f64(bytes, *value),
+        (LegacyFirst | Second, LawExpression::Point { value }) => native_point(
+            bytes,
+            [
+                value.x / LEN_TO_MM,
+                value.y / LEN_TO_MM,
+                value.z / LEN_TO_MM,
+            ],
+        ),
+        (LegacyFirst | Second, LawExpression::Vector { value }) => {
+            native_vector(bytes, [value.x, value.y, value.z]);
+        }
+        (RevisionFirst, _) => {
+            return Err(CodecError::NotImplemented(
+                "revision sweep first law requires a text expression".into(),
+            ));
+        }
+        (slot, _) => {
+            return Err(CodecError::NotImplemented(format!(
+                "sweep {slot:?} law has no native spelling for this expression variant"
+            )));
         }
     }
     Ok(())
@@ -2721,7 +2764,7 @@ fn encode_native_sweep_surface(
             for direction in directions {
                 native_vector(bytes, [direction.x, direction.y, direction.z]);
             }
-            native_law_expression(bytes, target, first_law, 0)?;
+            native_sweep_law(bytes, first_law, SweepLawSlot::RevisionFirst)?;
             native_i64(bytes, *first_mode);
             for value in first_range {
                 native_optional_f64(bytes, Some(*value));
@@ -2740,7 +2783,7 @@ fn encode_native_sweep_surface(
             }
             native_f64(bytes, *path_parameter);
             bytes.push(native_bool(*second_law_flag));
-            native_law_expression(bytes, target, second_law, 0)?;
+            native_sweep_law(bytes, second_law, SweepLawSlot::Second)?;
             native_i64(bytes, *formula_mode);
             native_law_formula(bytes, target, formula)?;
             bytes.push(native_bool(*trailing_flag));
@@ -3114,7 +3157,7 @@ fn encode_native_sweep_surface(
             for direction in directions {
                 native_vector(bytes, [direction.x, direction.y, direction.z]);
             }
-            native_law_expression(bytes, target, first_law, 0)?;
+            native_sweep_law(bytes, first_law, SweepLawSlot::LegacyFirst)?;
             native_i64(bytes, *first_mode);
             for value in first_range {
                 native_f64(bytes, *value);
@@ -3129,7 +3172,7 @@ fn encode_native_sweep_surface(
             }
             native_f64(bytes, *path_parameter);
             bytes.push(native_bool(*second_law_flag));
-            native_law_expression(bytes, target, second_law, 0)?;
+            native_sweep_law(bytes, second_law, SweepLawSlot::Second)?;
             native_i64(bytes, *formula_mode);
             native_law_formula(bytes, target, formula)?;
             bytes.push(native_bool(*trailing_flag));
@@ -6881,3 +6924,6 @@ mod null_law_token_tests {
         assert!(error.contains(NULL_LAW_TOKEN), "{error}");
     }
 }
+
+#[cfg(test)]
+mod law_tests;
