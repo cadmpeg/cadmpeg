@@ -108,22 +108,36 @@ fn named_views_record_with_userdata(archive: ArchiveVersion, userdata: Vec<u8>) 
     )
 }
 
+fn view_with_children(
+    archive: ArchiveVersion,
+    children: &[Vec<u8>],
+    end_marker: Option<Vec<u8>>,
+) -> Vec<u8> {
+    let mut view_body = Vec::new();
+    let mut excluded_ranges =
+        Vec::with_capacity(children.len() + usize::from(end_marker.is_some()));
+    for child in children {
+        let start = view_body.len();
+        view_body.extend(child);
+        excluded_ranges.push(start..view_body.len());
+    }
+    if let Some(end_marker) = end_marker {
+        let start = view_body.len();
+        view_body.extend(end_marker);
+        excluded_ranges.push(start..view_body.len());
+    }
+    support::test_dump::crc_chunk_excluding(archive, 0x2000_803b, &view_body, &excluded_ranges)
+}
+
 fn view_with_child(archive: ArchiveVersion, child: Vec<u8>) -> Vec<u8> {
-    let child_range = 0..child.len();
-    let end_marker = support::test_dump::short_chunk(archive, 0xffff_ffff, 0);
-    let end_start = child.len();
-    let mut view_body = child;
-    view_body.extend(end_marker);
-    let end_range = end_start..view_body.len();
-    support::test_dump::crc_chunk_excluding(
+    view_with_children(
         archive,
-        0x2000_803b,
-        &view_body,
-        &[child_range, end_range],
+        &[child],
+        Some(support::test_dump::short_chunk(archive, 0xffff_ffff, 0)),
     )
 }
 
-fn trace_view(archive: ArchiveVersion, reference: Vec<u8>) -> Vec<u8> {
+fn trace_child(archive: ArchiveVersion, reference: Vec<u8>) -> Vec<u8> {
     let mut trace_body = vec![0x14];
     trace_body.extend(support::test_dump::utf16_bytes("trace-witness.png"));
     trace_body.extend(42.0_f64.to_le_bytes());
@@ -153,7 +167,11 @@ fn trace_view(archive: ArchiveVersion, reference: Vec<u8>) -> Vec<u8> {
         &trace_body,
         std::slice::from_ref(&trace_reference_range),
     );
-    view_with_child(archive, trace)
+    trace
+}
+
+fn trace_view(archive: ArchiveVersion, reference: Vec<u8>) -> Vec<u8> {
+    view_with_child(archive, trace_child(archive, reference))
 }
 
 fn wallpaper_view(archive: ArchiveVersion, reference: Vec<u8>) -> Vec<u8> {
@@ -191,6 +209,28 @@ fn named_views_record_with_trace(archive: ArchiveVersion, corrupt_reference: boo
         reference[last] ^= 1;
     }
     named_views_record_with_views(archive, &[trace_view(archive, reference)])
+}
+
+fn document_with_named_views(archive: ArchiveVersion, named_views: Vec<u8>) -> Vec<u8> {
+    support::test_dump::minimal_document(
+        "80",
+        &[
+            support::test_dump::table(archive, 0x1000_0014, &[]),
+            support::test_dump::table(
+                archive,
+                0x1000_0015,
+                &[support::test_dump::units_record(archive, 2), named_views],
+            ),
+            support::test_dump::table(archive, 0x1000_0013, &[]),
+        ],
+    )
+}
+
+fn source_offset(document: &[u8], fragment: &[u8]) -> usize {
+    document
+        .windows(fragment.len())
+        .position(|window| window == fragment)
+        .expect("fixture fragment has one source location")
 }
 
 #[test]
@@ -540,4 +580,209 @@ fn malformed_wallpaper_reference_preserves_prior_diagnostic_and_recovers_later_v
         .iter()
         .any(|(_, record)| record.data() == Some(named_views.as_slice())));
     assert_valid(&result);
+}
+
+#[test]
+fn later_view_recovery_keeps_prior_child_checksum_loss_when_following_child_fails() {
+    let archive = ArchiveVersion::V8;
+    let mut corrupt_reference =
+        support::test_dump::file_reference(archive, "/trace/prior-crc.png", "prior-crc.png");
+    let reference_crc = corrupt_reference
+        .last_mut()
+        .expect("file-reference fixture has an outer checksum");
+    *reference_crc ^= 1;
+    let trace = trace_child(archive, corrupt_reference.clone());
+    let malformed_target = support::test_dump::crc_chunk(archive, 0x2000_883b, &[0; 8]);
+    let malformed_view = view_with_children(
+        archive,
+        &[trace, malformed_target],
+        Some(support::test_dump::short_chunk(
+            archive,
+            crate::chunks::TCODE_ENDOFTABLE,
+            0,
+        )),
+    );
+    let valid_view = trace_view(
+        archive,
+        support::test_dump::file_reference(archive, "/trace/later.png", "later.png"),
+    );
+    let named_views = named_views_record_with_views(archive, &[malformed_view.clone(), valid_view]);
+    let document = document_with_named_views(archive, named_views.clone());
+    let result = decode(document.clone());
+
+    let views = &result.ir().native.namespace("rhino").unwrap().arenas()["views"];
+    assert_eq!(views.len(), 1);
+    assert_eq!(
+        views[0]
+            .field("list_index")
+            .and_then(|value| value.as_u64()),
+        Some(1)
+    );
+
+    let reference_losses: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code == crate::loss::RhinoLossCode::IntegrityFailure.kind()
+                && loss
+                    .provenance
+                    .as_ref()
+                    .and_then(|provenance| provenance.tag.as_deref())
+                    == Some("VIEW/TRACE_IMAGE/FILE_REFERENCE")
+        })
+        .collect();
+    assert_eq!(reference_losses.len(), 1);
+    assert!(reference_losses[0].message.contains("file reference"));
+    assert!(reference_losses[0].message.contains("CRC mismatch"));
+    assert_eq!(
+        reference_losses[0]
+            .provenance
+            .as_ref()
+            .expect("nested checksum loss is located")
+            .offset as usize,
+        source_offset(&document, &corrupt_reference)
+    );
+
+    let dropped: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code == crate::loss::RhinoLossCode::PresentationRecordDropped.kind()
+                && loss
+                    .message
+                    .contains("was omitted after child parsing failed")
+        })
+        .collect();
+    assert_eq!(dropped.len(), 1);
+    assert!(
+        dropped[0].message.contains("exceeds bound"),
+        "unexpected target failure: {}",
+        dropped[0].message
+    );
+    assert_eq!(
+        dropped[0]
+            .provenance
+            .as_ref()
+            .expect("dropped view loss is located")
+            .offset as usize,
+        source_offset(&document, &malformed_view)
+    );
+    assert_eq!(
+        dropped[0]
+            .provenance
+            .as_ref()
+            .and_then(|provenance| provenance.tag.as_deref()),
+        Some("VIEW/RECORD")
+    );
+    assert!(result
+        .source_fidelity()
+        .retained_records()
+        .iter()
+        .any(|(_, record)| record.data() == Some(named_views.as_slice())));
+    assert_valid(&result);
+}
+
+#[test]
+fn later_view_recovery_keeps_viewport_warning_before_bad_end_marker() {
+    let archive = ArchiveVersion::V8;
+    for has_invalid_end_marker in [true, false] {
+        let malformed_viewport = support::test_dump::crc_chunk(archive, 0x2000_823b, &[0]);
+        let malformed_view = view_with_children(
+            archive,
+            std::slice::from_ref(&malformed_viewport),
+            has_invalid_end_marker.then(|| {
+                support::test_dump::short_chunk(archive, crate::chunks::TCODE_ENDOFTABLE, 1)
+            }),
+        );
+        let valid_view = trace_view(
+            archive,
+            support::test_dump::file_reference(archive, "/trace/recovered.png", "recovered.png"),
+        );
+        let named_views =
+            named_views_record_with_views(archive, &[malformed_view.clone(), valid_view]);
+        let document = document_with_named_views(archive, named_views.clone());
+        let result = decode(document.clone());
+
+        let views = &result.ir().native.namespace("rhino").unwrap().arenas()["views"];
+        assert_eq!(views.len(), 1, "invalid_end={has_invalid_end_marker}");
+        assert_eq!(
+            views[0]
+                .field("list_index")
+                .and_then(|value| value.as_u64()),
+            Some(1),
+            "invalid_end={has_invalid_end_marker}"
+        );
+
+        let viewport_losses: Vec<_> = result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| {
+                loss.code == crate::loss::RhinoLossCode::PresentationRecordDropped.kind()
+                    && loss.message.contains("viewport retained")
+            })
+            .collect();
+        assert_eq!(
+            viewport_losses.len(),
+            1,
+            "invalid_end={has_invalid_end_marker}"
+        );
+        assert_eq!(
+            viewport_losses[0]
+                .provenance
+                .as_ref()
+                .expect("viewport warning is located")
+                .offset as usize,
+            source_offset(&document, &malformed_viewport),
+            "invalid_end={has_invalid_end_marker}"
+        );
+        assert_eq!(
+            viewport_losses[0]
+                .provenance
+                .as_ref()
+                .and_then(|provenance| provenance.tag.as_deref()),
+            Some("VIEW/VIEWPORT"),
+            "invalid_end={has_invalid_end_marker}"
+        );
+
+        let end_error = if has_invalid_end_marker {
+            "view end marker is invalid"
+        } else {
+            "view is missing its end marker"
+        };
+        let dropped: Vec<_> = result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| {
+                loss.code == crate::loss::RhinoLossCode::PresentationRecordDropped.kind()
+                    && loss
+                        .message
+                        .contains("was omitted after child parsing failed")
+            })
+            .collect();
+        assert_eq!(dropped.len(), 1, "invalid_end={has_invalid_end_marker}");
+        assert!(
+            dropped[0].message.contains(end_error),
+            "invalid_end={has_invalid_end_marker}: {}",
+            dropped[0].message
+        );
+        assert_eq!(
+            dropped[0]
+                .provenance
+                .as_ref()
+                .expect("end-marker loss is located")
+                .offset as usize,
+            source_offset(&document, &malformed_view),
+            "invalid_end={has_invalid_end_marker}"
+        );
+        assert!(result
+            .source_fidelity()
+            .retained_records()
+            .iter()
+            .any(|(_, record)| record.data() == Some(named_views.as_slice())));
+        assert_valid(&result);
+    }
 }
