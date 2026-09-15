@@ -92,8 +92,7 @@ fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
             .unwrap(),
         ),
         None,
-    )
-    .unwrap()];
+    )];
 
     let coverage = surface_transfer_coverage(&rows, &surfaces, &procedural_surfaces);
 

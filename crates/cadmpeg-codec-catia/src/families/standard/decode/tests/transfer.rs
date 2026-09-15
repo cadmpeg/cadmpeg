@@ -774,7 +774,7 @@ fn decode_standard_transfers_exact_offset_construction() {
             cache: None,
         }
     );
-    let Some(bounds) = procedural.record_bounds else {
+    let Some(bounds) = procedural.record_bounds() else {
         panic!("offset parameter bounds");
     };
     for (actual, expected) in bounds.into_iter().zip(domain) {
@@ -819,7 +819,7 @@ fn decode_standard_transfers_construction_use_offset() {
     };
     let distance = definition_payload.distance();
     assert_eq!(*distance, -2.0);
-    let Some(bounds) = procedural.record_bounds else {
+    let Some(bounds) = procedural.record_bounds() else {
         panic!("offset parameter bounds");
     };
     for (actual, expected) in bounds.into_iter().zip(domain) {

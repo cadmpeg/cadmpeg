@@ -4383,7 +4383,7 @@ fn construction_carrier_interval(
     procedural: &cadmpeg_ir::geometry::ProceduralSurface,
     fallback: [f64; 2],
 ) -> Result<[f64; 2], CodecError> {
-    match procedural.record_bounds {
+    match procedural.record_bounds() {
         None => {
             if matches!(
                 geometry,
@@ -5110,10 +5110,8 @@ fn surface_entities(
 }
 
 fn encode_nurbs_surface(nurbs: &NurbsSurface) -> Result<Entity, CodecError> {
-    let u_count = usize::try_from(nurbs.u_count())
-        .map_err(|_| CodecError::Malformed("IGES surface u count overflows usize".into()))?;
-    let v_count = usize::try_from(nurbs.v_count())
-        .map_err(|_| CodecError::Malformed("IGES surface v count overflows usize".into()))?;
+    let u_count = nurbs.u_count();
+    let v_count = nurbs.v_count();
     let u_degree = usize::try_from(nurbs.u_degree())
         .map_err(|_| CodecError::Malformed("IGES surface u degree overflows usize".into()))?;
     let v_degree = usize::try_from(nurbs.v_degree())

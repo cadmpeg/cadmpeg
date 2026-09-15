@@ -7,7 +7,7 @@ use crate::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, LawExpression,
     LawFormula, LegacyExtensionFlags, NurbsCurve, NurbsSurface, OffsetExtension, PcurveGeometry,
     PolylineCurve, PolylineSamples, PolylineVertex, ProceduralCurve, ProceduralSurface,
-    ProceduralSurfaceDefinition, RevisionCacheForm, RevisionSurfaceForm,
+    ProceduralSurfaceDefinition, RecordBounds, RevisionCacheForm, RevisionSurfaceForm,
     RevisionSurfaceParameterization, RollingBallConstruction, RollingBallJetDerivative,
     RollingBallJetSite, RollingBallRadiusSelector, RollingBallSide, SolvedCurveGeometry,
     SolvedSurfaceGeometry, Surface, SurfaceGeometry, SurfaceParameterAxis, SweepRevisionForm,
@@ -40,7 +40,6 @@ macro_rules! procedural_surface {
             }))
             .expect("valid procedural surface cache fixture");
         ProceduralSurface::new($id, definition, $record_bounds)
-            .expect("valid procedural surface fixture")
     }};
 }
 
@@ -61,7 +60,7 @@ macro_rules! procedural_curve {
                 .expect("valid procedural curve cache fixture"),
             None => definition.clear_legacy_cache(),
         }
-        ProceduralCurve::new($id, definition).expect("valid procedural curve fixture")
+        ProceduralCurve::new($id, definition)
     }};
 }
 
@@ -1644,7 +1643,13 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
                 id: ProceduralSurfaceId::mint("test:model:entity#normalized-revolution-construction").expect("valid identity"),
                 definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)), [0.0, std::f64::consts::TAU], None, Some([0.0, 1.0]), false, crate::geometry::CacheContract::from_form(None)).unwrap()),
                 cache_fit_tolerance: None,
-                record_bounds: Some([Some(0.0), Some(10.0), None, None]),
+                record_bounds: Some(RecordBounds::try_new([
+                    Some(0.0),
+                    Some(10.0),
+                    None,
+                    None,
+                ])
+                .expect("finite record bounds")),
             },
         )
         .unwrap();

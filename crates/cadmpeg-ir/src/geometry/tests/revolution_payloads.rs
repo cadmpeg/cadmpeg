@@ -60,7 +60,7 @@ fn revolution_requires_three_strict_finite_intervals_on_all_routes() {
         )
         .unwrap(),
     );
-    let surface = ProceduralSurface::new(id(), definition, None).unwrap();
+    let surface = ProceduralSurface::new(id(), definition, None);
     let wire = serde_json::to_value(&surface).unwrap();
     assert_eq!(
         wire["definition"]["angular_interval"],
@@ -83,7 +83,7 @@ fn reject_on_serde_routes<T: serde::Serialize>(
     field: &str,
     value: T,
 ) {
-    let surface = ProceduralSurface::new(id(), valid.clone(), None).unwrap();
+    let surface = ProceduralSurface::new(id(), valid.clone(), None);
     let mut definition_wire = serde_json::to_value(valid).unwrap();
     definition_wire[field] = serde_json::to_value(value).unwrap();
     assert!(
@@ -118,7 +118,8 @@ fn axis_revolution_and_sum_reject_nonfinite_frames_and_basepoints() {
     assert!(axis(bad_origin, Vector3::new(0.0, 0.0, 1.0)).is_err());
     reject_on_serde_routes(&valid_axis, "axis_origin", bad_origin);
     for direction in [Vector3::new(0.0, 0.0, 1.0), Vector3::new(0.0, 0.0, -1.0)] {
-        assert!(ProceduralSurface::new(id(), axis(origin, direction).unwrap(), None).is_ok());
+        let _surface: ProceduralSurface =
+            ProceduralSurface::new(id(), axis(origin, direction).unwrap(), None);
     }
     let sum = |basepoint| {
         crate::geometry::surface_payloads::SumSurfaceConstruction::try_new(
@@ -135,5 +136,5 @@ fn axis_revolution_and_sum_reject_nonfinite_frames_and_basepoints() {
         assert!(sum(basepoint).is_err());
         reject_on_serde_routes(&valid_sum, "basepoint", basepoint);
     }
-    assert!(ProceduralSurface::new(id(), valid_sum, None).is_ok());
+    let _surface: ProceduralSurface = ProceduralSurface::new(id(), valid_sum, None);
 }

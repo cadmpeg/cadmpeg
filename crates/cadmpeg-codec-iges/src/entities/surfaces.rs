@@ -15,7 +15,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{
     derive_reference_direction, knots_nondecreasing, Curve, CurveGeometry, NurbsCurve,
     NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes, ProceduralSurface,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    ProceduralSurfaceDefinition, RecordBounds, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
     SurfaceGeometry, SurfaceParameterAxis,
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
@@ -1147,7 +1147,7 @@ fn indicator_normal(ir: &CadIr, surface: &SurfaceId) -> Option<Vector3> {
         .iter()
         .find(|procedural| ir.model.procedural_surface_owner(&procedural.id) == Some(surface));
     let parameters =
-        procedural.map(|procedural| offset_indicator_parameters(procedural.record_bounds));
+        procedural.map(|procedural| offset_indicator_parameters(procedural.record_bounds()));
     let parameters = parameters.unwrap_or([0.0, 0.0]);
     let partials = match procedural {
         Some(_) => {
@@ -1473,14 +1473,16 @@ pub(super) fn project(
                     second: crate::ids::curve(&crate::ids::Stem::directory(second_sequence)),
                     cache: None,
                 },
-                Some([
-                    Some(first_interval[0]),
-                    Some(first_interval[1]),
-                    Some(second_interval[0]),
-                    Some(second_interval[1]),
-                ]),
-            )
-            .map_err(cadmpeg_core::CodecError::malformed)?,
+                Some(
+                    RecordBounds::try_new([
+                        Some(first_interval[0]),
+                        Some(first_interval[1]),
+                        Some(second_interval[0]),
+                        Some(second_interval[1]),
+                    ])
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                ),
+            ),
         );
         losses.push(
             IgesLossCode::RuledDevelopabilityNotTransferred
@@ -1631,16 +1633,23 @@ pub(super) fn project(
                     cadmpeg_ir::geometry::CacheContract::from_form(None),
                 )
                 .and_then(|admitted_payload| {
-                    ProceduralSurface::new(
+                    Ok(ProceduralSurface::new(
                         procedural_id,
                         ProceduralSurfaceDefinition::Extrusion(admitted_payload),
-                        Some([
-                            Some(carrier_interval[0]),
-                            Some(carrier_interval[1]),
-                            None,
-                            None,
-                        ]),
-                    )
+                        Some(
+                            RecordBounds::try_new([
+                                Some(carrier_interval[0]),
+                                Some(carrier_interval[1]),
+                                None,
+                                None,
+                            ])
+                            .map_err(|_| {
+                                cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
+                                    "record bounds must be finite",
+                                )
+                            })?,
+                        ),
+                    ))
                 })
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             );
@@ -1765,16 +1774,23 @@ pub(super) fn project(
                 cadmpeg_ir::geometry::CacheContract::from_form(None),
             )
             .and_then(|admitted_payload| {
-                ProceduralSurface::new(
+                Ok(ProceduralSurface::new(
                     crate::ids::procedural_surface(&crate::ids::Stem::directory(entry.sequence)),
                     ProceduralSurfaceDefinition::Extrusion(admitted_payload),
-                    Some([
-                        Some(carrier_interval[0]),
-                        Some(carrier_interval[1]),
-                        None,
-                        None,
-                    ]),
-                )
+                    Some(
+                        RecordBounds::try_new([
+                            Some(carrier_interval[0]),
+                            Some(carrier_interval[1]),
+                            None,
+                            None,
+                        ])
+                        .map_err(|_| {
+                            cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
+                                "record bounds must be finite",
+                            )
+                        })?,
+                    ),
+                ))
             })
             .map_err(cadmpeg_core::CodecError::malformed)?,
         );
@@ -1943,16 +1959,23 @@ pub(super) fn project(
                     cadmpeg_ir::geometry::CacheContract::from_form(None),
                 )
                 .and_then(|admitted_payload| {
-                    ProceduralSurface::new(
+                    Ok(ProceduralSurface::new(
                         procedural_id,
                         ProceduralSurfaceDefinition::Revolution(admitted_payload),
-                        Some([
-                            Some(carrier_interval[0]),
-                            Some(carrier_interval[1]),
-                            None,
-                            None,
-                        ]),
-                    )
+                        Some(
+                            RecordBounds::try_new([
+                                Some(carrier_interval[0]),
+                                Some(carrier_interval[1]),
+                                None,
+                                None,
+                            ])
+                            .map_err(|_| {
+                                cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
+                                    "record bounds must be finite",
+                                )
+                            })?,
+                        ),
+                    ))
                 })
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             );
@@ -2117,18 +2140,25 @@ pub(super) fn project(
                     cadmpeg_ir::geometry::CacheContract::from_form(None),
                 )
                 .and_then(|admitted_payload| {
-                    ProceduralSurface::new(
+                    Ok(ProceduralSurface::new(
                         crate::ids::procedural_surface(&crate::ids::Stem::directory(
                             entry.sequence,
                         )),
                         ProceduralSurfaceDefinition::Revolution(admitted_payload),
-                        Some([
-                            Some(carrier_interval[0]),
-                            Some(carrier_interval[1]),
-                            None,
-                            None,
-                        ]),
-                    )
+                        Some(
+                            RecordBounds::try_new([
+                                Some(carrier_interval[0]),
+                                Some(carrier_interval[1]),
+                                None,
+                                None,
+                            ])
+                            .map_err(|_| {
+                                cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
+                                    "record bounds must be finite",
+                                )
+                            })?,
+                        ),
+                    ))
                 })
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             );
@@ -2498,14 +2528,16 @@ pub(super) fn project(
                     )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 ),
-                Some([
-                    Some(u_range[0]),
-                    Some(u_range[1]),
-                    Some(v_range[0]),
-                    Some(v_range[1]),
-                ]),
-            )
-            .map_err(cadmpeg_core::CodecError::malformed)?,
+                Some(
+                    RecordBounds::try_new([
+                        Some(u_range[0]),
+                        Some(u_range[1]),
+                        Some(v_range[0]),
+                        Some(v_range[1]),
+                    ])
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                ),
+            ),
         );
         decoded.insert(entry.sequence);
     }
@@ -2642,7 +2674,7 @@ pub(super) fn project(
                     cache: None,
                 },
             )
-            .and_then(|admitted_payload| {
+            .map(|admitted_payload| {
                 ProceduralSurface::new(
                     crate::ids::procedural_surface(&crate::ids::Stem::directory(entry.sequence)),
                     ProceduralSurfaceDefinition::Offset(admitted_payload),

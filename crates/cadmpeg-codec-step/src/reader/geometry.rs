@@ -904,22 +904,13 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             };
             let curve_index = CurveIndex(ir.model.curves.len());
             let curve = CurveId::from(ids::data(kind!("curve"), id));
-            let procedural = match ProceduralCurve::new(
+            let procedural = ProceduralCurve::new(
                 ProceduralCurveId::from(ids::construction(kind!("curve_replica"), id)),
                 ProceduralCurveDefinition::Replica {
                     source: CurveId::from(ids::data(kind!("curve"), parent_step)),
                     transform,
                 },
-            ) {
-                Ok(procedural) => procedural,
-                Err(error) => {
-                    losses.push(
-                        StepLossCode::DecodeWarning
-                            .note(format!("curve construction #{id}: {error}")),
-                    );
-                    continue;
-                }
-            };
+            );
             ir.model.curves.push(Curve {
                 id: curve.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
@@ -1010,10 +1001,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                     let mut definition = ProceduralCurveDefinition::Subset(admitted_payload);
                     definition
                         .set_legacy_cache(cadmpeg_ir::geometry::LegacyCache::try_new(0.0)?)?;
-                    ProceduralCurve::new(
+                    Ok(ProceduralCurve::new(
                         ProceduralCurveId::from(ids::construction(kind!("trimmed_curve"), id)),
                         definition,
-                    )
+                    ))
                 }) {
                     Ok(procedural) => procedural,
                     Err(error) => {
@@ -1136,7 +1127,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 reference_direction,
                 self_intersect,
             )
-            .and_then(|admitted_payload| {
+            .map(|admitted_payload| {
                 ProceduralCurve::new(
                     ProceduralCurveId::from(ids::construction(kind!("offset_curve"), id)),
                     ProceduralCurveDefinition::SpatialOffset(admitted_payload),
@@ -1325,20 +1316,11 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         });
         let _attached = ir.model.add_procedural_surface(
             surface,
-            match ProceduralSurface::new(
+            ProceduralSurface::new(
                 ProceduralSurfaceId::from(ids::construction(kind!("swept_surface"), id)),
                 definition,
                 None,
-            ) {
-                Ok(surface) => surface,
-                Err(error) => {
-                    losses.push(
-                        StepLossCode::DecodeWarning
-                            .note(format!("procedural surface #{id}: {error}")),
-                    );
-                    continue;
-                }
-            },
+            ),
         );
         typed.insert(id);
     }
@@ -1585,7 +1567,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                     Some(v_sense),
                     None,
                 )
-                .and_then(|admitted_payload| {
+                .map(|admitted_payload| {
                     ProceduralSurface::new(
                         ProceduralSurfaceId::from(ids::construction(
                             kind!("rectangular_trimmed_surface"),
@@ -1668,7 +1650,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             });
             let _attached = ir.model.add_procedural_surface(
                 surface,
-                match ProceduralSurface::new(
+                ProceduralSurface::new(
                     ProceduralSurfaceId::from(ids::construction(
                         kind!("curve_bounded_surface"),
                         id,
@@ -1680,16 +1662,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                         implicit_outer,
                     },
                     None,
-                ) {
-                    Ok(surface) => surface,
-                    Err(error) => {
-                        losses.push(
-                            StepLossCode::DecodeWarning
-                                .note(format!("procedural surface #{id}: {error}")),
-                        );
-                        continue;
-                    }
-                },
+                ),
             );
             carrier_index.surfaces.insert(id, surface_index);
             typed.insert(id);
@@ -1723,7 +1696,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             });
             let _attached = ir.model.add_procedural_surface(
                 surface,
-                match cadmpeg_ir::geometry::surface_payloads::ParallelOffsetSurfaceConstruction::try_new(support, distance * record_scale, self_intersect).and_then(|admitted_payload| ProceduralSurface::new(
+                match cadmpeg_ir::geometry::surface_payloads::ParallelOffsetSurfaceConstruction::try_new(support, distance * record_scale, self_intersect).map(|admitted_payload| ProceduralSurface::new(
                     ProceduralSurfaceId::from(ids::construction(kind!("offset_surface"), id)),
                     ProceduralSurfaceDefinition::ParallelOffset(admitted_payload),
                     None,
@@ -1776,23 +1749,14 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             });
             let _attached = ir.model.add_procedural_surface(
                 surface,
-                match ProceduralSurface::new(
+                ProceduralSurface::new(
                     ProceduralSurfaceId::from(ids::construction(kind!("surface_replica"), id)),
                     ProceduralSurfaceDefinition::Replica {
                         source: SurfaceId::from(ids::data(kind!("surface"), parent_step)),
                         transform,
                     },
                     None,
-                ) {
-                    Ok(surface) => surface,
-                    Err(error) => {
-                        losses.push(
-                            StepLossCode::DecodeWarning
-                                .note(format!("procedural surface #{id}: {error}")),
-                        );
-                        continue;
-                    }
-                },
+                ),
             );
             carrier_index.surfaces.insert(id, surface_index);
             typed.insert(id);
@@ -2042,20 +2006,11 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         }
         let _attached = ir.model.add_procedural_surface(
             surface,
-            match ProceduralSurface::new(
+            ProceduralSurface::new(
                 ProceduralSurfaceId::from(ids::construction(kind!("degenerate_torus"), id)),
                 ProceduralSurfaceDefinition::DegenerateTorus { select_outer },
                 None,
-            ) {
-                Ok(surface) => surface,
-                Err(error) => {
-                    losses.push(
-                        StepLossCode::DecodeWarning
-                            .note(format!("procedural surface #{id}: {error}")),
-                    );
-                    continue;
-                }
-            },
+            ),
         );
     }
 
@@ -4964,9 +4919,8 @@ pub(super) fn surface_parameter_periods(geometry: &SolvedSurfaceGeometry) -> [Op
     }
 }
 
-fn nurbs_surface_parameter_period(degree: u32, knots: &[f64], count: u32) -> Option<f64> {
+fn nurbs_surface_parameter_period(degree: u32, knots: &[f64], count: usize) -> Option<f64> {
     let degree = usize::try_from(degree).ok()?;
-    let count = usize::try_from(count).ok()?;
     let lower = *knots.get(degree)?;
     let upper = *knots.get(count)?;
     let period = upper - lower;

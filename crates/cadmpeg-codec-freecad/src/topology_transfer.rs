@@ -1419,8 +1419,7 @@ impl<'a> Builder<'a> {
                                 transform,
                             },
                             None,
-                        )
-                        .map_err(cadmpeg_core::CodecError::malformed)?,
+                        ),
                     )
                     .map_err(|error| CodecError::malformed(error.to_string()))?;
             }

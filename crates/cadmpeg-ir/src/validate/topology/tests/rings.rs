@@ -254,30 +254,27 @@ fn spring_support_reference_findings_name_the_construction() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let owner = ProceduralCurveId::mint("test:model:procedural-curve#spring").unwrap();
     let missing = SurfaceId::mint("test:model:surface#missing").unwrap();
-    ir.model.procedural_curves.push(
-        ProceduralCurve::new(
-            owner.clone(),
-            ProceduralCurveDefinition::Spring(
-                crate::geometry::curve_payloads::SpringCurvePayload::try_new(
-                    SpringLayout::ContextFirst {
-                        supports: [
-                            SpringSupport::Surface(missing.clone()),
-                            SpringSupport::Ranges([[0.0, 1.0]; 2]),
-                        ],
-                        first_pcurve: SpringPcurve::Range([0.0, 1.0]),
-                        second_pcurve: None,
-                        parameter_range: [0.0, 1.0],
-                        discontinuities: [Vec::new(), Vec::new(), Vec::new()],
-                        discontinuity_flag: false,
-                        cache: None,
-                    },
-                    1,
-                )
-                .unwrap(),
-            ),
-        )
-        .unwrap(),
-    );
+    ir.model.procedural_curves.push(ProceduralCurve::new(
+        owner.clone(),
+        ProceduralCurveDefinition::Spring(
+            crate::geometry::curve_payloads::SpringCurvePayload::try_new(
+                SpringLayout::ContextFirst {
+                    supports: [
+                        SpringSupport::Surface(missing.clone()),
+                        SpringSupport::Ranges([[0.0, 1.0]; 2]),
+                    ],
+                    first_pcurve: SpringPcurve::Range([0.0, 1.0]),
+                    second_pcurve: None,
+                    parameter_range: [0.0, 1.0],
+                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+                    discontinuity_flag: false,
+                    cache: None,
+                },
+                1,
+            )
+            .unwrap(),
+        ),
+    ));
     let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.check == Check::ReferentialIntegrity

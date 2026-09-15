@@ -1575,13 +1575,17 @@ fn patch_nurbs_surface_record(
                 record.index
             ))
         })?;
-    let u_count = usize::try_from(surface.u_count())
-        .map_err(|_| CodecError::Malformed("NURBS u pole count exceeds address space".into()))?;
-    let v_count = usize::try_from(surface.v_count())
-        .map_err(|_| CodecError::Malformed("NURBS v pole count exceeds address space".into()))?;
-    if usize::try_from(layout.surface.u_count()).ok() != Some(u_count)
-        || usize::try_from(layout.surface.v_count()).ok() != Some(v_count)
-        || layout.surface.weights().is_some() != surface.weights().is_some()
+    let u_count = surface.u_count();
+    let v_count = surface.v_count();
+    if layout.surface.u_count() != u_count
+        || layout.surface.v_count() != v_count
+        || matches!(
+            layout.surface.pole_grid(),
+            cadmpeg_ir::geometry::NurbsPoleGrid::Rational { .. }
+        ) != matches!(
+            surface.pole_grid(),
+            cadmpeg_ir::geometry::NurbsPoleGrid::Rational { .. }
+        )
     {
         return Err(CodecError::NotImplemented(format!(
             "spline record {} changed NURBS cache structure",
@@ -1617,26 +1621,38 @@ fn patch_nurbs_surface_record(
             AsmEditSet::patch_layout_integer(bytes, at, stream_width, value)?;
         }
     }
-    let components = if layout.surface.weights().is_some() {
-        4
-    } else {
-        3
-    };
-    let values = (0..v_count).flat_map(|v| {
-        (0..u_count).flat_map(move |u| {
-            let point = surface.pole(u, v);
-            [
-                point.map_or(0.0, |point| point.x / LEN_TO_MM),
-                point.map_or(0.0, |point| point.y / LEN_TO_MM),
-                point.map_or(0.0, |point| point.z / LEN_TO_MM),
-                surface.weight(u, v).unwrap_or(0.0),
-            ]
-            .into_iter()
-            .take(components)
-        })
-    });
-    for (offset, value) in layout.control_value_offsets().zip(values) {
-        AsmEditSet::patch_f64_payload(bytes, record.offset + offset, value)?;
+    match surface.pole_grid() {
+        cadmpeg_ir::geometry::NurbsPoleGrid::Polynomial { rows } => {
+            let values = (0..v_count).flat_map(|v| {
+                rows.iter().flat_map(move |row| {
+                    let point = row[v];
+                    [
+                        point.x / LEN_TO_MM,
+                        point.y / LEN_TO_MM,
+                        point.z / LEN_TO_MM,
+                    ]
+                })
+            });
+            for (offset, value) in layout.control_value_offsets().zip(values) {
+                AsmEditSet::patch_f64_payload(bytes, record.offset + offset, value)?;
+            }
+        }
+        cadmpeg_ir::geometry::NurbsPoleGrid::Rational { rows } => {
+            let values = (0..v_count).flat_map(|v| {
+                rows.iter().flat_map(move |row| {
+                    let pole = row[v];
+                    [
+                        pole.point.x / LEN_TO_MM,
+                        pole.point.y / LEN_TO_MM,
+                        pole.point.z / LEN_TO_MM,
+                        pole.weight.get(),
+                    ]
+                })
+            });
+            for (offset, value) in layout.control_value_offsets().zip(values) {
+                AsmEditSet::patch_f64_payload(bytes, record.offset + offset, value)?;
+            }
+        }
     }
     Ok(())
 }

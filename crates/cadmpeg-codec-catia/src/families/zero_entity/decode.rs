@@ -163,8 +163,7 @@ fn append_oriented_wire_curve(
                     Ok(())
                 }
             }) {
-            Ok(()) => ProceduralCurve::new(construction_id.clone(), definition)
-                .map_err(|error| error.to_string()),
+            Ok(()) => Ok(ProceduralCurve::new(construction_id.clone(), definition)),
             Err(error) => Err(error),
         };
         match admitted {
@@ -868,7 +867,7 @@ pub(crate) fn try_decode_zero_entity(
             });
             ir.model
                 .procedural_curves
-                .push(ProceduralCurve::new(construction_id, definition).ok()?);
+                .push(ProceduralCurve::new(construction_id, definition));
             support_curve_ids.insert(support.record_ordinal, curve_id);
             transferred_support_curves += 1;
         }
@@ -1468,7 +1467,7 @@ mod tests {
         ir.model
             .add_procedural_curve(
                 curve_id.clone(),
-                ProceduralCurve::new(construction_id.clone(), definition.clone()).unwrap(),
+                ProceduralCurve::new(construction_id.clone(), definition.clone()),
             )
             .unwrap();
         let support_runs = vec![

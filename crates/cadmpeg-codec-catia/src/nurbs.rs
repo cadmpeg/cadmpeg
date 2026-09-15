@@ -790,8 +790,8 @@ pub(crate) fn nurbs_surface_isocurve(
     {
         return None;
     }
-    let u_count = usize::try_from(surface.u_count()).ok()?;
-    let v_count = usize::try_from(surface.v_count()).ok()?;
+    let u_count = surface.u_count();
+    let v_count = surface.v_count();
     let u_degree = usize::try_from(surface.u_degree()).ok()?;
     let v_degree = usize::try_from(surface.v_degree()).ok()?;
     if !knots_nondecreasing(surface.u_knots()) || !knots_nondecreasing(surface.v_knots()) {

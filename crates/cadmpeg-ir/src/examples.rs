@@ -362,7 +362,7 @@ pub fn directed_subd_sum() -> Result<CadIr, crate::geometry::ProceduralGeometryE
     )?))?;
     ir.model
         .procedural_surfaces
-        .push(ProceduralSurface::new(construction, sum_definition, None)?);
+        .push(ProceduralSurface::new(construction, sum_definition, None));
     ir.model.subds.push(SubdSurface {
         id: v2_id!(SubdId, "subd", crate::identity_key!("directed")),
         scheme: SubdScheme::CatmullClark,

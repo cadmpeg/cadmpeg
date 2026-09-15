@@ -31,7 +31,6 @@ macro_rules! procedural_surface {
             }))
             .expect("valid procedural surface cache fixture");
         ProceduralSurface::new($id, definition, $record_bounds)
-            .expect("valid procedural surface fixture")
     }};
 }
 
@@ -52,7 +51,7 @@ macro_rules! procedural_curve {
                 .expect("valid procedural curve cache fixture"),
             None => definition.clear_legacy_cache(),
         }
-        ProceduralCurve::new($id, definition).expect("valid procedural curve fixture")
+        ProceduralCurve::new($id, definition)
     }};
 }
 

@@ -100,8 +100,10 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
             },
             source_object: None,
         });
-    translated.model.procedural_surfaces.push(
-        cadmpeg_ir::geometry::ProceduralSurface::new(
+    translated
+        .model
+        .procedural_surfaces
+        .push(cadmpeg_ir::geometry::ProceduralSurface::new(
             nested_construction,
             ProceduralSurfaceDefinition::Offset(
                 cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
@@ -118,9 +120,7 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
                 .unwrap(),
             ),
             None,
-        )
-        .unwrap(),
-    );
+        ));
     let nested_point = cadmpeg_ir::eval::model_surface_point_by_id(
         &cadmpeg_ir::index::ModelIndex::new(&translated),
         &nested_surface,
@@ -237,27 +237,24 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
         },
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(
-        ProceduralSurface::new(
-            construction,
-            ProceduralSurfaceDefinition::Offset(
-                cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
-                    support,
-                    0.75,
-                    None,
-                    None,
-                    false,
-                    cadmpeg_ir::geometry::OffsetExtension::Legacy {
-                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
-                        cache: None,
-                    },
-                )
-                .unwrap(),
-            ),
-            None,
-        )
-        .unwrap(),
-    );
+    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        construction,
+        ProceduralSurfaceDefinition::Offset(
+            cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                support,
+                0.75,
+                None,
+                None,
+                false,
+                cadmpeg_ir::geometry::OffsetExtension::Legacy {
+                    flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                    cache: None,
+                },
+            )
+            .unwrap(),
+        ),
+        None,
+    ));
 
     let expected = Point2::new(0.2, 0.45);
     let point = cadmpeg_ir::eval::model_surface_point_by_id(
@@ -292,27 +289,24 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
         },
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(
-        ProceduralSurface::new(
-            nested_construction,
-            ProceduralSurfaceDefinition::Offset(
-                cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
-                    offset.clone(),
-                    0.5,
-                    None,
-                    None,
-                    false,
-                    cadmpeg_ir::geometry::OffsetExtension::Legacy {
-                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
-                        cache: None,
-                    },
-                )
-                .unwrap(),
-            ),
-            None,
-        )
-        .unwrap(),
-    );
+    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        nested_construction,
+        ProceduralSurfaceDefinition::Offset(
+            cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                offset.clone(),
+                0.5,
+                None,
+                None,
+                false,
+                cadmpeg_ir::geometry::OffsetExtension::Legacy {
+                    flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                    cache: None,
+                },
+            )
+            .unwrap(),
+        ),
+        None,
+    ));
     let nested_point = cadmpeg_ir::eval::model_surface_point_by_id(
         &cadmpeg_ir::index::ModelIndex::new(&ir),
         &nested,
@@ -746,8 +740,7 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
                 discontinuity_flag: false,
                 cache: None,
             },
-        )
-        .unwrap(),
+        ),
     );
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
     let source_stream = annotations.stream("nx:test");
@@ -1022,8 +1015,7 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
                 discontinuity_flag: false,
                 cache: None,
             },
-        )
-        .unwrap(),
+        ),
     );
 
     let parameters = [Point2::new(0.2, 0.3), Point2::new(0.7, 0.8)];
@@ -1145,27 +1137,24 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
             },
             source_object: None,
         });
-        ir.model.procedural_surfaces.push(
-            ProceduralSurface::new(
-                constructions[side].clone(),
-                ProceduralSurfaceDefinition::Offset(
-                    cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
-                        base_surfaces[side].clone(),
-                        0.0,
-                        None,
-                        None,
-                        false,
-                        cadmpeg_ir::geometry::OffsetExtension::Legacy {
-                            flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
-                            cache: None,
-                        },
-                    )
-                    .unwrap(),
-                ),
-                None,
-            )
-            .unwrap(),
-        );
+        ir.model.procedural_surfaces.push(ProceduralSurface::new(
+            constructions[side].clone(),
+            ProceduralSurfaceDefinition::Offset(
+                cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                    base_surfaces[side].clone(),
+                    0.0,
+                    None,
+                    None,
+                    false,
+                    cadmpeg_ir::geometry::OffsetExtension::Legacy {
+                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                        cache: None,
+                    },
+                )
+                .unwrap(),
+            ),
+            None,
+        ));
     }
 
     let procedural_id = ProceduralCurveId::mint("test:model:entity#synthetic:coupled-intersection")
@@ -1196,8 +1185,7 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
                 discontinuity_flag: false,
                 cache: None,
             },
-        )
-        .unwrap(),
+        ),
     );
     let points = vec![
         Point3::new(0.0, 0.0, 0.0),
@@ -1315,8 +1303,11 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
         },
         source_object: None,
     });
-    result.ir_mut().model.procedural_surfaces.push(
-        ProceduralSurface::new(
+    result
+        .ir_mut()
+        .model
+        .procedural_surfaces
+        .push(ProceduralSurface::new(
             blend_construction,
             ProceduralSurfaceDefinition::Blend(
                 cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
@@ -1336,9 +1327,7 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
                 .unwrap(),
             ),
             None,
-        )
-        .unwrap(),
-    );
+        ));
     let parameters = vec![0.0, 0.01];
     let spine_carrier = result
         .ir()
@@ -1722,27 +1711,24 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
             },
             source_object: None,
         });
-        ir.model.procedural_surfaces.push(
-            ProceduralSurface::new(
-                construction,
-                ProceduralSurfaceDefinition::Offset(
-                    cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
-                        support.clone(),
-                        30.0,
-                        Some(0),
-                        Some(0),
-                        false,
-                        cadmpeg_ir::geometry::OffsetExtension::Legacy {
-                            flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
-                            cache: None,
-                        },
-                    )
-                    .unwrap(),
-                ),
-                None,
-            )
-            .unwrap(),
-        );
+        ir.model.procedural_surfaces.push(ProceduralSurface::new(
+            construction,
+            ProceduralSurfaceDefinition::Offset(
+                cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                    support.clone(),
+                    30.0,
+                    Some(0),
+                    Some(0),
+                    false,
+                    cadmpeg_ir::geometry::OffsetExtension::Legacy {
+                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                        cache: None,
+                    },
+                )
+                .unwrap(),
+            ),
+            None,
+        ));
     }
     let carrier = CurveId::mint("test:model:entity#curve").expect("identity grammar");
     ir.model.curves.push(Curve {
@@ -1782,8 +1768,7 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
                 discontinuity_flag: false,
                 cache: None,
             },
-        )
-        .unwrap(),
+        ),
     );
 
     assert!(parameterization_equivalent_surfaces(

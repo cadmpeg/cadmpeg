@@ -443,6 +443,58 @@ pub struct Curve {
     pub source_object: Option<SourceObjectAssociation>,
 }
 
+/// Four optional finite parameter bounds retained from one native surface
+/// record.
+///
+/// The positions are the native record's fields. Their meaning is supplied
+/// by the owning subtype, so a partial quartet remains valid. `None` in one
+/// position means that field was absent in the source record.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct RecordBounds([Option<FiniteReal>; 4]);
+
+/// A record-bound quartet contained a non-finite value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("record bounds must contain only finite values")]
+pub struct RecordBoundsError;
+
+impl RecordBounds {
+    /// Admit a native quartet after checking every present value.
+    pub fn try_new(raw: [Option<f64>; 4]) -> Result<Self, RecordBoundsError> {
+        let mut valid = true;
+        let checked = raw.map(|value| match value {
+            Some(value) => match FiniteReal::new(value) {
+                Some(value) => Some(value),
+                None => {
+                    valid = false;
+                    None
+                }
+            },
+            None => None,
+        });
+        valid.then_some(Self(checked)).ok_or(RecordBoundsError)
+    }
+
+    /// Admit an optional native quartet, preserving an outer `Some` whose
+    /// fields are all absent.
+    pub fn try_option(raw: Option<[Option<f64>; 4]>) -> Result<Option<Self>, RecordBoundsError> {
+        raw.map(Self::try_new).transpose()
+    }
+
+    /// Construct a quartet from already checked values.
+    #[must_use]
+    pub const fn from_checked(values: [Option<FiniteReal>; 4]) -> Self {
+        Self(values)
+    }
+
+    /// Return the native scalar representation.
+    #[must_use]
+    pub fn get(self) -> [Option<f64>; 4] {
+        self.0.map(|value| value.map(FiniteReal::get))
+    }
+}
+
 /// A neutral surface construction linked to the carrier it produces.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -458,7 +510,7 @@ pub struct ProceduralSurface {
     /// source directrix interval separately. `None` when the record stores no
     /// bound fields.
     #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
-    pub record_bounds: Option<[Option<f64>; 4]>,
+    record_bounds: Option<RecordBounds>,
 }
 
 /// Parameter fields carried by exact and loft spline-surface constructions.
@@ -1534,13 +1586,41 @@ impl ProceduralSurface {
     pub fn new(
         id: ProceduralSurfaceId,
         definition: ProceduralSurfaceDefinition,
-        record_bounds: Option<[Option<f64>; 4]>,
-    ) -> Result<Self, ProceduralGeometryError> {
-        Ok(Self {
+        record_bounds: Option<RecordBounds>,
+    ) -> Self {
+        Self {
             id,
             definition,
             record_bounds,
-        })
+        }
+    }
+
+    /// Build a procedural surface after admitting native record bounds.
+    pub fn try_new_with_raw_bounds(
+        id: ProceduralSurfaceId,
+        definition: ProceduralSurfaceDefinition,
+        record_bounds: Option<[Option<f64>; 4]>,
+    ) -> Result<Self, RecordBoundsError> {
+        Ok(Self::new(
+            id,
+            definition,
+            RecordBounds::try_option(record_bounds)?,
+        ))
+    }
+
+    /// Return the retained native record bounds, when present.
+    #[must_use]
+    pub fn record_bounds(&self) -> Option<[Option<f64>; 4]> {
+        self.record_bounds.map(RecordBounds::get)
+    }
+
+    /// Replace the retained native record bounds after finite-value admission.
+    pub fn set_record_bounds(
+        &mut self,
+        record_bounds: Option<[Option<f64>; 4]>,
+    ) -> Result<(), RecordBoundsError> {
+        self.record_bounds = RecordBounds::try_option(record_bounds)?;
+        Ok(())
     }
 
     /// Borrow the neutral construction definition.
@@ -6833,11 +6913,8 @@ impl ProceduralCurveDefinition {
 
 impl ProceduralCurve {
     /// Build a procedural curve from its construction definition.
-    pub fn new(
-        id: ProceduralCurveId,
-        definition: ProceduralCurveDefinition,
-    ) -> Result<Self, ProceduralGeometryError> {
-        Ok(Self { id, definition })
+    pub fn new(id: ProceduralCurveId, definition: ProceduralCurveDefinition) -> Self {
+        Self { id, definition }
     }
 
     /// Borrow the neutral construction definition.
@@ -6924,7 +7001,7 @@ pub(crate) struct ProceduralSurfaceRow {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "cadmpeg_core::absent_key::present"
     )]
-    pub(crate) record_bounds: Option<[Option<f64>; 4]>,
+    pub(crate) record_bounds: Option<RecordBounds>,
 }
 
 /// One procedural-curve row: the construction and the carrier it produces.
@@ -6955,11 +7032,7 @@ impl ProceduralSurfaceRow {
     pub(crate) fn into_parts(self) -> (SurfaceId, ProceduralSurface) {
         (
             self.surface,
-            ProceduralSurface {
-                id: self.id,
-                definition: self.definition,
-                record_bounds: self.record_bounds,
-            },
+            ProceduralSurface::new(self.id, self.definition, self.record_bounds),
         )
     }
 }

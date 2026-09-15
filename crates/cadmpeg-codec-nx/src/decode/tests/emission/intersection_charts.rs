@@ -428,40 +428,37 @@ fn cylinder_plane_transfer_fixture(
         },
         source_object: None,
     });
-    ir.model.procedural_curves.push(
-        ProceduralCurve::new(
-            construction,
-            ProceduralCurveDefinition::Intersection {
-                context: IntcurveSupportContext::try_new(
-                    [
-                        IntcurveSupportSide {
-                            surface: Some(source),
-                            pcurve: Some(
-                                PcurveGeometry::Line(
-                                    cadmpeg_ir::geometry::LinePcurve::try_new(
-                                        Point2::new(0.0, 0.0),
-                                        Point2::new(source_pcurve_angle, 0.0),
-                                    )
-                                    .unwrap(),
+    ir.model.procedural_curves.push(ProceduralCurve::new(
+        construction,
+        ProceduralCurveDefinition::Intersection {
+            context: IntcurveSupportContext::try_new(
+                [
+                    IntcurveSupportSide {
+                        surface: Some(source),
+                        pcurve: Some(
+                            PcurveGeometry::Line(
+                                cadmpeg_ir::geometry::LinePcurve::try_new(
+                                    Point2::new(0.0, 0.0),
+                                    Point2::new(source_pcurve_angle, 0.0),
                                 )
-                                .into(),
-                            ),
-                        },
-                        IntcurveSupportSide {
-                            surface: Some(target.clone()),
-                            pcurve: None,
-                        },
-                    ],
-                    [0.0, 1.0],
-                    [Vec::new(), Vec::new(), Vec::new()],
-                )
-                .unwrap(),
-                discontinuity_flag: false,
-                cache: None,
-            },
-        )
-        .unwrap(),
-    );
+                                .unwrap(),
+                            )
+                            .into(),
+                        ),
+                    },
+                    IntcurveSupportSide {
+                        surface: Some(target.clone()),
+                        pcurve: None,
+                    },
+                ],
+                [0.0, 1.0],
+                [Vec::new(), Vec::new(), Vec::new()],
+            )
+            .unwrap(),
+            discontinuity_flag: false,
+            cache: None,
+        },
+    ));
     ir.model.edges.push(Edge {
         id: EdgeId::mint("test:model:entity#synthetic:edge").expect("identity grammar"),
         carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some([0.0, 1.0])).unwrap(),
@@ -599,36 +596,32 @@ fn blend_contact_transfer_fixture(
                 discontinuity_flag: false,
                 cache: None,
             },
-        )
-        .unwrap(),
+        ),
     );
-    ir.model.procedural_surfaces.push(
-        ProceduralSurface::new(
-            ProceduralSurfaceId::mint("test:model:entity#synthetic:blend-contact-construction")
-                .expect("identity grammar"),
-            ProceduralSurfaceDefinition::Blend(
-                cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
-                    [
-                        Some(BlendSupport {
-                            surface: support.clone(),
-                            reversed: false,
-                        }),
-                        Some(BlendSupport {
-                            surface: other_support,
-                            reversed: false,
-                        }),
-                    ],
-                    Some(spine),
-                    BlendRadiusLaw::Constant { signed_radius: 2.0 },
-                    BlendCrossSection::Circular,
-                    cadmpeg_ir::geometry::CacheContract::from_form(None),
-                )
-                .unwrap(),
-            ),
-            None,
-        )
-        .unwrap(),
-    );
+    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        ProceduralSurfaceId::mint("test:model:entity#synthetic:blend-contact-construction")
+            .expect("identity grammar"),
+        ProceduralSurfaceDefinition::Blend(
+            cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
+                [
+                    Some(BlendSupport {
+                        surface: support.clone(),
+                        reversed: false,
+                    }),
+                    Some(BlendSupport {
+                        surface: other_support,
+                        reversed: false,
+                    }),
+                ],
+                Some(spine),
+                BlendRadiusLaw::Constant { signed_radius: 2.0 },
+                BlendCrossSection::Circular,
+                cadmpeg_ir::geometry::CacheContract::from_form(None),
+            )
+            .unwrap(),
+        ),
+        None,
+    ));
 
     for index in 0..candidate_count {
         let curve = CurveId::mint(format!(
@@ -672,8 +665,7 @@ fn blend_contact_transfer_fixture(
                     cadmpeg_ir::geometry::LegacyCache::try_new(tolerance).expect("fit tolerance"),
                 ),
             },
-        )
-        .unwrap();
+        );
         ir.model.add_procedural_curve(curve, procedural).unwrap();
     }
     ir
@@ -741,32 +733,29 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
         )),
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(
-        ProceduralSurface::new(
-            target_construction,
-            ProceduralSurfaceDefinition::Blend(
-                cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
-                    [
-                        Some(BlendSupport {
-                            surface: source.clone(),
-                            reversed: false,
-                        }),
-                        Some(BlendSupport {
-                            surface: other_support,
-                            reversed: false,
-                        }),
-                    ],
-                    Some(spine),
-                    BlendRadiusLaw::Constant { signed_radius: 2.0 },
-                    BlendCrossSection::Circular,
-                    cadmpeg_ir::geometry::CacheContract::from_form(None),
-                )
-                .unwrap(),
-            ),
-            None,
-        )
-        .unwrap(),
-    );
+    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        target_construction,
+        ProceduralSurfaceDefinition::Blend(
+            cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
+                [
+                    Some(BlendSupport {
+                        surface: source.clone(),
+                        reversed: false,
+                    }),
+                    Some(BlendSupport {
+                        surface: other_support,
+                        reversed: false,
+                    }),
+                ],
+                Some(spine),
+                BlendRadiusLaw::Constant { signed_radius: 2.0 },
+                BlendCrossSection::Circular,
+                cadmpeg_ir::geometry::CacheContract::from_form(None),
+            )
+            .unwrap(),
+        ),
+        None,
+    ));
 
     let curve =
         CurveId::mint("test:model:entity#synthetic:solved-boundary").expect("identity grammar");
@@ -815,8 +804,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
                 discontinuity_flag: false,
                 cache: None,
             },
-        )
-        .unwrap(),
+        ),
     );
     ir.model.edges.push(Edge {
         id: EdgeId::mint("test:model:entity#synthetic:boundary-edge").expect("identity grammar"),
@@ -922,8 +910,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
                 parameterization: None,
                 cache: None,
             },
-        )
-        .unwrap(),
+        ),
     );
     let point_ids = [
         PointId::mint("test:model:entity#synthetic:p0").expect("identity grammar"),
@@ -1150,8 +1137,7 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
             discontinuity_flag: false,
             cache: Some(cadmpeg_ir::geometry::LegacyCache::try_new(0.25).expect("fit tolerance")),
         },
-    )
-    .unwrap();
+    );
     ir.model.add_procedural_curve(curve, procedural).unwrap();
 
     crate::decode::pcurves::complete_exact_boundary_intersection_pcurves(

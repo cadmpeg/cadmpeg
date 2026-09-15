@@ -552,7 +552,7 @@ fn decode_solves_a_surface_of_revolution_from_a_line_with_roundoff_endpoints() {
     ));
     assert_eq!(*parameter_interval, [0.0, 1.0]);
     assert_eq!(
-        procedural.record_bounds,
+        procedural.record_bounds(),
         Some([Some(0.0), Some(6.606_051_667_958_6), None, None])
     );
     assert!(
@@ -736,7 +736,7 @@ fn decode_projects_a_trimmed_revolution_at_an_intermediate_native_angle() {
         })
         .expect("trimmed revolution construction");
     assert_eq!(
-        procedural.record_bounds,
+        procedural.record_bounds(),
         Some([Some(0.0), Some(2.0), None, None])
     );
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(definition_payload_0) =
@@ -1247,7 +1247,7 @@ fn decode_retains_nurbs_surface_parameter_subranges() {
         })
         .expect("Type 128 parameter-domain record");
     assert_eq!(
-        procedural.record_bounds,
+        procedural.record_bounds(),
         Some([Some(0.2), Some(0.8), Some(-1.0), Some(1.0)])
     );
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Exact(definition_payload) =

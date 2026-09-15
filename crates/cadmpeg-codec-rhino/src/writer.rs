@@ -1289,8 +1289,8 @@ fn validate_nurbs_trim(
     use cadmpeg_ir::eval::{nurbs_surface_point, pcurve_uv};
     use cadmpeg_ir::topology::Sense;
 
-    let u_count = surface.u_count() as usize;
-    let v_count = surface.v_count() as usize;
+    let u_count = surface.u_count();
+    let v_count = surface.v_count();
     let u_domain = [
         surface.u_knots()[surface.u_degree() as usize],
         surface.u_knots()[u_count],
@@ -1739,8 +1739,8 @@ fn check_nurbs_surface(
 ) -> Result<(), CodecError> {
     let u_order = surface.u_degree() as usize + 1;
     let v_order = surface.v_degree() as usize + 1;
-    let u_count = surface.u_count() as usize;
-    let v_count = surface.v_count() as usize;
+    let u_count = surface.u_count();
+    let v_count = surface.v_count();
     if u_order < 2
         || v_order < 2
         || i32::try_from(u_order).is_err()

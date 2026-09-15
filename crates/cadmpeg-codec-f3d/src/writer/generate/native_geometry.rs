@@ -109,7 +109,7 @@ fn native_record_bounds(bytes: &mut Vec<u8>, target: &CadIr, surface: &cadmpeg_i
         .procedural_surfaces
         .iter()
         .find(|procedural| target.model.procedural_surface_owner(&procedural.id) == Some(surface))
-        .and_then(|procedural| procedural.record_bounds);
+        .and_then(cadmpeg_ir::geometry::ProceduralSurface::record_bounds);
     if let Some(bounds) = bounds {
         for bound in bounds {
             native_optional_f64(bytes, bound);

@@ -386,8 +386,7 @@ pub(super) fn emit_edges(
                     )
                     .map_err(cadmpeg_core::CodecError::malformed)?;
             }
-            let procedural = ProceduralCurve::new(procedural_id, definition)
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            let procedural = ProceduralCurve::new(procedural_id, definition);
 
             let _attached = ir.model.add_procedural_curve(curve_id.clone(), procedural);
         }

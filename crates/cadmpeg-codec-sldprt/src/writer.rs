@@ -3293,6 +3293,16 @@ fn write_nurbs_surface(
             "NURBS surface degree must be positive".into(),
         ));
     }
+    let u_count = u32::try_from(nurbs.u_count()).map_err(|_| {
+        CodecError::NotImplemented(format!(
+            "SLDPRT NURBS surface {entity} u pole count exceeds the native u32 field"
+        ))
+    })?;
+    let v_count = u32::try_from(nurbs.v_count()).map_err(|_| {
+        CodecError::NotImplemented(format!(
+            "SLDPRT NURBS surface {entity} v pole count exceeds the native u32 field"
+        ))
+    })?;
     let u_unique = unique_knots(nurbs.u_knots(), entity)?;
     let v_unique = unique_knots(nurbs.v_knots(), entity)?;
     if !nurbs
@@ -3341,8 +3351,8 @@ fn write_nurbs_surface(
     out.extend_from_slice(&[0, 0]);
     be16(out, u_degree);
     be16(out, v_degree);
-    be32(out, nurbs.u_count());
-    be32(out, nurbs.v_count());
+    be32(out, u_count);
+    be32(out, v_count);
     out.extend_from_slice(&[1, 1]);
     be32(out, u_knot_count);
     be32(out, v_knot_count);

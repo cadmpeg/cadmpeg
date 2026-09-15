@@ -1767,8 +1767,7 @@ fn geometry_signal_excludes_opaque_carriers() {
                 .expect("finite ordered exact-spline fixture ranges"),
             ),
             None,
-        )
-        .expect("valid ProceduralSurface fixture"),
+        ),
     );
 
     assert!(has_transferred_geometry(&ir));

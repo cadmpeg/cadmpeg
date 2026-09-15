@@ -241,9 +241,11 @@ pub(crate) fn try_decode_e5(
             .ok()?
             .derived(&procedural_id, "definition")
             .ok()?;
-        ir.model
-            .procedural_surfaces
-            .push(ProceduralSurface::new(procedural_id, jet.definition()?, None).ok()?);
+        ir.model.procedural_surfaces.push(ProceduralSurface::new(
+            procedural_id,
+            jet.definition()?,
+            None,
+        ));
     }
     let mut topology_ir = ir.clone();
     let mut topology_annotations = annotations.clone();
@@ -1648,8 +1650,7 @@ fn emit_e5_curves_and_edges(
                     discontinuity_flag: false,
                     cache: None,
                 },
-            )
-            .map_err(cadmpeg_core::CodecError::malformed)?,
+            ),
         );
     }
     for (&record_id, (surface, pcurve, range)) in surface_curve_plan {
@@ -1698,8 +1699,7 @@ fn emit_e5_curves_and_edges(
                         tail: None,
                     },
                 },
-            )
-            .map_err(cadmpeg_core::CodecError::malformed)?,
+            ),
         );
     }
     for (&record_id, edge) in &topology.edges {

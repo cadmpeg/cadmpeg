@@ -16,7 +16,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
 use cadmpeg_ir::geometry::{
     NurbsCurve, Pcurve, PcurveGeometry, PcurveNurbs, ProceduralSurface,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    ProceduralSurfaceDefinition, RecordBounds, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
     SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId, VertexId};
@@ -463,7 +463,7 @@ fn procedural_pcurve_parameter_map(
         .procedural_surfaces
         .iter()
         .find(|procedural| procedural.id == *construction)?;
-    let Some([Some(carrier_start), Some(carrier_end), _, _]) = procedural.record_bounds else {
+    let Some([Some(carrier_start), Some(carrier_end), _, _]) = procedural.record_bounds() else {
         return None;
     };
     let carrier_interval = [carrier_start, carrier_end];
@@ -1401,14 +1401,14 @@ fn surface_parameter_bounds(
         let procedural = index.procedural_surface_for_surface(surface_id.as_str())?;
         let bounds = match procedural.definition() {
             ProceduralSurfaceDefinition::Ruled { .. } => procedural
-                .record_bounds
+                .record_bounds()
                 .map(|bounds| [bounds[0], bounds[1], Some(0.0), Some(1.0)]),
             ProceduralSurfaceDefinition::Extrusion(_) => procedural
-                .record_bounds
+                .record_bounds()
                 .map(|bounds| [bounds[0], bounds[1], Some(0.0), Some(1.0)]),
             ProceduralSurfaceDefinition::Revolution(definition_payload) => {
                 let angular_interval = definition_payload.angular_interval();
-                procedural.record_bounds.map(|bounds| {
+                procedural.record_bounds().map(|bounds| {
                     [
                         bounds[0],
                         bounds[1],
@@ -1417,7 +1417,7 @@ fn surface_parameter_bounds(
                     ]
                 })
             }
-            _ => procedural.record_bounds,
+            _ => procedural.record_bounds(),
         };
         if let Some(bounds) = bounds {
             return Some(bounds);
@@ -2393,9 +2393,19 @@ pub(super) fn project(
                     }
                 }),
             });
+            let record_bounds = match support_parameter_bounds
+                .map(RecordBounds::try_new)
+                .transpose()
+            {
+                Ok(record_bounds) => record_bounds,
+                Err(error) => {
+                    losses.push(entity_loss(entry, error.to_string()));
+                    continue;
+                }
+            };
             let _attached = candidate.model_mut().add_procedural_surface(
                 derived_surface_id.clone(),
-                match ProceduralSurface::new(
+                ProceduralSurface::new(
                     crate::ids::procedural_surface(
                         &crate::ids::Stem::directory(entry.sequence)
                             .part(crate::ids::Word::ImplicitOuter),
@@ -2406,14 +2416,8 @@ pub(super) fn project(
                         boundary_pcurves: implicit_boundary_pcurves,
                         implicit_outer: true,
                     },
-                    support_parameter_bounds,
-                ) {
-                    Ok(surface) => surface,
-                    Err(error) => {
-                        losses.push(entity_loss(entry, error.to_string()));
-                        continue;
-                    }
-                },
+                    record_bounds,
+                ),
             );
             derived_surface_id
         } else {

@@ -706,8 +706,7 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
                 .unwrap(),
             ),
             None,
-        )
-        .unwrap();
+        );
         (owner, procedural)
     };
     for ordinal in 0..2 {
@@ -840,8 +839,7 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
                 .unwrap(),
             ),
             None,
-        )
-        .unwrap();
+        );
         (owner, procedural)
     };
     for ordinal in 0..2 {
@@ -960,8 +958,7 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
                 .unwrap(),
             ),
             None,
-        )
-        .unwrap();
+        );
         (owner, procedural)
     };
     for (ordinal, distance) in [(0, -6.25), (1, 6.25)] {
@@ -1071,8 +1068,7 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
                 .unwrap(),
             ),
             None,
-        )
-        .unwrap();
+        );
         (owner, procedural)
     };
     let (first_owner, first) = make_blend(0, BlendRadiusLaw::Constant { signed_radius: 5.0 });
@@ -1240,8 +1236,7 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
             .unwrap(),
         ),
         None,
-    )
-    .unwrap();
+    );
     attach_test_body_procedural_surface(
         &mut ir,
         &BodyId::mint("nx:s4:body#3").expect("identity grammar"),

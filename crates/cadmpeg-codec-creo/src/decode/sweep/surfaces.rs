@@ -847,7 +847,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     None,
                     cadmpeg_ir::geometry::CacheContract::from_form(None),
                 )
-                .and_then(|admitted_payload| {
+                .map(|admitted_payload| {
                     ProceduralSurface::new(
                         procedural_id,
                         ProceduralSurfaceDefinition::Extrusion(admitted_payload),

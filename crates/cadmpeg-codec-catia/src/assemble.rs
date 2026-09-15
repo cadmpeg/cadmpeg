@@ -1112,8 +1112,7 @@ mod route_tests {
                         record: Some(record_id.clone()),
                         cache: None,
                     },
-                )
-                .unwrap(),
+                ),
             )
             .unwrap();
         let unknowns = [UnknownRecord::retained(
@@ -1168,8 +1167,7 @@ mod route_tests {
                         ),
                         cache: None,
                     },
-                )
-                .expect("valid ProceduralCurve fixture"),
+                ),
             )
             .expect("attach construction to its fixture carrier");
         ir.model
@@ -1188,8 +1186,7 @@ mod route_tests {
                         cache: None,
                     },
                     None,
-                )
-                .expect("valid ProceduralSurface fixture"),
+                ),
             )
             .expect("attach construction to its fixture carrier");
         ir.model
@@ -1206,7 +1203,7 @@ mod route_tests {
                         cache: None,
                     },
                 )
-                .and_then(|admitted_payload| {
+                .map(|admitted_payload| {
                     ProceduralSurface::new(
                         ProceduralSurfaceId::mint(
                             "catia:test:proceduralsurface#procedural-surface-1".to_string(),

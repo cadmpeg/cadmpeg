@@ -405,7 +405,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     false,
                     cadmpeg_ir::geometry::CacheContract::from_form(None),
                 )
-                .and_then(|admitted_payload| {
+                .map(|admitted_payload| {
                     ProceduralSurface::new(
                         procedural_id,
                         ProceduralSurfaceDefinition::Revolution(admitted_payload),

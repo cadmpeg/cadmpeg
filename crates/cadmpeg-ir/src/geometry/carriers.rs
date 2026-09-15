@@ -508,6 +508,18 @@ impl BsplineSurface {
         &self.v_knots
     }
 
+    /// Endpoints of the full U knot vector.
+    #[must_use]
+    pub fn full_u_knot_endpoints(&self) -> [f64; 2] {
+        [self.u_knots[0], self.u_knots[self.u_knots.len() - 1]]
+    }
+
+    /// Endpoints of the full V knot vector.
+    #[must_use]
+    pub fn full_v_knot_endpoints(&self) -> [f64; 2] {
+        [self.v_knots[0], self.v_knots[self.v_knots.len() - 1]]
+    }
+
     /// Rectangular control grid in first-parameter-major order.
     pub fn control_points(&self) -> &[Vec<Point3>] {
         &self.control_points
@@ -843,13 +855,13 @@ impl NurbsSurface {
     }
 
     /// Number of control points along u, the number of grid rows.
-    pub fn u_count(&self) -> u32 {
-        self.poles.u_count() as u32
+    pub fn u_count(&self) -> usize {
+        self.poles.u_count()
     }
 
     /// Number of control points along v, the length of every grid row.
-    pub fn v_count(&self) -> u32 {
-        self.poles.v_count() as u32
+    pub fn v_count(&self) -> usize {
+        self.poles.v_count()
     }
 
     /// Build a NURBS surface from a source's pole grid and weight grid.
@@ -893,12 +905,18 @@ impl NurbsSurface {
 
     /// Pole at grid position `(u, v)`.
     pub fn pole(&self, u: usize, v: usize) -> Option<Point3> {
-        self.poles.points().get(u)?.get(v).copied()
+        match &self.poles {
+            NurbsPoleGrid::Polynomial { rows } => rows.get(u)?.get(v).copied(),
+            NurbsPoleGrid::Rational { rows } => rows.get(u)?.get(v).map(|pole| pole.point),
+        }
     }
 
     /// Rational weight at grid position `(u, v)`, absent when non-rational.
     pub fn weight(&self, u: usize, v: usize) -> Option<f64> {
-        self.poles.weights()?.get(u)?.get(v).copied()
+        match &self.poles {
+            NurbsPoleGrid::Polynomial { .. } => None,
+            NurbsPoleGrid::Rational { rows } => rows.get(u)?.get(v).map(|pole| pole.weight.get()),
+        }
     }
 
     /// Atomically edit pole positions and preserve finite coordinates.
@@ -1056,6 +1074,12 @@ impl NurbsCurve {
     /// Full knot vector.
     pub fn knots(&self) -> &[f64] {
         &self.knots
+    }
+
+    /// Endpoints of the full knot vector.
+    #[must_use]
+    pub fn full_knot_endpoints(&self) -> [f64; 2] {
+        [self.knots[0], self.knots[self.knots.len() - 1]]
     }
 
     /// Atomically edit knot values and preserve their invariants.
@@ -3691,6 +3715,12 @@ impl PcurveNurbs {
     /// Full knot vector.
     pub fn knots(&self) -> &[f64] {
         &self.knots
+    }
+
+    /// Endpoints of the full knot vector.
+    #[must_use]
+    pub fn full_knot_endpoints(&self) -> [f64; 2] {
+        [self.knots[0], self.knots[self.knots.len() - 1]]
     }
 
     /// Atomically edit knot values and preserve their invariants.

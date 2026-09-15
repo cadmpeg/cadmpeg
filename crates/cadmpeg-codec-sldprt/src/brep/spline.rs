@@ -641,8 +641,8 @@ pub(crate) fn patch_nurbs_surface(
     let dimension = if old.weights().is_some() { 4 } else { 3 };
     if descriptor.u_degree != old.u_degree()
         || descriptor.v_degree != old.v_degree()
-        || descriptor.u_count != old.u_count() as usize
-        || descriptor.v_count != old.v_count() as usize
+        || descriptor.u_count != old.u_count()
+        || descriptor.v_count != old.v_count()
         || descriptor.dimension != dimension
         || descriptor.u_periodic != old.u_periodic()
         || descriptor.v_periodic != old.v_periodic()

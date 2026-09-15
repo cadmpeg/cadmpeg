@@ -26,7 +26,7 @@ fn subset(
 #[test]
 fn surface_payload_admission_enforces_directed_nonzero_subset_ranges() {
     let definition = subset([[2.0, -1.0], [0.0, 1.0]]).unwrap();
-    let surface = ProceduralSurface::new(id(), definition.clone(), None).unwrap();
+    let surface = ProceduralSurface::new(id(), definition.clone(), None);
     let wire = serde_json::to_value(&definition).unwrap();
     assert_eq!(
         wire["parameter_ranges"],
@@ -80,7 +80,8 @@ fn surface_law_admission_preserves_the_depth_boundary() {
         )))
         .map(ProceduralSurfaceDefinition::Law)
     };
-    assert!(ProceduralSurface::new(id(), law(expression.clone()).unwrap(), None).is_ok());
+    let _surface: ProceduralSurface =
+        ProceduralSurface::new(id(), law(expression.clone()).unwrap(), None);
     expression = LawExpression::Algebraic {
         operator: "+".into(),
         operands: vec![expression],
@@ -94,15 +95,14 @@ fn surface_law_admission_preserves_the_depth_boundary() {
         )
         .is_err());
     }
-    assert!(ProceduralSurface::new(
+    let _surface: ProceduralSurface = ProceduralSurface::new(
         id(),
         law(LawExpression::Text {
-            value: cadmpeg_core::nonblank_literal!("x ")
+            value: cadmpeg_core::nonblank_literal!("x "),
         })
         .unwrap(),
-        None
-    )
-    .is_ok());
+        None,
+    );
 }
 
 #[test]
@@ -117,7 +117,7 @@ fn linear_sweep_admission_requires_a_finite_nondegenerate_direction() {
             .map(ProceduralSurfaceDefinition::LinearSweep)
     };
     let valid = sweep(Vector3::new(0.0, 0.0, 2.0)).unwrap();
-    let surface = ProceduralSurface::new(id(), valid.clone(), None).unwrap();
+    let surface = ProceduralSurface::new(id(), valid.clone(), None);
     let wire = serde_json::to_value(&surface).unwrap();
     assert_eq!(
         wire["definition"]["direction"],
@@ -149,7 +149,7 @@ fn rejected_surface_definition_changes_preserve_serialized_owner() {
     definition
         .set_legacy_cache(Some(crate::geometry::LegacyCache::try_new(0.5).unwrap()))
         .unwrap();
-    let surface = ProceduralSurface::new(id(), definition, None).unwrap();
+    let surface = ProceduralSurface::new(id(), definition, None);
     let before = serde_json::to_vec(&surface).unwrap();
     for tolerance in [-1.0, f64::NAN, f64::INFINITY] {
         let mut replacement = subset([[2.0, 3.0], [4.0, 5.0]]).unwrap();

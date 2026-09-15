@@ -1284,7 +1284,7 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
         else {
             panic!("expected NURBS surface");
         };
-        let target = surface.v_count() as usize + 1;
+        let target = surface.v_count() + 1;
         let mut pole_index = 0usize;
         surface
             .edit_control_points(|pole| {

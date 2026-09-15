@@ -5052,7 +5052,7 @@ pub(crate) fn append_text_curve(
                     true,
                     None,
                 )
-                .and_then(|admitted_payload| {
+                .map(|admitted_payload| {
                     ProceduralCurve::new(
                         ProceduralCurveId::mint(format!("{id}:construction"))
                             .expect("identity grammar"),
@@ -5081,7 +5081,7 @@ pub(crate) fn append_text_curve(
                     },
                     None,
                 )
-                .and_then(|admitted_payload| {
+                .map(|admitted_payload| {
                     ProceduralCurve::new(
                         ProceduralCurveId::mint(format!("{id}:construction"))
                             .expect("identity grammar"),
@@ -5242,7 +5242,7 @@ pub(crate) fn append_text_surface(
                     None,
                     cadmpeg_ir::geometry::CacheContract::from_form(None),
                 )
-                .and_then(|admitted_payload| {
+                .map(|admitted_payload| {
                     ProceduralSurface::new(
                         ProceduralSurfaceId::mint(format!("{id}:construction"))
                             .expect("identity grammar"),
@@ -5272,7 +5272,7 @@ pub(crate) fn append_text_surface(
                     true,
                     cadmpeg_ir::geometry::CacheContract::from_form(None),
                 )
-                .and_then(|admitted_payload| {
+                .map(|admitted_payload| {
                     ProceduralSurface::new(
                         ProceduralSurfaceId::mint(format!("{id}:construction"))
                             .expect("identity grammar"),
@@ -5314,7 +5314,7 @@ pub(crate) fn append_text_surface(
                     None,
                     None,
                 )
-                .and_then(|admitted_payload| {
+                .map(|admitted_payload| {
                     ProceduralSurface::new(
                         ProceduralSurfaceId::mint(format!("{id}:construction"))
                             .expect("identity grammar"),
@@ -5348,7 +5348,7 @@ pub(crate) fn append_text_surface(
                         cache: None,
                     },
                 )
-                .and_then(|admitted_payload| {
+                .map(|admitted_payload| {
                     ProceduralSurface::new(
                         ProceduralSurfaceId::mint(format!("{id}:construction"))
                             .expect("identity grammar"),

@@ -9,8 +9,8 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide,
     NurbsCurve, NurbsSurface, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, SupportPcurve,
-    Surface, SurfaceGeometry,
+    ProceduralSurfaceDefinition, RecordBounds, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    SupportPcurve, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
@@ -680,7 +680,7 @@ pub(super) fn emit_surfaces(
                         false,
                         cadmpeg_ir::geometry::CacheContract::from_form(None),
                     )
-                    .and_then(|admitted_payload| {
+                    .map(|admitted_payload| {
                         ProceduralSurface::new(
                             procedural_id,
                             ProceduralSurfaceDefinition::Revolution(admitted_payload),
@@ -711,8 +711,7 @@ pub(super) fn emit_surfaces(
                 );
                 let _attached = ir.model.add_procedural_surface(
                     id,
-                    ProceduralSurface::new(procedural_id, definition, None)
-                        .map_err(cadmpeg_core::CodecError::malformed)?,
+                    ProceduralSurface::new(procedural_id, definition, None),
                 );
             }
             Some(SurfaceProcedure::RollingBall { .. }) | None => {}
@@ -742,6 +741,7 @@ pub(super) fn emit_surfaces(
             "30_offset_surface",
             Exactness::Derived,
         );
+        let record_bounds = parameter_record_bounds(offset.parameter_bounds)?;
         let _attached = ir.model.add_procedural_surface(
             surface.clone(),
             cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
@@ -755,11 +755,11 @@ pub(super) fn emit_surfaces(
                     cache: None,
                 },
             )
-            .and_then(|admitted_payload| {
+            .map(|admitted_payload| {
                 ProceduralSurface::new(
                     procedural_id,
                     ProceduralSurfaceDefinition::Offset(admitted_payload),
-                    Some(parameter_record_bounds(offset.parameter_bounds)),
+                    Some(record_bounds),
                 )
             })
             .map_err(cadmpeg_core::CodecError::malformed)?,
@@ -768,13 +768,16 @@ pub(super) fn emit_surfaces(
     Ok(surface_ids)
 }
 
-fn parameter_record_bounds(bounds: [[f64; 2]; 2]) -> [Option<f64>; 4] {
-    [
+fn parameter_record_bounds(
+    bounds: [[f64; 2]; 2],
+) -> Result<RecordBounds, cadmpeg_core::CodecError> {
+    RecordBounds::try_new([
         Some(bounds[0][0]),
         Some(bounds[0][1]),
         Some(bounds[1][0]),
         Some(bounds[1][1]),
-    ]
+    ])
+    .map_err(cadmpeg_core::CodecError::malformed)
 }
 
 fn emit_extrusion_procedure(
@@ -841,8 +844,7 @@ fn emit_extrusion_procedure(
                             .map_err(cadmpeg_core::CodecError::malformed)?,
                     ),
                 },
-            )
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+            );
 
             let _attached = ir
                 .model
@@ -922,7 +924,7 @@ fn emit_extrusion_procedure(
                         parameter_range: source_parameter_range,
                     }),
                 )
-                .and_then(|admitted_payload| {
+                .map(|admitted_payload| {
                     ProceduralCurve::new(
                         procedure_id,
                         ProceduralCurveDefinition::Offset(admitted_payload),
@@ -943,6 +945,7 @@ fn emit_extrusion_procedure(
         "2c_extrusion_surface",
         Exactness::ByteExact,
     );
+    let record_bounds = parameter_record_bounds(extrusion.parameter_bounds)?;
     let _attached = ir.model.add_procedural_surface(
         surface_id,
         cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
@@ -952,11 +955,11 @@ fn emit_extrusion_procedure(
             None,
             cadmpeg_ir::geometry::CacheContract::from_form(None),
         )
-        .and_then(|admitted_payload| {
+        .map(|admitted_payload| {
             ProceduralSurface::new(
                 procedure_id,
                 ProceduralSurfaceDefinition::Extrusion(admitted_payload),
-                Some(parameter_record_bounds(extrusion.parameter_bounds)),
+                Some(record_bounds),
             )
         })
         .map_err(cadmpeg_core::CodecError::malformed)?,
@@ -1101,7 +1104,7 @@ mod tests {
             _ => false,
         });
         assert_eq!(
-            ir.model.procedural_surfaces[0].record_bounds,
+            ir.model.procedural_surfaces[0].record_bounds(),
             Some([Some(-2.0), Some(3.0), Some(0.0), Some(1.0)])
         );
     }

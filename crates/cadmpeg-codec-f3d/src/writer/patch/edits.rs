@@ -3343,13 +3343,13 @@ pub(crate) fn validate_surface_edits(
                         before.u_knots(),
                         after.u_degree(),
                         after.u_knots(),
-                        usize::try_from(after.u_count()).unwrap_or(usize::MAX),
+                        after.u_count(),
                     )
                     && valid_edited_nurbs_direction(
                         before.v_knots(),
                         after.v_degree(),
                         after.v_knots(),
-                        usize::try_from(after.v_count()).unwrap_or(usize::MAX),
+                        after.v_count(),
                     )
                     && before.u_count() == after.u_count()
                     && before.v_count() == after.v_count()
