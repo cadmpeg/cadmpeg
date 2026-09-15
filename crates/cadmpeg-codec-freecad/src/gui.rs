@@ -90,7 +90,7 @@ struct CameraSettings {
 /// appearance key. The persisted display name remains separate so names such
 /// as `A B`, `#`, and the empty string remain legal source values.
 fn provider_identity_key(name: &str) -> IdentityKey {
-    crate::native::encoded_key(name)
+    IdentityKey::encode_segment(name)
 }
 
 fn provider_native_id(key: &IdentityKey) -> String {

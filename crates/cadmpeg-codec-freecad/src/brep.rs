@@ -497,24 +497,24 @@ impl ShapeSet {
         triangulation: usize,
         label: &str,
     ) -> Result<(), String> {
-        validate_one_based(polygon, self.polygons_on_triangulations.len(), label)?;
-        validate_one_based(triangulation, self.triangulations.len(), label)?;
-        let polygon_record = self
-            .polygons_on_triangulations
-            .get(
-                polygon
-                    .checked_sub(1)
-                    .ok_or_else(|| format!("{label} index is zero"))?,
-            )
-            .ok_or_else(|| format!("{label} index {polygon} is unavailable"))?;
-        let node_count = self
-            .triangulations
-            .get(
-                triangulation
-                    .checked_sub(1)
-                    .ok_or_else(|| format!("{label} index is zero"))?,
-            )
-            .ok_or_else(|| format!("{label} index {triangulation} is unavailable"))?
+        let polygon_record = polygon
+            .checked_sub(1)
+            .and_then(|index| self.polygons_on_triangulations.get(index))
+            .ok_or_else(|| {
+                format!(
+                    "{label} polygon index {polygon} is out of range 1..={}",
+                    self.polygons_on_triangulations.len()
+                )
+            })?;
+        let node_count = triangulation
+            .checked_sub(1)
+            .and_then(|index| self.triangulations.get(index))
+            .ok_or_else(|| {
+                format!(
+                    "{label} triangulation index {triangulation} is out of range 1..={}",
+                    self.triangulations.len()
+                )
+            })?
             .nodes()
             .len();
         for node in &polygon_record.nodes {

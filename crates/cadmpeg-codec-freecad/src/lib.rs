@@ -856,7 +856,7 @@ impl CodecBackend for FcstdCodec {
                 [UnknownRecord::retained(
                     UnknownId::compose(
                         &cadmpeg_ir::identity_namespace!("fcstd", "native", "thumbnail"),
-                        native::encoded_key(name),
+                        cadmpeg_ir::ids::IdentityKey::encode_segment(name),
                     ),
                     0,
                     bytes.to_vec(),
