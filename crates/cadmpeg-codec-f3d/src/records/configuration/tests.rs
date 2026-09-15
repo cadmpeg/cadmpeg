@@ -11,7 +11,14 @@ fn wire(kind: &str, order: &[&str], payload: Value) -> Value {
     };
     Value::Object(
         [
-            ("id".into(), crate::ids::configuration_entry_id(name).into()),
+            (
+                "id".into(),
+                crate::ids::configuration_entry_id(
+                    name,
+                    &cadmpeg_ir::identity_component!("configuration"),
+                )
+                .into(),
+            ),
             ("entry_name".into(), name.into()),
             ("kind".into(), kind.into()),
             ("variant_order".into(), json!(order)),

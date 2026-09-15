@@ -265,9 +265,13 @@ pub(crate) fn neutral_assembly_joint_id(
 }
 
 /// The Design configuration record key for the archive entry `entry_name`.
-pub(crate) fn configuration_entry_id(entry_name: &str) -> String {
+pub(crate) fn configuration_entry_id(
+    entry_name: &str,
+    scope: &cadmpeg_ir::ids::IdentityComponent,
+) -> String {
     format!(
-        "f3d:configuration:entry#{}",
+        "f3d:{}:entry#{}",
+        scope.as_str(),
         identity_key_component(entry_name)
     )
 }

@@ -6,9 +6,35 @@ use crate::records::configuration::{
 use crate::test_support::native_test::reject_changed_id;
 
 #[test]
+fn configuration_identity_scope_is_independent_of_its_source_entry_name() {
+    let name = "Design/Config #1.dsgcfg";
+    let valid = serde_json::json!({
+        "id": "f3d:xref/component-0/configuration:entry#Design/Config%20%231.dsgcfg",
+        "entry_name": name, "kind": "table", "variant_order": [], "payload": {}
+    });
+    let record: DesignConfiguration = serde_json::from_value(valid.clone()).unwrap();
+    assert_eq!(serde_json::to_value(record).unwrap(), valid);
+    for id in [
+        "f3d::entry#Design/Config%20%231.dsgcfg",
+        "f3d:scope with space:entry#Design/Config%20%231.dsgcfg",
+        "f3d:scope:extra:entry#Design/Config%20%231.dsgcfg",
+        "other:configuration:entry#Design/Config%20%231.dsgcfg",
+        "f3d:configuration:other#Design/Config%20%231.dsgcfg",
+        "f3d:xref/component-0/configuration:entry#Other.dsgcfg",
+    ] {
+        let mut invalid = valid.clone();
+        invalid["id"] = id.into();
+        assert!(
+            serde_json::from_value::<DesignConfiguration>(invalid).is_err(),
+            "{id}"
+        );
+    }
+}
+
+#[test]
 fn configuration_admission_checks_wire_and_variant_order() {
     use crate::records::configuration::DesignConfiguration;
-    let wire = serde_json::json!({"id":crate::ids::configuration_entry_id("table.dsgcfg"), "entry_name":"table.dsgcfg", "kind":"table",
+    let wire = serde_json::json!({"id":crate::ids::configuration_entry_id("table.dsgcfg", &cadmpeg_ir::identity_component!("configuration")), "entry_name":"table.dsgcfg", "kind":"table",
         "variant_order":["first","second"], "payload":{"configurations":{"first":{},"second":{}}}});
     let configuration: DesignConfiguration = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(&configuration).unwrap(), wire);
@@ -77,7 +103,13 @@ fn configuration_kind_requires_its_exact_entry_extension() {
         };
         let record = admit(valid).unwrap();
         let wire = serde_json::to_value(&record).unwrap();
-        assert_eq!(wire["id"], crate::ids::configuration_entry_id(valid));
+        assert_eq!(
+            wire["id"],
+            crate::ids::configuration_entry_id(
+                valid,
+                &cadmpeg_ir::identity_component!("configuration")
+            )
+        );
         assert_eq!(
             serde_json::to_value(
                 serde_json::from_value::<DesignConfiguration>(wire.clone()).unwrap()
@@ -90,7 +122,11 @@ fn configuration_kind_requires_its_exact_entry_extension() {
             assert!(error.contains("entry_name"), "{error}");
             let mut malformed = wire.clone();
             malformed["entry_name"] = name.into();
-            malformed["id"] = crate::ids::configuration_entry_id(name).into();
+            malformed["id"] = crate::ids::configuration_entry_id(
+                name,
+                &cadmpeg_ir::identity_component!("configuration"),
+            )
+            .into();
             assert!(serde_json::from_value::<DesignConfiguration>(malformed).is_err());
         }
     }
@@ -100,7 +136,10 @@ fn configuration_kind_requires_its_exact_entry_extension() {
 fn configuration_id_binds_the_escaped_entry_name() {
     let name = "Design/Config #1.dsgcfg";
     let wire = DesignConfigurationWire {
-        id: crate::ids::configuration_entry_id(name),
+        id: crate::ids::configuration_entry_id(
+            name,
+            &cadmpeg_ir::identity_component!("configuration"),
+        ),
         entry_name: name.into(),
         kind: DesignConfigurationKind::Table,
         variant_order: Vec::new(),
