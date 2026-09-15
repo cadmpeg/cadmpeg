@@ -428,13 +428,16 @@ pub(crate) fn try_decode_freeform_surfaces(
     let typed_loop_records =
         crate::families::b5::graph::typed_loop_records_from_records(&census_object_records);
     let typed_loop_metadata_counts = (!typed_loop_records.is_empty()).then(|| {
-        let resolved_count = b5_graph.as_ref().map_or(0, |graph| graph.loops.len());
         (
             loop_metadata_counts(typed_loop_records.values()),
             typed_loop_records
-                .len()
-                .checked_sub(resolved_count)
-                .expect("resolved loops are a subset of typed loop records"),
+                .keys()
+                .filter(|id| {
+                    b5_graph
+                        .as_ref()
+                        .is_none_or(|graph| !graph.loops.contains_key(id))
+                })
+                .count(),
         )
     });
     let class_21_suffix_scalar_count = b5_graph.as_ref().map(|graph| {
@@ -591,10 +594,7 @@ pub(crate) fn try_decode_freeform_surfaces(
             &cadmpeg_ir::identity_namespace!("catia", "b2", "nurbs-curve"),
             ir.model.curves.len(),
         );
-        let parameter_range = [
-            *curve.geometry.knots().first().expect("parsed knot vector"),
-            *curve.geometry.knots().last().expect("parsed knot vector"),
-        ];
+        let parameter_range = curve.geometry.full_knot_endpoints();
         annotate(
             &mut annotations,
             &id,
@@ -618,10 +618,7 @@ pub(crate) fn try_decode_freeform_surfaces(
             &cadmpeg_ir::identity_namespace!("catia", "a5", "nurbs-curve"),
             ir.model.curves.len(),
         );
-        let parameter_range = [
-            *curve.geometry.knots().first().expect("parsed knot vector"),
-            *curve.geometry.knots().last().expect("parsed knot vector"),
-        ];
+        let parameter_range = curve.geometry.full_knot_endpoints();
         annotate(
             &mut annotations,
             &id,

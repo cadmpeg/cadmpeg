@@ -1016,7 +1016,8 @@ struct E5OccurrenceIntersectionSide {
 
 /// Boundary lowering plan built by [`plan_e5_boundary`].
 #[allow(clippy::struct_field_names)]
-struct E5BoundaryPlan {
+struct E5BoundaryPlan<'a> {
+    faces: Vec<E5FacePlan<'a>>,
     pcurve_plan: BTreeMap<u32, (PcurveGeometry, [f64; 2])>,
     /// Whether each native pcurve occurrence runs opposite to its edge's
     /// stored endpoint order.
@@ -1024,6 +1025,51 @@ struct E5BoundaryPlan {
     edge_curve_plan: BTreeMap<u32, (CurveGeometry, [f64; 2])>,
     surface_curve_plan: BTreeMap<u32, (SurfaceId, PcurveGeometry, [f64; 2])>,
     intersection_plan: BTreeMap<u32, IntcurveSupportContext>,
+}
+
+struct E5FacePlan<'a> {
+    source: &'a crate::families::e5::graph::E5Face,
+    loops: Vec<E5LoopPlan<'a>>,
+}
+
+struct E5LoopPlan<'a> {
+    source: &'a crate::families::e5::graph::E5Loop,
+    members: Vec<E5MemberPlan<'a>>,
+}
+
+struct E5MemberPlan<'a> {
+    source: &'a crate::families::e5::graph::E5LoopMember,
+    orientation: &'a crate::families::e5::graph::E5OrientedMember,
+    id: CoedgeId,
+}
+
+impl<'a> E5LoopPlan<'a> {
+    fn admit(source: &'a crate::families::e5::graph::E5Loop) -> Option<Self> {
+        let oriented = source.resolved_members()?;
+        if source.members.is_empty() || oriented.len() != source.members.len() {
+            return None;
+        }
+        let mut seen = HashSet::new();
+        let members = oriented
+            .iter()
+            .map(|orientation| {
+                let member = source.members.get(orientation.serialized_index)?;
+                if !seen.insert(orientation.serialized_index) {
+                    return None;
+                }
+                Some(E5MemberPlan {
+                    source: member,
+                    orientation,
+                    id: CoedgeId::compose(
+                        &cadmpeg_ir::identity_namespace!("catia", "e5", "coedge"),
+                        cadmpeg_ir::ids::IdentityKey::from(source.record_id)
+                            .dash(orientation.serialized_index),
+                    ),
+                })
+            })
+            .collect::<Option<_>>()?;
+        Some(Self { source, members })
+    }
 }
 
 /// Body/region/shell ownership resolved by [`resolve_e5_ownership`].
@@ -1089,21 +1135,13 @@ pub(crate) fn transfer_e5_topology(
     else {
         return false;
     };
-    let E5BoundaryPlan {
-        pcurve_plan,
-        pcurve_use_reversed,
-        edge_curve_plan,
-        surface_curve_plan,
-        intersection_plan,
-    } = boundary;
-
     prune_e5_unused_surfaces(
         ir,
         annotations,
         topology,
         &surface_for_ref,
-        &intersection_plan,
-        &surface_curve_plan,
+        &boundary.intersection_plan,
+        &boundary.surface_curve_plan,
     );
 
     let Some(e5_ownership) = resolve_e5_ownership(topology) else {
@@ -1130,15 +1168,15 @@ pub(crate) fn transfer_e5_topology(
         topology,
         &vertex_for_ref,
         &edge_ids,
-        &edge_curve_plan,
-        &intersection_plan,
-        &surface_curve_plan,
+        &boundary.edge_curve_plan,
+        &boundary.intersection_plan,
+        &boundary.surface_curve_plan,
     )
     .is_err()
     {
         return false;
     }
-    if emit_e5_pcurves(ir, annotations, &pcurve_plan).is_err() {
+    if emit_e5_pcurves(ir, annotations, &boundary.pcurve_plan).is_err() {
         return false;
     }
     if emit_e5_bodies(ir, annotations, &bodies).is_err() {
@@ -1152,8 +1190,7 @@ pub(crate) fn transfer_e5_topology(
         &face_shell,
         &edge_ids,
         &vertex_for_ref,
-        &pcurve_plan,
-        &pcurve_use_reversed,
+        &boundary,
     ) {
         return false;
     }
@@ -1163,12 +1200,26 @@ pub(crate) fn transfer_e5_topology(
 /// Lowers every face loop to boundary curves, pcurves, and intersection contexts,
 /// or returns `None` when any binding fails admission.
 #[allow(clippy::question_mark)]
-fn plan_e5_boundary(
-    topology: &crate::families::e5::graph::E5Topology,
+fn plan_e5_boundary<'a>(
+    topology: &'a crate::families::e5::graph::E5Topology,
     surface_for_ref: &HashMap<u32, (SurfaceId, &crate::families::e5::records::E5Surface)>,
     point_for_ref: &HashMap<u32, Point3>,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<E5BoundaryPlan> {
+) -> Option<E5BoundaryPlan<'a>> {
+    let faces = topology
+        .faces
+        .iter()
+        .map(|face| {
+            Some(E5FacePlan {
+                source: face,
+                loops: face
+                    .loops
+                    .iter()
+                    .map(E5LoopPlan::admit)
+                    .collect::<Option<_>>()?,
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
     let mut pcurve_plan = BTreeMap::<u32, (PcurveGeometry, [f64; 2])>::new();
     let mut pcurve_use_reversed = BTreeMap::<(u32, usize), bool>::new();
     let mut edge_curve_plan = BTreeMap::<u32, (CurveGeometry, [f64; 2])>::new();
@@ -1180,9 +1231,6 @@ fn plan_e5_boundary(
             return None;
         };
         for loop_ in &face.loops {
-            if loop_.members.is_empty() || loop_.resolved_members().is_none() {
-                return None;
-            }
             for (member_index, member) in loop_.members.iter().enumerate() {
                 let pcurve_ref = member.pcurve;
                 let edge_ref = member.edge_use;
@@ -1497,6 +1545,7 @@ fn plan_e5_boundary(
         ));
     }
     Some(E5BoundaryPlan {
+        faces,
         pcurve_plan,
         pcurve_use_reversed,
         edge_curve_plan,
@@ -1898,11 +1947,11 @@ fn emit_e5_faces_loops_coedges(
     face_shell: &HashMap<u32, ShellId>,
     edge_ids: &HashMap<u32, EdgeId>,
     vertex_for_ref: &HashMap<u32, VertexId>,
-    pcurve_plan: &BTreeMap<u32, (PcurveGeometry, [f64; 2])>,
-    pcurve_use_reversed: &BTreeMap<(u32, usize), bool>,
+    boundary: &E5BoundaryPlan<'_>,
 ) -> bool {
     let mut coedges_by_edge = HashMap::<u32, Vec<usize>>::new();
-    for face in &topology.faces {
+    for face_plan in &boundary.faces {
+        let face = face_plan.source;
         let face_id = FaceId::compose(
             &cadmpeg_ir::identity_namespace!("catia", "e5", "face"),
             face.record_id,
@@ -1951,39 +2000,28 @@ fn emit_e5_faces_loops_coedges(
             tolerance: None,
         });
 
-        for loop_ in &face.loops {
+        for loop_plan in &face_plan.loops {
+            let loop_ = loop_plan.source;
             let loop_id = LoopId::compose(
                 &cadmpeg_ir::identity_namespace!("catia", "e5", "loop"),
                 loop_.record_id,
             );
-            let coedge_ids_by_member: Vec<CoedgeId> = (0..loop_.members.len())
-                .map(|index| {
-                    CoedgeId::compose(
-                        &cadmpeg_ir::identity_namespace!("catia", "e5", "coedge"),
-                        cadmpeg_ir::ids::IdentityKey::from(loop_.record_id).dash(index),
-                    )
-                })
-                .collect();
-            let members = loop_
-                .resolved_members()
-                .expect("E5 loop membership passed topology admission");
-            let coedge_ids: Vec<CoedgeId> = members
-                .iter()
-                .map(|member| coedge_ids_by_member[member.serialized_index].clone())
-                .collect();
+            let members = &loop_plan.members;
+            let coedge_ids: Vec<CoedgeId> =
+                members.iter().map(|member| member.id.clone()).collect();
             let Some(vertex_uses) = members
                 .iter()
                 .map(|member| {
-                    let edge_ref = loop_.members[member.serialized_index].edge_use;
+                    let edge_ref = member.source.edge_use;
                     let edge = topology.edges.get(&edge_ref)?;
-                    let endpoint_ref = if member.reversed {
+                    let endpoint_ref = if member.orientation.reversed {
                         edge.start_vertex
                     } else {
                         edge.end_vertex
                     };
                     Some(AnchoredVertexUse {
                         vertex: vertex_for_ref.get(&endpoint_ref)?.clone(),
-                        after: coedge_ids_by_member[member.serialized_index].clone(),
+                        after: member.id.clone(),
                         pcurves: Vec::new(),
                     })
                 })
@@ -2017,19 +2055,20 @@ fn emit_e5_faces_loops_coedges(
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
             });
             for member in members {
-                let index = member.serialized_index;
-                let edge_ref = loop_.members[index].edge_use;
-                let pcurve_ref = loop_.members[index].pcurve;
-                let Some(&pcurve_reversed) = pcurve_use_reversed.get(&(loop_.record_id, index))
+                let index = member.orientation.serialized_index;
+                let edge_ref = member.source.edge_use;
+                let pcurve_ref = member.source.pcurve;
+                let Some(&pcurve_reversed) =
+                    boundary.pcurve_use_reversed.get(&(loop_.record_id, index))
                 else {
                     return false;
                 };
-                let Some((_, range)) = pcurve_plan.get(&pcurve_ref) else {
+                let Some((_, range)) = boundary.pcurve_plan.get(&pcurve_ref) else {
                     return false;
                 };
                 let pcurve_parameter_range =
-                    (member.reversed ^ pcurve_reversed).then_some([range[1], range[0]]);
-                let id = coedge_ids_by_member[index].clone();
+                    (member.orientation.reversed ^ pcurve_reversed).then_some([range[1], range[0]]);
+                let id = member.id.clone();
                 annotate(
                     annotations,
                     &id,
@@ -2053,7 +2092,7 @@ fn emit_e5_faces_loops_coedges(
                     owner_loop: loop_id.clone(),
                     edge: edge_ids[&edge_ref].clone(),
                     radial_next: id,
-                    sense: if member.reversed {
+                    sense: if member.orientation.reversed {
                         Sense::Reversed
                     } else {
                         Sense::Forward
@@ -3010,6 +3049,7 @@ fn e5_ownership_plan(
 
 #[cfg(test)]
 mod route_tests {
+    mod loop_admission;
     mod occurrence_ranges;
     mod plane_frames;
 

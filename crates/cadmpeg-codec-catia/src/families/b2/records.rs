@@ -2308,10 +2308,22 @@ pub(crate) fn b2_embedded_cylinders_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<B2EmbeddedCylinder> {
+    b2_cylinder_groups_from_records(data, records)
+        .into_iter()
+        .flat_map(|(_, cylinders)| cylinders)
+        .collect()
+}
+
+pub(crate) fn b2_cylinder_groups_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<(B2Group, Vec<B2EmbeddedCylinder>)> {
     let groups = b2_groups_from_records(data, records);
-    let mut out = Vec::new();
+    let mut grouped = Vec::with_capacity(groups.len());
     for (index, group) in groups.iter().enumerate() {
+        let mut out = Vec::new();
         if group.group_type != 3 {
+            grouped.push((group.clone(), out));
             continue;
         }
         let wrapper_pos = group.pos;
@@ -2357,8 +2369,9 @@ pub(crate) fn b2_embedded_cylinders_from_records(
                 cylinder,
             });
         }
+        grouped.push((group.clone(), out));
     }
-    out
+    grouped
 }
 
 fn b2_construction_offset_supports_from_records(
