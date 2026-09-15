@@ -222,6 +222,32 @@ class PatternFilters(unittest.TestCase):
         text = 'CodecError::Malformed(format!(\n    "bad {}", x\n))\n'
         self.assertEqual(len(policy.MALFORMED_FORMAT.findall(text)), 1)
 
+    def test_loss_note_qualified_returns_are_types(self) -> None:
+        for name in ["LossNote", "cadmpeg_ir::LossNote", "::cadmpeg_ir::report::LossNote",
+                     "r#type::LossNote", "données::LossNote", "r#LossNote"]:
+            for gap in [" ", "\n    ", " /* return type */ "]:
+                with self.subTest(name=name, gap=gap):
+                    text = f"fn make() ->{gap}{name}\n{{ code.note(message) }}"
+                    self.assertEqual(policy.scan_patterns(policy.ROOT / "source.rs", text), [])
+
+    def test_loss_note_type_occurrence_does_not_hide_inline_literals(self) -> None:
+        for text, expected in [
+            ("fn make() -> LossNote { LossNote { message } }", [1]),
+            ("fn make() -> cadmpeg_ir::LossNote { cadmpeg_ir::LossNote { message } }", [1]),
+            ("struct LossNote {} fn make() { LossNote { message }; LossNote { message }; }", [1, 1]),
+            ("impl LossNote { fn make() -> Self { LossNote { message } } }", [1]),
+            ("impl Trait for cadmpeg_ir::LossNote { fn make() { LossNote { message }; } }", [1]),
+            ("struct r#LossNote {} impl r#LossNote {} impl Trait for r#LossNote {}", []),
+            ("fn make() ->\n LossNote {\n LossNote { message }\n}", [3]),
+        ]:
+            with self.subTest(text=text):
+                hits = policy.scan_patterns(policy.ROOT / "source.rs", text)
+                self.assertEqual([(hit.rule, hit.line) for hit in hits], [("loss_note_literal", line) for line in expected])
+
+    def test_loss_note_rule_matches_the_complete_type_name(self) -> None:
+        text = "fn make() { OtherLossNote { message }; LossNoteSuffix { message }; }"
+        self.assertEqual(policy.scan_patterns(policy.ROOT / "source.rs", text), [])
+
     def test_production_filter_rejects_test_paths(self) -> None:
         self.assertFalse(policy.is_production_rs(Path("crates/c/src/foo_test.rs")))
         self.assertFalse(policy.is_production_rs(Path("crates/c/tests/foo.rs")))
