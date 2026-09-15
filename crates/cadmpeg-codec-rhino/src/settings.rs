@@ -1543,12 +1543,47 @@ pub(crate) fn parse_rendering_attributes(
             ));
         }
         material_payload.skip(16 + 16)?;
-        let obsolete_mapping_count = material_payload.i32()?;
-        if obsolete_mapping_count != 0 {
-            return Err(FramingError::structural(
+        let obsolete_mapping_count = crate::chunks::checked_count_bytes(
+            material_payload.i32()?,
+            1,
+            material_payload.remaining(),
+            MAX_ARRAY_ITEMS,
+            material_payload.position(),
+        )?;
+        for _ in 0..obsolete_mapping_count {
+            let mapping = crate::chunks::chunk_at(
+                data,
                 material_payload.position(),
-                "rendering material mapping array is not empty",
-            ));
+                material_payload.end(),
+                archive,
+                false,
+            )?;
+            if mapping.typecode != ANONYMOUS || mapping.short() {
+                return Err(FramingError::structural(
+                    material_payload.position(),
+                    "rendering material mapping child must be anonymous",
+                ));
+            }
+            if let Some(warning) = checksum_warning(data, &mapping)? {
+                warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, warning);
+            }
+            let mut mapping_payload =
+                BoundedReader::new(data, mapping.body().start, mapping.body().end)?;
+            let mapping_major = mapping_payload.i32()?;
+            let mapping_minor = mapping_payload.i32()?;
+            if mapping_major != 1 {
+                return Err(FramingError::structural(
+                    mapping_payload.position() - 8,
+                    "unsupported obsolete rendering mapping version",
+                ));
+            }
+            mapping_payload.i32()?;
+            uuid(&mut mapping_payload)?;
+            if mapping_minor >= 1 {
+                xform(&mut mapping_payload)?;
+            }
+            mapping_payload.skip_remaining()?;
+            material_payload.skip(mapping.next_offset() - material_payload.position())?;
         }
         if material_minor >= 1 {
             material_payload.skip(16 + 4)?;
@@ -1703,13 +1738,7 @@ fn read_segments(payload: &mut BoundedReader<'_>) -> Result<(), FramingError> {
                 "linetype segment length is not finite",
             ));
         }
-        let kind = segment_reader.u32()?;
-        if kind > 2 {
-            return Err(FramingError::structural(
-                segment_reader.position(),
-                "linetype segment type is invalid",
-            ));
-        }
+        segment_reader.u32()?;
     }
     payload.skip(bytes)
 }

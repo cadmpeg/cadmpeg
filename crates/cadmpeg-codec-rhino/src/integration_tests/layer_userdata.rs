@@ -18,6 +18,12 @@ const OBSOLETE_LAYER_SETTINGS: Uuid = Uuid::from_canonical([
 ]);
 
 fn layer_payload(archive: ArchiveVersion) -> Vec<u8> {
+    let rendering =
+        support::test_dump::crc_chunk(archive, 0x4000_8000, &[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    layer_payload_with(&rendering, &[0])
+}
+
+fn layer_payload_with(rendering: &[u8], extension_items: &[u8]) -> Vec<u8> {
     let mut payload = vec![0x1f];
     payload.extend(0_i32.to_le_bytes());
     payload.extend(7_i32.to_le_bytes());
@@ -38,13 +44,9 @@ fn layer_payload(archive: ArchiveVersion) -> Vec<u8> {
     payload.extend([0x11; 16]);
     payload.extend([0; 16]);
     payload.push(1);
-    payload.extend(support::test_dump::crc_chunk(
-        archive,
-        0x4000_8000,
-        &[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    ));
+    payload.extend(rendering);
     payload.extend([0; 16]);
-    payload.push(0);
+    payload.extend(extension_items);
     payload
 }
 
@@ -111,6 +113,76 @@ fn layer_record_with_userdata(archive: ArchiveVersion, userdata: &[u8]) -> Vec<u
     );
     #[allow(clippy::single_range_in_vec_init)] // The class wrapper is one checksum child.
     support::test_dump::crc_chunk_excluding(archive, 0x2000_8050, &class, &[0..class.len()])
+}
+
+fn layer_record_with_rendering_and_extensions(
+    archive: ArchiveVersion,
+    rendering: &[u8],
+    extension_items: &[u8],
+) -> Vec<u8> {
+    let class = support::test_dump::class_wrapper_with_userdata(
+        archive,
+        LAYER_CLASS,
+        &layer_payload_with(rendering, extension_items),
+        &[],
+    );
+    #[allow(clippy::single_range_in_vec_init)] // The class wrapper is one checksum child.
+    support::test_dump::crc_chunk_excluding(archive, 0x2000_8050, &class, &[0..class.len()])
+}
+
+fn obsolete_mapping_rendering(archive: ArchiveVersion, mapping_major: i32) -> Vec<u8> {
+    let mut channel_body = 7_i32.to_le_bytes().to_vec();
+    channel_body.extend([0x33; 16]);
+    channel_body.extend(
+        (0..16)
+            .map(|index| if index % 5 == 0 { 1.0 } else { 0.0 })
+            .flat_map(f64::to_le_bytes),
+    );
+    let channel = support::test_dump::anonymous_chunk(archive, 1, &channel_body);
+
+    let mut material_body = vec![1, 0, 0, 0, 0, 0, 0, 0];
+    material_body.extend([0x11; 16]);
+    material_body.extend([0x22; 16]);
+    material_body.extend(1_i32.to_le_bytes());
+    material_body.extend(channel);
+    let material = support::test_dump::crc_chunk(archive, 0x4000_8000, &material_body);
+
+    let mut rendering_body = vec![1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0];
+    let material_start = rendering_body.len();
+    rendering_body.extend(material);
+    let material_end = rendering_body.len();
+    rendering_body.extend([0xaa, 0xbb]);
+    if mapping_major != 1 {
+        let major_offset = material_start + 8 + 44 + 8;
+        rendering_body[major_offset..major_offset + 4]
+            .copy_from_slice(&mapping_major.to_le_bytes());
+    }
+    support::test_dump::crc_chunk_excluding(
+        archive,
+        0x4000_8000,
+        &rendering_body,
+        &[material_start..material_end],
+    )
+}
+
+fn embedded_linetype(archive: ArchiveVersion, segment_tags: [u32; 2]) -> Vec<u8> {
+    let model_attributes = support::test_dump::crc_chunk(archive, 0x4000_8002, &[]);
+    let mut body = Vec::new();
+    body.extend(2_i32.to_le_bytes());
+    body.extend(4_i32.to_le_bytes());
+    body.extend(&model_attributes);
+    body.extend(2_i32.to_le_bytes());
+    for (length, tag) in [1.5_f64, 2.5].into_iter().zip(segment_tags) {
+        body.extend(length.to_le_bytes());
+        body.extend(tag.to_le_bytes());
+    }
+    body.push(0);
+    support::test_dump::crc_chunk_excluding(
+        archive,
+        0x4000_8000,
+        &body,
+        &[8..8 + model_attributes.len()],
+    )
 }
 
 fn document(archive: ArchiveVersion, layer: Vec<u8>) -> Vec<u8> {
@@ -288,11 +360,77 @@ fn malformed_obsolete_layer_settings_are_discarded_without_altering_the_layer() 
 }
 
 #[test]
+fn complete_decode_admits_nonempty_obsolete_mapping_channels() {
+    let archive = ArchiveVersion::V8;
+    let rendering = obsolete_mapping_rendering(archive, 1);
+    let layer = layer_record_with_rendering_and_extensions(archive, &rendering, &[0]);
+    let result = decode(document(archive, layer));
+
+    let layers = &result.ir().native.namespace("rhino").unwrap().arenas()["layers"];
+    assert_eq!(layers.len(), 1);
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.message
+            .contains("rendering material mapping array is not empty")
+    }));
+    assert_valid(&result);
+}
+
+#[test]
+fn complete_decode_admits_unset_and_future_embedded_linetype_tags() {
+    let archive = ArchiveVersion::V8;
+    let rendering =
+        support::test_dump::crc_chunk(archive, 0x4000_8000, &[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    let linetype = embedded_linetype(archive, [u32::MAX, 7]);
+    let extension = [vec![33], linetype, vec![0]].concat();
+    let layer = layer_record_with_rendering_and_extensions(archive, &rendering, &extension);
+    let result = decode(document(archive, layer));
+
+    let layers = &result.ir().native.namespace("rhino").unwrap().arenas()["layers"];
+    assert_eq!(layers.len(), 1);
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.message.contains("metadata record 0x20008050") && loss.message.contains("degraded")
+    }));
+    assert_valid(&result);
+}
+
+#[test]
+fn complete_decode_retains_malformed_obsolete_mapping_child() {
+    let archive = ArchiveVersion::V8;
+    let rendering = obsolete_mapping_rendering(archive, 2);
+    let layer = layer_record_with_rendering_and_extensions(archive, &rendering, &[0]);
+    let result = decode(document(archive, layer.clone()));
+
+    let layers = &result.ir().native.namespace("rhino").unwrap().arenas()["layers"];
+    assert!(layers.is_empty());
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.message.contains("metadata record 0x20008050") && loss.message.contains("rendering")
+    }));
+    let retained = result
+        .source_fidelity()
+        .retained_records()
+        .iter()
+        .find(|(id, record)| {
+            id.as_str()
+                .starts_with("rhino:opaque:record#10000011-20008050-")
+                && record.data() == Some(layer.as_slice())
+        });
+    assert!(
+        retained.is_some(),
+        "malformed layer source was not retained"
+    );
+    assert_valid(&result);
+}
+
+#[test]
 fn duplicate_layer_indexes_keep_each_source_summary_entry() {
     let archive = ArchiveVersion::V8;
     let first = layer_record(archive, &[0xde, 0xad]);
     let second = layer_record(archive, &[0xde, 0xad]);
-    let properties = vec![support::test_dump::short_chunk(archive, 0xa000_0026, 202_608_010)];
+    let properties = vec![support::test_dump::short_chunk(
+        archive,
+        0xa000_0026,
+        202_608_010,
+    )];
     let bytes = support::test_dump::minimal_document(
         "80",
         &[
