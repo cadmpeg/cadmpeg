@@ -83,6 +83,48 @@ fn complete_document_refuses_duplicate_native_keys_at_every_depth() {
 }
 
 #[test]
+fn deeply_nested_native_values_survive_every_stored_record_reader() {
+    #[derive(Debug, PartialEq, Serialize, serde::Deserialize)]
+    struct Record {
+        id: String,
+        nested: serde_json::Value,
+    }
+
+    let mut nested = serde_json::json!({"value": "retained", "absent": null});
+    for _ in 0..140 {
+        nested = serde_json::Value::Array(vec![nested]);
+    }
+    let id = "test:native:record#deep";
+    let fields = serde_json::Map::from_iter([("nested".to_owned(), nested.clone())]);
+    let constructed = NativeRecord::new(id, fields.clone()).unwrap();
+    let typed = Record {
+        id: id.into(),
+        nested: nested.clone(),
+    };
+    assert_eq!(NativeRecord::from_typed(&typed).unwrap(), constructed);
+    assert_eq!(constructed.to_typed::<Record>().unwrap(), typed);
+
+    let mut document = crate::CadIr::empty();
+    document
+        .native
+        .namespace_mut("future")
+        .arenas_mut()
+        .insert("records".into(), vec![constructed]);
+    let wire = serde_json::to_value(&document).unwrap();
+    let admitted = serde_json::from_value::<crate::CadIr>(wire).unwrap();
+    let record = &admitted.native.namespace("future").unwrap().arenas()["records"][0];
+    assert_eq!(record.fields(), fields);
+    assert_eq!(record.field("nested"), Some(nested));
+    assert_eq!(record.field("missing"), None);
+    assert_eq!(record.field("id"), None);
+    assert_eq!(record.to_typed::<Record>().unwrap(), typed);
+    assert_eq!(
+        serde_json::to_string(&admitted).unwrap(),
+        serde_json::to_string(&document).unwrap()
+    );
+}
+
+#[test]
 fn native_identity_admission_is_shared_by_all_construction_paths() {
     #[derive(Serialize)]
     struct Record<'a> {

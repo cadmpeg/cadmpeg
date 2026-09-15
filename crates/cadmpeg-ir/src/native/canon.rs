@@ -7,7 +7,7 @@
 //! float is `null`, an `f32` widens to `f64` before rendering, an integer
 //! map key becomes its decimal string) — without building the tree. Only
 //! objects buffer their members, for the sort; scalars and sequences
-//! append as they are visited.
+//! append as they are visited. Object keys must be distinct.
 #![deny(clippy::disallowed_methods)]
 
 use serde::ser::{self, Serialize};
@@ -266,11 +266,12 @@ impl ser::SerializeSeq for CanonSeq {
     type Error = Error;
 
     fn serialize_element<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Error> {
+        let rendered = value.serialize(CanonValue)?.render();
         if self.any {
             self.out.push(',');
         }
         self.any = true;
-        self.out.push_str(&value.serialize(CanonValue)?.render());
+        self.out.push_str(&rendered);
         Ok(())
     }
 
@@ -329,11 +330,24 @@ impl ser::SerializeTupleVariant for CanonVariantSeq {
     }
 }
 
-/// An object's members, buffered raw-key to rendered-value. A repeated key
-/// keeps the last value, as a `Value` map insert does.
+/// An object's distinct members, buffered raw-key to rendered-value.
 pub(super) struct CanonMap {
     entries: BTreeMap<String, String>,
     key: Option<String>,
+}
+
+impl CanonMap {
+    fn insert<T: Serialize + ?Sized>(&mut self, key: String, value: &T) -> Result<(), Error> {
+        match self.entries.entry(key) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(value.serialize(CanonValue)?.render());
+                Ok(())
+            }
+            std::collections::btree_map::Entry::Occupied(entry) => {
+                Err(ser::Error::custom(format!("duplicate key {}", entry.key())))
+            }
+        }
+    }
 }
 
 impl ser::SerializeMap for CanonMap {
@@ -341,6 +355,11 @@ impl ser::SerializeMap for CanonMap {
     type Error = Error;
 
     fn serialize_key<T: Serialize + ?Sized>(&mut self, key: &T) -> Result<(), Error> {
+        if self.key.is_some() {
+            return Err(ser::Error::custom(
+                "key serialized before the preceding value",
+            ));
+        }
         self.key = Some(key.serialize(CanonKey)?);
         Ok(())
     }
@@ -350,12 +369,13 @@ impl ser::SerializeMap for CanonMap {
             .key
             .take()
             .ok_or_else(|| <Error as ser::Error>::custom("value serialized before key"))?;
-        self.entries
-            .insert(key, value.serialize(CanonValue)?.render());
-        Ok(())
+        self.insert(key, value)
     }
 
     fn end(self) -> Result<Node, Error> {
+        if self.key.is_some() {
+            return Err(ser::Error::custom("map ended before the pending value"));
+        }
         Ok(Node::Object(self.entries))
     }
 }
@@ -369,13 +389,11 @@ impl ser::SerializeStruct for CanonMap {
         key: &'static str,
         value: &T,
     ) -> Result<(), Error> {
-        self.entries
-            .insert(key.to_owned(), value.serialize(CanonValue)?.render());
-        Ok(())
+        self.insert(key.to_owned(), value)
     }
 
     fn end(self) -> Result<Node, Error> {
-        Ok(Node::Object(self.entries))
+        ser::SerializeMap::end(self)
     }
 }
 
@@ -589,3 +607,6 @@ impl ser::Serializer for CanonKey {
         Err(key_must_be_a_string())
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -5,11 +5,10 @@
 //! member while skipping the rest.
 
 use std::borrow::Cow;
-use std::cell::RefCell;
 use std::fmt;
 
 use serde::{de, ser};
-use serde_json::Value;
+use serde_json::{value::RawValue, Value};
 
 /// Emit the JSON value held in `json` into `serializer`.
 ///
@@ -23,11 +22,49 @@ pub(super) fn emit<S: ser::Serializer>(json: &str, serializer: S) -> Result<S::O
 
 /// Parse the `name` member of the JSON object held in `json`.
 ///
-pub(super) fn field(json: &str, name: &str) -> Option<Value> {
+pub(super) fn field(json: &str, name: &str) -> Result<Option<Value>, serde_json::Error> {
     let mut deserializer = serde_json::Deserializer::from_str(json);
-    let found = de::Deserializer::deserialize_map(&mut deserializer, PickField(name)).ok()?;
-    deserializer.end().ok()?;
-    found
+    let found = de::Deserializer::deserialize_map(&mut deserializer, PickField(name))?;
+    deserializer.end()?;
+    Ok(found)
+}
+
+/// Read an owned type from a constructor-produced canonical JSON record.
+///
+/// Common records use the direct parser. Deeper records go through replay's
+/// one-container reads, then the Value deserializer, which has no JSON nesting
+/// ceiling. The cutoff is a conservative fast-path bound, not an admission
+/// limit. Scanning avoids materializing a second tree for every typed read.
+pub(super) fn parse<T: de::DeserializeOwned>(json: &str) -> Result<T, serde_json::Error> {
+    const DIRECT_JSON_DEPTH: usize = 64;
+    let mut depth = 0;
+    let mut bytes = json.bytes();
+    while let Some(byte) = bytes.next() {
+        match byte {
+            b'"' => {
+                while let Some(quoted) = bytes.next() {
+                    match quoted {
+                        b'\\' => {
+                            bytes.next();
+                        }
+                        b'"' => break,
+                        _ => {}
+                    }
+                }
+            }
+            b'[' | b'{' => {
+                depth += 1;
+                if depth > DIRECT_JSON_DEPTH {
+                    return T::deserialize(emit(json, serde_json::value::Serializer)?);
+                }
+            }
+            // The input is a complete object written by the native
+            // constructors; a closing container always has an opening one.
+            b']' | b'}' => depth -= 1,
+            _ => {}
+        }
+    }
+    serde_json::from_str(json)
 }
 
 fn ser_to_de<S: ser::Error, D: de::Error>(error: S) -> D {
@@ -85,7 +122,10 @@ impl<'de, S: ser::Serializer> de::Visitor<'de> for Emit<S> {
             .0
             .serialize_seq(access.size_hint())
             .map_err(ser_to_de)?;
-        while access.next_element_seed(Element(&mut sequence))?.is_some() {}
+        while let Some(value) = access.next_element::<&RawValue>()? {
+            ser::SerializeSeq::serialize_element(&mut sequence, &Replay(value.get()))
+                .map_err(ser_to_de)?;
+        }
         ser::SerializeSeq::end(sequence).map_err(ser_to_de)
     }
 
@@ -96,55 +136,25 @@ impl<'de, S: ser::Serializer> de::Visitor<'de> for Emit<S> {
             .map_err(ser_to_de)?;
         while let Some(key) = access.next_key_seed(Key)? {
             ser::SerializeMap::serialize_key(&mut map, key.as_ref()).map_err(ser_to_de)?;
-            access.next_value_seed(Entry(&mut map))?;
+            let value = access.next_value::<&RawValue>()?;
+            ser::SerializeMap::serialize_value(&mut map, &Replay(value.get()))
+                .map_err(ser_to_de)?;
         }
         ser::SerializeMap::end(map).map_err(ser_to_de)
     }
 }
 
-/// A `Serialize` that draws its value from a deserializer instead of memory.
+/// A repeatable borrowed JSON value handed to an arbitrary serializer.
 ///
-/// Serde hands a nested element to `serialize_element`/`serialize_value` as
-/// something serializable, which is where the replay recurses: the element's
-/// deserializer is parked here and unparked when the serializer asks for it.
-struct Replay<D>(RefCell<Option<D>>);
+/// A serializer may read a value more than once, or skip it. Consume the raw
+/// child before handing it over, then start a fresh parse for each read.
+/// Each parser reads only one container; RawValue scans its children without
+/// the parser recursion limit. No parsed child tree is retained here.
+struct Replay<'a>(&'a str);
 
-impl<'de, D: de::Deserializer<'de>> ser::Serialize for Replay<D> {
+impl ser::Serialize for Replay<'_> {
     fn serialize<S: ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let Some(deserializer) = self.0.borrow_mut().take() else {
-            return Err(<S::Error as ser::Error>::custom(
-                "a replayed value was serialized more than once",
-            ));
-        };
-        deserializer
-            .deserialize_any(Emit(serializer))
-            .map_err(de_to_ser)
-    }
-}
-
-/// Replays one sequence element into `S`.
-struct Element<'a, S>(&'a mut S);
-
-impl<'de, S: ser::SerializeSeq> de::DeserializeSeed<'de> for Element<'_, S> {
-    type Value = ();
-
-    fn deserialize<D: de::Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
-        self.0
-            .serialize_element(&Replay(RefCell::new(Some(deserializer))))
-            .map_err(ser_to_de)
-    }
-}
-
-/// Replays one map value into `S`.
-struct Entry<'a, S>(&'a mut S);
-
-impl<'de, S: ser::SerializeMap> de::DeserializeSeed<'de> for Entry<'_, S> {
-    type Value = ();
-
-    fn deserialize<D: de::Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
-        self.0
-            .serialize_value(&Replay(RefCell::new(Some(deserializer))))
-            .map_err(ser_to_de)
+        emit(self.0, serializer)
     }
 }
 
@@ -200,7 +210,8 @@ impl<'de> de::Visitor<'de> for PickField<'_> {
         // brace. Skipping a value costs a scan and no allocation.
         while let Some(key) = access.next_key_seed(Key)? {
             if found.is_none() && key.as_ref() == self.0 {
-                found = Some(access.next_value()?);
+                let raw = access.next_value::<&RawValue>()?;
+                found = Some(emit(raw.get(), serde_json::value::Serializer).map_err(ser_to_de)?);
             } else {
                 access.next_value::<de::IgnoredAny>()?;
             }
@@ -235,13 +246,39 @@ mod tests {
         assert_eq!(String::from_utf8(out).unwrap(), TEXT);
     }
 
+    #[test]
+    fn a_borrowed_member_can_be_serialized_more_than_once() {
+        let member = super::Replay(TEXT);
+        let expected = serde_json::from_str::<Value>(TEXT).unwrap();
+        assert_eq!(serde_json::to_value(&member).unwrap(), expected);
+        assert_eq!(serde_json::to_string(&member).unwrap(), TEXT);
+        assert_eq!(serde_json::to_value(&member).unwrap(), expected);
+    }
+
+    #[test]
+    fn direct_and_deep_typed_reads_preserve_container_depth_and_quoted_brackets() {
+        for depth in [0, 31, 63, 64, 65, 127, 128, 140] {
+            let mut nested = serde_json::json!({"value": "[\\\"{}]", "number": u64::MAX});
+            for _ in 0..depth {
+                nested = Value::Array(vec![nested]);
+            }
+            let expected = serde_json::json!({"[\\\"{}]": nested});
+            let text = expected.to_string();
+            assert_eq!(super::parse::<Value>(&text).unwrap(), expected, "{depth}");
+        }
+    }
+
     /// Picking one member matches parsing the whole object and removing it,
     /// including for absent members and for keys carrying escapes.
     #[test]
     fn picks_the_member_a_full_parse_would_yield() {
         let whole = serde_json::from_str::<serde_json::Map<String, Value>>(TEXT).unwrap();
         for name in ["id", "a", "b", "é key", "z", "missing", ""] {
-            assert_eq!(field(TEXT, name), whole.get(name).cloned(), "{name}");
+            assert_eq!(
+                field(TEXT, name).unwrap(),
+                whole.get(name).cloned(),
+                "{name}"
+            );
         }
     }
 }

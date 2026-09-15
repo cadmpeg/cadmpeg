@@ -174,8 +174,13 @@ impl NativeRecord {
     /// [`field`](Self::field) when one field is all that is wanted.
     #[must_use]
     pub fn fields(&self) -> Map<String, Value> {
-        let Ok(mut fields) = serde_json::from_str::<Map<String, Value>>(&self.json) else {
-            return Map::new();
+        // Both constructors render an object from admitted JSON values. Replay
+        // reads one container at a time, so the external parser's nesting limit
+        // cannot turn a stored field into absence.
+        let Value::Object(mut fields) = replay::emit(&self.json, serde_json::value::Serializer)
+            .expect("native constructors render valid JSON values")
+        else {
+            unreachable!("native constructors render an object")
         };
         fields.remove("id");
         fields
@@ -190,12 +195,12 @@ impl NativeRecord {
         if name == "id" {
             return None;
         }
-        replay::field(&self.json, name)
+        replay::field(&self.json, name).expect("native constructors render valid JSON objects")
     }
 
     /// Deserialize the record into a codec-owned typed record.
     fn to_typed<T: DeserializeOwned>(&self) -> Result<T, NativeConvertError> {
-        Ok(serde_json::from_str(&self.json)?)
+        Ok(replay::parse(&self.json)?)
     }
 
     /// Render `id` and `fields` as canonical record text.
