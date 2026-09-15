@@ -213,7 +213,7 @@ pub(crate) enum StandardUnit {
 }
 
 impl StandardUnit {
-    fn from_value(value: i32) -> Option<Self> {
+    pub(crate) fn from_value(value: i32) -> Option<Self> {
         Some(match value {
             1 => Self::Microns,
             2 => Self::Millimeters,
@@ -365,6 +365,22 @@ impl UnitsAndTolerances {
     }
 }
 
+/// A finite positive conversion from source lengths to millimeters.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct MillimeterScale(f64);
+
+impl From<StandardUnit> for MillimeterScale {
+    fn from(unit: StandardUnit) -> Self {
+        Self(unit.millimeters_per_unit())
+    }
+}
+
+impl MillimeterScale {
+    pub(crate) fn value(self) -> f64 {
+        self.0
+    }
+}
+
 /// The coordinate-unit fact carried by a scanned document.
 ///
 /// `None` is a legal Rhino unit system, but it means that coordinates remain
@@ -375,7 +391,7 @@ impl UnitsAndTolerances {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum UnitBinding {
     /// The source declares a finite positive scale to millimetres.
-    Millimeters(f64),
+    Millimeters(MillimeterScale),
     /// The source intentionally keeps coordinates in native units.
     Native,
     /// The source does not provide a usable coordinate scale.
@@ -391,16 +407,18 @@ impl UnitBinding {
         match &units.unit {
             UnitSystem::None => Self::Native,
             UnitSystem::Unset => Self::Unavailable,
-            UnitSystem::Standard(_) | UnitSystem::Custom(_) => units
-                .millimeters_per_unit()
-                .map_or(Self::Unavailable, Self::Millimeters),
+            UnitSystem::Standard(unit) => Self::Millimeters((*unit).into()),
+            // CustomUnit admission checks both the meter and millimeter scales.
+            UnitSystem::Custom(unit) => {
+                Self::Millimeters(MillimeterScale(unit.meters_per_unit * 1000.0))
+            }
         }
     }
 
     /// Returns the scale that may enter canonical millimetre IR.
     pub(crate) fn neutral_scale(self) -> Option<f64> {
         match self {
-            Self::Millimeters(scale) => Some(scale),
+            Self::Millimeters(scale) => Some(scale.value()),
             Self::Native | Self::Unavailable => None,
         }
     }

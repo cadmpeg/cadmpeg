@@ -93,7 +93,7 @@ fn unit_binding_keeps_native_and_unavailable_distinct_from_physical_scale() {
 
     assert_eq!(
         settings::UnitBinding::from_units(Some(&physical)),
-        settings::UnitBinding::Millimeters(25.4)
+        settings::UnitBinding::Millimeters(settings::StandardUnit::Inches.into())
     );
     assert_eq!(
         settings::UnitBinding::from_units(Some(&native)),
@@ -108,7 +108,7 @@ fn unit_binding_keeps_native_and_unavailable_distinct_from_physical_scale() {
         settings::UnitBinding::Unavailable
     );
     assert_eq!(
-        settings::UnitBinding::Millimeters(25.4).neutral_scale(),
+        settings::UnitBinding::from_units(Some(&physical)).neutral_scale(),
         Some(25.4)
     );
     assert_eq!(settings::UnitBinding::Native.neutral_scale(), None);
