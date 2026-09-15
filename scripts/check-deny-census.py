@@ -6,8 +6,8 @@ A document read must not silently accept a key no type declares. The golden
 sweeps test shapes the goldens carry; this checker follows declared
 read routes in the three wire crates. Explicit lexical imports are resolved
 before applying the unique-declaration fallback for bare names; this is not a
-complete Rust name-resolution proof. Wildcard imports, module aliases and
-unrecognized re-exports remain unresolved static limits.
+complete Rust name-resolution proof. Visible unresolved wildcards and cyclic
+bindings fail the static check. Re-export traversal remains a static limit.
 Declarations without attributes are included when following a read route.
 Nongeneric type aliases are followed to their targets; other alias shapes
 fail the static check when used as a read route.
@@ -115,7 +115,7 @@ class Item:
 
 
 class ImportBinding:
-    """One source-level ``use`` binding in a module scope."""
+    """One source-level import or module binding in a lexical scope."""
 
     def __init__(self, path, scope, alias, target, offsets=(), scopes=(),
                  module_scope=()):
@@ -359,7 +359,12 @@ def direct_input_argument(arguments, bindings):
 
 
 def call_has_direct_input(code, call, bindings):
-    """Whether a deserializer call directly receives a reader parameter."""
+    """Prove direct input use only for an unaliased, unrebound parameter.
+
+    Each candidate occurs once in its signature and once at the read call.
+    Additional uses require binding analysis this lexical checker does not
+    provide; a spelling reused by a local, closure or pattern is not proof.
+    """
     single_use = {
         binding for binding in bindings
         if len(re.findall(rf"\b{re.escape(binding)}\b", code)) == 2
@@ -381,16 +386,6 @@ def has_conditional_input_route(code, bindings):
         not call_is_unconditional(code, call)
         for call in direct_input_calls(code, bindings)
     )
-
-
-def call_uses_input(code, call, bindings):
-    """Prove direct consumption only for an unaliased, unrebound parameter.
-
-    Each candidate occurs once in its signature and once at the read call.
-    Additional uses require binding analysis this lexical checker does not
-    provide; a spelling reused by a local, closure or pattern is not proof.
-    """
-    return call_has_direct_input(code, call, bindings)
 
 
 def source_module_scope(path):
@@ -449,10 +444,9 @@ def use_tree_bindings(text, prefix=""):
     """Yield ``(alias, target)`` entries from a use tree.
 
     This parser handles the path and grouped forms used by the wire crates.
-    Unsupported trees produce no binding; callers then fail closed when a
-    name cannot be resolved instead of treating its spelling as a prelude
-    type. Paths are taken from masked source, so comments and literals cannot
-    manufacture an import.
+    Wildcards retain an unresolved binding. Paths are taken from masked
+    source, so comments and literals cannot manufacture an import. Syntax
+    outside this parser still needs independent admission-route verification.
     """
     code = SOURCE_POLICY.mask_rust_non_code(text).strip()
     if not code:
@@ -492,6 +486,10 @@ def use_tree_bindings(text, prefix=""):
         yield alias, use_path(path, prefix)
         return
 
+    if code == "*" and prefix:
+        yield None, canonical_path(prefix)
+        return
+
     if code.endswith("::*"):
         path = code[:-3].rstrip()
         if USE_PATH_RE.fullmatch(path) is not None:
@@ -514,7 +512,7 @@ def use_tree_bindings(text, prefix=""):
 
 
 def collect_imports(path):
-    """Collect source use bindings; wildcard bindings remain an open limit."""
+    """Collect imports and modules before recognizing external reader paths."""
     source = path.read_text(encoding="utf-8")
     code, _ = SOURCE_POLICY.production_source(source)
     offsets, scopes = lexical_scopes(code)
@@ -528,13 +526,11 @@ def collect_imports(path):
         statement = code[match.end():end - 1]
         scope = module_scope + scopes[bisect_right(offsets, match.start()) - 1]
         for alias, target in use_tree_bindings(statement):
-            if alias is None:
-                continue
             imports.append(
                 ImportBinding(
                     path,
                     scope,
-                    alias,
+                    "*" if alias is None else alias,
                     target,
                     tuple(offsets),
                     tuple(scopes),
@@ -542,6 +538,13 @@ def collect_imports(path):
                 )
             )
         cursor = end
+    for match in re.finditer(r"\bmod\s+([A-Za-z_]\w*)\s*(?:;|\{)", code):
+        scope = module_scope + scopes[bisect_right(offsets, match.start()) - 1]
+        name = match.group(1)
+        imports.append(ImportBinding(
+            path, scope, name, "::".join(("crate", *scope, name)),
+            tuple(offsets), tuple(scopes), module_scope,
+        ))
     return imports
 
 
@@ -559,11 +562,7 @@ def control_block_kind(code, opening):
         return "closure"
 
     segment = re.split(r"[;{}]", prefix)[-1].strip()
-    if re.match(r"^(?:else\s+)?if\b", segment):
-        return "conditional"
-    if re.match(r"^(?:match|while|for|loop)\b", segment):
-        return "conditional"
-    if re.match(r"^else\b", segment):
+    if re.search(r"\b(?:if|else|match|while|for|loop)\b", segment):
         return "conditional"
     return None
 
@@ -576,6 +575,10 @@ def call_is_unconditional(code, call):
     evidence. A call in an unsupported control shape fails closed; this is a
     static proof limit and does not reject the corresponding Rust value.
     """
+    # An earlier exit can make a later direct read unreachable. This lexical
+    # proof does not establish whether a containing branch takes that exit.
+    if re.search(r"\b(?:return|break|continue)\b", code[:call.start()]):
+        return False
     stack = []
     for index, char in enumerate(code[:call.start()]):
         if char == "{":
@@ -634,7 +637,7 @@ def macro_reader_contract(code, expected_path):
         return False
     calls = [
         call for call in DESERIALIZE_CALL_RE.finditer(method)
-        if call_uses_input(method, call, bindings)
+        if call_has_direct_input(method, call, bindings)
     ]
     if len(calls) != 1:
         return False
@@ -1543,15 +1546,16 @@ def main():
         return all(part.startswith("@") for part in call_scope[len(binding.scope):])
 
     def imported_path(name, owner, position=None, source_path=None,
-                      source_scope=None):
-        """Resolve one bare name through its explicit lexical use binding."""
-        if "::" in name:
+                      source_scope=None, seen=frozenset()):
+        """Follow lexical bindings before any external-reader shortcut."""
+        if name.startswith("::"):
             return import_missing
+        prefix, separator, suffix = name.partition("::")
         source_path = owner.path if source_path is None else source_path
         source_scope = owner.scope if source_scope is None else source_scope
         source_crate = Path(*source_path.parts[:source_path.parts.index("src")])
         candidates = [
-            binding for binding in imports.get(name, ())
+            binding for binding in imports.get(prefix, ())
             if binding.path.parts[:binding.path.parts.index("src")] == source_crate.parts
             and import_visible(
                 binding,
@@ -1571,8 +1575,24 @@ def main():
                 if len(binding.scope) == deepest
             ]
         if len(candidates) == 1:
-            return candidates[0].target
+            binding = candidates[0]
+            if binding in seen:
+                return import_ambiguous
+            target = binding.target + (f"::{suffix}" if separator else "")
+            resolved = imported_path(
+                target, owner, source_path=binding.path,
+                source_scope=binding.scope, seen=seen | {binding},
+            )
+            return target if resolved is import_missing else resolved
         if len(candidates) > 1:
+            return import_ambiguous
+        if any(
+            binding.path.parts[:binding.path.parts.index("src")] == source_crate.parts
+            and import_visible(binding, owner, position, source_path, source_scope)
+            for binding in imports.get("*", ())
+        ):
+            # A wildcard can introduce an alias absent from the declaration
+            # index, including a name that otherwise looks like a prelude type.
             return import_ambiguous
         return import_missing
 
@@ -1685,12 +1705,12 @@ def main():
         if has_conditional_input_route(code, bindings):
             return False
         array_route = any(
-            call_uses_input(code, call, bindings)
+            call_has_direct_input(code, call, bindings)
             for call in ARRAY_DESERIALIZE_CALL_RE.finditer(code)
         )
         calls = [
             call for call in DESERIALIZE_CALL_RE.finditer(code)
-            if call_uses_input(code, call, bindings)
+            if call_has_direct_input(code, call, bindings)
         ]
         if not calls and not array_route:
             return False
@@ -1753,12 +1773,12 @@ def main():
         # This spelling is an array reader whose leading ``<`` is not a type
         # path token accepted by the call regex below.
         array_route = any(
-            call_uses_input(code, call, reader.input_bindings)
+            call_has_direct_input(code, call, reader.input_bindings)
             for call in ARRAY_DESERIALIZE_CALL_RE.finditer(code)
         )
         calls = [
             call for call in DESERIALIZE_CALL_RE.finditer(code)
-            if call_uses_input(code, call, reader.input_bindings)
+            if call_has_direct_input(code, call, reader.input_bindings)
         ]
         if not calls and not array_route:
             return False
