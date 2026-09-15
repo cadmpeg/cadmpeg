@@ -589,6 +589,7 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
             .map(|value| value.version),
         Some((1, 1))
     );
+    assert_eq!(metadata.opaque_records.len(), 1);
     assert!(
         warnings
             .iter()
