@@ -1219,7 +1219,7 @@ Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +3 0 -2 0 *
         .native
         .namespace("fcstd")
         .expect("namespace")
-        .arena_as::<crate::native::ElementMapRecord>("element_maps")
+        .arena_as::<crate::native::element_map::ElementMapRecord>("element_maps")
         .expect("element maps");
     let groups = &maps[0].maps[0].groups;
     assert_eq!(groups[0].names[1][0].topology_ids.len(), 2);

@@ -98,7 +98,8 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     let string_tables = arena!(namespace
         .arena_as_collection::<native::StringTableRecord, native::StringTables>("string_tables"));
     let string_tables = string_tables.as_slice();
-    let element_maps = arena!(namespace.arena_as::<native::ElementMapRecord>("element_maps"));
+    let element_maps =
+        arena!(namespace.arena_as::<native::element_map::ElementMapRecord>("element_maps"));
     let gui_providers =
         arena!(namespace.arena_as::<native::GuiViewProviderRecord>("gui_view_providers"));
     let gui_documents = arena!(namespace.arena_as::<native::GuiDocumentRecord>("gui_documents"));

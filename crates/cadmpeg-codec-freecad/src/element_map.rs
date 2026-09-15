@@ -6,8 +6,10 @@ use std::collections::{BTreeMap, HashMap};
 use cadmpeg_core::decode::bounded_len;
 use cadmpeg_core::CodecError;
 
-use crate::native::{
+use crate::native::element_map::{
     ElementMapGroup, ElementMapNode, ElementMapNodes, ElementMapRecord, ElementMappedName,
+};
+use crate::native::{
     EntryRecord, PropertyRecord, StringTableEntry, StringTableRecord, StringTables,
 };
 use crate::topology_transfer::TopologyOccurrence;
@@ -1459,35 +1461,6 @@ EndMap\n";
     }
 
     #[test]
-    fn topology_binding_preserves_empty_indexed_name_slots() {
-        let mapped_name = || ElementMappedName {
-            encoded: ";stable.0".into(),
-            resolved: Some("stable".into()),
-            string_ids: Vec::new(),
-            topology_ids: Vec::new(),
-        };
-        let group = ElementMapGroup {
-            indexed_name: "Edge".into(),
-            children: Vec::new(),
-            names: vec![Vec::new(), vec![mapped_name()], Vec::new()],
-        };
-        let mut nodes = ElementMapNodes::try_from(vec![ElementMapNode {
-            map_id: 0,
-            groups: vec![group],
-        }])
-        .expect("valid name group");
-        nodes.bind_root_topology("Edge", 1, "edge-first-placement");
-        nodes.bind_root_topology("Edge", 2, "unmapped-edge");
-        nodes.bind_root_topology("Edge", 1, "edge-second-placement");
-        let group = &nodes.root().groups[0];
-
-        assert_eq!(
-            group.names[1][0].topology_ids,
-            ["edge-first-placement", "edge-second-placement"]
-        );
-    }
-
-    #[test]
     fn connects_persistent_element_names_to_neutral_topology() {
         let document = r#"<Document SchemaVersion="4" FileVersion="1" StringHasher="1">
 <Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
@@ -1593,7 +1566,7 @@ Co 1001000 +2 0 *
         assert_eq!(tables.len(), 1);
         assert_eq!(tables[0].entries()[0].string_id, 10);
         let maps = namespace
-            .arena_as::<crate::native::ElementMapRecord>("element_maps")
+            .arena_as::<crate::native::element_map::ElementMapRecord>("element_maps")
             .expect("required invariant");
         assert_eq!(maps.len(), 2);
         let shape_map = maps

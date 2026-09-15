@@ -14,9 +14,10 @@ use cadmpeg_ir::ContainerSummary;
 
 use crate::brep::ShapePayloadRecord;
 use crate::gui;
+use crate::native::element_map::ElementMapRecord;
 use crate::native::{
-    ArchiveSpan, ByteCoverageRecord, DocumentFacts, ElementMapRecord, EntryRecord,
-    LogicalClassification, LogicalSpan, PropertyFamily, PropertyRecord, StringTableRecord,
+    ArchiveSpan, ByteCoverageRecord, DocumentFacts, EntryRecord, LogicalClassification,
+    LogicalSpan, PropertyFamily, PropertyRecord, StringTableRecord,
 };
 
 const DETECTION_XML_BYTES: usize = 8 * 1024;
