@@ -108,6 +108,21 @@ fn named_views_record_with_userdata(archive: ArchiveVersion, userdata: Vec<u8>) 
     )
 }
 
+fn view_with_child(archive: ArchiveVersion, child: Vec<u8>) -> Vec<u8> {
+    let child_range = 0..child.len();
+    let end_marker = support::test_dump::short_chunk(archive, 0xffff_ffff, 0);
+    let end_start = child.len();
+    let mut view_body = child;
+    view_body.extend(end_marker);
+    let end_range = end_start..view_body.len();
+    support::test_dump::crc_chunk_excluding(
+        archive,
+        0x2000_803b,
+        &view_body,
+        &[child_range, end_range],
+    )
+}
+
 fn trace_view(archive: ArchiveVersion, reference: Vec<u8>) -> Vec<u8> {
     let mut trace_body = vec![0x14];
     trace_body.extend(support::test_dump::utf16_bytes("trace-witness.png"));
@@ -138,19 +153,23 @@ fn trace_view(archive: ArchiveVersion, reference: Vec<u8>) -> Vec<u8> {
         &trace_body,
         std::slice::from_ref(&trace_reference_range),
     );
-    let end_marker = support::test_dump::short_chunk(archive, 0xffff_ffff, 0);
-    let mut view_body = trace;
-    let trace_range = 0..view_body.len();
-    let end_start = view_body.len();
-    view_body.extend(end_marker);
-    let end_range = end_start..view_body.len();
-    let view = support::test_dump::crc_chunk_excluding(
+    view_with_child(archive, trace)
+}
+
+fn wallpaper_view(archive: ArchiveVersion, reference: Vec<u8>) -> Vec<u8> {
+    let mut wallpaper_body = vec![0x12];
+    wallpaper_body.extend(support::test_dump::utf16_bytes("wallpaper-witness.png"));
+    wallpaper_body.extend([1, 0]);
+    let reference_start = wallpaper_body.len();
+    wallpaper_body.extend(reference);
+    let reference_range = reference_start..wallpaper_body.len();
+    let wallpaper = support::test_dump::crc_chunk_excluding(
         archive,
-        0x2000_803b,
-        &view_body,
-        &[trace_range, end_range],
+        0x2000_874b,
+        &wallpaper_body,
+        std::slice::from_ref(&reference_range),
     );
-    view
+    view_with_child(archive, wallpaper)
 }
 
 fn named_views_record_with_views(archive: ArchiveVersion, views: &[Vec<u8>]) -> Vec<u8> {
@@ -433,6 +452,78 @@ fn malformed_trace_reference_preserves_prior_diagnostic_and_recovers_later_view(
                     == Some("VIEW/TRACE_IMAGE/FILE_REFERENCE")
         })
         .expect("digest diagnostic survives the later file-reference parse failure");
+    assert!(reference_loss.message.contains("file reference"));
+    assert!(reference_loss.message.contains("SHA-1 hash CRC mismatch"));
+    assert!(reference_loss
+        .provenance
+        .as_ref()
+        .is_some_and(|provenance| provenance.offset > 0));
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::RhinoLossCode::PresentationRecordDropped.kind()
+            && loss.message.contains("named view record")
+    }));
+    assert!(result
+        .source_fidelity()
+        .retained_records()
+        .iter()
+        .any(|(_, record)| record.data() == Some(named_views.as_slice())));
+    assert_valid(&result);
+}
+
+#[test]
+fn malformed_wallpaper_reference_preserves_prior_diagnostic_and_recovers_later_view() {
+    let archive = ArchiveVersion::V8;
+    let malformed = wallpaper_view(
+        archive,
+        support::test_dump::file_reference_with_digest_warning_and_missing_second_digest(
+            archive,
+            "/wallpaper/malformed.png",
+            "malformed.png",
+        ),
+    );
+    let valid = trace_view(
+        archive,
+        support::test_dump::file_reference(archive, "/trace/valid.png", "valid.png"),
+    );
+    let named_views = named_views_record_with_views(archive, &[malformed, valid]);
+    let bytes = support::test_dump::minimal_document(
+        "80",
+        &[
+            support::test_dump::table(archive, 0x1000_0014, &[]),
+            support::test_dump::table(
+                archive,
+                0x1000_0015,
+                &[
+                    support::test_dump::units_record(archive, 2),
+                    named_views.clone(),
+                ],
+            ),
+            support::test_dump::table(archive, 0x1000_0013, &[]),
+        ],
+    );
+
+    let result = decode(bytes);
+    let views = &result.ir().native.namespace("rhino").unwrap().arenas()["views"];
+    assert_eq!(views.len(), 1);
+    assert_eq!(
+        views[0]
+            .field("list_index")
+            .and_then(|value| value.as_u64()),
+        Some(1)
+    );
+    let reference_loss = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.code == crate::loss::RhinoLossCode::IntegrityFailure.kind()
+                && loss
+                    .provenance
+                    .as_ref()
+                    .and_then(|provenance| provenance.tag.as_deref())
+                    == Some("VIEW/WALLPAPER/FILE_REFERENCE")
+        })
+        .expect("digest diagnostic survives the later wallpaper reference parse failure");
     assert!(reference_loss.message.contains("file reference"));
     assert!(reference_loss.message.contains("SHA-1 hash CRC mismatch"));
     assert!(reference_loss
