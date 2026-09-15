@@ -234,6 +234,16 @@ pub(crate) fn unit_detail(archive: ArchiveVersion, unit: u32, meters_per_unit: f
     anonymous_chunk(archive, 0, &body)
 }
 
+/// Builds a complete document settings units record for archive-level tests.
+pub(crate) fn units_record(archive: ArchiveVersion, unit: i32) -> Vec<u8> {
+    let mut body = 100_i32.to_le_bytes().to_vec();
+    body.extend(unit.to_le_bytes());
+    body.extend(0.01_f64.to_le_bytes());
+    body.extend(0.1_f64.to_le_bytes());
+    body.extend(0.001_f64.to_le_bytes());
+    crc_chunk(archive, 0x2000_8031, &body)
+}
+
 pub(crate) fn content_hash(archive: ArchiveVersion) -> Vec<u8> {
     let mut body = 123_u64.to_le_bytes().to_vec();
     body.extend(456_u64.to_le_bytes());

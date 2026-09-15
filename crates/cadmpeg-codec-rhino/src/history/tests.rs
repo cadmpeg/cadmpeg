@@ -5,6 +5,8 @@ use super::*;
 use crate::chunks::TCODE_CRC;
 use crate::loss::Diagnostics;
 use crate::test_support::test_dump::*;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use std::io::Cursor;
 
 fn versioned_anonymous_chunk(
     archive: ArchiveVersion,
@@ -83,6 +85,30 @@ fn source_band_history_record_with_major(
     let payload = versioned_anonymous_chunk(archive, major, minor, &body);
     let class = class_wrapper(archive, HISTORY_CLASS.to_wire(), &payload);
     crc_chunk(archive, 0x2000_807b, &class)
+}
+
+fn history_record_with_point_geometry(archive: ArchiveVersion) -> Vec<u8> {
+    let mut geometry_payload = 1_i32.to_le_bytes().to_vec();
+    geometry_payload.extend(crate::test_support::class_wrapper(
+        crate::test_support::POINT_CLASS,
+        &crate::test_support::point_payload([1.0, 2.0, 3.0]),
+    ));
+    let geometry_value = value(10, &anonymous_chunk(archive, 0, &geometry_payload));
+    let mut values_body = 1_i32.to_le_bytes().to_vec();
+    values_body.extend(geometry_value);
+    let values = anonymous_chunk(archive, 0, &values_body);
+    let empty_list = anonymous_chunk(archive, 0, &0_i32.to_le_bytes());
+    let mut body = id(1).to_wire().to_vec();
+    body.extend(42_i32.to_le_bytes());
+    body.extend(id(2).to_wire());
+    body.extend(&empty_list);
+    body.extend(&empty_list);
+    body.extend(values);
+    body.extend(1_i32.to_le_bytes());
+    body.push(0);
+    let payload = versioned_anonymous_chunk(archive, 1, 2, &body);
+    let class = class_wrapper(archive, HISTORY_CLASS.to_wire(), &payload);
+    nested_crc_chunk(archive, 0x2000_807b, &class)
 }
 
 #[test]
@@ -198,6 +224,61 @@ fn history_record_writer_bands_follow_archive_version() {
         assert_eq!(history.values.len(), 0);
         assert_eq!(history.record_type, RecordType::FeatureParameters);
         assert_eq!(history.copy_on_replace, copy_on_replace);
+    }
+}
+
+#[test]
+fn full_history_document_retains_geometry_without_a_physical_binding() {
+    let archive = ArchiveVersion::V8;
+    let history_record = history_record_with_point_geometry(archive);
+    for (unit, retained) in [
+        (Some(2), false),
+        (Some(0), true),
+        (Some(255), true),
+        (None, true),
+    ] {
+        let unit_records = unit
+            .map(|value| vec![units_record(archive, value)])
+            .unwrap_or_default();
+        let bytes = minimal_document(
+            "80",
+            &[
+                crc_table(archive, 0x1000_0014, &[]),
+                crc_table(archive, 0x1000_0015, &unit_records),
+                crc_table(archive, 0x1000_0013, &[]),
+                crc_table(archive, 0x1000_0026, std::slice::from_ref(&history_record)),
+            ],
+        );
+        let result = crate::RhinoCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("complete history document");
+        let feature = &result.ir().model.features[0];
+        if retained {
+            assert_eq!(
+                feature.source_properties["value_7.0.geometry_status"],
+                "unavailable_unit_binding"
+            );
+            let source_id = feature.source_properties["value_7.source_fidelity_id"].clone();
+            let source = result
+                .source_fidelity()
+                .retained_record(&source_id)
+                .unwrap_or_else(|| panic!("history source {source_id} was not retained; keys={:?}", result.source_fidelity().retained_records().keys().collect::<Vec<_>>()));
+            assert_eq!(source.data(), Some(history_record.as_slice()));
+            assert!(result.report().losses.iter().any(|loss| {
+                loss.code == crate::loss::RhinoLossCode::HistoryGeometryNotTransferred.kind()
+                    && loss.message.contains("no coordinate-unit binding")
+            }));
+        } else {
+            assert!(feature.source_properties.contains_key("value_7.0.geometry"));
+            assert!(!feature
+                .source_properties
+                .contains_key("value_7.0.source_fidelity_id"));
+            assert!(!result
+                .source_fidelity()
+                .retained_records()
+                .keys()
+                .any(|id| id.as_str().starts_with("rhino:history:source#")));
+        }
     }
 }
 

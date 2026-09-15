@@ -75,7 +75,15 @@ fn render_settings_userdata_future_payload_retains_complete_record() {
         "80",
         &[
             support::test_dump::table(archive, 0x1000_0014, &[]),
-            support::test_dump::table(archive, 0x1000_0015, &[render, userdata.clone()]),
+            support::test_dump::table(
+                archive,
+                0x1000_0015,
+                &[
+                    support::test_dump::units_record(archive, 2),
+                    render,
+                    userdata.clone(),
+                ],
+            ),
             support::test_dump::table(archive, 0x1000_0013, &[]),
         ],
     );
@@ -96,4 +104,52 @@ fn render_settings_userdata_future_payload_retains_complete_record() {
         .expect("render-settings userdata record is retained");
     assert_eq!(retained.data(), Some(userdata.as_slice()));
     assert_valid(&result);
+}
+
+#[test]
+fn document_length_render_settings_are_retained_without_a_physical_binding() {
+    let archive = ArchiveVersion::V8;
+    for unit in [Some(0), Some(255), None] {
+        let render = render_settings_record(archive);
+        let settings = unit
+            .map(|value| vec![support::test_dump::units_record(archive, value)])
+            .unwrap_or_default();
+        let records = [settings, vec![render.clone()]].concat();
+        let bytes = support::test_dump::minimal_document(
+            "80",
+            &[
+                support::test_dump::table(archive, 0x1000_0014, &[]),
+                support::test_dump::table(archive, 0x1000_0015, &records),
+                support::test_dump::table(archive, 0x1000_0013, &[]),
+            ],
+        );
+        let result = decode(bytes);
+        let namespace = result.ir().native.namespace("rhino").unwrap();
+        assert!(namespace.arenas()["render_settings"].is_empty());
+        let retained = result
+            .source_fidelity()
+            .retained_records()
+            .iter()
+            .find(|(id, record)| {
+                id.as_str()
+                    .starts_with("rhino:opaque:record#10000015-2000803d-")
+                    && record.data() == Some(render.as_slice())
+            });
+        assert!(
+            retained.is_some(),
+            "unit {unit:?} render source was not retained"
+        );
+        let label = if unit == Some(0) {
+            "native"
+        } else {
+            "unavailable"
+        };
+        assert!(result.report().losses.iter().any(|loss| {
+            loss.code == crate::loss::RhinoLossCode::PresentationRecordDropped.kind()
+                && loss
+                    .message
+                    .contains(&format!("no physical millimetre binding ({label})"))
+        }));
+        assert_valid(&result);
+    }
 }

@@ -1889,8 +1889,12 @@ pub(crate) fn resolve_identities(
 }
 
 struct LayerLookup<'a> {
-    unique: HashMap<i32, &'a crate::settings::LayerRecord>,
-    ambiguous: HashSet<i32>,
+    entries: HashMap<i32, LayerEntry<'a>>,
+}
+
+enum LayerEntry<'a> {
+    Unique(&'a crate::settings::LayerRecord),
+    Ambiguous,
 }
 
 enum LayerMatch<'a> {
@@ -1902,30 +1906,26 @@ enum LayerMatch<'a> {
 impl<'a> LayerLookup<'a> {
     fn with_capacity(capacity: usize) -> Self {
         Self {
-            unique: HashMap::with_capacity(capacity),
-            ambiguous: HashSet::new(),
+            entries: HashMap::with_capacity(capacity),
         }
     }
 
     fn insert(&mut self, layer: &'a crate::settings::LayerRecord) {
-        if self.ambiguous.contains(&layer.index) {
-            return;
-        }
-        if self.unique.remove(&layer.index).is_some() {
-            self.ambiguous.insert(layer.index);
-        } else {
-            self.unique.insert(layer.index, layer);
+        match self.entries.entry(layer.index) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(LayerEntry::Unique(layer));
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                entry.insert(LayerEntry::Ambiguous);
+            }
         }
     }
 
     fn resolve(&self, index: i32) -> LayerMatch<'a> {
-        if self.ambiguous.contains(&index) {
-            LayerMatch::Ambiguous
-        } else {
-            self.unique
-                .get(&index)
-                .copied()
-                .map_or(LayerMatch::Missing, LayerMatch::Unique)
+        match self.entries.get(&index) {
+            None => LayerMatch::Missing,
+            Some(LayerEntry::Unique(layer)) => LayerMatch::Unique(layer),
+            Some(LayerEntry::Ambiguous) => LayerMatch::Ambiguous,
         }
     }
 }

@@ -365,6 +365,56 @@ impl UnitsAndTolerances {
     }
 }
 
+/// The coordinate-unit fact carried by a scanned document.
+///
+/// `None` is a legal Rhino unit system, but it means that coordinates remain
+/// in native units without a physical millimetre interpretation.  `Unset` and
+/// a missing units record provide no coordinate scale at all.  Keeping these
+/// states separate from a bare `f64` prevents a caller from treating the
+/// native scale-1 convention as a canonical millimetre conversion.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum UnitBinding {
+    /// The source declares a finite positive scale to millimetres.
+    Millimeters(f64),
+    /// The source intentionally keeps coordinates in native units.
+    Native,
+    /// The source does not provide a usable coordinate scale.
+    Unavailable,
+}
+
+impl UnitBinding {
+    /// Classifies a parsed units record, including its legal absence.
+    pub(crate) fn from_units(units: Option<&UnitsAndTolerances>) -> Self {
+        let Some(units) = units else {
+            return Self::Unavailable;
+        };
+        match &units.unit {
+            UnitSystem::None => Self::Native,
+            UnitSystem::Unset => Self::Unavailable,
+            UnitSystem::Standard(_) | UnitSystem::Custom(_) => units
+                .millimeters_per_unit()
+                .map_or(Self::Unavailable, Self::Millimeters),
+        }
+    }
+
+    /// Returns the scale that may enter canonical millimetre IR.
+    pub(crate) fn neutral_scale(self) -> Option<f64> {
+        match self {
+            Self::Millimeters(scale) => Some(scale),
+            Self::Native | Self::Unavailable => None,
+        }
+    }
+
+    /// Stable diagnostic label for the binding state.
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Millimeters(_) => "millimeters",
+            Self::Native => "native",
+            Self::Unavailable => "unavailable",
+        }
+    }
+}
+
 /// `SubD` display fields nested in mesh parameters version 1.5.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct SubDDisplayParameters {

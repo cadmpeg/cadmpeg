@@ -74,6 +74,48 @@ fn maps_standard_units_to_millimeters() {
 }
 
 #[test]
+fn unit_binding_keeps_native_and_unavailable_distinct_from_physical_scale() {
+    let physical = settings::UnitsAndTolerances {
+        unit: settings::UnitSystem::Standard(settings::StandardUnit::Inches),
+        absolute_tolerance: 0.01,
+        angular_tolerance: 0.1,
+        relative_tolerance: 0.01,
+        distance_display: None,
+    };
+    let native = settings::UnitsAndTolerances {
+        unit: settings::UnitSystem::None,
+        ..physical.clone()
+    };
+    let unavailable = settings::UnitsAndTolerances {
+        unit: settings::UnitSystem::Unset,
+        ..physical
+    };
+
+    assert_eq!(
+        settings::UnitBinding::from_units(Some(&physical)),
+        settings::UnitBinding::Millimeters(25.4)
+    );
+    assert_eq!(
+        settings::UnitBinding::from_units(Some(&native)),
+        settings::UnitBinding::Native
+    );
+    assert_eq!(
+        settings::UnitBinding::from_units(Some(&unavailable)),
+        settings::UnitBinding::Unavailable
+    );
+    assert_eq!(
+        settings::UnitBinding::from_units(None),
+        settings::UnitBinding::Unavailable
+    );
+    assert_eq!(
+        settings::UnitBinding::Millimeters(25.4).neutral_scale(),
+        Some(25.4)
+    );
+    assert_eq!(settings::UnitBinding::Native.neutral_scale(), None);
+    assert_eq!(settings::UnitBinding::Unavailable.neutral_scale(), None);
+}
+
+#[test]
 pub(crate) fn parses_units_with_single_scale_transfer_and_legacy_order() {
     let mut body = Vec::new();
     body.extend(100_i32.to_le_bytes());
