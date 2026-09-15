@@ -170,6 +170,7 @@ pub fn payload_subtype_range(
     expected: &str,
 ) -> Option<std::ops::Range<usize>> {
     let limit = record.offset.checked_add(record.len)?;
+    let bytes = bytes.get(..limit)?;
     let mut pos = record.offset;
     let mut name_done = false;
     let mut payload_index = 0usize;
@@ -233,6 +234,7 @@ pub fn payload_token_offset(
     token_index: usize,
 ) -> Option<usize> {
     let limit = record.offset.checked_add(record.len)?;
+    let bytes = bytes.get(..limit)?;
     let mut position = record.offset;
     let mut name_done = false;
     let mut payload_index = 0usize;
@@ -394,7 +396,19 @@ pub fn payload_token_offsets(
     ref_width: RefWidth,
     tag: u8,
 ) -> Result<Vec<usize>, StreamError> {
-    let end = record.offset + record.len;
+    let end = record
+        .offset
+        .checked_add(record.len)
+        .ok_or_else(|| StreamError {
+            format: StreamFormat::Binary,
+            offset: record.offset,
+            reason: "record byte extent overflows".to_owned(),
+        })?;
+    let bytes = bytes.get(..end).ok_or_else(|| StreamError {
+        format: StreamFormat::Binary,
+        offset: record.offset,
+        reason: "record byte extent exceeds the available stream".to_owned(),
+    })?;
     let mut position = record.offset;
     let mut offsets = Vec::new();
     while position < end {
@@ -444,7 +458,7 @@ fn frame_impl(
     ref_width: RefWidth,
     eof_terminates_final_record: bool,
 ) -> Result<Vec<Record>, StreamError> {
-    if limit > bytes.len() {
+    let Some(bytes) = bytes.get(..limit) else {
         return Err(StreamError {
             format: StreamFormat::Binary,
             offset: start,
@@ -452,6 +466,13 @@ fn frame_impl(
                 "record stream declares its end at byte {limit}, but the stream holds {} bytes",
                 bytes.len()
             ),
+        });
+    };
+    if start > limit {
+        return Err(StreamError {
+            format: StreamFormat::Binary,
+            offset: start,
+            reason: format!("record stream starts at byte {start} after its end at byte {limit}"),
         });
     }
     let mut records = Vec::new();
@@ -568,6 +589,54 @@ fn frame_impl(
 mod tests {
     use super::{exact_identifier_at, frame, frame_history, payload_token_offset};
     use crate::kernel_header::RefWidth;
+
+    #[test]
+    fn framing_cannot_complete_a_token_from_bytes_after_its_limit() {
+        for width in [RefWidth::Four, RefWidth::Eight] {
+            let mut bytes = vec![0x0d, 1, b'x', 0x06];
+            bytes.extend_from_slice(&1.5f64.to_le_bytes());
+            bytes.push(0x11);
+            let records = frame(&bytes, 0, bytes.len(), width).expect("complete record");
+            assert_eq!(records.len(), 1);
+            assert_eq!(records[0].len, bytes.len());
+            for limit in 1..bytes.len() {
+                assert!(frame(&bytes, 0, limit, width).is_err(), "limit {limit}");
+            }
+            for limit in [1, 2, 4, 5, 6, 7, 8, 9, 10, 11] {
+                assert!(
+                    frame_history(&bytes, 0, limit, width).is_err(),
+                    "history limit {limit}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn payload_lookup_cannot_complete_a_token_outside_its_record() {
+        for width in [RefWidth::Four, RefWidth::Eight] {
+            let mut bytes = vec![0x0d, 1, b'x', 0x06];
+            bytes.extend_from_slice(&1.5f64.to_le_bytes());
+            bytes.push(0x11);
+            let mut record = frame(&bytes, 0, bytes.len(), width).unwrap().remove(0);
+            record.len = 11;
+            assert!(payload_token_offset(&bytes, &record, width, 0).is_none());
+            assert!(super::payload_token_offsets(&bytes, &record, width, 0x06).is_err());
+        }
+    }
+
+    #[test]
+    fn record_readers_reject_inverted_and_overflowing_extents() {
+        let bytes = b"\x0d\x01x\x11";
+        assert!(frame(bytes, bytes.len() + 1, bytes.len(), RefWidth::Eight).is_err());
+        let mut record = frame(bytes, 0, bytes.len(), RefWidth::Eight)
+            .unwrap()
+            .remove(0);
+        record.offset = usize::MAX;
+        record.len = 1;
+        assert!(payload_token_offset(bytes, &record, RefWidth::Eight, 0).is_none());
+        assert!(super::payload_token_offsets(bytes, &record, RefWidth::Eight, 0x06).is_err());
+        assert!(super::payload_subtype_range(bytes, &record, 0, RefWidth::Eight, "x").is_none());
+    }
 
     #[test]
     fn exact_identifier_requires_the_tag_length_and_complete_payload() {
