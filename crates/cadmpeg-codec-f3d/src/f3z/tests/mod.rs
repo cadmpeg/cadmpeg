@@ -27,7 +27,7 @@ use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
 use cadmpeg_ir::ids::{BodyId, RegionId};
 use cadmpeg_ir::topology::{Body, BodyKind, Region};
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::{Native, NativeRecord};
+use cadmpeg_ir::Native;
 
 mod archive;
 mod fidelity;

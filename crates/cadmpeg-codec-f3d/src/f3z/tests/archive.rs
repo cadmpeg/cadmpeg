@@ -49,7 +49,7 @@ fn f3z_archive_merges_identity_occurrences() {
         decoded.ir().model.points.len(),
         component_alone.ir().model.points.len()
     );
-    let prefix = format!("f3d:xref/{XREF_ROLE}/");
+    let prefix = format!("f3d:xref/role-{XREF_ROLE}/");
     let body = &decoded.ir().model.bodies[0];
     assert!(
         body.id.as_str().starts_with(&prefix),
@@ -198,7 +198,7 @@ fn f3z_archive_merges_occurrence_scoped_unknown_carriers() {
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .unwrap();
 
-    let prefix = format!("f3d:xref/{XREF_ROLE}/occurrence-0/");
+    let prefix = format!("f3d:xref/role-{XREF_ROLE}/occurrence-0/");
     let merged_unknowns = decoded.ir().native_unknowns("f3d").unwrap();
     assert_eq!(merged_unknowns.len(), component_unknowns.len());
     assert!(merged_unknowns
@@ -318,7 +318,7 @@ fn f3z_archive_recursively_merges_nested_occurrences() {
         .any(|note| note.contains("merged 2 external occurrence")));
     let body_id = &decoded.ir().model.bodies[0].id.as_str();
     assert!(body_id.contains(&format!(
-        "xref/{XREF_ROLE}/occurrence-0/xref/{CHILD_ROLE}/occurrence-0/"
+        "xref/role-{XREF_ROLE}/occurrence-0/xref/role-{CHILD_ROLE}/occurrence-0/"
     )));
 }
 
