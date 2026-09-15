@@ -3,8 +3,9 @@
 """Check that every non-test deserializable item refuses an unknown wire key.
 
 A document read must not silently accept a key no type declares. The golden
-sweeps prove this only for shapes the goldens carry; this checker proves the
-static property over every declaration in the two wire crates.
+sweeps test shapes the goldens carry; this checker follows declared
+read routes in the three wire crates. Imported bare names use
+a unique-declaration fallback; this is not a Rust name-resolution proof.
 
 An item that derives ``Deserialize`` passes when its serde attributes state one
 of:
@@ -31,9 +32,25 @@ Exit code 0 prints ``deny census: ok``; any failure prints one
 
 from __future__ import annotations
 
+import importlib.util
+from bisect import bisect_right
+import os
 import re
+import stat
 import sys
 from pathlib import Path
+
+# Share the source-policy lexer so comments, literals and cfg(test) bodies do
+# not create declarations or alter lexical scope in this census.
+_SPEC = importlib.util.spec_from_file_location(
+    "deny_source_policy", Path(__file__).with_name("check-source-policy.py")
+)
+if _SPEC is None or _SPEC.loader is None:
+    raise SystemExit("cannot load the source-policy lexer")
+SOURCE_POLICY = importlib.util.module_from_spec(_SPEC)
+sys.modules[_SPEC.name] = SOURCE_POLICY
+_SPEC.loader.exec_module(SOURCE_POLICY)
+
 
 ROOTS = (
     "crates/cadmpeg-ir/src",
@@ -65,98 +82,87 @@ ITEM_RE = re.compile(
 
 
 class Item:
-    def __init__(self, path, line, kind, name, attrs, body):
+    def __init__(self, path, line, kind, name, attrs, body, scope=None):
         self.path = path
         self.line = line
         self.kind = kind
         self.name = name
         self.attrs = attrs
         self.body = body
+        src = path.parts.index("src")
+        self.crate = Path(*path.parts[:src])
+        parts = path.parts[src + 1:]
+        module = parts[:-1] + (() if path.name in {"lib.rs", "main.rs", "mod.rs"} else (path.stem,))
+        self.scope = module if scope is None else module + scope
 
 
 def source_files():
+    def fail(error):
+        raise error
+
     for root in ROOTS:
         base = Path(root)
-        for path in sorted(base.rglob("*.rs")):
-            parts = set(path.parts)
-            if path.name in SKIP_BASENAMES or parts & SKIP_DIRS:
-                continue
-            yield path
+        if not stat.S_ISDIR(base.stat().st_mode):
+            raise NotADirectoryError(base)
+        for directory, children, files in os.walk(base, onerror=fail):
+            children[:] = sorted(name for name in children if name not in SKIP_DIRS)
+            for name in sorted(files):
+                if name.endswith(".rs") and name not in SKIP_BASENAMES:
+                    yield Path(directory) / name
 
 
-def read_attribute(lines, index):
-    """Consume one ``#[...]`` attribute starting at ``index``."""
-    text = ""
-    depth = 0
-    while index < len(lines):
-        line = lines[index]
-        text += line
-        depth += line.count("[") - line.count("]")
-        index += 1
-        if depth <= 0:
-            break
-    return text, index
+SCOPE_TOKEN = re.compile(r"\bmod\s+(\w+)\s*\{|[{}]")
 
 
-def skip_block(lines, index):
-    """Skip the item starting at ``index``, brace-matched or ``;``-terminated."""
-    depth = 0
-    seen_brace = False
-    while index < len(lines):
-        line = lines[index]
-        depth += line.count("{") - line.count("}")
-        if "{" in line:
-            seen_brace = True
-        index += 1
-        if seen_brace and depth <= 0:
-            return index
-        if not seen_brace and line.rstrip().endswith(";"):
-            return index
-    return index
+def lexical_scopes(code):
+    """Scope after each brace, preserving inline modules and local blocks."""
+    offsets = [0]
+    scopes = [()]
+    stack = []
+    for token in SCOPE_TOKEN.finditer(code):
+        if token.group() == "}":
+            if stack:
+                stack.pop()
+        else:
+            stack.append(token.group(1) or f"@{token.start()}")
+        offsets.append(token.end())
+        scopes.append(tuple(stack))
+    return offsets, scopes
 
 
 def collect_items(path):
-    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    source = path.read_text(encoding="utf-8")
+    code, _ = SOURCE_POLICY.production_source(source)
+    offsets, scopes = lexical_scopes(code)
     items = []
-    index = 0
-    while index < len(lines):
-        stripped = lines[index].lstrip()
-        if not stripped.startswith("#["):
-            index += 1
-            continue
+    cursor = 0
+    while opening := SOURCE_POLICY.OUTER_ATTRIBUTE.search(code, cursor):
+        start = cursor = opening.start()
         attrs = []
-        start = index
-        test_only = False
-        while index < len(lines) and lines[index].lstrip().startswith("#["):
-            text, index = read_attribute(lines, index)
-            if re.search(r"#\[cfg\(\s*test\s*\)\]", text):
-                test_only = True
-            attrs.append(text)
-        while index < len(lines) and (
-            not lines[index].strip() or lines[index].lstrip().startswith("///")
-            or lines[index].lstrip().startswith("//")
-        ):
-            index += 1
-        if index >= len(lines):
-            break
-        match = ITEM_RE.match(lines[index])
+        while SOURCE_POLICY.OUTER_ATTRIBUTE.match(code, cursor):
+            end = SOURCE_POLICY.attribute_end(code, cursor)
+            if end is None:
+                raise ValueError(f"{path}: incomplete attribute at byte {cursor}")
+            attrs.append(source[cursor:end])
+            cursor = end
+            while cursor < len(code) and code[cursor].isspace():
+                cursor += 1
+        match = ITEM_RE.match(code[cursor:])
         if match is None:
-            if test_only:
-                index = skip_block(lines, index)
             continue
-        body_end = skip_block(lines, index)
-        if not test_only:
-            items.append(
-                Item(
-                    path,
-                    start + 1,
-                    match.group(1),
-                    match.group(2),
-                    "".join(attrs),
-                    "".join(lines[index:body_end]),
-                )
-            )
-        index = body_end
+        body_end = SOURCE_POLICY.item_end(code, cursor)
+        if body_end is None:
+            raise ValueError(f"{path}: incomplete declaration at byte {cursor}")
+        items.append(Item(
+            path,
+            source.count("\n", 0, start) + 1,
+            match.group(1),
+            match.group(2),
+            "\n".join(attrs),
+            source[cursor:body_end],
+            scopes[bisect_right(offsets, cursor) - 1],
+        ))
+        cursor = body_end
     return items
 
 
@@ -306,33 +312,58 @@ def untagged_arms(item):
 
 
 def named_types(text):
-    return re.findall(r"[A-Z]\w*", text)
+    # Retain the whole path: other::Wire cannot inherit a local Wire's deny.
+    return re.findall(r"(?<![\w:])(?:::)?(?:[A-Za-z_]\w*::)*[A-Z]\w*", text)
 
 
 def resolve_item(index, name, owner, ambiguities):
-    """Resolve a named declaration without silently choosing a duplicate.
+    """Resolve qualified declarations and distinguish lexical item scopes.
 
-    Rust resolves an unqualified type in its module before this source walk
-    sees it. The census has only file and item locations, so a same-file
-    declaration is the strongest safe local resolution. Distinct files with
-    the same bare name remain ambiguous and must fail the census instead of
-    inheriting whichever file happened to be visited first.
+    A bare name may have been imported from a different file. A unique
+    declaration remains the census's imported-name fallback; duplicates require
+    a declaration in the current lexical scope. Qualified paths never use that
+    fallback. An unresolved qualified path fails closed.
     """
-    candidates = index.get(name, ())
-    if len(candidates) <= 1:
-        return candidates[0] if candidates else None
-    local = [candidate for candidate in candidates if candidate.path == owner.path]
-    if len(local) == 1:
-        return local[0]
-    ambiguities.append(
-        (
-            owner.path,
-            owner.line,
-            owner.name,
-            name,
-            tuple(candidate.path for candidate in candidates),
-        )
-    )
+    parts = name.lstrip(":").split("::")
+    candidates = index.get(parts[-1], ())
+    if len(parts) > 1:
+        prefix = parts[:-1]
+        crate = owner.crate
+        scope = tuple(part for part in owner.scope if not part.startswith("@"))
+        if prefix[0] == "crate":
+            scope = ()
+            prefix = prefix[1:]
+        elif prefix[0] == "self":
+            prefix = prefix[1:]
+        elif prefix[0] == "super":
+            while prefix and prefix[0] == "super":
+                scope = scope[:-1]
+                prefix = prefix[1:]
+        else:
+            external = [candidate.crate for candidate in candidates
+                        if candidate.crate.name.replace("-", "_") == prefix[0]]
+            if external:
+                crate = external[0]
+                scope = ()
+                prefix = prefix[1:]
+        wanted = scope + tuple(prefix)
+        matches = [candidate for candidate in candidates
+                   if candidate.crate == crate and candidate.scope == wanted]
+    else:
+        scope = owner.scope
+        while True:
+            matches = [candidate for candidate in candidates
+                       if candidate.path == owner.path and candidate.scope == scope]
+            if matches or not scope or not scope[-1].startswith("@"):
+                break
+            scope = scope[:-1]
+        if not matches and len(candidates) == 1 and candidates[0].path != owner.path:
+            matches = list(candidates)
+    if len(matches) == 1:
+        return matches[0]
+    if candidates or len(parts) > 1:
+        ambiguities.append((owner.path, owner.line, owner.name, name,
+                            tuple(candidate.path for candidate in candidates)))
     return None
 
 
@@ -379,14 +410,14 @@ def main():
                     target = resolve_item(index, name, item, ambiguities)
                     if target is not None and not passes(target):
                         admitted = False
-                    elif target is None and name in index:
+                    elif target is None and (name in index or "::" in name):
                         admitted = False
         return admitted
 
     def passes(item):
         if f"{item.path.as_posix()}:{item.name}" in EXCEPTIONS:
             return True
-        identity = (item.path.as_posix(), item.name)
+        identity = (item.path.as_posix(), item.line, item.name)
         if identity in checking:
             return True
         checking.add(identity)
@@ -403,7 +434,7 @@ def main():
                     target_item = resolve_item(index, name, item, ambiguities)
                     if target_item is not None and not passes(target_item):
                         admitted = False
-                    elif target_item is None and name in index:
+                    elif target_item is None and (name in index or "::" in name):
                         admitted = False
                 return admitted
             if re.search(r"\buntagged\b", attrs):
@@ -434,7 +465,7 @@ def main():
             (
                 path,
                 line,
-                f"{owner}: type name {name} is ambiguous between {locations}",
+                f"{owner}: cannot resolve type {name} uniquely in its scope; candidates: {locations or 'none'}",
             )
         )
 
@@ -452,7 +483,7 @@ def main():
         for line in reported:
             print(line, file=sys.stderr)
         print(
-            f"deny census: {len(reported)} item(s) accept an unknown wire key",
+            f"deny census: {len(reported)} item(s) lack checked unknown-key refusal",
             file=sys.stderr,
         )
         return 1
