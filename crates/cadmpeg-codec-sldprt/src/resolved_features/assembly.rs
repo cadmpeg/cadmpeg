@@ -1,6 +1,6 @@
 //! Feature-input lane assembly from container streams.
 
-use super::markers::{reference_cells, relation_bindings, sketch_input_entities};
+use super::markers::{admit_sketch_input_entities, reference_cells, relation_bindings};
 use super::names::{class_declarations, configuration, object_names};
 use super::scalars::named_scalars;
 use super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
@@ -13,58 +13,66 @@ pub(crate) fn is_supplemental_config_lane(lane: &FeatureInputLane) -> bool {
     lane.id.contains(":config-objects#")
 }
 
-pub(crate) fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<FeatureInputLane> {
+pub(crate) fn lanes(
+    scan: &ContainerScan,
+    annotations: &mut Annotations,
+) -> Result<Vec<FeatureInputLane>, cadmpeg_core::CodecError> {
     let sections = scan.sections().collect::<Vec<_>>();
     let has_explicit_lanes = sections.iter().any(|source| {
         source
             .name()
             .is_some_and(|name| name.to_ascii_lowercase().contains("resolvedfeatures"))
     });
-    sections
-        .into_iter()
-        .filter_map(|source| {
-            let section = source.name()?;
-            if if has_explicit_lanes {
-                !section.to_ascii_lowercase().contains("resolvedfeatures")
-            } else {
-                !legacy_feature_input_section(section)
-            } {
-                return None;
-            }
-            Some(feature_input_lane(source, "resolved-features", annotations))
-        })
-        .collect()
+    let mut result = Vec::new();
+    for source in sections {
+        let Some(section) = source.name() else {
+            continue;
+        };
+        if if has_explicit_lanes {
+            !section.to_ascii_lowercase().contains("resolvedfeatures")
+        } else {
+            !legacy_feature_input_section(section)
+        } {
+            continue;
+        }
+        result.push(feature_input_lane(
+            source,
+            section,
+            "resolved-features",
+            annotations,
+        )?);
+    }
+    Ok(result)
 }
 
 pub(crate) fn supplemental_config_lanes(
     scan: &ContainerScan,
     annotations: &mut Annotations,
-) -> Vec<FeatureInputLane> {
+) -> Result<Vec<FeatureInputLane>, cadmpeg_core::CodecError> {
     let has_explicit_lanes = scan.sections().any(|source| {
         source
             .name()
             .is_some_and(|name| name.to_ascii_lowercase().contains("resolvedfeatures"))
     });
     if !has_explicit_lanes {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     scan.sections()
-        .filter(|source| {
-            source.name().is_some_and(legacy_feature_input_section)
-                && legacy_sketch_object_stream(source.payload())
+        .filter_map(|source| {
+            let section = source.name()?;
+            (legacy_feature_input_section(section) && legacy_sketch_object_stream(source.payload()))
+                .then_some((source, section))
         })
-        .map(|source| feature_input_lane(source, "config-objects", annotations))
+        .map(|(source, section)| feature_input_lane(source, section, "config-objects", annotations))
         .collect()
 }
 
 fn feature_input_lane(
     source: crate::container::Section<'_>,
+    section: &str,
     family: &str,
     annotations: &mut Annotations,
-) -> FeatureInputLane {
-    let section = source
-        .name()
-        .expect("feature-input sections are selected by name");
+) -> Result<FeatureInputLane, cadmpeg_core::CodecError> {
     let parent = format!("sldprt:feature-input:{family}#{}", source.ordinal());
     let payload = source.payload();
     let classes = class_declarations(payload, &parent);
@@ -72,7 +80,7 @@ fn feature_input_lane(
     let scalars = named_scalars(payload, &parent, &names);
     let relation_bindings = relation_bindings(&parent, &classes, &scalars);
     let references = reference_cells(&scalars, &classes);
-    let sketch_entities = sketch_input_entities(payload, &parent);
+    let sketch_entities = admit_sketch_input_entities(payload, &parent)?;
     for entity in &sketch_entities {
         let signature = usize::try_from(entity.offset())
             .ok()
@@ -89,7 +97,7 @@ fn feature_input_lane(
         crate::annotations::note(
             annotations,
             entity.id(),
-            section,
+            source.source_stream(),
             entity.offset(),
             signature,
             Exactness::ByteExact,
@@ -98,7 +106,7 @@ fn feature_input_lane(
     crate::annotations::note(
         annotations,
         parent.clone(),
-        section,
+        source.source_stream(),
         0,
         if family == "config-objects" {
             "ConfigObjects"
@@ -107,7 +115,7 @@ fn feature_input_lane(
         },
         Exactness::ByteExact,
     );
-    FeatureInputLane {
+    Ok(FeatureInputLane {
         id: parent,
         configuration: configuration(section),
         native_payload: payload.to_vec(),
@@ -122,7 +130,7 @@ fn feature_input_lane(
         generated_surface_identities: Vec::new(),
         references,
         sketch_entities,
-    }
+    })
 }
 
 pub(super) fn legacy_feature_input_section(section: &str) -> bool {

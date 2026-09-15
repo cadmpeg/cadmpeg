@@ -301,7 +301,7 @@ fn attribute(
     crate::annotations::note(
         annotations,
         id.as_str().to_owned(),
-        section.display_name(),
+        section.source_stream(),
         offset as u64,
         std::str::from_utf8(token).unwrap_or(name),
         Exactness::ByteExact,

@@ -47,7 +47,7 @@ pub(super) fn project_endpoint_constraints(
     block_offset: usize,
     stream_ordinal: usize,
     face_ordinal: usize,
-    section: &str,
+    stream: &cadmpeg_ir::StreamName,
     annotations: &mut Annotations,
     constraints: &mut Vec<SketchConstraint>,
 ) {
@@ -92,7 +92,7 @@ pub(super) fn project_endpoint_constraints(
         crate::annotations::note(
             annotations,
             id.as_str().to_owned(),
-            section,
+            stream,
             0,
             "feature_input_shared_endpoint",
             Exactness::Derived,

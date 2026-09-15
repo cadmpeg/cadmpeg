@@ -1360,7 +1360,8 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         native_ref: None,
     }];
     let mut builder = AnnotationBuilder::new();
-    let stream = builder.stream("test:support");
+    let stream =
+        cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("test:support"));
     builder
         .note(sketch_id.as_str(), &stream, 200)
         .tag("support");

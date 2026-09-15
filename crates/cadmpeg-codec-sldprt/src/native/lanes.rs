@@ -4,7 +4,9 @@ use crate::records::FeatureInputLane;
 use crate::resolved_features::assembly::is_supplemental_config_lane;
 use crate::resolved_features::bindings::finalize_lane_bindings;
 
-pub(super) fn admit(native: &SldprtNative) -> Result<(), cadmpeg_ir::NativeConvertError> {
+pub(super) fn admit_payload_structure(
+    native: &SldprtNative,
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for lane in &native.feature_input_lanes {
         let expected_classes =
             crate::resolved_features::names::class_declarations(&lane.native_payload, &lane.id);
@@ -25,6 +27,8 @@ pub(super) fn admit(native: &SldprtNative) -> Result<(), cadmpeg_ir::NativeConve
                         || actual.parent != expected.parent
                         || actual.ordinal != expected.ordinal
                         || actual.offset != expected.offset
+                        || actual.object_id != expected.object_id
+                        || actual.value != expected.value
                 })
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
@@ -62,6 +66,11 @@ pub(super) fn admit(native: &SldprtNative) -> Result<(), cadmpeg_ir::NativeConve
             ));
         }
     }
+    Ok(())
+}
+
+pub(super) fn admit(native: &SldprtNative) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    admit_payload_structure(native)?;
     for (lane, expected_lane) in expected_lanes(native) {
         if !crate::resolved_features::scalars::scalar_indices_match(
             &lane.scalars,

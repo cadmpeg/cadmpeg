@@ -11,6 +11,24 @@ use crate::test_support::*;
 use crate::SldprtCodec;
 
 #[test]
+fn metadata_from_nameless_block_keeps_annotation_owner() {
+    let payload = br"<swSolidWorks><SW_UnitsLinear>1</SW_UnitsLinear></swSolidWorks>";
+    let mut source = outer_header();
+    source.extend(make_block(0x43, "", payload));
+    let scan = container::scan_bytes(&source);
+    let mut annotations = cadmpeg_ir::annotations::Annotations::default();
+    let attributes = super::attributes(&scan, &mut annotations);
+
+    assert!(attributes
+        .iter()
+        .any(|attribute| attribute.name == "source_linear_unit_code"));
+    assert!(annotations
+        .provenance
+        .values()
+        .any(|provenance| provenance.stream() == "block@8"));
+}
+
+#[test]
 fn transformed_reference_plane_requires_fixed_prefix() {
     let mut source = sldprt_with_body(&triangle_body());
     let mut payload = b"moTransRefPlaneData_c".to_vec();

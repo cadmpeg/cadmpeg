@@ -361,17 +361,17 @@ fn expanded_knots(values: &[f64], multiplicities: &[u16], expected: usize) -> Op
 }
 
 fn unique_knots(knots: &[f64]) -> (Vec<f64>, Vec<u16>) {
-    let mut unique = Vec::new();
-    let mut multiplicities = Vec::new();
+    let mut runs = Vec::<(f64, u16)>::new();
     for &knot in knots {
-        if unique.last() == Some(&knot) {
-            *multiplicities.last_mut().expect("matching knot") += 1;
-        } else {
-            unique.push(knot);
-            multiplicities.push(1);
+        if let Some((last, multiplicity)) = runs.last_mut() {
+            if *last == knot {
+                *multiplicity += 1;
+                continue;
+            }
         }
+        runs.push((knot, 1));
     }
-    (unique, multiplicities)
+    runs.into_iter().unzip()
 }
 
 fn multiplicity_sum(values: &[u16]) -> Option<usize> {

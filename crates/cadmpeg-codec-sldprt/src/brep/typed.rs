@@ -142,21 +142,14 @@ impl Facts {
     /// FACE-to-SHELL closure is checked separately against compact bridge
     /// records because a stream may carry subordinate faces in another site.
     pub(crate) fn has_valid_ownership(&self) -> bool {
-        let Some((bodies, regions, shells, _faces)) = self.ownership_maps() else {
-            return false;
-        };
-        !bodies.is_empty()
-            && bodies.values().all(|body| {
-                null_like_or_existing(body.shell(), &shells)
-                    && region_chain(body, &regions).is_some()
-            })
+        self.valid_ownership_maps().is_some()
     }
 
-    /// Return FACE attributes whose shell pointers close through the validated
-    /// typed ownership maps.  Raw FACE candidates can be byte-window matches
-    /// with a pointer outside the u16 attribute identity space.
-    pub(crate) fn valid_face_attrs(&self) -> Option<HashSet<u16>> {
-        let (_, _, _, faces) = self.ownership_maps()?;
+    /// Return FACE attributes from a closed typed BODY ownership set. Raw FACE
+    /// candidates can be byte-window matches with a pointer outside the u16
+    /// attribute identity space.
+    pub(crate) fn valid_ownership_face_attrs(&self) -> Option<HashSet<u16>> {
+        let (_, _, _, faces) = self.valid_ownership_maps()?;
         Some(faces.keys().copied().collect())
     }
 
@@ -356,6 +349,19 @@ impl Facts {
             .cloned()
             .collect::<Vec<_>>();
         let bodies = unique_map(&bodies, |node| node.attr)?;
+        Some((bodies, regions, shells, faces))
+    }
+
+    fn valid_ownership_maps(&self) -> Option<OwnershipMaps> {
+        let (bodies, regions, shells, faces) = self.ownership_maps()?;
+        if bodies.is_empty()
+            || !bodies.values().all(|body| {
+                null_like_or_existing(body.shell(), &shells)
+                    && region_chain(body, &regions).is_some()
+            })
+        {
+            return None;
+        }
         Some((bodies, regions, shells, faces))
     }
 }
@@ -1334,7 +1340,10 @@ mod tests {
             ],
         };
 
-        assert_eq!(facts.valid_face_attrs(), Some(HashSet::from([101])));
+        assert_eq!(
+            facts.valid_ownership_face_attrs(),
+            Some(HashSet::from([101]))
+        );
         assert!(facts.hierarchies(&HashSet::from([100])).is_none());
         assert!(facts.hierarchies(&HashSet::from([101])).is_some());
     }

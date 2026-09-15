@@ -136,10 +136,14 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
                 Some(body) => transforms.get(body).copied().ok_or_else(|| {
                     CodecError::Malformed("tessellation references missing body".into())
                 })?,
-                None if transforms.len() == 1 => *transforms
-                    .values()
-                    .next()
-                    .expect("one body transform exists"),
+                None if transforms.len() == 1 => {
+                    let Some(transform) = transforms.values().next().copied() else {
+                        return Err(CodecError::Malformed(
+                            "unowned tessellation has no body transform".into(),
+                        ));
+                    };
+                    transform
+                }
                 None => {
                     return Err(CodecError::NotImplemented(
                         "SLDPRT cannot assign an unowned tessellation to transformed bodies".into(),

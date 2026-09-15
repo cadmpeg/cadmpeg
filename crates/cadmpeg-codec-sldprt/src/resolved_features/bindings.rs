@@ -112,13 +112,14 @@ pub(crate) fn bind_pattern_inputs(
                 starts.get(start_index + 1).is_some_and(|(_, candidate)| {
                     candidate.input_class.as_deref() == Some("moDerivedCosmeticThread_c")
                 });
-            let pattern_object_end = || {
+            let pattern_object_logical_end = || {
                 let next = start_index + 1 + usize::from(has_derived_cosmetic_thread_output);
                 starts
                     .get(next)
                     .and_then(|(offset, _)| usize::try_from(*offset).ok())
                     .unwrap_or(lane.native_payload.len())
             };
+            let pattern_object_end = || pattern_object_logical_end().min(lane.native_payload.len());
             if native_object_class(feature.input_class.as_deref().unwrap_or_default())
                 == NativeClassKind::MirrorPattern
             {
@@ -290,7 +291,12 @@ pub(crate) fn bind_pattern_inputs(
                 ) {
                     if let Some((spacing, count)) =
                         object_start.filter(|start| *start < end).and_then(|start| {
-                            typed_linear_pattern_dimensions(feature, lane, start, end)
+                            typed_linear_pattern_dimensions(
+                                feature,
+                                lane,
+                                start,
+                                pattern_object_logical_end(),
+                            )
                         })
                     {
                         let mut definition =

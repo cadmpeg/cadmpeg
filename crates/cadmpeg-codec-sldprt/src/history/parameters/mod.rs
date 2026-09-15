@@ -847,7 +847,9 @@ pub(crate) fn expression_identifier_tokens(
                     closed = true;
                     break;
                 } else {
-                    let character = quoted.chars().next().expect("nonempty suffix");
+                    let Some(character) = quoted.chars().next() else {
+                        return Err(UnclosedQuote);
+                    };
                     cursor += character.len_utf8();
                 }
             }

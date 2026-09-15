@@ -1195,35 +1195,25 @@ pub(crate) fn project_profiled_hole_constructions(
         if !incomplete(diameter, extent, construction) {
             continue;
         }
-        let Some(history_index) = feature
-            .native_ref
-            .as_deref()
-            .and_then(|native| native_histories.get(native))
+        let Some(native) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        let Some(&history_index) = native_histories.get(native) else {
+            continue;
+        };
+        let Some(native_feature) = histories[history_index]
+            .features
+            .iter()
+            .find(|candidate| candidate.id == native)
         else {
             continue;
         };
-        let unowned = feature
-            .native_ref
-            .as_deref()
-            .and_then(|native| {
-                histories[*history_index]
-                    .features
-                    .iter()
-                    .find(|candidate| candidate.id == native)
-            })
-            .is_some_and(|native| !native.properties.contains_key("DissectableChildren"));
+        let unowned = !native_feature
+            .properties
+            .contains_key("DissectableChildren");
         if unowned {
-            let native = feature
-                .native_ref
-                .as_deref()
-                .expect("unowned holes carry a native reference");
-            let ordinal = histories[*history_index]
-                .features
-                .iter()
-                .find(|candidate| candidate.id == native)
-                .expect("native hole was resolved above")
-                .ordinal;
-            unowned_incomplete_holes[*history_index].push((native.into(), ordinal));
+            let ordinal = native_feature.ordinal;
+            unowned_incomplete_holes[history_index].push((native.into(), ordinal));
         }
     }
     let profiled_constructions = histories

@@ -159,11 +159,11 @@ fn encoder_writes_source_less_neutral_configurations() {
     assert!(scan
         .blocks
         .iter()
-        .any(|block| { block.section.as_deref() == Some("Contents/Config-0-Partition") }));
+        .any(|block| { block.section.name() == Some("Contents/Config-0-Partition") }));
     assert!(!scan
         .blocks
         .iter()
-        .any(|block| { block.section.as_deref() == Some("Contents/Config-1-Partition") }));
+        .any(|block| { block.section.name() == Some("Contents/Config-1-Partition") }));
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -360,11 +360,11 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
     assert!(scan
         .blocks
         .iter()
-        .any(|block| { block.section.as_deref() == Some("Contents/Config-0-Partition") }));
+        .any(|block| { block.section.name() == Some("Contents/Config-0-Partition") }));
     assert!(scan
         .blocks
         .iter()
-        .any(|block| { block.section.as_deref() == Some("Contents/Config-1-Partition") }));
+        .any(|block| { block.section.name() == Some("Contents/Config-1-Partition") }));
     assert_eq!(container::active_configuration_index(&scan), Some(1));
     assert_eq!(
         container::select_active_parasolid_site(&scan)
@@ -448,11 +448,11 @@ fn semantic_writer_remaps_partition_without_remapping_resolved_features() {
     assert!(scan
         .blocks
         .iter()
-        .any(|block| { block.section.as_deref() == Some("Contents/Config-5-Partition") }));
+        .any(|block| { block.section.name() == Some("Contents/Config-5-Partition") }));
     assert!(scan
         .blocks
         .iter()
-        .any(|block| { block.section.as_deref() == Some("Contents/Config-3-ResolvedFeatures") }));
+        .any(|block| { block.section.name() == Some("Contents/Config-3-ResolvedFeatures") }));
     assert_eq!(container::active_configuration_index(&scan), Some(5));
     assert_eq!(
         container::select_active_parasolid_site(&scan)
@@ -463,7 +463,7 @@ fn semantic_writer_remaps_partition_without_remapping_resolved_features() {
     let stale = scan
         .blocks
         .iter()
-        .filter_map(|block| block.section.as_deref())
+        .filter_map(|block| block.section.name())
         .filter(|section| {
             *section == "Contents/Config-3-Partition"
                 || *section == "Contents/Config-5-ResolvedFeatures"
@@ -471,7 +471,7 @@ fn semantic_writer_remaps_partition_without_remapping_resolved_features() {
         .collect::<Vec<_>>();
     assert!(stale.is_empty(), "stale sections: {stale:?}");
     assert!(!scan.blocks.iter().any(|block| {
-        block.section.as_deref().is_some_and(|section| {
+        block.section.name().is_some_and(|section| {
             section == "Contents/Config-3-Partition"
                 || section == "Contents/Config-5-ResolvedFeatures"
         })
@@ -525,14 +525,14 @@ fn semantic_writer_allocates_partition_index_without_remapping_resolved_features
     assert!(scan
         .blocks
         .iter()
-        .any(|block| block.section.as_deref() == Some("Contents/Config-0-Partition")));
+        .any(|block| block.section.name() == Some("Contents/Config-0-Partition")));
     assert!(scan
         .blocks
         .iter()
-        .any(|block| { block.section.as_deref() == Some("Contents/Config-3-ResolvedFeatures") }));
+        .any(|block| { block.section.name() == Some("Contents/Config-3-ResolvedFeatures") }));
     assert!(!scan.blocks.iter().any(|block| {
         matches!(
-            block.section.as_deref(),
+            block.section.name(),
             Some(
                 "Contents/ResolvedFeatures"
                     | "Contents/Config-3-Partition"
@@ -1469,7 +1469,7 @@ fn semantic_writer_derives_resolved_feature_section_names() {
     assert!(scan
         .blocks
         .iter()
-        .any(|block| { block.section.as_deref() == Some("Contents/Config-0-ResolvedFeatures") }));
+        .any(|block| { block.section.name() == Some("Contents/Config-0-ResolvedFeatures") }));
 
     let (mut unscoped, _, fidelity) = decoded.into_parts();
     update_sldprt_native(&mut unscoped, |native| {
@@ -1481,7 +1481,7 @@ fn semantic_writer_derives_resolved_feature_section_names() {
     assert!(scan
         .blocks
         .iter()
-        .any(|block| block.section.as_deref() == Some("Contents/ResolvedFeatures")));
+        .any(|block| block.section.name() == Some("Contents/ResolvedFeatures")));
 }
 
 #[test]

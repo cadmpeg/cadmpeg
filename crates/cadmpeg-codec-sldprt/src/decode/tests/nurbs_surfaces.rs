@@ -400,7 +400,7 @@ fn face_on_untyped_surface_keeps_topology() {
     assert!(retained
         .links
         .iter()
-        .any(|link| link == result.ir().model.surfaces[0].id.as_str()));
+        .any(|link| link.as_str() == result.ir().model.surfaces[0].id.as_str()));
     assert!(result
         .report()
         .losses

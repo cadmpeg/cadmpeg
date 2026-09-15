@@ -519,7 +519,7 @@ pub(crate) fn dimensions(
         }
         collect_dimensions(
             source.payload(),
-            section,
+            source.source_stream(),
             &source.native_id(),
             annotations,
             losses,
@@ -539,9 +539,10 @@ pub(crate) fn parse_payload(payload: &[u8], losses: &mut Vec<LossNote>) -> Vec<P
     let mut annotations = Annotations::default();
     let mut records = Vec::new();
     let mut seen = HashSet::<String>::new();
+    let stream = cadmpeg_ir::stream_name!("Contents/PMISemanticDataDB");
     collect_dimensions(
         payload,
-        "Contents/PMISemanticDataDB",
+        &stream,
         "sldprt:block#pmi-payload",
         &mut annotations,
         losses,
@@ -554,7 +555,7 @@ pub(crate) fn parse_payload(payload: &[u8], losses: &mut Vec<LossNote>) -> Vec<P
 
 fn collect_dimensions(
     payload: &[u8],
-    section: &str,
+    stream: &cadmpeg_ir::StreamName,
     parent: &str,
     annotations: &mut Annotations,
     losses: &mut Vec<LossNote>,
@@ -570,7 +571,7 @@ fn collect_dimensions(
                 crate::annotations::note(
                     annotations,
                     record.id.clone(),
-                    section,
+                    stream,
                     offset as u64,
                     "messagepack_dim_sem_data",
                     Exactness::ByteExact,

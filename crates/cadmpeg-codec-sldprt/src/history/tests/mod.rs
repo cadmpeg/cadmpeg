@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::records::FeatureSource;
+use crate::test_support::*;
 use cadmpeg_ir::attributes::AttributeValue;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -19,6 +20,24 @@ use cadmpeg_ir::{
     scalar::Length,
 };
 use std::collections::HashSet;
+
+#[test]
+fn history_from_nameless_block_keeps_annotation_owner() {
+    let payload = br#"<Keywords Name="Part"><Configuration Name="Default"/><Feature id="1" Name="Boss"/></Keywords>"#;
+    let mut source = outer_header();
+    source.extend(make_block(0x43, "", payload));
+    let scan = crate::container::scan_bytes(&source);
+    let mut annotations = cadmpeg_ir::annotations::Annotations::default();
+    let mut losses = Vec::new();
+    let histories = super::histories(&scan, &mut annotations, &mut losses);
+
+    assert_eq!(histories.len(), 1);
+    assert!(!histories[0].features.is_empty());
+    assert!(annotations
+        .provenance
+        .values()
+        .any(|provenance| provenance.stream() == "block@8"));
+}
 
 fn feature(id: &str, source_id: Option<&str>, ordinal: u32) -> Feature {
     Feature {

@@ -65,7 +65,7 @@ pub(crate) fn histories(
             if !root.tag_name().name().contains("Keywords") {
                 return None;
             }
-            let stream = section.display_name();
+            let stream = section.source_stream();
             let parent = format!("sldprt:history:feature-history#{source}");
             let configurations = root
                 .children()
@@ -76,7 +76,7 @@ pub(crate) fn histories(
                     crate::annotations::note(
                         annotations,
                         id.clone(),
-                        stream.clone(),
+                        stream,
                         node.range().start as u64,
                         "Configuration",
                         Exactness::ByteExact,
@@ -136,7 +136,7 @@ pub(crate) fn histories(
                     crate::annotations::note(
                         annotations,
                         id.clone(),
-                        stream.clone(),
+                        stream,
                         node.range().start as u64,
                         node.tag_name().name(),
                         Exactness::ByteExact,

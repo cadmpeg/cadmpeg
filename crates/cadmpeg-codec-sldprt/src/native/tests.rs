@@ -358,10 +358,20 @@ fn native_store_accepts_duplicate_local_ids_for_scalar_ordinals() {
     let lane = &mut native.feature_input_lanes[0];
     assert_eq!(lane.scalars[0].operands[0].entity_index, 0);
     assert!(lane.scalars[0].operands[0].entity_ref.is_some());
-    lane.sketch_entities[1] = lane.sketch_entities[1].with_test_identity(
-        lane.sketch_entities[1].object_index(),
-        lane.sketch_entities[0].local_id(),
-    );
+    let local_id = lane.sketch_entities[0]
+        .local_id()
+        .expect("first marker local id");
+    lane.sketch_entities[1] = lane.sketch_entities[1]
+        .with_test_identity(lane.sketch_entities[1].object_index(), Some(local_id));
+    let local_id_offset = crate::resolved_features::markers::marker_local_id_offset(
+        &lane.native_payload,
+        usize::try_from(lane.sketch_entities[1].offset()).expect("marker offset"),
+    )
+    .expect("local id offset");
+    lane.native_payload[local_id_offset..local_id_offset + 4]
+        .copy_from_slice(&local_id.to_le_bytes());
+    let next = &mut lane.sketch_entities[2];
+    *next = next.with_test_identity(Some(local_id), next.local_id());
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).unwrap();
@@ -401,6 +411,75 @@ fn native_load_rejects_fabricated_payload_lane_rows_from_json() {
     let namespace: cadmpeg_ir::NativeNamespace = serde_json::from_value(wire).unwrap();
     let error = crate::native::SldprtNative::load(&namespace).unwrap_err();
     assert!(error.to_string().contains("omits marker"), "{error}");
+}
+
+#[test]
+fn native_load_rejects_edited_object_name_identity_from_json() {
+    let mut source = sldprt_with_compact_relation_pair(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let original = serde_json::to_value(decoded.ir().native.namespace("sldprt").unwrap()).unwrap();
+    let names = original["feature_input_names"]
+        .as_array()
+        .expect("decoded lane has a name arena");
+    assert!(
+        !names.is_empty(),
+        "fixture must admit at least one object name"
+    );
+
+    let mut value_edit = original.clone();
+    value_edit["feature_input_names"][0]["value"] = serde_json::json!("forged-name");
+    let namespace: cadmpeg_ir::NativeNamespace = serde_json::from_value(value_edit).unwrap();
+    let error = crate::native::SldprtNative::load(&namespace).unwrap_err();
+    assert!(
+        error.to_string().contains("name structure does not match"),
+        "edited object name value was admitted: {error}"
+    );
+
+    let mut object_id_edit = original;
+    let current_object_id = object_id_edit["feature_input_names"][0]["object_id"].as_u64();
+    let forged_object_id = (current_object_id == Some(1)).then_some(2).unwrap_or(1);
+    object_id_edit["feature_input_names"][0]["object_id"] = serde_json::json!(forged_object_id);
+    let namespace: cadmpeg_ir::NativeNamespace = serde_json::from_value(object_id_edit).unwrap();
+    let error = crate::native::SldprtNative::load(&namespace).unwrap_err();
+    assert!(
+        error.to_string().contains("name structure does not match"),
+        "edited object name identifier was admitted: {error}"
+    );
+}
+
+#[test]
+fn native_store_rejects_edited_object_name_identity() {
+    let mut source = sldprt_with_compact_relation_pair(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut native = sldprt_native(decoded.ir());
+    native.feature_input_lanes[0]
+        .names
+        .first_mut()
+        .expect("decoded lane has a name arena")
+        .value = "forged-name".into();
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let error = native.store(&mut namespace).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("name structure does not match its native payload"),
+        "edited object name was admitted: {error}"
+    );
 }
 
 #[test]

@@ -373,7 +373,12 @@ impl SldprtNative {
                 let payload = lane_payloads
                     .get(wire.parent.as_str())
                     .copied()
-                    .unwrap_or_default();
+                    .ok_or_else(|| {
+                        cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                            "sketch input entity {} references lane {} without a payload",
+                            wire.id, wire.parent
+                        ))
+                    })?;
                 crate::records::SketchInputEntity::try_from_wire(wire, payload)
                     .map_err(cadmpeg_ir::NativeConvertError::InvalidOwner)
             })
@@ -805,6 +810,12 @@ impl SldprtNative {
         &self,
         namespace: &mut cadmpeg_ir::NativeNamespace,
     ) -> Result<(), cadmpeg_ir::NativeConvertError> {
+        // Store and load share the byte-backed lane admission boundary. This
+        // keeps direct native callers from writing a name/class/entity index
+        // that a later load would reject, while preserving namespace
+        // atomicity on failure. Store-specific binding checks below retain
+        // their more precise diagnostics for the remaining relationships.
+        lanes::admit_payload_structure(self)?;
         for history in &self.feature_histories {
             if let Some(record) = history
                 .configurations
@@ -1018,6 +1029,14 @@ impl SldprtNative {
                 .iter()
                 .map(|record| (record.id(), record))
                 .collect::<std::collections::HashMap<_, _>>();
+            for record in &lane.sketch_entities {
+                if let Err(error) = record.validate_against_payload(&lane.native_payload) {
+                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                        "sketch input entity {}: {error}",
+                        record.id()
+                    )));
+                }
+            }
             for scalar in &lane.scalars {
                 let resolved_operands =
                     crate::resolved_features::operands::resolve_scalar_operand_markers(
@@ -1306,8 +1325,10 @@ fn relation_instance_shape_valid(
     match detached.as_slice() {
         [] => true,
         [(position, scalar)] => {
-            record.parameter_scalar_ref() == Some(scalar.id.as_str())
-                && *position > operand_scalars.last().expect("nonempty operand scalars").0
+            let Some((last_position, _)) = operand_scalars.last() else {
+                return false;
+            };
+            record.parameter_scalar_ref() == Some(scalar.id.as_str()) && *position > *last_position
         }
         _ => false,
     }

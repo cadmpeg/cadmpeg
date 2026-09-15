@@ -105,7 +105,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     let streams = active_body_streams(&scan);
     if !streams.is_empty() {
         ctx.charge_entities(streams.len() as u64, "admit SLDPRT body streams")?;
-        if let Some((decoded, mut report)) = try_decode_brep(&scan, &streams, &classification) {
+        if let Some((decoded, mut report)) = try_decode_brep(&scan, &streams, &classification)? {
             let source_header = decoded.metadata_header;
             let (ir, annotations, unknowns, mut pmi_losses) = build_geometry_ir(
                 ctx,
@@ -165,7 +165,7 @@ fn decode_result(
         .map(|index| unknowns.remove(index));
     source_fidelity.attach_native_unknown_records(&mut ir, "sldprt", unknowns)?;
     if let Some(source_image) = source_image {
-        source_fidelity.retain_unknown_records("sldprt", [source_image]);
+        source_fidelity.retain_unknown_records("source", [source_image])?;
     }
     stamp_local_digests(&mut ir)?;
     Ok(Decoded {
@@ -1951,14 +1951,16 @@ fn active_body_streams<'a>(scan: &'a ContainerScan<'_>) -> Vec<ActiveParasolidSi
     streams
 }
 
-/// Decode the available Parasolid body streams into one B-rep. Returns `None`
-/// when the streams frame but yield neither geometry nor a valid empty
-/// partition/deltas model, so the caller falls back to metadata.
+/// Decode the available Parasolid body streams into one B-rep. Returns
+/// `Ok(None)` when the streams frame but yield neither geometry nor a valid
+/// empty partition/deltas model, so the caller falls back to metadata. A
+/// framed stream that fails semantic decoding returns its error to the caller;
+/// it must not be mistaken for a metadata-only document.
 fn try_decode_brep<'a>(
     scan: &ContainerScan,
     streams: &[ActiveParasolidSite<'a>],
     classification: &crate::dialect::LayerClassification,
-) -> Option<(DecodedBrep<'a>, DecodeBody)> {
+) -> Result<Option<(DecodedBrep<'a>, DecodeBody)>, CodecError> {
     let mut sites: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     for (index, stream) in streams.iter().enumerate() {
         sites.entry(stream.site_key()).or_default().push(index);
@@ -1966,16 +1968,15 @@ fn try_decode_brep<'a>(
     let mut decoded_sites = Vec::new();
     for (site, indices) in &sites {
         let first = indices[0];
-        let name = streams[first].name();
         let bodies: Vec<_> = indices
             .iter()
             .map(|index| (streams[*index].payload, streams[*index].header))
             .collect();
-        let decoded = brep::decode_bodies(&bodies, &name).ok()?;
+        let decoded = brep::decode_bodies(&bodies, streams[first].source_stream())?;
         decoded_sites.push((site.clone(), first, decoded));
     }
     if decoded_sites.is_empty() {
-        return None;
+        return Ok(None);
     }
     let active_site = container::select_active_parasolid_site(scan).map(|site| site.site_key());
     let resolved_active_site = active_site
@@ -2004,7 +2005,7 @@ fn try_decode_brep<'a>(
         || !decoded_sites[selected_site].2.points.is_empty();
     if resolved_active_site.is_some() {
         if !selected_is_empty_model && !selected_has_geometry {
-            return None;
+            return Ok(None);
         }
     } else {
         let any_site_has_geometry = decoded_sites.iter().any(|(_, _, decoded)| {
@@ -2028,7 +2029,7 @@ fn try_decode_brep<'a>(
                 })
         });
         if !any_site_has_geometry && !any_empty_model {
-            return None;
+            return Ok(None);
         }
     }
     let active_stream = resolved_active_site.map(|site| decoded_sites[site].1);
@@ -2048,7 +2049,7 @@ fn try_decode_brep<'a>(
         });
     let (selected_site_key, selected, mut decoded) = decoded_sites.swap_remove(selected_site);
     if active_stream.is_none() {
-        decoded.qualify_ids(&selected_site_key).ok()?;
+        decoded.qualify_ids(&selected_site_key)?;
     }
     bind_opaque_geometry(
         &mut decoded,
@@ -2062,7 +2063,7 @@ fn try_decode_brep<'a>(
         ));
     }
     for (site, first, mut alternate) in decoded_sites {
-        alternate.qualify_ids(&site).ok()?;
+        alternate.qualify_ids(&site)?;
         bind_opaque_geometry(
             &mut alternate,
             &UnknownId::mint(streams[first].section.native_id()).expect("identity grammar"),
@@ -2080,17 +2081,17 @@ fn try_decode_brep<'a>(
         // Keep only the selected source's bridge sequence namespace. Alternate
         // configuration sites are qualified into the model but do not own the
         // active SWIFT CadIdentifier lane.
-        merge_brep(&mut decoded, alternate);
+        merge_brep(&mut decoded, alternate)?;
     }
     let report = build_geometry_report(scan, &decoded, classification);
-    Some((
+    Ok(Some((
         DecodedBrep {
             metadata_header,
             brep: decoded,
             configuration_bodies,
         },
         report,
-    ))
+    )))
 }
 
 fn bind_opaque_geometry(brep: &mut Brep, source: &UnknownId) {
@@ -2115,10 +2116,10 @@ fn bind_opaque_geometry(brep: &mut Brep, source: &UnknownId) {
     }
 }
 
-fn merge_brep(target: &mut Brep, mut source: Brep) {
+fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     // Sequence links are source-local and belong only to the selected SWIFT
     // source. Alternate configuration sequences must not enter its namespace.
-    target.annotations.append(source.annotations);
+    target.annotations.append(source.annotations)?;
     target.bodies.append(&mut source.bodies);
     target.regions.append(&mut source.regions);
     target.shells.append(&mut source.shells);
@@ -2149,6 +2150,7 @@ fn merge_brep(target: &mut Brep, mut source: Brep) {
     target.stats.ambiguous_face_owners += source.stats.ambiguous_face_owners;
     target.stats.unclaimed_faces += source.stats.unclaimed_faces;
     target.stats.synthetic_body_grouping |= source.stats.synthetic_body_grouping;
+    Ok(())
 }
 
 fn ensure_display_appearance(
@@ -2171,7 +2173,7 @@ fn ensure_display_appearance(
     crate::annotations::note(
         annotations,
         id.as_str().to_owned(),
-        definition.source_name.clone(),
+        &definition.source_name,
         definition.record_offset as u64,
         "displaylist_visual_properties",
         Exactness::ByteExact,
@@ -2219,9 +2221,9 @@ fn build_geometry_ir(
     let mut annotations = std::mem::take(&mut brep.annotations);
     let mut pmi_losses = Vec::new();
     let mut histories = crate::history::histories(scan, &mut annotations, &mut pmi_losses);
-    let mut lanes = crate::resolved_features::assembly::lanes(scan, &mut annotations);
+    let mut lanes = crate::resolved_features::assembly::lanes(scan, &mut annotations)?;
     let mut supplemental_config_lanes =
-        crate::resolved_features::assembly::supplemental_config_lanes(scan, &mut annotations);
+        crate::resolved_features::assembly::supplemental_config_lanes(scan, &mut annotations)?;
     crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
     crate::resolved_features::bindings::bind_scalar_operands(&histories, &mut lanes);
     crate::resolved_features::bindings::bind_scalar_operands(
@@ -2649,13 +2651,23 @@ fn build_geometry_ir(
     stamp_configuration_baseline(&mut ir)?;
     snapshot_active_configuration(&mut ir);
     let mut unknowns = brep.unknowns;
-    let annotation_source = header.map_or("unresolved Parasolid stream", |header| {
-        header.description.as_str()
-    });
-    for face_color in brep.face_colors {
+    for owned_face_color in brep.face_colors {
+        let annotation_source = &owned_face_color.source_stream;
+        let site = owned_face_color.site_key.as_deref().map_or_else(
+            || {
+                owned_face_color
+                    .value
+                    .target
+                    .as_deref()
+                    .and_then(|target| target.split_once('@').map(|(_, site)| format!("@{site}")))
+                    .unwrap_or_default()
+            },
+            |site| format!("@{site}"),
+        );
+        let face_color = owned_face_color.value;
         let id = AppearanceId::mint(format!(
-            "sldprt:appearance:entity53#{}",
-            face_color.color_attr
+            "sldprt:appearance:entity53#{}{}",
+            face_color.color_attr, site
         ))
         .expect("identity grammar");
         crate::annotations::note(
@@ -2687,10 +2699,6 @@ fn build_geometry_ir(
             });
         }
         if let Some(target) = face_color.target {
-            let site = target
-                .split_once('@')
-                .map(|(_, site)| format!("@{site}"))
-                .unwrap_or_default();
             let binding_id = format!(
                 "sldprt:appearance:binding#face:{}:{}{}",
                 face_color.face_attr, face_color.color_attr, site
@@ -2721,7 +2729,7 @@ fn build_geometry_ir(
         crate::annotations::note(
             &mut annotations,
             id.as_str().to_owned(),
-            definition.source_name,
+            &definition.source_name,
             definition.record_offset as u64,
             "moVisualProperties_c",
             Exactness::ByteExact,
@@ -2752,6 +2760,7 @@ fn build_geometry_ir(
         if display_faces.is_empty() {
             continue;
         }
+        let display_stream = display.source_stream();
         for (table_index, face) in display_faces.iter().enumerate() {
             let candidates = face
                 .surface_references
@@ -2761,7 +2770,7 @@ fn build_geometry_ir(
             if candidates.len() > 1 {
                 conflicting_display_references.push(format!(
                     "{}::DisplayFace[{}] ({})",
-                    display.display_name(),
+                    display_stream.as_str(),
                     table_index,
                     candidates
                         .iter()
@@ -2787,7 +2796,6 @@ fn build_geometry_ir(
                     identity,
                 });
             }
-            let display_stream = display.display_name();
             crate::annotations::note(
                 &mut annotations,
                 id.clone(),
@@ -2816,7 +2824,7 @@ fn build_geometry_ir(
                     appearance,
                     source_entity_id: Some(format!(
                         "{}::DisplayFace[{}]",
-                        display.display_name(),
+                        display_stream.as_str(),
                         table_index
                     )),
                     object_type: Some("DisplayFace".into()),
@@ -2835,7 +2843,7 @@ fn build_geometry_ir(
         crate::annotations::note(
             &mut annotations,
             display_id.clone(),
-            display.display_name(),
+            display_stream,
             0,
             "displaylist_tessellation",
             Exactness::Unknown,
@@ -2901,10 +2909,7 @@ fn build_geometry_ir(
         crate::annotations::note(
             &mut annotations,
             id.clone(),
-            source_block
-                .section
-                .clone()
-                .unwrap_or_else(|| format!("block@{}", source_block.offset)),
+            source_block.section.source_stream(),
             source_block.offset as u64,
             source_block.family.label(),
             Exactness::ByteExact,
@@ -2921,7 +2926,7 @@ fn build_geometry_ir(
         crate::annotations::note(
             &mut annotations,
             id.clone(),
-            source_stream.path.clone(),
+            &source_stream.path,
             0,
             container::payload_family(&source_stream.payload).label(),
             Exactness::ByteExact,
@@ -2957,10 +2962,14 @@ fn build_geometry_ir(
         }
     }
     for (record_id, links) in opaque_links {
-        let source = unknowns
+        let Some(source) = unknowns
             .iter_mut()
             .find(|record| record.id().as_str() == record_id)
-            .expect("opaque geometry source is retained");
+        else {
+            return Err(CodecError::malformed(format_args!(
+                "opaque geometry record {record_id} was not retained"
+            )));
+        };
         source.links_mut().extend(links);
     }
     preserve_source_image(scan, &mut annotations, &mut unknowns);
@@ -3269,9 +3278,9 @@ fn build_metadata_ir(
     let mut annotations = Annotations::default();
     let mut pmi_losses = Vec::new();
     let mut histories = crate::history::histories(scan, &mut annotations, &mut pmi_losses);
-    let mut lanes = crate::resolved_features::assembly::lanes(scan, &mut annotations);
+    let mut lanes = crate::resolved_features::assembly::lanes(scan, &mut annotations)?;
     let mut supplemental_config_lanes =
-        crate::resolved_features::assembly::supplemental_config_lanes(scan, &mut annotations);
+        crate::resolved_features::assembly::supplemental_config_lanes(scan, &mut annotations)?;
     crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
     crate::resolved_features::bindings::bind_scalar_operands(&histories, &mut lanes);
     crate::resolved_features::bindings::bind_scalar_operands(
@@ -3325,7 +3334,7 @@ fn build_metadata_ir(
         crate::annotations::note(
             &mut annotations,
             id.clone(),
-            name,
+            site.source_stream(),
             0,
             "parasolid_stream",
             Exactness::Unknown,
@@ -4578,7 +4587,7 @@ fn preserve_source_image(
     crate::annotations::note(
         annotations,
         "sldprt:file:source-image#0",
-        "source",
+        &cadmpeg_ir::stream_name!("source"),
         0,
         "source_image",
         Exactness::ByteExact,

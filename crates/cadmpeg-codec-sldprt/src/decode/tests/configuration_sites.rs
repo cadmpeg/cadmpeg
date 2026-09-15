@@ -122,7 +122,7 @@ fn decode_synthesizes_sparse_partition_configuration() {
         &parasolid_with_body("partition body", "SCH_SW_33103_11000", &triangle_body()),
     ));
     assert_eq!(
-        container::scan_bytes(&source).blocks[0].section.as_deref(),
+        container::scan_bytes(&source).blocks[0].section.name(),
         Some("Contents/Config-3-Partition")
     );
     let decoded = SldprtCodec
@@ -156,11 +156,11 @@ fn decode_synthesizes_sparse_partition_configuration() {
     assert!(scan
         .blocks
         .iter()
-        .any(|block| block.section.as_deref() == Some("Contents/Config-3-Partition")));
+        .any(|block| block.section.name() == Some("Contents/Config-3-Partition")));
     assert!(!scan
         .blocks
         .iter()
-        .any(|block| block.section.as_deref() == Some("Contents/Config-0-Partition")));
+        .any(|block| block.section.name() == Some("Contents/Config-0-Partition")));
 }
 
 #[test]

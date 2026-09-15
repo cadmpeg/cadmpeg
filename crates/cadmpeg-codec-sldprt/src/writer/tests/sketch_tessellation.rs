@@ -228,7 +228,7 @@ fn semantic_writer_applies_compressed_line_sketch_edits() {
         .find(|block| {
             block
                 .section
-                .as_deref()
+                .name()
                 .is_some_and(|section| section.contains("ResolvedFeatures"))
         })
         .unwrap();
@@ -574,14 +574,14 @@ fn semantic_writer_preserves_opaque_auxiliary_blocks() {
 
     assert!(regenerated
         .source_fidelity()
-        .retained_records
+        .retained_records()
         .iter()
         .any(|(id, record)| {
             regenerated
                 .source_fidelity()
                 .annotations
                 .provenance
-                .get(id)
+                .get(id.as_str())
                 .is_some_and(|note| note.stream() == "Contents/CustomData")
                 && record.data() == Some(payload.as_slice())
         }));
@@ -657,14 +657,14 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
     );
     assert!(regenerated
         .source_fidelity()
-        .retained_records
+        .retained_records()
         .iter()
         .any(|(id, record)| {
             regenerated
                 .source_fidelity()
                 .annotations
                 .provenance
-                .get(id)
+                .get(id.as_str())
                 .is_some_and(|note| note.stream() == "Contents/CustomData")
                 && record.data() == Some(b"opaque-state".as_slice())
         }));
@@ -677,7 +677,7 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
     let scan = container::scan_bytes(written);
     assert_eq!(scan.directory.len(), scan.blocks.len());
     for block in &scan.blocks {
-        let section = block.section.as_deref().unwrap();
+        let section = block.section.name().unwrap();
         if section == "Contents/CustomData" {
             assert_eq!(block.type_id, 0x77);
         }

@@ -114,11 +114,11 @@ fn scan_classifies_blocks_cells_and_directory() {
     assert_eq!(scan.directory.len(), 1);
 
     let png = &scan.blocks[0];
-    assert_eq!(png.section.as_deref(), Some("PreviewPNG"));
+    assert_eq!(png.section.name(), Some("PreviewPNG"));
     assert_eq!(png.family, container::PayloadFamily::PngPreview);
 
     let ps = &scan.blocks[1];
-    assert_eq!(ps.section.as_deref(), Some("Contents/Config-0-Partition"));
+    assert_eq!(ps.section.name(), Some("Contents/Config-0-Partition"));
     assert_eq!(ps.family, container::PayloadFamily::Parasolid);
 
     assert_eq!(scan.cache_cells[0].name, "Contents/DisplayLists");
@@ -126,6 +126,19 @@ fn scan_classifies_blocks_cells_and_directory() {
     assert_eq!(scan.directory[0].name, "[Content_Types].xml");
     assert_eq!(scan.directory[0].descriptor, [0; 14]);
     assert_eq!(scan.directory[0].trailer, [0xe5, 0x4b, 0x57, 0x5b, 0, 0]);
+}
+
+#[test]
+fn empty_block_name_is_anonymous_but_has_offset_owner() {
+    assert_eq!(container::nibble_swap_name(&[]), Some(String::new()));
+
+    let mut source = outer_header();
+    source.extend(make_block(0x44, "", b"anonymous payload"));
+    let scan = container::scan_bytes(&source);
+    let block = &scan.blocks[0];
+
+    assert_eq!(block.section.name(), None);
+    assert_eq!(block.section.source_stream().as_str(), "block@8");
 }
 
 #[test]

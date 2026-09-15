@@ -10,7 +10,6 @@ use crate::records::{
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use std::collections::{HashMap, HashSet};
-use std::fmt::Write as _;
 
 pub(crate) fn component_path_features(
     components: &[FeatureInputComponentPathEntry],
@@ -107,8 +106,9 @@ pub(crate) fn component_path_terminal_feature(
             .or_insert(Some(feature.id.as_str()));
     }
     for component in components.iter().rev() {
-        let source_id =
-            View::u32_le_at(&component.type_signature, 4).expect("four-byte component source");
+        let Some(source_id) = View::u32_le_at(&component.type_signature, 4) else {
+            continue;
+        };
         match by_source.get(&source_id) {
             Some(Some(feature)) => return Some((*feature).to_string()),
             Some(None) => return None,
@@ -585,7 +585,7 @@ fn compact_edge_selection_value(local_edge_ids: &[u32]) -> String {
         if index != 0 {
             value.push(',');
         }
-        write!(&mut value, "{edge_id}").expect("writing to String cannot fail");
+        value.push_str(&edge_id.to_string());
     }
     value
 }
@@ -643,7 +643,7 @@ pub(crate) fn compact_body_selection_value(local_body_ids: &[u32]) -> String {
         if index != 0 {
             value.push(',');
         }
-        write!(&mut value, "{body_id}").expect("writing to String cannot fail");
+        value.push_str(&body_id.to_string());
     }
     value
 }

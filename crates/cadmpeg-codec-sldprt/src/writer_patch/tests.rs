@@ -233,7 +233,7 @@ fn native_patch_edits_points_without_dropping_untyped_surfaces() {
         .unwrap();
     let scan = container::scan_bytes(written);
     assert!(scan.blocks.iter().any(|block| {
-        block.section.as_deref() == Some("Contents/Config-0-Deltas") && block.payload == deltas
+        block.section.name() == Some("Contents/Config-0-Deltas") && block.payload == deltas
     }));
 }
 
@@ -438,12 +438,12 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
     let partition = indexed
         .blocks
         .iter()
-        .find(|block| block.section.as_deref() == Some("Contents/Config-0-Partition"))
+        .find(|block| block.section.name() == Some("Contents/Config-0-Partition"))
         .unwrap();
     let keywords = indexed
         .blocks
         .iter()
-        .find(|block| block.section.as_deref() == Some("Contents/Keywords"))
+        .find(|block| block.section.name() == Some("Contents/Keywords"))
         .unwrap();
     let mut directory = make_directory_entry(
         partition.type_id,
@@ -467,7 +467,7 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
     let source_partition = source_scan
         .blocks
         .iter()
-        .find(|block| block.section.as_deref() == Some("Contents/Config-0-Partition"))
+        .find(|block| block.section.name() == Some("Contents/Config-0-Partition"))
         .unwrap()
         .payload
         .clone();
@@ -516,11 +516,11 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
     let written_partition = written_scan
         .blocks
         .iter()
-        .find(|block| block.section.as_deref() == Some("Contents/Config-0-Partition"))
+        .find(|block| block.section.name() == Some("Contents/Config-0-Partition"))
         .unwrap();
     assert_eq!(written_partition.payload, source_partition);
     assert!(written_scan.blocks.iter().any(|block| {
-        block.section.as_deref() == Some("Contents/Config-0-Deltas")
+        block.section.name() == Some("Contents/Config-0-Deltas")
             && block.payload == b"opaque-deltas"
     }));
     assert_eq!(written_scan.cache_cells.len(), 1);
@@ -551,7 +551,7 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
         [0xcd, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     );
     assert!(written_scan.blocks.iter().any(|block| {
-        block.section.as_deref() == Some("Contents/Config-0-GhostPartition")
+        block.section.name() == Some("Contents/Config-0-GhostPartition")
             && block.payload == b"opaque-ghost"
     }));
     let regenerated = SldprtCodec
@@ -603,7 +603,10 @@ fn opaque_curve_is_retained_and_does_not_block_point_edits() {
         .iter()
         .find(|unknown| unknown.id == *record)
         .expect("opaque curve record");
-    assert!(retained.links.iter().any(|link| link == curve.id.as_str()));
+    assert!(retained
+        .links
+        .iter()
+        .any(|link| link.as_str() == curve.id.as_str()));
 
     decoded.ir_mut().model.points[1].position.x = 1_500.0;
     let mut encoded = Vec::new();

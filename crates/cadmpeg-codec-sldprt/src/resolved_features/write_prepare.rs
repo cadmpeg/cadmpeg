@@ -3,8 +3,9 @@
 use super::bindings::bind_scalar_operands;
 use super::hashes::{constraint_hash, lane_hash, sketch_hash};
 use super::markers::{
-    marker_spatial_coordinate_offset, reference_cells, relation_bindings, sketch_input_entities,
-    spatial_relation_marker_coordinates, spatial_sketches, spatial_vertex_offsets,
+    admit_sketch_input_entities, marker_spatial_coordinate_offset, reference_cells,
+    relation_bindings, spatial_relation_marker_coordinates, spatial_sketches,
+    spatial_vertex_offsets,
 };
 use super::names::{class_declarations, object_names};
 use super::scalars::{feature_object_name, named_scalars};
@@ -1447,7 +1448,7 @@ fn source_less_lanes(
         lane.scalars = named_scalars(&lane.native_payload, &lane.id, &lane.names);
         lane.relation_bindings = relation_bindings(&lane.id, &lane.classes, &lane.scalars);
         lane.references = reference_cells(&lane.scalars, &lane.classes);
-        lane.sketch_entities = sketch_input_entities(&lane.native_payload, &lane.id);
+        lane.sketch_entities = admit_sketch_input_entities(&lane.native_payload, &lane.id)?;
     }
     bind_scalar_operands(&native.feature_histories, &mut lanes);
     Ok(lanes)
@@ -1474,6 +1475,7 @@ fn source_less_lane<'a>(
     {
         return &mut lanes[position];
     }
+    let index = lanes.len();
     lanes.push(FeatureInputLane {
         id: format!("Contents/Config-{configuration}-ResolvedFeatures"),
         configuration: Some(configuration.into()),
@@ -1490,7 +1492,7 @@ fn source_less_lane<'a>(
         references: Vec::new(),
         sketch_entities: Vec::new(),
     });
-    lanes.last_mut().expect("lane was inserted")
+    &mut lanes[index]
 }
 
 pub(super) fn append_spatial_vertex(payload: &mut Vec<u8>, point: Point3) {

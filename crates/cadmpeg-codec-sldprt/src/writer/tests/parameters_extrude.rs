@@ -933,7 +933,7 @@ fn semantic_writer_round_trips_feature_output_scope() {
     let source_partition = container::scan_bytes(&source)
         .blocks
         .iter()
-        .find(|block| block.section.as_deref() == Some("Contents/Config-0-Partition"))
+        .find(|block| block.section.name() == Some("Contents/Config-0-Partition"))
         .unwrap()
         .payload
         .clone();
@@ -960,7 +960,7 @@ fn semantic_writer_round_trips_feature_output_scope() {
     let written_partition = container::scan_bytes(&encoded)
         .blocks
         .iter()
-        .find(|block| block.section.as_deref() == Some("Contents/Config-0-Partition"))
+        .find(|block| block.section.name() == Some("Contents/Config-0-Partition"))
         .unwrap()
         .payload
         .clone();

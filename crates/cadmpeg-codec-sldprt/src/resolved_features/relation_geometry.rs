@@ -551,10 +551,9 @@ pub(crate) fn project_relation_point_geometry(
             if positions.len() != 1 {
                 continue;
             }
-            let position = positions
-                .into_iter()
-                .next()
-                .expect("one transformed position");
+            let Some(position) = positions.into_iter().next() else {
+                continue;
+            };
             let position = Point2::new(position.0 as f64 * QUANTUM, position.1 as f64 * QUANTUM);
             entities.push(
                 SketchEntity::new(
@@ -1031,11 +1030,13 @@ pub(crate) fn project_relation_solved_line_geometry(
             };
             let transformed_line = |markers: [&SketchInputEntity; 2]| {
                 let native = markers.map(|marker| {
-                    let [u, v] = marker
-                        .coordinates_m
-                        .expect("coordinate-bearing roster points carry coordinates");
-                    quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM)
+                    marker.coordinates_m.map(|[u, v]| {
+                        quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM)
+                    })
                 });
+                let [Some(first), Some(second)] = native else {
+                    return None;
+                };
                 let transform_candidates = transforms
                     .get(relation.feature_ref.as_str())
                     .map_or(&[][..], Vec::as_slice);
@@ -1055,7 +1056,7 @@ pub(crate) fn project_relation_solved_line_geometry(
                 let candidates = transform_candidates
                     .into_iter()
                     .filter_map(|transform| {
-                        Some((transform.apply(native[0])?, transform.apply(native[1])?))
+                        Some((transform.apply(first)?, transform.apply(second)?))
                     })
                     .filter(|(start, end)| start != end)
                     .fold(Vec::new(), |mut candidates, candidate| {
@@ -1821,7 +1822,9 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
     if slot_classes.len() != 1 {
         return None;
     }
-    let slot_class = slot_classes.pop().expect("one slot handle class");
+    let Some(slot_class) = slot_classes.pop() else {
+        return None;
+    };
     let class_end = lane
         .classes
         .iter()

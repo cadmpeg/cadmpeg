@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::topology::Color;
+use cadmpeg_ir::StreamName;
 
 use crate::brep::feature_source::FeatureSourceId;
 use crate::container::{ContainerScan, Section};
@@ -19,7 +20,7 @@ const VISUAL_PROPERTIES_CLASS: &[u8] = b"moVisualProperties_c";
 pub(crate) struct AppearanceDefinition {
     pub(crate) name: String,
     pub(crate) color: Color,
-    pub(crate) source_name: String,
+    pub(crate) source_name: StreamName,
     pub(crate) record_offset: usize,
 }
 
@@ -41,7 +42,7 @@ pub(crate) struct FeatureAppearanceAssignment {
     pub(crate) feature_timestamp: u32,
     pub(crate) packed_color: u32,
     pub(crate) color: Color,
-    pub(crate) source_name: String,
+    pub(crate) source_name: StreamName,
     pub(crate) record_offset: usize,
 }
 
@@ -78,6 +79,7 @@ fn definition_at(
     record_offset: usize,
 ) -> Option<AppearanceDefinition> {
     let bytes = section.payload();
+    let source_name = section.source_stream().clone();
     let packed_color = View::u32_le_at(bytes, packed_offset)?;
     let name_header = packed_offset + 16;
     if bytes.get(name_header..name_header + 3) != Some(&[0xff, 0xfe, 0xff]) {
@@ -98,7 +100,7 @@ fn definition_at(
     Some(AppearanceDefinition {
         name,
         color: packed_rgb(packed_color),
-        source_name: section.display_name(),
+        source_name,
         record_offset,
     })
 }
@@ -186,6 +188,7 @@ pub(crate) fn feature_assignments(scan: &ContainerScan) -> Vec<FeatureAppearance
         .sections()
         .filter(|section| section.name() == Some("ThirdPtyStore/VisualStates"))
     {
+        let source_name = section.source_stream().clone();
         let bytes = section.payload();
         let classes = crate::tessellation::class_intervals(bytes);
         for marker_offset in bytes
@@ -241,7 +244,7 @@ pub(crate) fn feature_assignments(scan: &ContainerScan) -> Vec<FeatureAppearance
                 feature_timestamp,
                 packed_color,
                 color: packed_rgb(packed_color),
-                source_name: section.display_name(),
+                source_name: source_name.clone(),
                 record_offset,
             });
         }
