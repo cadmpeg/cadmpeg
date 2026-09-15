@@ -4,8 +4,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-/// Every hand-written `Deserialize` in the three wire crates, with how it is
-/// covered.
+mod reader_routes {
+    include!("source_census/reader_routes.rs");
+}
+
+/// Every hand-written `Deserialize` in the three wire crates, with the reader
+/// route that admits its wire value.
 ///
 /// A hand impl never reaches `scripts/check-deny-census.py`, which reads
 /// `derive(Deserialize)` items only, so its coverage is stated here. The test
@@ -13,14 +17,15 @@ use std::path::{Path, PathBuf};
 /// disagree in either direction, so a new hand impl cannot land uncovered and a
 /// deleted one cannot leave a stale entry.
 ///
-/// The coverage classes are:
+/// The route classes are checked against parsed implementation bodies by the
+/// `reader_routes` module. They cannot drift independently of the reader.
 ///
-/// * `wire` - the impl reads one named or inner wire type that declares
-///   `deny_unknown_fields`, so the key set is refused by that type;
-/// * `keyless` - the impl reads a scalar, a string, a byte string, a fixed
-///   array or a list, so it has no object key set at all;
-/// * `free-form` - the impl admits open maps. The separate golden sweep and
-///   owning admission tests state their value and duplicate-key constraints.
+/// * `wire` - the impl reads a named or local wire object whose declaration
+///   states `deny_unknown_fields`;
+/// * `keyless` - the impl reads a scalar, byte string, fixed array, or list;
+/// * `free-form` - the impl admits an open map or canonical JSON value;
+/// * `validated-value` - the impl reads a general JSON value and applies an
+///   explicit version gate before constructing its scalar wrapper.
 const HAND_IMPLS: &[(&str, &str, &str)] = &[
     ("crates/cadmpeg-asm/src/brep/mod.rs", "AsmBrep", "wire"),
     ("crates/cadmpeg-asm/src/brep/records.rs", "$name", "wire"),
@@ -54,7 +59,11 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
     ),
     ("crates/cadmpeg-ir/src/document.rs", "CadIr", "wire"),
     ("crates/cadmpeg-ir/src/document.rs", "CensusKey", "keyless"),
-    ("crates/cadmpeg-ir/src/document.rs", "IrVersion", "keyless"),
+    (
+        "crates/cadmpeg-ir/src/document.rs",
+        "IrVersion",
+        "validated-value",
+    ),
     ("crates/cadmpeg-ir/src/document.rs", "Model", "wire"),
     (
         "crates/cadmpeg-ir/src/features/edge_treatments.rs",
@@ -72,6 +81,7 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
         "wire",
     ),
     ("crates/cadmpeg-ir/src/features.rs", "$name", "wire"),
+    ("crates/cadmpeg-ir/src/features.rs", "$name", "keyless"),
     ("crates/cadmpeg-ir/src/features.rs", "BodyMember", "wire"),
     (
         "crates/cadmpeg-ir/src/features.rs",
@@ -243,6 +253,7 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
         "keyless",
     ),
     ("crates/cadmpeg-ir/src/provenance.rs", "Provenance", "wire"),
+    ("crates/cadmpeg-ir/src/provenance.rs", "Provenance", "wire"),
     ("crates/cadmpeg-ir/src/scalar.rs", "$name", "keyless"),
     (
         "crates/cadmpeg-ir/src/sketches.rs",
@@ -254,9 +265,6 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
     ("crates/cadmpeg-ir/src/units.rs", "$name", "keyless"),
 ];
 
-/// The coverage classes a `HAND_IMPLS` entry may state.
-const COVERAGE_CLASSES: &[&str] = &["wire", "keyless", "free-form"];
-
 #[test]
 fn every_hand_written_deserialize_states_its_coverage() {
     let found = hand_written_impls();
@@ -264,18 +272,16 @@ fn every_hand_written_deserialize_states_its_coverage() {
         !found.is_empty(),
         "the hand-impl census found no impls to classify"
     );
-    let listed: BTreeSet<(String, String)> = HAND_IMPLS
+    let listed: Vec<(String, String)> = HAND_IMPLS
         .iter()
-        .map(|(path, name, class)| {
-            assert!(
-                COVERAGE_CLASSES.contains(class),
-                "{path} {name} states the unknown coverage class {class}"
-            );
-            ((*path).to_owned(), (*name).to_owned())
-        })
+        .map(|(path, name, _class)| ((*path).to_owned(), (*name).to_owned()))
         .collect();
-    let missing: Vec<String> = found
-        .difference(&listed)
+    let mut found = found;
+    let mut listed = listed;
+    found.sort();
+    listed.sort();
+    let missing: Vec<String> = reader_routes::multiset_difference(&found, &listed)
+        .into_iter()
         .map(|(path, name)| format!("{path} {name}"))
         .collect();
     assert!(
@@ -284,8 +290,8 @@ fn every_hand_written_deserialize_states_its_coverage() {
         missing.len(),
         missing.join("\n")
     );
-    let stale: Vec<String> = listed
-        .difference(&found)
+    let stale: Vec<String> = reader_routes::multiset_difference(&listed, &found)
+        .into_iter()
         .map(|(path, name)| format!("{path} {name}"))
         .collect();
     assert!(
@@ -294,6 +300,8 @@ fn every_hand_written_deserialize_states_its_coverage() {
         stale.len(),
         stale.join("\n")
     );
+
+    reader_routes::assert_hand_written_reader_routes();
 
     // Namespace and arena names are open. Their values still have fixed shapes:
     // a namespace is an arena map, and an arena is a list of native records.
@@ -1432,13 +1440,13 @@ fn absence_spelling(field: &syn::Field) -> Option<String> {
 /// A `macro_rules!` body is token text, not items, so its impls are read from
 /// the macro's own token stream under the same trait-and-lifetime rule; the
 /// type name recorded there is the macro's metavariable.
-fn hand_written_impls() -> BTreeSet<(String, String)> {
+fn hand_written_impls() -> Vec<(String, String)> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(Path::parent)
         .expect("the repository root sits two levels above the crate manifest")
         .to_path_buf();
-    let mut found = BTreeSet::new();
+    let mut found = Vec::new();
     for source in [
         "crates/cadmpeg-ir/src",
         "crates/cadmpeg-core/src",
@@ -1463,17 +1471,18 @@ fn hand_written_impls() -> BTreeSet<(String, String)> {
             collect_hand_impls(&parsed.items, &relative, &mut found);
         }
     }
+    found.sort();
     found
 }
 
 /// Records every hand-written `Deserialize` impl among `items`, recursing into
 /// inline modules and `macro_rules!` bodies.
-fn collect_hand_impls(items: &[syn::Item], relative: &str, found: &mut BTreeSet<(String, String)>) {
+fn collect_hand_impls(items: &[syn::Item], relative: &str, found: &mut Vec<(String, String)>) {
     for item in items {
         match item {
             syn::Item::Impl(implementation) => {
                 if let Some(name) = deserialize_impl_target(implementation) {
-                    found.insert((relative.to_owned(), name));
+                    found.push((relative.to_owned(), name));
                 }
             }
             syn::Item::Mod(module) => {
@@ -1486,7 +1495,7 @@ fn collect_hand_impls(items: &[syn::Item], relative: &str, found: &mut BTreeSet<
             }
             syn::Item::Macro(macro_item) => {
                 for name in macro_body_impl_targets(&macro_item.mac.tokens) {
-                    found.insert((relative.to_owned(), name));
+                    found.push((relative.to_owned(), name));
                 }
             }
             _ => {}
@@ -1732,6 +1741,49 @@ mod scanner_tests {
             panic!("the fixture is a macro");
         };
         assert_eq!(macro_body_impl_targets(&item.mac.tokens), vec!["$name"]);
+    }
+
+    #[test]
+    fn hand_impl_scanner_preserves_duplicate_impls_and_macro_routes() {
+        let file: syn::File = syn::parse_str(
+            r#"
+                impl<'wire> serde::Deserialize<'wire> for Manual {}
+                impl<'wire> serde::Deserialize<'wire> for Manual {}
+                mod nested {
+                    impl<'wire> serde::Deserialize<'wire> for Nested {}
+                }
+                macro_rules! make_reader {
+                    ($name:ident) => {
+                        impl<'wire> serde::Deserialize<'wire> for $name {}
+                    };
+                }
+            "#,
+        )
+        .expect("parse duplicate reader fixture");
+        let mut found = Vec::new();
+        collect_hand_impls(&file.items, "fixture.rs", &mut found);
+        assert_eq!(
+            found,
+            vec![
+                ("fixture.rs".to_owned(), "Manual".to_owned()),
+                ("fixture.rs".to_owned(), "Manual".to_owned()),
+                ("fixture.rs".to_owned(), "Nested".to_owned()),
+                ("fixture.rs".to_owned(), "$name".to_owned()),
+            ]
+        );
+        assert_eq!(
+            reader_routes::multiset_difference(
+                &found,
+                &vec![
+                    ("fixture.rs".to_owned(), "Manual".to_owned()),
+                    ("fixture.rs".to_owned(), "$name".to_owned()),
+                ],
+            ),
+            vec![
+                ("fixture.rs".to_owned(), "Manual".to_owned()),
+                ("fixture.rs".to_owned(), "Nested".to_owned()),
+            ]
+        );
     }
 
     #[test]
