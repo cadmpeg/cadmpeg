@@ -383,13 +383,18 @@ fn complete_decode_admits_unset_and_future_embedded_linetype_tags() {
     let linetype = embedded_linetype(archive, [u32::MAX, 7]);
     let extension = [vec![33], linetype, vec![0]].concat();
     let layer = layer_record_with_rendering_and_extensions(archive, &rendering, &extension);
-    let result = decode(document(archive, layer));
+    let result = decode(document(archive, layer.clone()));
 
     let layers = &result.ir().native.namespace("rhino").unwrap().arenas()["layers"];
     assert_eq!(layers.len(), 1);
     assert!(!result.report().losses.iter().any(|loss| {
         loss.message.contains("metadata record 0x20008050") && loss.message.contains("degraded")
     }));
+    assert!(result
+        .source_fidelity()
+        .retained_records()
+        .iter()
+        .any(|(_, record)| record.data() == Some(layer.as_slice())));
     assert_valid(&result);
 }
 
