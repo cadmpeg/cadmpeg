@@ -1504,7 +1504,7 @@ pub(crate) fn parse_rendering_attributes(
     let mut payload = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let major = payload.i32()?;
     let minor = payload.i32()?;
-    if major != 1 || (matches!(kind, RenderingAttributesKind::Object) && minor < 1) {
+    if major != 1 || minor < 0 || (matches!(kind, RenderingAttributesKind::Object) && minor < 1) {
         return Err(FramingError::structural(
             payload.position(),
             "unsupported rendering-attributes version",
@@ -1536,7 +1536,7 @@ pub(crate) fn parse_rendering_attributes(
             BoundedReader::new(data, material.body().start, material.body().end)?;
         let material_major = material_payload.i32()?;
         let material_minor = material_payload.i32()?;
-        if material_major != 1 {
+        if material_major != 1 || material_minor < 0 {
             return Err(FramingError::structural(
                 material_payload.position(),
                 "unsupported rendering material reference version",
@@ -1571,7 +1571,7 @@ pub(crate) fn parse_rendering_attributes(
                 BoundedReader::new(data, mapping.body().start, mapping.body().end)?;
             let mapping_major = mapping_payload.i32()?;
             let mapping_minor = mapping_payload.i32()?;
-            if mapping_major != 1 {
+            if mapping_major != 1 || mapping_minor < 0 {
                 return Err(FramingError::structural(
                     mapping_payload.position() - 8,
                     "unsupported obsolete rendering mapping version",
@@ -1612,8 +1612,8 @@ pub(crate) fn parse_rendering_attributes(
             let mut mapping_payload =
                 BoundedReader::new(data, mapping.body().start, mapping.body().end)?;
             let mapping_major = mapping_payload.i32()?;
-            let _mapping_minor = mapping_payload.i32()?;
-            if mapping_major != 1 {
+            let mapping_minor = mapping_payload.i32()?;
+            if mapping_major != 1 || mapping_minor < 0 {
                 return Err(FramingError::structural(
                     mapping_payload.position() - 4,
                     "unsupported rendering mapping reference version",
@@ -1651,6 +1651,12 @@ pub(crate) fn parse_rendering_attributes(
                     ));
                 }
                 let channel_minor = channel_payload.i32()?;
+                if channel_minor < 0 {
+                    return Err(FramingError::structural(
+                        channel_payload.position() - 4,
+                        "unsupported rendering mapping channel version",
+                    ));
+                }
                 channel_payload.skip(4 + 16)?;
                 if channel_minor >= 1 {
                     channel_payload.skip(16 * 8)?;
@@ -2038,7 +2044,8 @@ fn parse_layer(
     } else {
         obsolete_mode == 2
     };
-    let id = (version.1 >= 5).then(|| uuid(&mut reader)).transpose()?;
+    let serialized_id = (version.1 >= 5).then(|| uuid(&mut reader)).transpose()?;
+    let id = serialized_id.filter(|id| !id.is_nil());
     let parent_compatible = writer_version.is_some_and(|version| version > 200_505_110);
     if version.1 >= 6 && writer_version.is_none() {
         losses.push(crate::loss::writer_stamp_unverified(
@@ -2103,7 +2110,11 @@ fn parse_layer(
         embedded_section_style: None,
         per_viewport_settings: Vec::new(),
     };
-    let mut source_requires_opaque = false;
+    // A nil serialized UUID is a valid source absence. The typed layer has no
+    // identity to expose for it, so retain the complete record for exact
+    // source recovery while using its archive index and source offset for
+    // internal disambiguation.
+    let mut source_requires_opaque = serialized_id.is_some_and(|id| id.is_nil());
     if let Some(descriptor) =
         userdata
             .iter()

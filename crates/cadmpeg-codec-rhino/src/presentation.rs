@@ -3813,6 +3813,12 @@ fn parse_rendering_mapping_channel(
         ));
     }
     let minor = value.i32()?;
+    if minor < 0 {
+        return Err(FramingError::structural(
+            value.position() - 4,
+            "rendering mapping channel minor version is negative",
+        ));
+    }
     let mapping_channel_id = value.i32()?;
     let mapping_uuid = uuid(&mut value)?.to_string();
     let object_transform = if minor >= 1 {
@@ -3870,6 +3876,12 @@ fn rendering_attributes(
                     ));
                 }
                 let minor = value.i32()?;
+                if minor < 0 {
+                    return Err(FramingError::structural(
+                        value.position() - 4,
+                        "rendering material minor version is negative",
+                    ));
+                }
                 let plugin_uuid = uuid(&mut value)?.to_string();
                 let front_material_uuid = uuid(&mut value)?.to_string();
                 let obsolete_mapping_count = checked_count_bytes(
@@ -3926,7 +3938,13 @@ fn rendering_attributes(
                         "rendering mapping version is unsupported",
                     ));
                 }
-                let _minor = value.i32()?;
+                let minor = value.i32()?;
+                if minor < 0 {
+                    return Err(FramingError::structural(
+                        value.position() - 4,
+                        "rendering mapping minor version is negative",
+                    ));
+                }
                 let plugin_uuid = uuid(&mut value)?.to_string();
                 let channel_count = checked_count_bytes(
                     value.i32()?,
