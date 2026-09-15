@@ -589,6 +589,8 @@ def collect_imports(path):
 def control_block_kind(code, opening):
     """Classify a brace that can make a reader call conditional."""
     prefix = code[:opening].rstrip()
+    if re.search(r"\bmacro_rules\s*!\s*[A-Za-z_]\w*$", prefix):
+        return "macro"
     closure = re.search(
         r"(?:^|[;{}(=,:])\s*(?:async\s+)?(?:move\s+)?"
         r"\|[^|{};\n]*\|\s*(?:->\s*[^{};\n]+)?$",
@@ -617,6 +619,14 @@ def call_is_unconditional(code, call):
     # proof does not establish whether a containing branch takes that exit.
     if re.search(r"\b(?:return|break|continue)\b", code[:call.start()]):
         return False
+    # Macro arguments are tokens, not evaluated expressions. Expansion can
+    # discard a read even when its source text contains a propagated result.
+    for invocation in re.finditer(r"\b[A-Za-z_$]\w*\s*!\s*([({\[])", code[:call.start()]):
+        left = invocation.group(1)
+        right = {"(": ")", "{": "}", "[": "]"}[left]
+        end = delimited_end(code, invocation.end() - 1, left, right)
+        if end is None or call.start() < end:
+            return False
     stack = []
     for index, char in enumerate(code[:call.start()]):
         if char == "{":

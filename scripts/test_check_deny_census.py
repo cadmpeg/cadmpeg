@@ -1020,6 +1020,10 @@ class DenyCensusTests(unittest.TestCase):
             "assigned if": "let _ = if false { Some(u8::deserialize(d)?) } else { None }; Ok(Self)",
             "assigned match": "let _ = match false { true => Some(u8::deserialize(d)?), false => None }; Ok(Self)",
             "early return": "return Ok(Self); let _ = u8::deserialize(d)?; Ok(Self)",
+            "unused macro": "macro_rules! unused { () => { u8::deserialize(d)? }; } Ok(Self)",
+            "macro argument parentheses": "macro_rules! discard { ($($t:tt)*) => { () } } discard!(u8::deserialize(d)?); Ok(Self)",
+            "macro argument braces": "macro_rules! discard { ($($t:tt)*) => { () } } discard!{u8::deserialize(d)?}; Ok(Self)",
+            "macro argument brackets": "macro_rules! discard { ($($t:tt)*) => { () } } discard![u8::deserialize(d)?]; Ok(Self)",
             "closure": "let _reader = || u8::deserialize(d); Ok(Self)",
             "closure block": "let _reader = || { u8::deserialize(d) }; Ok(Self)",
             "async block": "let _reader = async { u8::deserialize(d) }; Ok(Self)",
@@ -1160,6 +1164,7 @@ class DenyCensusTests(unittest.TestCase):
     def test_propagated_reader_errors_remain_proved(self) -> None:
         for body in [
             "Ok(Self(f64::deserialize(d)?))",
+            "macro_rules! discard { ($($t:tt)*) => { () } } discard!(anything); Ok(Self(f64::deserialize(d)?))",
             "f64::deserialize(d).map(Self)",
             "f64::deserialize(d).and_then(|value| Ok(Self(value)))",
             "let value = f64::deserialize(d).map_err(D::Error::custom)?; Ok(Self(value))",
