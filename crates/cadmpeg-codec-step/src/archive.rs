@@ -152,7 +152,7 @@ pub(crate) fn root_reference_notes(
     let (exchange, _) = crate::parse::parse(root_bytes)
         .map_err(|error| CodecError::Malformed(error.to_string()))?;
     let mut notes = Vec::new();
-    for reference in &exchange.references {
+    for reference in exchange.references() {
         let name = reference.name;
         let uri = forwarded_reference_uri(&exchange, &reference.uri);
         match resolve_uri(ROOT_NAME, uri)? {
@@ -185,7 +185,7 @@ fn forwarded_reference_uri<'a>(exchange: &'a crate::parse::Exchange, uri: &'a st
         return uri;
     };
     exchange
-        .anchors
+        .anchors()
         .iter()
         .find(|anchor| anchor.name == fragment)
         .and_then(|anchor| match &anchor.value {

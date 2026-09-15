@@ -211,15 +211,15 @@ pub struct ReferenceEntry {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Exchange {
     /// HEADER records in source order.
-    pub header: Vec<HeaderRecord>,
+    header: Vec<HeaderRecord>,
     /// ANCHOR bindings in source order.
-    pub anchors: Vec<AnchorEntry>,
+    anchors: Vec<AnchorEntry>,
     /// REFERENCE bindings in source order.
-    pub references: Vec<ReferenceEntry>,
+    references: Vec<ReferenceEntry>,
     /// DATA sections in source order.
-    pub data: Vec<DataSection>,
+    data: Vec<DataSection>,
     /// Complete SIGNATURE section byte ranges in source order.
-    pub signatures: Vec<Range<usize>>,
+    signatures: Vec<Range<usize>>,
     /// DATA instances indexed across every DATA section.
     records: BTreeMap<u64, RawRecord>,
     schema_identifiers: Vec<AdmittedSchemaIdentifier>,
@@ -270,6 +270,31 @@ impl PartialEq for EntityIndex {
 }
 
 impl Exchange {
+    /// HEADER records admitted with the cached schema and implementation level.
+    pub(crate) fn header(&self) -> &[HeaderRecord] {
+        &self.header
+    }
+
+    /// Resolved ANCHOR bindings in source order.
+    pub(crate) fn anchors(&self) -> &[AnchorEntry] {
+        &self.anchors
+    }
+
+    /// Admitted external occurrence bindings in source order.
+    pub(crate) fn references(&self) -> &[ReferenceEntry] {
+        &self.references
+    }
+
+    /// Admitted DATA sections and their record populations.
+    pub(crate) fn data(&self) -> &[DataSection] {
+        &self.data
+    }
+
+    /// Validated SIGNATURE extents in source order.
+    pub(crate) fn signatures(&self) -> &[Range<usize>] {
+        &self.signatures
+    }
+
     /// Shared record graph; mutation would invalidate the cached entity index.
     pub(crate) fn records(&self) -> &BTreeMap<u64, RawRecord> {
         &self.records
@@ -302,18 +327,20 @@ impl Exchange {
         crate::strings::decode_with_level(bytes, self.implementation_level.level())
     }
 
-    /// Release semantic source structures before retained opaque bytes are copied.
-    pub(crate) fn release_source_graph(&mut self) {
+    /// Release the source graph and transfer its signature extents for retention.
+    pub(crate) fn release_source_graph(&mut self) -> Vec<Range<usize>> {
         self.header.clear();
         self.anchors.clear();
         self.references.clear();
         self.data.clear();
-        self.signatures.clear();
         self.records.clear();
         self.schema_identifiers.clear();
         self.entity_ids = EntityIndex::default();
+        std::mem::take(&mut self.signatures)
     }
 
+    // The record graph is immutable while these indexes exist. Every indexed ID
+    // therefore owns a record; release_source_graph clears both together.
     fn entity_ids(&self) -> &HashMap<String, Vec<u64>> {
         self.entity_ids.0.get_or_init(|| {
             let mut entity_ids = HashMap::<String, Vec<u64>>::new();
@@ -359,7 +386,7 @@ impl Exchange {
             .get(name)
             .into_iter()
             .flatten()
-            .filter_map(|id| self.records.get(id).map(|record| (*id, record)))
+            .map(|id| (*id, &self.records[id]))
     }
 
     pub(crate) fn entities_any<'a>(
@@ -408,7 +435,7 @@ impl Exchange {
                 .clone();
             EntityIdIter::Shared { ids, at: 0 }
         };
-        ids.filter_map(|id| self.records.get(&id).map(|record| (id, record)))
+        ids.map(|id| (id, &self.records[&id]))
     }
 }
 

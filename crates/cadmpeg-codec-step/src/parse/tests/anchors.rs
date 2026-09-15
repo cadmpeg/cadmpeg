@@ -10,10 +10,10 @@ fn parser_accepts_external_instance_references_in_edition_three() {
     let (exchange, diagnostics) = crate::parse::parse(source).expect("external reference");
 
     assert!(diagnostics.is_empty());
-    assert_eq!(exchange.references[0].name.to_string(), "#100");
-    assert_eq!(exchange.references[0].uri, "part.step#root");
+    assert_eq!(exchange.references()[0].name.to_string(), "#100");
+    assert_eq!(exchange.references()[0].uri, "part.step#root");
     assert_eq!(
-        exchange.anchors[0].value,
+        exchange.anchors()[0].value,
         crate::parse::Value::Reference(100)
     );
     assert_eq!(
@@ -28,7 +28,7 @@ fn standalone_relative_reference_has_no_implicit_transport_base() {
     let (exchange, diagnostics) = crate::parse::parse(source).expect("standalone URI witness");
 
     assert!(diagnostics.is_empty());
-    assert_eq!(exchange.references[0].uri, "parts/child.p21#target");
+    assert_eq!(exchange.references()[0].uri, "parts/child.p21#target");
     assert_eq!(
         exchange.records()[&1].partials[0].parameters,
         vec![
@@ -90,7 +90,7 @@ fn parser_resolves_cyclic_local_references_to_null_values() {
     let (exchange, diagnostics) = crate::parse::parse(source).expect("cyclic reference");
 
     assert!(diagnostics.is_empty());
-    assert_eq!(exchange.anchors[0].value, crate::parse::Value::Omitted);
+    assert_eq!(exchange.anchors()[0].value, crate::parse::Value::Omitted);
     assert_eq!(
         exchange.records()[&1].partials[0].parameters,
         vec![crate::parse::Value::Omitted]
@@ -112,18 +112,18 @@ fn parser_accepts_value_instances_and_express_constants_in_edition_three() {
     assert!(diagnostics.is_empty());
     assert_eq!(
         exchange
-            .references
+            .references()
             .iter()
             .map(|entry| entry.name.to_string())
             .collect::<Vec<_>>(),
         ["#200", "@100"]
     );
     assert_eq!(
-        exchange.anchors[0].value,
+        exchange.anchors()[0].value,
         crate::parse::Value::ConstantEntity("PI".into())
     );
     assert_eq!(
-        exchange.anchors[1].value,
+        exchange.anchors()[1].value,
         crate::parse::Value::ConstantValue("E".into())
     );
     assert_eq!(
@@ -143,16 +143,16 @@ fn parser_retains_anchor_tags_and_resolves_their_references() {
     let (exchange, diagnostics) = crate::parse::parse(source).expect("anchor tags");
 
     assert!(diagnostics.is_empty());
-    assert_eq!(exchange.anchors[0].name, "shape");
-    assert_eq!(exchange.anchors[0].tags.len(), 2);
-    assert_eq!(exchange.anchors[0].tags[0].name, "source");
+    assert_eq!(exchange.anchors()[0].name, "shape");
+    assert_eq!(exchange.anchors()[0].tags.len(), 2);
+    assert_eq!(exchange.anchors()[0].tags[0].name, "source");
     assert_eq!(
-        exchange.anchors[0].tags[0].value,
+        exchange.anchors()[0].tags[0].value,
         crate::parse::Value::Resource("part.step#shape".into())
     );
-    assert_eq!(exchange.anchors[0].tags[1].name, "width");
+    assert_eq!(exchange.anchors()[0].tags[1].name, "width");
     assert_eq!(
-        exchange.anchors[0].tags[1].value,
+        exchange.anchors()[0].tags[1].value,
         crate::parse::Value::ValueReference(100)
     );
 }
