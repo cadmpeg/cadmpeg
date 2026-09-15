@@ -6,6 +6,7 @@
 mod consolidated;
 mod constraint;
 mod design;
+mod embedded_cylinders;
 mod entity;
 mod entity_suffix;
 mod entity_suffix_framing;
