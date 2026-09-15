@@ -1020,7 +1020,10 @@ pub(crate) fn parse_element_map(bytes: &[u8], side_entry: bool) -> Result<Parsed
                 let fields = (0..7)
                     .map(|_| next_token(&mut tokens, "child descriptor"))
                     .collect::<Result<Vec<_>, _>>()?;
-                children.push(fields.join(" "));
+                let descriptor = fields.join(" ");
+                crate::native::validate_element_map_child_descriptor(&descriptor, expected_index)
+                    .map_err(CodecError::Malformed)?;
+                children.push(descriptor);
             }
             expect(&mut tokens, "NameCount")?;
             let name_count = next_count(&mut tokens, "name count", MAX_NAMES)?;
@@ -1409,6 +1412,24 @@ EndMap\n";
         .expect("legacy v1 side-entry map");
         assert_eq!(maps[0].declared_count, 3);
         assert_eq!(maps[0].maps[0].groups[0].children.len(), 1);
+    }
+
+    #[test]
+    fn rejects_child_map_index_that_is_not_a_prior_node() {
+        let data = b"BeginElementMap v1\n\
+1 PostfixCount 0\n\
+MapCount 1\n\
+ElementMap 1 1 1\n\
+Face\n\
+ChildCount 1\n\
+1 0 3 0 1 0 0\n\
+NameCount 0\n\
+EndMap\n";
+        let error = match parse_element_map(data, true) {
+            Ok(_) => panic!("forward child map index"),
+            Err(error) => error,
+        };
+        assert!(error.to_string().contains("mapIndex"), "{error}");
     }
 
     #[test]

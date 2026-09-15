@@ -393,7 +393,12 @@ mod tests {
         let mut negative = base.clone();
         negative["element_count"] = serde_json::json!(-1);
         assert!(serde_json::from_value::<super::ProductNodeRecord>(negative).is_err());
-        for field in ["element_transforms", "element_scales", "element_objects"] {
+        for field in [
+            "element_transforms",
+            "element_scales",
+            "element_visibility",
+            "element_objects",
+        ] {
             let mut wire = base.clone();
             wire["element_count"] = serde_json::json!(2);
             wire[field] = match field {
@@ -404,12 +409,22 @@ mod tests {
                     [0.0, 0.0, 0.0, 1.0]
                 ]]),
                 "element_scales" => serde_json::json!([[1.0, 1.0, 1.0]]),
+                "element_visibility" => serde_json::json!([true]),
                 _ => serde_json::json!(["object"]),
             };
             assert!(serde_json::from_value::<super::ProductNodeRecord>(wire.clone()).is_err());
             wire["element_count"] = serde_json::json!(1);
             assert!(serde_json::from_value::<super::ProductNodeRecord>(wire).is_ok());
         }
+
+        let mut object_only = base;
+        object_only["element_objects"] = serde_json::json!(["object"]);
+        let record = serde_json::from_value::<super::ProductNodeRecord>(object_only)
+            .expect("an object carrier establishes absent-count cardinality");
+        assert!(matches!(
+            record.element_cardinality(),
+            Some(super::LinkArrayCardinality::Elements(elements)) if elements.get() == 1
+        ));
     }
 
     #[test]
@@ -489,6 +504,37 @@ mod tests {
                     && finding.check == cadmpeg_ir::report::Check::NativeLinks
             }));
         }
+    }
+
+    #[test]
+    fn element_map_wire_rejects_forward_and_negative_child_map_indices() {
+        let child = |descriptor: &str| {
+            serde_json::json!([{
+                "index": 1,
+                "map_id": 0,
+                "groups": [{
+                    "indexed_name": "Face",
+                    "children": [descriptor],
+                    "names": []
+                }]
+            }])
+        };
+        for descriptor in ["1 0 3 1 1 ;:H,E;:H:5,E 0", "1 0 3 1 -1 ;:H,E;:H:5,E 0"] {
+            let error =
+                serde_json::from_value::<super::ElementMapNodes>(child(descriptor)).unwrap_err();
+            assert!(error.to_string().contains("mapIndex"), "{error}");
+        }
+
+        let valid = serde_json::json!([
+            {"index": 1, "map_id": 0, "groups": []},
+            {"index": 2, "map_id": 1, "groups": [{
+                "indexed_name": "Face",
+                "children": ["1 0 3 1 1 ;:H,E;:H:5,E 0"],
+                "names": []
+            }]}
+        ]);
+        serde_json::from_value::<super::ElementMapNodes>(valid)
+            .expect("a child map may name an earlier node");
     }
 
     #[test]
@@ -1263,6 +1309,7 @@ pub struct LinkArray {
     count: Option<u64>,
     transforms: Vec<FiniteFrame>,
     scales: Vec<FiniteVec3>,
+    visibility: Vec<bool>,
     objects: Vec<String>,
 }
 
@@ -1271,7 +1318,7 @@ pub struct LinkArray {
 /// A present zero `ElementCount` requires every array-valued field to be empty
 /// and the link retains its single scalar occurrence. An absent `ElementCount`
 /// permits one scalar link occurrence or infers a nonzero count from the
-/// populated array-valued fields.
+/// populated array-valued fields, including per-element visibility.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LinkArrayCardinality {
     /// The link is not an array and carries one occurrence.
@@ -1285,17 +1332,19 @@ impl LinkArray {
         count: Option<u64>,
         transforms: Vec<FiniteFrame>,
         scales: Vec<FiniteVec3>,
+        visibility: Vec<bool>,
         objects: Vec<String>,
     ) -> Result<Self, String> {
         let lengths = [
             transforms.len() as u64,
             scales.len() as u64,
+            visibility.len() as u64,
             objects.len() as u64,
         ];
         // With no stated count the longest populated carrier establishes the
         // cardinality; every populated carrier must agree with it. A stated
         // zero therefore requires every carrier to be empty.
-        let effective = count.unwrap_or(lengths[0].max(lengths[1]).max(lengths[2]));
+        let effective = count.unwrap_or(lengths[0].max(lengths[1]).max(lengths[2]).max(lengths[3]));
         if lengths
             .into_iter()
             .any(|length| length != 0 && length != effective)
@@ -1306,6 +1355,7 @@ impl LinkArray {
             count,
             transforms,
             scales,
+            visibility,
             objects,
         })
     }
@@ -1315,6 +1365,7 @@ impl LinkArray {
         let elements = self.count.unwrap_or_else(|| {
             (self.transforms.len() as u64)
                 .max(self.scales.len() as u64)
+                .max(self.visibility.len() as u64)
                 .max(self.objects.len() as u64)
         });
         match NonZeroU64::new(elements) {
@@ -1450,6 +1501,12 @@ impl ProductNodeRecord {
             .map_or(&[], |node| node.array.scales.as_slice())
     }
 
+    /// Ordered per-element visibility values after FreeCAD bit-order decoding.
+    pub fn element_visibility(&self) -> &[bool] {
+        self.occurrence()
+            .map_or(&[], |node| node.array.visibility.as_slice())
+    }
+
     /// Subelement paths selected on the linked prototype.
     pub fn linked_subelements(&self) -> &[String] {
         self.occurrence()
@@ -1571,7 +1628,7 @@ impl From<ProductNodeRecord> for ProductNodeRecordWire {
             copy_on_change_group: value.copy_on_change_group().cloned(),
             copy_on_change_touched: value.copy_on_change_touched(),
             scale: value.scale(),
-            element_visibility: Vec::new(),
+            element_visibility: value.element_visibility().to_vec(),
             element_objects: value.element_objects().to_vec(),
             id: value.id,
             object: value.object,
@@ -1588,6 +1645,7 @@ impl ProductNodeRecordWire {
             || self.link_transform.is_some()
             || !self.element_transforms.is_empty()
             || !self.element_scales.is_empty()
+            || !self.element_visibility.is_empty()
             || !self.linked_subelements.is_empty()
             || self.claim_child.is_some()
             || self.copy_on_change.is_some()
@@ -1602,9 +1660,6 @@ impl TryFrom<ProductNodeRecordWire> for ProductNodeRecord {
     type Error = String;
 
     fn try_from(wire: ProductNodeRecordWire) -> Result<Self, Self::Error> {
-        if !wire.element_visibility.is_empty() {
-            return Err("product node element_visibility is unused and must be empty".to_owned());
-        }
         if wire.kind != "occurrence" && wire.has_occurrence_fields() {
             return Err("container product node carries occurrence-only link fields".to_owned());
         }
@@ -1656,6 +1711,7 @@ impl TryFrom<ProductNodeRecordWire> for ProductNodeRecord {
                         .map(FiniteVec3::try_from)
                         .collect::<Result<Vec<_>, _>>()
                         .map_err(|error| format!("element_scales: {error}"))?,
+                    wire.element_visibility,
                     wire.element_objects,
                 )?,
                 link_transform: wire.link_transform,
@@ -3014,6 +3070,11 @@ impl TryFrom<Vec<ElementMapNodeWire>> for ElementMapNodes {
                     wire.index
                 ));
             }
+            for group in &wire.groups {
+                for child in &group.children {
+                    validate_element_map_child_descriptor(child, expected_index)?;
+                }
+            }
             nodes.push(ElementMapNode {
                 map_id: wire.map_id,
                 groups: wire.groups,
@@ -3021,6 +3082,37 @@ impl TryFrom<Vec<ElementMapNodeWire>> for ElementMapNodes {
         }
         Self::try_from(nodes)
     }
+}
+
+/// Validate the map-index field of one FreeCAD child-map descriptor.
+///
+/// The descriptor's remaining fields are retained as source text because
+/// their grammar is owned by the FreeCAD topology reader. The fifth token is
+/// the one field whose relation is established by the surrounding map stream:
+/// zero means no child map, otherwise it names an already serialized node.
+pub(crate) fn validate_element_map_child_descriptor(
+    descriptor: &str,
+    node_index: usize,
+) -> Result<(), String> {
+    let mut fields = descriptor.split_ascii_whitespace();
+    for _ in 0..4 {
+        fields
+            .next()
+            .ok_or_else(|| "element-map child descriptor has no mapIndex".to_owned())?;
+    }
+    let map_index = fields
+        .next()
+        .ok_or_else(|| "element-map child descriptor has no mapIndex".to_owned())?
+        .parse::<i64>()
+        .map_err(|_| "element-map child descriptor has an invalid mapIndex".to_owned())?;
+    let node_index = i64::try_from(node_index)
+        .map_err(|_| "element-map node index exceeds signed range".to_owned())?;
+    if map_index < 0 || map_index >= node_index {
+        return Err(format!(
+            "element-map child mapIndex {map_index} does not name a prior map for node {node_index}"
+        ));
+    }
+    Ok(())
 }
 
 impl Serialize for ElementMapNodes {

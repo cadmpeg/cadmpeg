@@ -146,6 +146,16 @@ pub(crate) fn transfer_neutral(
     records
         .iter()
         .filter_map(|record| {
+            if let Some((name, error)) = record.parameters.iter().find_map(|(name, value)| {
+                crate::native::joint::validate_parameter_value(name, value)
+                    .err()
+                    .map(|error| (name, error))
+            }) {
+                return Some(Err(malformed(format!(
+                    "joint {} parameter {name}: {error}",
+                    record.id,
+                ))));
+            }
             let bool_value = |name: &str| {
                 record
                     .parameters
@@ -521,17 +531,15 @@ fn scalar_parameter(property: &PropertyRecord) -> Result<Option<String>, CodecEr
             property.id
         )));
     }
-    value
-        .attributes
-        .get("value")
-        .cloned()
-        .ok_or_else(|| {
-            malformed(format!(
-                "joint parameter property {} has no value",
-                property.id
-            ))
-        })
-        .map(Some)
+    let value = value.attributes.get("value").cloned().ok_or_else(|| {
+        malformed(format!(
+            "joint parameter property {} has no value",
+            property.id
+        ))
+    })?;
+    crate::native::joint::validate_parameter_value(&property.name, &value)
+        .map_err(|error| malformed(format!("joint parameter property {}: {error}", property.id)))?;
+    Ok(Some(value))
 }
 
 fn unique_property<'a>(

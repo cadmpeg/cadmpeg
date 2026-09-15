@@ -126,6 +126,31 @@ struct JointRecordWire {
     parameters: BTreeMap<String, String>,
 }
 
+/// Validate the lexical value of a known joint parameter.
+///
+/// Unknown parameter names remain native extension data. Known names are
+/// emitted by FreeCAD with either a finite floating-point scalar or one of the
+/// four boolean spellings accepted by the source XML reader.
+pub(crate) fn validate_parameter_value(name: &str, value: &str) -> Result<(), String> {
+    let valid = match name {
+        "Angle" | "AngleMin" | "AngleMax" | "Distance" | "Distance2" | "LengthMin"
+        | "LengthMax" => value.parse::<f64>().is_ok_and(f64::is_finite),
+        "EnableAngleMin" | "EnableAngleMax" | "EnableLengthMin" | "EnableLengthMax" | "Detach1"
+        | "Detach2" | "Suppressed" => matches!(
+            value.to_ascii_lowercase().as_str(),
+            "true" | "false" | "1" | "0"
+        ),
+        _ => return Ok(()),
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err(format!(
+            "joint parameter {name} has an invalid value {value:?}"
+        ))
+    }
+}
+
 impl From<JointRecord> for JointRecordWire {
     fn from(value: JointRecord) -> Self {
         let kind = value.kind().to_owned();
@@ -154,6 +179,10 @@ impl TryFrom<JointRecordWire> for JointRecord {
     type Error = String;
 
     fn try_from(wire: JointRecordWire) -> Result<Self, Self::Error> {
+        for (name, value) in &wire.parameters {
+            validate_parameter_value(name, value)
+                .map_err(|error| format!("joint {}: {error}", wire.id))?;
+        }
         let body = if wire.kind == "grounded" {
             let [placement] = <[_; 1]>::try_from(wire.placements)
                 .map_err(|_| "grounded joint must carry exactly one placement".to_owned())?;
@@ -309,6 +338,42 @@ mod tests {
             let mut invalid = wire.clone();
             invalid["kind"] = serde_json::json!(name);
             assert!(serde_json::from_value::<JointRecord>(invalid).is_err());
+        }
+    }
+
+    #[test]
+    fn wire_admission_rejects_invalid_known_parameter_values() {
+        let identity = cadmpeg_ir::transform::Transform::identity().rows();
+        for (name, value) in [("Angle", "abc"), ("Angle", "NaN"), ("Suppressed", "maybe")] {
+            let parameters =
+                serde_json::Map::from_iter([(name.to_owned(), serde_json::json!(value))]);
+            let wire = serde_json::json!({
+                "id": "joint",
+                "object": "object",
+                "kind": "Fixed",
+                "references": [null, null],
+                "placements": [identity, identity],
+                "offsets": [identity, identity],
+                "parameters": parameters
+            });
+            let error = serde_json::from_value::<JointRecord>(wire).unwrap_err();
+            assert!(error.to_string().contains("invalid value"), "{error}");
+        }
+
+        for (name, value) in [("Angle", "15.5"), ("Suppressed", "false")] {
+            let parameters =
+                serde_json::Map::from_iter([(name.to_owned(), serde_json::json!(value))]);
+            let wire = serde_json::json!({
+                "id": "joint",
+                "object": "object",
+                "kind": "Fixed",
+                "references": [null, null],
+                "placements": [identity, identity],
+                "offsets": [identity, identity],
+                "parameters": parameters
+            });
+            serde_json::from_value::<JointRecord>(wire)
+                .expect("valid known parameter values remain admissible");
         }
     }
 }
