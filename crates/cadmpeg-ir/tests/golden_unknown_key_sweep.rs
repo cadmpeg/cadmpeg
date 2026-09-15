@@ -306,21 +306,27 @@ fn golden_files() -> Vec<PathBuf> {
     let entries = std::fs::read_dir(&crates).expect("read crates directory");
     for entry in entries {
         let golden = entry.expect("crate entry").path().join("tests/golden");
-        collect_goldens(&golden, &mut found);
+        // Several workspace crates have no golden tree.  An existing tree is
+        // required to remain readable once it is selected; recursive
+        // enumeration errors must not turn into an empty contribution.
+        if golden.is_dir() {
+            collect_goldens(&golden, &mut found)
+                .unwrap_or_else(|error| panic!("cannot collect {golden:?}: {error}"));
+        }
     }
     found.sort();
     found
 }
 
 /// Appends every `*.json` under `directory`, recursively.
-fn collect_goldens(directory: &Path, found: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(directory) else {
-        return;
-    };
+fn collect_goldens(directory: &Path, found: &mut Vec<PathBuf>) -> Result<(), String> {
+    let entries = std::fs::read_dir(directory)
+        .map_err(|error| format!("{}: {error}", directory.display()))?;
     for entry in entries {
-        let path = entry.expect("golden entry").path();
+        let entry = entry.map_err(|error| format!("{}: {error}", directory.display()))?;
+        let path = entry.path();
         if path.is_dir() {
-            collect_goldens(&path, found);
+            collect_goldens(&path, found)?;
         } else if path
             .extension()
             .is_some_and(|extension| extension == "json")
@@ -328,6 +334,7 @@ fn collect_goldens(directory: &Path, found: &mut Vec<PathBuf>) {
             found.push(path);
         }
     }
+    Ok(())
 }
 
 /// Every hand-written `Deserialize` in the three wire crates, with how it is
@@ -364,12 +371,18 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
     ),
     ("crates/cadmpeg-ir/src/assets.rs", "AssetData", "keyless"),
     (
+        "crates/cadmpeg-ir/src/annotations.rs",
+        "NonEmptyMap",
+        "free-form",
+    ),
+    (
         "crates/cadmpeg-ir/src/container.rs",
         "ContainerKind",
         "keyless",
     ),
     ("crates/cadmpeg-ir/src/document.rs", "CadIr", "wire"),
     ("crates/cadmpeg-ir/src/document.rs", "CensusKey", "keyless"),
+    ("crates/cadmpeg-ir/src/document.rs", "IrVersion", "keyless"),
     ("crates/cadmpeg-ir/src/document.rs", "Model", "wire"),
     (
         "crates/cadmpeg-ir/src/features/edge_treatments.rs",
@@ -532,6 +545,11 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
         "keyless",
     ),
     (
+        "crates/cadmpeg-ir/src/hash/digest.rs",
+        "Sha256Digest",
+        "keyless",
+    ),
+    (
         "crates/cadmpeg-ir/src/native/mod.rs",
         "NativeRecord",
         "free-form",
@@ -545,6 +563,11 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
     (
         "crates/cadmpeg-ir/src/provenance.rs",
         "CodecFormat",
+        "keyless",
+    ),
+    (
+        "crates/cadmpeg-ir/src/provenance.rs",
+        "SourceOwner",
         "keyless",
     ),
     ("crates/cadmpeg-ir/src/provenance.rs", "Provenance", "wire"),
@@ -1034,7 +1057,8 @@ fn shim_definitions() -> BTreeMap<String, BTreeSet<String>> {
     let mut found = BTreeMap::new();
     for source in ["crates/cadmpeg-ir/src", "crates/cadmpeg-core/src"] {
         let mut files = Vec::new();
-        collect_rust_sources(&root.join(source), &mut files);
+        collect_rust_sources(&root.join(source), &mut files)
+            .unwrap_or_else(|error| panic!("cannot collect {source}: {error}"));
         files.sort();
         for file in files {
             let relative = file
@@ -1195,7 +1219,8 @@ fn wire_index() -> WireIndex {
         "crates/cadmpeg-asm/src",
     ] {
         let mut files = Vec::new();
-        collect_rust_sources(&root.join(source), &mut files);
+        collect_rust_sources(&root.join(source), &mut files)
+            .unwrap_or_else(|error| panic!("cannot collect {source}: {error}"));
         files.sort();
         for file in files {
             let relative = file
@@ -1350,7 +1375,8 @@ fn optional_absence_census() -> (usize, Vec<String>) {
         "crates/cadmpeg-asm/src",
     ] {
         let mut files = Vec::new();
-        collect_rust_sources(&root.join(source), &mut files);
+        collect_rust_sources(&root.join(source), &mut files)
+            .unwrap_or_else(|error| panic!("cannot collect {source}: {error}"));
         files.sort();
         for file in files {
             let relative = file
@@ -1722,8 +1748,8 @@ fn absence_spelling(field: &syn::Field) -> Option<String> {
 /// visits every `impl` item, including one nested in an inline `mod`, so a
 /// header wrapped over several lines, a generic parameter list, or a
 /// fully-qualified trait path is found just the same. An impl counts when the
-/// trait path ends in `Deserialize` and the impl generics declare the `'de`
-/// lifetime.
+/// trait path ends in `Deserialize` and carries its lifetime argument,
+/// regardless of whether that lifetime is declared by the impl.
 ///
 /// A `macro_rules!` body is token text, not items, so its impls are read from
 /// the macro's own token stream under the same trait-and-lifetime rule; the
@@ -1741,7 +1767,8 @@ fn hand_written_impls() -> BTreeSet<(String, String)> {
         "crates/cadmpeg-asm/src",
     ] {
         let mut files = Vec::new();
-        collect_rust_sources(&root.join(source), &mut files);
+        collect_rust_sources(&root.join(source), &mut files)
+            .unwrap_or_else(|error| panic!("cannot collect {source}: {error}"));
         for file in files {
             let relative = file
                 .strip_prefix(&root)
@@ -1791,29 +1818,90 @@ fn collect_hand_impls(items: &[syn::Item], relative: &str, found: &mut BTreeSet<
 
 /// Whether this inline module is a test module.
 fn is_test_module(module: &syn::ItemMod) -> bool {
-    module.attrs.iter().any(|attribute| match &attribute.meta {
-        syn::Meta::List(list) => {
-            list.path.is_ident("cfg") && list.tokens.to_string().contains("test")
+    module.attrs.iter().any(|attribute| {
+        if !attribute.path().is_ident("cfg") {
+            return false;
         }
-        syn::Meta::Path(_) | syn::Meta::NameValue(_) => false,
+        let mut requires_test = false;
+        attribute
+            .parse_nested_meta(|meta| {
+                requires_test = cfg_requires_test(meta)?;
+                Ok(())
+            })
+            .expect("every cfg attribute in the wire crates parses");
+        requires_test
     })
+}
+
+/// Whether a `cfg` expression is restricted to test builds.
+///
+/// A substring search treats `feature = "testing"` as `cfg(test)`, and also
+/// drops modules enabled by a production feature in `any(test, ...)`. The
+/// recursive shape keeps only expressions that require `test` on every active
+/// branch. Unknown expressions are retained for the census.
+fn cfg_requires_test(meta: syn::meta::ParseNestedMeta<'_>) -> syn::Result<bool> {
+    if meta.path.is_ident("test") {
+        return Ok(true);
+    }
+    if meta.path.is_ident("all") {
+        let mut has_argument = false;
+        let mut requires_test = false;
+        meta.parse_nested_meta(|nested| {
+            has_argument = true;
+            requires_test |= cfg_requires_test(nested)?;
+            Ok(())
+        })?;
+        return Ok(has_argument && requires_test);
+    }
+    if meta.path.is_ident("any") {
+        let mut has_argument = false;
+        let mut every_branch_requires_test = true;
+        meta.parse_nested_meta(|nested| {
+            has_argument = true;
+            every_branch_requires_test &= cfg_requires_test(nested)?;
+            Ok(())
+        })?;
+        return Ok(has_argument && every_branch_requires_test);
+    }
+    if meta.path.is_ident("not") {
+        // `not(test)` is a production configuration. Retain it in the walk;
+        // the source may be compiled outside the test configuration.
+        meta.parse_nested_meta(|nested| {
+            let _ = cfg_requires_test(nested)?;
+            Ok(())
+        })?;
+        return Ok(false);
+    }
+    if meta.input.peek(syn::Token![=]) {
+        let _: syn::Lit = meta.value()?.parse()?;
+    } else if meta.input.peek(syn::token::Paren) {
+        meta.parse_nested_meta(|nested| {
+            let _ = cfg_requires_test(nested)?;
+            Ok(())
+        })?;
+    }
+    Ok(false)
 }
 
 /// The type a hand-written `Deserialize` impl is written for: the last segment
 /// of its self type, without generic arguments.
 ///
-/// `None` when the impl is for another trait, is an inherent impl, or declares
-/// no `'de` lifetime.
+/// `None` when the impl is for another trait, is an inherent impl, or has no
+/// lifetime argument in the `Deserialize` trait path.
 fn deserialize_impl_target(implementation: &syn::ItemImpl) -> Option<String> {
     let (_, path, _) = implementation.trait_.as_ref()?;
-    if path.segments.last()?.ident != "Deserialize" {
+    let deserialize = path.segments.last()?;
+    if deserialize.ident != "Deserialize" {
         return None;
     }
-    let has_de = implementation.generics.params.iter().any(|parameter| {
-        matches!(parameter, syn::GenericParam::Lifetime(lifetime)
-            if lifetime.lifetime.ident == "de")
-    });
-    if !has_de {
+    let syn::PathArguments::AngleBracketed(arguments) = &deserialize.arguments else {
+        return None;
+    };
+    if !arguments
+        .args
+        .iter()
+        .any(|argument| matches!(argument, syn::GenericArgument::Lifetime(_)))
+    {
         return None;
     }
     match implementation.self_ty.as_ref() {
@@ -1822,29 +1910,41 @@ fn deserialize_impl_target(implementation: &syn::ItemImpl) -> Option<String> {
     }
 }
 
-/// Every `Deserialize<'de> for …` target named in a `macro_rules!` body.
+/// Every `Deserialize<'a> for …` target named in a `macro_rules!` body.
 ///
 /// A macro body is token text, so it is scanned as tokens: the walk flattens
-/// every delimited group and looks for the token run
-/// `Deserialize < 'de > for`, then reads the target that follows. A target
-/// spelled as a metavariable is recorded with its sigil.
+/// every delimited group and looks for `Deserialize<'a> for`, accepting
+/// either tokenization proc-macro uses for a lifetime. A target spelled as a
+/// metavariable is recorded with its sigil.
 fn macro_body_impl_targets(tokens: &proc_macro2::TokenStream) -> Vec<String> {
     let mut flat = Vec::new();
     flatten_tokens(tokens, &mut flat);
-    let header = [
-        "Deserialize".to_owned(),
-        "<".to_owned(),
-        "'".to_owned(),
-        "de".to_owned(),
-        ">".to_owned(),
-        "for".to_owned(),
-    ];
     let mut targets = Vec::new();
-    for (index, window) in flat.windows(header.len()).enumerate() {
-        if window != header {
+    for index in 0..flat.len() {
+        if flat.get(index).map(String::as_str) != Some("Deserialize")
+            || flat.get(index + 1).map(String::as_str) != Some("<")
+        {
             continue;
         }
-        let after = index + header.len();
+        let Some(mut cursor) = index.checked_add(2) else {
+            continue;
+        };
+        if flat
+            .get(cursor)
+            .is_some_and(|token| token.starts_with('\'') && token.len() > 1)
+        {
+            cursor += 1;
+        } else if flat.get(cursor).map(String::as_str) == Some("'") {
+            cursor += 2;
+        } else {
+            continue;
+        }
+        if flat.get(cursor).map(String::as_str) != Some(">")
+            || flat.get(cursor + 1).map(String::as_str) != Some("for")
+        {
+            continue;
+        }
+        let after = cursor + 2;
         let Some(first) = flat.get(after) else {
             continue;
         };
@@ -1878,16 +1978,117 @@ fn is_test_path(relative: &str) -> bool {
 }
 
 /// Appends every `*.rs` under `directory`, recursively.
-fn collect_rust_sources(directory: &Path, found: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(directory) else {
-        return;
-    };
+fn collect_rust_sources(directory: &Path, found: &mut Vec<PathBuf>) -> Result<(), String> {
+    let entries = std::fs::read_dir(directory)
+        .map_err(|error| format!("{}: {error}", directory.display()))?;
     for entry in entries {
-        let path = entry.expect("source entry").path();
+        let entry = entry.map_err(|error| format!("{}: {error}", directory.display()))?;
+        let path = entry.path();
         if path.is_dir() {
-            collect_rust_sources(&path, found);
+            collect_rust_sources(&path, found)?;
         } else if path.extension().is_some_and(|extension| extension == "rs") {
             found.push(path);
         }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod scanner_tests {
+    use super::*;
+
+    #[test]
+    fn cfg_classification_requires_a_test_only_expression() {
+        let feature: syn::ItemMod =
+            syn::parse_str(r#"#[cfg(feature = "testing")] mod production {}"#)
+                .expect("parse feature-gated module");
+        assert!(!is_test_module(&feature));
+
+        let mixed: syn::ItemMod =
+            syn::parse_str(r#"#[cfg(any(test, feature = "production"))] mod production {}"#)
+                .expect("parse mixed module");
+        assert!(!is_test_module(&mixed));
+
+        let test_only: syn::ItemMod =
+            syn::parse_str(r#"#[cfg(all(test, feature = "test_helpers"))] mod tests {}"#)
+                .expect("parse test-only module");
+        assert!(is_test_module(&test_only));
+
+        let production: syn::ItemMod = syn::parse_str(r#"#[cfg(not(test))] mod production {}"#)
+            .expect("parse production module");
+        assert!(!is_test_module(&production));
+    }
+
+    #[test]
+    fn manual_deserialize_census_accepts_a_named_lifetime() {
+        let implementation: syn::ItemImpl =
+            syn::parse_str("impl<'wire> serde::Deserialize<'wire> for Manual {}")
+                .expect("parse manual Deserialize impl");
+        assert_eq!(
+            deserialize_impl_target(&implementation),
+            Some("Manual".into())
+        );
+
+        let static_impl: syn::ItemImpl =
+            syn::parse_str("impl serde::Deserialize<'static> for Manual {}").expect("parse");
+        assert_eq!(deserialize_impl_target(&static_impl), Some("Manual".into()));
+
+        let elided_impl: syn::ItemImpl =
+            syn::parse_str("impl serde::Deserialize<'_> for Manual {}").expect("parse");
+        assert_eq!(deserialize_impl_target(&elided_impl), Some("Manual".into()));
+    }
+
+    #[test]
+    fn macro_deserialize_census_accepts_a_named_lifetime() {
+        let file: syn::File = syn::parse_str(
+            r#"
+                macro_rules! make_reader {
+                    ($name:ident) => {
+                        impl<'wire> serde::Deserialize<'wire> for $name {}
+                    };
+                }
+            "#,
+        )
+        .expect("parse macro");
+        let syn::Item::Macro(item) = &file.items[0] else {
+            panic!("the fixture is a macro");
+        };
+        assert_eq!(macro_body_impl_targets(&item.mac.tokens), vec!["$name"]);
+    }
+
+    #[test]
+    fn source_collector_reports_a_missing_root() {
+        let missing = std::env::temp_dir().join(format!(
+            "cadmpeg-unknown-key-sweep-missing-{}",
+            std::process::id()
+        ));
+        assert!(
+            !missing.exists(),
+            "test path unexpectedly exists: {missing:?}"
+        );
+
+        let mut found = Vec::new();
+        let error = collect_rust_sources(&missing, &mut found)
+            .expect_err("a missing source root must fail the census");
+        assert!(error.contains(&missing.display().to_string()));
+        assert!(error.contains("No such file") || error.contains("not found"));
+    }
+
+    #[test]
+    fn golden_collector_reports_a_missing_root() {
+        let missing = std::env::temp_dir().join(format!(
+            "cadmpeg-unknown-key-sweep-missing-goldens-{}",
+            std::process::id()
+        ));
+        assert!(
+            !missing.exists(),
+            "test path unexpectedly exists: {missing:?}"
+        );
+
+        let mut found = Vec::new();
+        let error = collect_goldens(&missing, &mut found)
+            .expect_err("a selected golden root must fail the census");
+        assert!(error.contains(&missing.display().to_string()));
+        assert!(error.contains("No such file") || error.contains("not found"));
     }
 }

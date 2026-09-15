@@ -48,7 +48,6 @@ ROOTS = (
 # nothing here. The key is the declaring path, so a type that reuses an
 # exception's name in another file is not admitted by it.
 EXCEPTIONS = {
-    "crates/cadmpeg-ir/src/unknown.rs:NativeUnknownRecord": "narrowing projection over the /native unknown record: it reads only id and links out of a wider stored record, so it has no field map of its own for a deny to bind; hash.rs reads the arena through it and pins_document_digests covers that read",
     "crates/cadmpeg-ir/src/document.rs:VersionProbe": "private one-field pre-pass; the document is re-read through CadIrReadWire, which denies",
 }
 
@@ -310,16 +309,44 @@ def named_types(text):
     return re.findall(r"[A-Z]\w*", text)
 
 
+def resolve_item(index, name, owner, ambiguities):
+    """Resolve a named declaration without silently choosing a duplicate.
+
+    Rust resolves an unqualified type in its module before this source walk
+    sees it. The census has only file and item locations, so a same-file
+    declaration is the strongest safe local resolution. Distinct files with
+    the same bare name remain ambiguous and must fail the census instead of
+    inheriting whichever file happened to be visited first.
+    """
+    candidates = index.get(name, ())
+    if len(candidates) <= 1:
+        return candidates[0] if candidates else None
+    local = [candidate for candidate in candidates if candidate.path == owner.path]
+    if len(local) == 1:
+        return local[0]
+    ambiguities.append(
+        (
+            owner.path,
+            owner.line,
+            owner.name,
+            name,
+            tuple(candidate.path for candidate in candidates),
+        )
+    )
+    return None
+
+
 def main():
     index = {}
     order = []
     for path in source_files():
         for item in collect_items(path):
             order.append(item)
-            index.setdefault(item.name, item)
+            index.setdefault(item.name, []).append(item)
 
     failures = []
     arm_failures = []
+    ambiguities = []
     checking = set()
 
     def check_untagged_arms(item, arms):
@@ -349,16 +376,20 @@ def main():
                 admitted = False
             elif arm.kind == "tuple":
                 for name in named_types(arm.types[0]):
-                    if name in index and not passes(index[name]):
+                    target = resolve_item(index, name, item, ambiguities)
+                    if target is not None and not passes(target):
+                        admitted = False
+                    elif target is None and name in index:
                         admitted = False
         return admitted
 
     def passes(item):
         if f"{item.path.as_posix()}:{item.name}" in EXCEPTIONS:
             return True
-        if item.name in checking:
+        identity = (item.path.as_posix(), item.name)
+        if identity in checking:
             return True
-        checking.add(item.name)
+        checking.add(identity)
         try:
             attrs = serde_attrs(item.attrs)
             if re.search(r"\bdeny_unknown_fields\b", attrs):
@@ -367,11 +398,14 @@ def main():
                 return True
             target = re.search(r"\b(?:try_from|from)\s*=\s*\"([^\"]+)\"", attrs)
             if target:
-                return all(
-                    passes(index[name])
-                    for name in named_types(target.group(1))
-                    if name in index
-                )
+                admitted = True
+                for name in named_types(target.group(1)):
+                    target_item = resolve_item(index, name, item, ambiguities)
+                    if target_item is not None and not passes(target_item):
+                        admitted = False
+                    elif target_item is None and name in index:
+                        admitted = False
+                return admitted
             if re.search(r"\buntagged\b", attrs):
                 return check_untagged_arms(item, untagged_arms(item))
             if is_uninhabited_enum(item):
@@ -380,7 +414,7 @@ def main():
                 return True
             return False
         finally:
-            checking.discard(item.name)
+            checking.discard(identity)
 
     for item in order:
         if not derives_deserialize(item.attrs):
@@ -393,6 +427,16 @@ def main():
             arms = [arm for arm in untagged_arms(item) if arm.untagged]
             if arms and not check_untagged_arms(item, arms):
                 failures.append((item.path, item.line, item.name))
+
+    for path, line, owner, name, candidates in sorted(set(ambiguities), key=str):
+        locations = ", ".join(candidate.as_posix() for candidate in candidates)
+        failures.append(
+            (
+                path,
+                line,
+                f"{owner}: type name {name} is ambiguous between {locations}",
+            )
+        )
 
     detailed = {(path, line) for path, line, _ in arm_failures}
     lines = [
