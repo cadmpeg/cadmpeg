@@ -1550,7 +1550,7 @@ fn parse_per_object_mesh_userdata(
 
 fn resolve_identity(
     descriptor: &ObjectDescriptor<()>,
-    layers: &HashMap<i32, &crate::settings::LayerRecord>,
+    layers: &LayerLookup<'_>,
     warnings: &mut Diagnostics,
     index: usize,
     seen_ids: &mut HashSet<Uuid>,
@@ -1558,12 +1558,28 @@ fn resolve_identity(
     let attributes = descriptor.attributes.parsed();
     let object_id = attributes.map_or(Uuid::nil(), |value| value.object_id);
     let layer_index = attributes.map_or(-1, |value| value.layer_index);
-    let layer = layers.get(&layer_index).copied();
-    if attributes.is_some() && layer.is_none() {
-        warnings.push(format!(
-            "object {object_id} references missing layer index {layer_index}"
-        ));
-    }
+    let layer = match layers.resolve(layer_index) {
+        LayerMatch::Unique(layer) => Some(layer),
+        LayerMatch::Ambiguous => {
+            if attributes.is_some() {
+                warnings.push_coded(
+                    crate::loss::RhinoLossCode::DuplicateRecordResolved,
+                    format!(
+                        "object {object_id} references ambiguous layer index {layer_index}; layer binding withheld"
+                    ),
+                );
+            }
+            None
+        }
+        LayerMatch::Missing => {
+            if attributes.is_some() {
+                warnings.push(format!(
+                    "object {object_id} references missing layer index {layer_index}"
+                ));
+            }
+            None
+        }
+    };
     let object_color = attributes.map(|value| value.color);
     let object_visible = attributes.is_none_or(|value| value.visible);
     let visible = object_visible && layer.is_none_or(|value| value.visible);
@@ -1838,9 +1854,9 @@ pub(crate) fn resolve_identities(
     warnings: &mut Diagnostics,
 ) -> Vec<ObjectRecord> {
     let mut seen_ids = HashSet::new();
-    let mut layers = HashMap::with_capacity(metadata.layers.len());
+    let mut layers = LayerLookup::with_capacity(metadata.layers.len());
     for layer in &metadata.layers {
-        layers.entry(layer.index).or_insert(layer);
+        layers.insert(layer);
     }
     objects
         .into_iter()
@@ -1870,6 +1886,48 @@ pub(crate) fn resolve_identities(
             }
         })
         .collect()
+}
+
+struct LayerLookup<'a> {
+    unique: HashMap<i32, &'a crate::settings::LayerRecord>,
+    ambiguous: HashSet<i32>,
+}
+
+enum LayerMatch<'a> {
+    Unique(&'a crate::settings::LayerRecord),
+    Ambiguous,
+    Missing,
+}
+
+impl<'a> LayerLookup<'a> {
+    fn with_capacity(capacity: usize) -> Self {
+        Self {
+            unique: HashMap::with_capacity(capacity),
+            ambiguous: HashSet::new(),
+        }
+    }
+
+    fn insert(&mut self, layer: &'a crate::settings::LayerRecord) {
+        if self.ambiguous.contains(&layer.index) {
+            return;
+        }
+        if self.unique.remove(&layer.index).is_some() {
+            self.ambiguous.insert(layer.index);
+        } else {
+            self.unique.insert(layer.index, layer);
+        }
+    }
+
+    fn resolve(&self, index: i32) -> LayerMatch<'a> {
+        if self.ambiguous.contains(&index) {
+            LayerMatch::Ambiguous
+        } else {
+            self.unique
+                .get(&index)
+                .copied()
+                .map_or(LayerMatch::Missing, LayerMatch::Unique)
+        }
+    }
 }
 
 #[cfg(test)]

@@ -296,6 +296,49 @@ fn decoded_history_geometry_is_counted_as_untyped_while_it_stays_stringified() {
 }
 
 #[test]
+fn history_geometry_without_unit_binding_is_counted_and_source_located() {
+    let mut geometry_payload = 1_i32.to_le_bytes().to_vec();
+    geometry_payload.extend(crate::test_support::class_wrapper(
+        crate::test_support::POINT_CLASS,
+        &crate::test_support::point_payload([1.0, 2.0, 3.0]),
+    ));
+    let geometry_value = value(10, &anonymous_value(0, &geometry_payload));
+    let (parsed, _) = parse_value(&geometry_value, 0, geometry_value.len(), ArchiveVersion::V8)
+        .expect("embedded geometry");
+    let Value::Geometries(values) = &parsed.value else {
+        panic!("embedded geometry value");
+    };
+    let source_range = values[0].class_data_range.clone();
+    let mut properties = BTreeMap::new();
+    let mut warnings = Diagnostics::new();
+    let (untyped, failed) = {
+        let mut sink = GeometrySink {
+            warnings: &mut warnings,
+            untyped: 0,
+            failed: 0,
+            redundant_repairs: 0,
+        };
+        structured_value_properties("value_7", &parsed.value, None, &mut properties, &mut sink);
+        (sink.untyped, sink.failed)
+    };
+    assert_eq!(untyped, 1);
+    assert_eq!(failed, 0);
+    assert_eq!(
+        properties["value_7.0.geometry_status"],
+        "unavailable_unit_binding"
+    );
+    assert_eq!(
+        properties["value_7.0.source_range"],
+        format!("{}..{}", source_range.start, source_range.end)
+    );
+    assert!(warnings.iter().any(|warning| {
+        warning.code == Some(crate::loss::RhinoLossCode::HistoryGeometryNotTransferred)
+            && warning.contains("value_7.0")
+            && warning.contains("no coordinate-unit binding")
+    }));
+}
+
+#[test]
 fn embedded_geometry_polyedge_and_subd_chain_values_are_typed() {
     let geometry = crate::test_support::class_wrapper(
         crate::test_support::POINT_CLASS,
