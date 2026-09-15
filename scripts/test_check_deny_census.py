@@ -932,6 +932,74 @@ class DenyCensusTests(unittest.TestCase):
                 self.assertEqual(status, 1, output)
                 self.assertIn("Reader", output)
 
+    def test_rebound_input_cannot_certify_a_manual_macro_or_helper_reader(self) -> None:
+        preamble = '''
+            use serde::{Deserialize, Deserializer};
+            fn discard<'de, D: Deserializer<'de>>(input: D) -> Result<(), D::Error> {
+                let _ = serde_json::Value::deserialize(input)?;
+                Ok(())
+            }
+        '''
+        for body in [
+            '''let actual = d;
+               let d = serde::de::value::F64Deserializer::<D::Error>::new(1.0);
+               let _ = f64::deserialize(d)?;
+               discard(actual)?;''',
+            '''let actual = d;
+               let (d,) = (serde::de::value::F64Deserializer::<D::Error>::new(1.0),);
+               let _ = f64::deserialize(d)?;
+               discard(actual)?;''',
+            '''let _ = (|d: serde::de::value::F64Deserializer<D::Error>| {
+                   f64::deserialize(d)
+               })(serde::de::value::F64Deserializer::<D::Error>::new(1.0))?;
+               discard(d)?;''',
+        ]:
+            readers = {
+                "manual": f'''
+                    struct Open;
+                    impl<'de> Deserialize<'de> for Open {{
+                        fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {{
+                            {body} Ok(Self)
+                        }}
+                    }}
+                    #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                    enum Reader {{ A(Open) }}
+                ''',
+                "macro": f'''
+                    macro_rules! checked_scalar {{
+                        ($name:ident) => {{
+                            #[derive(serde::Serialize)] #[serde(transparent)] struct $name(f64);
+                            impl<'de> Deserialize<'de> for $name {{
+                                fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {{
+                                    {body} Ok(Self(0.0))
+                                }}
+                            }}
+                        }};
+                    }}
+                    checked_scalar!(Open);
+                    #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                    enum Reader {{ A(Open) }}
+                ''',
+                "helper": f'''
+                    fn read<'de, D: Deserializer<'de>>(d: D) -> Result<f64, D::Error> {{
+                        {body} Ok(0.0)
+                    }}
+                    #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                    enum Reader {{ A(#[serde(deserialize_with = "read")] f64) }}
+                ''',
+            }
+            for route, reader in readers.items():
+                with self.subTest(route=route, body=body):
+                    files = {"lib.rs": preamble + reader}
+                    status, output = self.run_census(files)
+                    self.assertEqual(status, 1, output)
+                    mutated, output = self.run_mutated_census(
+                        files,
+                        "direct_input_argument(arguments, single_use)",
+                        "direct_input_argument(arguments, bindings)",
+                    )
+                    self.assertEqual(mutated, 0, output)
+
     def test_route_counterexample_mutations_are_load_bearing(self) -> None:
         qualified_scalar = {
             "lib.rs": '''
