@@ -42,7 +42,11 @@ fn viewport_body() -> Vec<u8> {
     bytes
 }
 
-fn viewport_userdata(archive: ArchiveVersion) -> Vec<u8> {
+fn viewport_userdata_with_options(
+    archive: ArchiveVersion,
+    class_end_value: i64,
+    corrupt_userdata_crc: bool,
+) -> Vec<u8> {
     let application = crate::wire::Uuid::from_canonical([
         0x17, 0xb3, 0xec, 0xda, 0x17, 0xba, 0x4e, 0x45, 0x9e, 0x67, 0xa2, 0xb8, 0xd9, 0xbe, 0x52,
         0x0d,
@@ -54,7 +58,7 @@ fn viewport_userdata(archive: ArchiveVersion) -> Vec<u8> {
         [0xde, 0xad].as_slice(),
     ]
     .concat();
-    let userdata = support::test_dump::class_userdata_v2_with_direct_payload(
+    let mut userdata = support::test_dump::class_userdata_v2_with_direct_payload(
         archive,
         crate::objects::USER_STRING_LIST.to_wire(),
         application,
@@ -62,7 +66,26 @@ fn viewport_userdata(archive: ArchiveVersion) -> Vec<u8> {
         202_608_010,
         &payload,
     );
-    let class_end = support::test_dump::short_chunk(archive, 0x8002_7fff, 0);
+    if corrupt_userdata_crc {
+        let outer_header_len = if archive.uses_eight_byte_values() {
+            12
+        } else {
+            8
+        };
+        let header = crate::chunks::chunk_at(
+            &userdata,
+            outer_header_len + 1,
+            userdata.len(),
+            archive,
+            false,
+        )
+        .expect("viewport userdata fixture has a class header");
+        let crc = userdata
+            .get_mut(header.body().end)
+            .expect("viewport userdata class header has a checksum");
+        *crc ^= 1;
+    }
+    let class_end = support::test_dump::short_chunk(archive, 0x8002_7fff, class_end_value);
     let class_end_start = userdata.len();
     let mut body = userdata;
     body.extend(&class_end);
@@ -74,6 +97,10 @@ fn viewport_userdata(archive: ArchiveVersion) -> Vec<u8> {
         &body,
         &[0..class_end_start, class_end_range],
     )
+}
+
+fn viewport_userdata(archive: ArchiveVersion) -> Vec<u8> {
+    viewport_userdata_with_options(archive, 0, false)
 }
 
 fn named_views_record(archive: ArchiveVersion) -> Vec<u8> {
@@ -785,4 +812,89 @@ fn later_view_recovery_keeps_viewport_warning_before_bad_end_marker() {
             .any(|(_, record)| record.data() == Some(named_views.as_slice())));
         assert_valid(&result);
     }
+}
+
+#[test]
+fn malformed_viewport_userdata_keeps_prior_checksum_loss_and_recovers_later_view() {
+    let archive = ArchiveVersion::V8;
+    let malformed_userdata = viewport_userdata_with_options(archive, 1, true);
+    let malformed_view = view_with_child(archive, malformed_userdata.clone());
+    let valid_view = trace_view(
+        archive,
+        support::test_dump::file_reference(
+            archive,
+            "/trace/userdata-later.png",
+            "userdata-later.png",
+        ),
+    );
+    let named_views = named_views_record_with_views(archive, &[malformed_view, valid_view]);
+    let document = document_with_named_views(archive, named_views);
+    let result = decode(document.clone());
+
+    let views = &result.ir().native.namespace("rhino").unwrap().arenas()["views"];
+    assert_eq!(views.len(), 2);
+    assert_eq!(
+        views[1]
+            .field("list_index")
+            .and_then(|value| value.as_u64()),
+        Some(1)
+    );
+
+    let checksum_losses: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code == crate::loss::RhinoLossCode::IntegrityFailure.kind()
+                && loss
+                    .provenance
+                    .as_ref()
+                    .and_then(|provenance| provenance.tag.as_deref())
+                    == Some("VIEW/VIEWPORT_USERDATA")
+        })
+        .collect();
+    assert_eq!(
+        checksum_losses.len(),
+        1,
+        "all losses: {:#?}",
+        result.report().losses
+    );
+    let userdata_source = source_offset(&document, &malformed_userdata);
+    let archive_header_len = if archive.uses_eight_byte_values() {
+        12
+    } else {
+        8
+    };
+    assert_eq!(
+        checksum_losses[0]
+            .provenance
+            .as_ref()
+            .expect("userdata checksum loss is located")
+            .offset as usize,
+        userdata_source + archive_header_len
+    );
+    assert!(checksum_losses[0].message.contains("viewport userdata"));
+
+    let malformed_losses: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code == crate::loss::RhinoLossCode::ViewportUserdataDropped.kind()
+                && loss.message.contains("could not be framed")
+        })
+        .collect();
+    assert_eq!(malformed_losses.len(), 1);
+    assert!(malformed_losses[0]
+        .message
+        .contains("class end must be a short zero chunk"));
+    assert_eq!(
+        malformed_losses[0]
+            .provenance
+            .as_ref()
+            .expect("malformed userdata loss is located")
+            .offset as usize,
+        userdata_source
+    );
+    assert_valid(&result);
 }
