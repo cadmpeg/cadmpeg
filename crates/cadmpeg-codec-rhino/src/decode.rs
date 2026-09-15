@@ -316,13 +316,14 @@ impl<'a> DecodeContext<'a> {
         self.scan.archive
     }
 
-    /// Returns the native-to-millimeter scale when the source declares one.
-    pub(crate) fn unit_scale(&self) -> Option<f64> {
-        let units = self.scan.metadata.settings.units.as_ref()?;
-        match units.unit {
-            crate::settings::UnitSystem::None => Some(1.0),
-            _ => units.millimeters_per_unit(),
-        }
+    /// Returns the source coordinate binding.
+    pub(crate) fn unit_binding(&self) -> crate::settings::UnitBinding {
+        crate::settings::UnitBinding::from_units(self.scan.metadata.settings.units.as_ref())
+    }
+
+    /// Returns the scale that is safe for canonical millimetre geometry.
+    fn neutral_scale(&self) -> Option<f64> {
+        self.unit_binding().neutral_scale()
     }
 
     /// Looks up a scanned object by deterministic source order.
@@ -587,11 +588,8 @@ impl<'a> DecodeContext<'a> {
             {
                 continue;
             }
-            let Some(scale) = self.unit_scale() else {
-                self.scan_warning(
-                    source_order,
-                    "simple geometry retained because document units are unavailable",
-                );
+            let Some(scale) = self.neutral_scale() else {
+                self.scan_unbound_unit_warning(source_order, "simple geometry");
                 continue;
             };
             if crate::mesh::supported_class(object.class_uuid) {
@@ -756,11 +754,8 @@ impl<'a> DecodeContext<'a> {
                 );
                 continue;
             }
-            let Some(scale) = self.unit_scale() else {
-                self.scan_warning(
-                    source_order,
-                    "dimension retained because document units are unavailable",
-                );
+            let Some(scale) = self.neutral_scale() else {
+                self.scan_unbound_unit_warning(source_order, "dimension");
                 continue;
             };
             let identity = &object.identity;
@@ -874,11 +869,8 @@ impl<'a> DecodeContext<'a> {
     fn decode_hatch(&mut self, source_order: usize, object: &ObjectDescriptor) {
         use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
-        let Some(scale) = self.unit_scale() else {
-            self.scan_warning(
-                source_order,
-                "hatch retained because document units are unavailable",
-            );
+        let Some(scale) = self.neutral_scale() else {
+            self.scan_unbound_unit_warning(source_order, "hatch");
             return;
         };
         let identity = &object.identity;
@@ -1234,11 +1226,8 @@ impl<'a> DecodeContext<'a> {
     fn decode_cage(&mut self, source_order: usize, object: &ObjectDescriptor) {
         use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
-        let Some(scale) = self.unit_scale() else {
-            self.scan_warning(
-                source_order,
-                "NURBS cage retained because document units are unavailable",
-            );
+        let Some(scale) = self.neutral_scale() else {
+            self.scan_unbound_unit_warning(source_order, "NURBS cage");
             return;
         };
         let identity = &object.identity;
@@ -1368,11 +1357,8 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn decode_morph(&mut self, source_order: usize, object: &ObjectDescriptor) {
-        let Some(scale) = self.unit_scale() else {
-            self.scan_warning(
-                source_order,
-                "morph control retained because document units are unavailable",
-            );
+        let Some(scale) = self.neutral_scale() else {
+            self.scan_unbound_unit_warning(source_order, "morph control");
             return;
         };
         let identity = &object.identity;
@@ -1437,11 +1423,8 @@ impl<'a> DecodeContext<'a> {
     fn decode_curve_on_surface(&mut self, source_order: usize, object: &ObjectDescriptor) {
         use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
-        let Some(scale) = self.unit_scale() else {
-            self.scan_warning(
-                source_order,
-                "curve-on-surface retained because document units are unavailable",
-            );
+        let Some(scale) = self.neutral_scale() else {
+            self.scan_unbound_unit_warning(source_order, "curve-on-surface");
             return;
         };
         let identity = &object.identity;
@@ -1803,9 +1786,13 @@ impl<'a> DecodeContext<'a> {
         if stack.contains(&definition.id) {
             return Err(format!("definition cycle reaches {}", definition.id));
         }
-        let scale = self
-            .unit_scale()
-            .ok_or_else(|| "document units are unavailable".to_string())?;
+        let binding = self.unit_binding();
+        let scale = binding.neutral_scale().ok_or_else(|| {
+            format!(
+                "document has no physical millimetre binding ({})",
+                binding.label()
+            )
+        })?;
         let local = crate::instances::scale_translation(reference.transform, scale)
             .ok_or_else(|| "scaled instance transform is invalid".to_string())?;
         let transform = parent.compose(local).map_err(|error| error.to_string())?;
@@ -1984,11 +1971,8 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn decode_subd(&mut self, source_order: usize, object: &ObjectDescriptor) {
-        let Some(scale) = self.unit_scale() else {
-            self.scan_warning(
-                source_order,
-                "SubD retained because document units are unavailable",
-            );
+        let Some(scale) = self.neutral_scale() else {
+            self.scan_unbound_unit_warning(source_order, "SubD");
             return;
         };
         let identity = &object.identity;
@@ -2099,11 +2083,8 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn decode_extrusion(&mut self, source_order: usize, object: &ObjectDescriptor) {
-        let Some(scale) = self.unit_scale() else {
-            self.scan_warning(
-                source_order,
-                "extrusion retained because document units are unavailable",
-            );
+        let Some(scale) = self.neutral_scale() else {
+            self.scan_unbound_unit_warning(source_order, "extrusion");
             self.commit_unknown_surface(source_order);
             return;
         };
@@ -2155,7 +2136,9 @@ impl<'a> DecodeContext<'a> {
         self.report
             .typed_losses
             .extend(crate::annotations::install(self.scan, &mut self.ir)?);
-        for source in crate::document_data::install(self.scan, &mut self.ir)? {
+        let document_data = crate::document_data::install(self.scan, &mut self.ir)?;
+        self.report.typed_losses.extend(document_data.losses);
+        for source in document_data.opaque_records {
             self.retain_opaque_record(&source);
         }
         let presentation = crate::presentation::install(self.scan, &mut self.ir)?;
@@ -2356,6 +2339,44 @@ impl<'a> DecodeContext<'a> {
         }
     }
 
+    /// Retains complete history records whose embedded geometry cannot enter
+    /// canonical millimetre IR.  The feature projection still keeps the
+    /// scalar history values and points to this source boundary by ID.
+    fn retain_unbound_history_geometry(&mut self) {
+        if self.neutral_scale().is_some() {
+            return;
+        }
+        let binding = self.unit_binding();
+        let ranges = self
+            .scan
+            .history
+            .iter()
+            .filter(|record| {
+                record.values.iter().any(|value| {
+                    matches!(&value.value, crate::history::Value::Geometries(values) if !values.is_empty())
+                })
+            })
+            .map(|record| record.source_range.clone())
+            .collect::<Vec<_>>();
+        for range in ranges {
+            let id = UnknownId::compose(
+                &cadmpeg_ir::identity_namespace!("rhino", "history", "source"),
+                IdentityKey::zero_padded(range.start as u64, 12),
+            );
+            let retained = self.source_record(id, range.clone());
+            self.opaque_records.push(retained);
+            self.report.phase_warnings.push_coded(
+                RhinoLossCode::HistoryGeometryNotTransferred,
+                format!(
+                    "history record at source range {}..{} retained as complete source for {} unit binding",
+                    range.start,
+                    range.end,
+                    binding.label()
+                ),
+            );
+        }
+    }
+
     fn retain_opaque_record(&mut self, source: &OpaqueRecord) {
         let table_key = source.table_typecode.to_be_bytes();
         let record_key = source.record.typecode.to_be_bytes();
@@ -2392,6 +2413,17 @@ impl<'a> DecodeContext<'a> {
     fn scan_warning(&mut self, source_order: usize, message: &str) {
         let class = report_class(&self.scan.objects[source_order]);
         self.scan_warnings_for_class(&class, message);
+    }
+
+    fn scan_unbound_unit_warning(&mut self, source_order: usize, kind: &str) {
+        let binding = self.unit_binding();
+        self.scan_warning(
+            source_order,
+            &format!(
+                "{kind} retained because the document has no physical millimetre binding ({})",
+                binding.label()
+            ),
+        );
     }
 
     fn scan_diagnostic(&mut self, source_order: usize, diagnostic: &crate::loss::RhinoDiagnostic) {
@@ -3076,11 +3108,8 @@ impl<'a> DecodeContext<'a> {
                 loss.message = format!("{}: {}", object.class_uuid, loss.message);
                 loss
             }));
-        let Some(scale) = self.unit_scale() else {
-            self.scan_warning(
-                source_order,
-                "Brep retained because document units are unavailable",
-            );
+        let Some(scale) = self.neutral_scale() else {
+            self.scan_unbound_unit_warning(source_order, "Brep");
             return;
         };
         let association = self.source_association(identity);
@@ -5486,7 +5515,8 @@ pub(crate) fn decode(
     let mut context = DecodeContext::new(scan, expand);
     context.decode_geometry();
     context.decode_dimensions();
-    let geometry_context = context.unit_scale().map(|scale| {
+    context.retain_unbound_history_geometry();
+    let geometry_context = context.neutral_scale().map(|scale| {
         (
             expand,
             scan.archive,
@@ -5755,8 +5785,26 @@ fn full_source_attributes(scan: &Scan<'_>) -> BTreeMap<String, String> {
     if let Some(url) = &settings.model_url {
         attributes.insert("model_url".to_string(), url.clone());
     }
+    let mut layer_index_counts = BTreeMap::<i32, usize>::new();
     for layer in &scan.metadata.layers {
-        let prefix = format!("layer.{}", layer.index);
+        *layer_index_counts.entry(layer.index).or_default() += 1;
+    }
+    let mut layer_index_occurrences = BTreeMap::<i32, usize>::new();
+    for layer in &scan.metadata.layers {
+        let occurrence = layer_index_occurrences.entry(layer.index).or_default();
+        let prefix = if layer_index_counts.get(&layer.index) == Some(&1) {
+            format!("layer.{}", layer.index)
+        } else {
+            let current = *occurrence;
+            *occurrence += 1;
+            format!(
+                "layer.{}.record-{current:06}-offset-{}",
+                layer.index, layer.source.range.start
+            )
+        };
+        if layer_index_counts.get(&layer.index) != Some(&1) {
+            attributes.insert(format!("{prefix}.index"), layer.index.to_string());
+        }
         attributes.insert(format!("{prefix}.name"), layer.name.clone());
         attributes.insert(format!("{prefix}.visible"), layer.visible.to_string());
         attributes.insert(format!("{prefix}.locked"), layer.locked.to_string());

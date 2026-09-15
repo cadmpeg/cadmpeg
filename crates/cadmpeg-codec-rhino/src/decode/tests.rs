@@ -1285,7 +1285,10 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
         let mut context = crate::decode::DecodeContext::new(&scan, expand);
         assert!(context.object(0).is_some());
         assert!(context.unknown(0).is_some());
-        assert_eq!(context.unit_scale(), None);
+        assert_eq!(
+            context.unit_binding(),
+            crate::settings::UnitBinding::Unavailable
+        );
         assert_eq!(context.archive(), archive);
         assert!(context.append_link(0, "rhino:curve#2".to_string()));
         assert!(context.append_link(0, "rhino:curve#1".to_string()));

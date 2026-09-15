@@ -125,6 +125,11 @@ pub(crate) struct HistoryScan {
     pub(crate) opaque_records: Vec<OpaqueRecord>,
 }
 
+/// Stable source-fidelity identity for a complete history record boundary.
+pub(crate) fn source_id(source_offset: usize) -> String {
+    format!("rhino:history:source#{source_offset:012}")
+}
+
 fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
     Ok(Uuid::from_wire(reader.array()?))
 }
@@ -1367,6 +1372,14 @@ pub(crate) fn project(
                 &mut properties,
                 &mut sink,
             );
+            if geometry_context.is_none()
+                && matches!(&value.value, Value::Geometries(values) if !values.is_empty())
+            {
+                properties.insert(
+                    format!("{key}.source_fidelity_id"),
+                    source_id(record.source_range.start),
+                );
+            }
             if let Some(text) = value_text(&value.value) {
                 parameters.insert(key, text);
             } else if let Value::Opaque { type_code, range } = &value.value {

@@ -116,7 +116,14 @@ fn viewport_userdata_future_payload_retains_typed_view_list_record() {
         "80",
         &[
             support::test_dump::table(archive, 0x1000_0014, &[]),
-            support::test_dump::table(archive, 0x1000_0015, std::slice::from_ref(&named_views)),
+            support::test_dump::table(
+                archive,
+                0x1000_0015,
+                &[
+                    support::test_dump::units_record(archive, 2),
+                    named_views.clone(),
+                ],
+            ),
             support::test_dump::table(archive, 0x1000_0013, &[]),
         ],
     );
@@ -151,7 +158,14 @@ fn malformed_viewport_userdata_retains_typed_view_list_record() {
         "80",
         &[
             support::test_dump::table(archive, 0x1000_0014, &[]),
-            support::test_dump::table(archive, 0x1000_0015, std::slice::from_ref(&named_views)),
+            support::test_dump::table(
+                archive,
+                0x1000_0015,
+                &[
+                    support::test_dump::units_record(archive, 2),
+                    named_views.clone(),
+                ],
+            ),
             support::test_dump::table(archive, 0x1000_0013, &[]),
         ],
     );
@@ -175,4 +189,55 @@ fn malformed_viewport_userdata_retains_typed_view_list_record() {
         .expect("malformed view list record is retained");
     assert_eq!(retained.data(), Some(named_views.as_slice()));
     assert_valid(&result);
+}
+
+#[test]
+fn view_list_with_native_or_unavailable_units_is_retained_without_scale_one() {
+    let archive = ArchiveVersion::V8;
+    for unit in [Some(0), Some(255), None] {
+        let named_views = named_views_record(archive);
+        let settings = unit
+            .map(|value| vec![support::test_dump::units_record(archive, value)])
+            .unwrap_or_default();
+        let bytes = support::test_dump::minimal_document(
+            "80",
+            &[
+                support::test_dump::table(archive, 0x1000_0014, &[]),
+                support::test_dump::table(
+                    archive,
+                    0x1000_0015,
+                    &[settings, vec![named_views.clone()]].concat(),
+                ),
+                support::test_dump::table(archive, 0x1000_0013, &[]),
+            ],
+        );
+        let result = decode(bytes);
+        let views = &result.ir().native.namespace("rhino").unwrap().arenas()["views"];
+        assert!(views.is_empty(), "unit {unit:?} unexpectedly entered CADIR");
+        let retained = result
+            .source_fidelity()
+            .retained_records()
+            .iter()
+            .find(|(id, record)| {
+                id.as_str()
+                    .starts_with("rhino:opaque:record#10000015-20008036-")
+                    && record.data() == Some(named_views.as_slice())
+            });
+        assert!(
+            retained.is_some(),
+            "unit {unit:?} list source was not retained"
+        );
+        let label = if unit == Some(0) {
+            "native"
+        } else {
+            "unavailable"
+        };
+        assert!(result.report().losses.iter().any(|loss| {
+            loss.code == crate::loss::RhinoLossCode::PresentationRecordDropped.kind()
+                && loss
+                    .message
+                    .contains(&format!("no physical millimetre binding ({label})"))
+        }));
+        assert_valid(&result);
+    }
 }

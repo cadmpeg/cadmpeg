@@ -8,9 +8,9 @@ use serde::Serialize;
 use std::ops::Range;
 
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError};
-use crate::container::{OpaqueRecord, Record, Scan};
+use crate::container::{NativeInstall, OpaqueRecord, Record, Scan};
 use crate::objects::{parse_userdata, UserdataDescriptor};
-use crate::settings::utf16;
+use crate::settings::{utf16, UnitBinding};
 use crate::wire::{scaled_coordinate, Uuid};
 
 const SETTINGS_TABLE: u32 = 0x1000_0015;
@@ -504,7 +504,7 @@ fn render_userdata(
 ///
 /// The returned records are complete settings records whose payload was not
 /// admitted by a registered owner.
-pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<OpaqueRecord>, CodecError> {
+pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<NativeInstall, CodecError> {
     let properties = &scan.metadata.properties;
     let revisions = properties
         .revision_history
@@ -583,14 +583,11 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<OpaqueRecor
             parse_error: None,
         })
         .collect::<Vec<_>>();
-    let scale = settings
-        .units
-        .as_ref()
-        .and_then(crate::settings::UnitsAndTolerances::millimeters_per_unit)
-        .unwrap_or(1.0);
+    let binding = UnitBinding::from_units(settings.units.as_ref());
     let mut annotations = Vec::new();
     let mut grids = Vec::new();
     let mut renders = Vec::new();
+    let mut losses = Vec::new();
     let mut opaque_records = Vec::new();
     let mut render_settings_seen = false;
     for table in &scan.tables {
@@ -598,13 +595,53 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<OpaqueRecor
             continue;
         }
         for record in &table.records {
+            if matches!(
+                record.typecode,
+                ANNOTATION_SETTINGS | GRID_DEFAULTS | RENDER_SETTINGS
+            ) && binding.neutral_scale().is_none()
+            {
+                let message = format!(
+                    "setting record {:#010x} at offset {} was retained as complete source because the document has no physical millimetre binding ({})",
+                    record.typecode,
+                    record.range.start,
+                    binding.label()
+                );
+                losses.push(
+                    crate::loss::RhinoLossCode::PresentationRecordDropped.note(message.clone()),
+                );
+                opaque_records.push(OpaqueRecord {
+                    table_typecode: table.typecode,
+                    record: record.clone(),
+                });
+                setting_records.push(SettingRecord {
+                    id: format!(
+                        "rhino:document:setting#unit-binding-{:04}",
+                        setting_records.len()
+                    ),
+                    source_offset: record.range.start as u64,
+                    byte_len: record.range.len() as u64,
+                    typecode: format!("{:#010x}", record.typecode),
+                    sha256: cadmpeg_ir::hash::sha256_hex(&scan.data[record.range.clone()]),
+                    parse_error: Some(message),
+                });
+                continue;
+            }
             let result = if record.typecode == ANNOTATION_SETTINGS {
+                let Some(scale) = binding.neutral_scale() else {
+                    continue;
+                };
                 annotation_settings(scan.data, record.body(), record.range.start, scale)
                     .map(|value| annotations.push(value))
             } else if record.typecode == GRID_DEFAULTS {
+                let Some(scale) = binding.neutral_scale() else {
+                    continue;
+                };
                 grid_defaults(scan.data, record.body(), record.range.start, scale)
                     .map(|value| grids.push(value))
             } else if record.typecode == RENDER_SETTINGS {
+                let Some(scale) = binding.neutral_scale() else {
+                    continue;
+                };
                 render_settings(
                     scan.data,
                     record.body(),
@@ -664,7 +701,10 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<OpaqueRecor
     namespace.set_arena("annotation_settings", &annotations)?;
     namespace.set_arena("grid_defaults", &grids)?;
     namespace.set_arena("render_settings", &renders)?;
-    Ok(opaque_records)
+    Ok(NativeInstall {
+        losses,
+        opaque_records,
+    })
 }
 
 #[cfg(test)]

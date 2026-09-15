@@ -13,7 +13,7 @@ use crate::chunks::{
 };
 use crate::container::{NativeInstall, OpaqueRecord, Record, Scan};
 use crate::objects::parse_userdata;
-use crate::settings::{plane, utf16, Plane};
+use crate::settings::{plane, utf16, Plane, UnitBinding};
 use crate::wire::{scaled_coordinate, Uuid};
 
 const SETTINGS: u32 = 0x1000_0015;
@@ -1279,16 +1279,31 @@ fn parse_named_cplanes(
     Ok(values)
 }
 
+fn retain_unbound_view_record(
+    losses: &mut Vec<LossNote>,
+    opaque_records: &mut Vec<OpaqueRecord>,
+    table_typecode: u32,
+    record: &Record,
+    binding: UnitBinding,
+    kind: &str,
+) {
+    losses.push(crate::loss::RhinoLossCode::PresentationRecordDropped.note(
+        format!(
+            "{kind} record at offset {} was retained as complete source because the document has no physical millimetre binding ({})",
+            record.range.start,
+            binding.label()
+        ),
+    ));
+    opaque_records.push(OpaqueRecord {
+        table_typecode,
+        record: record.clone(),
+    });
+}
+
 /// Result of installing saved and active view records.
 /// Installs saved and active view records with complete child accounting.
 pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<NativeInstall, CodecError> {
-    let scale = scan
-        .metadata
-        .settings
-        .units
-        .as_ref()
-        .and_then(crate::settings::UnitsAndTolerances::millimeters_per_unit)
-        .unwrap_or(1.0);
+    let binding = UnitBinding::from_units(scan.metadata.settings.units.as_ref());
     let mut views = Vec::new();
     let mut cplanes = Vec::new();
     let mut losses = Vec::new();
@@ -1299,6 +1314,17 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<NativeInstall, 
         }
         for record in &table.records {
             if record.typecode == NAMED_CPLANES {
+                let Some(scale) = binding.neutral_scale() else {
+                    retain_unbound_view_record(
+                        &mut losses,
+                        &mut opaque_records,
+                        table.typecode,
+                        record,
+                        binding,
+                        "named construction-plane",
+                    );
+                    continue;
+                };
                 match parse_named_cplanes(scan.data, record, scan.archive, scale) {
                     Ok(values) => cplanes.extend(values),
                     Err(error) => {
@@ -1316,6 +1342,17 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<NativeInstall, 
                 }
             }
             if record.typecode == NAMED_VIEWS {
+                let Some(scale) = binding.neutral_scale() else {
+                    retain_unbound_view_record(
+                        &mut losses,
+                        &mut opaque_records,
+                        table.typecode,
+                        record,
+                        binding,
+                        "named-view list",
+                    );
+                    continue;
+                };
                 let (parsed, mut parse_losses) =
                     parse_list(scan.data, record, scan.archive, scale, ViewListKind::Named);
                 if !parse_losses.is_empty() {
@@ -1328,6 +1365,17 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<NativeInstall, 
                 losses.append(&mut parse_losses);
             }
             if record.typecode == ACTIVE_VIEWS {
+                let Some(scale) = binding.neutral_scale() else {
+                    retain_unbound_view_record(
+                        &mut losses,
+                        &mut opaque_records,
+                        table.typecode,
+                        record,
+                        binding,
+                        "active-view list",
+                    );
+                    continue;
+                };
                 let (parsed, mut parse_losses) =
                     parse_list(scan.data, record, scan.archive, scale, ViewListKind::Active);
                 if !parse_losses.is_empty() {

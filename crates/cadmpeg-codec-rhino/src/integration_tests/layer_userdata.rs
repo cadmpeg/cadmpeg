@@ -286,3 +286,39 @@ fn malformed_obsolete_layer_settings_are_discarded_without_altering_the_layer() 
         .any(|loss| loss.message.contains("layer per-viewport userdata")));
     assert_valid(&result);
 }
+
+#[test]
+fn duplicate_layer_indexes_keep_each_source_summary_entry() {
+    let archive = ArchiveVersion::V8;
+    let first = layer_record(archive, &[0xde, 0xad]);
+    let second = layer_record(archive, &[0xde, 0xad]);
+    let properties = vec![support::test_dump::short_chunk(archive, 0xa000_0026, 202_608_010)];
+    let bytes = support::test_dump::minimal_document(
+        "80",
+        &[
+            support::test_dump::table(archive, 0x1000_0014, &properties),
+            support::test_dump::table(archive, 0x1000_0015, &[]),
+            support::test_dump::table(archive, 0x1000_0011, &[first, second]),
+            support::test_dump::table(archive, 0x1000_0013, &[]),
+        ],
+    );
+    let result = decode(bytes);
+    let attributes = &result.ir().source.as_ref().unwrap().attributes;
+    let layer_entries = attributes
+        .iter()
+        .filter(|(key, _)| key.as_str().starts_with("layer.7."))
+        .collect::<Vec<_>>();
+    assert_eq!(layer_entries.len(), 10);
+    assert_eq!(
+        layer_entries
+            .iter()
+            .filter(|(key, _)| key.as_str().ends_with(".index"))
+            .count(),
+        2
+    );
+    assert!(layer_entries.iter().all(|(key, _)| {
+        key.as_str().contains("record-000000-offset-")
+            || key.as_str().contains("record-000001-offset-")
+    }));
+    assert_valid(&result);
+}
