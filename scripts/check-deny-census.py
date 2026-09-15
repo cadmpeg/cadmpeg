@@ -380,11 +380,49 @@ def direct_input_calls(code, bindings):
     return [call for call in calls if call_has_direct_input(code, call, bindings)]
 
 
-def has_conditional_input_route(code, bindings):
-    """Reject direct input calls whose execution is conditional or deferred."""
+def has_unproved_input_route(code, bindings):
+    """Require an unconditional read whose failure leaves the reader."""
     return any(
         not call_is_unconditional(code, call)
+        or not call_propagates_error(code, call)
         for call in direct_input_calls(code, bindings)
+    )
+
+
+def call_propagates_error(code, call):
+    """Prove direct ``?`` propagation or a returned Result expression.
+
+    Only Result adapters that preserve Err are followed. Discarded results,
+    error recovery and local result aliases do not establish refusal.
+    """
+    opening = call.end()
+    while opening < len(code) and code[opening].isspace():
+        opening += 1
+    if opening == len(code) or code[opening] != "(":
+        return False
+    end = delimited_end(code, opening, "(", ")")
+    if end is None:
+        return False
+    while True:
+        while end < len(code) and code[end].isspace():
+            end += 1
+        if code[end:end + 1] == "?":
+            return True
+        adapter = re.match(r"\.\s*(?:map|map_err|and_then)\s*\(", code[end:])
+        if adapter is None:
+            break
+        end = delimited_end(code, end + adapter.end() - 1, "(", ")")
+        if end is None:
+            return False
+
+    statement_start = max(
+        code.rfind(";", 0, call.start()),
+        code.rfind("{", 0, call.start()),
+        code.rfind("}", 0, call.start()),
+    ) + 1
+    return (
+        not code[statement_start:call.start()].strip()
+        and re.fullmatch(r"\s*}\s*", code[end:]) is not None
     )
 
 
@@ -633,7 +671,7 @@ def macro_reader_contract(code, expected_path):
         return False
     method = methods[0]
     bindings = function_input_bindings(method)
-    if has_conditional_input_route(method, bindings):
+    if has_unproved_input_route(method, bindings):
         return False
     calls = [
         call for call in DESERIALIZE_CALL_RE.finditer(method)
@@ -1702,7 +1740,7 @@ def main():
         if OPEN_READER_ROUTE.search(code):
             return False
         bindings = function.input_bindings
-        if has_conditional_input_route(code, bindings):
+        if has_unproved_input_route(code, bindings):
             return False
         array_route = any(
             call_has_direct_input(code, call, bindings)
@@ -1767,7 +1805,7 @@ def main():
         code = SOURCE_POLICY.mask_rust_non_code(reader.body)
         if OPEN_READER_ROUTE.search(code):
             return False
-        if has_conditional_input_route(code, reader.input_bindings):
+        if has_unproved_input_route(code, reader.input_bindings):
             return False
 
         # This spelling is an array reader whose leading ``<`` is not a type
