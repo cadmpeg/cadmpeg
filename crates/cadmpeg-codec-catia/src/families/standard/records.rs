@@ -779,8 +779,9 @@ fn standard_curve_support_row_at(
 fn standard_curve_support_has_predecessor(brep: &[u8], face_count: usize, start: usize) -> bool {
     const MAX_ROW_BYTES: usize = 35;
     (start.saturating_sub(MAX_ROW_BYTES)..start).any(|candidate| {
-        standard_curve_support_row_at(brep, face_count, candidate)
-            .is_some_and(|(_, end)| end == start)
+        brep[candidate] == 0x60
+            && standard_curve_support_row_at(brep, face_count, candidate)
+                .is_some_and(|(_, end)| end == start)
     })
 }
 
@@ -970,6 +971,27 @@ fn all_finite(vs: &[f32]) -> bool {
 mod tests {
     use super::{axis_from_xy, unit_vector};
     use cadmpeg_ir::math::Vector3;
+
+    #[test]
+    fn support_predecessor_requires_the_row_marker() {
+        // A line support row is 60, its u24 tag, the five-byte line body,
+        // and two local face references (format specification section 5.5).
+        let mut bytes = vec![
+            0x60, 1, 0, 0, 0, 2, 0, 0x33, 0x36, 0, 1, 0x60, 2, 0, 0, 0, 2, 0, 0x33, 0x36, 0, 1,
+        ];
+        assert!(super::standard_curve_supports(&bytes, 2, Some(1)).is_empty());
+        for marker in 0..=u8::MAX {
+            if marker == 0x60 {
+                continue;
+            }
+            bytes[0] = marker;
+            let rows = super::standard_curve_supports(&bytes, 2, Some(1));
+            assert_eq!(rows.len(), 1, "preceding non-row marker {marker:#04x}");
+            assert_eq!(rows[0].pos, 11);
+            assert_eq!(rows[0].tag, 2);
+            assert_eq!(rows[0].faces, [0, 1]);
+        }
+    }
 
     #[test]
     fn unit_vector_preserves_tiny_finite_direction() {
