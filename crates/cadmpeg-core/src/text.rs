@@ -18,7 +18,7 @@ impl NonWhitespaceChar {
     /// Admit an ASCII byte that is not whitespace.
     #[must_use]
     pub const fn from_ascii(byte: u8) -> Option<Self> {
-        if byte.is_ascii() && !byte.is_ascii_whitespace() {
+        if byte.is_ascii() && !matches!(byte, b'\t'..=b'\r' | b' ') {
             Some(Self(byte as char))
         } else {
             None
@@ -50,9 +50,23 @@ impl std::fmt::Display for NonWhitespaceChar {
 /// back and compared as text. A run of spaces names nothing, so it is refused
 /// here rather than by each reader.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct NonBlankString(String);
+
+#[cfg(feature = "schema")]
+impl JsonSchema for NonBlankString {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "NonBlankString".into()
+    }
+
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        // Unicode White_Space matches char::is_whitespace; ECMAScript \s does not.
+        schemars::json_schema!({
+            "type": "string",
+            "pattern": r"[^\u0009-\u000d\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"
+        })
+    }
+}
 
 impl NonBlankString {
     /// Constructs a source string that is not blank.
@@ -107,6 +121,10 @@ impl NonBlankString {
 ///
 /// ```compile_fail
 /// let _ = cadmpeg_core::nonblank_literal!(" {}", "name");
+/// ```
+///
+/// ```compile_fail
+/// let _ = cadmpeg_core::nonblank_literal!("\x0b");
 /// ```
 #[macro_export]
 macro_rules! nonblank_literal {
@@ -259,6 +277,11 @@ pub fn named_entries<V>(
 /// or starts with whitespace or a non-ASCII byte fails `cargo check` with
 /// E0080. Use it where the key is a pinned constant, so the spelling stays in
 /// one place instead of being repeated as a literal beside the constant.
+///
+/// ```compile_fail
+/// const BLANK: &str = "\x0b";
+/// let _ = cadmpeg_core::nonblank_const!(BLANK);
+/// ```
 #[macro_export]
 macro_rules! nonblank_const {
     ($constant:expr) => {{
@@ -337,11 +360,44 @@ mod tests {
             let admitted = NonWhitespaceChar::from_ascii(byte);
             assert_eq!(
                 admitted.is_some(),
-                byte.is_ascii() && !byte.is_ascii_whitespace()
+                byte.is_ascii() && !char::from(byte).is_whitespace()
             );
             if let Some(character) = admitted {
                 assert_eq!(character.to_string(), char::from(byte).to_string());
             }
+        }
+    }
+
+    #[test]
+    fn every_admitted_prefix_produces_text_accepted_by_the_public_reader() {
+        for byte in u8::MIN..=u8::MAX {
+            let Some(prefix) = NonWhitespaceChar::from_ascii(byte) else {
+                continue;
+            };
+            let value = NonBlankString::prefixed(prefix, "\t\n\u{85}\u{3000}");
+            assert!(NonBlankString::new(value.as_str()).is_some(), "byte {byte}");
+            let wire = serde_json::to_string(&value).unwrap();
+            assert_eq!(
+                serde_json::from_str::<NonBlankString>(&wire).unwrap(),
+                value
+            );
+        }
+        assert!(NonWhitespaceChar::from_ascii(0x0b).is_none());
+    }
+
+    #[cfg(feature = "schema")]
+    #[test]
+    fn nonblank_schema_constrains_property_names_without_trimming_source_text() {
+        let schema = serde_json::to_value(schemars::schema_for!(NonBlankString)).unwrap();
+        assert_eq!(schema["type"], "string");
+        let pattern = schema["pattern"].as_str().unwrap();
+        let map =
+            serde_json::to_value(schemars::schema_for!(BTreeMap<NonBlankString, String>)).unwrap();
+        assert_eq!(map["additionalProperties"], false);
+        assert!(map["patternProperties"].get(pattern).is_some());
+        for text in [" \tname\n", "\u{feff}", "\0"] {
+            let value = NonBlankString::new(text).unwrap();
+            assert_eq!(serde_json::to_value(value).unwrap(), text);
         }
     }
 
