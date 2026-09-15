@@ -452,6 +452,32 @@ fn located_presentation_loss(
         .with_provenance(SourceProvenance::root("rhino", offset as u64).with_tag(tag))
 }
 
+fn located_integrity_loss(
+    offset: usize,
+    tag: impl Into<String>,
+    message: impl Into<String>,
+) -> LossNote {
+    crate::loss::RhinoLossCode::IntegrityFailure
+        .note(message.into())
+        .with_provenance(SourceProvenance::root("rhino", offset as u64).with_tag(tag))
+}
+
+fn view_checksum_tag(typecode: u32) -> &'static str {
+    match typecode {
+        VIEW_CPLANE => "VIEW/CPLANE",
+        VIEW_VIEWPORT => "VIEW/VIEWPORT",
+        VIEW_TARGET => "VIEW/TARGET",
+        VIEW_POSITION => "VIEW/POSITION",
+        VIEW_NAME => "VIEW/NAME",
+        VIEW_WALLPAPER => "VIEW/WALLPAPER",
+        VIEW_WALLPAPER_V3 => "VIEW/WALLPAPER",
+        VIEW_TRACE_IMAGE => "VIEW/TRACE_IMAGE",
+        VIEW_ATTRIBUTES => "VIEW/ATTRIBUTES",
+        VIEW_VIEWPORT_USERDATA => "VIEW/VIEWPORT_USERDATA",
+        _ => "VIEW/CHILD",
+    }
+}
+
 fn parse_cplane(
     data: &[u8],
     body: std::ops::Range<usize>,
@@ -1014,7 +1040,11 @@ fn parse_view(
             VIEW_VIEWPORT | VIEW_CPLANE | VIEW_TARGET | VIEW_POSITION | VIEW_NAME | VIEW_WALLPAPER
         ) {
             if let Some(warning) = direct_view_child_checksum_warning(data, &child)? {
-                losses.push(crate::loss::RhinoLossCode::IntegrityFailure.note(warning));
+                losses.push(located_integrity_loss(
+                    child.header_start,
+                    view_checksum_tag(child.typecode),
+                    warning,
+                ));
             }
         }
         children.push(ViewChild {
@@ -1056,7 +1086,11 @@ fn parse_view(
                 if let Some(warning) =
                     view_child_checksum_warning_excluding(data, &child, &nested_children)?
                 {
-                    losses.push(crate::loss::RhinoLossCode::IntegrityFailure.note(warning));
+                    losses.push(located_integrity_loss(
+                        child.header_start,
+                        "VIEW/TRACE_IMAGE",
+                        warning,
+                    ));
                 }
                 trace_image = Some(value);
             }
@@ -1084,7 +1118,11 @@ fn parse_view(
                 if let Some(warning) =
                     view_child_checksum_warning_excluding(data, &child, &nested_children)?
                 {
-                    losses.push(crate::loss::RhinoLossCode::IntegrityFailure.note(warning));
+                    losses.push(located_integrity_loss(
+                        child.header_start,
+                        "VIEW/WALLPAPER",
+                        warning,
+                    ));
                 }
                 wallpaper = Some(value);
             }
@@ -1120,7 +1158,11 @@ fn parse_view(
                 if let Some(warning) =
                     view_child_checksum_warning_excluding(data, &child, &nested_children)?
                 {
-                    losses.push(crate::loss::RhinoLossCode::IntegrityFailure.note(warning));
+                    losses.push(located_integrity_loss(
+                        child.header_start,
+                        "VIEW/ATTRIBUTES",
+                        warning,
+                    ));
                 }
                 attributes_detail = Some(attributes);
             }
@@ -1143,9 +1185,11 @@ fn parse_view(
                             if let Some(warning) =
                                 view_child_checksum_warning_excluding(data, &child, &scan.children)?
                             {
-                                losses.push(
-                                    crate::loss::RhinoLossCode::IntegrityFailure.note(warning),
-                                );
+                                losses.push(located_integrity_loss(
+                                    child.header_start,
+                                    "VIEW/VIEWPORT_USERDATA",
+                                    warning,
+                                ));
                             }
                             if scan.has_untyped_content {
                                 losses.push(
@@ -1207,7 +1251,11 @@ fn parse_view(
         _ => None,
     };
     if let Some(warning) = checksum_warning {
-        losses.push(crate::loss::RhinoLossCode::IntegrityFailure.note(warning));
+        losses.push(located_integrity_loss(
+            record.header_start,
+            "VIEW/RECORD",
+            warning,
+        ));
     }
     Ok(ViewRecord {
         id: format!("rhino:document:view#{}-{list_index:04}", list_kind.as_str()),
@@ -1780,6 +1828,13 @@ mod tests {
             crate::loss::RhinoLossCode::IntegrityFailure.kind()
         );
         assert!(losses[0].message.contains("CRC mismatch"));
+        assert_eq!(
+            losses[0]
+                .provenance
+                .as_ref()
+                .and_then(|provenance| provenance.tag.as_deref()),
+            Some("VIEW/RECORD")
+        );
     }
 
     #[test]
@@ -1810,6 +1865,13 @@ mod tests {
             crate::loss::RhinoLossCode::IntegrityFailure.kind()
         );
         assert!(losses[0].message.contains("0x2000883b"));
+        assert_eq!(
+            losses[0]
+                .provenance
+                .as_ref()
+                .and_then(|provenance| provenance.tag.as_deref()),
+            Some("VIEW/TARGET")
+        );
     }
 
     #[test]
@@ -1979,6 +2041,13 @@ mod tests {
         assert_eq!(views.len(), 1);
         assert_eq!(losses.len(), 1);
         assert!(losses[0].message.contains("0x20008c3b"));
+        assert_eq!(
+            losses[0]
+                .provenance
+                .as_ref()
+                .and_then(|provenance| provenance.tag.as_deref()),
+            Some("VIEW/ATTRIBUTES")
+        );
     }
 
     #[test]
@@ -2084,6 +2153,13 @@ mod tests {
             crate::loss::RhinoLossCode::IntegrityFailure.kind()
         );
         assert!(losses[0].message.contains("0x2000863b"));
+        assert_eq!(
+            losses[0]
+                .provenance
+                .as_ref()
+                .and_then(|provenance| provenance.tag.as_deref()),
+            Some("VIEW/TRACE_IMAGE")
+        );
 
         let mut corrupted_wallpaper = wallpaper.clone();
         let wallpaper_crc_offset = corrupted_wallpaper.len() - 1;
@@ -2092,6 +2168,13 @@ mod tests {
         assert_eq!(views.len(), 1);
         assert_eq!(losses.len(), 1);
         assert!(losses[0].message.contains("0x2000874b"));
+        assert_eq!(
+            losses[0]
+                .provenance
+                .as_ref()
+                .and_then(|provenance| provenance.tag.as_deref()),
+            Some("VIEW/WALLPAPER")
+        );
     }
 
     #[test]
@@ -2167,6 +2250,14 @@ mod tests {
         assert!(losses
             .iter()
             .any(|loss| loss.message.contains("0x20008d3b")));
+        assert!(losses.iter().any(|loss| {
+            loss.code == crate::loss::RhinoLossCode::IntegrityFailure.kind()
+                && loss
+                    .provenance
+                    .as_ref()
+                    .and_then(|provenance| provenance.tag.as_deref())
+                    == Some("VIEW/VIEWPORT_USERDATA")
+        }));
     }
 
     struct AttributesField<'a>(Option<&'a ViewAttributes>);
