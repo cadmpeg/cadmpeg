@@ -1394,7 +1394,7 @@ fn exporting_a_salvaged_noncanonical_unit_repairs_partial_order() {
     let (exchange, diagnostics) = crate::parse::parse(&output).expect("parse repaired output");
     assert!(diagnostics.is_empty());
     let unit = exchange
-        .records
+        .records()
         .values()
         .find(|record| {
             record

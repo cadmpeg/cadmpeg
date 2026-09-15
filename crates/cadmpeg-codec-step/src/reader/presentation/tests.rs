@@ -1347,7 +1347,7 @@ fn body_layers_and_visibility_cover_every_region_shape_item() {
     let (exchange, diagnostics) = crate::parse::parse(&bytes).expect("parse body presentation");
     assert!(diagnostics.is_empty());
     let layer = exchange
-        .records
+        .records()
         .values()
         .find(|record| {
             record
@@ -1366,7 +1366,7 @@ fn body_layers_and_visibility_cover_every_region_shape_item() {
     };
     assert_eq!(layer_items.len(), 2);
     let visibility = exchange
-        .records
+        .records()
         .values()
         .find(|record| {
             record

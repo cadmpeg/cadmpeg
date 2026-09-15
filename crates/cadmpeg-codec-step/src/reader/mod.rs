@@ -137,7 +137,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         );
         attributes.insert(
             cadmpeg_core::nonblank_literal!("entity_instances"),
-            exchange.records.len().to_string(),
+            exchange.records().len().to_string(),
         );
         if let DecodeMode::Decode(packaging) = mode {
             packaging.add_source_attributes(&mut attributes);
@@ -435,7 +435,7 @@ fn decode_exchange_mode(
     let opaque_offsets = match mode {
         DecodeMode::Decode(_) => BTreeSet::new(),
         DecodeMode::Inspect => exchange
-            .records
+            .records()
             .iter()
             .filter(|(id, _)| !session.typed_records.contains(id))
             .map(|(_, record)| record.span.start)
@@ -448,13 +448,13 @@ fn decode_exchange_mode(
     let mut source_fidelity = SourceFidelity::default();
     if matches!(mode, DecodeMode::Decode(_)) {
         opaque_ids = exchange
-            .records
+            .records()
             .iter()
             .filter(|(id, _)| !session.typed_records.contains(id))
             .map(|(&id, record)| (id, opaque_record_id(id, record)))
             .collect::<BTreeMap<_, _>>();
         opaque_sources.reserve(opaque_ids.len());
-        for (&id, record) in &exchange.records {
+        for (&id, record) in exchange.records() {
             if session.typed_records.contains(&id) {
                 continue;
             }
@@ -491,7 +491,7 @@ fn decode_exchange_mode(
             .collect::<BTreeSet<_>>();
         source_targets = record_targets(&session.ir, |record_id| target_ids.contains(&record_id));
     } else {
-        for (&id, record) in &exchange.records {
+        for (&id, record) in exchange.records() {
             if session.typed_records.contains(&id) {
                 continue;
             }
@@ -599,7 +599,7 @@ fn decode_exchange_mode(
 
 /// Count the source graph nodes that each semantic pass may inspect.
 fn semantic_input_work(exchange: &Exchange) -> u64 {
-    let records = exchange.records.values().map(|record| {
+    let records = exchange.records().values().map(|record| {
         1_u64.saturating_add(
             record
                 .partials
@@ -676,7 +676,7 @@ fn reference_work_units(value: &Value) -> u64 {
 /// Reserve the linear scan used to derive a plane for an implicit face.
 fn implicit_face_plane_work(exchange: &Exchange) -> u64 {
     exchange
-        .records
+        .records()
         .values()
         .filter_map(|record| {
             record
@@ -733,7 +733,7 @@ fn retain_unowned_carriers(
         )
         .collect::<BTreeSet<_>>();
     let unowned_pcurves = exchange
-        .records
+        .records()
         .iter()
         .filter(|(_, record)| {
             record
@@ -766,7 +766,7 @@ fn retain_unowned_carriers(
                 .map(|surface| surface.id.as_str()),
         )
         .filter_map(step_id_from_ir)
-        .filter(|id| exchange.records.contains_key(id) && !referenced.contains(id))
+        .filter(|id| exchange.records().contains_key(id) && !referenced.contains(id))
         .collect::<BTreeSet<_>>();
     associate_unowned_direct_carriers(ir, &unowned_direct_carriers);
     if unowned_pcurves.is_empty() {
@@ -973,7 +973,7 @@ fn record_closure(roots: &BTreeSet<u64>, exchange: &Exchange) -> BTreeSet<u64> {
         if !closure.insert(id) {
             continue;
         }
-        let Some(record) = exchange.records.get(&id) else {
+        let Some(record) = exchange.records().get(&id) else {
             continue;
         };
         let mut references = BTreeSet::new();
@@ -989,7 +989,7 @@ fn record_closure(roots: &BTreeSet<u64>, exchange: &Exchange) -> BTreeSet<u64> {
 
 fn referenced_record_ids(exchange: &Exchange) -> BTreeSet<u64> {
     let mut references = BTreeSet::new();
-    for record in exchange.records.values() {
+    for record in exchange.records().values() {
         for parameter in record
             .partials
             .iter()
@@ -1056,7 +1056,7 @@ fn byte_accounting(
 ) -> Result<ByteAccounting, CodecError> {
     let mut classes =
         ctx.alloc_filled(input.len(), ByteClass::Unclassified, "step byte classes")?;
-    for (&id, record) in &exchange.records {
+    for (&id, record) in exchange.records() {
         let class = if typed_records.contains(&id) {
             ByteClass::Typed
         } else {

@@ -18,7 +18,7 @@ fn released_source_graph_drops_records_and_cached_entity_indexes() {
 
     exchange.release_source_graph();
 
-    assert!(exchange.records.is_empty());
+    assert!(exchange.records().is_empty());
     assert!(exchange.header.is_empty());
     assert!(exchange.data.is_empty());
     assert!(!exchange.has_entity("POINT"));
@@ -66,7 +66,7 @@ fn poisoned_entity_union_cache_preserves_completed_entries_and_accepts_new_queri
             .map(|(id, _)| id)
             .collect::<Vec<_>>();
         let expected = exchange
-            .records
+            .records()
             .iter()
             .filter(|(_, record)| {
                 record

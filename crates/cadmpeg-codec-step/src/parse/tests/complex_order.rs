@@ -37,7 +37,7 @@ fn parser_reports_recoverable_noncanonical_complex_partial_order() {
         "complex partial records are not alphabetical: observed (NAMED_UNIT, SOLID_ANGLE_UNIT, SI_UNIT), expected (NAMED_UNIT, SI_UNIT, SOLID_ANGLE_UNIT)"
     );
     assert_eq!(
-        exchange.records[&1]
+        exchange.records()[&1]
             .partials
             .iter()
             .map(|partial| partial.name.as_str())

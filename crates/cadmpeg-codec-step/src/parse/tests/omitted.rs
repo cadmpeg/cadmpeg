@@ -5,7 +5,7 @@
 fn omitted_name_recovery_accounts_for_inserted_parameter_storage() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT((0.,0.,0.));ENDSEC;END-ISO-10303-21;";
     let (exchange, diagnostics) = crate::parse::parse(source).expect("recover omitted name");
-    let parameters = &exchange.records[&1].partials[0].parameters;
+    let parameters = &exchange.records()[&1].partials[0].parameters;
 
     assert_eq!(parameters.len(), 2);
     assert_eq!(diagnostics.len(), 1);
@@ -47,7 +47,7 @@ fn parser_recovers_omitted_repositioned_tessellated_item_name() {
         crate::parse::ParseDiagnosticKind::OmittedEntityName
     );
     assert_eq!(
-        exchange.records[&1].partials[0].parameters,
+        exchange.records()[&1].partials[0].parameters,
         vec![
             crate::parse::Value::String(Vec::new()),
             crate::parse::Value::Reference(2),
@@ -61,9 +61,9 @@ fn parser_retains_user_defined_entity_and_type_names() {
     let (exchange, diagnostics) = crate::parse::parse(source).expect("user-defined names");
 
     assert!(diagnostics.is_empty());
-    assert_eq!(exchange.records[&1].partials[0].name, "!VENDOR_ENTITY");
+    assert_eq!(exchange.records()[&1].partials[0].name, "!VENDOR_ENTITY");
     assert_eq!(
-        exchange.records[&1].partials[0].parameters,
+        exchange.records()[&1].partials[0].parameters,
         vec![crate::parse::Value::Typed(
             "!VENDOR_TYPE".into(),
             Box::new(crate::parse::Value::Reference(2)),
@@ -78,7 +78,7 @@ fn parser_retains_user_defined_typed_parameter_from_witness() {
 
     assert!(diagnostics.is_empty());
     assert_eq!(
-        exchange.records[&2].partials[0].parameters[2],
+        exchange.records()[&2].partials[0].parameters[2],
         crate::parse::Value::Typed(
             "!VENDOR_TYPE".into(),
             Box::new(crate::parse::Value::List(vec![
@@ -95,7 +95,7 @@ fn parser_does_not_repair_non_carrier_first_parameters() {
 
     assert!(diagnostics.is_empty());
     assert_eq!(
-        exchange.records[&1].partials[0].parameters,
+        exchange.records()[&1].partials[0].parameters,
         vec![
             crate::parse::Value::Integer(1),
             crate::parse::Value::Reference(2),
@@ -118,7 +118,7 @@ fn parser_recovers_omitted_geometry_name_without_shifting_context_fields() {
         .message
         .contains("recovered 4 simple named carrier instance(s)"));
     assert_eq!(
-        exchange.records[&1].partials[0].parameters,
+        exchange.records()[&1].partials[0].parameters,
         vec![
             crate::parse::Value::String(Vec::new()),
             crate::parse::Value::List(vec![
@@ -129,23 +129,23 @@ fn parser_recovers_omitted_geometry_name_without_shifting_context_fields() {
         ]
     );
     assert_eq!(
-        exchange.records[&2].partials[0].parameters,
+        exchange.records()[&2].partials[0].parameters,
         vec![crate::parse::Value::Integer(3)]
     );
     assert_eq!(
-        exchange.records[&3].partials[0].parameters[0],
+        exchange.records()[&3].partials[0].parameters[0],
         crate::parse::Value::String(Vec::new())
     );
     assert_eq!(
-        exchange.records[&4].partials[0].parameters[0],
+        exchange.records()[&4].partials[0].parameters[0],
         crate::parse::Value::String(Vec::new())
     );
     assert_eq!(
-        exchange.records[&5].partials[0].parameters[0],
+        exchange.records()[&5].partials[0].parameters[0],
         crate::parse::Value::String(Vec::new())
     );
     assert_eq!(
-        exchange.records[&6].partials[0].parameters,
+        exchange.records()[&6].partials[0].parameters,
         vec![
             crate::parse::Value::Omitted,
             crate::parse::Value::List(vec![crate::parse::Value::Reference(1)]),
@@ -165,7 +165,7 @@ fn parser_recovers_omitted_shape_representation_with_parameters_name() {
         crate::parse::ParseDiagnosticKind::OmittedEntityName
     );
     assert_eq!(
-        exchange.records[&1].partials[0].parameters,
+        exchange.records()[&1].partials[0].parameters,
         vec![
             crate::parse::Value::String(Vec::new()),
             crate::parse::Value::List(vec![crate::parse::Value::Reference(2)]),

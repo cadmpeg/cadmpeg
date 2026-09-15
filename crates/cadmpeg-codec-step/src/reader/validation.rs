@@ -38,7 +38,7 @@ pub(super) fn decode(
     }
     let mut losses = Vec::new();
     let representations = exchange
-        .records
+        .records()
         .iter()
         .filter_map(|(&id, record)| {
             let items = super::representation::items(record)?
@@ -109,7 +109,7 @@ pub(super) fn decode(
         };
         validation_representations.insert(representation_id);
         for &item_id in item_ids {
-            let Some(item) = exchange.records.get(&item_id) else {
+            let Some(item) = exchange.records().get(&item_id) else {
                 continue;
             };
             let scale = geometry.units.length([item_id, representation_id]);
@@ -157,7 +157,7 @@ pub(super) fn decode(
     }
     let mut referenced_validation_points = BTreeSet::new();
     if !validation_points.is_empty() {
-        for (&record_id, record) in &exchange.records {
+        for (&record_id, record) in exchange.records() {
             if validation_representations.contains(&record_id) {
                 continue;
             }
@@ -227,12 +227,12 @@ fn measure_scale(
     losses: &mut Vec<LossNote>,
 ) -> f64 {
     measure_unit(record)
-        .and_then(|unit| exchange.records.get(&unit))
+        .and_then(|unit| exchange.records().get(&unit))
         .and_then(derived_unit_elements)
         .and_then(ValueExt::list)
         .and_then(|elements| {
             elements.iter().try_fold(1.0, |scale, element| {
-                let element = exchange.records.get(&element.reference()?)?;
+                let element = exchange.records().get(&element.reference()?)?;
                 let element = element.partial("DERIVED_UNIT_ELEMENT")?;
                 let base = element.parameters.first()?.reference()?;
                 let exponent = element.parameters.get(1)?.number()?;
@@ -288,7 +288,7 @@ fn derived_unit_elements(record: &RawRecord) -> Option<&Value> {
 
 fn collect_unit_records(id: u64, exchange: &Exchange, typed: &mut HashSet<u64>) {
     typed.insert(id);
-    let Some(record) = exchange.records.get(&id) else {
+    let Some(record) = exchange.records().get(&id) else {
         return;
     };
     let Some(elements) = derived_unit_elements(record).and_then(ValueExt::list) else {
@@ -297,7 +297,7 @@ fn collect_unit_records(id: u64, exchange: &Exchange, typed: &mut HashSet<u64>) 
     for element in elements.iter().filter_map(ValueExt::reference) {
         typed.insert(element);
         if let Some(base) = exchange
-            .records
+            .records()
             .get(&element)
             .and_then(|record| record.partial("DERIVED_UNIT_ELEMENT"))
             .and_then(|record| record.parameters.first())

@@ -27,7 +27,7 @@ pub(super) fn decode(
     ir: &mut CadIr,
 ) -> Result<StageOutcome<()>, CodecError> {
     let coordinates = exchange
-        .records
+        .records()
         .iter()
         .filter_map(|(&id, record)| {
             if !has_entity(record, "COORDINATES_LIST") {
@@ -45,7 +45,7 @@ pub(super) fn decode(
     let mut declared_items = BTreeSet::new();
     let mut unresolved_containers = BTreeSet::new();
     let mut body_context_items = BTreeSet::new();
-    for (&id, record) in &exchange.records {
+    for (&id, record) in exchange.records() {
         let Some(kind) = entity_kind(record, &["TESSELLATED_SOLID", "TESSELLATED_SHELL"]) else {
             continue;
         };
@@ -88,11 +88,11 @@ pub(super) fn decode(
     let product_representations = product_linked_representations(exchange);
     let product_representation_items = product_representations
         .iter()
-        .filter_map(|id| exchange.records.get(id))
+        .filter_map(|id| exchange.records().get(id))
         .filter_map(super::representation::items)
         .flatten()
         .collect::<BTreeSet<_>>();
-    for (&id, record) in &exchange.records {
+    for (&id, record) in exchange.records() {
         if !is_tessellated_shape_representation(record) {
             continue;
         }
@@ -133,7 +133,7 @@ pub(super) fn decode(
             associator.visit(item, 0, None)?;
         }
     }
-    for (&id, record) in &exchange.records {
+    for (&id, record) in exchange.records() {
         if !has_entity(record, "TESSELLATED_ANNOTATION_OCCURRENCE") {
             continue;
         }
@@ -166,7 +166,7 @@ pub(super) fn decode(
         losses.push(StepLossCode::TessellationPlacementUnresolved.note(message));
     }
     for id in unresolved_containers {
-        let Some(record) = exchange.records.get(&id) else {
+        let Some(record) = exchange.records().get(&id) else {
             continue;
         };
         let Some(kind) = entity_kind(record, &["TESSELLATED_SOLID", "TESSELLATED_SHELL"]) else {
@@ -208,7 +208,7 @@ pub(super) fn decode(
             losses.push(StepLossCode::TessellationItemBodyUnresolved.note(message));
         }
     }
-    for (&id, record) in &exchange.records {
+    for (&id, record) in exchange.records() {
         let Some(entity) = TriangulatedEntity::of(record) else {
             continue;
         };
@@ -434,7 +434,7 @@ pub(super) fn decode(
         typed.extend([id, coordinate_id]);
     }
     if !ir.model.tessellations.is_empty() {
-        for (&id, record) in &exchange.records {
+        for (&id, record) in exchange.records() {
             if has_entity(record, "TESSELLATED_SHAPE_REPRESENTATION")
                 || has_entity(record, "TESSELLATED_SOLID")
                 || has_entity(record, "TESSELLATED_SHELL")
@@ -505,7 +505,7 @@ impl TessellationItemAssociator<'_> {
         if depth >= super::record_graph_limit(None) || !self.active.insert(id) {
             return Ok(());
         }
-        let Some(record) = self.exchange.records.get(&id) else {
+        let Some(record) = self.exchange.records().get(&id) else {
             self.active.remove(&id);
             return Ok(());
         };
@@ -660,7 +660,7 @@ fn product_linked_representations(exchange: &Exchange) -> BTreeSet<u64> {
         return linked;
     }
     let mut relationships = BTreeMap::<u64, BTreeSet<u64>>::new();
-    for record in exchange.records.values() {
+    for record in exchange.records().values() {
         let Some(shape_relationship) = record
             .partials
             .iter()

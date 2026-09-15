@@ -166,10 +166,10 @@ fn inspect_exchange(
     for (index, section) in exchange.data.iter().enumerate() {
         let mut counts = std::collections::BTreeMap::<String, usize>::new();
         for id in &section.records {
-            if !opaque_offsets.contains(&exchange.records[id].span.start) {
+            if !opaque_offsets.contains(&exchange.records()[id].span.start) {
                 continue;
             }
-            for partial in &exchange.records[id].partials {
+            for partial in &exchange.records()[id].partials {
                 *counts.entry(partial.name.clone()).or_default() += 1;
             }
         }

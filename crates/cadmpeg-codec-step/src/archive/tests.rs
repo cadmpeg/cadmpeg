@@ -389,7 +389,7 @@ fn caller_composition_resolves_forwarded_zip_target_without_root_import() {
         panic!("subsidiary anchor is not an entity");
     };
     let target = subsidiary_exchange
-        .records
+        .records()
         .get(&target_id)
         .expect("subsidiary target entity");
     assert!(target
@@ -559,7 +559,7 @@ fn valid_resource_pair_keeps_target_anchor_and_root_graph_separate() {
         "parts/er03_subsidiary_valid.p21#remote_item"
     );
     assert_eq!(
-        root_exchange.records[&1].partials[0].parameters,
+        root_exchange.records()[&1].partials[0].parameters,
         vec![crate::parse::Value::Reference(10)]
     );
 
@@ -571,7 +571,7 @@ fn valid_resource_pair_keeps_target_anchor_and_root_graph_separate() {
         crate::parse::Value::Reference(1)
     );
     assert_eq!(
-        subsidiary_exchange.records[&1].partials[0].parameters,
+        subsidiary_exchange.records()[&1].partials[0].parameters,
         vec![crate::parse::Value::String(b"remote".to_vec())]
     );
 
@@ -623,7 +623,7 @@ fn distinct_external_resources_keep_reused_numeric_targets_separate() {
         "parts/er03_subsidiary_beta.p21#remote_item"
     );
     assert_eq!(
-        root_exchange.records[&1].partials[0].parameters,
+        root_exchange.records()[&1].partials[0].parameters,
         vec![
             crate::parse::Value::Reference(10),
             crate::parse::Value::Reference(11)
@@ -639,7 +639,7 @@ fn distinct_external_resources_keep_reused_numeric_targets_separate() {
         assert_eq!(exchange.anchors[0].name, "remote_item");
         assert_eq!(exchange.anchors[0].value, crate::parse::Value::Reference(1));
         assert_eq!(
-            exchange.records[&1].partials[0].parameters,
+            exchange.records()[&1].partials[0].parameters,
             vec![crate::parse::Value::String(value.to_vec())]
         );
     }
@@ -722,7 +722,7 @@ fn valid_forwarded_root_anchor_keeps_archive_target_resource_qualified() {
         crate::parse::Value::Reference(1)
     );
     assert_eq!(
-        subsidiary_exchange.records[&1].partials[0].parameters,
+        subsidiary_exchange.records()[&1].partials[0].parameters,
         vec![crate::parse::Value::String(b"remote".to_vec())]
     );
 
@@ -912,7 +912,7 @@ pub(crate) fn codec_inspects_edition3_sections_and_external_references() {
         Some(&bytes[signature.clone()])
     );
     assert_eq!(
-        exchange.records[&2].partials[0].parameters,
+        exchange.records()[&2].partials[0].parameters,
         vec![crate::parse::Value::Reference(1)]
     );
 }

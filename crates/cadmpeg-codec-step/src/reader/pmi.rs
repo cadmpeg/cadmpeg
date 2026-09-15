@@ -100,7 +100,7 @@ pub(super) fn decode(
     }
 
     for id in exchange.matching_entity_ids(is_datum_target_name) {
-        let Some(record) = exchange.records.get(&id) else {
+        let Some(record) = exchange.records().get(&id) else {
             continue;
         };
         let form = shape_aspect_parameter(record, 1)
@@ -216,7 +216,7 @@ pub(super) fn decode(
     }
 
     for id in exchange.matching_entity_ids(|name| dimension_kind(Some(name)).is_some()) {
-        let Some(record) = exchange.records.get(&id) else {
+        let Some(record) = exchange.records().get(&id) else {
             continue;
         };
         let Some((dimension_name, mut kind)) = dimension_descriptor(record) else {
@@ -296,12 +296,12 @@ pub(super) fn decode(
             .find_map(|reference| annotations.get(*reference));
         let limits = refs.iter().find_map(|reference| {
             exchange
-                .records
+                .records()
                 .get(reference)
                 .filter(|candidate| candidate.simple_name() == Some("TOLERANCE_VALUE"))
         });
         let fit = refs.iter().find_map(|reference| {
-            let record = exchange.records.get(reference)?;
+            let record = exchange.records().get(reference)?;
             (record.simple_name() == Some("LIMITS_AND_FITS")).then(|| {
                 (
                     *reference,
@@ -408,7 +408,7 @@ pub(super) fn decode(
     }
 
     for id in exchange.matching_entity_ids(|name| tolerance_kind(Some(name)).is_some()) {
-        let Some(record) = exchange.records.get(&id) else {
+        let Some(record) = exchange.records().get(&id) else {
             continue;
         };
         let Some(tolerance) = record
@@ -539,7 +539,7 @@ pub(super) fn decode(
         typed.insert(id);
         typed.extend(refs.iter().copied().filter(|reference| {
             exchange
-                .records
+                .records()
                 .get(reference)
                 .is_some_and(is_measure_record)
         }));
@@ -551,7 +551,7 @@ pub(super) fn decode(
                 .flat_map(references)
                 .filter(|reference| {
                     exchange
-                        .records
+                        .records()
                         .get(reference)
                         .is_some_and(is_measure_record)
                 }),
@@ -579,7 +579,7 @@ pub(super) fn decode(
     }
 
     for id in exchange.matching_entity_ids(is_presentation_annotation) {
-        let Some(record) = exchange.records.get(&id) else {
+        let Some(record) = exchange.records().get(&id) else {
             continue;
         };
         let Some(name) = presentation_annotation_name(record) else {
@@ -751,7 +751,7 @@ fn mark_characteristic_representations(
         }
         typed.insert(id);
         for representation_id in record_references {
-            let Some(representation) = exchange.records.get(&representation_id) else {
+            let Some(representation) = exchange.records().get(&representation_id) else {
                 continue;
             };
             if !representation
@@ -770,7 +770,7 @@ fn mark_characteristic_representations(
                     .flat_map(references)
                     .filter(|reference| {
                         exchange
-                            .records
+                            .records()
                             .get(reference)
                             .is_some_and(is_measure_record)
                     }),
@@ -816,7 +816,7 @@ fn resolve_geometric_item_usages(
     typed: &mut HashSet<u64>,
 ) {
     let mut aspect_annotations = BTreeMap::<u64, BTreeSet<AnnotationIndex>>::new();
-    for (&annotation_id, record) in &exchange.records {
+    for (&annotation_id, record) in exchange.records() {
         let Some(annotation_index) = annotations.get(annotation_id) else {
             continue;
         };
@@ -837,7 +837,7 @@ fn resolve_geometric_item_usages(
     }
 
     let mut relationship_aspects = BTreeMap::<u64, BTreeSet<u64>>::new();
-    for record in exchange.records.values() {
+    for record in exchange.records().values() {
         let Some((relating, related)) = relationship_endpoints(record) else {
             continue;
         };
@@ -851,7 +851,7 @@ fn resolve_geometric_item_usages(
             .insert(relating);
     }
 
-    for (&id, record) in &exchange.records {
+    for (&id, record) in exchange.records() {
         let Some(partial) = record
             .partials
             .iter()
@@ -1016,7 +1016,7 @@ fn datum_references(
     let Some(compartment_id) = value.reference() else {
         return Vec::new();
     };
-    let Some(compartment) = exchange.records.get(&compartment_id) else {
+    let Some(compartment) = exchange.records().get(&compartment_id) else {
         return Vec::new();
     };
     if !is_datum_reference_partial(compartment, "DATUM_REFERENCE_COMPARTMENT")
@@ -1046,7 +1046,7 @@ fn datum_references(
         return element_ids
             .into_iter()
             .filter_map(|element_id| {
-                let element = exchange.records.get(&element_id)?;
+                let element = exchange.records().get(&element_id)?;
                 if !is_datum_reference_partial(element, "DATUM_REFERENCE_ELEMENT") {
                     return None;
                 }
@@ -1134,7 +1134,7 @@ fn modifier_text(
         Value::Enumeration(value) => Some(value.to_ascii_lowercase()),
         Value::Typed(_, value) => modifier_text(value, exchange, typed, measurements),
         Value::Reference(id) => {
-            let record = exchange.records.get(id)?;
+            let record = exchange.records().get(id)?;
             let parameters = record
                 .partials
                 .iter()
@@ -1178,7 +1178,7 @@ pub(super) fn is_supported_invisibility_target(record: &RawRecord) -> bool {
 
 fn hidden_presentation_annotation_ids(exchange: &Exchange) -> BTreeSet<u64> {
     let mut hidden = BTreeSet::new();
-    for record in exchange.records.values() {
+    for record in exchange.records().values() {
         let Some(items) = record
             .partials
             .iter()
@@ -1189,7 +1189,7 @@ fn hidden_presentation_annotation_ids(exchange: &Exchange) -> BTreeSet<u64> {
         };
         for target in references(items) {
             if exchange
-                .records
+                .records()
                 .get(&target)
                 .is_some_and(is_supported_invisibility_target)
             {
@@ -1277,7 +1277,7 @@ fn collect_annotation_text(
     if depth >= 256 || !visited.insert(id) {
         return;
     }
-    let Some(record) = exchange.records.get(&id) else {
+    let Some(record) = exchange.records().get(&id) else {
         return;
     };
     if let Some(value) = named_parameter(record, "TEXT_LITERAL", 0)
@@ -1317,10 +1317,10 @@ fn collect_placement_candidates(
         return;
     }
     visited.insert(id, depth);
-    if let Some(record) = exchange.records.get(&id) {
+    if let Some(record) = exchange.records().get(&id) {
         collect_typed_placement_candidates(record, geometry, candidates);
     }
-    let Some(record) = exchange.records.get(&id) else {
+    let Some(record) = exchange.records().get(&id) else {
         return;
     };
     for reference in all_parameters(record).flat_map(references) {
@@ -1626,7 +1626,7 @@ fn characteristic_values(
                 .flat_map(|value| references(value))
                 .find(|id| {
                     exchange
-                        .records
+                        .records()
                         .get(id)
                         .is_some_and(|record| dimension_descriptor(record).is_some())
                 })
@@ -1637,7 +1637,7 @@ fn characteristic_values(
             .iter()
             .flat_map(|value| references(value))
             .find(|id| {
-                exchange.records.get(id).is_some_and(|record| {
+                exchange.records().get(id).is_some_and(|record| {
                     record
                         .partials
                         .iter()
@@ -1645,7 +1645,7 @@ fn characteristic_values(
                 })
             });
         let representation_items = representation
-            .and_then(|id| exchange.records.get(&id))
+            .and_then(|id| exchange.records().get(&id))
             .and_then(|record| {
                 record
                     .partials
@@ -1715,7 +1715,7 @@ fn characteristic_measure_values<'a>(
         .filter_map(|id| {
             let value = measure(&Value::Reference(id), exchange, measurements)?;
             let name = exchange
-                .records
+                .records()
                 .get(&id)
                 .and_then(|record| measure_item_name(id, record, exchange, measurements.losses));
             Some((name, value))
@@ -1747,7 +1747,7 @@ fn collect_measure_ids(
             if !active.insert(*id) {
                 return;
             }
-            if let Some(record) = exchange.records.get(id) {
+            if let Some(record) = exchange.records().get(id) {
                 if is_measure_record(record) {
                     measure_ids.insert(*id);
                 } else {
@@ -1867,7 +1867,7 @@ fn measure_inner(
             if !active.insert(*id) {
                 return None;
             }
-            let Some(record) = exchange.records.get(id) else {
+            let Some(record) = exchange.records().get(id) else {
                 active.remove(id);
                 return None;
             };
@@ -1891,7 +1891,7 @@ fn measure_inner(
                 .flat_map(|partial| &partial.parameters)
                 .filter_map(Value::reference)
                 .find(|unit| {
-                    exchange.records.get(unit).is_some_and(|record| {
+                    exchange.records().get(unit).is_some_and(|record| {
                         record.partials.iter().any(|partial| {
                             matches!(partial.name.as_str(), "LENGTH_UNIT" | "PLANE_ANGLE_UNIT")
                         })

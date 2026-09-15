@@ -17,7 +17,7 @@ fn parser_accepts_external_instance_references_in_edition_three() {
         crate::parse::Value::Reference(100)
     );
     assert_eq!(
-        exchange.records[&1].partials[0].parameters,
+        exchange.records()[&1].partials[0].parameters,
         vec![crate::parse::Value::Reference(100)]
     );
 }
@@ -30,14 +30,14 @@ fn standalone_relative_reference_has_no_implicit_transport_base() {
     assert!(diagnostics.is_empty());
     assert_eq!(exchange.references[0].uri, "parts/child.p21#target");
     assert_eq!(
-        exchange.records[&1].partials[0].parameters,
+        exchange.records()[&1].partials[0].parameters,
         vec![
             crate::parse::Value::Reference(10),
             crate::parse::Value::Reference(2),
         ]
     );
     assert_eq!(
-        exchange.records[&4].partials[0].parameters,
+        exchange.records()[&4].partials[0].parameters,
         vec![
             crate::parse::Value::Reference(3),
             crate::parse::Value::String(b"parts/document.p21#target".to_vec()),
@@ -52,7 +52,7 @@ fn parser_resolves_local_entity_reference_anchors_before_schema_decoding() {
 
     assert!(diagnostics.is_empty());
     assert_eq!(
-        exchange.records[&1].partials[0].parameters,
+        exchange.records()[&1].partials[0].parameters,
         vec![crate::parse::Value::Reference(2)]
     );
 }
@@ -64,7 +64,7 @@ fn parser_resolves_local_value_reference_anchors_and_nulls_invalid_targets() {
 
     assert!(diagnostics.is_empty());
     assert_eq!(
-        exchange.records[&1].partials[0].parameters,
+        exchange.records()[&1].partials[0].parameters,
         vec![
             crate::parse::Value::Real(3.0),
             crate::parse::Value::Omitted,
@@ -92,7 +92,7 @@ fn parser_resolves_cyclic_local_references_to_null_values() {
     assert!(diagnostics.is_empty());
     assert_eq!(exchange.anchors[0].value, crate::parse::Value::Omitted);
     assert_eq!(
-        exchange.records[&1].partials[0].parameters,
+        exchange.records()[&1].partials[0].parameters,
         vec![crate::parse::Value::Omitted]
     );
 }
@@ -127,7 +127,7 @@ fn parser_accepts_value_instances_and_express_constants_in_edition_three() {
         crate::parse::Value::ConstantValue("E".into())
     );
     assert_eq!(
-        exchange.records[&1].partials[0].parameters,
+        exchange.records()[&1].partials[0].parameters,
         vec![
             crate::parse::Value::ConstantEntity("PI".into()),
             crate::parse::Value::ConstantValue("E".into()),
@@ -214,7 +214,7 @@ fn parser_resolves_anchor_before_repairing_omitted_entity_names() {
         .iter()
         .all(|diagnostic| diagnostic.kind != crate::parse::ParseDiagnosticKind::OmittedEntityName));
     assert_eq!(
-        exchange.records[&4].partials[0].parameters,
+        exchange.records()[&4].partials[0].parameters,
         vec![
             crate::parse::Value::String(b"anchored line".to_vec()),
             crate::parse::Value::Reference(1),
@@ -234,23 +234,23 @@ fn parser_resolves_anchor_and_reference_chain_before_name_recovery() {
         crate::parse::ParseDiagnosticKind::OmittedEntityName
     );
     assert_eq!(
-        exchange.records[&1].partials[0].parameters[0],
+        exchange.records()[&1].partials[0].parameters[0],
         crate::parse::Value::String(b"literal".to_vec())
     );
     assert_eq!(
-        exchange.records[&2].partials[0].parameters[0],
+        exchange.records()[&2].partials[0].parameters[0],
         crate::parse::Value::String(b"anchored line".to_vec())
     );
     assert_eq!(
-        exchange.records[&3].partials[0].parameters[0],
+        exchange.records()[&3].partials[0].parameters[0],
         crate::parse::Value::String(b"anchored line".to_vec())
     );
     assert_eq!(
-        exchange.records[&4].partials[0].parameters[0],
+        exchange.records()[&4].partials[0].parameters[0],
         crate::parse::Value::String(Vec::new())
     );
     assert_eq!(
-        exchange.records[&5].partials[0].parameters[0],
+        exchange.records()[&5].partials[0].parameters[0],
         crate::parse::Value::Omitted
     );
 }

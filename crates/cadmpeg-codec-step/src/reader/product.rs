@@ -83,7 +83,7 @@ pub(super) fn decode(
     for definitions in definitions_by_product_in_source_order.values_mut() {
         definitions.sort_by_key(|definition| {
             exchange
-                .records
+                .records()
                 .get(definition)
                 .map_or(usize::MAX, |record| record.span.start)
         });
@@ -355,7 +355,7 @@ pub(super) fn decode(
             .collect::<Vec<_>>()
             .join(", ");
         let context_dependent = source_ids.iter().all(|id| {
-            exchange.records.get(id).is_some_and(|record| {
+            exchange.records().get(id).is_some_and(|record| {
                 record
                     .partial("CONTEXT_DEPENDENT_SHAPE_REPRESENTATION")
                     .is_some()
@@ -679,7 +679,7 @@ fn apply_body_placements(
 
 fn drawing_owned_items(exchange: &Exchange) -> BTreeSet<u64> {
     let mut pending = Vec::new();
-    for record in exchange.records.values() {
+    for record in exchange.records().values() {
         let drawing_owner = record
             .partials
             .iter()
@@ -700,7 +700,7 @@ fn drawing_owned_items(exchange: &Exchange) -> BTreeSet<u64> {
         if !visited.insert(id) {
             continue;
         }
-        let Some(record) = exchange.records.get(&id) else {
+        let Some(record) = exchange.records().get(&id) else {
             continue;
         };
         if record.partial("MAPPED_ITEM").is_some() {
@@ -770,7 +770,7 @@ fn shape_bindings(
     let mut result = BTreeMap::<u64, Vec<BodyId>>::new();
     let mut representation_cache = BTreeMap::new();
     for record in exchange
-        .records
+        .records()
         .values()
         .filter(|record| record.partial("SHAPE_DEFINITION_REPRESENTATION").is_some())
     {
@@ -851,7 +851,7 @@ fn occurrence_placements(
     competing: &mut BTreeMap<u64, Vec<u64>>,
 ) -> Result<BTreeMap<u64, Transform>, CodecError> {
     let pds = exchange
-        .records
+        .records()
         .iter()
         .filter_map(|(&id, record)| {
             Some((
@@ -937,14 +937,14 @@ fn occurrence_placements(
         };
         let mut candidates = Vec::new();
         for &(source_id, representation) in representations {
-            let Some(record) = exchange.records.get(&representation) else {
+            let Some(record) = exchange.records().get(&representation) else {
                 continue;
             };
             let Some(items) = super::representation::items(record) else {
                 continue;
             };
             for item_id in items {
-                let Some(item) = exchange.records.get(&item_id) else {
+                let Some(item) = exchange.records().get(&item_id) else {
                     continue;
                 };
                 if item.partial("MAPPED_ITEM").is_none() {
@@ -1020,14 +1020,14 @@ fn occurrence_placements(
         };
         let mut placements = Vec::new();
         for &parent_representation in parent_representations {
-            let Some(record) = exchange.records.get(&parent_representation) else {
+            let Some(record) = exchange.records().get(&parent_representation) else {
                 continue;
             };
             let Some(items) = super::representation::items(record) else {
                 continue;
             };
             for item_id in items {
-                let Some(item) = exchange.records.get(&item_id) else {
+                let Some(item) = exchange.records().get(&item_id) else {
                     continue;
                 };
                 if item.partial("MAPPED_ITEM").is_none() {
@@ -1105,7 +1105,7 @@ fn mapped_item_transform(
 
 fn is_two_dimensional_mapping(origin: u64, target: u64, exchange: &Exchange) -> bool {
     [origin, target].into_iter().all(|id| {
-        exchange.records.get(&id).is_some_and(|record| {
+        exchange.records().get(&id).is_some_and(|record| {
             record.partial("AXIS2_PLACEMENT_2D").is_some()
                 || record
                     .partial("CARTESIAN_TRANSFORMATION_OPERATOR_2D")
@@ -1117,7 +1117,7 @@ fn is_two_dimensional_mapping(origin: u64, target: u64, exchange: &Exchange) -> 
 fn mapped_item_definition(item: &RawRecord, exchange: &Exchange) -> Option<(u64, u64, u64)> {
     let map = named_parameter(item, "MAPPED_ITEM", 1)
         .and_then(ValueExt::reference)
-        .and_then(|map| exchange.records.get(&map))?;
+        .and_then(|map| exchange.records().get(&map))?;
     let origin = named_parameter(map, "REPRESENTATION_MAP", 0).and_then(ValueExt::reference)?;
     let representation =
         named_parameter(map, "REPRESENTATION_MAP", 1).and_then(ValueExt::reference)?;
@@ -1148,7 +1148,7 @@ fn occurrence_placement_definition(
     usages: &BTreeMap<u64, Usage>,
     definition_representations: &BTreeMap<u64, BTreeSet<u64>>,
 ) -> Option<(u64, u64, u64)> {
-    let relation = exchange.records.get(
+    let relation = exchange.records().get(
         &named_parameter(record, "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION", 0)
             .and_then(ValueExt::reference)?,
     )?;
@@ -1165,7 +1165,7 @@ fn occurrence_placement_definition(
         .parameters
         .first()?
         .reference()?;
-    let transform = exchange.records.get(&transform_id)?;
+    let transform = exchange.records().get(&transform_id)?;
     let item_one = named_parameter(transform, "ITEM_DEFINED_TRANSFORMATION", 2)
         .and_then(ValueExt::reference)?;
     let item_two = named_parameter(transform, "ITEM_DEFINED_TRANSFORMATION", 3)

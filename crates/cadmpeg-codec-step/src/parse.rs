@@ -205,7 +205,7 @@ pub struct Exchange {
     /// Complete SIGNATURE section byte ranges in source order.
     pub signatures: Vec<Range<usize>>,
     /// DATA instances indexed across every DATA section.
-    pub records: BTreeMap<u64, RawRecord>,
+    records: BTreeMap<u64, RawRecord>,
     schema_identifiers: Vec<AdmittedSchemaIdentifier>,
     implementation_level: DeclaredImplementationLevel,
     entity_ids: EntityIndex,
@@ -254,6 +254,11 @@ impl PartialEq for EntityIndex {
 }
 
 impl Exchange {
+    /// Shared record graph; mutation would invalidate the cached entity index.
+    pub(crate) fn records(&self) -> &BTreeMap<u64, RawRecord> {
+        &self.records
+    }
+
     /// Header-admitted `FILE_SCHEMA` identifiers in source order.
     pub(crate) fn schema_identifiers(&self) -> Vec<String> {
         self.schema_identifiers

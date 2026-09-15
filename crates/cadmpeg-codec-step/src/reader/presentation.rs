@@ -102,7 +102,7 @@ pub(super) fn decode(
     let mut hidden_style_ids = BTreeSet::new();
     let mut hidden_layer_ids = BTreeSet::new();
     let mut deferred_invisibility = BTreeMap::<u64, (bool, BTreeSet<u64>, BTreeSet<u64>)>::new();
-    for (&id, record) in &exchange.records {
+    for (&id, record) in exchange.records() {
         if !has_partial(record, "INVISIBILITY") {
             continue;
         }
@@ -118,7 +118,7 @@ pub(super) fn decode(
         let mut layer_targets = BTreeSet::new();
         for target in items.iter().filter_map(ValueExt::reference) {
             if exchange
-                .records
+                .records()
                 .get(&target)
                 .is_some_and(|record| has_partial(record, "PRESENTATION_LAYER_ASSIGNMENT"))
             {
@@ -127,7 +127,7 @@ pub(super) fn decode(
                 continue;
             }
             if exchange
-                .records
+                .records()
                 .get(&target)
                 .is_some_and(|record| styled_item_parts(record).is_some())
             {
@@ -136,14 +136,14 @@ pub(super) fn decode(
                 continue;
             }
             if exchange
-                .records
+                .records()
                 .get(&target)
                 .is_some_and(super::drawing::is_supported_invisibility_target)
             {
                 continue;
             }
             if exchange
-                .records
+                .records()
                 .get(&target)
                 .is_some_and(super::pmi::is_supported_invisibility_target)
             {
@@ -171,7 +171,7 @@ pub(super) fn decode(
             deferred_invisibility.insert(id, (supported, style_targets, layer_targets));
         }
     }
-    for (&layer_id, layer) in &exchange.records {
+    for (&layer_id, layer) in exchange.records() {
         if !has_partial(layer, "PRESENTATION_LAYER_ASSIGNMENT") {
             continue;
         }
@@ -239,13 +239,13 @@ pub(super) fn decode(
         typed.insert(layer_id);
     }
     let mut styles = exchange
-        .records
+        .records()
         .iter()
         .filter_map(|(&id, record)| styled_item_parts(record).map(|_| id))
         .collect::<Vec<_>>();
     let overridden_styles = styles
         .iter()
-        .filter_map(|id| overridden_style(&exchange.records[id]))
+        .filter_map(|id| overridden_style(&exchange.records()[id]))
         .collect::<BTreeSet<_>>();
     styles.sort_by_key(|id| {
         style_depth(*id, exchange, &mut BTreeSet::new(), 0, graph_limit).unwrap_or(u32::MAX)
@@ -256,7 +256,7 @@ pub(super) fn decode(
             typed.insert(style_id);
             continue;
         }
-        let style = &exchange.records[&style_id];
+        let style = &exchange.records()[&style_id];
         let Some(parts) = styled_item_parts(style) else {
             continue;
         };
@@ -287,7 +287,7 @@ pub(super) fn decode(
             .copied()
             .filter(|reference| {
                 exchange
-                    .records
+                    .records()
                     .get(reference)
                     .is_some_and(is_presentation_style_by_context)
             })
@@ -297,7 +297,7 @@ pub(super) fn decode(
                 .iter()
                 .map(|context_style_id| {
                     let context = exchange
-                        .records
+                        .records()
                         .get(context_style_id)
                         .and_then(presentation_style_context)
                         .and_then(ValueExt::reference)
@@ -595,7 +595,7 @@ fn collect_invisible_body_ids(
         return true;
     }
 
-    let Some(record) = exchange.records.get(&id) else {
+    let Some(record) = exchange.records().get(&id) else {
         active.remove(&id);
         return false;
     };
@@ -651,7 +651,7 @@ fn expand_style_targets(
     if depth >= graph_limit || !active.insert(id) {
         return Vec::new();
     }
-    let Some(record) = exchange.records.get(&id) else {
+    let Some(record) = exchange.records().get(&id) else {
         active.remove(&id);
         return vec![id];
     };
@@ -749,7 +749,7 @@ fn appearance_targets(
             tessellation_id.into_string(),
         )];
     }
-    if exchange.records.contains_key(&id) {
+    if exchange.records().contains_key(&id) {
         return vec![AppearanceTarget::Source {
             source_id: format!("#{id}"),
         }];
@@ -863,7 +863,7 @@ fn presentation_item_one(
             surface: SurfaceId::from(surface),
         };
     }
-    let Some(record) = exchange.records.get(&id) else {
+    let Some(record) = exchange.records().get(&id) else {
         return PresentationItem::Source {
             source_id: super::step_source_id(id),
         };
@@ -992,7 +992,7 @@ fn style_depth(
         return None;
     }
     let result = (|| {
-        let style = exchange.records.get(&id)?;
+        let style = exchange.records().get(&id)?;
         if let Some(base) = overridden_style(style) {
             style_depth(base, exchange, active, depth + 1, graph_limit)?.checked_add(1)
         } else {
@@ -1116,7 +1116,7 @@ fn find_color(
     if let Some(result) = cache.get(&(id, domain)) {
         return result.clone();
     }
-    let record = exchange.records.get(&id)?;
+    let record = exchange.records().get(&id)?;
     if is_presentation_style_by_context(record) {
         return None;
     }
@@ -1287,7 +1287,7 @@ fn surface_transparency(
         .filter(|partial| partial.name == "SURFACE_STYLE_RENDERING_WITH_PROPERTIES")
         .flat_map(|partial| partial.parameters.iter().flat_map(references))
         .filter_map(|property_id| {
-            let property = exchange.records.get(&property_id)?;
+            let property = exchange.records().get(&property_id)?;
             let transparency = property
                 .partials
                 .iter()
@@ -1367,7 +1367,7 @@ fn style_domain_at(id: u64, exchange: &Exchange, active: &mut BTreeSet<u64>) -> 
     if !active.insert(id) {
         return StyleDomain::Any;
     }
-    let Some(record) = exchange.records.get(&id) else {
+    let Some(record) = exchange.records().get(&id) else {
         active.remove(&id);
         return StyleDomain::Any;
     };
@@ -1454,7 +1454,7 @@ fn style_is_hidden(
         return hidden_style_ids.contains(&id);
     }
     let hidden = exchange
-        .records
+        .records()
         .get(&id)
         .and_then(overridden_style)
         .is_some_and(|base| style_is_hidden(base, hidden_style_ids, exchange, active));
@@ -1472,7 +1472,7 @@ fn style_inherits_from(
         return id == ancestor;
     }
     let inherits = exchange
-        .records
+        .records()
         .get(&id)
         .and_then(overridden_style)
         .is_some_and(|base| style_inherits_from(base, ancestor, exchange, active));
@@ -1495,12 +1495,14 @@ fn contains_null_style(
         Value::List(values) => values
             .iter()
             .any(|value| contains_null_style(value, exchange, visited, depth + 1)),
-        Value::Reference(id) if visited.insert(*id) => exchange.records.get(id).is_some_and(|r| {
-            r.partials
-                .iter()
-                .flat_map(|partial| partial.parameters.iter())
-                .any(|value| contains_null_style(value, exchange, visited, depth + 1))
-        }),
+        Value::Reference(id) if visited.insert(*id) => {
+            exchange.records().get(id).is_some_and(|r| {
+                r.partials
+                    .iter()
+                    .flat_map(|partial| partial.parameters.iter())
+                    .any(|value| contains_null_style(value, exchange, visited, depth + 1))
+            })
+        }
         _ => false,
     }
 }

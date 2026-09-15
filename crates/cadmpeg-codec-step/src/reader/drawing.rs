@@ -67,7 +67,7 @@ pub(super) fn decode(
 ) -> StageOutcome<()> {
     let mut losses = Vec::new();
     let mut candidates = exchange
-        .records
+        .records()
         .iter()
         .filter_map(|(&id, record)| {
             let (name, kind) = drawing_type(record)?;
@@ -103,7 +103,7 @@ pub(super) fn decode(
         .map(|candidate| candidate.id)
         .collect::<BTreeSet<_>>();
     let hidden_drawing_ids = exchange
-        .records
+        .records()
         .values()
         .filter_map(|record| {
             record
@@ -267,7 +267,7 @@ fn referenced_target_ids(
     for association_id in
         exchange.matching_entity_ids(|name| DRAWING_ASSOCIATION_TYPES.contains(&name))
     {
-        let Some(record) = exchange.records.get(&association_id) else {
+        let Some(record) = exchange.records().get(&association_id) else {
             continue;
         };
         let Some(parameters) = association_parameters(record) else {
@@ -309,7 +309,7 @@ fn add_source_typed_targets(
         if !known_typed.contains(&id) || target_identities.contains_key(&id) {
             continue;
         }
-        let Some(record) = exchange.records.get(&id) else {
+        let Some(record) = exchange.records().get(&id) else {
             continue;
         };
         if wrapper_target_resolution(id, target_identities, exchange).is_some() {
@@ -598,7 +598,7 @@ fn add_draughting_model_associations(
     for association_id in
         exchange.matching_entity_ids(|name| DRAWING_ASSOCIATION_TYPES.contains(&name))
     {
-        let Some(record) = exchange.records.get(&association_id) else {
+        let Some(record) = exchange.records().get(&association_id) else {
             continue;
         };
         let Some(parameters) = association_parameters(record) else {
@@ -806,7 +806,7 @@ fn target_resolution(
         None => None,
     };
     if !known_typed.contains(&id) {
-        if let Some(record) = exchange.records.get(&id) {
+        if let Some(record) = exchange.records().get(&id) {
             return TargetResolution::Resolved(ReferenceSelection::new(
                 ReferenceTarget::Local(opaque_record_id(id, record).into_string()),
                 Vec::new(),
@@ -855,7 +855,7 @@ fn wrapper_target_resolution(
             identities.extend(targets.iter().cloned());
             continue;
         }
-        let Some(record) = exchange.records.get(&id) else {
+        let Some(record) = exchange.records().get(&id) else {
             continue;
         };
         if let Some(plane) = record
@@ -867,7 +867,7 @@ fn wrapper_target_resolution(
         {
             pending.push((plane, false));
         } else if let Some(items) = mapped_representation(record, exchange)
-            .and_then(|representation| exchange.records.get(&representation))
+            .and_then(|representation| exchange.records().get(&representation))
             .and_then(representation::items)
         {
             pending.extend(items.into_iter().rev().map(|item| (item, false)));
@@ -889,7 +889,7 @@ fn mapped_representation(record: &RawRecord, exchange: &Exchange) -> Option<u64>
         .and_then(|partial| partial.parameters.get(1))
         .and_then(value_reference)?;
     exchange
-        .records
+        .records()
         .get(&map_id)
         .and_then(|map| {
             map.partials

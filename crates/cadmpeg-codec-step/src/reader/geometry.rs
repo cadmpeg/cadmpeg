@@ -223,7 +223,7 @@ fn resolve_source_curve_parameter_scales(
     unit_scales: &UnitScales,
 ) -> BTreeMap<u64, f64> {
     exchange
-        .records
+        .records()
         .keys()
         .filter_map(|id| {
             source_curve_parameter_scale(*id, exchange, unit_scales, &mut BTreeSet::new())
@@ -242,11 +242,11 @@ fn source_curve_parameter_scale(
         return None;
     }
     let scale = (|| {
-        let record = exchange.records.get(&id)?;
+        let record = exchange.records().get(&id)?;
         if record.partial("LINE").is_some() {
             let magnitude = named_parameter(record, "LINE", 2)
                 .and_then(Value::reference)
-                .and_then(|vector| exchange.records.get(&vector))
+                .and_then(|vector| exchange.records().get(&vector))
                 .filter(|vector| vector.partial("VECTOR").is_some())
                 .and_then(|vector| named_parameter(vector, "VECTOR", 2))
                 .and_then(Value::number)
@@ -436,7 +436,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
     }
     decode_tessellated_curve_sets(exchange, &unit_scales, ir, &mut typed, &mut losses);
     let mut point_carriers = BTreeSet::new();
-    for record in exchange.records.values() {
+    for record in exchange.records().values() {
         if record
             .partials
             .iter()
@@ -650,7 +650,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         }
         let representation_id = named_parameter(record, "PCURVE", 2).and_then(Value::reference);
         let Some(items) = representation_id
-            .and_then(|representation| exchange.records.get(&representation))
+            .and_then(|representation| exchange.records().get(&representation))
             .and_then(representation_items)
         else {
             continue;
@@ -871,7 +871,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         if carrier_index.curves.contains_key(&id) {
             continue;
         }
-        let Some(record) = exchange.records.get(&id) else {
+        let Some(record) = exchange.records().get(&id) else {
             continue;
         };
         if let Some(parent_reference_step) = record
@@ -1174,7 +1174,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 id: CurveId::from(ids::data(kind!("curve"), id)),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                     record: exchange
-                        .records
+                        .records()
                         .get(&id)
                         .map(|record| opaque_record_id(id, record)),
                 }),
@@ -1227,7 +1227,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 id: curve.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                     record: exchange
-                        .records
+                        .records()
                         .get(&id)
                         .map(|record| opaque_record_id(id, record)),
                 }),
@@ -1482,7 +1482,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         if carrier_index.surfaces.contains_key(&id) {
             continue;
         }
-        let Some(record) = exchange.records.get(&id) else {
+        let Some(record) = exchange.records().get(&id) else {
             continue;
         };
         let resolved = if record.partial("RECTANGULAR_TRIMMED_SURFACE").is_some() {
@@ -1815,7 +1815,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 id: SurfaceId::from(ids::data(kind!("surface"), id)),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                     record: exchange
-                        .records
+                        .records()
                         .get(&id)
                         .map(|record| opaque_record_id(id, record)),
                 }),
@@ -1858,7 +1858,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 id: CurveId::from(ids::data(kind!("curve"), curve_step)),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                     record: exchange
-                        .records
+                        .records()
                         .get(&curve_step)
                         .map(|record| opaque_record_id(curve_step, record)),
                 }),
@@ -1882,7 +1882,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 id: surface,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                     record: exchange
-                        .records
+                        .records()
                         .get(&id)
                         .map(|record| opaque_record_id(id, record)),
                 }),
@@ -1894,7 +1894,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             entry.insert(surface_index);
         }
     }
-    for (&face_id, face) in &exchange.records {
+    for (&face_id, face) in exchange.records() {
         if !face
             .partials
             .iter()
@@ -1911,7 +1911,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 id: SurfaceId::from(ids::data(kind!("surface"), surface_step)),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                     record: exchange
-                        .records
+                        .records()
                         .get(&surface_step)
                         .map(|record| opaque_record_id(surface_step, record)),
                 }),
@@ -1947,7 +1947,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         let surface_step = named_parameter(record, "PCURVE", 1).and_then(Value::reference);
         let representation = named_parameter(record, "PCURVE", 2)
             .and_then(Value::reference)
-            .and_then(|representation| exchange.records.get(&representation));
+            .and_then(|representation| exchange.records().get(&representation));
         let curve_steps = representation
             .and_then(representation_items)
             .unwrap_or_default();
@@ -2059,7 +2059,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         );
     }
 
-    for (&id, record) in &exchange.records {
+    for (&id, record) in exchange.records() {
         if record.partials.iter().any(|partial| {
             matches!(
                 partial.name.as_str(),
@@ -2100,7 +2100,7 @@ fn decode_tessellated_curve_sets(
     typed: &mut HashSet<u64>,
     losses: &mut Vec<LossNote>,
 ) {
-    for (&id, record) in &exchange.records {
+    for (&id, record) in exchange.records() {
         if record.partial("TESSELLATED_CURVE_SET").is_none() {
             continue;
         }
@@ -2112,7 +2112,7 @@ fn decode_tessellated_curve_sets(
             )));
             continue;
         };
-        let Some(coordinates_record) = exchange.records.get(&coordinates_id) else {
+        let Some(coordinates_record) = exchange.records().get(&coordinates_id) else {
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "TESSELLATED_CURVE_SET #{id} references missing COORDINATES_LIST #{coordinates_id}"
             )));
@@ -2224,7 +2224,7 @@ pub(super) fn associate_free_geometric_set_members(
     owned: &OwnedCarriers,
     losses: &mut Vec<LossNote>,
 ) {
-    for set in exchange.records.values() {
+    for set in exchange.records().values() {
         let Some(set_type) = entity_type(set, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"]) else {
             continue;
         };
@@ -2233,7 +2233,7 @@ pub(super) fn associate_free_geometric_set_members(
         };
         for member in members.iter().filter_map(Value::reference) {
             let name = exchange
-                .records
+                .records()
                 .get(&member)
                 .and_then(representation_item_name)
                 .and_then(|value| {
@@ -2288,7 +2288,7 @@ pub(super) fn associate_free_representation_members(
     owned: &OwnedCarriers,
     losses: &mut Vec<LossNote>,
 ) {
-    for representation in exchange.records.values().filter(|record| {
+    for representation in exchange.records().values().filter(|record| {
         record
             .partials
             .iter()
@@ -2299,7 +2299,7 @@ pub(super) fn associate_free_representation_members(
         };
         for member in items {
             let source_name = exchange
-                .records
+                .records()
                 .get(&member)
                 .and_then(representation_item_name)
                 .and_then(|value| {
@@ -2350,7 +2350,7 @@ pub(super) fn associate_free_presentation_carriers(
     owned: &OwnedCarriers,
     losses: &mut Vec<LossNote>,
 ) {
-    for (style_id, target) in exchange.records.iter().filter_map(|(style_id, record)| {
+    for (style_id, target) in exchange.records().iter().filter_map(|(style_id, record)| {
         super::presentation::styled_item_target(record).map(|target| (*style_id, target))
     }) {
         associate_presentation_carrier(exchange, ir, index, owned, target, style_id, losses);
@@ -2384,7 +2384,7 @@ fn associate_presentation_carrier(
     losses: &mut Vec<LossNote>,
 ) {
     let name = exchange
-        .records
+        .records()
         .get(&target)
         .and_then(representation_item_name)
         .and_then(|value| {
@@ -2945,7 +2945,7 @@ fn retained_surface_curve_ids(
         let Some(surface_curve) = edge_curve_geometry_reference(edge) else {
             continue;
         };
-        let Some(record) = exchange.records.get(&surface_curve) else {
+        let Some(record) = exchange.records().get(&surface_curve) else {
             continue;
         };
         if !is_surface_curve_record(record) {
@@ -2963,7 +2963,7 @@ fn retained_surface_curve_ids(
         }
     }
 
-    for set in exchange.records.values() {
+    for set in exchange.records().values() {
         let Some(set_type) = entity_type(set, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"]) else {
             continue;
         };
@@ -2977,7 +2977,7 @@ fn retained_surface_curve_ids(
         }
     }
 
-    for representation in exchange.records.values().filter(|record| {
+    for representation in exchange.records().values().filter(|record| {
         record
             .partials
             .iter()
@@ -2993,7 +2993,7 @@ fn retained_surface_curve_ids(
         }
     }
 
-    for record in exchange.records.values() {
+    for record in exchange.records().values() {
         if let Some(target) = super::presentation::styled_item_target(record) {
             if decoded_surface_curve(target, exchange, index) {
                 retained.insert(target);
@@ -3020,7 +3020,7 @@ fn retained_surface_curve_ids(
 }
 
 fn decoded_surface_curve(id: u64, exchange: &Exchange, index: &CarrierIndex) -> bool {
-    let Some(record) = exchange.records.get(&id) else {
+    let Some(record) = exchange.records().get(&id) else {
         return false;
     };
     is_surface_curve_record(record)
@@ -3048,7 +3048,7 @@ fn surface_curve_supports(
         .into_iter()
         .filter_map(|associated| {
             let surface = exchange
-                .records
+                .records()
                 .get(&associated)
                 .and_then(|record| named_parameter(record, "PCURVE", 1))
                 .and_then(Value::reference)
@@ -3084,7 +3084,7 @@ fn resolve_unit_scales(
 ) -> UnitScales {
     let mut length_candidates = BTreeMap::<u64, Vec<f64>>::new();
     let mut angle_candidates = BTreeMap::<u64, Vec<f64>>::new();
-    for (&representation_id, representation) in &exchange.records {
+    for (&representation_id, representation) in exchange.records() {
         if !is_representation_record(representation) {
             continue;
         }
@@ -3192,7 +3192,7 @@ fn representation_context(record: &RawRecord) -> Option<u64> {
 }
 
 fn context_unit_scales(id: u64, exchange: &Exchange) -> (Option<f64>, Option<f64>) {
-    let Some(context) = exchange.records.get(&id) else {
+    let Some(context) = exchange.records().get(&id) else {
         return (None, None);
     };
     let Some(units) = context
@@ -3226,7 +3226,7 @@ fn collect_unit_scope_members(
     if !active.insert(id) {
         return;
     }
-    let Some(record) = exchange.records.get(&id) else {
+    let Some(record) = exchange.records().get(&id) else {
         return;
     };
     if is_unit_record(record) || is_representation_context_record(record) {
@@ -3257,7 +3257,7 @@ fn collect_unit_scope_members(
         collect_references(parameter, &mut references);
     }
     for reference in references {
-        let Some(referenced) = exchange.records.get(&reference) else {
+        let Some(referenced) = exchange.records().get(&reference) else {
             continue;
         };
         if is_representation_record(referenced)
@@ -3312,7 +3312,7 @@ fn document_unit_scale(
     let mut context_scales = Vec::new();
     let mut has_context_unit = false;
 
-    for record in exchange.records.values() {
+    for record in exchange.records().values() {
         let Some(units) = record
             .partial("GLOBAL_UNIT_ASSIGNED_CONTEXT")
             .and_then(|partial| partial.parameters.first())
@@ -3325,7 +3325,7 @@ fn document_unit_scale(
             .filter_map(Value::reference)
             .filter(|id| {
                 exchange
-                    .records
+                    .records()
                     .get(id)
                     .is_some_and(|unit| unit.partial(dimension_partial).is_some())
             })
@@ -3349,7 +3349,7 @@ fn document_unit_scale(
     // This branch is CADIR salvage for an unscoped dimension: accept only a
     // scale to which every unit occurrence in the exchange resolves.
     let scales = exchange
-        .records
+        .records()
         .iter()
         .filter(|(_, record)| record.partial(dimension_partial).is_some())
         .map(|(&id, _)| resolve(id, exchange, &mut BTreeSet::new()))
@@ -3378,7 +3378,7 @@ fn unit_scale_radians_inner(
         return None;
     }
     let result = (|| {
-        let record = exchange.records.get(&id)?;
+        let record = exchange.records().get(&id)?;
         if let Some(unit) = record.partial("SI_UNIT") {
             if unit.parameters.get(1)?.enumeration()? == "RADIAN" {
                 let prefix = match unit.parameters.first()? {
@@ -3392,7 +3392,7 @@ fn unit_scale_radians_inner(
             }
         } else if let Some(unit) = record.partial("CONVERSION_BASED_UNIT") {
             let factor_id = unit.parameters.get(1)?.reference()?;
-            let factor = exchange.records.get(&factor_id)?;
+            let factor = exchange.records().get(&factor_id)?;
             let value = record_values(factor).find_map(measure_number)?;
             let base = record_values(factor)
                 .find_map(Value::reference)
@@ -3427,7 +3427,7 @@ fn unit_scale_mm_inner(
         return None;
     }
     let result = (|| {
-        let record = exchange.records.get(&id)?;
+        let record = exchange.records().get(&id)?;
         if let Some(unit) = record.partial("SI_UNIT") {
             if unit.parameters.get(1)?.enumeration()? == "METRE" {
                 let prefix = match unit.parameters.first()? {
@@ -3441,7 +3441,7 @@ fn unit_scale_mm_inner(
             }
         } else if let Some(unit) = record.partial("CONVERSION_BASED_UNIT") {
             let factor_id = unit.parameters.get(1)?.reference()?;
-            let factor = exchange.records.get(&factor_id)?;
+            let factor = exchange.records().get(&factor_id)?;
             let value = record_values(factor).find_map(measure_number)?;
             let base = factor
                 .partials
@@ -3504,7 +3504,7 @@ fn context_length_uncertainties(context: &RawRecord, exchange: &Exchange) -> (Ve
     let mut measures = Vec::new();
     let mut unresolved = 0;
     for uncertainty_id in references.iter().filter_map(Value::reference) {
-        let Some(measure) = exchange.records.get(&uncertainty_id) else {
+        let Some(measure) = exchange.records().get(&uncertainty_id) else {
             unresolved += 1;
             continue;
         };
@@ -3802,14 +3802,14 @@ fn line_parameter_scale(
         if !visiting.insert(curve) {
             return length_scale;
         }
-        let Some(record) = exchange.records.get(&curve) else {
+        let Some(record) = exchange.records().get(&curve) else {
             visiting.remove(&curve);
             return length_scale;
         };
         let result = if record.partial("LINE").is_some() {
             named_parameter(record, "LINE", 2)
                 .and_then(ValueExt::reference)
-                .and_then(|vector| exchange.records.get(&vector))
+                .and_then(|vector| exchange.records().get(&vector))
                 .filter(|record| record.partial("VECTOR").is_some())
                 .and_then(|record| named_parameter(record, "VECTOR", 2))
                 .and_then(ValueExt::number)
@@ -3916,7 +3916,7 @@ fn composite_curve_dependencies(record: &RawRecord, exchange: &Exchange) -> Vec<
         .into_iter()
         .flatten()
         .filter_map(Value::reference)
-        .filter_map(|segment| exchange.records.get(&segment))
+        .filter_map(|segment| exchange.records().get(&segment))
         .filter_map(composite_curve_segment_parameters)
         .filter_map(|parameters| parameters.get(2).and_then(Value::reference))
         .filter_map(|curve| curve_carrier_record(curve, exchange))
@@ -3935,7 +3935,7 @@ fn composite_curve(
         .iter()
         .map(|value| {
             let id = value.reference()?;
-            let segment = exchange.records.get(&id)?;
+            let segment = exchange.records().get(&id)?;
             let parameters = composite_curve_segment_parameters(segment)?;
             let transition = match parameters.first()?.enumeration()? {
                 "DISCONTINUOUS" => CompositeCurveTransition::Discontinuous,
@@ -3986,7 +3986,7 @@ fn composite_curve_segment_parameters(record: &RawRecord) -> Option<&[Value]> {
 }
 
 fn boundary_pcurve_steps(boundary: u64, support: u64, exchange: &Exchange) -> Vec<u64> {
-    let Some(record) = exchange.records.get(&boundary) else {
+    let Some(record) = exchange.records().get(&boundary) else {
         return Vec::new();
     };
     let Some((parameters, offset)) = composite_curve_parameters(record) else {
@@ -3998,10 +3998,10 @@ fn boundary_pcurve_steps(boundary: u64, support: u64, exchange: &Exchange) -> Ve
         .into_iter()
         .flatten()
         .filter_map(Value::reference)
-        .filter_map(|segment| exchange.records.get(&segment))
+        .filter_map(|segment| exchange.records().get(&segment))
         .filter_map(composite_curve_segment_parameters)
         .filter_map(|parameters| parameters.get(2).and_then(Value::reference))
-        .filter_map(|curve| exchange.records.get(&curve))
+        .filter_map(|curve| exchange.records().get(&curve))
         .filter(|curve| {
             curve.partials.iter().any(|partial| {
                 matches!(
@@ -4013,7 +4013,7 @@ fn boundary_pcurve_steps(boundary: u64, support: u64, exchange: &Exchange) -> Ve
         .flat_map(|curve| surface_curve_pcurves(curve).unwrap_or_default())
         .filter(|pcurve| {
             exchange
-                .records
+                .records()
                 .get(pcurve)
                 .and_then(|record| named_parameter(record, "PCURVE", 1))
                 .and_then(Value::reference)
@@ -4374,7 +4374,7 @@ fn decode_pcurve_geometry(
         return None;
     }
     let result = (|| {
-        let record = exchange.records.get(&id)?;
+        let record = exchange.records().get(&id)?;
         let mut records = BTreeSet::from([id]);
         let geometry = if record.partials.iter().any(|partial| {
             matches!(
@@ -5204,7 +5204,7 @@ fn references(value: &Value) -> Option<Vec<u64>> {
 }
 
 fn curve_carrier_record(id: u64, exchange: &Exchange) -> Option<u64> {
-    let record = exchange.records.get(&id)?;
+    let record = exchange.records().get(&id)?;
     if record.partials.iter().any(|partial| {
         matches!(
             partial.name.as_str(),
