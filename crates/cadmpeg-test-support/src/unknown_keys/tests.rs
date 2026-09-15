@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{normalise, object_at_mut, sweep, Step};
+use super::{normalise, object_at_mut, probe_key, sweep, Step, UNKNOWN_KEY};
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{json, Map, Value};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -74,4 +74,47 @@ fn source_member_names_cannot_alias_path_separators() {
         normalise(&[Step::Key("a/b~c".into()), Step::Index(0)]),
         "/a~1b~0c/#",
     );
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ExistingSentinelDocument {
+    #[serde(rename = "items")]
+    _items: Vec<ExistingSentinelItem>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ExistingSentinelItem {
+    #[serde(rename = "value")]
+    _value: u32,
+    #[serde(rename = "zz_bogus")]
+    _sentinel: u32,
+}
+
+#[test]
+fn an_existing_sentinel_member_is_preserved_while_probing() {
+    let document = json!({"items": [{"value": 1, "zz_bogus": 7}]});
+    assert!(
+        ExistingSentinelDocument::deserialize(&document).is_ok(),
+        "the sentinel fixture must be admitted before the sweep runs"
+    );
+    let swept = sweep(&document, &json!({"items": []}), |probe| {
+        ExistingSentinelDocument::deserialize(probe).is_ok()
+    })
+    .expect("every path comes from the document");
+
+    assert!(
+        swept.accepting.is_empty(),
+        "the extra suffixed key is denied"
+    );
+}
+
+#[test]
+fn probe_key_uses_the_first_absent_suffix() {
+    let fields = Map::from_iter([
+        (UNKNOWN_KEY.to_owned(), Value::Null),
+        (format!("{UNKNOWN_KEY}_"), Value::Null),
+    ]);
+    assert_eq!(probe_key(&fields), format!("{UNKNOWN_KEY}__"));
 }

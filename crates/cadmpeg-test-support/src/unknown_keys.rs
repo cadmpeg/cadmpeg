@@ -96,8 +96,15 @@ fn sweep(
                 (ir.clone(), concrete)
             }
         };
+        // Keep every value probe independent by replacing the one key this
+        // sweep added. The callback only borrows the document, so no other
+        // field can carry state from the preceding value.
+        let key = {
+            let fields = object_at_mut(&mut document, &path)?;
+            probe_key(fields)
+        };
         for value in probe_values() {
-            object_at_mut(&mut document, &path)?.insert(UNKNOWN_KEY.into(), value);
+            object_at_mut(&mut document, &path)?.insert(key.clone(), value);
             if accepts(&document) {
                 accepting.insert(normalise(&path));
                 break;
@@ -109,6 +116,19 @@ fn sweep(
         swept,
         fallbacks,
     })
+}
+
+/// Return a sentinel key that is absent from the object being probed.
+///
+/// Source maps may legally contain the default sentinel as an ordinary key.
+/// Choosing a stable suffix in that case keeps the existing member intact and
+/// still inserts a key the surrounding typed object does not declare.
+fn probe_key(fields: &Map<String, Value>) -> String {
+    let mut candidate = UNKNOWN_KEY.to_owned();
+    while fields.contains_key(&candidate) {
+        candidate.push('_');
+    }
+    candidate
 }
 
 /// The document one shape is probed in, with the path that reaches the shape
