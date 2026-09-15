@@ -1159,9 +1159,10 @@ pub(super) fn extended_radial_circle_index(payload: &[u8], offset: usize) -> Opt
         && payload.get(offset + 68..offset + 72) == Some(&1u32.to_le_bytes())
         && payload.get(offset + 72..offset + 80) == Some(&(-1.0f64).to_le_bytes())
         && payload.get(offset + 80..offset + 84) == Some(&1u32.to_le_bytes());
-    supported.then(|| {
-        usize::from(View::u16_le_at(payload, offset + 64).expect("guarded two-byte radial index"))
-    })
+    supported
+        .then(|| View::u16_le_at(payload, offset + 64))
+        .flatten()
+        .map(usize::from)
 }
 
 pub(super) fn radial_dimension_radius(
@@ -1446,9 +1447,9 @@ pub(crate) fn project_marker_dimensioned_circles(
                 })
                 .collect::<Vec<_>>();
             if let [(_, center_marker)] = centers.as_slice() {
-                let [cu, cv] = center_marker
-                    .coordinates_m
-                    .expect("coordinate markers carry coordinates");
+                let Some([cu, cv]) = center_marker.coordinates_m else {
+                    continue;
+                };
                 let radii = radial_dimensions
                     .iter()
                     .map(|(_, radius)| *radius)
@@ -1690,9 +1691,9 @@ pub(crate) fn project_marker_dimensioned_circles(
                 let Some(radial) = roster.get(radial_index).copied() else {
                     continue;
                 };
-                let [ru, rv] = radial
-                    .coordinates_m
-                    .expect("coordinate markers carry coordinates");
+                let Some([ru, rv]) = radial.coordinates_m else {
+                    continue;
+                };
                 let mut candidates = markers
                     .iter()
                     .copied()
@@ -1855,9 +1856,9 @@ pub(crate) fn project_marker_dimensioned_circles(
         if radial.len() != radial_dimensions.len() {
             continue;
         }
-        let [cu, cv] = center
-            .coordinates_m
-            .expect("coordinate markers carry coordinates");
+        let Some([cu, cv]) = center_marker.coordinates_m else {
+            continue;
+        };
         let matches = radial_dimensions
             .iter()
             .map(|(_, radius)| {
@@ -1865,9 +1866,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                     .iter()
                     .enumerate()
                     .filter_map(|(index, marker)| {
-                        let [u, v] = marker
-                            .coordinates_m
-                            .expect("coordinate markers carry coordinates");
+                        let [u, v] = marker.coordinates_m?;
                         same_dimension_length((u - cu).hypot(v - cv) * NATIVE_TO_IR, *radius)
                             .then_some(index)
                     })

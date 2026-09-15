@@ -2,7 +2,7 @@
 //! Container site-key identity tests.
 #![allow(clippy::unwrap_used)]
 
-use crate::container::{Block, CompoundStream, Section};
+use crate::container::{Block, BlockName, CompoundStream, Section};
 
 #[test]
 fn site_keys_use_outer_container_identity() {
@@ -10,7 +10,7 @@ fn site_keys_use_outer_container_identity() {
         offset: 100,
         type_id: 0,
         comp_sz: 0,
-        section: Some("Contents/Config-0-Partition".into()),
+        section: BlockName::Named(cadmpeg_ir::stream_name!("Contents/Config-0-Partition")),
         family: crate::container::PayloadFamily::Parasolid,
         payload: Vec::new(),
         ps_streams: Vec::new(),
@@ -26,7 +26,7 @@ fn site_keys_use_outer_container_identity() {
     );
 
     let compound = CompoundStream {
-        path: "Contents/Config-0-Partition".into(),
+        path: cadmpeg_ir::stream_name!("Contents/Config-0-Partition"),
         directory_id: 300,
         start_sector: 0,
         payload: Vec::new(),

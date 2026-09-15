@@ -310,22 +310,25 @@ fn distance(a: [f64; 3], b: [f64; 3]) -> f64 {
         .sqrt()
 }
 
-fn chart_parameters(chart: &Chart, points: &[[f64; 3]]) -> Vec<f64> {
+fn chart_parameters(chart: &Chart, points: &[[f64; 3]]) -> Option<Vec<f64>> {
+    points.first()?;
     let mut parameters = Vec::with_capacity(points.len());
     parameters.push(chart.base_parameter);
     for pair in points.windows(2) {
-        let previous = *parameters.last().expect("base parameter inserted");
+        let previous = *parameters.last()?;
         parameters.push(previous + distance(pair[0], pair[1]) * chart.base_scale);
     }
-    parameters
+    Some(parameters)
 }
 
-fn degree_one_knots(parameters: &[f64]) -> Vec<f64> {
+fn degree_one_knots(parameters: &[f64]) -> Option<Vec<f64>> {
+    let first = *parameters.first()?;
+    let last = *parameters.last()?;
     let mut knots = Vec::with_capacity(parameters.len() + 2);
-    knots.push(parameters[0]);
+    knots.push(first);
     knots.extend_from_slice(parameters);
-    knots.push(*parameters.last().expect("non-empty parameters"));
-    knots
+    knots.push(last);
+    Some(knots)
 }
 
 /// Build the derived polyline curve for one validated composite.
@@ -335,10 +338,12 @@ fn solved_curve(
     end: [f64; 3],
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<(CurveGeometry, Vec<f64>, bool)> {
-    let mut parameters = chart_parameters(chart, &chart.points);
+    let mut parameters = chart_parameters(chart, &chart.points)?;
     let mut points = chart.points.clone();
-    *points.first_mut().expect("chart has at least two points") = start;
-    *points.last_mut().expect("chart has at least two points") = end;
+    let first = points.first_mut()?;
+    *first = start;
+    let last = points.last_mut()?;
+    *last = end;
     let reversed = if parameters.windows(2).all(|pair| pair[0] < pair[1]) {
         false
     } else if parameters.windows(2).all(|pair| pair[0] > pair[1]) {
@@ -348,7 +353,7 @@ fn solved_curve(
     } else {
         return None;
     };
-    let knots = degree_one_knots(&parameters);
+    let knots = degree_one_knots(&parameters)?;
     let nurbs = match NurbsCurve::from_lanes(
         1,
         knots,

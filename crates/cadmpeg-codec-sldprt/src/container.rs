@@ -116,6 +116,32 @@ pub(crate) fn nibble_swap_name(raw: &[u8]) -> Option<String> {
     Some(s)
 }
 
+/// The admitted name of one compressed block.
+///
+/// Anonymous blocks retain a generated source owner while keeping their
+/// section classification absent. Named and anonymous blocks therefore share
+/// one owning value instead of carrying two writable copies of the name.
+#[derive(Debug, Clone)]
+pub(crate) enum BlockName {
+    Named(cadmpeg_ir::StreamName),
+    Anonymous(cadmpeg_ir::StreamName),
+}
+
+impl BlockName {
+    pub(crate) fn name(&self) -> Option<&str> {
+        match self {
+            Self::Named(name) => Some(name.as_str()),
+            Self::Anonymous(_) => None,
+        }
+    }
+
+    pub(crate) fn source_stream(&self) -> &cadmpeg_ir::StreamName {
+        match self {
+            Self::Named(name) | Self::Anonymous(name) => name,
+        }
+    }
+}
+
 /// One validated compressed block.
 #[derive(Debug, Clone)]
 pub(crate) struct Block {
@@ -125,8 +151,8 @@ pub(crate) struct Block {
     pub(crate) type_id: u32,
     /// Compressed payload length.
     pub(crate) comp_sz: u32,
-    /// OPC section name decoded from the preamble, when printable.
-    pub(crate) section: Option<String>,
+    /// OPC section name and admitted source owner.
+    pub(crate) section: BlockName,
     /// Payload family from its signature or extracted Parasolid streams.
     pub(crate) family: PayloadFamily,
     /// The decompressed payload bytes.
@@ -173,8 +199,8 @@ pub(crate) struct CacheCell {
 /// One named stream in a Compound File Binary container.
 #[derive(Debug, Clone)]
 pub(crate) struct CompoundStream {
-    /// Storage-qualified stream path.
-    pub(crate) path: String,
+    /// Storage-qualified stream path and admitted source owner.
+    pub(crate) path: cadmpeg_ir::StreamName,
     /// Unique directory entry identifier.
     pub(crate) directory_id: u32,
     /// First regular or mini sector identifier.
@@ -214,18 +240,19 @@ pub(crate) enum Section<'a> {
 impl<'a> Section<'a> {
     pub(crate) fn name(self) -> Option<&'a str> {
         match self {
-            Self::Block(block) => block.section.as_deref(),
-            Self::Compound(stream) => Some(&stream.path),
+            Self::Block(block) => block.section.name(),
+            Self::Compound(stream) => Some(stream.path.as_str()),
         }
     }
 
     pub(crate) fn display_name(self) -> String {
+        self.source_stream().as_str().to_owned()
+    }
+
+    pub(crate) fn source_stream(self) -> &'a cadmpeg_ir::StreamName {
         match self {
-            Self::Block(block) => block
-                .section
-                .clone()
-                .unwrap_or_else(|| format!("block@{}", block.offset)),
-            Self::Compound(stream) => stream.path.clone(),
+            Self::Block(block) => block.section.source_stream(),
+            Self::Compound(stream) => &stream.path,
         }
     }
 
@@ -345,7 +372,7 @@ fn completed_scan(
     let solidworks = scan_solidworks_envelopes(
         blocks
             .iter()
-            .map(|block| (block.section.as_deref(), block.payload.as_slice()))
+            .map(|block| (block.section.name(), block.payload.as_slice()))
             .chain(compound_streams.iter().map(|stream| {
                 (
                     Some(stream.path.as_str()),
@@ -414,6 +441,10 @@ fn compound_stream(
     decoded_bytes: Option<Vec<u8>>,
 ) -> CompoundStream {
     let ps_streams = crate::parasolid::extract_streams_with_offsets(&bytes);
+    let path = match cadmpeg_ir::StreamName::try_from(path) {
+        Ok(path) => path,
+        Err(_) => cadmpeg_ir::stream_name!("compound@").with_suffix(directory_id),
+    };
     CompoundStream {
         path,
         directory_id,
@@ -542,11 +573,22 @@ struct RawBlock {
 
 impl RawBlock {
     fn into_block(self) -> Block {
+        let section = match self.section {
+            Some(name) => match cadmpeg_ir::StreamName::try_from(name) {
+                Ok(name) => BlockName::Named(name),
+                Err(_) => BlockName::Anonymous(
+                    cadmpeg_ir::stream_name!("block@").with_suffix(self.offset),
+                ),
+            },
+            None => {
+                BlockName::Anonymous(cadmpeg_ir::stream_name!("block@").with_suffix(self.offset))
+            }
+        };
         Block {
             offset: self.offset,
             type_id: self.type_id,
             comp_sz: self.comp_sz,
-            section: self.section,
+            section,
             family: self.family,
             payload: self.payload,
             ps_streams: self.ps_streams,
@@ -752,10 +794,7 @@ pub(crate) fn summarize(scan: &ContainerScan, dialects: DialectLayers) -> Contai
             );
         }
         entries.push(ContainerEntry {
-            name: b
-                .section
-                .clone()
-                .unwrap_or_else(|| format!("block@{}", b.offset)),
+            name: b.section.source_stream().as_str().to_owned(),
             role: ContainerRole::Block,
             storage: EntryStorage::Compressed {
                 method: CompressionMethod::Deflate,
@@ -799,7 +838,7 @@ pub(crate) fn summarize(scan: &ContainerScan, dialects: DialectLayers) -> Contai
             payload_family(&stream.payload).label().to_string(),
         );
         entries.push(ContainerEntry {
-            name: stream.path.clone(),
+            name: stream.path.as_str().to_owned(),
             role: ContainerRole::CompoundStream,
             storage: EntryStorage::verbatim(VerbatimLabel::Stored, stream.payload.len() as u64),
             attributes,
@@ -877,6 +916,10 @@ pub(crate) struct ActiveParasolidSite<'a> {
 impl ActiveParasolidSite<'_> {
     pub(crate) fn name(&self) -> String {
         self.section.display_name()
+    }
+
+    pub(crate) fn source_stream(&self) -> &cadmpeg_ir::StreamName {
+        self.section.source_stream()
     }
 
     pub(crate) fn site_key(&self) -> String {

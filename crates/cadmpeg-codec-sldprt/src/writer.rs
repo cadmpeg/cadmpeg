@@ -455,7 +455,7 @@ fn retained_cache_cells(
         .iter()
         .filter(|cell| {
             let original_matches = scan.blocks.iter().any(|block| {
-                block.section.as_deref() == Some(cell.name.as_str())
+                block.section.name() == Some(cell.name.as_str())
                     && sections.iter().any(|(section, payload)| {
                         section == &cell.name && payload == &block.payload
                     })
@@ -539,9 +539,9 @@ fn section_type_ids(
     let mut source_ids: HashMap<String, VecDeque<u32>> = HashMap::new();
     if let Some(scan) = source_scan {
         for block in &scan.blocks {
-            if let Some(section) = &block.section {
+            if let Some(section) = block.section.name() {
                 source_ids
-                    .entry(section.clone())
+                    .entry(section.to_owned())
                     .or_default()
                     .push_back(block.type_id);
             }
@@ -1307,6 +1307,8 @@ fn resolved_feature_payload(
                     || actual.parent != expected.parent
                     || actual.ordinal != expected.ordinal
                     || actual.offset != expected.offset
+                    || actual.object_id != expected.object_id
+                    || actual.value != expected.value
             })
     {
         return Err(CodecError::NotImplemented(format!(
@@ -1376,6 +1378,15 @@ fn resolved_feature_payload(
     }
     let mut payload = lane.native_payload.clone();
     for entity in &lane.sketch_entities {
+        entity
+            .validate_against_payload(&lane.native_payload)
+            .map_err(|error| {
+                CodecError::malformed(format_args!(
+                    "feature-input lane {} entity {}: {error}",
+                    lane.id,
+                    entity.id()
+                ))
+            })?;
         let offset = usize::try_from(entity.offset()).map_err(|_| {
             CodecError::Malformed("feature-input offset exceeds address space".into())
         })?;

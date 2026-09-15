@@ -261,7 +261,7 @@ pub(crate) fn annotations(
             crate::annotations::note(
                 annotations,
                 annotation.id.as_str().to_owned(),
-                stream.clone(),
+                &stream,
                 entity.offset as u64,
                 "swift_gdt_analysis",
                 cadmpeg_ir::Exactness::ByteExact,
@@ -415,7 +415,9 @@ fn has_root_marker(scan: &ContainerScan<'_>) -> bool {
     })
 }
 
-fn scan_root(scan: &ContainerScan<'_>) -> Option<(String, Entity, Vec<RenderedDimension>)> {
+fn scan_root(
+    scan: &ContainerScan<'_>,
+) -> Option<(cadmpeg_ir::StreamName, Entity, Vec<RenderedDimension>)> {
     let mut roots = scan
         .sections()
         .filter(|section| {
@@ -424,13 +426,9 @@ fn scan_root(scan: &ContainerScan<'_>) -> Option<(String, Entity, Vec<RenderedDi
                 .is_some_and(|name| name.starts_with("SWIFT/") && name.contains("Schema"))
         })
         .filter_map(|section| {
-            parse_unique_root(section.payload()).map(|root| {
-                (
-                    section.display_name(),
-                    root,
-                    rendered_dimensions(section.payload()),
-                )
-            })
+            let source_name = section.source_stream().clone();
+            let root = parse_unique_root(section.payload())?;
+            Some((source_name, root, rendered_dimensions(section.payload())))
         });
     let root = roots.next()?;
     roots.next().is_none().then_some(root)

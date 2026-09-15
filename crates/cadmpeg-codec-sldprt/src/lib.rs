@@ -440,13 +440,17 @@ mod tests {
     fn source_record_join_borrows_the_retained_source_image() {
         let payload = vec![0x5a; 4096];
         let payload_ptr = payload.as_ptr();
-        let fidelity = cadmpeg_ir::SourceFidelity {
-            retained_records: std::collections::BTreeMap::from([(
-                SOURCE_IMAGE_ID.to_owned(),
-                cadmpeg_ir::source_fidelity::RetainedSourceRecord::retained("source", 0, payload),
-            )]),
-            ..cadmpeg_ir::SourceFidelity::default()
-        };
+        let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+        let id: cadmpeg_ir::ids::UnknownId = SOURCE_IMAGE_ID
+            .to_owned()
+            .try_into()
+            .expect("source image identity");
+        let record =
+            cadmpeg_ir::source_fidelity::RetainedSourceRecord::retained("source", 0, payload)
+                .expect("source image extent");
+        fidelity
+            .insert_retained_record(id, record)
+            .expect("source image identity is unique");
 
         let records = crate::source_records(
             &cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted"),

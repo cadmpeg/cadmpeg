@@ -1744,10 +1744,9 @@ pub(super) fn bind_detached_relation_drivers(
         if relation_names.len() != 1 {
             continue;
         }
-        let name = *relation_names
-            .iter()
-            .next()
-            .expect("one display scalar name");
+        let Some(&name) = relation_names.iter().next() else {
+            continue;
+        };
         candidates
             .entry((relation.feature_ref.clone(), name.to_string()))
             .or_default()

@@ -554,7 +554,9 @@ pub(crate) fn type_display_relation_parameters(
         if families.len() != 1 {
             continue;
         }
-        let family = *families.iter().next().expect("one relation family");
+        let Some(&family) = families.iter().next() else {
+            continue;
+        };
         match family {
             FeatureInputRelationFamily::Angle => {
                 if let Some(cadmpeg_ir::features::ParameterValue::Real(value)) = parameter.value {

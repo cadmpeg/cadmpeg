@@ -1547,7 +1547,7 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
     assert_eq!(
         scan.blocks
             .iter()
-            .filter(|block| block.section.as_deref() == Some("Contents/Config-0-ResolvedFeatures"))
+            .filter(|block| block.section.name() == Some("Contents/Config-0-ResolvedFeatures"))
             .count(),
         1
     );

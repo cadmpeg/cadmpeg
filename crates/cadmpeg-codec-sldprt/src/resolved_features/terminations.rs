@@ -18,7 +18,6 @@ use crate::records::{FeatureInputComponentPathEntry, FeatureInputLane};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use std::collections::HashMap;
-use std::fmt::Write as _;
 
 const EPS_TERMINATIONS_ENRICH_HISTORY_EXTRUSION_TERMINATIONS_E9: f64 = 1.0e-9;
 
@@ -1908,7 +1907,7 @@ pub(crate) fn compact_surface_selection_value(
         }
         match component.local_id {
             Some(local_id) => {
-                write!(&mut value, "{local_id}").expect("writing to String cannot fail");
+                value.push_str(&local_id.to_string());
             }
             None => value.push('_'),
         }

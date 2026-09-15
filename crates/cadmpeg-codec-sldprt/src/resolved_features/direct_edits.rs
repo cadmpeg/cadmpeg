@@ -47,7 +47,9 @@ pub(super) fn move_body_translation_record(
         let Some(bytes) = payload.get(selection_offset..selection_offset + 4) else {
             continue;
         };
-        let count = View::u32_le_at(bytes, 0).expect("four-byte body count") as usize;
+        let Some(count) = View::u32_le_at(bytes, 0).map(|value| value as usize) else {
+            continue;
+        };
         if !(1..=4096).contains(&count) {
             continue;
         }

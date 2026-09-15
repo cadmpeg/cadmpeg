@@ -8,7 +8,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_ir::annotations::{AnnotationBuilder, Annotations};
+use cadmpeg_ir::annotations::{AnnotationBuilder, Annotations, StreamHandle};
 use cadmpeg_ir::eval::{
     analytic_surface_parameters, nurbs_curve_parameter_domain, nurbs_curve_point,
     nurbs_surface_isocurve, nurbs_surface_parameter_near_point,
@@ -89,7 +89,7 @@ pub(crate) struct Brep {
     /// opaque payloads.
     pub(crate) unknowns: Vec<UnknownRecord>,
     /// Per-face RGB colors resolved from native entity records.
-    pub(crate) face_colors: Vec<entity::FaceColor>,
+    pub(crate) face_colors: Vec<OwnedFaceColor>,
     /// Per-face producing-feature identities resolved from Parasolid attributes.
     pub(crate) face_atoms: Vec<attrib::FaceAtom>,
     /// Source-local sequence-to-attribute links carried by face bridge
@@ -114,12 +114,23 @@ pub(crate) struct Brep {
     pub(crate) stats: Stats,
 }
 
+/// A resolved face color retains the stream that admitted its source row.
+///
+/// Alternate configuration sites are merged into one B-rep, so the selected
+/// site cannot serve as a provenance owner for every color row.
+#[derive(Debug, Clone)]
+pub(crate) struct OwnedFaceColor {
+    pub(crate) value: entity::FaceColor,
+    pub(crate) source_stream: cadmpeg_ir::StreamName,
+    /// Site qualifier applied when this color came from an unselected site.
+    /// A color attribute is only site-local, so an unbound color still needs
+    /// this qualifier after alternate sites are merged.
+    pub(crate) site_key: Option<String>,
+}
+
 impl Brep {
     /// Qualify every document-arena identity and internal reference by one site key.
-    pub(crate) fn qualify_ids(
-        &mut self,
-        site: &str,
-    ) -> Result<(), cadmpeg_ir::geometry::ProceduralGeometryError> {
+    pub(crate) fn qualify_ids(&mut self, site: &str) -> Result<(), cadmpeg_core::CodecError> {
         let qualify = |value: &str| {
             value.split_once('#').map_or_else(
                 || value.to_owned(),
@@ -165,7 +176,11 @@ impl Brep {
                         *id = qualify(id.as_str()).try_into().expect("qualified identity");
                     }
                 })
-                .map_err(cadmpeg_ir::geometry::ProceduralGeometryError::Members)?;
+                .map_err(|error| {
+                    cadmpeg_core::CodecError::malformed(format_args!(
+                        "qualified shell topology is invalid: {error}"
+                    ))
+                })?;
         }
         for face in &mut self.faces {
             face.id = qualify(face.id.as_str())
@@ -231,8 +246,13 @@ impl Brep {
                                 .expect("qualified identity");
                         }
                     }
-                    *ring = cadmpeg_ir::topology::LoopRing::new(coedges, vertex_uses)
-                        .expect("qualified loop ring preserves anchors");
+                    *ring = cadmpeg_ir::topology::LoopRing::new(coedges, vertex_uses).map_err(
+                        |error| {
+                            cadmpeg_core::CodecError::malformed(format_args!(
+                                "qualified loop ring is invalid: {error}"
+                            ))
+                        },
+                    )?;
                 }
             }
         }
@@ -363,9 +383,10 @@ impl Brep {
                 .for_each(|link| *link = qualify(link));
         }
         for color in &mut self.face_colors {
-            if let Some(target) = &mut color.target {
+            if let Some(target) = &mut color.value.target {
                 *target = qualify(target);
             }
+            color.site_key = Some(site.to_owned());
         }
         for atom in &mut self.face_atoms {
             atom.face = qualify(atom.face.as_str())
@@ -377,13 +398,7 @@ impl Brep {
                 *target = qualify(target);
             }
         }
-        self.annotations.provenance = std::mem::take(&mut self.annotations.provenance)
-            .into_iter()
-            .map(|(id, value)| (qualify(&id), value))
-            .collect();
-        let mut annotations = AnnotationBuilder::resume(std::mem::take(&mut self.annotations));
-        annotations.map_exactness_ids(qualify);
-        self.annotations = annotations.build();
+        self.annotations.map_ids(qualify)?;
 
         Ok(())
     }
@@ -1007,7 +1022,7 @@ fn header_body<'a>(
 pub(crate) fn decode(
     payload: &[u8],
     header: &StreamHeader,
-    stream: &str,
+    stream: &cadmpeg_ir::StreamName,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
     decode_body(header_body(payload, header)?, stream)
 }
@@ -1019,7 +1034,7 @@ pub(crate) fn decode(
 /// topology or carrier record. `stream` names the combined provenance source.
 pub(crate) fn decode_bodies(
     bodies: &[(&[u8], &StreamHeader)],
-    stream: &str,
+    stream: &cadmpeg_ir::StreamName,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
     let mut carriers = CarrierIndex::default();
     let mut tables = topology::Tables::default();
@@ -1043,28 +1058,23 @@ pub(crate) fn decode_bodies(
     for stream_typed_facts in &typed_streams {
         typed_facts.merge_missing(stream_typed_facts.clone());
     }
-    let typed_ownership_valid = typed_facts.has_valid_ownership();
-    let typed_bridge_attrs = if typed_ownership_valid {
-        typed_facts.valid_face_attrs().unwrap_or_default()
-    } else {
-        HashSet::new()
-    };
-    let selected_bridge_attrs = typed_ownership_valid.then_some(&typed_bridge_attrs);
+    let typed_bridge_attrs = typed_facts.valid_ownership_face_attrs();
+    let selected_bridge_attrs = typed_bridge_attrs.as_ref();
     for (stream_order, ((payload, header), stream_typed_facts)) in
         ordered.into_iter().zip(typed_streams).enumerate()
     {
         let body = header_body(payload, header)?;
         let is_deltas = header.description.to_ascii_lowercase().contains("deltas");
-        let typed_face_offsets = if typed_ownership_valid {
-            stream_typed_facts
-                .faces
-                .iter()
-                .filter(|face| typed_bridge_attrs.contains(&face.attr))
-                .map(|face| face.offset)
-                .collect::<HashSet<_>>()
-        } else {
-            HashSet::new()
-        };
+        let typed_face_offsets = typed_bridge_attrs
+            .as_ref()
+            .map_or_else(HashSet::new, |attrs| {
+                stream_typed_facts
+                    .faces
+                    .iter()
+                    .filter(|face| attrs.contains(&face.attr))
+                    .map(|face| face.offset)
+                    .collect::<HashSet<_>>()
+            });
         typed_facts.merge_missing(stream_typed_facts);
         carriers.merge_missing(scan_carriers(body));
         let curve_attrs = carriers.curve_attrs();
@@ -1119,21 +1129,24 @@ pub(crate) fn decode_bodies(
     decode_graph(&carriers, &tables, facts, &typed_facts, stream)
 }
 
-fn decode_body(body: &[u8], stream: &str) -> Result<Brep, cadmpeg_core::CodecError> {
+fn decode_body(
+    body: &[u8],
+    stream: &cadmpeg_ir::StreamName,
+) -> Result<Brep, cadmpeg_core::CodecError> {
     let carriers = scan_carriers(body);
     let curve_attrs = carriers.curve_attrs();
     let typed_facts = typed::scan(body);
-    let typed_face_attrs = typed_facts.valid_face_attrs().unwrap_or_default();
-    let typed_face_offsets = if typed_facts.has_valid_ownership() {
-        typed_facts
-            .faces
-            .iter()
-            .filter(|face| typed_face_attrs.contains(&face.attr))
-            .map(|face| face.offset)
-            .collect::<HashSet<_>>()
-    } else {
-        HashSet::new()
-    };
+    let typed_face_attrs = typed_facts.valid_ownership_face_attrs();
+    let typed_face_offsets = typed_face_attrs
+        .as_ref()
+        .map_or_else(HashSet::new, |attrs| {
+            typed_facts
+                .faces
+                .iter()
+                .filter(|face| attrs.contains(&face.attr))
+                .map(|face| face.offset)
+                .collect::<HashSet<_>>()
+        });
     let t = topology::scan_with_curve_attrs_excluding(body, &curve_attrs, &typed_face_offsets);
     let entity_facts = entity::scan_metadata(body, false);
     decode_graph(&carriers, &t, entity_facts, &typed_facts, stream)
@@ -1280,7 +1293,7 @@ fn decode_graph(
     t: &topology::Tables,
     entity_facts: entity::Facts,
     typed_facts: &typed::Facts,
-    stream: &str,
+    stream: &cadmpeg_ir::StreamName,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
     let typed_records = typed_body_records(typed_facts, t);
     let body_records = typed_records.unwrap_or_default();
@@ -1310,7 +1323,14 @@ fn decode_graph(
     vertex_use_sequences.dedup();
 
     let mut out = Brep {
-        face_colors,
+        face_colors: face_colors
+            .into_iter()
+            .map(|value| OwnedFaceColor {
+                value,
+                source_stream: stream.clone(),
+                site_key: None,
+            })
+            .collect(),
         face_bridge_sequences,
         edge_use_sequences,
         vertex_use_sequences,
@@ -1324,7 +1344,7 @@ fn decode_graph(
         ..Brep::default()
     };
     let mut annotations = AnnotationBuilder::new();
-    let source_stream = annotations.stream(stream);
+    let source_stream = StreamHandle::new(stream.clone());
     if t.bridges().is_empty() {
         return Ok(out);
     }
@@ -1464,6 +1484,7 @@ fn decode_graph(
     // Curves and edges. An edge keeps a curve only when its carrier decodes to a
     // curve kind; a nonzero-but-untyped carrier is counted as loss.
     let mut emitted_curves: HashSet<u16> = HashSet::new();
+    let mut edge_set: HashSet<u16> = HashSet::new();
     let mut edge_endpoint_positions = HashMap::<u16, [cadmpeg_ir::math::Point3; 2]>::new();
     let mut reversed_edge_orientation = HashSet::<u16>::new();
     let mut edge_attrs: Vec<u16> = edge_ends.keys().copied().collect();
@@ -1598,19 +1619,8 @@ fn decode_graph(
             end: end_id,
             tolerance: None,
         });
+        edge_set.insert(e);
     }
-    let edge_set: HashSet<u16> = out
-        .edges
-        .iter()
-        .map(|e| {
-            e.id.as_str()
-                .rsplit('#')
-                .next()
-                .expect("invariant: id_edge always emits a '#'-separated suffix")
-                .parse()
-                .expect("invariant: id_edge suffix is the u16 attr formatted with {}")
-        })
-        .collect();
 
     // A loop is kept only when its whole ring resolves: every coedge exists and
     // its edge was emitted. A partial ring is dropped whole, so an emitted
@@ -2098,9 +2108,9 @@ fn decode_graph(
                 .and_then(|owner| {
                     out.face_colors
                         .iter()
-                        .find(|entry| entry.face_attr == owner)
+                        .find(|entry| entry.value.face_attr == owner)
                 })
-                .map(|entry| entry.color),
+                .map(|entry| entry.value.color),
             tolerance: None,
         });
     }
@@ -2110,13 +2120,13 @@ fn decode_graph(
         .map(|face| (face.id.as_str(), &face.id))
         .collect::<HashMap<_, _>>();
     for appearance in &mut out.face_colors {
-        appearance.target = faces
+        appearance.value.target = faces
             .iter()
             .find(|face| {
                 t.bridges()
                     .get(&face.bridge_attr)
                     .and_then(|bridge| bridge.owner)
-                    == Some(appearance.face_attr)
+                    == Some(appearance.value.face_attr)
             })
             .map(|face| id_face(face.bridge_attr))
             .filter(|face| emitted_faces.contains_key(face.as_str()));
@@ -5496,17 +5506,21 @@ fn synthesize_cylinder_seams(
             use_curve: None,
             pcurves: Vec::new(),
         });
-        let ring = [circle_a.clone(), seam_a, circle_b.clone(), seam_b];
-        for id in &ring {
+        let ring_ids = [circle_a.clone(), seam_a, circle_b.clone(), seam_b];
+        let ring = cadmpeg_ir::topology::LoopRing::new(ring_ids.to_vec(), Vec::new()).map_err(
+            |error| {
+                cadmpeg_core::CodecError::malformed(format_args!(
+                    "generated periodic seam ring is invalid: {error}"
+                ))
+            },
+        )?;
+        for id in &ring_ids {
             if let Some(coedge_index) = coedge_indices.get(id) {
                 out.coedges[*coedge_index].owner_loop = loop_a.clone();
             }
         }
         if let Some(lp) = out.loops.iter_mut().find(|lp| lp.id == loop_a) {
-            lp.boundary = cadmpeg_ir::topology::LoopBoundary::Ring(
-                cadmpeg_ir::topology::LoopRing::new(ring.to_vec(), Vec::new())
-                    .expect("periodic seam ring is nonempty"),
-            );
+            lp.boundary = cadmpeg_ir::topology::LoopBoundary::Ring(ring);
         }
         if let Some(face) = out.faces.iter_mut().find(|face| face.id == face_id) {
             face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(vec![loop_a]);
@@ -5849,11 +5863,13 @@ fn synthesize_sphere_seams(
                 ),
             }],
         });
+        let ring = cadmpeg_ir::topology::LoopRing::new(ring, Vec::new()).map_err(|error| {
+            cadmpeg_core::CodecError::malformed(format_args!(
+                "generated sphere seam ring is invalid: {error}"
+            ))
+        })?;
         if let Some(lp) = out.loops.iter_mut().find(|lp| lp.id == loop_id) {
-            lp.boundary = cadmpeg_ir::topology::LoopBoundary::Ring(
-                cadmpeg_ir::topology::LoopRing::new(ring, Vec::new())
-                    .expect("sphere seam ring is nonempty"),
-            );
+            lp.boundary = cadmpeg_ir::topology::LoopBoundary::Ring(ring);
         }
     }
     Ok(())
@@ -6531,7 +6547,8 @@ mod tests {
 
     #[test]
     fn geometry_free_stream_does_not_report_synthetic_body_grouping() {
-        let decoded = super::decode_body(&[], "empty").expect("valid exactness fields");
+        let decoded = super::decode_body(&[], &cadmpeg_ir::stream_name!("empty"))
+            .expect("valid exactness fields");
 
         assert!(decoded.faces.is_empty());
         assert!(!decoded.stats.synthetic_body_grouping);
@@ -6632,7 +6649,7 @@ mod tests {
                 ..Default::default()
             },
             &super::typed::Facts::default(),
-            "empty",
+            &cadmpeg_ir::stream_name!("empty"),
         )
         .expect("valid exactness fields");
 
@@ -7232,7 +7249,8 @@ mod tests {
             ..Default::default()
         };
         let mut annotations = AnnotationBuilder::new();
-        let source_stream = annotations.stream("test");
+        let source_stream =
+            cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("test"));
         super::derive_cylindrical_pcurves(&mut brep, &mut annotations, &source_stream);
 
         assert!(brep.pcurves.is_empty());

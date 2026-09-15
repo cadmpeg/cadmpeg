@@ -38,18 +38,19 @@ pub(crate) fn sketches(
         if !section.to_ascii_lowercase().contains("resolvedfeatures") {
             continue;
         }
+        let source_stream = source.source_stream();
         let native_ref = format!(
             "sldprt:feature-input:resolved-features#{}",
             source.ordinal()
         );
         for (stream_ordinal, stream) in source.ps_streams().iter().enumerate() {
-            let brep = crate::brep::decode(&stream.payload, &stream.header, section)?;
+            let brep = crate::brep::decode(&stream.payload, &stream.header, source_stream)?;
             project_brep(
                 &brep,
                 source.ordinal(),
                 stream_ordinal,
                 stream.offset,
-                section,
+                source_stream,
                 &stream.header.description,
                 configuration(section).as_deref(),
                 &native_ref,
@@ -73,7 +74,7 @@ fn project_brep(
     block_offset: usize,
     stream_ordinal: usize,
     stream_offset: usize,
-    section: &str,
+    source_stream: &cadmpeg_ir::StreamName,
     sketch_name: &str,
     configuration: Option<&str>,
     native_ref: &str,
@@ -194,7 +195,7 @@ fn project_brep(
                     crate::annotations::note(
                         annotations,
                         id.as_str().to_owned(),
-                        section,
+                        source_stream,
                         0,
                         "feature_input_profile_edge",
                         Exactness::Derived,
@@ -252,7 +253,7 @@ fn project_brep(
             crate::annotations::note(
                 annotations,
                 id.as_str().to_owned(),
-                section,
+                source_stream,
                 0,
                 "feature_input_profile_point",
                 Exactness::Derived,
@@ -275,7 +276,7 @@ fn project_brep(
         crate::annotations::note(
             annotations,
             sketch_id.as_str().to_owned(),
-            section,
+            source_stream,
             stream_offset as u64,
             "feature_input_profile",
             Exactness::Derived,
@@ -286,7 +287,7 @@ fn project_brep(
             block_offset,
             stream_ordinal,
             face_ordinal,
-            section,
+            source_stream,
             annotations,
             constraints,
         );

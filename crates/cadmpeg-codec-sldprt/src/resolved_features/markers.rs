@@ -736,16 +736,26 @@ pub(super) fn spatial_vertex_offsets(payload: &[u8]) -> Vec<usize> {
         .collect()
 }
 
-pub(super) fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity> {
+/// Admit every sketch marker in a retained feature-input payload.
+///
+/// A marker is a record boundary: once [`sketch_marker_at`] recognizes it,
+/// failure to read its native code, ordinal, or checked identity is a
+/// malformed lane. Returning an error keeps the marker from disappearing
+/// through an iterator's `filter_map`.
+pub(super) fn admit_sketch_input_entities(
+    payload: &[u8],
+    parent: &str,
+) -> Result<Vec<SketchInputEntity>, cadmpeg_core::CodecError> {
     let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
     (0..payload.len().saturating_sub(SKETCH_MARKER.len() - 1))
         .filter(|offset| sketch_marker_at(payload, *offset))
-        .filter_map(|offset| {
-            let code = marker_native_code(payload, offset)?;
-            Some((offset, code))
-        })
         .enumerate()
-        .filter_map(|(ordinal, (offset, code))| {
+        .map(|(ordinal, offset)| {
+            let code = marker_native_code(payload, offset).ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed(format_args!(
+                    "SolidWorks feature-input marker at byte {offset} has no native code"
+                ))
+            })?;
             let linked_point = linked_profile_point(payload, offset);
             let legacy_alternate_profile_point =
                 legacy_geometry_locus_alternate_profile_point_coordinates(payload, offset);
@@ -880,20 +890,34 @@ pub(super) fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchI
             } else {
                 SketchInputKind::from_native_code_and_layout(code, coordinates_m.is_some())
             };
+            let ordinal = u32::try_from(ordinal).map_err(|_| {
+                cadmpeg_core::CodecError::malformed(format_args!(
+                    "SolidWorks feature-input lane {parent} has more than u32::MAX sketch markers"
+                ))
+            })?;
             let mut entity = SketchInputEntity::try_new(
                 format!("sldprt:feature-input:sketch-entity#{lane_key}:{offset}"),
                 parent.to_string(),
-                u32::try_from(ordinal).ok()?,
+                ordinal,
                 offset as u64,
                 kind,
                 payload,
             )
-            .ok()?;
+            .map_err(|error| {
+                cadmpeg_core::CodecError::malformed(format_args!(
+                    "SolidWorks feature-input lane {parent} marker at byte {offset}: {error}"
+                ))
+            })?;
             entity.state_value = marker_state_value(payload, offset);
             entity.coordinates_m = coordinates_m;
-            Some(entity)
+            Ok(entity)
         })
         .collect()
+}
+
+#[cfg(test)]
+pub(super) fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity> {
+    admit_sketch_input_entities(payload, parent).expect("synthetic sketch marker payload")
 }
 
 fn current_geometry_locus_profile_line(payload: &[u8], offset: usize, code: u32) -> bool {
@@ -1192,7 +1216,7 @@ pub(crate) fn reference_cells(
     cells
 }
 
-pub(crate) fn marker_local_id(payload: &[u8], offset: usize) -> Option<u32> {
+pub(crate) fn marker_local_id_offset(payload: &[u8], offset: usize) -> Option<usize> {
     let relative = if compact_legacy_code_two_profile_point_coordinates(payload, offset).is_some() {
         128
     } else if legacy_wide_profile_roster_curve(payload, offset)
@@ -1216,7 +1240,11 @@ pub(crate) fn marker_local_id(payload: &[u8], offset: usize) -> Option<u32> {
     } else {
         return None;
     };
-    let start = offset.checked_add(relative)?;
+    offset.checked_add(relative)
+}
+
+pub(crate) fn marker_local_id(payload: &[u8], offset: usize) -> Option<u32> {
+    let start = marker_local_id_offset(payload, offset)?;
     let id = View::u32_le_at(payload, start)?;
     (id != u32::MAX).then_some(id)
 }

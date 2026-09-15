@@ -232,7 +232,10 @@ pub(super) fn compact_body_state_ids(
         let Some(header) = compact_body_state_header(payload, offset, token) else {
             continue;
         };
-        result.push(View::u32_le_at(header, 11).expect("four-byte body id"));
+        let Some(body_id) = View::u32_le_at(header, 11) else {
+            continue;
+        };
+        result.push(body_id);
     }
     result
 }
@@ -1026,11 +1029,10 @@ pub(crate) fn enrich_feature_object_sources(
             .filter_map(|lane| feature_object_name(feature, lane)?.object_id?.value())
             .collect::<HashSet<_>>();
         if sources.len() == 1 {
-            let source = sources
-                .iter()
-                .next()
-                .expect("singleton source set has one member");
-            feature.source_id = FeatureSource::from_value(*source);
+            let Some(&source) = sources.iter().next() else {
+                continue;
+            };
+            feature.source_id = FeatureSource::from_value(source);
         }
     }
 }
@@ -1864,9 +1866,13 @@ fn inline_mirror_surface_paths(
         if signature_at(terminal).is_none() {
             continue;
         }
-        let local_bytes = &payload[terminal + 12..terminal + 16];
+        let Some(local_bytes) = payload.get(terminal + 12..terminal + 16) else {
+            continue;
+        };
         let next_is_component = {
-            let instance = View::u16_le_at(local_bytes, 0).expect("two-byte instance slice");
+            let Some(instance) = View::u16_le_at(local_bytes, 0) else {
+                continue;
+            };
             is_class_token(instance)
                 && local_bytes[2..] == [0, 0]
                 && signature_at(terminal + 16).is_some()
@@ -2614,8 +2620,11 @@ fn compact_component_separator(payload: &[u8], cursor: usize, gap: usize) -> boo
             View::u16_le_at(bytes, 0).is_some_and(|token| token != u16::MAX) && bytes[2..] == [0; 4]
         }),
         8 => payload.get(cursor..cursor + 8).is_some_and(|bytes| {
-            let first = View::u32_le_at(bytes, 0).expect("four-byte state");
-            let second = View::u32_le_at(bytes, 4).expect("four-byte state");
+            let (Some(first), Some(second)) =
+                (View::u32_le_at(bytes, 0), View::u32_le_at(bytes, 4))
+            else {
+                return false;
+            };
             (first == 0 && second == 0)
                 || (first == u32::MAX && second <= 1)
                 || (first == 0 && !matches!(second, 0 | u32::MAX))

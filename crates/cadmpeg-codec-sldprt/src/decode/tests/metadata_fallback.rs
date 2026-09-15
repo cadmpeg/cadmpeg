@@ -109,16 +109,18 @@ fn decode_without_geometry_falls_back_to_metadata() {
         .unwrap();
     assert!(!result.report().geometry_transferred());
     assert_eq!(result.ir().native_unknowns("sldprt").unwrap().len(), 1);
-    assert_eq!(result.source_fidelity().retained_records.len(), 2);
+    assert_eq!(result.source_fidelity().retained_records().len(), 2);
     assert!(result
         .source_fidelity()
         .retained_record("sldprt:file:source-image#0")
         .is_some_and(|record| record.data().is_some()));
     assert!(result
         .source_fidelity()
-        .retained_records
+        .retained_records()
         .iter()
-        .any(|(id, record)| id != "sldprt:file:source-image#0" && record.sha256().len() == 64));
+        .any(|(id, record)| {
+            id.as_str() != "sldprt:file:source-image#0" && record.sha256().len() == 64
+        }));
     let source = result.ir().source.as_ref().expect("source metadata");
     assert_eq!(source.format(), "sldprt");
     assert_eq!(

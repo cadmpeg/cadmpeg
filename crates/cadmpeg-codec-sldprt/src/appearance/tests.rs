@@ -11,6 +11,18 @@ use crate::layout::visual_states_feature_appearance_prefix as feature_visual;
 use crate::test_support::*;
 use crate::SldprtCodec;
 
+#[test]
+fn appearance_from_nameless_block_keeps_source_owner() {
+    let payload = material_payload("Steel", [32, 64, 128]);
+    let mut source = outer_header();
+    source.extend(make_block(0x43, "", &payload));
+    let scan = crate::container::scan_bytes(&source);
+
+    let definitions = super::definitions(&scan);
+    assert_eq!(definitions.len(), 1);
+    assert_eq!(definitions[0].source_name.as_str(), "block@8");
+}
+
 fn display_descriptor(item_size: u32, kind: u32, count: u32, data: &[u8]) -> Vec<u8> {
     let mut out = Vec::new();
     out.extend(item_size.to_le_bytes());

@@ -44,7 +44,7 @@ fn semantic_writer_replays_unchanged_swobjects_payload() {
         .unwrap();
     let retained = regenerated
         .source_fidelity()
-        .retained_records
+        .retained_records()
         .values()
         .find(|record| record.stream() == "SWObjects")
         .unwrap();
@@ -511,7 +511,7 @@ fn encoder_writes_source_less_line_sketches() {
     assert!(scan.blocks.iter().any(|block| {
         block
             .section
-            .as_deref()
+            .name()
             .is_some_and(|section| section == "Contents/Config-0-ResolvedFeatures")
     }));
     let decoded = SldprtCodec

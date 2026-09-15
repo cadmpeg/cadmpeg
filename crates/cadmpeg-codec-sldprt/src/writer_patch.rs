@@ -75,11 +75,7 @@ fn patch_partition_inner(
         })
         .collect::<Vec<_>>();
     streams.sort_by_key(|(candidate, _, header)| {
-        let section = candidate
-            .section
-            .as_deref()
-            .unwrap_or("")
-            .to_ascii_lowercase();
+        let section = candidate.section.name().unwrap_or("").to_ascii_lowercase();
         (
             !section.contains("partition"),
             !header
@@ -92,15 +88,18 @@ fn patch_partition_inner(
         .iter()
         .map(|(_, payload, header)| (payload.as_slice(), *header))
         .collect::<Vec<_>>();
-    let native = crate::brep::decode_bodies(&bodies, "native-patch-baseline").ok()?;
+    let native =
+        crate::brep::decode_bodies(&bodies, &cadmpeg_ir::stream_name!("native-patch-baseline"))
+            .ok()?;
     if !same_graph(ir, &native) {
         return None;
     }
-    let section = block
-        .section
-        .clone()
-        .unwrap_or_else(|| format!("block@{}", block.offset));
-    if let Err(error) = validate_changed_annotations(ir, annotations, &native, &section) {
+    if let Err(error) = validate_changed_annotations(
+        ir,
+        annotations,
+        &native,
+        block.section.source_stream().as_str(),
+    ) {
         return Some(Err(error));
     }
 
@@ -129,7 +128,10 @@ fn patch_partition_inner(
         header.body_offset,
         scale,
     )?;
-    Some(Ok((section, payload)))
+    Some(Ok((
+        block.section.source_stream().as_str().to_owned(),
+        payload,
+    )))
 }
 
 fn validate_changed_annotations(
@@ -218,11 +220,7 @@ fn raw_annotation_offset(
 }
 
 fn site_key(block: &crate::container::Block) -> String {
-    let mut key = block
-        .section
-        .clone()
-        .unwrap_or_else(|| format!("block@{}", block.offset))
-        .to_ascii_lowercase();
+    let mut key = block.section.source_stream().as_str().to_ascii_lowercase();
     for suffix in ["partition", "deltas"] {
         if let Some(offset) = key.rfind(suffix) {
             key.truncate(offset);

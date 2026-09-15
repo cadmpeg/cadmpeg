@@ -1327,6 +1327,32 @@ impl SketchInputEntity {
         })
     }
 
+    /// Re-admit this record against the payload it references.
+    ///
+    /// The nested native arena is mutable after deserialization, so the
+    /// checked JSON route alone does not protect `store` or native rewrite.
+    /// Keep the payload-derived marker identity tied to the record at every
+    /// outbound boundary.
+    pub(crate) fn validate_against_payload(&self, payload: &[u8]) -> Result<(), &'static str> {
+        let expected = Self::try_new(
+            self.id.clone(),
+            self.parent.clone(),
+            self.ordinal,
+            self.offset,
+            self.kind,
+            payload,
+        )?;
+        if self.object_index != expected.object_index {
+            return Err("SolidWorks feature-input object index does not match its native payload");
+        }
+        if self.local_id != expected.local_id {
+            return Err(
+                "SolidWorks feature-input local object id does not match its native payload",
+            );
+        }
+        Ok(())
+    }
+
     #[cfg(test)]
     pub(crate) fn new(
         id: impl Into<String>,

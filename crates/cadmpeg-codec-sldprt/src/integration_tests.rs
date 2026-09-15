@@ -52,7 +52,7 @@ fn compound_pipeline_aligns_detection_inspection_blocks_cache_directory_and_meta
         .iter()
         .any(|entry| entry.role == ContainerRole::DirectoryEntry));
     let result = decode(bytes);
-    assert!(!result.source_fidelity().retained_records.is_empty());
+    assert!(!result.source_fidelity().retained_records().is_empty());
     assert_valid(&result);
 }
 
@@ -429,16 +429,26 @@ fn a_retained_source_record_without_data_reports_degraded_fidelity() {
         let record = fidelity
             .retained_record(crate::SOURCE_IMAGE_ID)
             .expect("decode retains the source image");
+        let digest = cadmpeg_ir::hash::digest::Sha256Digest::try_from(record.sha256().as_str())
+            .expect("decoded source image has a valid digest");
         cadmpeg_ir::RetainedSourceRecord::unavailable(
             record.stream().to_owned(),
             record.offset(),
             record.byte_len(),
-            record.sha256(),
+            digest,
         )
+        .expect("source image extent")
     };
+    let source_image_id: cadmpeg_ir::ids::UnknownId = crate::SOURCE_IMAGE_ID
+        .to_owned()
+        .try_into()
+        .expect("source image identity");
     fidelity
-        .retained_records
-        .insert(crate::SOURCE_IMAGE_ID.to_owned(), unavailable);
+        .remove_retained_record(crate::SOURCE_IMAGE_ID)
+        .expect("decode retains the source image");
+    fidelity
+        .insert_retained_record(source_image_id, unavailable)
+        .expect("source image identity is unique");
 
     let plan = SldprtCodec
         .plan(

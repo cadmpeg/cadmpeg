@@ -1210,7 +1210,7 @@ fn encoder_writes_source_less_native_features() {
     assert!(scan.blocks.iter().any(|block| {
         block
             .section
-            .as_deref()
+            .name()
             .is_some_and(|section| section.starts_with("Contents/Keywords-"))
     }));
     let decoded = SldprtCodec
