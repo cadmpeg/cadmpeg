@@ -619,10 +619,14 @@ fn later_view_recovery_keeps_prior_child_checksum_loss_when_following_child_fail
         .expect("file-reference fixture has an outer checksum");
     *reference_crc ^= 1;
     let trace = trace_child(archive, corrupt_reference.clone());
-    let malformed_target = support::test_dump::crc_chunk(archive, 0x2000_883b, &[0; 8]);
+    let mut malformed_target = support::test_dump::crc_chunk(archive, 0x2000_883b, &[0; 8]);
+    let target_crc = malformed_target
+        .last_mut()
+        .expect("malformed target has an outer checksum");
+    *target_crc ^= 1;
     let malformed_view = view_with_children(
         archive,
-        &[trace, malformed_target],
+        &[trace, malformed_target.clone()],
         Some(support::test_dump::short_chunk(
             archive,
             crate::chunks::TCODE_ENDOFTABLE,
@@ -669,6 +673,28 @@ fn later_view_recovery_keeps_prior_child_checksum_loss_when_following_child_fail
             .expect("nested checksum loss is located")
             .offset as usize,
         source_offset(&document, &corrupt_reference)
+    );
+
+    let target_loss = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.code == crate::loss::RhinoLossCode::IntegrityFailure.kind()
+                && loss
+                    .provenance
+                    .as_ref()
+                    .and_then(|provenance| provenance.tag.as_deref())
+                    == Some("VIEW/TARGET")
+        })
+        .expect("direct child checksum loss is retained before the later child failure");
+    assert_eq!(
+        target_loss
+            .provenance
+            .as_ref()
+            .expect("direct child checksum loss is located")
+            .offset as usize,
+        source_offset(&document, &malformed_target)
     );
 
     let dropped: Vec<_> = result
