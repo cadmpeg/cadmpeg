@@ -361,13 +361,33 @@ fn occurrence_key_separates_fallback_and_authored_roles() {
     assert_eq!(occurrence_key(&reference("", 7)), "ordinal-7/occurrence-0");
     assert_eq!(
         occurrence_key(&reference("ordinal-7", 7)),
-        "role-ordinal-7/occurrence-0"
+        "role-ordinal-7/reference-7/occurrence-0"
     );
     assert_eq!(
         occurrence_key(&reference("role /#: value", 7)),
-        "role-role%20%2F%23%3A%20value/occurrence-0"
+        "role-role%20%2F%23%3A%20value/reference-7/occurrence-0"
     );
     let key = occurrence_key(&reference("role /#: value", 7));
     cadmpeg_ir::ids::Identity::new(format!("f3d:xref/{key}/native:record#1"))
         .expect("encoded occurrence key remains an admitted identity scope");
+}
+
+#[test]
+fn occurrence_key_separates_same_role_references_with_reset_ordinals() {
+    let reference = |ordinal| XrefReference {
+        id: format!("f3d:xref:reference#{ordinal}"),
+        ordinal,
+        occurrence_ordinal: 0,
+        from: "root.f3d".into(),
+        relative_path: format!("part-{ordinal}.f3d"),
+        neutron_role: "same-role".into(),
+        neutron_data: String::new(),
+        transform: None,
+    };
+
+    assert_ne!(
+        occurrence_key(&reference(0)),
+        occurrence_key(&reference(1)),
+        "reference ordinal is part of the occurrence owner when role ordinals reset"
+    );
 }
