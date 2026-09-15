@@ -106,7 +106,16 @@ mod tests {
             (vec![entry(1, vec![2]), entry(2, vec![])], false),
             (vec![entry(1, vec![9])], false),
         ] {
-            let wire = serde_json::json!({"id":native_id("string-table", "0"),"index":0,"owner_property":null,"save_all":false,"threshold":0,"declared_count":entries.len(),"source_entry":null,"entries":entries});
+            let wire = serde_json::json!({
+                "id": native_id("string-table", "0"),
+                "index": 0,
+                "owner_property": null,
+                "save_all": false,
+                "threshold": 0,
+                "declared_count": entries.len(),
+                "source_entry": null,
+                "entries": entries
+            });
             let result = serde_json::from_value::<super::StringTableRecord>(wire.clone());
             assert_eq!(result.is_ok(), valid);
             if let Ok(record) = result {
@@ -154,15 +163,7 @@ mod tests {
     fn string_tables_admit_numeric_positions_from_canonical_native_order() {
         let records = (0..12)
             .map(|index| {
-                super::StringTableRecord::try_new(
-                    index,
-                    None,
-                    false,
-                    0,
-                    None,
-                    Vec::new(),
-                )
-                .unwrap()
+                super::StringTableRecord::try_new(index, None, false, 0, None, Vec::new()).unwrap()
             })
             .collect::<Vec<_>>();
         let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
@@ -176,7 +177,7 @@ mod tests {
             tables
                 .as_slice()
                 .iter()
-            .map(|table| table.index)
+                .map(|table| table.index)
                 .collect::<Vec<_>>(),
             (0..12).collect::<Vec<_>>()
         );
@@ -199,15 +200,8 @@ mod tests {
             let records = indices
                 .into_iter()
                 .map(|index| {
-                    super::StringTableRecord::try_new(
-                        index,
-                        None,
-                        false,
-                        0,
-                        None,
-                        Vec::new(),
-                    )
-                    .unwrap()
+                    super::StringTableRecord::try_new(index, None, false, 0, None, Vec::new())
+                        .unwrap()
                 })
                 .collect::<Vec<_>>();
             assert!(super::StringTables::try_from(records.clone()).is_err());
@@ -463,9 +457,9 @@ mod tests {
                 .into_iter()
                 .map(|index| serde_json::json!({"index": index, "map_id": 0, "groups": []}))
                 .collect::<Vec<_>>();
-            let error = serde_json::from_value::<super::ElementMapNodes>(
-                serde_json::Value::Array(wire.clone()),
-            )
+            let error = serde_json::from_value::<super::ElementMapNodes>(serde_json::Value::Array(
+                wire.clone(),
+            ))
             .unwrap_err();
             assert!(error.to_string().contains("maps[") || error.to_string().contains("maps"));
 
