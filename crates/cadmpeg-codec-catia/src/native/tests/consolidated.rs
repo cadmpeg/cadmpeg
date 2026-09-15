@@ -1830,6 +1830,32 @@ fn native_namespace_retains_resolved_consolidated_sphere_supports() {
 }
 
 #[test]
+fn embedded_cylinders_keep_group_identity_after_empty_groups() {
+    let mut bytes = b2_group_stream();
+    bytes.extend_from_slice(&b2_embedded_cylinder_stream_with_object_id(17));
+    bytes.extend_from_slice(&b2_group_stream());
+    bytes.extend_from_slice(&b2_embedded_cylinder_stream_with_object_id(23));
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert_eq!(native.consolidated_groups.len(), 4);
+    assert_eq!(native.consolidated_embedded_cylinders.len(), 2);
+    for (index, group_index, object_id) in [(0, 1, 17), (1, 3, 23)] {
+        let cylinder = &native.consolidated_embedded_cylinders[index];
+        let group = &native.consolidated_groups[group_index];
+        assert_eq!(cylinder.object_id, object_id);
+        assert_eq!(
+            cylinder.id,
+            format!("catia:consolidated:embedded-cylinder#{index}")
+        );
+        assert_eq!(
+            cylinder.group,
+            format!("catia:consolidated:group#{group_index}")
+        );
+        assert_eq!(cylinder.group, group.id);
+        assert!(group.byte_offset < cylinder.byte_offset);
+    }
+}
+
+#[test]
 fn native_namespace_retains_embedded_cylinders_with_their_owning_group() {
     let native = crate::native::CatiaNative::decode(&b2_embedded_cylinder_stream());
     assert!(native.consolidated_cylinders.is_empty());

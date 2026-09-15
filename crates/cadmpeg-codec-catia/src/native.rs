@@ -7388,21 +7388,6 @@ fn consolidated_class5b5c_records(
         .collect()
 }
 
-fn consolidated_groups(
-    bytes: &[u8],
-    records: &[ConsolidatedRecord],
-) -> Vec<CatiaConsolidatedGroup> {
-    crate::families::b2::records::b2_groups_from_records(bytes, records)
-        .into_iter()
-        .enumerate()
-        .map(|(index, group)| CatiaConsolidatedGroup {
-            id: format!("catia:consolidated:group#{index}"),
-            byte_offset: group.pos as u64,
-            group_type: group.group_type,
-        })
-        .collect()
-}
-
 fn consolidated_cone_faces(
     bytes: &[u8],
     records: &[ConsolidatedRecord],
@@ -7518,35 +7503,41 @@ fn consolidated_cylinders(
         .collect()
 }
 
-fn consolidated_embedded_cylinders(
+fn consolidated_cylinder_groups(
     bytes: &[u8],
     records: &[ConsolidatedRecord],
-    groups: &[CatiaConsolidatedGroup],
-) -> Vec<CatiaConsolidatedEmbeddedCylinder> {
-    let group_ids = groups
-        .iter()
-        .map(|group| (group.byte_offset, group.id.as_str()))
-        .collect::<HashMap<_, _>>();
-    crate::families::b2::records::b2_embedded_cylinders_from_records(bytes, records)
-        .into_iter()
-        .enumerate()
-        .map(|(index, embedded)| CatiaConsolidatedEmbeddedCylinder {
-            id: format!("catia:consolidated:embedded-cylinder#{index}"),
-            byte_offset: embedded.pos as u64,
-            group: group_ids
-                .get(&(embedded.wrapper_pos as u64))
-                .expect("embedded cylinder owner came from the same group parse")
-                .to_string(),
-            object_id: embedded.object_id,
-            origin: embedded.cylinder.origin,
-            radius: embedded.cylinder.radius,
-            u_range: embedded.cylinder.u_range,
-            v_range: embedded.cylinder.v_range,
-            frame_token: embedded.cylinder.frame_token(),
-            axis: embedded.cylinder.axis,
-            reference_direction: embedded.cylinder.reference_direction,
-        })
-        .collect()
+) -> (
+    Vec<CatiaConsolidatedGroup>,
+    Vec<CatiaConsolidatedEmbeddedCylinder>,
+) {
+    let mut groups = Vec::new();
+    let mut cylinders = Vec::new();
+    for (group, embedded) in
+        crate::families::b2::records::b2_cylinder_groups_from_records(bytes, records)
+    {
+        let group = CatiaConsolidatedGroup {
+            id: format!("catia:consolidated:group#{}", groups.len()),
+            byte_offset: group.pos as u64,
+            group_type: group.group_type,
+        };
+        for embedded in embedded {
+            cylinders.push(CatiaConsolidatedEmbeddedCylinder {
+                id: format!("catia:consolidated:embedded-cylinder#{}", cylinders.len()),
+                byte_offset: embedded.pos as u64,
+                group: group.id.clone(),
+                object_id: embedded.object_id,
+                origin: embedded.cylinder.origin,
+                radius: embedded.cylinder.radius,
+                u_range: embedded.cylinder.u_range,
+                v_range: embedded.cylinder.v_range,
+                frame_token: embedded.cylinder.frame_token(),
+                axis: embedded.cylinder.axis,
+                reference_direction: embedded.cylinder.reference_direction,
+            });
+        }
+        groups.push(group);
+    }
+    (groups, cylinders)
 }
 
 fn consolidated_parameter_points(
@@ -9066,9 +9057,8 @@ impl CatiaNative {
             consolidated_cone_faces(bytes, consolidated_records, &consolidated_parameter_points);
         let consolidated_cones = consolidated_cones(bytes, consolidated_records);
         let consolidated_cylinders = consolidated_cylinders(bytes, consolidated_records);
-        let consolidated_groups = consolidated_groups(bytes, consolidated_records);
-        let consolidated_embedded_cylinders =
-            consolidated_embedded_cylinders(bytes, consolidated_records, &consolidated_groups);
+        let (consolidated_groups, consolidated_embedded_cylinders) =
+            consolidated_cylinder_groups(bytes, consolidated_records);
         let consolidated_line_profiles = consolidated_line_profiles(bytes, consolidated_records);
         let mut consolidated_owner_packets =
             consolidated_owner_packets(bytes, consolidated_records);
