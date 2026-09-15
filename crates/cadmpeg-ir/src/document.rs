@@ -416,6 +416,13 @@ macro_rules! declare_model {
                 0 $(+ self.$field.len())*
             }
 
+            /// Moves every arena and feature-parent relation from another model.
+            pub(crate) fn append(&mut self, mut other: Self) {
+                $(self.$field.append(&mut other.$field);)*
+                self.feature_regeneration_parents.0
+                    .extend(other.feature_regeneration_parents.0);
+            }
+
             /// Visits every typed identity reference in canonical arena order.
             ///
             /// Returns the first [`crate::schema::ReferenceWalkError`] an
@@ -1212,7 +1219,7 @@ impl CadIr {
     /// ```
     pub fn try_append<T, E>(
         &mut self,
-        mut model: Model,
+        model: Model,
         native: Native,
         admit: impl FnOnce(&Self) -> Result<T, E>,
     ) -> Result<T, E> {
@@ -1235,9 +1242,7 @@ impl CadIr {
         macro_rules! append_and_admit {
             ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {{
                 $(let $field = self.model.$field.len();)*
-                $(self.model.$field.append(&mut model.$field);)*
-                self.model.feature_regeneration_parents.0
-                    .extend(model.feature_regeneration_parents.0);
+                self.model.append(model);
                 for (format, mut namespace) in native.0 {
                     let destination = self.native.namespace_mut(format).arenas_mut();
                     for (arena, mut records) in std::mem::take(namespace.arenas_mut()) {
