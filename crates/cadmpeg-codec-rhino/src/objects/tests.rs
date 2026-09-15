@@ -543,8 +543,12 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
             .layer
             .as_ref()
             .map(|layer| layer.name.as_str()),
-        Some("Layer")
+        None
     );
+    assert!(warnings.iter().any(|warning| {
+        warning.code == Some(crate::loss::RhinoLossCode::DuplicateRecordResolved)
+            && warning.contains("ambiguous layer index -1")
+    }));
 
     attributes.color_source = crate::objects::ColorSource::Parent;
     attributes.object_mode = 0xf3;

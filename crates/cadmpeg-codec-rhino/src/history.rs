@@ -1164,6 +1164,27 @@ fn structured_value_properties(
                     } else {
                         sink.failed += 1;
                     }
+                } else {
+                    sink.untyped += 1;
+                    sink.warnings.push_coded(
+                        crate::loss::RhinoLossCode::HistoryGeometryNotTransferred,
+                        format!(
+                            "history geometry value {key}.{index} at source range {}..{} has no coordinate-unit binding",
+                            value.class_data_range.start,
+                            value.class_data_range.end
+                        ),
+                    );
+                    properties.insert(
+                        format!("{key}.{index}.geometry_status"),
+                        "unavailable_unit_binding".to_string(),
+                    );
+                    properties.insert(
+                        format!("{key}.{index}.source_range"),
+                        format!(
+                            "{}..{}",
+                            value.class_data_range.start, value.class_data_range.end
+                        ),
+                    );
                 }
             }
         }

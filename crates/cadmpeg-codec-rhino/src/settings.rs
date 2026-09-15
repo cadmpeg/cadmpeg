@@ -2,7 +2,7 @@
 //! Bounded Rhino document properties, settings, units, and layer metadata.
 
 use crate::loss::Diagnostics;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 
 use cadmpeg_core::decode::View;
@@ -491,7 +491,8 @@ pub(crate) struct LayerPlot {
 pub(crate) struct LayerRecord {
     /// Complete source range.
     pub(crate) source: SourceRange,
-    /// Archive layer index.
+    /// Serialized archive layer index. This is never synthesized during
+    /// duplicate handling; source identity uses the record range instead.
     pub(crate) index: i32,
     /// IGES level.
     pub(crate) iges_level: Option<i32>,
@@ -2262,81 +2263,54 @@ pub(crate) fn parse_metadata(
             }
         }
     }
-    reassign_duplicate_layer_indices(&mut metadata.layers, warnings);
-    metadata.opaque_records = opaque_records;
-    let known_ids: BTreeSet<Uuid> = metadata
-        .layers
-        .iter()
-        .filter_map(|layer| layer.id)
-        .collect();
+    let mut layer_index_counts = BTreeMap::<i32, usize>::new();
     for layer in &metadata.layers {
-        if let Some(parent) = layer.hierarchy.map(|hierarchy| hierarchy.parent_id) {
-            if !parent.is_nil() && !known_ids.contains(&parent) {
-                warnings.push(format!(
-                    "layer {} references missing parent UUID {parent}",
-                    layer.index
-                ));
-            }
-        }
+        *layer_index_counts.entry(layer.index).or_default() += 1;
     }
-    metadata
-}
-
-fn reassign_duplicate_layer_indices(layers: &mut Vec<LayerRecord>, warnings: &mut Diagnostics) {
-    let mut used = layers
-        .iter()
-        .map(|layer| layer.index)
-        .collect::<BTreeSet<_>>();
-    let mut owners = BTreeSet::new();
-    let mut position = 0;
-    while position < layers.len() {
-        let original_index = layers[position].index;
-        if owners.insert(original_index) {
-            position += 1;
-            continue;
-        }
-        let Some(new_index) = next_layer_index(&used) else {
-            let source_offset = layers[position].source.range.start;
+    for (index, count) in layer_index_counts {
+        if count > 1 {
             warnings.push_coded(
                 crate::loss::RhinoLossCode::DuplicateRecordResolved,
                 format!(
-                    "duplicate layer index {original_index} at offset {source_offset} was dropped; no available i32 layer index"
+                    "duplicate layer index {index} occurs {count} times; raw indexes preserved and object bindings withheld"
                 ),
             );
-            layers.remove(position);
-            continue;
-        };
-        layers[position].index = new_index;
-        used.insert(new_index);
-        warnings.push_coded(
-            crate::loss::RhinoLossCode::DuplicateRecordResolved,
-            format!(
-                "duplicate layer index {original_index}; later record assigned new index {new_index}; first record owns archive references"
-            ),
-        );
-        position += 1;
+        }
     }
+    metadata.opaque_records = opaque_records;
+    report_layer_parent_references(&metadata.layers, warnings);
+    metadata
 }
 
-fn next_layer_index(used: &BTreeSet<i32>) -> Option<i32> {
-    let mut candidate = used
-        .iter()
-        .copied()
-        .filter(|index| *index >= 0)
-        .max()
-        .unwrap_or(-1);
-    while let Some(next) = candidate.checked_add(1) {
-        if !used.contains(&next) {
-            return Some(next);
+fn report_layer_parent_references(layers: &[LayerRecord], warnings: &mut Diagnostics) {
+    let mut id_counts = BTreeMap::<Uuid, usize>::new();
+    for layer in layers {
+        if let Some(id) = layer.id.filter(|id| !id.is_nil()) {
+            *id_counts.entry(id).or_default() += 1;
         }
-        candidate = next;
     }
-    let mut candidate = -2;
-    loop {
-        if !used.contains(&candidate) {
-            return Some(candidate);
+    for layer in layers {
+        let Some(parent) = layer
+            .hierarchy
+            .map(|hierarchy| hierarchy.parent_id)
+            .filter(|parent| !parent.is_nil())
+        else {
+            continue;
+        };
+        match id_counts.get(&parent).copied() {
+            None => warnings.push(format!(
+                "layer {} references missing parent UUID {parent}",
+                layer.index
+            )),
+            Some(1) => {}
+            Some(count) => warnings.push_coded(
+                crate::loss::RhinoLossCode::DuplicateRecordResolved,
+                format!(
+                    "layer {} references ambiguous parent UUID {parent}; {count} layer records carry that UUID",
+                    layer.index
+                ),
+            ),
         }
-        candidate = candidate.checked_sub(1)?;
     }
 }
 

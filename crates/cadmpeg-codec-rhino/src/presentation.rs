@@ -2324,6 +2324,28 @@ fn parse_group(
     })
 }
 
+/// Makes source identities unique when the archive repeats a group UUID or
+/// archive index. The serialized identity remains in `source_uuid` and
+/// `archive_index`; the suffix identifies the particular source record.
+fn disambiguate_group_ids(groups: &mut [GroupRecord]) -> usize {
+    let mut counts = BTreeMap::<String, usize>::new();
+    for group in groups.iter() {
+        *counts.entry(group.id.clone()).or_default() += 1;
+    }
+    let mut changed = 0;
+    for (order, group) in groups.iter_mut().enumerate() {
+        if counts.get(&group.id).copied() == Some(1) {
+            continue;
+        }
+        group.id = format!(
+            "{}-source-offset-{:016x}-record-{order:06}",
+            group.id, group.source_offset
+        );
+        changed += 1;
+    }
+    changed
+}
+
 fn parse_light(
     data: &[u8],
     range: Range<usize>,
@@ -4491,6 +4513,12 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<NativeInstall, 
             )));
         }
     }
+    let disambiguated_group_count = disambiguate_group_ids(&mut groups);
+    if disambiguated_group_count != 0 {
+        losses.push(RhinoLossCode::DuplicateRecordResolved.note(format!(
+            "{disambiguated_group_count} group source identities were disambiguated by source offset"
+        )));
+    }
     for group in &mut groups {
         group.links = if group_index_counts.get(&group.archive_index) == Some(&1) {
             group_members
@@ -5595,6 +5623,24 @@ mod tests {
             Some("44444444-4444-4444-4444-444444444444")
         );
         assert_eq!(group.source_offset, 120);
+    }
+
+    #[test]
+    fn duplicate_group_source_ids_are_disambiguated_without_rewriting_source_fields() {
+        let mut bytes = vec![0x1f];
+        bytes.extend(7_i32.to_le_bytes());
+        bytes.extend(utf16("fixtures"));
+        bytes.extend([0x44; 16]);
+        let first = parse_group(&bytes, 0..bytes.len(), 120).expect("first group");
+        let second = parse_group(&bytes, 0..bytes.len(), 240).expect("second group");
+        let mut groups = vec![first, second];
+        assert_eq!(disambiguate_group_ids(&mut groups), 2);
+        assert_ne!(groups[0].id, groups[1].id);
+        assert_eq!(groups[0].archive_index, 7);
+        assert_eq!(groups[1].archive_index, 7);
+        assert_eq!(groups[0].source_uuid, groups[1].source_uuid);
+        assert!(groups[0].id.contains("source-offset-0000000000000078"));
+        assert!(groups[1].id.contains("source-offset-00000000000000f0"));
     }
 
     fn light_payload(packed: u8, hotspot: f64) -> Vec<u8> {

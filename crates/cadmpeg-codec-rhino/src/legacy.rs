@@ -2263,6 +2263,7 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
     let mut omitted = BTreeMap::<u32, usize>::new();
     let mut opaque_records = Vec::new();
     let mut direct_records = Vec::new();
+    let mut typed_source_records = Vec::new();
     let mut retained_bytes = 0_usize;
     let mut diagnostics = Vec::new();
     let mut tolerance_losses = Vec::new();
@@ -2374,6 +2375,7 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
                 color: None,
                 visible: None,
             });
+            typed_source_records.push(retain_v1_record(data, &chunk, &mut retained_bytes));
             decoded += 1;
         } else if matches!(
             chunk.typecode,
@@ -2406,6 +2408,7 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
                         decoded_nurbs_breps += 1;
                     }
                     direct_records.push(record);
+                    typed_source_records.push(retain_v1_record(data, &chunk, &mut retained_bytes));
                 }
                 Err(error) => {
                     diagnostics.push(format!("V1 direct record at offset {offset}: {error}"));
@@ -2525,6 +2528,7 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
                         });
                         decoded_curves += 1;
                     }
+                    typed_source_records.push(retain_v1_record(data, &chunk, &mut retained_bytes));
                 }
                 Err(error) => {
                     diagnostics.push(format!("V1 curve at offset {offset}: {error}"));
@@ -2536,7 +2540,10 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
             match legacy_brep(data, &chunk, scale).and_then(|brep| {
                 append_legacy_brep(&mut ir, brep, &format!("legacy-brep-{decoded_breps:06}"))
             }) {
-                Ok(()) => decoded_breps += 1,
+                Ok(()) => {
+                    typed_source_records.push(retain_v1_record(data, &chunk, &mut retained_bytes));
+                    decoded_breps += 1;
+                }
                 Err(error) => {
                     diagnostics.push(format!("V1 Brep at offset {offset}: {error}"));
                     *omitted.entry(chunk.typecode).or_default() += 1;
@@ -2552,6 +2559,7 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
             ) {
                 Ok(mesh) => {
                     ir.model.tessellations.push(mesh);
+                    typed_source_records.push(retain_v1_record(data, &chunk, &mut retained_bytes));
                     decoded_meshes += 1;
                 }
                 Err(error) => {
@@ -2578,6 +2586,11 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
         .iter()
         .filter(|record| record.data().is_some())
         .count();
+    let typed_source_count = typed_source_records.len();
+    let typed_source_bytes = typed_source_records
+        .iter()
+        .filter(|record| record.data().is_some())
+        .count();
     let losses = omitted
         .into_iter()
         .map(|(typecode, count)| {
@@ -2594,7 +2607,10 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
         .chain(tolerance_losses)
         .collect();
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
-    source_fidelity.retain_unknown_records("rhino", opaque_records)?;
+    source_fidelity.retain_unknown_records(
+        "rhino",
+        opaque_records.into_iter().chain(typed_source_records),
+    )?;
     Ok(Decoded {
         ir,
         body: DecodeBody {
@@ -2626,6 +2642,11 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
         .chain((opaque_count > 0).then(|| {
             format!(
                 "retained metadata/digests for {opaque_count} unsupported V1 records; complete bytes for {opaque_bytes}"
+            )
+        }))
+        .chain((typed_source_count > 0).then(|| {
+            format!(
+                "retained complete source boundaries/digests for {typed_source_count} typed V1 records; complete bytes for {typed_source_bytes}"
             )
         }))
         .chain(diagnostics)
@@ -3123,6 +3144,32 @@ mod tests {
     }
 
     #[test]
+    fn v1_point_suffix_is_retained_with_the_typed_projection() {
+        let mut data = crate::chunks::MAGIC.to_vec();
+        data.extend(*b"       1");
+        data.extend(chunk(TCODE_COMMENT, b"legacy"));
+        let point_offset = data.len();
+        let mut point_body = [1.0_f64, 2.0, 3.0]
+            .into_iter()
+            .flat_map(f64::to_le_bytes)
+            .collect::<Vec<_>>();
+        point_body.extend([0xde, 0xad]);
+        let point = chunk(TCODE_RH_POINT, &point_body);
+        data.extend(&point);
+
+        let result = crate::decode::seal_for_test(
+            decode_v1(&data).expect("valid V1 point with attribute suffix"),
+            false,
+        );
+        assert_eq!(result.ir().model.points.len(), 1);
+        let retained = result.source_fidelity().retained_records();
+        assert_eq!(retained.len(), 1);
+        let record = retained.values().next().expect("typed source boundary");
+        assert_eq!(record.offset(), point_offset as u64);
+        assert_eq!(record.data(), Some(point.as_slice()));
+    }
+
+    #[test]
     fn v1_settings_presentation_records_are_opaque_and_table_end_is_structural() {
         let result = crate::decode::seal_for_test(
             decode_v1(&v1_settings_archive()).expect("valid V1 settings stream"),
@@ -3196,7 +3243,11 @@ mod tests {
     #[test]
     fn v1_direct_annotations_and_preclass_nurbs_are_typed() {
         let mut bytes = archive(&[]);
-        for record in v1_annotation_records() {
+        let mut direct_records = v1_annotation_records();
+        direct_records[0].extend([0xde, 0xad]);
+        let body_len = (direct_records[0].len() - 8) as i32;
+        direct_records[0][4..8].copy_from_slice(&body_len.to_le_bytes());
+        for record in direct_records {
             bytes.extend(record);
         }
         bytes.extend(rhinoio_curve_object());
@@ -3259,7 +3310,14 @@ mod tests {
         assert_eq!(result.report().coverage()["legacy_v1_nurbs_curves"], 1);
         assert_eq!(result.report().coverage()["legacy_v1_nurbs_surfaces"], 1);
         assert_eq!(result.report().coverage()["legacy_v1_nurbs_breps"], 1);
-        assert!(result.source_fidelity().retained_records().is_empty());
+        assert_eq!(result.source_fidelity().retained_records().len(), 8);
+        assert!(result
+            .source_fidelity()
+            .retained_records()
+            .values()
+            .any(|record| record
+                .data()
+                .is_some_and(|data| data.ends_with(&[0xde, 0xad]))));
     }
 
     #[test]
