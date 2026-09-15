@@ -1124,10 +1124,17 @@ fn rendering_attributes_accept_nonempty_obsolete_material_mapping_channels() {
     material_body.extend([0x11; 16]);
     material_body.extend([0x22; 16]);
     material_body.extend(1_i32.to_le_bytes());
+    let channel_start = material_body.len();
     material_body.extend(channel);
+    let channel_end = material_body.len();
     material_body.extend([0x44; 16]);
     material_body.extend([3, 0, 0, 0]);
-    let material = crc_chunk(archive, 0x4000_8000, &material_body);
+    let material = crc_chunk_excluding(
+        archive,
+        0x4000_8000,
+        &material_body,
+        &[channel_start..channel_end],
+    );
 
     let mut rendering_body = vec![1, 0, 0, 0, 4, 0, 0, 0, 1, 0, 0, 0];
     let material_start = rendering_body.len();
@@ -1429,3 +1436,5 @@ fn duplicate_singleton_settings_use_the_later_valid_record_and_report_it() {
         ["duplicate singleton metadata record 0xa0000038; later record wins"]
     );
 }
+
+mod rendering_checksums;

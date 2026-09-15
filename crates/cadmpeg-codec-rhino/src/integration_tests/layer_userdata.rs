@@ -172,8 +172,15 @@ fn obsolete_mapping_rendering_with_version(
     material_body.extend([0x11; 16]);
     material_body.extend([0x22; 16]);
     material_body.extend(1_i32.to_le_bytes());
+    let channel_start = material_body.len();
     material_body.extend(channel);
-    let material = support::test_dump::crc_chunk(archive, 0x4000_8000, &material_body);
+    let channel_end = material_body.len();
+    let material = support::test_dump::crc_chunk_excluding(
+        archive,
+        0x4000_8000,
+        &material_body,
+        &[channel_start..channel_end],
+    );
 
     let mut rendering_body = vec![1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0];
     let material_start = rendering_body.len();
