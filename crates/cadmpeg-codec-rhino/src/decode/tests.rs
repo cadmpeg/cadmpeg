@@ -1100,7 +1100,15 @@ fn successful_candidate_keeps_preceding_arena_order_for_instance_checkpoints() {
         let point = |key| Point {
             id: format!("rhino:test:point#{key}").try_into().unwrap(),
             position: Point3::new(0.0, 0.0, 0.0),
-            source_object: None,
+            source_object: Some(SourceObjectAssociation {
+                format: cadmpeg_ir::CodecFormat::Rhino,
+                object_id: cadmpeg_core::text::NonBlankString::new(format!("point-{key}")).unwrap(),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
         };
         context.ir.model.points.push(point("z"));
         let checkpoint = ModelCheckpoint::capture(&context.ir.model);
