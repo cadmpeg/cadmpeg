@@ -13,6 +13,10 @@
 use serde::ser::{self, Serialize};
 use std::collections::BTreeMap;
 
+// serde_json's RawValue Serialize protocol. The RawValue owner fixtures check
+// this spelling against the dependency's actual serializer.
+const RAW_VALUE_STRUCT: &str = "$serde_json::private::RawValue";
+
 /// One serialized value: rendered text, or a buffered object kept apart so
 /// the record assembler can hoist its `id` member.
 pub(super) enum Node {
@@ -65,7 +69,7 @@ impl ser::Serializer for CanonValue {
     type SerializeTupleStruct = CanonSeq;
     type SerializeTupleVariant = CanonVariantSeq;
     type SerializeMap = CanonMap;
-    type SerializeStruct = CanonMap;
+    type SerializeStruct = CanonStruct;
     type SerializeStructVariant = CanonVariantMap;
 
     fn serialize_bool(self, value: bool) -> Result<Node, Error> {
@@ -230,8 +234,12 @@ impl ser::Serializer for CanonValue {
         })
     }
 
-    fn serialize_struct(self, _name: &'static str, len: usize) -> Result<CanonMap, Error> {
-        self.serialize_map(Some(len))
+    fn serialize_struct(self, name: &'static str, len: usize) -> Result<CanonStruct, Error> {
+        if name == RAW_VALUE_STRUCT {
+            Ok(CanonStruct::Raw(None))
+        } else {
+            self.serialize_map(Some(len)).map(CanonStruct::Object)
+        }
     }
 
     fn serialize_struct_variant(
@@ -373,7 +381,13 @@ impl ser::SerializeMap for CanonMap {
     }
 }
 
-impl ser::SerializeStruct for CanonMap {
+/// Ordinary struct members or one JSON value carried by RawValue's protocol.
+pub(super) enum CanonStruct {
+    Object(CanonMap),
+    Raw(Option<Node>),
+}
+
+impl ser::SerializeStruct for CanonStruct {
     type Ok = Node;
     type Error = Error;
 
@@ -382,11 +396,33 @@ impl ser::SerializeStruct for CanonMap {
         key: &'static str,
         value: &T,
     ) -> Result<(), Error> {
-        self.insert(key.to_owned(), value)
+        match self {
+            Self::Object(map) => map.insert(key.to_owned(), value),
+            Self::Raw(parsed) => {
+                if key != RAW_VALUE_STRUCT || parsed.is_some() {
+                    return Err(ser::Error::custom(
+                        "raw JSON requires exactly one payload field",
+                    ));
+                }
+                let serde_json::Value::String(json) =
+                    value.serialize(serde_json::value::Serializer)?
+                else {
+                    return Err(ser::Error::custom("raw JSON payload must be a string"));
+                };
+                // Replay through the same canonical constructor, so raw objects
+                // obey duplicate-key, number, ordering and depth semantics too.
+                *parsed = Some(super::replay::emit(&json, CanonValue)?);
+                Ok(())
+            }
+        }
     }
 
     fn end(self) -> Result<Node, Error> {
-        ser::SerializeMap::end(self)
+        match self {
+            Self::Object(map) => ser::SerializeMap::end(map),
+            Self::Raw(Some(parsed)) => Ok(parsed),
+            Self::Raw(None) => Err(ser::Error::custom("raw JSON has no payload field")),
+        }
     }
 }
 
@@ -405,11 +441,11 @@ impl ser::SerializeStructVariant for CanonVariantMap {
         key: &'static str,
         value: &T,
     ) -> Result<(), Error> {
-        ser::SerializeStruct::serialize_field(&mut self.map, key, value)
+        self.map.insert(key.to_owned(), value)
     }
 
     fn end(self) -> Result<Node, Error> {
-        let inner = ser::SerializeStruct::end(self.map)?.render();
+        let inner = ser::SerializeMap::end(self.map)?.render();
         Ok(Node::Text(format!(
             "{{{}:{inner}}}",
             escape_key(self.variant)
