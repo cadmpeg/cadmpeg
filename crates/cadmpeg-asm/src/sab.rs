@@ -226,13 +226,13 @@ pub fn payload_subtype_range(
     None
 }
 
-/// Return the absolute byte offset of one payload token by its framed index.
-pub fn payload_token_offset(
+/// Return one payload token and its absolute byte offset by its framed index.
+pub fn payload_token(
     bytes: &[u8],
     record: &Record,
     ref_width: RefWidth,
     token_index: usize,
-) -> Option<usize> {
+) -> Option<(usize, Token)> {
     let limit = record.offset.checked_add(record.len)?;
     let bytes = bytes.get(..limit)?;
     let mut position = record.offset;
@@ -245,10 +245,10 @@ pub fn payload_token_offset(
         match lexed {
             Lexed::SubIdent(_) if !name_done => {}
             Lexed::Ident(_) if !name_done => name_done = true,
-            Lexed::Value(_) => {
+            Lexed::Value(token) => {
                 name_done = true;
                 if payload_index == token_index {
-                    return Some(token_offset);
+                    return Some((token_offset, token));
                 }
                 payload_index += 1;
             }
@@ -587,7 +587,7 @@ fn frame_impl(
 
 #[cfg(test)]
 mod tests {
-    use super::{exact_identifier_at, frame, frame_history, payload_token_offset};
+    use super::{exact_identifier_at, frame, frame_history, payload_token};
     use crate::kernel_header::RefWidth;
 
     #[test]
@@ -619,7 +619,7 @@ mod tests {
             bytes.push(0x11);
             let mut record = frame(&bytes, 0, bytes.len(), width).unwrap().remove(0);
             record.len = 11;
-            assert!(payload_token_offset(&bytes, &record, width, 0).is_none());
+            assert!(payload_token(&bytes, &record, width, 0).is_none());
             assert!(super::payload_token_offsets(&bytes, &record, width, 0x06).is_err());
         }
     }
@@ -633,7 +633,7 @@ mod tests {
             .remove(0);
         record.offset = usize::MAX;
         record.len = 1;
-        assert!(payload_token_offset(bytes, &record, RefWidth::Eight, 0).is_none());
+        assert!(payload_token(bytes, &record, RefWidth::Eight, 0).is_none());
         assert!(super::payload_token_offsets(bytes, &record, RefWidth::Eight, 0x06).is_err());
         assert!(super::payload_subtype_range(bytes, &record, 0, RefWidth::Eight, "x").is_none());
     }
@@ -1251,16 +1251,18 @@ mod tests {
             let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated record");
             let record = records.first().expect("generated pcurve");
             assert_eq!(
-                bytes[payload_token_offset(&bytes, record, ref_width, 4)
-                    .expect("required invariant")],
+                bytes[payload_token(&bytes, record, ref_width, 4)
+                    .expect("required invariant")
+                    .0],
                 0x0b
             );
             assert_eq!(
-                bytes[payload_token_offset(&bytes, record, ref_width, 5)
-                    .expect("required invariant")],
+                bytes[payload_token(&bytes, record, ref_width, 5)
+                    .expect("required invariant")
+                    .0],
                 0x0f
             );
-            assert!(payload_token_offset(&bytes, record, ref_width, 8).is_none());
+            assert!(payload_token(&bytes, record, ref_width, 8).is_none());
         }
     }
 
@@ -1271,8 +1273,8 @@ mod tests {
             let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated ref pcurve");
             let record = &records[0];
             for (index, expected) in [(5usize, -2.0f64), (6, 4.0)] {
-                let offset = payload_token_offset(&bytes, record, ref_width, index)
-                    .expect("range field offset");
+                let (offset, _) =
+                    payload_token(&bytes, record, ref_width, index).expect("range field offset");
                 assert_eq!(bytes[offset], 0x06);
                 assert_eq!(
                     f64::from_le_bytes(
@@ -1301,8 +1303,8 @@ mod tests {
                 (10, 0x06),
                 (11, 0x06),
             ] {
-                let offset = payload_token_offset(&bytes, record, ref_width, index)
-                    .expect("cone field offset");
+                let (offset, _) =
+                    payload_token(&bytes, record, ref_width, index).expect("cone field offset");
                 assert_eq!(bytes[offset], tag);
             }
         }
@@ -1315,8 +1317,8 @@ mod tests {
             let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated sphere");
             let record = &records[0];
             for (index, tag) in [(3usize, 0x13), (4, 0x06), (5, 0x14), (6, 0x14)] {
-                let offset = payload_token_offset(&bytes, record, ref_width, index)
-                    .expect("sphere field offset");
+                let (offset, _) =
+                    payload_token(&bytes, record, ref_width, index).expect("sphere field offset");
                 assert_eq!(bytes[offset], tag);
             }
         }
@@ -1329,8 +1331,8 @@ mod tests {
             let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated torus");
             let record = &records[0];
             for (index, tag) in [(3usize, 0x13), (4, 0x14), (5, 0x06), (6, 0x06), (7, 0x14)] {
-                let offset = payload_token_offset(&bytes, record, ref_width, index)
-                    .expect("torus field offset");
+                let (offset, _) =
+                    payload_token(&bytes, record, ref_width, index).expect("torus field offset");
                 assert_eq!(bytes[offset], tag);
             }
         }
@@ -1343,8 +1345,8 @@ mod tests {
             let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated plane");
             let record = &records[0];
             for (index, tag) in [(3usize, 0x13), (4, 0x14), (5, 0x14)] {
-                let offset = payload_token_offset(&bytes, record, ref_width, index)
-                    .expect("plane field offset");
+                let (offset, _) =
+                    payload_token(&bytes, record, ref_width, index).expect("plane field offset");
                 assert_eq!(bytes[offset], tag);
             }
         }
@@ -1357,8 +1359,8 @@ mod tests {
             let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated ellipse");
             let record = &records[0];
             for (index, tag) in [(3usize, 0x13), (4, 0x14), (5, 0x14), (6, 0x06)] {
-                let offset = payload_token_offset(&bytes, record, ref_width, index)
-                    .expect("ellipse field offset");
+                let (offset, _) =
+                    payload_token(&bytes, record, ref_width, index).expect("ellipse field offset");
                 assert_eq!(bytes[offset], tag);
             }
         }
@@ -1371,8 +1373,8 @@ mod tests {
             let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated straight");
             let record = &records[0];
             for (index, tag) in [(3usize, 0x13), (4, 0x14)] {
-                let offset = payload_token_offset(&bytes, record, ref_width, index)
-                    .expect("straight field offset");
+                let (offset, _) =
+                    payload_token(&bytes, record, ref_width, index).expect("straight field offset");
                 assert_eq!(bytes[offset], tag);
             }
         }
@@ -1385,8 +1387,8 @@ mod tests {
             let records =
                 frame(&bytes, 0, bytes.len(), ref_width).expect("generated degenerate curve");
             let record = &records[0];
-            let offset = payload_token_offset(&bytes, record, ref_width, 3)
-                .expect("degenerate point offset");
+            let (offset, _) =
+                payload_token(&bytes, record, ref_width, 3).expect("degenerate point offset");
             assert_eq!(bytes[offset], 0x13);
         }
     }
@@ -1397,8 +1399,8 @@ mod tests {
             let bytes = generated_point_record(ref_width);
             let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated point");
             let record = &records[0];
-            let offset =
-                payload_token_offset(&bytes, record, ref_width, 3).expect("point position offset");
+            let (offset, _) =
+                payload_token(&bytes, record, ref_width, 3).expect("point position offset");
             assert_eq!(bytes[offset], 0x13);
         }
     }
@@ -1409,8 +1411,8 @@ mod tests {
             let edge = generated_edge_record(ref_width);
             let records = frame(&edge, 0, edge.len(), ref_width).expect("generated edge");
             for index in [4usize, 6] {
-                let offset = payload_token_offset(&edge, &records[0], ref_width, index)
-                    .expect("edge range offset");
+                let (offset, _) =
+                    payload_token(&edge, &records[0], ref_width, index).expect("edge range offset");
                 assert_eq!(edge[offset], 0x06);
             }
 
@@ -1429,7 +1431,7 @@ mod tests {
             let records =
                 frame(&coedge, 0, coedge.len(), ref_width).expect("generated tolerant coedge");
             for index in [11usize, 12] {
-                let offset = payload_token_offset(&coedge, &records[0], ref_width, index)
+                let (offset, _) = payload_token(&coedge, &records[0], ref_width, index)
                     .expect("tolerant coedge parameter offset");
                 assert_eq!(coedge[offset], 0x06);
             }
@@ -1445,24 +1447,24 @@ mod tests {
             let face = generated_face_record(ref_width);
             let records = frame(&face, 0, face.len(), ref_width).expect("generated face");
             for index in [8usize, 9, 10] {
-                let offset = payload_token_offset(&face, &records[0], ref_width, index)
-                    .expect("face sense field");
+                let (offset, _) =
+                    payload_token(&face, &records[0], ref_width, index).expect("face sense field");
                 assert!(matches!(face[offset], 0x0a | 0x0b));
             }
 
             let coedge = generated_tcoedge_record(ref_width);
             let records =
                 frame(&coedge, 0, coedge.len(), ref_width).expect("generated tolerant coedge");
-            let offset = payload_token_offset(&coedge, &records[0], ref_width, 7)
-                .expect("coedge sense field");
+            let (offset, _) =
+                payload_token(&coedge, &records[0], ref_width, 7).expect("coedge sense field");
             assert_eq!(coedge[offset], 0x0b);
 
             let edge = generated_edge_record(ref_width);
             let records = frame(&edge, 0, edge.len(), ref_width).expect("generated edge");
-            let sense =
-                payload_token_offset(&edge, &records[0], ref_width, 9).expect("edge sense field");
-            let continuity = payload_token_offset(&edge, &records[0], ref_width, 10)
-                .expect("edge continuity field");
+            let (sense, _) =
+                payload_token(&edge, &records[0], ref_width, 9).expect("edge sense field");
+            let (continuity, _) =
+                payload_token(&edge, &records[0], ref_width, 10).expect("edge continuity field");
             assert_eq!(edge[sense], 0x0b);
             assert_eq!(edge[continuity], 0x07);
         }
@@ -1484,7 +1486,7 @@ mod tests {
                 (8, 0x06),
                 (9, 0x04),
             ] {
-                let offset = payload_token_offset(&bytes, record, ref_width, index)
+                let (offset, _) = payload_token(&bytes, record, ref_width, index)
                     .expect("tolerant vertex metadata field");
                 assert_eq!(bytes[offset], tag);
             }
@@ -1496,14 +1498,13 @@ mod tests {
         for ref_width in [RefWidth::Four, RefWidth::Eight] {
             let body = generated_body_record(ref_width);
             let records = frame(&body, 0, body.len(), ref_width).expect("generated body");
-            let key =
-                payload_token_offset(&body, &records[0], ref_width, 1).expect("body key field");
+            let (key, _) = payload_token(&body, &records[0], ref_width, 1).expect("body key field");
             assert_eq!(body[key], 0x04);
 
             let edge = generated_edge_record(ref_width);
             let records = frame(&edge, 0, edge.len(), ref_width).expect("generated edge");
-            let owner =
-                payload_token_offset(&edge, &records[0], ref_width, 7).expect("edge owner field");
+            let (owner, _) =
+                payload_token(&edge, &records[0], ref_width, 7).expect("edge owner field");
             assert_eq!(edge[owner], 0x0c);
         }
     }
@@ -1515,13 +1516,13 @@ mod tests {
             let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated transform");
             let record = &records[0];
             for (index, tag) in [(0usize, 0x14), (1, 0x14), (2, 0x14), (3, 0x14), (4, 0x06)] {
-                let offset = payload_token_offset(&bytes, record, ref_width, index)
+                let (offset, _) = payload_token(&bytes, record, ref_width, index)
                     .expect("transform numeric field");
                 assert_eq!(bytes[offset], tag);
             }
             for index in 5..=7 {
-                let offset = payload_token_offset(&bytes, record, ref_width, index)
-                    .expect("transform hint field");
+                let (offset, _) =
+                    payload_token(&bytes, record, ref_width, index).expect("transform hint field");
                 assert!(matches!(bytes[offset], 0x0a | 0x0b));
             }
         }
@@ -1532,8 +1533,8 @@ mod tests {
         for ref_width in [RefWidth::Four, RefWidth::Eight] {
             let bytes = generated_wire_record(ref_width);
             let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated wire");
-            let offset =
-                payload_token_offset(&bytes, &records[0], ref_width, 7).expect("wire side field");
+            let (offset, _) =
+                payload_token(&bytes, &records[0], ref_width, 7).expect("wire side field");
             assert_eq!(bytes[offset], 0x0b);
         }
     }
@@ -1545,7 +1546,7 @@ mod tests {
             let records =
                 frame(&color, 0, color.len(), ref_width).expect("generated RGB attribute");
             for index in 1..=3 {
-                let offset = payload_token_offset(&color, &records[0], ref_width, index)
+                let (offset, _) = payload_token(&color, &records[0], ref_width, index)
                     .expect("RGB channel field");
                 assert_eq!(color[offset], 0x06);
             }
@@ -1554,7 +1555,7 @@ mod tests {
             let records = frame(&timestamp, 0, timestamp.len(), ref_width)
                 .expect("generated timestamp attribute");
             for (index, tag) in [(1usize, 0x07), (2, 0x04), (3, 0x06)] {
-                let offset = payload_token_offset(&timestamp, &records[0], ref_width, index)
+                let (offset, _) = payload_token(&timestamp, &records[0], ref_width, index)
                     .expect("timestamp semantic field");
                 assert_eq!(timestamp[offset], tag);
             }
