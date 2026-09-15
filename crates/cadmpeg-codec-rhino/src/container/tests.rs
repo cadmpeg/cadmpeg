@@ -459,6 +459,19 @@ fn counted_view_list_crc_excludes_nested_children() {
 }
 
 #[test]
+fn negative_view_list_count_is_reported_by_checksum_warning() {
+    let archive = ArchiveVersion::V5;
+    let body = (-1_i32).to_le_bytes();
+    let record = crc_chunk(archive, 0x2000_8035, &body);
+
+    let warning = super::checksum_warning(&record, 0x2000_8035, 0, record.len(), archive)
+        .expect("negative view-list checksum framing");
+    let warning = warning.expect("negative child count must remain observable");
+    assert!(warning.contains("checksum child framing"));
+    assert!(warning.contains("negative view-list child count"));
+}
+
+#[test]
 fn mesh_settings_crc_excludes_nested_subd_display_chunk() {
     let archive = ArchiveVersion::V5;
     let mut body = vec![0x1f];

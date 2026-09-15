@@ -4,6 +4,7 @@
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError};
@@ -448,6 +449,32 @@ fn decode_v2_annotation_arrow(
     Ok((tail, head))
 }
 
+fn source_key(identity: &crate::objects::SourceIdentity, source_order: usize) -> String {
+    identity.source_id.rsplit_once('#').map_or_else(
+        || format!("record-{source_order:06}"),
+        |(_, key)| key.to_owned(),
+    )
+}
+
+fn annotation_record_dropped(
+    losses: &mut Vec<LossNote>,
+    source_id: &str,
+    source_offset: usize,
+    class_uuid: Uuid,
+    error: impl std::fmt::Display,
+) {
+    losses.push(
+        RhinoLossCode::AnnotationRecordDropped
+            .note(format!(
+                "annotation object {source_id} at offset {source_offset} (class {class_uuid}) could not be transferred: {error}"
+            ))
+            .with_provenance(
+                SourceProvenance::root("rhino", source_offset as u64)
+                    .with_tag(format!("ANNOTATION/source={source_id}/class={class_uuid}")),
+            ),
+    );
+}
+
 /// Projects every supported general annotation into stable native records.
 pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, CodecError> {
     let Some(scale) = scan
@@ -469,11 +496,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, 
         };
         let identity = &object.identity;
         let link = format!("rhino:object:record#{source_order:06}");
-        let key = if identity.object_id.is_nil() {
-            format!("record-{source_order:06}")
-        } else {
-            identity.object_id.to_string()
-        };
+        let key = source_key(identity, source_order);
         let source_uuid = identity.object_id.to_string();
         let mut v5_text_extra = None;
         if matches!(object.class_uuid, TEXT | LEGACY_TEXT) {
@@ -498,14 +521,24 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, 
         }
         if matches!(object.class_uuid, TEXT | LEADER) {
             let leader = object.class_uuid == LEADER;
-            let Ok((value, points)) = decode_annotation(
+            let (value, points) = match decode_annotation(
                 scan.data,
                 object.class_data_range.clone(),
                 scan.archive,
                 scale,
                 leader,
-            ) else {
-                continue;
+            ) {
+                Ok(value) => value,
+                Err(error) => {
+                    annotation_record_dropped(
+                        &mut losses,
+                        &identity.source_id,
+                        object.range.start,
+                        object.class_uuid,
+                        error,
+                    );
+                    continue;
+                }
             };
             annotations.push(AnnotationRecord {
                 id: format!("rhino:document:annotation#{key}"),
@@ -547,13 +580,23 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, 
             });
         } else if matches!(object.class_uuid, LEGACY_TEXT | LEGACY_LEADER) {
             let leader = object.class_uuid == LEGACY_LEADER;
-            let Ok(value) = decode_legacy_annotation(
+            let value = match decode_legacy_annotation(
                 scan.data,
                 object.class_data_range.clone(),
                 scan.archive,
                 scale,
-            ) else {
-                continue;
+            ) {
+                Ok(value) => value,
+                Err(error) => {
+                    annotation_record_dropped(
+                        &mut losses,
+                        &identity.source_id,
+                        object.range.start,
+                        object.class_uuid,
+                        error,
+                    );
+                    continue;
+                }
             };
             annotations.push(AnnotationRecord {
                 id: format!("rhino:document:annotation#{key}"),
@@ -599,13 +642,23 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, 
                 | crate::dimensions::V2_TEXT_OBJECT
                 | crate::dimensions::V2_LEADER
         ) {
-            let Ok(value) = decode_v2_annotation(
+            let value = match decode_v2_annotation(
                 scan.data,
                 object.class_data_range.clone(),
                 scale,
                 object.class_uuid,
-            ) else {
-                continue;
+            ) {
+                Ok(value) => value,
+                Err(error) => {
+                    annotation_record_dropped(
+                        &mut losses,
+                        &identity.source_id,
+                        object.range.start,
+                        object.class_uuid,
+                        error,
+                    );
+                    continue;
+                }
             };
             let is_leader = object.class_uuid == crate::dimensions::V2_LEADER
                 || (object.class_uuid == crate::dimensions::V2_ANNOTATION && value.base.kind == 6);
@@ -664,8 +717,18 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, 
             } else {
                 decode_v2_text_dot(scan.data, object.class_data_range.clone(), scale)
             };
-            let Ok(mut value) = decoded else {
-                continue;
+            let mut value = match decoded {
+                Ok(value) => value,
+                Err(error) => {
+                    annotation_record_dropped(
+                        &mut losses,
+                        &identity.source_id,
+                        object.range.start,
+                        object.class_uuid,
+                        error,
+                    );
+                    continue;
+                }
             };
             value.id = format!("rhino:document:text_dot#{key}");
             value.source_offset = object.range.start as u64;
@@ -673,11 +736,21 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, 
             value.links.push(link);
             dots.push(value);
         } else if object.class_uuid == V2_ANNOTATION_ARROW {
-            let Ok((tail, head)) =
-                decode_v2_annotation_arrow(scan.data, object.class_data_range.clone(), scale)
-            else {
-                continue;
-            };
+            let (tail, head) =
+                match decode_v2_annotation_arrow(scan.data, object.class_data_range.clone(), scale)
+                {
+                    Ok(value) => value,
+                    Err(error) => {
+                        annotation_record_dropped(
+                            &mut losses,
+                            &identity.source_id,
+                            object.range.start,
+                            object.class_uuid,
+                            error,
+                        );
+                        continue;
+                    }
+                };
             arrows.push(AnnotationArrowRecord {
                 id: format!("rhino:document:annotation_arrow#{key}"),
                 source_offset: object.range.start as u64,
@@ -702,11 +775,13 @@ mod tests {
     use super::{
         decode_annotation, decode_dot, decode_legacy_annotation, decode_v2_annotation,
         decode_v2_annotation_arrow, decode_v2_text_dot, install, parse_v5_text_extra, ANONYMOUS,
-        V2_ANNOTATION_ARROW, V2_TEXT_DOT, V5_TEXT_EXTRA,
+        LEGACY_TEXT, V2_ANNOTATION_ARROW, V2_TEXT_DOT, V5_TEXT_EXTRA,
     };
     use crate::chunks::ArchiveVersion;
     use crate::objects::ClassUserdata;
-    use crate::test_support::test_dump::{object_record_with_payload, scan_with_objects};
+    use crate::test_support::test_dump::{
+        object_record_with_payload, scan_with_objects, set_identity,
+    };
     use crate::wire::Uuid;
     use cadmpeg_ir::document::CadIr;
 
@@ -791,6 +866,24 @@ mod tests {
         bytes.extend(utf16(default_text));
         bytes.extend(i32::from(user_positioned).to_le_bytes());
         bytes
+    }
+
+    fn legacy_text_payload() -> Vec<u8> {
+        let mut fields = 7_i32.to_le_bytes().to_vec();
+        fields.extend(0_i32.to_le_bytes());
+        fields.extend(plane());
+        fields.extend(0_i32.to_le_bytes());
+        fields.extend(utf16("legacy text"));
+        fields.extend(0_i32.to_le_bytes());
+        fields.extend(0_i32.to_le_bytes());
+        fields.extend(1.5_f64.to_le_bytes());
+        fields.extend(0_i32.to_le_bytes());
+        fields.push(0);
+        fields.extend(utf16("legacy text"));
+        fields.extend((-1_i32).to_le_bytes());
+        fields.extend(12_i32.to_le_bytes());
+        let base = anonymous(3, &fields);
+        anonymous(0, &base)
     }
 
     #[test]
@@ -891,6 +984,114 @@ mod tests {
             serde_json::to_value(&namespace.arenas()["annotations"][3]).expect("unknown JSON");
         assert_eq!(unknown["kind"], "annotation");
         assert_eq!(unknown["annotation_type"], 123);
+    }
+
+    #[test]
+    fn install_uses_the_legacy_grammar_for_v5_text_objects() {
+        let payload = legacy_text_payload();
+        let scan = scan_with_objects(&[object_record_with_payload(
+            ArchiveVersion::V5,
+            0x20,
+            LEGACY_TEXT.to_wire(),
+            &payload,
+        )]);
+        let mut ir = CadIr::empty();
+        let losses = install(&scan, &mut ir).expect("legacy annotation installation");
+        assert!(losses.is_empty());
+
+        let record = &ir
+            .native
+            .namespace("rhino")
+            .expect("Rhino namespace")
+            .arenas()["annotations"][0];
+        assert_eq!(
+            record.field("legacy_user_text"),
+            Some(serde_json::json!("legacy text"))
+        );
+        assert_eq!(
+            record.field("legacy_text_height"),
+            Some(serde_json::json!(1.5))
+        );
+    }
+
+    #[test]
+    fn malformed_supported_annotation_is_reported_with_source_provenance() {
+        let scan = scan_with_objects(&[object_record_with_payload(
+            ArchiveVersion::V5,
+            0x20,
+            crate::dimensions::V2_TEXT_OBJECT.to_wire(),
+            &[],
+        )]);
+        let source_offset = scan.objects[0].range().start;
+        let source_id = scan.objects[0]
+            .identity()
+            .expect("test object identity")
+            .source_id
+            .clone();
+        let mut ir = CadIr::empty();
+        let losses = install(&scan, &mut ir).expect("annotation installation");
+        let loss = losses
+            .iter()
+            .find(|loss| loss.code == super::RhinoLossCode::AnnotationRecordDropped.kind())
+            .expect("malformed annotation loss");
+        assert!(loss.message.contains(&format!("offset {source_offset}")));
+        let provenance = loss.provenance.as_ref().expect("annotation provenance");
+        assert_eq!(provenance.format(), "rhino");
+        assert_eq!(provenance.offset, source_offset as u64);
+        let expected_tag =
+            format!("ANNOTATION/source={source_id}/class=5de6b210-486b-11d4-8014-0010830122f0");
+        assert_eq!(provenance.tag.as_deref(), Some(expected_tag.as_str()));
+        assert!(ir
+            .native
+            .namespace("rhino")
+            .expect("Rhino namespace")
+            .arenas()["annotations"]
+            .is_empty());
+    }
+
+    #[test]
+    fn duplicate_annotation_uuids_use_the_resolved_source_keys() {
+        let payload = v2_annotation_payload(7, &[], "first", "unused", false);
+        let mut scan = scan_with_objects(&[
+            object_record_with_payload(
+                ArchiveVersion::V5,
+                0x20,
+                crate::dimensions::V2_ANNOTATION.to_wire(),
+                &payload,
+            ),
+            object_record_with_payload(
+                ArchiveVersion::V5,
+                0x20,
+                crate::dimensions::V2_ANNOTATION.to_wire(),
+                &payload,
+            ),
+        ]);
+        let duplicate_id = [0x42; 16];
+        set_identity(&mut scan, 0, duplicate_id, "first", None, true);
+        set_identity(&mut scan, 1, duplicate_id, "second", None, true);
+
+        let mut ir = CadIr::empty();
+        install(&scan, &mut ir).expect("annotation installation");
+        let records = &ir
+            .native
+            .namespace("rhino")
+            .expect("Rhino namespace")
+            .arenas()["annotations"];
+        let ids = records
+            .iter()
+            .map(|record| record.id().to_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            ids,
+            vec![
+                "rhino:document:annotation#first",
+                "rhino:document:annotation#second"
+            ]
+        );
+        assert!(records.iter().all(|record| {
+            record.field("source_uuid")
+                == Some(serde_json::json!(Uuid::from_wire(duplicate_id).to_string()))
+        }));
     }
 
     #[test]

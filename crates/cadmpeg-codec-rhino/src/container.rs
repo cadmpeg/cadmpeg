@@ -297,6 +297,12 @@ fn framing_error(error: FramingError) -> CodecError {
     }
 }
 
+fn checksum_children_warning(typecode: u32, offset: usize, error: FramingError) -> String {
+    format!(
+        "checksum child framing at offset {offset} for typecode {typecode:#x} could not be verified: {error}"
+    )
+}
+
 fn checksum_warning(
     data: &[u8],
     typecode: u32,
@@ -327,8 +333,11 @@ fn checksum_warning(
         typecode,
         TCODE_NAMED_PLANES | TCODE_NAMED_VIEWS | TCODE_VIEWS
     ) {
-        let Ok(children) = list_checksum_children(data, &chunk, archive) else {
-            return Ok(None);
+        let children = match list_checksum_children(data, &chunk, archive) {
+            Ok(children) => children,
+            Err(error) => {
+                return Ok(Some(checksum_children_warning(typecode, offset, error)));
+            }
         };
         let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
@@ -336,49 +345,70 @@ fn checksum_warning(
         typecode,
         TCODE_RENDER_MESH_SETTINGS | TCODE_ANALYSIS_MESH_SETTINGS
     ) {
-        let Ok(children) = mesh_checksum_children(data, &chunk, archive) else {
-            return Ok(None);
+        let children = match mesh_checksum_children(data, &chunk, archive) {
+            Ok(children) => children,
+            Err(error) => {
+                return Ok(Some(checksum_children_warning(typecode, offset, error)));
+            }
         };
         let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
     } else if typecode == TCODE_RENDER_SETTINGS {
-        let Ok(children) = render_settings_checksum_children(data, &chunk, archive) else {
-            return Ok(None);
+        let children = match render_settings_checksum_children(data, &chunk, archive) {
+            Ok(children) => children,
+            Err(error) => {
+                return Ok(Some(checksum_children_warning(typecode, offset, error)));
+            }
         };
         let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
     } else if typecode == TCODE_SETTINGS_ATTRIBUTES {
-        let Ok(children) = settings_attributes_checksum_children(data, &chunk, archive) else {
-            return Ok(None);
+        let children = match settings_attributes_checksum_children(data, &chunk, archive) {
+            Ok(children) => children,
+            Err(error) => {
+                return Ok(Some(checksum_children_warning(typecode, offset, error)));
+            }
         };
         let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
     } else if typecode == TCODE_PLUGIN_LIST {
-        let Ok(children) = plugin_list_checksum_children(data, &chunk, archive) else {
-            return Ok(None);
+        let children = match plugin_list_checksum_children(data, &chunk, archive) {
+            Ok(children) => children,
+            Err(error) => {
+                return Ok(Some(checksum_children_warning(typecode, offset, error)));
+            }
         };
         let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
     } else if typecode == TCODE_RENDER_USERDATA {
-        let Ok(children) = checksum_children_through_class_end(
+        let children = match checksum_children_through_class_end(
             data,
             chunk.body().clone(),
             archive,
             "render-settings userdata",
-        ) else {
-            return Ok(None);
+        ) {
+            Ok(children) => children,
+            Err(error) => {
+                return Ok(Some(checksum_children_warning(typecode, offset, error)));
+            }
         };
         let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
     } else if typecode == TCODE_COMPRESSED_PREVIEW {
-        let Ok(children) = compressed_preview_checksum_children(data, &chunk, archive) else {
-            return Ok(None);
+        let children = match compressed_preview_checksum_children(data, &chunk, archive) {
+            Ok(children) => children,
+            Err(error) => {
+                return Ok(Some(checksum_children_warning(typecode, offset, error)));
+            }
         };
         let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
     } else if typecode == TCODE_USER_TABLE_UUID {
-        let Ok(children) = user_table_uuid_checksum_children(data, &chunk, archive) else {
-            return Ok(None);
+        let children = match user_table_uuid_checksum_children(data, &chunk, archive) {
+            Ok(children) => children,
+            Err(error) => {
+                return Ok(Some(checksum_children_warning(typecode, offset, error)));
+            }
         };
         let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
@@ -1036,12 +1066,9 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
                         "document table record budget of {record_limit} exceeded"
                     ))
                 })?;
-            table_record_count = table_record_count.checked_add(1).ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "table record count overflow at offset {}",
-                    child_offset
-                ))
-            })?;
+            table_record_count = table_record_count
+                .checked_add(1)
+                .expect("document record budget bounds table count");
             let record = Record::from_chunk(&child);
             let opaque = table_base(chunk.typecode) == TCODE_USER
                 || !record_is_allowed(chunk.typecode, record.typecode, record.is_short());
